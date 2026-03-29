@@ -1,10 +1,12 @@
 package builder
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -12,6 +14,7 @@ const (
 	expectedAPIVersion = "aggrega.ai/v1alpha1"
 	aggregateKind      = "Aggregate"
 	manifestKind       = "Manifest"
+	releaseKind        = "Release"
 )
 
 // Aggregate is the Domain 1 developer intent document (aggregate-v1alpha1).
@@ -200,4 +203,144 @@ func validateManifest(doc *Manifest) error {
 		}
 	}
 	return nil
+}
+
+// releaseYAMLFile is the YAML shape of release-v1alpha1 (internal to parsing).
+type releaseYAMLFile struct {
+	APIVersion string `yaml:"apiVersion"`
+	Kind       string `yaml:"kind"`
+	Metadata   struct {
+		Name string `yaml:"name"`
+	} `yaml:"metadata"`
+	Spec struct {
+		Aggregate string                 `yaml:"aggregate"`
+		Manifest  string                 `yaml:"manifest"`
+		Inputs    map[string]interface{} `yaml:"inputs,omitempty"`
+		Policies  *releasePoliciesYAML   `yaml:"policies,omitempty"`
+		Scopes    []releaseScopeYAML     `yaml:"scopes"`
+	} `yaml:"spec"`
+}
+
+type releasePoliciesYAML struct {
+	StrictNetworking       *bool `yaml:"strict_networking,omitempty"`
+	EnforceGuardrails      *bool `yaml:"enforce_guardrails,omitempty"`
+	EnforceTrustDirectives *bool `yaml:"enforce_trust_directives,omitempty"`
+}
+
+type releaseScopeYAML struct {
+	Name        string            `yaml:"name"`
+	Provider    string            `yaml:"provider"`
+	Components  []string          `yaml:"components,omitempty"`
+	MatchLabels map[string]string `yaml:"matchLabels,omitempty"`
+}
+
+// ParseRelease decodes Release YAML into types.Release.
+func ParseRelease(data []byte) (*types.Release, error) {
+	var doc releaseYAMLFile
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse release yaml: %w", err)
+	}
+	if err := validateReleaseYAML(&doc); err != nil {
+		return nil, err
+	}
+	return releaseYAMLToTypes(&doc)
+}
+
+// ParseReleaseFile reads a Release file from path and parses it.
+func ParseReleaseFile(path string) (*types.Release, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read release file %q: %w", path, err)
+	}
+	rel, err := ParseRelease(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return rel, nil
+}
+
+func validateReleaseYAML(doc *releaseYAMLFile) error {
+	if doc == nil {
+		return fmt.Errorf("release: document is nil")
+	}
+	if doc.APIVersion != expectedAPIVersion {
+		return fmt.Errorf("release: apiVersion must be %q, got %q", expectedAPIVersion, doc.APIVersion)
+	}
+	if doc.Kind != releaseKind {
+		return fmt.Errorf("release: kind must be %q, got %q", releaseKind, doc.Kind)
+	}
+	if strings.TrimSpace(doc.Metadata.Name) == "" {
+		return fmt.Errorf("release: metadata.name is required")
+	}
+	if strings.TrimSpace(doc.Spec.Aggregate) == "" {
+		return fmt.Errorf("release: spec.aggregate is required")
+	}
+	if strings.TrimSpace(doc.Spec.Manifest) == "" {
+		return fmt.Errorf("release: spec.manifest is required")
+	}
+	if len(doc.Spec.Scopes) == 0 {
+		return fmt.Errorf("release: spec.scopes must not be empty")
+	}
+	for i, s := range doc.Spec.Scopes {
+		if strings.TrimSpace(s.Name) == "" {
+			return fmt.Errorf("release: spec.scopes[%d].name is required", i)
+		}
+		if strings.TrimSpace(s.Provider) == "" {
+			return fmt.Errorf("release: spec.scopes[%d].provider is required", i)
+		}
+	}
+	return nil
+}
+
+func releaseYAMLToTypes(doc *releaseYAMLFile) (*types.Release, error) {
+	inputs, err := mapToReleaseInputs(doc.Spec.Inputs)
+	if err != nil {
+		return nil, err
+	}
+	var pol *types.ReleasePolicies
+	if doc.Spec.Policies != nil {
+		pol = &types.ReleasePolicies{
+			StrictNetworking:       doc.Spec.Policies.StrictNetworking,
+			EnforceGuardrails:      doc.Spec.Policies.EnforceGuardrails,
+			EnforceTrustDirectives: doc.Spec.Policies.EnforceTrustDirectives,
+		}
+	}
+	scopes := make([]types.Scope, len(doc.Spec.Scopes))
+	for i, s := range doc.Spec.Scopes {
+		scopes[i] = types.Scope{
+			Name:        s.Name,
+			Provider:    s.Provider,
+			Components:  append([]string(nil), s.Components...),
+			MatchLabels: s.MatchLabels,
+		}
+	}
+	return &types.Release{
+		APIVersion: doc.APIVersion,
+		Kind:       doc.Kind,
+		Metadata: types.ReleaseMetadata{
+			Name: doc.Metadata.Name,
+		},
+		Spec: types.ReleaseSpec{
+			Aggregate: doc.Spec.Aggregate,
+			Manifest:  doc.Spec.Manifest,
+			Inputs:    inputs,
+			Policies:  pol,
+			Scopes:    scopes,
+		},
+	}, nil
+}
+
+func mapToReleaseInputs(m map[string]interface{}) (map[string]json.RawMessage, error) {
+	if len(m) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]json.RawMessage, len(m))
+	for k, v := range m {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("release: spec.inputs[%q]: %w", k, err)
+		}
+		out[k] = b
+	}
+	return out, nil
 }

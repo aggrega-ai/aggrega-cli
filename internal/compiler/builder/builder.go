@@ -60,6 +60,14 @@ func (b *GraphBuilder) Build(aggregateYAML, manifestYAML []byte) (*types.IRGraph
 	return b.buildIR(agg, "", "")
 }
 
+// BuildIRFromParsed constructs the IR graph from documents that were already parsed and for
+// which ResolveManifestAgainstAggregate(agg, man) has succeeded. The manifest is accepted for
+// API symmetry with the rest of the pipeline; IR emission currently depends only on the aggregate.
+func (b *GraphBuilder) BuildIRFromParsed(agg *Aggregate, man *Manifest, aggregatePath, manifestPath string) (*types.IRGraph, error) {
+	_ = man
+	return b.buildIR(agg, aggregatePath, manifestPath)
+}
+
 func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath string) (*types.IRGraph, error) {
 	nodes := make(map[string]types.IRNode, len(agg.Spec.Components))
 	valuesMapping := make(map[string]json.RawMessage, len(agg.Spec.Components))
