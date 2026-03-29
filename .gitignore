@@ -5,7 +5,7 @@
 *.so
 *.dylib
 bin/
-aggrega
+/aggrega
 
 # Test binary, built with `go test -c`
 *.test
