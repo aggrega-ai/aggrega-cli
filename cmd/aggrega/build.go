@@ -91,7 +91,7 @@ func runBuild(cmd *cobra.Command, args []string) {
 		log.Fatalf("aggrega build: render: %v", err)
 	}
 
-	outRoot := filepath.Join(wd, ".aggrega", "dist", buildScope)
+	outRoot := filepath.Join(wd, "out", buildScope)
 	if err := writeArtifacts(outRoot, artifacts); err != nil {
 		log.Fatalf("aggrega build: write output: %v", err)
 	}

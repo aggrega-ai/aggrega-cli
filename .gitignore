@@ -13,5 +13,8 @@ bin/
 # Output of the go coverage tool
 *.out
 
+# Output of aggrega cli
+out/
+
 # Dependency directories (if you vendor)
 vendor/
