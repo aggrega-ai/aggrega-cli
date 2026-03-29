@@ -1,0 +1,203 @@
+package builder
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	expectedAPIVersion = "aggrega.ai/v1alpha1"
+	aggregateKind      = "Aggregate"
+	manifestKind       = "Manifest"
+)
+
+// Aggregate is the Domain 1 developer intent document (aggregate-v1alpha1).
+type Aggregate struct {
+	APIVersion string            `yaml:"apiVersion"`
+	Kind       string            `yaml:"kind"`
+	Metadata   AggregateMetadata `yaml:"metadata"`
+	Spec       AggregateSpec     `yaml:"spec"`
+}
+
+// AggregateMetadata carries aggregate identity and optional labels.
+type AggregateMetadata struct {
+	Name   string            `yaml:"name"`
+	Labels map[string]string `yaml:"labels,omitempty"`
+}
+
+// AggregateSpec lists logical components and optional module inputs.
+type AggregateSpec struct {
+	Inputs     map[string]interface{} `yaml:"inputs,omitempty"`
+	Components []AggregateComponent   `yaml:"components"`
+}
+
+// AggregateComponent is one logical node in the aggregate topology.
+type AggregateComponent struct {
+	ID       string                        `yaml:"id"`
+	Type     string                        `yaml:"type"`
+	Features []AggregateFeatureAttachment  `yaml:"features,omitempty"`
+	Values   map[string]interface{}        `yaml:"values,omitempty"`
+	Secrets  map[string]AggregateSecretRef `yaml:"secrets,omitempty"`
+}
+
+// AggregateFeatureAttachment binds a Feature type and optional configuration.
+type AggregateFeatureAttachment struct {
+	Type string                 `yaml:"type"`
+	With map[string]interface{} `yaml:"with,omitempty"`
+}
+
+// AggregateSecretRef references a SecretStore and optional store parameters.
+type AggregateSecretRef struct {
+	Store string                 `yaml:"store"`
+	With  map[string]interface{} `yaml:"with,omitempty"`
+}
+
+// Manifest is the Domain 4 dependency lockfile (manifest-v1alpha1).
+type Manifest struct {
+	APIVersion string       `yaml:"apiVersion"`
+	Kind       string       `yaml:"kind"`
+	Metadata   ManifestMeta `yaml:"metadata"`
+	Spec       ManifestSpec `yaml:"spec"`
+}
+
+// ManifestMeta identifies the manifest instance.
+type ManifestMeta struct {
+	Name string `yaml:"name"`
+}
+
+// ManifestSpec holds abstract URI to concrete recipe mappings.
+type ManifestSpec struct {
+	Mappings map[string]ManifestMapping `yaml:"mappings"`
+}
+
+// ManifestMapping locks one abstract URI to a semantic version and at least one recipe URI.
+// The JSON schema requires anyOf componentRecipe | featureRecipe | secretRecipe; callers
+// enforce which recipe kind applies to each resolution path.
+type ManifestMapping struct {
+	Version         string `yaml:"version"`
+	ComponentRecipe string `yaml:"componentRecipe,omitempty"`
+	FeatureRecipe   string `yaml:"featureRecipe,omitempty"`
+	SecretRecipe    string `yaml:"secretRecipe,omitempty"`
+}
+
+// ParseAggregate decodes Aggregate YAML and applies structural checks expected by v1alpha1.
+func ParseAggregate(data []byte) (*Aggregate, error) {
+	var doc Aggregate
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse aggregate yaml: %w", err)
+	}
+	if err := validateAggregate(&doc); err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
+// ParseAggregateFile reads a path and parses an Aggregate document.
+func ParseAggregateFile(path string) (*Aggregate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read aggregate file %q: %w", path, err)
+	}
+	doc, err := ParseAggregate(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return doc, nil
+}
+
+// ParseManifest decodes Manifest YAML and applies structural checks expected by v1alpha1.
+func ParseManifest(data []byte) (*Manifest, error) {
+	var doc Manifest
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse manifest yaml: %w", err)
+	}
+	if err := validateManifest(&doc); err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
+// ParseManifestFile reads a path and parses a Manifest document.
+func ParseManifestFile(path string) (*Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read manifest file %q: %w", path, err)
+	}
+	doc, err := ParseManifest(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return doc, nil
+}
+
+func validateAggregate(doc *Aggregate) error {
+	if doc == nil {
+		return fmt.Errorf("aggregate: document is nil")
+	}
+	if doc.APIVersion != expectedAPIVersion {
+		return fmt.Errorf("aggregate: apiVersion must be %q, got %q", expectedAPIVersion, doc.APIVersion)
+	}
+	if doc.Kind != aggregateKind {
+		return fmt.Errorf("aggregate: kind must be %q, got %q", aggregateKind, doc.Kind)
+	}
+	if strings.TrimSpace(doc.Metadata.Name) == "" {
+		return fmt.Errorf("aggregate: metadata.name is required")
+	}
+	if len(doc.Spec.Components) == 0 {
+		return fmt.Errorf("aggregate: spec.components must not be empty")
+	}
+	seen := make(map[string]struct{}, len(doc.Spec.Components))
+	for i, c := range doc.Spec.Components {
+		if strings.TrimSpace(c.ID) == "" {
+			return fmt.Errorf("aggregate: spec.components[%d].id is required", i)
+		}
+		if strings.TrimSpace(c.Type) == "" {
+			return fmt.Errorf("aggregate: spec.components[%d].type is required", i)
+		}
+		if _, dup := seen[c.ID]; dup {
+			return fmt.Errorf("aggregate: duplicate component id %q", c.ID)
+		}
+		seen[c.ID] = struct{}{}
+		for j, f := range c.Features {
+			if strings.TrimSpace(f.Type) == "" {
+				return fmt.Errorf("aggregate: spec.components[%d].features[%d].type is required", i, j)
+			}
+		}
+		for secretName, s := range c.Secrets {
+			if strings.TrimSpace(s.Store) == "" {
+				return fmt.Errorf("aggregate: spec.components[%d].secrets[%q].store is required", i, secretName)
+			}
+		}
+	}
+	return nil
+}
+
+func validateManifest(doc *Manifest) error {
+	if doc == nil {
+		return fmt.Errorf("manifest: document is nil")
+	}
+	if doc.APIVersion != expectedAPIVersion {
+		return fmt.Errorf("manifest: apiVersion must be %q, got %q", expectedAPIVersion, doc.APIVersion)
+	}
+	if doc.Kind != manifestKind {
+		return fmt.Errorf("manifest: kind must be %q, got %q", manifestKind, doc.Kind)
+	}
+	if strings.TrimSpace(doc.Metadata.Name) == "" {
+		return fmt.Errorf("manifest: metadata.name is required")
+	}
+	if len(doc.Spec.Mappings) == 0 {
+		return fmt.Errorf("manifest: spec.mappings must not be empty")
+	}
+	for key, m := range doc.Spec.Mappings {
+		if strings.TrimSpace(m.Version) == "" {
+			return fmt.Errorf("manifest: mappings[%q].version is required", key)
+		}
+		if m.ComponentRecipe == "" && m.FeatureRecipe == "" && m.SecretRecipe == "" {
+			return fmt.Errorf("manifest: mappings[%q] must set one of componentRecipe, featureRecipe, or secretRecipe", key)
+		}
+	}
+	return nil
+}

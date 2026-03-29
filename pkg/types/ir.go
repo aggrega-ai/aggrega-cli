@@ -55,6 +55,10 @@ type IRSpec struct {
 	// keyed by node ID. Each value is arbitrary JSON.
 	ValuesMapping map[string]json.RawMessage `json:"values_mapping"`
 
+	// FeatureValuesMapping is a normalized map of Node IDs to their attached Feature
+	// configurations. Format: NodeID -> FeatureType -> Arbitrary JSON (from the 'with' block).
+	FeatureValuesMapping map[string]map[string]json.RawMessage `json:"feature_values_mapping"`
+
 	// Secrets maps node ID to named credential requests (store reference plus opaque
 	// "with" parameters), kept separate from ValuesMapping.
 	Secrets map[string]map[string]IRSecretRequest `json:"secrets"`
