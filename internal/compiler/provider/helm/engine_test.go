@@ -11,9 +11,7 @@ import (
 
 func TestHelmEngine_Render_ChartMetadata(t *testing.T) {
 	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "my-app"}}
-	graph := minimalGraph(t, "web", "server", map[string]interface{}{
-		"image": "nginx:1.0",
-	})
+	graph := minimalGraph(t, "web", "server", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, types.Scope{})
 	if err != nil {
 		t.Fatal(err)
@@ -35,10 +33,7 @@ func TestHelmEngine_Render_GatewayLoadBalancer(t *testing.T) {
 			Policies:  &types.ReleasePolicies{StrictNetworking: &tTrue},
 		},
 	}
-	graph := minimalGraph(t, "ingress", "ai-gateway", map[string]interface{}{
-		"image": "gw:v1",
-		"ports": []string{"443:8443"},
-	})
+	graph := minimalGraph(t, "ingress", "ai-gateway", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, types.Scope{})
 	if err != nil {
 		t.Fatal(err)
@@ -51,10 +46,7 @@ func TestHelmEngine_Render_GatewayLoadBalancer(t *testing.T) {
 
 func TestHelmEngine_Render_ResolvedTypeGatewayString(t *testing.T) {
 	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "x"}}
-	graph := minimalGraph(t, "edge", "gateway", map[string]interface{}{
-		"image": "g:v",
-		"ports": []string{"80:8080"},
-	})
+	graph := minimalGraph(t, "edge", "gateway", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, types.Scope{})
 	if err != nil {
 		t.Fatal(err)
@@ -67,10 +59,7 @@ func TestHelmEngine_Render_ResolvedTypeGatewayString(t *testing.T) {
 
 func TestHelmEngine_Render_StandardClusterIP(t *testing.T) {
 	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "app"}}
-	graph := minimalGraph(t, "api", "server", map[string]interface{}{
-		"image": "api:v2",
-		"ports": []string{"8080:8080"},
-	})
+	graph := minimalGraph(t, "api", "server", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, types.Scope{})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +81,7 @@ func TestHelmEngine_Render_StrictNetworkingAnnotation(t *testing.T) {
 			Policies:  &types.ReleasePolicies{StrictNetworking: &tTrue},
 		},
 	}
-	graph := minimalGraph(t, "api", "server", map[string]interface{}{"image": "x"})
+	graph := minimalGraph(t, "api", "server", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, types.Scope{})
 	if err != nil {
 		t.Fatal(err)

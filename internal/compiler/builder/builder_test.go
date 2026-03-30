@@ -13,8 +13,8 @@ metadata:
   name: demo
 spec:
   components:
-    - id: web
-      type: core/http-server
+    web:
+      type: server
       values:
         port: 8080
 `
@@ -25,7 +25,7 @@ metadata:
   name: lock
 spec:
   mappings:
-    core/http-server:
+    server:
       version: "1.0.0"
       componentRecipe: oci://example/recipes/http-server
 `
@@ -35,7 +35,7 @@ spec:
 		t.Fatalf("Build: %v", err)
 	}
 	node := ir.Spec.Nodes["web"]
-	if node.Component != "core/http-server" {
+	if node.Component != "server" {
 		t.Fatalf("node component: got %q", node.Component)
 	}
 	raw, ok := ir.Spec.ValuesMapping["web"]
@@ -69,14 +69,14 @@ metadata:
   name: demo
 spec:
   components:
-    - id: gw
-      type: core/gateway
+    gw:
+      type: ai-gateway
       features:
         - type: privacy-filter
           with:
             action: redact
-    - id: agent
-      type: core/agent
+    agent:
+      type: ai-agent
 `
 	manifestYAML := `
 apiVersion: aggrega.ai/v1alpha1
@@ -85,10 +85,10 @@ metadata:
   name: lock
 spec:
   mappings:
-    core/gateway:
+    ai-gateway:
       version: "1.0.0"
       componentRecipe: oci://example/gateway
-    core/agent:
+    ai-agent:
       version: "1.0.0"
       componentRecipe: oci://example/agent
     privacy-filter:
@@ -130,10 +130,9 @@ func TestResolveManifestAgainstAggregate_Errors(t *testing.T) {
 		Kind:       aggregateKind,
 		Metadata:   AggregateMetadata{Name: "a"},
 		Spec: AggregateSpec{
-			Components: []AggregateComponent{{
-				ID:   "x",
-				Type: "missing/component",
-			}},
+			Components: map[string]AggregateComponent{
+				"x": {Type: "missing/component"},
+			},
 		},
 	}
 	man := &Manifest{

@@ -75,12 +75,12 @@ func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath strin
 	secretsOut := make(map[string]map[string]types.IRSecretRequest)
 	featureMarkers := make([]string, 0)
 
-	for _, comp := range agg.Spec.Components {
-		if !irNodeIDPattern.MatchString(comp.ID) {
-			return nil, fmt.Errorf("component id %q must match %s", comp.ID, irNodeIDPattern.String())
+	for id, comp := range agg.Spec.Components {
+		if !irNodeIDPattern.MatchString(id) {
+			return nil, fmt.Errorf("component id %q must match %s", id, irNodeIDPattern.String())
 		}
 
-		nodes[comp.ID] = types.IRNode{
+		nodes[id] = types.IRNode{
 			ResolvedType: InferResolvedType(comp.Type),
 			Component:    comp.Type,
 		}
@@ -90,12 +90,12 @@ func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath strin
 			var err error
 			valuesRaw, err = json.Marshal(comp.Values)
 			if err != nil {
-				return nil, fmt.Errorf("component %q: marshal values: %w", comp.ID, err)
+				return nil, fmt.Errorf("component %q: marshal values: %w", id, err)
 			}
 		} else {
 			valuesRaw = json.RawMessage(`{}`)
 		}
-		valuesMapping[comp.ID] = valuesRaw
+		valuesMapping[id] = valuesRaw
 
 		perNodeFeatures := make(map[string]json.RawMessage)
 		for _, f := range comp.Features {
@@ -103,19 +103,19 @@ func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath strin
 			if f.With != nil {
 				raw, err := json.Marshal(f.With)
 				if err != nil {
-					return nil, fmt.Errorf("component %q feature %q: marshal with: %w", comp.ID, f.Type, err)
+					return nil, fmt.Errorf("component %q feature %q: marshal with: %w", id, f.Type, err)
 				}
 				perNodeFeatures[f.Type] = raw
 			}
 		}
-		featureValuesMapping[comp.ID] = perNodeFeatures
+		featureValuesMapping[id] = perNodeFeatures
 
 		if len(comp.Secrets) > 0 {
-			secMap, err := convertSecrets(comp.ID, comp.Secrets)
+			secMap, err := convertSecrets(id, comp.Secrets)
 			if err != nil {
 				return nil, err
 			}
-			secretsOut[comp.ID] = secMap
+			secretsOut[id] = secMap
 		}
 	}
 

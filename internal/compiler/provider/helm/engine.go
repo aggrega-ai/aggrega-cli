@@ -148,6 +148,7 @@ func (e *HelmEngine) Render(ctx context.Context, graph *types.IRGraph, release *
 		if err != nil {
 			return nil, err
 		}
+		payload = helmPortFallbacks(node, payload)
 
 		image := payload.image
 		if image == "" {
@@ -269,6 +270,20 @@ type extractedPayload struct {
 	image       string
 	ports       []string
 	environment map[string]string
+}
+
+// helmPortFallbacks supplies service/container ports when values_mapping omits them (recipe not wired).
+func helmPortFallbacks(node types.IRNode, p extractedPayload) extractedPayload {
+	if len(p.ports) > 0 {
+		return p
+	}
+	rt := node.ResolvedType
+	if rt == "ai-gateway" || rt == "gateway" {
+		p.ports = []string{"443:8443"}
+		return p
+	}
+	p.ports = []string{"8080:8080"}
+	return p
 }
 
 func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, error) {

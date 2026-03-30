@@ -38,10 +38,7 @@ func TestComposeEngine_Render_GatewayPortsUnderStrict(t *testing.T) {
 			Policies: &types.ReleasePolicies{StrictNetworking: &tTrue},
 		},
 	}
-	gwVals, _ := json.Marshal(map[string]interface{}{
-		"image": "gw:latest",
-		"ports": []string{"8080:8080"},
-	})
+	gwVals, _ := json.Marshal(map[string]interface{}{})
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
@@ -99,11 +96,7 @@ func TestComposeEngine_Render_InvalidValuesMapping(t *testing.T) {
 
 func sampleGraph(t *testing.T) *types.IRGraph {
 	t.Helper()
-	vals, err := json.Marshal(map[string]interface{}{
-		"image":   "app:v1",
-		"ports":   []string{"3000:3000"},
-		"environment": map[string]interface{}{"FOO": "bar"},
-	})
+	vals, err := json.Marshal(map[string]interface{}{})
 	if err != nil {
 		t.Fatal(err)
 	}

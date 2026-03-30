@@ -75,6 +75,7 @@ func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, releas
 		if err != nil {
 			return nil, err
 		}
+		payload = composePortFallbacks(node, strictNet, payload)
 
 		svc := Service{
 			Image:       payload.image,
@@ -125,6 +126,22 @@ type extractedPayload struct {
 	image       string
 	ports       []string
 	environment map[string]string
+}
+
+// composePortFallbacks supplies published ports when values_mapping omits them (recipe not wired).
+// Domain-1 aggregates never carry ports; the engine must not require them on the IR node struct.
+func composePortFallbacks(node types.IRNode, strict bool, p extractedPayload) extractedPayload {
+	if len(p.ports) > 0 {
+		return p
+	}
+	if strict {
+		if node.ResolvedType == gatewayResolvedType {
+			p.ports = []string{"8080:8080"}
+		}
+		return p
+	}
+	p.ports = []string{"3000:3000"}
+	return p
 }
 
 func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, error) {

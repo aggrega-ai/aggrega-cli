@@ -13,18 +13,18 @@ func ResolveManifestAgainstAggregate(agg *Aggregate, man *Manifest) error {
 	}
 	mappings := man.Spec.Mappings
 
-	for _, comp := range agg.Spec.Components {
+	for id, comp := range agg.Spec.Components {
 		if err := resolveComponentMapping(mappings, comp.Type); err != nil {
-			return fmt.Errorf("component %q (type %q): %w", comp.ID, comp.Type, err)
+			return fmt.Errorf("component %q (type %q): %w", id, comp.Type, err)
 		}
 		for _, feat := range comp.Features {
 			if err := resolveFeatureMapping(mappings, feat.Type); err != nil {
-				return fmt.Errorf("component %q feature %q: %w", comp.ID, feat.Type, err)
+				return fmt.Errorf("component %q feature %q: %w", id, feat.Type, err)
 			}
 		}
 		for name, sec := range comp.Secrets {
 			if err := resolveSecretMapping(mappings, sec.Store); err != nil {
-				return fmt.Errorf("component %q secret %q (store %q): %w", comp.ID, name, sec.Store, err)
+				return fmt.Errorf("component %q secret %q (store %q): %w", id, name, sec.Store, err)
 			}
 		}
 	}

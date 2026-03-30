@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/schema"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -32,15 +33,16 @@ type AggregateMetadata struct {
 }
 
 // AggregateSpec lists logical components and optional module inputs.
+// spec.components is a map keyed by component id (validated by CUE as {[string]: #Component}).
 type AggregateSpec struct {
-	Inputs     map[string]interface{} `yaml:"inputs,omitempty"`
-	Components []AggregateComponent   `yaml:"components"`
+	Inputs     map[string]interface{}          `yaml:"inputs,omitempty"`
+	Components map[string]AggregateComponent `yaml:"components"`
 }
 
 // AggregateComponent is one logical node in the aggregate topology.
+// Infrastructure bindings (image, ports, env) belong to recipes/manifests, not the aggregate.
 type AggregateComponent struct {
-	ID       string                        `yaml:"id"`
-	Type     string                        `yaml:"type"`
+	Type     string                        `yaml:"type,omitempty"`
 	Features []AggregateFeatureAttachment  `yaml:"features,omitempty"`
 	Values   map[string]interface{}        `yaml:"values,omitempty"`
 	Secrets  map[string]AggregateSecretRef `yaml:"secrets,omitempty"`
@@ -88,6 +90,9 @@ type ManifestMapping struct {
 
 // ParseAggregate decodes Aggregate YAML and applies structural checks expected by v1alpha1.
 func ParseAggregate(data []byte) (*Aggregate, error) {
+	if err := schema.Validate(data, aggregateKind); err != nil {
+		return nil, err
+	}
 	var doc Aggregate
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse aggregate yaml: %w", err)
@@ -152,26 +157,22 @@ func validateAggregate(doc *Aggregate) error {
 	if len(doc.Spec.Components) == 0 {
 		return fmt.Errorf("aggregate: spec.components must not be empty")
 	}
-	seen := make(map[string]struct{}, len(doc.Spec.Components))
-	for i, c := range doc.Spec.Components {
-		if strings.TrimSpace(c.ID) == "" {
-			return fmt.Errorf("aggregate: spec.components[%d].id is required", i)
+	for id, c := range doc.Spec.Components {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("aggregate: spec.components contains an empty key")
 		}
 		if strings.TrimSpace(c.Type) == "" {
-			return fmt.Errorf("aggregate: spec.components[%d].type is required", i)
+			c.Type = "server"
+			doc.Spec.Components[id] = c
 		}
-		if _, dup := seen[c.ID]; dup {
-			return fmt.Errorf("aggregate: duplicate component id %q", c.ID)
-		}
-		seen[c.ID] = struct{}{}
 		for j, f := range c.Features {
 			if strings.TrimSpace(f.Type) == "" {
-				return fmt.Errorf("aggregate: spec.components[%d].features[%d].type is required", i, j)
+				return fmt.Errorf("aggregate: spec.components[%q].features[%d].type is required", id, j)
 			}
 		}
 		for secretName, s := range c.Secrets {
 			if strings.TrimSpace(s.Store) == "" {
-				return fmt.Errorf("aggregate: spec.components[%d].secrets[%q].store is required", i, secretName)
+				return fmt.Errorf("aggregate: spec.components[%q].secrets[%q].store is required", id, secretName)
 			}
 		}
 	}
@@ -236,6 +237,9 @@ type releaseScopeYAML struct {
 
 // ParseRelease decodes Release YAML into types.Release.
 func ParseRelease(data []byte) (*types.Release, error) {
+	if err := schema.Validate(data, releaseKind); err != nil {
+		return nil, err
+	}
 	var doc releaseYAMLFile
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse release yaml: %w", err)
