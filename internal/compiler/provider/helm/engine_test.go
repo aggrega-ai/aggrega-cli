@@ -92,6 +92,32 @@ func TestHelmEngine_Render_StrictNetworkingAnnotation(t *testing.T) {
 	}
 }
 
+func TestHelmEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T) {
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "kong-app"}}
+	vals := map[string]interface{}{
+		"image": "kong:3.4",
+		"environment": map[string]interface{}{
+			"KONG_DATABASE": "off",
+		},
+		"_aggrega_injected_env_PROMPT_GUARD": "true",
+	}
+	graph := minimalGraph(t, "proxy", "server", vals)
+	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, types.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dep := string(out["templates/proxy-deployment.yaml"])
+	if !strings.Contains(dep, "kong:3.4") {
+		t.Fatalf("expected image kong:3.4 in:\n%s", dep)
+	}
+	if !strings.Contains(dep, "name: KONG_DATABASE") || !strings.Contains(dep, "off") {
+		t.Fatalf("expected KONG_DATABASE env in:\n%s", dep)
+	}
+	if !strings.Contains(dep, "name: PROMPT_GUARD") || !(strings.Contains(dep, `value: "true"`) || strings.Contains(dep, "value: true")) {
+		t.Fatalf("expected PROMPT_GUARD injected env in:\n%s", dep)
+	}
+}
+
 func TestHelmEngine_Render_InvalidValuesMapping(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{

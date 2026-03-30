@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/plugins"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -80,6 +81,19 @@ func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath strin
 			return nil, fmt.Errorf("component id %q must match %s", id, irNodeIDPattern.String())
 		}
 
+		for _, f := range comp.Features {
+			fk := strings.ToLower(FeatureKey(f))
+			if fk == "" {
+				continue
+			}
+			if p, ok := plugins.Registry[fk]; ok {
+				if err := p.Apply(&comp.Values); err != nil {
+					return nil, fmt.Errorf("component %q feature %q: plugin: %w", id, fk, err)
+				}
+			}
+		}
+		agg.Spec.Components[id] = comp
+
 		nodes[id] = types.IRNode{
 			ResolvedType: InferResolvedType(comp.Type),
 			Component:    comp.Type,
@@ -99,13 +113,14 @@ func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath strin
 
 		perNodeFeatures := make(map[string]json.RawMessage)
 		for _, f := range comp.Features {
-			featureMarkers = append(featureMarkers, normalizeFeatureMarker(f.Type))
+			fk := FeatureKey(f)
+			featureMarkers = append(featureMarkers, normalizeFeatureMarker(fk))
 			if f.With != nil {
 				raw, err := json.Marshal(f.With)
 				if err != nil {
-					return nil, fmt.Errorf("component %q feature %q: marshal with: %w", id, f.Type, err)
+					return nil, fmt.Errorf("component %q feature %q: marshal with: %w", id, fk, err)
 				}
-				perNodeFeatures[f.Type] = raw
+				perNodeFeatures[fk] = raw
 			}
 		}
 		featureValuesMapping[id] = perNodeFeatures

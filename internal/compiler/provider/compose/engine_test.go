@@ -79,6 +79,47 @@ func TestComposeEngine_Render_NonStrictPorts(t *testing.T) {
 	}
 }
 
+func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T) {
+	tFalse := false
+	rel := &types.Release{
+		Spec: types.ReleaseSpec{
+			Policies: &types.ReleasePolicies{StrictNetworking: &tFalse},
+		},
+	}
+	vals, err := json.Marshal(map[string]interface{}{
+		"image": "kong:3.4",
+		"environment": map[string]interface{}{
+			"KONG_DATABASE": "off",
+		},
+		"_aggrega_injected_env_PROMPT_GUARD": "true",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: map[string]types.IRNode{
+				"gw": {ResolvedType: "ai-gateway", Component: "kong"},
+			},
+			ValuesMapping: map[string]json.RawMessage{"gw": vals},
+		},
+	}
+	out, err := (&ComposeEngine{}).Render(context.Background(), graph, rel, types.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	y := string(out["compose.yaml"])
+	if !strings.Contains(y, "kong:3.4") {
+		t.Fatalf("expected image kong:3.4 in:\n%s", y)
+	}
+	if !strings.Contains(y, "KONG_DATABASE") || !strings.Contains(y, "off") {
+		t.Fatalf("expected KONG_DATABASE=off in:\n%s", y)
+	}
+	if !strings.Contains(y, "PROMPT_GUARD") || !strings.Contains(y, "true") {
+		t.Fatalf("expected injected PROMPT_GUARD in:\n%s", y)
+	}
+}
+
 func TestComposeEngine_Render_InvalidValuesMapping(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{

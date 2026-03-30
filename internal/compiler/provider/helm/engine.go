@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/plugins"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -297,13 +298,7 @@ func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, e
 		return extractedPayload{}, fmt.Errorf("helm: node %q: values_mapping: %w", nodeID, err)
 	}
 
-	if v, ok := m["image"]; ok && v != nil {
-		s, ok := v.(string)
-		if !ok {
-			return extractedPayload{}, fmt.Errorf("helm: node %q: values_mapping.image must be a string", nodeID)
-		}
-		out.image = s
-	}
+	out.image = extractImageFromValuesMap(m)
 
 	if v, ok := m["ports"]; ok && v != nil {
 		ports, err := coerceStringSlice(v, nodeID, "ports")
@@ -313,19 +308,35 @@ func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, e
 		out.ports = ports
 	}
 
-	if v, ok := m["environment"]; ok && v != nil {
-		envMap, ok := v.(map[string]interface{})
-		if !ok {
-			return extractedPayload{}, fmt.Errorf("helm: node %q: values_mapping.environment must be a JSON object", nodeID)
-		}
-		env, err := stringifyEnvironment(envMap, nodeID)
-		if err != nil {
-			return extractedPayload{}, err
-		}
-		out.environment = env
+	mergeStandardEnvironmentInto(&out.environment, m["environment"])
+
+	if err := mergeInjectedEnvFromValuesMap(&out, m, nodeID); err != nil {
+		return extractedPayload{}, err
 	}
 
 	return out, nil
+}
+
+func mergeInjectedEnvFromValuesMap(out *extractedPayload, m map[string]interface{}, nodeID string) error {
+	prefix := plugins.InjectedEnvPrefix
+	for k, v := range m {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		envName := strings.TrimPrefix(k, prefix)
+		if envName == "" {
+			continue
+		}
+		s, err := scalarToString(v)
+		if err != nil {
+			return fmt.Errorf("helm: node %q: values_mapping[%q]: %w", nodeID, k, err)
+		}
+		if out.environment == nil {
+			out.environment = make(map[string]string)
+		}
+		out.environment[envName] = s
+	}
+	return nil
 }
 
 func coerceStringSlice(v interface{}, nodeID, field string) ([]string, error) {
@@ -362,16 +373,53 @@ func scalarToString(v interface{}) (string, error) {
 	}
 }
 
-func stringifyEnvironment(m map[string]interface{}, nodeID string) (map[string]string, error) {
+func extractImageFromValuesMap(m map[string]interface{}) string {
+	v, ok := m["image"]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return ""
+	}
+	return s
+}
+
+func mergeStandardEnvironmentInto(dst *map[string]string, v interface{}) {
+	if v == nil {
+		return
+	}
+	var src map[string]string
+	switch em := v.(type) {
+	case map[string]interface{}:
+		src = stringifyEnvironmentLenient(em)
+	case map[string]string:
+		src = em
+	default:
+		return
+	}
+	if len(src) == 0 {
+		return
+	}
+	if *dst == nil {
+		*dst = make(map[string]string)
+	}
+	for k, val := range src {
+		(*dst)[k] = val
+	}
+}
+
+func stringifyEnvironmentLenient(m map[string]interface{}) map[string]string {
 	out := make(map[string]string, len(m))
 	for k, v := range m {
 		s, err := scalarToString(v)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q: values_mapping.environment[%q]: %w", nodeID, k, err)
+			out[k] = fmt.Sprintf("%v", v)
+			continue
 		}
 		out[k] = s
 	}
-	return out, nil
+	return out
 }
 
 func envVarsFromMap(m map[string]string) []EnvVar {

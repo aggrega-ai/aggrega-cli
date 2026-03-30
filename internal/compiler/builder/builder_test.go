@@ -1,8 +1,14 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/cognitio/aggrega-cli/internal/compiler/provider/compose"
+	"github.com/cognitio/aggrega-cli/internal/compiler/provider/helm"
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 func TestGraphBuilder_Build_SplitBrainValues(t *testing.T) {
@@ -121,6 +127,115 @@ spec:
 	}
 	if len(agentFeatures) != 0 {
 		t.Fatalf("agent: expected empty inner map, got %v", agentFeatures)
+	}
+}
+
+func TestPromptGuardPlugin_EndToEndComposeAndHelm(t *testing.T) {
+	aggregateYAML := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sec-demo
+spec:
+  components:
+    api:
+      type: server
+      features:
+        - name: prompt_guard
+`
+	manifestYAML := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: lock
+spec:
+  mappings:
+    server:
+      version: "1.0.0"
+      componentRecipe: oci://example/server
+    prompt_guard:
+      version: "1.0.0"
+      featureRecipe: oci://example/prompt-guard
+`
+	gb := &GraphBuilder{CompilerVersion: "test"}
+	ir, err := gb.Build([]byte(aggregateYAML), []byte(manifestYAML))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	raw, ok := ir.Spec.ValuesMapping["api"]
+	if !ok {
+		t.Fatal("missing values_mapping for api")
+	}
+	var vm map[string]interface{}
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	if vm["_aggrega_injected_env_PROMPT_GUARD_ENABLED"] != "true" {
+		t.Fatalf("values_mapping: expected injected prompt guard flag, got %#v", vm)
+	}
+
+	ctx := context.Background()
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "sec-demo"}}
+
+	compOut, err := (&compose.ComposeEngine{}).Render(ctx, ir, rel, types.Scope{})
+	if err != nil {
+		t.Fatalf("compose Render: %v", err)
+	}
+	composeYAML := string(compOut["compose.yaml"])
+	if !strings.Contains(composeYAML, "PROMPT_GUARD_ENABLED") || !strings.Contains(composeYAML, "true") {
+		t.Fatalf("compose output missing PROMPT_GUARD_ENABLED=true:\n%s", composeYAML)
+	}
+
+	helmOut, err := (&helm.HelmEngine{}).Render(ctx, ir, rel, types.Scope{})
+	if err != nil {
+		t.Fatalf("helm Render: %v", err)
+	}
+	dep := string(helmOut["templates/api-deployment.yaml"])
+	if !strings.Contains(dep, "name: PROMPT_GUARD_ENABLED") || !(strings.Contains(dep, `value: "true"`) || strings.Contains(dep, "value: true")) {
+		t.Fatalf("helm deployment missing PROMPT_GUARD_ENABLED env:\n%s", dep)
+	}
+}
+
+func TestGraphBuilder_Build_PromptGuardPluginInjectsValues(t *testing.T) {
+	aggregateYAML := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo
+spec:
+  components:
+    svc:
+      type: server
+      features:
+        - name: prompt_guard
+`
+	manifestYAML := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: lock
+spec:
+  mappings:
+    server:
+      version: "1.0.0"
+      componentRecipe: oci://example/server
+    prompt_guard:
+      version: "1.0.0"
+      featureRecipe: oci://example/pg
+`
+	gb := &GraphBuilder{CompilerVersion: "test"}
+	ir, err := gb.Build([]byte(aggregateYAML), []byte(manifestYAML))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	raw := ir.Spec.ValuesMapping["svc"]
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["_aggrega_injected_env_PROMPT_GUARD_ENABLED"] != "true" {
+		t.Fatalf("expected injected key in values_mapping, got %#v", m)
 	}
 }
 

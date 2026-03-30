@@ -49,9 +49,19 @@ type AggregateComponent struct {
 }
 
 // AggregateFeatureAttachment binds a Feature type and optional configuration.
+// Either name or type must be set (name takes precedence for plugin registry and manifest keys).
 type AggregateFeatureAttachment struct {
-	Type string                 `yaml:"type"`
+	Type string                 `yaml:"type,omitempty"`
+	Name string                 `yaml:"name,omitempty"`
 	With map[string]interface{} `yaml:"with,omitempty"`
+}
+
+// FeatureKey returns the manifest / plugin identifier for a feature attachment.
+func FeatureKey(f AggregateFeatureAttachment) string {
+	if n := strings.TrimSpace(f.Name); n != "" {
+		return n
+	}
+	return strings.TrimSpace(f.Type)
 }
 
 // AggregateSecretRef references a SecretStore and optional store parameters.
@@ -82,10 +92,11 @@ type ManifestSpec struct {
 // The JSON schema requires anyOf componentRecipe | featureRecipe | secretRecipe; callers
 // enforce which recipe kind applies to each resolution path.
 type ManifestMapping struct {
-	Version         string `yaml:"version"`
-	ComponentRecipe string `yaml:"componentRecipe,omitempty"`
-	FeatureRecipe   string `yaml:"featureRecipe,omitempty"`
-	SecretRecipe    string `yaml:"secretRecipe,omitempty"`
+	Version         string                 `yaml:"version"`
+	ComponentRecipe string                 `yaml:"componentRecipe,omitempty"`
+	FeatureRecipe   string                 `yaml:"featureRecipe,omitempty"`
+	SecretRecipe    string                 `yaml:"secretRecipe,omitempty"`
+	Values          map[string]interface{} `yaml:"values,omitempty"`
 }
 
 // ParseAggregate decodes Aggregate YAML and applies structural checks expected by v1alpha1.
@@ -166,8 +177,8 @@ func validateAggregate(doc *Aggregate) error {
 			doc.Spec.Components[id] = c
 		}
 		for j, f := range c.Features {
-			if strings.TrimSpace(f.Type) == "" {
-				return fmt.Errorf("aggregate: spec.components[%q].features[%d].type is required", id, j)
+			if FeatureKey(f) == "" {
+				return fmt.Errorf("aggregate: spec.components[%q].features[%d]: name or type is required", id, j)
 			}
 		}
 		for secretName, s := range c.Secrets {
