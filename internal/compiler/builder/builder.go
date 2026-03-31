@@ -64,12 +64,12 @@ func (b *GraphBuilder) Build(aggregateYAML, manifestYAML []byte) (*types.IRGraph
 // BuildIRFromParsed constructs the IR graph from documents that were already parsed and for
 // which ResolveManifestAgainstAggregate(agg, man) has succeeded. The manifest is accepted for
 // API symmetry with the rest of the pipeline; IR emission currently depends only on the aggregate.
-func (b *GraphBuilder) BuildIRFromParsed(agg *Aggregate, man *Manifest, aggregatePath, manifestPath string) (*types.IRGraph, error) {
+func (b *GraphBuilder) BuildIRFromParsed(agg *types.Aggregate, man *Manifest, aggregatePath, manifestPath string) (*types.IRGraph, error) {
 	_ = man
 	return b.buildIR(agg, aggregatePath, manifestPath)
 }
 
-func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath string) (*types.IRGraph, error) {
+func (b *GraphBuilder) buildIR(agg *types.Aggregate, aggregatePath, manifestPath string) (*types.IRGraph, error) {
 	nodes := make(map[string]types.IRNode, len(agg.Spec.Components))
 	valuesMapping := make(map[string]json.RawMessage, len(agg.Spec.Components))
 	featureValuesMapping := make(map[string]map[string]json.RawMessage, len(agg.Spec.Components))
@@ -186,7 +186,7 @@ func (b *GraphBuilder) buildIR(agg *Aggregate, aggregatePath, manifestPath strin
 	return graph, nil
 }
 
-func convertSecrets(componentID string, in map[string]AggregateSecretRef) (map[string]types.IRSecretRequest, error) {
+func convertSecrets(componentID string, in map[string]types.AggregateSecretRef) (map[string]types.IRSecretRequest, error) {
 	out := make(map[string]types.IRSecretRequest, len(in))
 	for name, ref := range in {
 		if !irSecretNamePattern.MatchString(name) {

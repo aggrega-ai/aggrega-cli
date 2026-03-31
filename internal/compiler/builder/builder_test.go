@@ -240,12 +240,12 @@ spec:
 }
 
 func TestResolveManifestAgainstAggregate_Errors(t *testing.T) {
-	agg := &Aggregate{
+	agg := &types.Aggregate{
 		APIVersion: expectedAPIVersion,
 		Kind:       aggregateKind,
-		Metadata:   AggregateMetadata{Name: "a"},
-		Spec: AggregateSpec{
-			Components: map[string]AggregateComponent{
+		Metadata:   types.AggregateMetadata{Name: "a"},
+		Spec: types.AggregateSpec{
+			Components: map[string]types.AggregateComponent{
 				"x": {Type: "missing/component"},
 			},
 		},

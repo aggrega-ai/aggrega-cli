@@ -3,12 +3,14 @@ package builder
 import (
 	"fmt"
 	"strings"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 // ResolveManifestAgainstAggregate checks every component, attached feature, and secret store
 // reference against spec.mappings, then deep-merges each component mapping's Values (Ops
 // fallback) into the component's Values with developer intent winning on key collision.
-func ResolveManifestAgainstAggregate(agg *Aggregate, man *Manifest) error {
+func ResolveManifestAgainstAggregate(agg *types.Aggregate, man *Manifest) error {
 	if agg == nil || man == nil {
 		return fmt.Errorf("resolver: aggregate and manifest are required")
 	}

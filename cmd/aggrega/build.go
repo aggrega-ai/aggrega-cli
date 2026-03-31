@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/builder"
+	"github.com/cognitio/aggrega-cli/internal/compiler/linter"
 	"github.com/cognitio/aggrega-cli/internal/compiler/provider"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"github.com/spf13/cobra"
@@ -57,6 +58,19 @@ func runBuild(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("aggrega build: %v", err)
 	}
+
+	catalogCandidates := []string{
+		filepath.Join(wd, "aggrega-registry", "components"),
+		filepath.Join(wd, "..", "aggrega-registry", "components"),
+	}
+	cat, err := builder.TryLoadComponentCatalog(catalogCandidates...)
+	if err != nil {
+		log.Fatalf("aggrega build: load platform catalog: %v", err)
+	}
+	if err := linter.ValidateRequiredFeatures(agg, cat); err != nil {
+		log.Fatalf("aggrega build: %v", err)
+	}
+
 	man, err := builder.ParseManifestFile(manPath)
 	if err != nil {
 		log.Fatalf("aggrega build: %v", err)

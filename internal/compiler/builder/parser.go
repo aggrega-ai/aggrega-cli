@@ -18,56 +18,9 @@ const (
 	releaseKind        = "Release"
 )
 
-// Aggregate is the Domain 1 developer intent document (aggregate-v1alpha1).
-type Aggregate struct {
-	APIVersion string            `yaml:"apiVersion"`
-	Kind       string            `yaml:"kind"`
-	Metadata   AggregateMetadata `yaml:"metadata"`
-	Spec       AggregateSpec     `yaml:"spec"`
-}
-
-// AggregateMetadata carries aggregate identity and optional labels.
-type AggregateMetadata struct {
-	Name   string            `yaml:"name"`
-	Labels map[string]string `yaml:"labels,omitempty"`
-}
-
-// AggregateSpec lists logical components and optional module inputs.
-// spec.components is a map keyed by component id (validated by CUE as {[string]: #Component}).
-type AggregateSpec struct {
-	Inputs     map[string]interface{}          `yaml:"inputs,omitempty"`
-	Components map[string]AggregateComponent `yaml:"components"`
-}
-
-// AggregateComponent is one logical node in the aggregate topology.
-// Infrastructure bindings (image, ports, env) belong to recipes/manifests, not the aggregate.
-type AggregateComponent struct {
-	Type     string                        `yaml:"type,omitempty"`
-	Features []AggregateFeatureAttachment  `yaml:"features,omitempty"`
-	Values   map[string]interface{}        `yaml:"values,omitempty"`
-	Secrets  map[string]AggregateSecretRef `yaml:"secrets,omitempty"`
-}
-
-// AggregateFeatureAttachment binds a Feature type and optional configuration.
-// Either name or type must be set (name takes precedence for plugin registry and manifest keys).
-type AggregateFeatureAttachment struct {
-	Type string                 `yaml:"type,omitempty"`
-	Name string                 `yaml:"name,omitempty"`
-	With map[string]interface{} `yaml:"with,omitempty"`
-}
-
 // FeatureKey returns the manifest / plugin identifier for a feature attachment.
-func FeatureKey(f AggregateFeatureAttachment) string {
-	if n := strings.TrimSpace(f.Name); n != "" {
-		return n
-	}
-	return strings.TrimSpace(f.Type)
-}
-
-// AggregateSecretRef references a SecretStore and optional store parameters.
-type AggregateSecretRef struct {
-	Store string                 `yaml:"store"`
-	With  map[string]interface{} `yaml:"with,omitempty"`
+func FeatureKey(f types.AggregateFeatureAttachment) string {
+	return types.FeatureAttachmentKey(f)
 }
 
 // Manifest is the Domain 4 dependency lockfile (manifest-v1alpha1).
@@ -100,11 +53,11 @@ type ManifestMapping struct {
 }
 
 // ParseAggregate decodes Aggregate YAML and applies structural checks expected by v1alpha1.
-func ParseAggregate(data []byte) (*Aggregate, error) {
+func ParseAggregate(data []byte) (*types.Aggregate, error) {
 	if err := schema.Validate(data, aggregateKind); err != nil {
 		return nil, err
 	}
-	var doc Aggregate
+	var doc types.Aggregate
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse aggregate yaml: %w", err)
 	}
@@ -115,7 +68,7 @@ func ParseAggregate(data []byte) (*Aggregate, error) {
 }
 
 // ParseAggregateFile reads a path and parses an Aggregate document.
-func ParseAggregateFile(path string) (*Aggregate, error) {
+func ParseAggregateFile(path string) (*types.Aggregate, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read aggregate file %q: %w", path, err)
@@ -152,7 +105,7 @@ func ParseManifestFile(path string) (*Manifest, error) {
 	return doc, nil
 }
 
-func validateAggregate(doc *Aggregate) error {
+func validateAggregate(doc *types.Aggregate) error {
 	if doc == nil {
 		return fmt.Errorf("aggregate: document is nil")
 	}
@@ -177,7 +130,7 @@ func validateAggregate(doc *Aggregate) error {
 			doc.Spec.Components[id] = c
 		}
 		for j, f := range c.Features {
-			if FeatureKey(f) == "" {
+			if types.FeatureAttachmentKey(f) == "" {
 				return fmt.Errorf("aggregate: spec.components[%q].features[%d]: name or type is required", id, j)
 			}
 		}
