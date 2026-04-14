@@ -61,6 +61,7 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 			ReleaseAnnotations:   releaseAnnotations,
 			AggregateAnnotations: aggregateAnnotations,
 			CatalogMetadata:      buildCatalogMetadata(topoNode.ComponentType, cfg.CatalogLookup),
+			SelfInject:           topoNode.SelfInject,
 		}
 
 		// Resolved version from catalog

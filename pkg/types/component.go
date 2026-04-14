@@ -33,6 +33,7 @@ type ComponentSpec struct {
 	Extends          string                     `json:"extends,omitempty" yaml:"extends,omitempty"`
 	SecretNames      []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"`
 	RequiredFeatures []string                   `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
+	Inject           []string                   `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).
 	UsesSchema       map[string]UsesSchemaEntry `json:"usesSchema,omitempty" yaml:"usesSchema,omitempty"`
 	CueSchema        string                     `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
 	CueSchemaRef     string                     `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`

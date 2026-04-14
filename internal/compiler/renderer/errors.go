@@ -9,5 +9,7 @@ var (
 	ErrProvidesSelfContainment = errors.New("provides block references cross-node data")
 	ErrProvidesEvaluation      = errors.New("provides template evaluation failed")
 	ErrInjectResolution        = errors.New("inject key resolution failed")
-	ErrJsonnetNotSupported     = errors.New("valuesMappingJsonnet is not supported in ; use valuesMapping or valuesMappingFile")
+	ErrJsonnetNotSupported          = errors.New("valuesMappingJsonnet is not supported in ; use valuesMapping or valuesMappingFile")
+	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
+	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
 )

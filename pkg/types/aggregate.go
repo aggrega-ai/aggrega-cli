@@ -61,7 +61,8 @@ type ComponentInstance struct {
 	Type        string                     `json:"type" yaml:"type"`
 	Description string                     `json:"description,omitempty" yaml:"description,omitempty"`
 	Values      map[string]interface{}     `json:"values,omitempty" yaml:"values,omitempty"`
-	Uses        map[string]interface{}     `json:"uses,omitempty" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose map
+	Inject      *InjectBlock               `json:"inject,omitempty" yaml:"inject,omitempty"` // Component-level self-inject
+	Uses        map[string]interface{}     `json:"uses,omitempty" yaml:"uses,omitempty"`     // UsesBlock: socket → simple []string or verbose map
 	Features    map[string]FeatureInstance `json:"features,omitempty" yaml:"features,omitempty"`
 	Secrets     map[string]SecretInstance  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 }

@@ -52,6 +52,7 @@ type IRNode struct {
 	CatalogAnnotations   map[string]string `json:"catalog_annotations,omitempty"`
 	ReleaseAnnotations   map[string]string `json:"release_annotations,omitempty"`
 	AggregateAnnotations map[string]string `json:"aggregate_annotations,omitempty"`
+	SelfInject           *InjectBlock      `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.

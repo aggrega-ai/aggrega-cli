@@ -20,6 +20,8 @@ var (
 	ErrMissingRequiredFeature   = errors.New("missing required feature")
 	ErrFeatureMergeConflict     = errors.New("feature merge conflict")
 	ErrUnknownUsesSocket        = errors.New("unknown uses socket")
+	ErrSelfInjectForbidden      = errors.New("self-inject on component without spec.inject allowlist")
+	ErrInjectKeyCollision       = errors.New("duplicate delivery key across inject sources")
 )
 
 // ResolverError is a structured error with entity and field context.

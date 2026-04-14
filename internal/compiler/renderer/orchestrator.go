@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -65,8 +66,28 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		node := graph.Spec.Nodes[nodeID]
 		recipe := nodeRecipes[nodeID]
 
-		// Pass 2: Build inject pipe + rehydrate from provides
-		inject, injectRaw := BuildInjectPipe(nil) // base inject from component
+		// Pass 2a: Self-inject resolution (component-level inject)
+		inject, injectRaw := BuildInjectPipe(node.SelfInject)
+		if node.SelfInject != nil {
+			siCtx := SelfInjectContext{
+				Values: tmplCtxValues(graph, nodeID),
+				Infra:  tmplCtxInfra(graph, nodeID),
+				Context: SelfInjectContextBlock{
+					InstanceID: nodeID,
+					Labels:     node.Labels,
+					Annotations: &types.AnnotationBuckets{
+						Catalog:   node.CatalogAnnotations,
+						Release:   node.ReleaseAnnotations,
+						Aggregate: node.AggregateAnnotations,
+					},
+				},
+			}
+			if _, err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx); err != nil {
+				return nil, fmt.Errorf("Step 5 node %q Pass 2a: %w", nodeID, err)
+			}
+		}
+
+		// Pass 2b: Rehydrate inject from uses-edge provides
 		RehydrateInjectFromProvides(&inject, graph.Spec.Edges, nodeID, allProvides)
 
 		// Build template context
@@ -184,4 +205,28 @@ func sortedNodeIDs(nodes map[string]types.IRNode) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+func tmplCtxValues(graph *types.IRGraph, nodeID string) map[string]interface{} {
+	raw, ok := graph.Spec.ValuesMapping[nodeID]
+	if !ok {
+		return map[string]interface{}{}
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return map[string]interface{}{}
+	}
+	return m
+}
+
+func tmplCtxInfra(graph *types.IRGraph, nodeID string) map[string]interface{} {
+	raw, ok := graph.Spec.InfraMapping[nodeID]
+	if !ok {
+		return map[string]interface{}{}
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return map[string]interface{}{}
+	}
+	return m
 }

@@ -50,6 +50,7 @@ func flattenAggregate(
 			InstanceID:      nodeID,
 			ComponentType:   comp.Type,
 			Values:          comp.Values,
+			SelfInject:      comp.Inject,
 			SubsystemPath:   subsystemPath,
 			SourceAggregate: prefix,
 		}
@@ -123,6 +124,7 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub t
 			InstanceID:      nodeID,
 			ComponentType:   comp.Type,
 			Values:          comp.Values,
+			SelfInject:      comp.Inject,
 			SubsystemPath:   subsystemPath,
 			SourceAggregate: prefix,
 		}

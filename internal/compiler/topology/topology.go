@@ -25,6 +25,7 @@ type TopologyNode struct {
 	ComponentType   string
 	Labels          map[string]string
 	Values          map[string]interface{}
+	SelfInject      *types.InjectBlock // Component-level self-inject (carried to IR for Pass 2a)
 	SubsystemPath   string
 	BoundaryPath    string
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
