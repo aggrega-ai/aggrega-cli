@@ -1,24 +1,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/builder"
-	"github.com/cognitio/aggrega-cli/internal/compiler/linter"
-	"github.com/cognitio/aggrega-cli/internal/compiler/provider"
-	"github.com/cognitio/aggrega-cli/pkg/types"
 	"github.com/spf13/cobra"
-)
-
-const (
-	aggregateFile = "aggregate.yaml"
-	manifestFile  = "manifest.yaml"
-	releaseFile   = "release.yaml"
 )
 
 var buildScope string
@@ -41,76 +29,8 @@ func runBuild(cmd *cobra.Command, args []string) {
 	_ = cmd
 	_ = args
 
-	if err := validateScopeSegment(buildScope); err != nil {
-		log.Fatalf("aggrega build: %v", err)
-	}
-
-	wd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("aggrega build: get working directory: %v", err)
-	}
-
-	aggPath := filepath.Join(wd, aggregateFile)
-	manPath := filepath.Join(wd, manifestFile)
-	relPath := filepath.Join(wd, releaseFile)
-
-	agg, err := builder.ParseAggregateFile(aggPath)
-	if err != nil {
-		log.Fatalf("aggrega build: %v", err)
-	}
-
-	catalogCandidates := []string{
-		filepath.Join(wd, "aggrega-registry", "components"),
-		filepath.Join(wd, "..", "aggrega-registry", "components"),
-	}
-	cat, err := builder.TryLoadComponentCatalog(catalogCandidates...)
-	if err != nil {
-		log.Fatalf("aggrega build: load platform catalog: %v", err)
-	}
-	if err := linter.ValidateRequiredFeatures(agg, cat); err != nil {
-		log.Fatalf("aggrega build: %v", err)
-	}
-
-	man, err := builder.ParseManifestFile(manPath)
-	if err != nil {
-		log.Fatalf("aggrega build: %v", err)
-	}
-	if err := builder.ResolveManifestAgainstAggregate(agg, man); err != nil {
-		log.Fatalf("aggrega build: manifest resolution failed: %v", err)
-	}
-
-	gb := &builder.GraphBuilder{CompilerVersion: "aggrega-cli"}
-	graph, err := gb.BuildIRFromParsed(agg, man, aggPath, manPath)
-	if err != nil {
-		log.Fatalf("aggrega build: build IR: %v", err)
-	}
-
-	release, err := builder.ParseReleaseFile(relPath)
-	if err != nil {
-		log.Fatalf("aggrega build: %v", err)
-	}
-
-	scope, ok := findScope(release, buildScope)
-	if !ok {
-		log.Fatalf("aggrega build: no scope named %q in %s (spec.scopes[].name)", buildScope, releaseFile)
-	}
-
-	engine, err := provider.GetEngine(scope.Provider)
-	if err != nil {
-		log.Fatalf("aggrega build: %v", err)
-	}
-
-	artifacts, err := engine.Render(context.Background(), graph, release, scope)
-	if err != nil {
-		log.Fatalf("aggrega build: render: %v", err)
-	}
-
-	outRoot := filepath.Join(wd, "out", buildScope)
-	if err := writeArtifacts(outRoot, artifacts); err != nil {
-		log.Fatalf("aggrega build: write output: %v", err)
-	}
-
-	fmt.Printf("wrote %d file(s) under %s\n", len(artifacts), outRoot)
+	fmt.Fprintln(os.Stderr, "aggrega build:  rewrite in progress — pipeline not yet wired")
+	os.Exit(1)
 }
 
 func validateScopeSegment(s string) error {
@@ -122,15 +42,6 @@ func validateScopeSegment(s string) error {
 		return fmt.Errorf("--scope %q must not contain path separators or '..'", s)
 	}
 	return nil
-}
-
-func findScope(rel *types.Release, name string) (types.Scope, bool) {
-	for _, s := range rel.Spec.Scopes {
-		if s.Name == name {
-			return s, true
-		}
-	}
-	return types.Scope{}, false
 }
 
 func writeArtifacts(outRoot string, files map[string][]byte) error {
@@ -160,3 +71,4 @@ func writeArtifacts(outRoot string, files map[string][]byte) error {
 	}
 	return nil
 }
+

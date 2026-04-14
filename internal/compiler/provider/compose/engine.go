@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/plugins"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +15,7 @@ import (
 const (
 	composeFileVersion  = "3.8"
 	defaultServiceImage = "aggrega/placeholder:latest"
+	injectedEnvPrefix   = "_aggrega_injected_env_"
 	strictNetworkName   = "aggrega"
 	gatewayResolvedType = "ai-gateway"
 )
@@ -177,7 +177,7 @@ func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, e
 }
 
 func mergeInjectedEnvFromValuesMap(out *extractedPayload, m map[string]interface{}, nodeID, engine string) error {
-	prefix := plugins.InjectedEnvPrefix
+	prefix := injectedEnvPrefix
 	for k, v := range m {
 		if !strings.HasPrefix(k, prefix) {
 			continue

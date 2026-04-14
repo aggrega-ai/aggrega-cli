@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/plugins"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -18,6 +17,7 @@ const (
 	chartVersion        = "0.1.0"
 	defaultChartName    = "application"
 	defaultImage        = "aggrega/placeholder:latest"
+	injectedEnvPrefix   = "_aggrega_injected_env_"
 
 	k8sDeploymentAPIVersion = "apps/v1"
 	k8sServiceAPIVersion    = "v1"
@@ -318,7 +318,7 @@ func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, e
 }
 
 func mergeInjectedEnvFromValuesMap(out *extractedPayload, m map[string]interface{}, nodeID string) error {
-	prefix := plugins.InjectedEnvPrefix
+	prefix := injectedEnvPrefix
 	for k, v := range m {
 		if !strings.HasPrefix(k, prefix) {
 			continue
