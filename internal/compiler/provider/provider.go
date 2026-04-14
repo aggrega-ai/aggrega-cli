@@ -10,5 +10,5 @@ import (
 // relative paths (for example "compose.yaml", "templates/deployment.yaml"); values are file
 // contents.
 type Engine interface {
-	Render(ctx context.Context, graph *types.IRGraph, release *types.Release, scope types.Scope) (map[string][]byte, error)
+	Render(ctx context.Context, graph *types.IRGraph, release *types.Release, boundary string) (map[string][]byte, error)
 }

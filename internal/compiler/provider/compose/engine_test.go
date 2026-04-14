@@ -10,15 +10,9 @@ import (
 )
 
 func TestComposeEngine_Render_StrictNetworking(t *testing.T) {
-	tTrue := true
-	rel := &types.Release{
-		Spec: types.ReleaseSpec{
-			Policies: &types.ReleasePolicies{StrictNetworking: &tTrue},
-		},
-	}
 	graph := sampleGraph(t)
 	eng := &ComposeEngine{}
-	out, err := eng.Render(context.Background(), graph, rel, types.Scope{})
+	out, err := eng.Render(context.Background(), graph, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,17 +26,15 @@ func TestComposeEngine_Render_StrictNetworking(t *testing.T) {
 }
 
 func TestComposeEngine_Render_GatewayPortsUnderStrict(t *testing.T) {
-	tTrue := true
-	rel := &types.Release{
-		Spec: types.ReleaseSpec{
-			Policies: &types.ReleasePolicies{StrictNetworking: &tTrue},
-		},
-	}
 	gwVals, _ := json.Marshal(map[string]interface{}{})
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"gw": {ResolvedType: "ai-gateway", Component: "c/gw"},
+				"gw": {
+					Labels:          map[string]string{types.ComponentTypeLabel: "ai-gateway"},
+					Component:       "c/gw",
+					ResolvedVersion: "1.0.0",
+				},
 			},
 			ValuesMapping: map[string]json.RawMessage{
 				"gw": gwVals,
@@ -50,7 +42,7 @@ func TestComposeEngine_Render_GatewayPortsUnderStrict(t *testing.T) {
 		},
 	}
 	eng := &ComposeEngine{}
-	out, err := eng.Render(context.Background(), graph, rel, types.Scope{})
+	out, err := eng.Render(context.Background(), graph, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,32 +52,21 @@ func TestComposeEngine_Render_GatewayPortsUnderStrict(t *testing.T) {
 	}
 }
 
-func TestComposeEngine_Render_NonStrictPorts(t *testing.T) {
-	tFalse := false
-	rel := &types.Release{
-		Spec: types.ReleaseSpec{
-			Policies: &types.ReleasePolicies{StrictNetworking: &tFalse},
-		},
-	}
+func TestComposeEngine_Render_StrictNonGatewayNoPorts(t *testing.T) {
+	// In v2, strict networking is always enabled. Non-gateway services do not publish ports.
 	graph := sampleGraph(t)
 	eng := &ComposeEngine{}
-	out, err := eng.Render(context.Background(), graph, rel, types.Scope{})
+	out, err := eng.Render(context.Background(), graph, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	y := string(out["compose.yaml"])
-	if !strings.Contains(y, "3000:3000") {
-		t.Fatalf("expected published ports when strict networking off, got:\n%s", y)
+	if strings.Contains(y, "ports:") {
+		t.Fatalf("non-gateway should not publish ports under strict networking, got:\n%s", y)
 	}
 }
 
 func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T) {
-	tFalse := false
-	rel := &types.Release{
-		Spec: types.ReleaseSpec{
-			Policies: &types.ReleasePolicies{StrictNetworking: &tFalse},
-		},
-	}
 	vals, err := json.Marshal(map[string]interface{}{
 		"image": "kong:3.4",
 		"environment": map[string]interface{}{
@@ -99,12 +80,16 @@ func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T)
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"gw": {ResolvedType: "ai-gateway", Component: "kong"},
+				"gw": {
+					Labels:          map[string]string{types.ComponentTypeLabel: "ai-gateway"},
+					Component:       "kong",
+					ResolvedVersion: "1.0.0",
+				},
 			},
 			ValuesMapping: map[string]json.RawMessage{"gw": vals},
 		},
 	}
-	out, err := (&ComposeEngine{}).Render(context.Background(), graph, rel, types.Scope{})
+	out, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,13 +108,15 @@ func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T)
 func TestComposeEngine_Render_InvalidValuesMapping(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{"bad": {}},
+			Nodes: map[string]types.IRNode{
+				"bad": {Labels: map[string]string{}, Component: "c/bad", ResolvedVersion: "1.0.0"},
+			},
 			ValuesMapping: map[string]json.RawMessage{
 				"bad": json.RawMessage(`not-json`),
 			},
 		},
 	}
-	_, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, types.Scope{})
+	_, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, "")
 	if err == nil || !strings.Contains(err.Error(), `node "bad"`) {
 		t.Fatalf("expected error for bad node, got %v", err)
 	}
@@ -144,7 +131,11 @@ func sampleGraph(t *testing.T) *types.IRGraph {
 	return &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"web": {ResolvedType: "server", Component: "c/web"},
+				"web": {
+					Labels:          map[string]string{types.ComponentTypeLabel: "server"},
+					Component:       "c/web",
+					ResolvedVersion: "1.0.0",
+				},
 			},
 			ValuesMapping: map[string]json.RawMessage{"web": vals},
 		},

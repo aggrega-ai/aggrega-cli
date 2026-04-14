@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: local-dev
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test-manifest
+  boundaries:
+    local:
+      directory: ./output
+      components:
+        web:
+          infra:
+            replicas: 1
+        worker:
+          infra:
+            replicas: 1

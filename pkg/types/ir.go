@@ -9,9 +9,7 @@ const IRAPIVersion = "aggrega.ai/v1alpha1"
 const IRKind = "IR"
 
 // IRGraph is the in-memory, target-agnostic intermediate representation emitted by the
-// graph builder (Intent 003). It strictly mirrors the JSON shape of
-// ir-v1alpha1.schema.json and forms the typed boundary handed to the security translator
-// (Intent 004) and provider engine (Intent 002).
+// topology builder. It strictly mirrors ir-v1alpha1.schema.json.
 type IRGraph struct {
 	APIVersion string     `json:"apiVersion"`
 	Kind       string     `json:"kind"`
@@ -21,97 +19,87 @@ type IRGraph struct {
 
 // IRMetadata carries document-level metadata for an IR graph.
 type IRMetadata struct {
-	// AppName identifies the logical application this IR describes.
 	AppName string `json:"appName"`
 }
 
-// IRSpec is the spec subtree of an IR document: topology, routing, annotations, and
-// supporting maps separated per schema (nodes hold no opaque payload).
+// IRSpec is the spec subtree of an IR document.
+// Schema: ir-v1alpha1.schema.json#/properties/spec
 type IRSpec struct {
-	// Nodes maps absolute node IDs to topological node records (resolved type and
-	// component name only; opaque values live under ValuesMapping).
-	Nodes map[string]IRNode `json:"nodes"`
-
-	Edges []IREdge `json:"edges"`
-
-	// Routing enumerates explicit gateway-mediated paths (source → gateway → sink).
-	//
-	// At the v1alpha1 JSON-schema layer each entry is only the three node IDs above.
-	// Semantically, this slice is also where compilation attaches gateway concerns
-	// described in annotations and CUE—including fallback_chain, traffic_shadowing,
-	// token_budget, semantic_caching, and concurrency_limit—so downstream engines
-	// resolve those concerns in lockstep with the gateway hop they belong to.
-	Routing []IRRouting `json:"routing"`
-
-	// Annotations holds generic declarations (for example auth_strategy, retry_policy).
-	// Values are arbitrary JSON objects preserved losslessly for round-trip.
-	Annotations map[string]json.RawMessage `json:"annotations"`
-
-	// FeatureMarkers lists canonical strings (for example semantic_routing, data_masking)
-	// derived from annotations for feature negotiation in later pipeline stages.
-	FeatureMarkers []string `json:"feature_markers"`
-
-	// ValuesMapping is the single source of truth for opaque pass-through payloads,
-	// keyed by node ID. Each value is arbitrary JSON.
-	ValuesMapping map[string]json.RawMessage `json:"values_mapping"`
-
-	// FeatureValuesMapping is a normalized map of Node IDs to their attached Feature
-	// configurations. Format: NodeID -> FeatureType -> Arbitrary JSON (from the 'with' block).
-	FeatureValuesMapping map[string]map[string]json.RawMessage `json:"feature_values_mapping"`
-
-	// Secrets maps node ID to named credential requests (store reference plus opaque
-	// "with" parameters), kept separate from ValuesMapping.
-	Secrets map[string]map[string]IRSecretRequest `json:"secrets"`
-
-	// Artifact holds opaque references to external templates or pre-existing artifacts.
-	Artifact map[string]json.RawMessage `json:"artifact"`
-
-	// Provenance carries traceability metadata for diagnostics and auditing.
-	Provenance IRProvenance `json:"provenance"`
+	Nodes                map[string]IRNode                    `json:"nodes"`
+	Edges                []IREdge                             `json:"edges"`
+	FeatureMarkers       []string                             `json:"feature_markers"`
+	ValuesMapping        map[string]json.RawMessage           `json:"values_mapping"`
+	InfraMapping         map[string]json.RawMessage           `json:"infra_mapping"`
+	FeatureValuesMapping map[string]map[string]IRFeatureEntry `json:"feature_values_mapping"`
+	Secrets              map[string]map[string]IRSecretEntry  `json:"secrets"`
+	Provenance           IRProvenance                         `json:"provenance"`
 }
 
-// IRNode is a single node in the IR graph without embedded payload (schema: resolvedType,
-// component only).
+// IRNode is a single node in the IR graph. Purely topological — no opaque payload.
+// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/nodes
 type IRNode struct {
-	// ResolvedType is the resolved AI entity type (for example ai-agent, ai-gateway).
-	ResolvedType string `json:"resolvedType"`
-	// Component is the name of the underlying Component entity.
-	Component string `json:"component"`
+	Description          string            `json:"description,omitempty"`
+	Labels               map[string]string `json:"labels"`
+	Component            string            `json:"component"`
+	ResolvedVersion      string            `json:"resolved_version"`
+	SyncWave             string            `json:"sync_wave,omitempty"`
+	BoundaryPath         string            `json:"boundary_path,omitempty"`
+	SubsystemPath        string            `json:"subsystem_path,omitempty"`
+	CatalogMetadata      *CatalogMetadata  `json:"catalog_metadata,omitempty"`
+	CatalogAnnotations   map[string]string `json:"catalog_annotations,omitempty"`
+	ReleaseAnnotations   map[string]string `json:"release_annotations,omitempty"`
+	AggregateAnnotations map[string]string `json:"aggregate_annotations,omitempty"`
 }
 
-// IREdgeType classifies an edge between two nodes.
-type IREdgeType string
-
-const (
-	IREdgeTypeNetwork           IREdgeType = "network"
-	IREdgeTypeLogicalDependency IREdgeType = "logical_dependency"
-	IREdgeTypeDataFlow          IREdgeType = "data_flow"
-)
+// CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.
+// Schema: ir-v1alpha1.schema.json node catalog_metadata
+type CatalogMetadata struct {
+	Maintainers []Maintainer `json:"maintainers,omitempty"`
+	License     string       `json:"license,omitempty"`
+	Repository  string       `json:"repository,omitempty"`
+	Home        string       `json:"home,omitempty"`
+	Keywords    []string     `json:"keywords,omitempty"`
+	Deprecated  bool         `json:"deprecated,omitempty"`
+}
 
 // IREdge is a directed logical relationship between IR nodes.
+// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/edges/items
 type IREdge struct {
-	Source string     `json:"source"`
-	Target string     `json:"target"`
-	Type   IREdgeType `json:"type,omitempty"`
+	Source        string                       `json:"source"`
+	Target        string                       `json:"target"`
+	Socket        string                       `json:"socket,omitempty"`
+	Alias         string                       `json:"alias,omitempty"`
+	OriginFeature string                       `json:"origin_feature,omitempty"`
+	Inject        map[string]map[string]string `json:"inject,omitempty"`
 }
 
-// IRRouting describes one gateway-mediated path in the IR graph.
-type IRRouting struct {
-	SourceNodeID  string `json:"source_node_id"`
-	GatewayNodeID string `json:"gateway_node_id"`
-	SinkNodeID    string `json:"sink_node_id"`
+// IRFeatureEntry is one feature attached to a node in the feature_values_mapping.
+// Schema: ir-v1alpha1.schema.json feature_values_mapping entry
+type IRFeatureEntry struct {
+	Type            string                       `json:"type"`
+	ResolvedVersion string                       `json:"resolved_version"`
+	Values          map[string]interface{}       `json:"values,omitempty"`
+	Infra           map[string]interface{}       `json:"infra,omitempty"`
+	Inject          map[string]map[string]string `json:"inject,omitempty"`
+	Secrets         map[string]IRSecretEntry     `json:"secrets,omitempty"`
 }
 
-// IRSecretRequest is a validated credential request for a node (store + opaque parameters).
-type IRSecretRequest struct {
-	Store string                     `json:"store"`
-	With  map[string]json.RawMessage `json:"with"`
+// IRSecretEntry is a validated credential request for a node.
+// Schema: ir-v1alpha1.schema.json secrets entry
+type IRSecretEntry struct {
+	Type            string                       `json:"type"`
+	ResolvedVersion string                       `json:"resolved_version"`
+	Values          map[string]interface{}       `json:"values,omitempty"`
+	Inject          map[string]map[string]string `json:"inject,omitempty"`
 }
 
 // IRProvenance records compiler and source traceability for an IR build.
-// The schema allows additional properties beyond the listed fields.
+// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/provenance
 type IRProvenance struct {
-	SchemaVersion     string   `json:"schema_version,omitempty"`
-	CompilerVersion   string   `json:"compiler_version,omitempty"`
-	SourceIdentifiers []string `json:"source_identifiers,omitempty"`
+	SchemaVersion     string   `json:"schema_version"`
+	CompilerVersion   string   `json:"compiler_version"`
+	AggregateVersion  string   `json:"aggregate_version"`
+	ManifestVersion   string   `json:"manifest_version"`
+	ReleaseVersion    string   `json:"release_version"`
+	SourceIdentifiers []string `json:"source_identifiers"`
 }

@@ -1,53 +1,60 @@
 package types
 
-import "strings"
-
-// Aggregate is the Domain 1 developer intent document (aggregate-v1alpha1).
+// Aggregate is the recursive, parameterized AI architecture — both the root application and reusable module.
+// Schema: aggregate-v1alpha1.schema.json
 type Aggregate struct {
-	APIVersion string            `yaml:"apiVersion"`
-	Kind       string            `yaml:"kind"`
-	Metadata   AggregateMetadata `yaml:"metadata"`
-	Spec       AggregateSpec     `yaml:"spec"`
+	APIVersion string            `json:"apiVersion" yaml:"apiVersion"`
+	Kind       string            `json:"kind" yaml:"kind"`
+	Metadata   AggregateMetadata `json:"metadata" yaml:"metadata"`
+	Spec       AggregateSpec     `json:"spec" yaml:"spec"`
 }
 
-// AggregateMetadata carries aggregate identity and optional labels.
+// AggregateMetadata carries identity, versioning, and optional metadata for an Aggregate.
 type AggregateMetadata struct {
-	Name   string            `yaml:"name"`
-	Labels map[string]string `yaml:"labels,omitempty"`
+	Name        string            `json:"name" yaml:"name"`
+	Version     string            `json:"version" yaml:"version"`
+	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Maintainers []Maintainer      `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
+	License     string            `json:"license,omitempty" yaml:"license,omitempty"`
+	Repository  string            `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Home        string            `json:"home,omitempty" yaml:"home,omitempty"`
+	Keywords    []string          `json:"keywords,omitempty" yaml:"keywords,omitempty"`
+	Deprecated  bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
-// AggregateSpec lists logical components and optional module inputs.
+// AggregateSpec defines the components, sub-aggregates, subsystems, and parameters.
 type AggregateSpec struct {
-	Inputs     map[string]interface{}          `yaml:"inputs,omitempty"`
-	Components map[string]AggregateComponent `yaml:"components"`
+	Parameters         map[string]interface{}       `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Aggregates         map[string]SubAggregate      `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
+	ExportedComponents map[string]string            `json:"exported_components,omitempty" yaml:"exported_components,omitempty"`
+	Subsystems         map[string]Subsystem         `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
+	Components         map[string]ComponentInstance `json:"components,omitempty" yaml:"components,omitempty"`
 }
 
-// AggregateComponent is one logical node in the aggregate topology.
-type AggregateComponent struct {
-	Type     string                        `yaml:"type,omitempty"`
-	Features []AggregateFeatureAttachment  `yaml:"features,omitempty"`
-	Values   map[string]interface{}        `yaml:"values,omitempty"`
-	Secrets  map[string]AggregateSecretRef `yaml:"secrets,omitempty"`
+// SubAggregate is a nested aggregate acting as an imported module.
+// Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates
+type SubAggregate struct {
+	Type       string                 `json:"type" yaml:"type"`
+	Parameters map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
-// AggregateFeatureAttachment binds a Feature type and optional configuration.
-// Either name or type must be set (name takes precedence for manifest keys).
-type AggregateFeatureAttachment struct {
-	Type string                 `yaml:"type,omitempty"`
-	Name string                 `yaml:"name,omitempty"`
-	With map[string]interface{} `yaml:"with,omitempty"`
+// Subsystem is a logical grouping of developer intent. Recursive via nested Subsystems.
+// Schema: aggregate-v1alpha1.schema.json#/$defs/subsystem
+type Subsystem struct {
+	Annotations map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Features    map[string]FeatureInstance   `json:"features,omitempty" yaml:"features,omitempty"`
+	Subsystems  map[string]Subsystem         `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
+	Components  map[string]ComponentInstance `json:"components,omitempty" yaml:"components,omitempty"`
 }
 
-// FeatureAttachmentKey returns the manifest / plugin identifier for a feature attachment.
-func FeatureAttachmentKey(f AggregateFeatureAttachment) string {
-	if n := strings.TrimSpace(f.Name); n != "" {
-		return n
-	}
-	return strings.TrimSpace(f.Type)
-}
-
-// AggregateSecretRef references a SecretStore and optional store parameters.
-type AggregateSecretRef struct {
-	Store string                 `yaml:"store"`
-	With  map[string]interface{} `yaml:"with,omitempty"`
+// ComponentInstance is one logical node in the aggregate topology (Developer-authored).
+// Schema: aggregate-v1alpha1.schema.json#/$defs/component_instance
+type ComponentInstance struct {
+	Type        string                     `json:"type" yaml:"type"`
+	Description string                     `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      map[string]interface{}     `json:"values,omitempty" yaml:"values,omitempty"`
+	Uses        map[string]interface{}     `json:"uses,omitempty" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose map
+	Features    map[string]FeatureInstance `json:"features,omitempty" yaml:"features,omitempty"`
+	Secrets     map[string]SecretInstance  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 }

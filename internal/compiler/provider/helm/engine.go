@@ -115,8 +115,8 @@ type ServicePort struct {
 type HelmEngine struct{}
 
 // Render emits Chart.yaml and templates/*.yaml for the given IR graph.
-func (e *HelmEngine) Render(ctx context.Context, graph *types.IRGraph, release *types.Release, scope types.Scope) (map[string][]byte, error) {
-	_ = scope
+func (e *HelmEngine) Render(ctx context.Context, graph *types.IRGraph, release *types.Release, boundary string) (map[string][]byte, error) {
+	_ = boundary
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -244,15 +244,16 @@ func chartNameFromRelease(release *types.Release) string {
 	return name
 }
 
-func strictNetworkingEnabled(release *types.Release) bool {
-	if release == nil || release.Spec.Policies == nil || release.Spec.Policies.StrictNetworking == nil {
-		return true
-	}
-	return *release.Spec.Policies.StrictNetworking
+// strictNetworkingEnabled returns true (the v2 default). The  Policies struct was
+// abolished; strict networking is now determined by boundary annotations in the Release.
+// This function will be rewritten in Intent 3 when the provider engines are overhauled.
+func strictNetworkingEnabled(_ *types.Release) bool {
+	return true
 }
 
 func serviceTypeForNode(node types.IRNode) string {
-	if node.ResolvedType == "gateway" || node.ResolvedType == "ai-gateway" {
+	rt := node.Labels[types.ComponentTypeLabel]
+	if rt == "gateway" || rt == "ai-gateway" {
 		return "LoadBalancer"
 	}
 	return "ClusterIP"
@@ -278,7 +279,7 @@ func helmPortFallbacks(node types.IRNode, p extractedPayload) extractedPayload {
 	if len(p.ports) > 0 {
 		return p
 	}
-	rt := node.ResolvedType
+	rt := node.Labels[types.ComponentTypeLabel]
 	if rt == "ai-gateway" || rt == "gateway" {
 		p.ports = []string{"443:8443"}
 		return p

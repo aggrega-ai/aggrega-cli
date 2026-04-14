@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bad-name-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: bad-name-app
+  manifest: bad-name-manifest
+  boundaries:
+    local:
+      directory: ./output

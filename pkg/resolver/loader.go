@@ -1,0 +1,78 @@
+package resolver
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
+	"gopkg.in/yaml.v3"
+)
+
+// LoadAggregate reads and unmarshals an Aggregate YAML file.
+func LoadAggregate(path string) (*types.Aggregate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &ResolverError{
+			Entity:  "Aggregate",
+			Field:   path,
+			Message: fmt.Sprintf("failed to read file: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
+	var agg types.Aggregate
+	if err := yaml.Unmarshal(data, &agg); err != nil {
+		return nil, &ResolverError{
+			Entity:  "Aggregate",
+			Field:   path,
+			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
+	return &agg, nil
+}
+
+// LoadRelease reads and unmarshals a Release YAML file.
+func LoadRelease(path string) (*types.Release, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &ResolverError{
+			Entity:  "Release",
+			Field:   path,
+			Message: fmt.Sprintf("failed to read file: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
+	var rel types.Release
+	if err := yaml.Unmarshal(data, &rel); err != nil {
+		return nil, &ResolverError{
+			Entity:  "Release",
+			Field:   path,
+			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
+	return &rel, nil
+}
+
+// LoadManifest reads and unmarshals a Manifest YAML file.
+func LoadManifest(path string) (*types.Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &ResolverError{
+			Entity:  "Manifest",
+			Field:   path,
+			Message: fmt.Sprintf("failed to read file: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
+	var man types.Manifest
+	if err := yaml.Unmarshal(data, &man); err != nil {
+		return nil, &ResolverError{
+			Entity:  "Manifest",
+			Field:   path,
+			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
+	return &man, nil
+}

@@ -1,0 +1,4 @@
+db:
+  host: external-db.override
+  port: 5432
+extra_key: from-external

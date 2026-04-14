@@ -1,64 +1,73 @@
 package types
 
-import "encoding/json"
-
-// API version constant for Release documents validated against release-v1alpha1.schema.json.
-const ReleaseAPIVersion = "aggrega.ai/v1alpha1"
-
-// ReleaseKind is the canonical kind value for Release documents (Domain 4 deployment router).
-const ReleaseKind = "Release"
-
-// Release binds an Aggregate to a Manifest, assigns Providers, and scopes components to
-// physical targets. It strictly mirrors release-v1alpha1.schema.json and is the typed
-// contract between release configuration and the provider engine.
+// Release binds an Aggregate to a Manifest and routes components into recursive boundaries.
+// Schema: release-v1alpha1.schema.json
 type Release struct {
-	APIVersion string          `json:"apiVersion"`
-	Kind       string          `json:"kind"`
-	Metadata   ReleaseMetadata `json:"metadata"`
-	Spec       ReleaseSpec     `json:"spec"`
+	APIVersion string          `json:"apiVersion" yaml:"apiVersion"`
+	Kind       string          `json:"kind" yaml:"kind"`
+	Metadata   ReleaseMetadata `json:"metadata" yaml:"metadata"`
+	Spec       ReleaseSpec     `json:"spec" yaml:"spec"`
 }
 
-// ReleaseMetadata identifies this release instance.
+// ReleaseMetadata carries identity for a Release, including the target environment.
 type ReleaseMetadata struct {
-	Name string `json:"name"`
+	Name        string       `json:"name" yaml:"name"`
+	Environment string       `json:"environment" yaml:"environment"`
+	Version     string       `json:"version" yaml:"version"`
+	Description string       `json:"description,omitempty" yaml:"description,omitempty"`
+	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
+	License     string       `json:"license,omitempty" yaml:"license,omitempty"`
+	Repository  string       `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Home        string       `json:"home,omitempty" yaml:"home,omitempty"`
+	Keywords    []string     `json:"keywords,omitempty" yaml:"keywords,omitempty"`
+	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// ReleaseSpec is the spec subtree: aggregate reference, manifest, optional inputs and
-// policies, and placement scopes.
+// ReleaseSpec defines the aggregate reference, manifest, parameters, and boundary routing.
 type ReleaseSpec struct {
-	// Aggregate is the name of the Aggregate to deploy.
-	Aggregate string `json:"aggregate"`
-	// Manifest is the Manifest used for software version resolution.
-	Manifest string `json:"manifest"`
-	// Inputs carries environment-specific variables injected into the Aggregate.
-	Inputs map[string]json.RawMessage `json:"inputs,omitempty"`
-	// Policies holds permissive execution overrides (for example local testing).
-	Policies *ReleasePolicies `json:"policies,omitempty"`
-	// Scopes group logical components into physical deployment destinations.
-	Scopes []Scope `json:"scopes"`
+	Aggregate      string                 `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
+	Manifest       string                 `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+	Extends        string                 `json:"extends,omitempty" yaml:"extends,omitempty"`
+	Parameters     map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	ParametersFrom []string               `json:"parametersFrom,omitempty" yaml:"parametersFrom,omitempty"`
+	SyncWaves      map[string][]string    `json:"sync_waves,omitempty" yaml:"sync_waves,omitempty"`
+	Boundaries     map[string]Boundary    `json:"boundaries" yaml:"boundaries"`
 }
 
-// ReleasePolicies toggles enforcement behaviors in the provider engine. JSON booleans
-// are optional; nil means “use schema defaults” (all true in v1alpha1).
-type ReleasePolicies struct {
-	// StrictNetworking, when false, allows the provider to ignore trust boundaries and
-	// provision a flat network.
-	StrictNetworking *bool `json:"strict_networking,omitempty"`
-	// EnforceGuardrails, when false, skips provisioning L7 data-plane proxies.
-	EnforceGuardrails *bool `json:"enforce_guardrails,omitempty"`
-	// EnforceTrustDirectives, when false, skips cryptographic checks and approval gates.
-	EnforceTrustDirectives *bool `json:"enforce_trust_directives,omitempty"`
+// Boundary is a recursive logical box into which components are routed.
+// Schema: release-v1alpha1.schema.json#/$defs/boundary
+type Boundary struct {
+	Directory    string                       `json:"directory,omitempty" yaml:"directory,omitempty"`
+	SubDirectory string                       `json:"sub_directory,omitempty" yaml:"sub_directory,omitempty"`
+	Annotations  map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Features     map[string]interface{}       `json:"features,omitempty" yaml:"features,omitempty"`
+	Secrets      map[string]interface{}       `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Boundaries   map[string]Boundary          `json:"boundaries,omitempty" yaml:"boundaries,omitempty"`
+	Components   map[string]BoundaryComponent `json:"components,omitempty" yaml:"components,omitempty"`
+	Aggregates   map[string]AggregateRouting  `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
 }
 
-// Scope is one physical placement rule: a named destination, provider engine, and
-// optional explicit components or label selectors.
-type Scope struct {
-	// Name is the physical destination (for example aws-eks-us-east-ns).
-	Name string `json:"name"`
-	// Provider names the Provider that selects the rendering engine for this scope.
-	Provider string `json:"provider"`
-	// Components, when set, lists Component IDs placed explicitly in this scope.
-	Components []string `json:"components,omitempty"`
-	// MatchLabels selects components dynamically by label.
-	MatchLabels map[string]string `json:"matchLabels,omitempty"`
+// BoundaryComponent is a component instance routed into a boundary with optional sizing and feature attachments.
+// Schema: release-v1alpha1.schema.json#/$defs/boundary_component
+type BoundaryComponent struct {
+	Description  string                     `json:"description,omitempty" yaml:"description,omitempty"`
+	SubDirectory string                     `json:"sub_directory,omitempty" yaml:"sub_directory,omitempty"`
+	Infra        map[string]interface{}     `json:"infra,omitempty" yaml:"infra,omitempty"`
+	Features     map[string]BoundaryFeature `json:"features,omitempty" yaml:"features,omitempty"`
+	Secrets      map[string]BoundaryFeature `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+}
+
+// BoundaryFeature is a feature or secret attachment within a Release boundary.
+// Release provides only type (for Ops-injected) and infra (physical sizing). Never values.
+// Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
+type BoundaryFeature struct {
+	Type  string                 `json:"type,omitempty" yaml:"type,omitempty"`
+	Infra map[string]interface{} `json:"infra,omitempty" yaml:"infra,omitempty"`
+}
+
+// AggregateRouting routes a nested Aggregate sub-module's components into a boundary.
+// Schema: release-v1alpha1.schema.json#/$defs/aggregate_routing
+type AggregateRouting struct {
+	Components map[string]BoundaryComponent `json:"components,omitempty" yaml:"components,omitempty"`
+	Aggregates map[string]AggregateRouting  `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
 }

@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: param-release
+  environment: staging
+  version: "1.0.0"
+spec:
+  aggregate: param-app
+  manifest: param-manifest
+  parameters:
+    api_port: "8080"
+    db:
+      host: staging-db.internal
+  boundaries:
+    staging:
+      directory: ./output
+      components:
+        api:
+          infra:
+            replicas: 2

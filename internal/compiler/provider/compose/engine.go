@@ -48,8 +48,8 @@ type Volume struct{}
 type ComposeEngine struct{}
 
 // Render emits compose.yaml from the IR graph and release policies.
-func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, release *types.Release, scope types.Scope) (map[string][]byte, error) {
-	_ = scope
+func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, release *types.Release, boundary string) (map[string][]byte, error) {
+	_ = boundary
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, releas
 
 		if strictNet {
 			svc.Networks = []string{strictNetworkName}
-			if node.ResolvedType == gatewayResolvedType && len(payload.ports) > 0 {
+			if node.Labels[types.ComponentTypeLabel] == gatewayResolvedType && len(payload.ports) > 0 {
 				svc.Ports = append([]string(nil), payload.ports...)
 			}
 		} else {
@@ -108,11 +108,11 @@ func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, releas
 	return map[string][]byte{"compose.yaml": yamlBytes}, nil
 }
 
-func strictNetworkingEnabled(release *types.Release) bool {
-	if release == nil || release.Spec.Policies == nil || release.Spec.Policies.StrictNetworking == nil {
-		return true
-	}
-	return *release.Spec.Policies.StrictNetworking
+// strictNetworkingEnabled returns true (the v2 default). The  Policies struct was
+// abolished; strict networking is now determined by boundary annotations in the Release.
+// This function will be rewritten in Intent 3.
+func strictNetworkingEnabled(_ *types.Release) bool {
+	return true
 }
 
 func nodeIDsSorted(nodes map[string]types.IRNode) []string {
@@ -137,7 +137,7 @@ func composePortFallbacks(node types.IRNode, strict bool, p extractedPayload) ex
 		return p
 	}
 	if strict {
-		if node.ResolvedType == gatewayResolvedType {
+		if node.Labels[types.ComponentTypeLabel] == gatewayResolvedType {
 			p.ports = []string{"8080:8080"}
 		}
 		return p

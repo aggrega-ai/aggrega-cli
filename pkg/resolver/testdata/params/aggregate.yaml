@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: param-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server:1.0.0
+      values:
+        port: {{ .parameters.api_port | default "3000" }}
+        host: {{ .parameters.db.host }}

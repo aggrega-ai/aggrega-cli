@@ -1,0 +1,43 @@
+package types
+
+// Component is the abstract definition of an atomic building block (catalog entity).
+// Schema: component-v1alpha1.schema.json
+type Component struct {
+	APIVersion string            `json:"apiVersion" yaml:"apiVersion"`
+	Kind       string            `json:"kind" yaml:"kind"`
+	Metadata   ComponentMetadata `json:"metadata" yaml:"metadata"`
+	Spec       ComponentSpec     `json:"spec" yaml:"spec"`
+}
+
+// ComponentMetadata carries identity and duck-typing labels for a Component.
+// The labels field is required and must include the component.aggrega.ai/type key.
+type ComponentMetadata struct {
+	Name        string            `json:"name" yaml:"name"`
+	Version     string            `json:"version" yaml:"version"`
+	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Maintainers []Maintainer      `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
+	License     string            `json:"license,omitempty" yaml:"license,omitempty"`
+	Repository  string            `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Home        string            `json:"home,omitempty" yaml:"home,omitempty"`
+	Keywords    []string          `json:"keywords,omitempty" yaml:"keywords,omitempty"`
+	Deprecated  bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	Labels      map[string]string `json:"labels" yaml:"labels"`
+	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+}
+
+// ComponentSpec defines validation schemas and constraints for a catalog Component.
+type ComponentSpec struct {
+	Extends          string                     `json:"extends,omitempty" yaml:"extends,omitempty"`
+	SecretNames      []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"`
+	RequiredFeatures []string                   `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
+	UsesSchema       map[string]UsesSchemaEntry `json:"usesSchema,omitempty" yaml:"usesSchema,omitempty"`
+	CueSchema        string                     `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
+	CueSchemaRef     string                     `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
+}
+
+// UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.
+// Schema: component-v1alpha1.schema.json#/properties/spec/properties/usesSchema
+type UsesSchemaEntry struct {
+	Selector string   `json:"selector" yaml:"selector"`
+	Inject   []string `json:"inject,omitempty" yaml:"inject,omitempty"`
+}

@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: bad-name-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    helm:
+      components:
+        type:
+          "core/server": "recipes/helm-server:1.0.0"
