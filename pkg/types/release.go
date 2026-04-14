@@ -37,6 +37,7 @@ type ReleaseSpec struct {
 // Boundary is a recursive logical box into which components are routed.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary
 type Boundary struct {
+	Description  string                       `json:"description,omitempty" yaml:"description,omitempty"`
 	Directory    string                       `json:"directory,omitempty" yaml:"directory,omitempty"`
 	SubDirectory string                       `json:"sub_directory,omitempty" yaml:"sub_directory,omitempty"`
 	Annotations  map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
@@ -61,8 +62,9 @@ type BoundaryComponent struct {
 // Release provides only type (for Ops-injected) and infra (physical sizing). Never values.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
 type BoundaryFeature struct {
-	Type  string                 `json:"type,omitempty" yaml:"type,omitempty"`
-	Infra map[string]interface{} `json:"infra,omitempty" yaml:"infra,omitempty"`
+	Type        string                 `json:"type,omitempty" yaml:"type,omitempty"`
+	Description string                 `json:"description,omitempty" yaml:"description,omitempty"`
+	Infra       map[string]interface{} `json:"infra,omitempty" yaml:"infra,omitempty"`
 }
 
 // AggregateRouting routes a nested Aggregate sub-module's components into a boundary.

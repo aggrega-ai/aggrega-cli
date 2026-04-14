@@ -60,20 +60,22 @@ type InjectBlock struct {
 // FeatureInstance is a feature attachment on a component or subsystem.
 // Used in Aggregate component.features, subsystem.features, and Release boundary features.
 type FeatureInstance struct {
-	Type    string                    `json:"type" yaml:"type"`
-	Values  map[string]interface{}    `json:"values,omitempty" yaml:"values,omitempty"`
-	Uses    map[string]interface{}    `json:"uses,omitempty" yaml:"uses,omitempty"`
-	Inject  *InjectBlock              `json:"inject,omitempty" yaml:"inject,omitempty"`
-	Secrets map[string]SecretInstance `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Type        string                    `json:"type" yaml:"type"`
+	Description string                    `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      map[string]interface{}    `json:"values,omitempty" yaml:"values,omitempty"`
+	Uses        map[string]interface{}    `json:"uses,omitempty" yaml:"uses,omitempty"`
+	Inject      *InjectBlock              `json:"inject,omitempty" yaml:"inject,omitempty"`
+	Secrets     map[string]SecretInstance  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 }
 
 // SecretInstance is a credential feature attachment (labeled feature.aggrega.ai/kind: secret).
 // Used in Aggregate component.secrets, feature.secrets, and Release boundary secrets.
 type SecretInstance struct {
-	Type   string                 `json:"type" yaml:"type"`
-	Values map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
-	Uses   map[string]interface{} `json:"uses,omitempty" yaml:"uses,omitempty"`
-	Inject *InjectBlock           `json:"inject,omitempty" yaml:"inject,omitempty"`
+	Type        string                 `json:"type" yaml:"type"`
+	Description string                 `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
+	Uses        map[string]interface{} `json:"uses,omitempty" yaml:"uses,omitempty"`
+	Inject      *InjectBlock           `json:"inject,omitempty" yaml:"inject,omitempty"`
 }
 
 // PipelineStep is one Wasm plugin invocation in a Recipe or FeatureRecipe pipeline.

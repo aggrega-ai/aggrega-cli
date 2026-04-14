@@ -19,8 +19,11 @@ type AggregateMetadata struct {
 	Repository  string            `json:"repository,omitempty" yaml:"repository,omitempty"`
 	Home        string            `json:"home,omitempty" yaml:"home,omitempty"`
 	Keywords    []string          `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Deprecated bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	// Labels are module-level duck-typing labels for catalog discovery and policy evaluation.
+	// They describe the Aggregate's identity as a reusable module and do NOT cascade to child
+	// component nodes. Component labels come exclusively from the Component catalog entity.
+	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // AggregateSpec defines the components, sub-aggregates, subsystems, and parameters.
@@ -42,6 +45,7 @@ type SubAggregate struct {
 // Subsystem is a logical grouping of developer intent. Recursive via nested Subsystems.
 // Schema: aggregate-v1alpha1.schema.json#/$defs/subsystem
 type Subsystem struct {
+	Description string                       `json:"description,omitempty" yaml:"description,omitempty"`
 	Annotations map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 	Features    map[string]FeatureInstance   `json:"features,omitempty" yaml:"features,omitempty"`
 	Subsystems  map[string]Subsystem         `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`

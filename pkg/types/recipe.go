@@ -32,6 +32,5 @@ type RecipeSpec struct {
 	ValuesMapping        string            `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
 	ValuesMappingFile    string            `json:"valuesMappingFile,omitempty" yaml:"valuesMappingFile,omitempty"`
 	ValuesMappingJsonnet string            `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`
-	InjectMapping        string            `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
 	Pipeline             []PipelineStep    `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
 }
