@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package types
 
 // Component is the abstract definition of an atomic building block (catalog entity).

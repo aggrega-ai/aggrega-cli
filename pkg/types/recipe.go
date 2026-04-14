@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package types
 
 // Recipe is the Ops-authored mapping connecting Dev intent to a specific infrastructure engine.

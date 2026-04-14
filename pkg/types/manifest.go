@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package types
 
 // Manifest is the global lockfile mapping abstract Developer Interfaces to concrete Ops Implementations.

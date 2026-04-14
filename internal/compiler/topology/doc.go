@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 // Package topology implements Step 2 of the Aggrega compiler pipeline:
 // the Topology Builder & Mutation Gate.
 //

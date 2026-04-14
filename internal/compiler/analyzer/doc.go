@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 // Package analyzer implements Step 4 of the Aggrega compiler pipeline:
 // the Static Analyzer & Validation Gate.
 //

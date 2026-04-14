@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package types
 
 // TemplateContext is the runtime view assembled by the Go compiler and injected into

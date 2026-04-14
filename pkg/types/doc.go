@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 // Package types defines the typed in-memory boundaries between compiler stages.
 // Every struct maps 1:1 to a canonical JSON schema in the aggrega-schemas repo.
 //

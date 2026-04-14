@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package types
 
 // Provider is the global plugin registrar mapping a rendering engine name to an executable.

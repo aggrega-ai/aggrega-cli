@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package types
 
 // FeatureRecipe is the Ops-authored mapping connecting Dev abstract features to concrete plugin pipelines.

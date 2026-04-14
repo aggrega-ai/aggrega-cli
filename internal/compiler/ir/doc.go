@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 // Package ir implements Step 3 of the Aggrega compiler pipeline:
 // Graph Finalization & Feature Normalization.
 //

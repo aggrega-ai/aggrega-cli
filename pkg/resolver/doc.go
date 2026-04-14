@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 // Package resolver implements the Step 1 pipeline: YAML loading, parameter
 // interpolation (Go templates + Sprig), parametersFrom external file merging,
 // instance name validation, and boundary infra wiring.

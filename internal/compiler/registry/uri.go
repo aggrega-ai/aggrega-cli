@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 // Package registry hosts OCI registry resolution helpers for Aggrega manifests.
 package registry
 

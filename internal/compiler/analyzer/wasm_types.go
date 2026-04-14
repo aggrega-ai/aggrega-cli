@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
 package analyzer
 
 import "github.com/cognitio/aggrega-cli/pkg/types"
