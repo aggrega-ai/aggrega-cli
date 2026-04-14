@@ -13,14 +13,16 @@ type CatalogLookup struct {
 }
 
 // RunGuards executes all resolver guard checks in defined order:
-//  1. Inject key validation
-//  2. Credential label partition
-//  3. requiredFeatures completeness
-//  4. Release Feature merge
+//  1. Uses socket validation (socket names must exist in usesSchema)
+//  2. Inject key validation
+//  3. Credential label partition
+//  4. requiredFeatures completeness
+//  5. Release Feature merge
 //
 // All violations are collected — earlier guards do not mask later ones.
 func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	var errs []*ResolverError
+	errs = append(errs, guardUsesSocket(agg, catalog)...)
 	errs = append(errs, guardInjectKeys(agg, catalog)...)
 	errs = append(errs, guardCredentialPartition(agg, catalog)...)
 	errs = append(errs, guardRequiredFeatures(agg, release, catalog)...)

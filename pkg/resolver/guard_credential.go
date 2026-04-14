@@ -42,6 +42,7 @@ func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*Re
 		}
 	}
 
+	sortResolverErrors(errs)
 	return errs
 }
 

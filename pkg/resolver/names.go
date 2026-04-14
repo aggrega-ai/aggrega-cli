@@ -66,6 +66,7 @@ func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
 		errs = append(errs, validateSubsystemNames(entity, ".spec.subsystems."+name, sub)...)
 	}
 
+	sortResolverErrors(errs)
 	return errs
 }
 

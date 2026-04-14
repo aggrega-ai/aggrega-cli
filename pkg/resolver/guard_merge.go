@@ -37,6 +37,7 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 		}
 	}
 
+	sortResolverErrors(errs)
 	return errs
 }
 

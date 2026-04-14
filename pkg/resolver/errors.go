@@ -16,6 +16,7 @@ var (
 	ErrCredentialLabelPartition = errors.New("credential label partition violated")
 	ErrMissingRequiredFeature   = errors.New("missing required feature")
 	ErrFeatureMergeConflict     = errors.New("feature merge conflict")
+	ErrUnknownUsesSocket        = errors.New("unknown uses socket")
 )
 
 // ResolverError is a structured error with entity and field context.

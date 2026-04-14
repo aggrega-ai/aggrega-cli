@@ -44,6 +44,7 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 		}
 	}
 
+	sortResolverErrors(errs)
 	return errs
 }
 

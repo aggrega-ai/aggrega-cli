@@ -46,6 +46,7 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 		}
 	}
 
+	sortResolverErrors(errs)
 	return errs
 }
 
