@@ -12,7 +12,6 @@ import (
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -46,7 +45,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 	if err == nil {
 		t.Fatal("expected error for provides self-containment violation")
 	}
@@ -119,7 +118,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +172,7 @@ func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,7 +242,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

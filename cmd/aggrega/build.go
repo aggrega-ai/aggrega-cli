@@ -13,6 +13,7 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
@@ -123,7 +124,18 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		CatalogLookup: catalogLookup,
 	}
 
-	renderResult, err := renderer.RenderAll(context.Background(), rendererInput, recipeLookup, &renderHelmChart.HelmEngine{})
+	engineFactory := func(providerName string) (renderer.Engine, error) {
+		switch providerName {
+		case "helm", "":
+			return &renderHelm.HelmEngine{}, nil
+		case "helm-chart":
+			return &renderHelmChart.HelmEngine{}, nil
+		default:
+			return nil, fmt.Errorf("unknown provider %q", providerName)
+		}
+	}
+
+	renderResult, err := renderer.RenderAll(context.Background(), rendererInput, recipeLookup, engineFactory)
 	if err != nil {
 		return fmt.Errorf("Step 5 (render): %w", err)
 	}

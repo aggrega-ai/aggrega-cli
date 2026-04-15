@@ -14,6 +14,12 @@ type Engine interface {
 	Render(ctx context.Context, values map[string]interface{}, nodeCtx NodeRenderContext) (map[string][]byte, error)
 }
 
+// EngineFactory returns the Engine implementation for a given provider name
+// (from `recipe.spec.provider`). Returning an error halts the build.
+// Engines may be cached/singleton'd by the factory; the orchestrator makes no
+// assumption about instance identity.
+type EngineFactory func(providerName string) (Engine, error)
+
 // BoundaryComposer is an optional interface for engines that produce
 // boundary-level artifacts after all per-node Render calls for that boundary.
 // The helm-chart provider uses this to emit an umbrella Chart.yaml + values.yaml
@@ -50,6 +56,7 @@ type NodeRenderContext struct {
 	SyncWave        string
 	ResolvedVersion string
 	Component       string
+	Source          interface{} // forwarded from recipe.spec.source (nil / string path / structured)
 	Provenance      ProvenanceContext
 }
 

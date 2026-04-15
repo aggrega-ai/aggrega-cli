@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package helm
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+)
+
+// HelmEngine produces flat rendered Kubernetes YAML.
+// Dispatches to sourced (Helm SDK on a real chart) or sourceless (generative
+// Deployment + Service from validated values dict) based on the Recipe's
+// `source` field. Source is passed in via NodeRenderContext.SourceHint below,
+// populated by the orchestrator.
+type HelmEngine struct{}
+
+var _ renderer.Engine = (*HelmEngine)(nil)
+
+// Render produces a map of relative file paths → YAML bytes.
+// File keys are flat (no subdirectory prefix) — e.g., "<nodeID>-deployment.yaml".
+// The orchestrator prefixes them with `boundaries/<boundary>/`.
+func (e *HelmEngine) Render(
+	ctx context.Context,
+	values map[string]interface{},
+	nodeCtx renderer.NodeRenderContext,
+) (map[string][]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Classify source (forwarded by the orchestrator from recipe.spec.source)
+	switch s := nodeCtx.Source.(type) {
+	case nil:
+		return renderSourceless(values, nodeCtx)
+	case string:
+		if s == "" {
+			return nil, fmt.Errorf("%w: node %q", ErrEmptySource, nodeCtx.NodeID)
+		}
+		return renderSourced(ctx, s, values, nodeCtx)
+	default:
+		// Structured source objects (e.g. {repo: ..., chart: ..., version: ...}) are
+		// reserved for future registry integration;  supports only filesystem paths.
+		return nil, fmt.Errorf("helm: node %q: structured source not supported in ", nodeCtx.NodeID)
+	}
+}

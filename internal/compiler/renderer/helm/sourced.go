@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package helm
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
+)
+
+// renderSourced loads a Helm chart from disk and renders it against the
+// Phase B values dictionary using the Helm Go SDK's template engine.
+// Returns flat rendered YAML files keyed by "<nodeID>-<basename>.yaml".
+func renderSourced(
+	_ context.Context,
+	chartPath string,
+	values map[string]interface{},
+	nodeCtx renderer.NodeRenderContext,
+) (map[string][]byte, error) {
+	// Load chart directory
+	ch, err := loader.Load(chartPath)
+	if err != nil {
+		return nil, fmt.Errorf("helm: node %q: load chart %q: %w", nodeCtx.NodeID, chartPath, err)
+	}
+
+	// Coalesce the Phase B dict with the chart's default values
+	cvals, err := chartutil.CoalesceValues(ch, chartutil.Values(values))
+	if err != nil {
+		return nil, fmt.Errorf("helm: node %q: coalesce values: %w", nodeCtx.NodeID, err)
+	}
+
+	// Build release options. We are not installing — just rendering templates.
+	relOpts := chartutil.ReleaseOptions{
+		Name:      sanitizeContainerName(nodeCtx.NodeID),
+		Namespace: "default",
+		Revision:  1,
+		IsInstall: true,
+	}
+	caps := chartutil.DefaultCapabilities
+
+	renderVals, err := chartutil.ToRenderValues(ch, cvals, relOpts, caps)
+	if err != nil {
+		return nil, fmt.Errorf("helm: node %q: render values: %w", nodeCtx.NodeID, err)
+	}
+
+	// Render
+	rendered, err := engine.Engine{}.Render(ch, renderVals)
+	if err != nil {
+		return nil, fmt.Errorf("helm: node %q: render: %w", nodeCtx.NodeID, err)
+	}
+
+	// rendered is map[path]string. Path format: "<chart>/templates/<file>.yaml".
+	// Flatten with nodeID prefix for output determinism.
+	out := make(map[string][]byte, len(rendered))
+	keys := make([]string, 0, len(rendered))
+	for k := range rendered {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, path := range keys {
+		content := rendered[path]
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+		base := filepath.Base(path)
+		// Drop partial-template files (Helm convention: underscore prefix)
+		if strings.HasPrefix(base, "_") {
+			continue
+		}
+		outKey := nodeCtx.NodeID + "-" + base
+		out[outKey] = []byte(content + "\n")
+	}
+
+	return out, nil
+}

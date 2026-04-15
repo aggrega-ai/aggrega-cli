@@ -33,7 +33,7 @@ type RecipeLookup struct {
 //     d. Phase B: Execute valuesMapping → values dictionary
 //     e. Helm render → K8s manifests
 //  3. Collect all files
-func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLookup, engine Engine) (*RenderResult, error) {
+func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLookup, engineFactory EngineFactory) (*RenderResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -61,13 +61,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, fmt.Errorf("Step 5 Pass 1: %w", err)
 	}
 
-	// Detect optional BoundaryComposer (umbrella chart producers like helm-chart)
-	composer, hasComposer := engine.(BoundaryComposer)
-
 	// Track per-boundary sub-chart info for umbrella composition
 	type pendingBoundary struct {
 		files     map[string]map[string][]byte // nodeID → per-node file map
 		subCharts []SubChartInfo
+		composer  BoundaryComposer // first composer engine seen in this boundary (if any)
 	}
 	boundaries := map[string]*pendingBoundary{}
 	orderedBoundaries := []string{}
@@ -139,8 +137,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			)
 		}
 
+		// Resolve engine for this node's provider via factory
+		providerName := ""
+		if recipe != nil {
+			providerName = recipe.Spec.Provider
+		}
+		engine, err := engineFactory(providerName)
+		if err != nil {
+			return nil, fmt.Errorf("Step 5 node %q engine factory: %w", nodeID, err)
+		}
+
 		// Per-node engine render
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
+		if recipe != nil {
+			nodeCtx.Source = recipe.Spec.Source
+		}
 		files, err := engine.Render(ctx, values, nodeCtx)
 		if err != nil {
 			return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
@@ -158,6 +169,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			Version:    node.ResolvedVersion,
 			Values:     values,
 		})
+		if boundaries[bp].composer == nil {
+			if c, ok := engine.(BoundaryComposer); ok {
+				boundaries[bp].composer = c
+			}
+		}
 	}
 
 	// Finalize per-boundary output
@@ -171,13 +187,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// If engine is a BoundaryComposer (helm-chart) AND the boundary is non-empty:
 		// nest per-node under charts/<nodeID>/ and emit boundary-level umbrella files.
-		if hasComposer && bp != "" {
+		if pb.composer != nil && bp != "" {
 			info := BoundaryInfo{
 				BoundaryPath:  bp,
 				AggregateName: graph.Metadata.AggregateName,
 				SubCharts:     pb.subCharts,
 			}
-			boundaryFiles, nestPerNode, err := composer.ComposeBoundary(ctx, info)
+			boundaryFiles, nestPerNode, err := pb.composer.ComposeBoundary(ctx, info)
 			if err != nil {
 				return nil, fmt.Errorf("Step 5 boundary %q compose: %w", bp, err)
 			}

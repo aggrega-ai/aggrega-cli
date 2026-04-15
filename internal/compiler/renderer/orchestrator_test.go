@@ -17,6 +17,14 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+// testHelmChartFactory returns an EngineFactory that always returns the
+// helm-chart engine — used by tests that predate the per-node factory dispatch.
+func testHelmChartFactory() renderer.EngineFactory {
+	return func(string) (renderer.Engine, error) {
+		return &helmchart.HelmEngine{}, nil
+	}
+}
+
 func testInput() renderer.RendererInput {
 	return renderer.RendererInput{
 		Graph: &types.IRGraph{
@@ -77,7 +85,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 func TestRenderAll_SimpleNode(t *testing.T) {
 	t.Parallel()
 
-	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), &helmchart.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), testHelmChartFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +144,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +178,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +209,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 
 	var firstKeys []string
 	for i := 0; i < 10; i++ {
-		result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+		result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

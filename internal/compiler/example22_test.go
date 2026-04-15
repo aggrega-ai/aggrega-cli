@@ -111,7 +111,7 @@ func TestExample22_TheProof(t *testing.T) {
 		context.Background(),
 		rendererInput,
 		recipeLookup,
-		&renderHelmChart.HelmEngine{},
+		func(string) (renderer.Engine, error) { return &renderHelmChart.HelmEngine{}, nil },
 	)
 	if err != nil {
 		t.Fatalf("Step 5 (render): %v", err)
