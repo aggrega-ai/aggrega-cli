@@ -235,3 +235,25 @@ func TestHelmEngine_Render_DotNotationNodeID(t *testing.T) {
 		t.Errorf("container name should sanitize dots, got:\n%s", depStr)
 	}
 }
+
+func TestHelmEngine_NamespaceFromAnnotation(t *testing.T) {
+	t.Parallel()
+
+	engine := &HelmEngine{}
+	nc := testNodeCtx()
+	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
+	values := map[string]interface{}{
+		"image": "myapp:v1.0.0",
+		"ports": []interface{}{"8080:8080"},
+	}
+	out, err := engine.Render(context.Background(), values, nc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(out["templates/deployment.yaml"]), "namespace: backend-zone") {
+		t.Errorf("deployment missing namespace: %s", out["templates/deployment.yaml"])
+	}
+	if !strings.Contains(string(out["templates/svc.yaml"]), "namespace: backend-zone") {
+		t.Errorf("service missing namespace: %s", out["templates/svc.yaml"])
+	}
+}

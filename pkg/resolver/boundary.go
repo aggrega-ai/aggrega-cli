@@ -41,9 +41,11 @@ func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations m
 
 	// Collect components in this boundary
 	for compName, comp := range b.Components {
+		// BoundaryComponent.Annotations override the boundary chain per key.
+		compAnnotations := mergeStringMaps(mergedAnnotations, comp.Annotations)
 		bi := &BoundaryInfra{
 			Infra:        comp.Infra,
-			Annotations:  mergedAnnotations,
+			Annotations:  compAnnotations,
 			BoundaryPath: currentPath,
 			Directory:    b.Directory,
 			SubDirectory: resolveSubDirectory(b.SubDirectory, comp.SubDirectory),

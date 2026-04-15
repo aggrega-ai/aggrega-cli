@@ -43,11 +43,13 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 	containerPorts, svcPorts := parsePorts(ports)
 	envVars := envVarsFromMap(env)
 
+	namespace := renderer.NamespaceFromAnnotations(nodeCtx.Annotations)
+
 	replicasInt32 := int32(replicas)
 	deploy := Deployment{
 		APIVersion: k8sDeploymentAPIVersion,
 		Kind:       "Deployment",
-		Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Labels: resourceLabels},
+		Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels},
 		Spec: DeploymentSpec{
 			Replicas: &replicasInt32,
 			Selector: &LabelSelector{MatchLabels: selectorLabels},
@@ -75,7 +77,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 		svc := Service{
 			APIVersion: k8sServiceAPIVersion,
 			Kind:       "Service",
-			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Labels: resourceLabels},
+			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels},
 			Spec: ServiceSpec{
 				Type:     "ClusterIP",
 				Selector: selectorLabels,

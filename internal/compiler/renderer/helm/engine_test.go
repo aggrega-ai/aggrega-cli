@@ -55,6 +55,44 @@ func TestHelmEngine_Sourceless_DeploymentAndService(t *testing.T) {
 	}
 }
 
+func TestHelmEngine_Sourceless_NamespaceFromAnnotation(t *testing.T) {
+	t.Parallel()
+	eng := &helm.HelmEngine{}
+	values := map[string]interface{}{
+		"image": "myapp:1.0",
+		"ports": []interface{}{"8080:8080"},
+	}
+	nc := nodeCtx("api", nil)
+	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
+	files, err := eng.Render(context.Background(), values, nc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(files["api-deployment.yaml"]), "namespace: backend-zone") {
+		t.Errorf("deployment missing namespace: %s", files["api-deployment.yaml"])
+	}
+	if !strings.Contains(string(files["api-service.yaml"]), "namespace: backend-zone") {
+		t.Errorf("service missing namespace: %s", files["api-service.yaml"])
+	}
+}
+
+func TestHelmEngine_Sourced_NamespaceFromAnnotation(t *testing.T) {
+	t.Parallel()
+	eng := &helm.HelmEngine{}
+	nc := nodeCtx("api", "testdata/ns-chart")
+	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
+	files, err := eng.Render(context.Background(), map[string]interface{}{}, nc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, v := range files {
+		if strings.Contains(string(v), "namespace: backend-zone") {
+			return
+		}
+	}
+	t.Errorf("no rendered file carries namespace: backend-zone; files: %v", keys(files))
+}
+
 func TestHelmEngine_EmptySourceIsFatal(t *testing.T) {
 	t.Parallel()
 	eng := &helm.HelmEngine{}

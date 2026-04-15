@@ -38,9 +38,15 @@ func renderSourced(
 	}
 
 	// Build release options. We are not installing — just rendering templates.
+	// Namespace comes from the `aggrega.ai/namespace` annotation when present
+	// (merged from boundary + boundary_component); otherwise "default".
+	ns := renderer.NamespaceFromAnnotations(nodeCtx.Annotations)
+	if ns == "" {
+		ns = "default"
+	}
 	relOpts := chartutil.ReleaseOptions{
 		Name:      sanitizeContainerName(nodeCtx.NodeID),
-		Namespace: "default",
+		Namespace: ns,
 		Revision:  1,
 		IsInstall: true,
 	}

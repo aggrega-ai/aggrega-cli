@@ -29,6 +29,7 @@ type Service struct {
 // ObjectMeta carries K8s resource metadata.
 type ObjectMeta struct {
 	Name        string            `yaml:"name"`
+	Namespace   string            `yaml:"namespace,omitempty"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }

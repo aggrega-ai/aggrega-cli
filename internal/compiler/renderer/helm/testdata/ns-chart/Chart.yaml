@@ -1,0 +1,4 @@
+apiVersion: v2
+name: ns
+version: 0.1.0
+description: Fixture proving Release.Namespace flows through from the aggrega.ai/namespace annotation.
