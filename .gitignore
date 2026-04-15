@@ -15,6 +15,7 @@ bin/
 
 # Output of aggrega cli
 out/
+dist/
 
 # Dependency directories (if you vendor)
 vendor/

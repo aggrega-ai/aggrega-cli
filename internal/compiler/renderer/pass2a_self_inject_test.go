@@ -62,7 +62,7 @@ func TestExecutePass2a_ValueTemplate(t *testing.T) {
 	}
 	selfInject := &types.InjectBlock{
 		Env: map[string]interface{}{
-			"APP_ID": map[string]interface{}{"value": "{{ .Context.InstanceID }}-app"},
+			"APP_ID": map[string]interface{}{"value": "{{ .context.instance_id }}-app"},
 		},
 	}
 	siCtx := SelfInjectContext{

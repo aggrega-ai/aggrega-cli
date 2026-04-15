@@ -58,7 +58,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 						Provider:   "helm",
 						Implements: "core/api-server",
 						Provides: map[string]string{
-							"host":         `{{ .Context.InstanceID }}.svc.cluster.local`,
+							"host":         `{{ .context.instance_id }}.svc.cluster.local`,
 							"service_port": `8080`,
 						},
 						Outputs:       map[string]string{"primary_compute": "api"},
@@ -116,7 +116,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						ValuesMapping: `{"image": "api:latest", "environment": {"DB_HOST": "{{ .Context.Inject.Env.DB_HOST }}"}}`,
+						ValuesMapping: `{"image": "api:latest", "environment": {"DB_HOST": "{{ .context.inject.env.DB_HOST }}"}}`,
 					},
 				}, true
 			case "core/postgres":
@@ -124,7 +124,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
 						Provides: map[string]string{
-							"host": `{{ .Context.InstanceID }}.svc.cluster.local`,
+							"host": `{{ .context.instance_id }}.svc.cluster.local`,
 						},
 						ValuesMapping: `{"image": "postgres:15"}`,
 					},

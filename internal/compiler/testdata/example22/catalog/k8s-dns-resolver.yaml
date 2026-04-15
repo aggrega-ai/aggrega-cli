@@ -1,0 +1,6 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/k8s-dns-resolver
+  version: "1.0.0"
+spec: {}

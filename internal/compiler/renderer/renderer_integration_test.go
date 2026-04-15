@@ -91,7 +91,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						ValuesMapping: `{"image": "api:latest", "environment": {"DB_URL": "{{ .Context.Inject.Env.DB_URL }}"}}`,
+						ValuesMapping: `{"image": "api:latest", "environment": {"DB_URL": "{{ .context.inject.env.DB_URL }}"}}`,
 					},
 				}, true
 			case "core/postgres":

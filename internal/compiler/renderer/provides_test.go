@@ -65,7 +65,7 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 			Metadata: types.RecipeMetadata{Name: "postgres-recipe"},
 			Spec: types.RecipeSpec{
 				Provides: map[string]string{
-					"host":         `{{ .Context.InstanceID }}.svc.cluster.local`,
+					"host":         `{{ .context.instance_id }}.svc.cluster.local`,
 					"service_port": `5432`,
 				},
 				Outputs: map[string]string{"primary_compute": "postgres"},
@@ -152,7 +152,7 @@ func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 			Metadata: types.RecipeMetadata{Name: "sprig-recipe"},
 			Spec: types.RecipeSpec{
 				Provides: map[string]string{
-					"host": `{{ .Context.InstanceID | upper }}`,
+					"host": `{{ .context.instance_id | upper }}`,
 				},
 			},
 		},

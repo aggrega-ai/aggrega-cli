@@ -18,6 +18,7 @@ type FeatureRecipeRef struct {
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
 // It iterates FeatureRecipes in the provided order (5-Tier Onion Model from ir.FeatureOrder),
 // evaluates each injectMapping template, and deep-merges the output over ctx.Context.Inject.
+// For each FeatureRecipe, .values and .infra are swapped to the feature's own values/infra.
 func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef) error {
 	for _, ref := range featureRecipes {
 		if ref.FeatureRecipe == nil {
@@ -28,11 +29,18 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			continue
 		}
 
-		// Evaluate injectMapping with the current template context
+		// Build feature-scoped context: swap .values/.infra to the feature's own
+		featureCtx := *ctx // shallow copy
+		if feat, ok := ctx.Features[ref.InstanceName]; ok {
+			featureCtx.Values = feat.Values
+			featureCtx.Infra = feat.Infra
+		}
+
+		// Evaluate injectMapping with the feature-scoped context
 		output, err := EvalTemplate(
 			fmt.Sprintf("injectMapping[%s/%s]", ref.InstanceName, ref.FeatureRecipe.Metadata.Name),
 			tmplText,
-			ctx,
+			&featureCtx,
 		)
 		if err != nil {
 			return fmt.Errorf("Phase A: feature %q (recipe %q) injectMapping: %w",

@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: example22-app
+  version: "1.0.0"
+spec:
+  aggregates:
+    data:
+      type: db-module
+  components:
+    backend:
+      type: core/api-server
+      values:
+        port: 8080
+      uses:
+        databases:
+          - data.main-db
+    frontend:
+      type: core/web-ui
+      values:
+        port: 3000
+      uses:
+        apis:
+          my-api:
+            target: backend
+            inject:
+              env:
+                API_HOST: host
+                API_PORT: service_port

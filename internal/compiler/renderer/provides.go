@@ -4,15 +4,12 @@
 package renderer
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
-	"text/template"
 
-	sprig "github.com/Masterminds/sprig/v3"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -96,19 +93,9 @@ func EvaluateAllProvides(
 }
 
 // evalTemplateString evaluates a Go template string with Sprig functions.
+// Uses toLowercaseMap for consistent lowercase field names in templates.
 func evalTemplateString(tmplText string, data interface{}, name string) (string, error) {
-	t, err := template.New(name).
-		Option("missingkey=zero").
-		Funcs(sprig.FuncMap()).
-		Parse(tmplText)
-	if err != nil {
-		return "", fmt.Errorf("parse: %w", err)
-	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute: %w", err)
-	}
-	return buf.String(), nil
+	return EvalTemplate(name, tmplText, data)
 }
 
 func ensureMap(m map[string]interface{}) map[string]interface{} {

@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: db-module
+  version: "1.0.0"
+spec:
+  components:
+    main-db:
+      type: core/postgres
+      values:
+        database_name: app_production
+  exported_components:
+    public_db: main-db

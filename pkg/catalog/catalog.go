@@ -1,0 +1,148 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package catalog
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
+	"github.com/cognitio/aggrega-cli/pkg/resolver"
+	"github.com/cognitio/aggrega-cli/pkg/types"
+	"gopkg.in/yaml.v3"
+)
+
+// Catalog holds all loaded entities indexed for lookup.
+type Catalog struct {
+	Components     map[string]types.Component
+	Features       map[string]types.Feature
+	Recipes        map[string]types.Recipe        // keyed by spec.implements
+	FeatureRecipes map[string]types.FeatureRecipe  // keyed by spec.implements
+	Aggregates     map[string]types.Aggregate      // keyed by metadata.name
+}
+
+// Load scans a directory recursively for .yaml files and indexes all entities.
+func Load(dir string) (*Catalog, error) {
+	c := &Catalog{
+		Components:     make(map[string]types.Component),
+		Features:       make(map[string]types.Feature),
+		Recipes:        make(map[string]types.Recipe),
+		FeatureRecipes: make(map[string]types.FeatureRecipe),
+		Aggregates:     make(map[string]types.Aggregate),
+	}
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || (!strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml")) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %q: %w", path, err)
+		}
+		return c.indexFile(data, path)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("catalog load %q: %w", dir, err)
+	}
+
+	return c, nil
+}
+
+// entityHeader is used to peek at kind before full unmarshal.
+type entityHeader struct {
+	Kind string `yaml:"kind"`
+}
+
+func (c *Catalog) indexFile(data []byte, path string) error {
+	var header entityHeader
+	if err := yaml.Unmarshal(data, &header); err != nil {
+		return nil // skip non-entity YAML files silently
+	}
+
+	switch header.Kind {
+	case "Component":
+		var e types.Component
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return fmt.Errorf("unmarshal Component %q: %w", path, err)
+		}
+		c.Components[e.Metadata.Name] = e
+	case "Feature":
+		var e types.Feature
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return fmt.Errorf("unmarshal Feature %q: %w", path, err)
+		}
+		c.Features[e.Metadata.Name] = e
+	case "Recipe":
+		var e types.Recipe
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return fmt.Errorf("unmarshal Recipe %q: %w", path, err)
+		}
+		c.Recipes[e.Spec.Implements] = e
+	case "FeatureRecipe":
+		var e types.FeatureRecipe
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return fmt.Errorf("unmarshal FeatureRecipe %q: %w", path, err)
+		}
+		c.FeatureRecipes[e.Spec.Implements] = e
+	case "Aggregate":
+		var e types.Aggregate
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return fmt.Errorf("unmarshal Aggregate %q: %w", path, err)
+		}
+		c.Aggregates[e.Metadata.Name] = e
+	}
+	// Unknown kinds silently skipped (Manifest, Release handled separately)
+	return nil
+}
+
+// CatalogLookup returns resolver-compatible lookup callbacks.
+func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
+	return resolver.CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			comp, ok := c.Components[typeURI]
+			return comp, ok
+		},
+		Feature: func(typeURI string) (types.Feature, bool) {
+			feat, ok := c.Features[typeURI]
+			return feat, ok
+		},
+	}
+}
+
+// RecipeLookup returns renderer-compatible lookup callbacks.
+func (c *Catalog) RecipeLookup() renderer.RecipeLookup {
+	return renderer.RecipeLookup{
+		Recipe: func(componentType string) (*types.Recipe, bool) {
+			r, ok := c.Recipes[componentType]
+			if !ok {
+				return nil, false
+			}
+			return &r, true
+		},
+		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+			fr, ok := c.FeatureRecipes[featureType]
+			if !ok {
+				return nil, false
+			}
+			return &fr, true
+		},
+	}
+}
+
+// SubAggregateLoader returns a topology-compatible loader callback.
+func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
+	return func(typeName string) (*types.Aggregate, error) {
+		agg, ok := c.Aggregates[typeName]
+		if !ok {
+			return nil, fmt.Errorf("sub-aggregate %q not found in catalog", typeName)
+		}
+		return &agg, nil
+	}
+}

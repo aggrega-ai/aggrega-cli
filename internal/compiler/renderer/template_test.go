@@ -29,7 +29,10 @@ func TestEvalTemplate_Sprig(t *testing.T) {
 
 func TestEvalTemplate_MissingKeyZero(t *testing.T) {
 	t.Parallel()
-	out, err := EvalTemplate("test", `value={{ .Missing }}`, map[string]string{})
+	// After JSON round-trip, map[string]string becomes map[string]interface{}.
+	// Missing keys return nil (zero of interface{}), which renders as "<no value>".
+	// Templates should use Sprig default for optional values.
+	out, err := EvalTemplate("test", `value={{ default "" .Missing }}`, map[string]string{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

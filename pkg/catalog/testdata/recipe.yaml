@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: ops/helm-api-server
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: "core/api-server"
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "8080"
+  outputs:
+    primary_compute: api
+  valuesMapping: '{"image": "api-server:latest", "ports": ["8080:8080"]}'

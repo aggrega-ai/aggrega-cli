@@ -124,6 +124,7 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 			Socket:        e.Socket,
 			Alias:         e.Alias,
 			OriginFeature: e.OriginFeature,
+			Inject:        convertInjectBlock(e.Inject),
 		}
 		irEdges = append(irEdges, irEdge)
 	}
@@ -159,6 +160,42 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	}
 
 	return graph, featureOrder, nil
+}
+
+// convertInjectBlock converts a topology InjectBlock to the IR edge inject format.
+func convertInjectBlock(inject *types.InjectBlock) map[string]map[string]string {
+	if inject == nil {
+		return nil
+	}
+	result := map[string]map[string]string{}
+	convert := func(mech string, raw interface{}) {
+		if raw == nil {
+			return
+		}
+		switch v := raw.(type) {
+		case map[string]interface{}:
+			m := make(map[string]string, len(v))
+			for k, val := range v {
+				if s, ok := val.(string); ok {
+					m[k] = s
+				}
+			}
+			if len(m) > 0 {
+				result[mech] = m
+			}
+		case map[string]string:
+			if len(v) > 0 {
+				result[mech] = v
+			}
+		}
+	}
+	convert("env", inject.Env)
+	convert("file", inject.File)
+	convert("arg", inject.Arg)
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func findSyncWave(syncWaves map[string][]string, nodeID string) string {

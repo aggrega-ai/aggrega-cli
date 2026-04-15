@@ -39,7 +39,7 @@ func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 			FeatureRecipe: &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: "k8s-dns-resolver"},
 				Spec: types.FeatureRecipeSpec{
-					InjectMapping: `{"env": {"DB_URL": "{{ (index .Context.Uses "my-db").Provides.host }}"}}`,
+					InjectMapping: `{"env": {"DB_URL": "{{ (index .context.uses "my-db").provides.host }}"}}`,
 				},
 			},
 		},

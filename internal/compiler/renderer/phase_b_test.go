@@ -27,7 +27,7 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "api-recipe"},
 		Spec: types.RecipeSpec{
-			ValuesMapping: `{"image": "myapp:latest", "port": {{ .Values.port }}, "replicas": {{ .Infra.replicas }}}`,
+			ValuesMapping: `{"image": "myapp:latest", "port": {{ .values.port }}, "replicas": {{ .infra.replicas }}}`,
 		},
 	}
 
@@ -131,7 +131,7 @@ func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "inject-consumer"},
 		Spec: types.RecipeSpec{
-			ValuesMapping: `{"env": [{"name": "DATABASE_URL", "value": "{{ .Context.Inject.Env.DB_URL }}"}]}`,
+			ValuesMapping: `{"env": [{"name": "DATABASE_URL", "value": "{{ .context.inject.env.DB_URL }}"}]}`,
 		},
 	}
 

@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: ops/k8s-dns-patcher
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: "core/k8s-dns-resolver"
+  injectMapping: |
+    {{- $targetVar := .infra.target_var -}}
+    {{- $targetHost := "" -}}
+    {{- $namespace := "" -}}
+    {{- range $alias, $edge := .context.uses -}}
+      {{- $targetHost = $edge.target -}}
+      {{- if and $edge.annotations $edge.annotations.release -}}
+        {{- $ns := index $edge.annotations.release "network.aggrega.ai/namespace" -}}
+        {{- if $ns -}}
+          {{- $namespace = $ns -}}
+        {{- end -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if and $targetHost $namespace -}}
+    {"env": {"{{ $targetVar }}": "{{ $targetHost }}.{{ $namespace }}.svc"}}
+    {{- else -}}
+    {}
+    {{- end -}}
