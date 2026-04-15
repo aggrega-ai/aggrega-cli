@@ -19,3 +19,22 @@ dist/
 
 # Dependency directories (if you vendor)
 vendor/
+
+# Go workspace (developer-local)
+go.work
+go.work.sum
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Local logs, env, editor swap files
+*.log
+.env
+.env.*
+*.swp
+*.swo
