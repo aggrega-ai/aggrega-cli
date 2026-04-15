@@ -11,7 +11,7 @@ spec:
     frontend-ns:
       directory: ./dist/frontend
       annotations:
-        network.aggrega.ai/namespace: "frontend-zone"
+        aggrega.ai/namespace: "frontend-zone"
       components:
         frontend:
           infra:
@@ -24,7 +24,7 @@ spec:
     backend-ns:
       directory: ./dist/backend
       annotations:
-        network.aggrega.ai/namespace: "backend-zone"
+        aggrega.ai/namespace: "backend-zone"
       components:
         backend:
           infra:
@@ -32,7 +32,7 @@ spec:
     data-ns:
       directory: ./dist/data
       annotations:
-        network.aggrega.ai/namespace: "database-zone"
+        aggrega.ai/namespace: "database-zone"
       components:
         data.main-db:
           infra:

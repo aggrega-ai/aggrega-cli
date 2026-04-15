@@ -4,6 +4,9 @@
 package catalog
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -166,5 +169,91 @@ func TestLoad_EmptyDir(t *testing.T) {
 	}
 	if len(c.Components) != 0 || len(c.Features) != 0 {
 		t.Error("expected empty catalog")
+	}
+}
+
+func TestLoadAll_MergesAcrossDirs(t *testing.T) {
+	t.Parallel()
+
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dirA, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: ops/recipe-a
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/x
+  valuesMapping: '{}'
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirB, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: ops/recipe-b
+  version: 1.0.0
+spec:
+  provider: helm-chart
+  implements: core/y
+  valuesMapping: '{}'
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := LoadAll(dirA, dirB)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := c.Recipes["core/x"]; !ok {
+		t.Error("missing core/x from dirA")
+	}
+	if _, ok := c.Recipes["core/y"]; !ok {
+		t.Error("missing core/y from dirB")
+	}
+}
+
+func TestLoad_RelativeRecipeSourceResolvedToAbsPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	recipeDir := filepath.Join(dir, "nested")
+	if err := os.MkdirAll(filepath.Join(recipeDir, "charts", "my-chart"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recipePath := filepath.Join(recipeDir, "recipe.yaml")
+	if err := os.WriteFile(recipePath, []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: ops/rel
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/rel
+  source: ./charts/my-chart
+  valuesMapping: '{}'
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r, ok := c.Recipes["core/rel"]
+	if !ok {
+		t.Fatal("recipe not loaded")
+	}
+	s, ok := r.Spec.Source.(string)
+	if !ok {
+		t.Fatalf("source not a string: %T", r.Spec.Source)
+	}
+	if !filepath.IsAbs(s) {
+		t.Errorf("source not absolute: %q", s)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(s), "/nested/charts/my-chart") {
+		t.Errorf("source path not resolved against recipe dir: %q", s)
 	}
 }

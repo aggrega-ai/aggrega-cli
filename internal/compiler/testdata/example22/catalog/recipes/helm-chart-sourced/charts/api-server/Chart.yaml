@@ -1,0 +1,4 @@
+apiVersion: v2
+name: api-server
+version: 0.1.0
+description: Example22 sourced chart for core/api-server.

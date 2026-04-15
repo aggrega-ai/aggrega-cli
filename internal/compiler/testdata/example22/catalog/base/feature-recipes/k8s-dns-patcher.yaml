@@ -13,7 +13,7 @@ spec:
     {{- range $alias, $edge := .context.uses -}}
       {{- $targetHost = $edge.target -}}
       {{- if and $edge.annotations $edge.annotations.release -}}
-        {{- $ns := index $edge.annotations.release "network.aggrega.ai/namespace" -}}
+        {{- $ns := index $edge.annotations.release "aggrega.ai/namespace" -}}
         {{- if $ns -}}
           {{- $namespace = $ns -}}
         {{- end -}}

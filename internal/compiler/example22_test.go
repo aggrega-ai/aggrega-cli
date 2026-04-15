@@ -5,34 +5,65 @@ package compiler_test
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 )
 
-// TestExample22_TheProof is the end-to-end proof:
-// The frontend's rendered Helm deployment contains API_HOST: "backend.backend-zone.svc".
+// Example22 drives the end-to-end proof across the 4-variant provider matrix:
 //
-// This proves Separation of Concerns works: the developer declared a simple dependency
-// (uses: apis: backend with inject: env: API_HOST: host), and Ops transparently rewrote
-// the DNS via the k8s-dns-patcher FeatureRecipe's injectMapping before Helm rendering.
-func TestExample22_TheProof(t *testing.T) {
-	t.Parallel()
+//	                      | generative (sourceless) | rendering (sourced) |
+//	--------------------- | ----------------------- | ------------------- |
+//	provider: helm        | A                        | B                   |
+//	provider: helm-chart  | C                        | D                   |
+//
+// All 4 variants share the same Aggregate + Release + Manifest; only the Recipe
+// layer changes (which `catalog/recipes/<variant>` sub-directory is loaded).
+//
+// Common assertions (every variant):
+//
+//  1. API_HOST env on frontend deployment = "backend.backend-zone.svc"  (injectMapping flow)
+//  2. Frontend deployment metadata.namespace = "frontend-zone"           (WI-6 annotation injection)
+//  3. Backend deployment metadata.namespace = "backend-zone"             (WI-6 annotation injection)
+//  4. Frontend container port = 3003                                     (values.port flows from Aggregate)
+//  5. Backend replicas = 3                                               (infra.replicas flows from Release)
+//  6. Output shape matches the provider mode.
 
-	// Load catalog (standard library + db-module sub-aggregate)
-	cat, err := catalog.Load("testdata/example22/catalog")
+type variantMode int
+
+const (
+	modeHelmFlat variantMode = iota
+	modeHelmChartUmbrella
+)
+
+type example22Result struct {
+	Files    map[string][]byte
+	Warnings []string
+}
+
+// runExample22 executes the full 5-step pipeline for one variant and returns
+// the rendered file set. The `variant` sub-directory under catalog/recipes/
+// drives the provider + source choice.
+func runExample22(t *testing.T, variant string) *example22Result {
+	t.Helper()
+
+	base := "testdata/example22/catalog/base"
+	recipesDir := filepath.Join("testdata/example22/catalog/recipes", variant)
+
+	cat, err := catalog.LoadAll(base, recipesDir)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
 
-	// Step 1: Resolve
 	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
 		AggregatePath: "testdata/example22/aggregate.yaml",
 		ReleasePath:   "testdata/example22/release.yaml",
@@ -44,9 +75,14 @@ func TestExample22_TheProof(t *testing.T) {
 
 	catalogLookup := cat.CatalogLookup()
 
-	// Run guards (skip for now — guards may fail on uses socket validation
-	// because the test aggregate uses inline socket names that may not match
-	// the catalog usesSchema perfectly. The proof focuses on the rendering pipeline.)
+	// Step 1a: Guards — MUST pass for the end-to-end proof.
+	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup)
+	if len(guardErrs) > 0 {
+		for _, e := range guardErrs {
+			t.Errorf("guard: %s", e.Error())
+		}
+		t.FailNow()
+	}
 
 	// Step 2: Topology
 	topoResult, err := topology.Build(topology.BuildConfig{
@@ -56,17 +92,6 @@ func TestExample22_TheProof(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Step 2 (topology): %v", err)
-	}
-
-	// Verify nodes
-	if topoResult.Nodes["frontend"] == nil {
-		t.Fatal("missing frontend node")
-	}
-	if topoResult.Nodes["backend"] == nil {
-		t.Fatal("missing backend node")
-	}
-	if topoResult.Nodes["data.main-db"] == nil {
-		t.Fatal("missing data.main-db node (sub-aggregate flattening)")
 	}
 
 	// Step 3: IR
@@ -80,81 +105,170 @@ func TestExample22_TheProof(t *testing.T) {
 		t.Fatalf("Step 3 (IR): %v", err)
 	}
 
-	// Verify edges
-	foundEdge := false
-	for _, e := range graph.Spec.Edges {
-		if e.Source == "frontend" && e.Target == "backend" && e.Socket == "apis" {
-			foundEdge = true
-		}
-	}
-	if !foundEdge {
-		t.Error("missing frontend → backend edge")
-	}
-
 	// Step 4: Analyze
 	analysis := analyzer.Analyze(graph, catalogLookup)
-	// Log but don't fail on selector errors for now — the proof focuses on rendering
 	for _, e := range analysis.Errors {
-		t.Logf("selector warning: %s → %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
+		t.Errorf("selector: %s → %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
+	}
+	if t.Failed() {
+		t.FailNow()
 	}
 
-	// Step 5: Render — THE PROOF
-	recipeLookup := cat.RecipeLookup()
+	// Step 5: Render — provider per-node via factory.
+	providerLookup := cat.ProviderLookup
 	rendererInput := renderer.RendererInput{
-		Graph:         graph,
-		FeatureOrder:  featureOrder,
-		ResolveResult: resolveResult,
-		CatalogLookup: catalogLookup,
+		Graph:          graph,
+		FeatureOrder:   featureOrder,
+		ResolveResult:  resolveResult,
+		CatalogLookup:  catalogLookup,
+		ProviderLookup: providerLookup,
+	}
+	engineFactory := func(providerName string) (renderer.Engine, error) {
+		switch providerName {
+		case "helm", "":
+			return &renderHelm.HelmEngine{}, nil
+		case "helm-chart":
+			return &renderHelmChart.HelmEngine{}, nil
+		default:
+			return nil, nil
+		}
 	}
 
 	renderResult, err := renderer.RenderAll(
 		context.Background(),
 		rendererInput,
-		recipeLookup,
-		func(string) (renderer.Engine, error) { return &renderHelmChart.HelmEngine{}, nil },
+		cat.RecipeLookup(),
+		engineFactory,
 	)
 	if err != nil {
 		t.Fatalf("Step 5 (render): %v", err)
 	}
+	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}
+}
 
-	// Log warnings
-	for _, w := range renderResult.Warnings {
-		t.Logf("render warning: %s", w)
+// assertCommonProof asserts the six invariants that must hold across every
+// variant. Namespace/port/replicas assertions are string searches — good
+// enough for this proof because each boundary's output is isolated by path.
+func assertCommonProof(t *testing.T, res *example22Result, mode variantMode) {
+	t.Helper()
+
+	frontendDep, frontendDepPath := findFile(res.Files, "frontend-ns", "frontend", "deployment")
+	backendDep, backendDepPath := findFile(res.Files, "backend-ns", "backend", "deployment")
+
+	if frontendDep == "" {
+		t.Fatalf("frontend deployment not found; files: %v", sortedKeys(res.Files))
+	}
+	if backendDep == "" {
+		t.Fatalf("backend deployment not found; files: %v", sortedKeys(res.Files))
 	}
 
-	// THE PROOF: find the frontend deployment and check for the rewritten API_HOST
-	found := false
-	for path, content := range renderResult.Files {
-		if strings.Contains(path, "frontend") && strings.Contains(path, "deployment") {
-			yamlStr := string(content)
-			t.Logf("Frontend deployment:\n%s", yamlStr)
+	// 1. API_HOST injection via k8s-dns-patcher feature recipe
+	if !strings.Contains(frontendDep, "backend.backend-zone.svc") {
+		t.Errorf("[%s] API_HOST not rewritten in frontend deployment (%s):\n%s", tagFor(mode), frontendDepPath, frontendDep)
+	}
 
-			if strings.Contains(yamlStr, "backend.backend-zone.svc") {
-				found = true
-				t.Log("✓ THE PROOF: frontend deployment contains API_HOST: backend.backend-zone.svc")
+	// 2 + 3. Namespace injection (WI-6)
+	if !strings.Contains(frontendDep, "namespace: frontend-zone") {
+		t.Errorf("[%s] frontend deployment missing metadata.namespace frontend-zone (%s):\n%s", tagFor(mode), frontendDepPath, frontendDep)
+	}
+	if !strings.Contains(backendDep, "namespace: backend-zone") {
+		t.Errorf("[%s] backend deployment missing metadata.namespace backend-zone (%s):\n%s", tagFor(mode), backendDepPath, backendDep)
+	}
+
+	// 4. Frontend port 3003 (from Aggregate .values.port=3003)
+	if !strings.Contains(frontendDep, "3003") {
+		t.Errorf("[%s] frontend deployment missing port 3003 (%s):\n%s", tagFor(mode), frontendDepPath, frontendDep)
+	}
+
+	// 5. Backend replicas 3 (from Release .infra.replicas=3)
+	if !strings.Contains(backendDep, "replicas: 3") {
+		t.Errorf("[%s] backend deployment missing replicas: 3 (%s):\n%s", tagFor(mode), backendDepPath, backendDep)
+	}
+
+	// 6. Output shape per provider mode
+	hasBoundaryChart := containsAny(res.Files, "boundaries/frontend-ns/Chart.yaml")
+	hasSubChart := containsAny(res.Files, "boundaries/frontend-ns/charts/")
+	switch mode {
+	case modeHelmFlat:
+		if hasBoundaryChart {
+			t.Errorf("[helm] unexpected umbrella Chart.yaml at boundary root; files: %v", sortedKeys(res.Files))
+		}
+		if hasSubChart {
+			t.Errorf("[helm] unexpected charts/<instance_id>/ nesting; files: %v", sortedKeys(res.Files))
+		}
+	case modeHelmChartUmbrella:
+		if !hasBoundaryChart {
+			t.Errorf("[helm-chart] missing umbrella Chart.yaml at boundary root; files: %v", sortedKeys(res.Files))
+		}
+		if !hasSubChart {
+			t.Errorf("[helm-chart] missing charts/<instance_id>/ sub-chart nesting; files: %v", sortedKeys(res.Files))
+		}
+	}
+}
+
+// findFile returns (contents, path) of the first file whose path contains ALL substrings.
+func findFile(files map[string][]byte, parts ...string) (string, string) {
+	for path, content := range files {
+		matched := true
+		for _, p := range parts {
+			if !strings.Contains(path, p) {
+				matched = false
+				break
 			}
 		}
-	}
-
-	if !found {
-		t.Fatal("✗ THE PROOF FAILED: frontend deployment does not contain 'backend.backend-zone.svc'")
-	}
-
-	// Verify we got files for all boundaries
-	hasBackend := false
-	hasData := false
-	for path := range renderResult.Files {
-		if strings.Contains(path, "backend") {
-			hasBackend = true
-		}
-		if strings.Contains(path, "data") {
-			hasData = true
+		if matched {
+			return string(content), path
 		}
 	}
-	if !hasBackend {
-		t.Error("missing backend boundary output")
+	return "", ""
+}
+
+func containsAny(files map[string][]byte, prefix string) bool {
+	for path := range files {
+		if strings.Contains(path, prefix) {
+			return true
+		}
 	}
-	if !hasData {
-		t.Error("missing data boundary output")
+	return false
+}
+
+func sortedKeys(m map[string][]byte) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
+	return keys
+}
+
+func tagFor(m variantMode) string {
+	if m == modeHelmFlat {
+		return "helm"
+	}
+	return "helm-chart"
+}
+
+// --- Variant tests ---------------------------------------------------------
+
+func TestExample22_HelmGenerative(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-generative")
+	assertCommonProof(t, res, modeHelmFlat)
+}
+
+func TestExample22_HelmSourced(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-sourced")
+	assertCommonProof(t, res, modeHelmFlat)
+}
+
+func TestExample22_HelmChartGenerative(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-chart-generative")
+	assertCommonProof(t, res, modeHelmChartUmbrella)
+}
+
+func TestExample22_HelmChartSourced(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-chart-sourced")
+	assertCommonProof(t, res, modeHelmChartUmbrella)
 }

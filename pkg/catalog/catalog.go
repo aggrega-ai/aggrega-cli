@@ -27,7 +27,16 @@ type Catalog struct {
 }
 
 // Load scans a directory recursively for .yaml files and indexes all entities.
+// Delegates to LoadAll so single- and multi-directory loads share the same code path.
 func Load(dir string) (*Catalog, error) {
+	return LoadAll(dir)
+}
+
+// LoadAll scans one or more directories recursively and merges all entities into a single Catalog.
+// Later directories override earlier ones on key collisions (last write wins).
+// This supports layered catalogs like `base/` + `recipes/<variant>/` where the variant's
+// Recipe by `spec.implements` replaces the base entry (if any).
+func LoadAll(dirs ...string) (*Catalog, error) {
 	c := &Catalog{
 		Components:     make(map[string]types.Component),
 		Features:       make(map[string]types.Feature),
@@ -36,24 +45,23 @@ func Load(dir string) (*Catalog, error) {
 		Aggregates:     make(map[string]types.Aggregate),
 		Providers:      make(map[string]types.Provider),
 	}
-
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, dir := range dirs {
+		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || (!strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml")) {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read %q: %w", path, err)
+			}
+			return c.indexFile(data, path)
+		}); err != nil {
+			return nil, fmt.Errorf("catalog load %q: %w", dir, err)
 		}
-		if d.IsDir() || (!strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml")) {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read %q: %w", path, err)
-		}
-		return c.indexFile(data, path)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("catalog load %q: %w", dir, err)
 	}
-
 	return c, nil
 }
 
@@ -85,6 +93,16 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		var e types.Recipe
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return fmt.Errorf("unmarshal Recipe %q: %w", path, err)
+		}
+		// Resolve relative string sources against the Recipe file's directory so
+		// co-located charts stay bundled with their Recipe (on disk today, OCI
+		// artifact tomorrow). Absolute paths and non-string sources pass through.
+		if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
+			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
+			if err != nil {
+				return fmt.Errorf("resolve Recipe %q source %q: %w", path, s, err)
+			}
+			e.Spec.Source = abs
 		}
 		c.Recipes[e.Spec.Implements] = e
 	case "FeatureRecipe":

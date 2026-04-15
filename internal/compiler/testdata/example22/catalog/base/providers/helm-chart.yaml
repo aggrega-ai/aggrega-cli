@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm-chart
+  version: "1.0.0"
+spec:
+  # baseSchema validates the valuesMapping output for sourceless (generative) mode.
+  # The helm-chart provider emits an umbrella chart with per-component sub-charts
+  # whose templates consume this dict shape.
+  baseSchema: |
+    {
+      image: string
+      replicas?: int | *1
+      ports?: [...string]
+      environment?: {[string]: string | int}
+    }

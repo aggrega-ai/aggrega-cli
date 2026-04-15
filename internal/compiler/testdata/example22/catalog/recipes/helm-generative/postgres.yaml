@@ -1,15 +1,19 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/helm-postgres
+  name: ops/helm-postgres-generative
   version: "1.0.0"
 spec:
   provider: helm
-  implements: "core/postgres"
+  implements: core/postgres
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "5432"
   locals:
     primary_compute: postgres
   valuesMapping: |
-    {"image": "postgres:15", "ports": ["5432:5432"]}
+    {
+      "image": "postgres:15",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["5432:5432"]
+    }

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  # baseSchema validates the valuesMapping output for sourceless (generative) mode.
+  # The helm provider generates flat Deployment + optional Service from this dict.
+  baseSchema: |
+    {
+      image: string
+      replicas?: int | *1
+      ports?: [...string]
+      environment?: {[string]: string | int}
+    }
