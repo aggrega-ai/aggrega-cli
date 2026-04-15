@@ -146,9 +146,12 @@ func runExample22(t *testing.T, variant string) *example22Result {
 	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}
 }
 
-// assertCommonProof asserts the six invariants that must hold across every
-// variant. Namespace/port/replicas assertions are string searches — good
-// enough for this proof because each boundary's output is isolated by path.
+// assertCommonProof asserts the invariants for variants whose output is
+// pre-rendered K8s YAML (helm flat in both modes, and helm-chart generative
+// whose templates have values substituted by our own engine). The helm-chart
+// sourced variant uses `assertSourcedUmbrellaProof` instead, because its
+// sub-chart templates come through unrendered — values propagate through the
+// umbrella's values.yaml and are substituted at `helm install` time.
 func assertCommonProof(t *testing.T, res *example22Result, mode variantMode) {
 	t.Helper()
 
@@ -270,5 +273,74 @@ func TestExample22_HelmChartGenerative(t *testing.T) {
 func TestExample22_HelmChartSourced(t *testing.T) {
 	t.Parallel()
 	res := runExample22(t, "helm-chart-sourced")
-	assertCommonProof(t, res, modeHelmChartUmbrella)
+	assertSourcedUmbrellaProof(t, res)
+}
+
+// assertSourcedUmbrellaProof covers the helm-chart sourced variant. The user's
+// chart is placed under charts/<instance_id>/ verbatim, so templates still
+// reference {{ .Values.* }}. We verify propagation through umbrella files:
+//
+//   - umbrella Chart.yaml declares dependencies using the user's chart name
+//     with alias=<instance_id>
+//   - sub-chart Chart.yaml preserves the user's original chart name
+//   - umbrella values.yaml scopes per-instance values (replicas, port,
+//     environment.API_HOST) under the instance alias
+//
+// Namespace injection is out of scope here: in sourced mode the user's chart
+// controls metadata.namespace (typically via .Release.Namespace), which the
+// deploying tool sets at `helm install --namespace=<boundary-ns>`.
+func assertSourcedUmbrellaProof(t *testing.T, res *example22Result) {
+	t.Helper()
+
+	// Umbrella shape exists
+	if !containsAny(res.Files, "boundaries/frontend-ns/Chart.yaml") {
+		t.Fatalf("frontend umbrella Chart.yaml missing; files: %v", sortedKeys(res.Files))
+	}
+	if !containsAny(res.Files, "boundaries/frontend-ns/charts/") {
+		t.Fatalf("frontend sub-chart nesting missing; files: %v", sortedKeys(res.Files))
+	}
+
+	// Sub-chart preserves user's original chart name
+	subChart, subPath := findFile(res.Files, "boundaries/frontend-ns/charts/frontend/Chart.yaml")
+	if subChart == "" {
+		t.Fatalf("frontend sub-chart Chart.yaml not found; files: %v", sortedKeys(res.Files))
+	}
+	if !strings.Contains(subChart, "name: web-ui") {
+		t.Errorf("sourced sub-chart did not preserve user's chart name `web-ui` (%s):\n%s", subPath, subChart)
+	}
+
+	// Umbrella dep uses original chart name with alias = instance_id
+	umbrella, umbrellaPath := findFile(res.Files, "boundaries/frontend-ns/Chart.yaml")
+	if !strings.Contains(umbrella, "- name: web-ui") {
+		t.Errorf("umbrella dep missing original chart name `web-ui` (%s):\n%s", umbrellaPath, umbrella)
+	}
+	if !strings.Contains(umbrella, "alias: frontend") {
+		t.Errorf("umbrella dep missing alias=frontend (%s):\n%s", umbrellaPath, umbrella)
+	}
+
+	// Umbrella values.yaml scopes per-instance values
+	frontendValues, fvPath := findFile(res.Files, "boundaries/frontend-ns/values.yaml")
+	if frontendValues == "" {
+		t.Fatalf("frontend umbrella values.yaml missing; files: %v", sortedKeys(res.Files))
+	}
+	if !strings.Contains(frontendValues, "frontend:") {
+		t.Errorf("umbrella values.yaml missing `frontend:` alias scope (%s):\n%s", fvPath, frontendValues)
+	}
+	// Values propagation proof: Aggregate .values.port=3003 → frontend.ports
+	if !strings.Contains(frontendValues, "3003:3003") {
+		t.Errorf("frontend.ports did not pick up .values.port=3003 (%s):\n%s", fvPath, frontendValues)
+	}
+	// Inject flow proof: injectMapping produced API_HOST
+	if !strings.Contains(frontendValues, "backend.backend-zone.svc") {
+		t.Errorf("frontend.environment.API_HOST not rewritten in umbrella values (%s):\n%s", fvPath, frontendValues)
+	}
+
+	// Backend boundary: Release .infra.replicas=3 → backend.replicas
+	backendValues, bvPath := findFile(res.Files, "boundaries/backend-ns/values.yaml")
+	if backendValues == "" {
+		t.Fatalf("backend umbrella values.yaml missing; files: %v", sortedKeys(res.Files))
+	}
+	if !strings.Contains(backendValues, "replicas: 3") {
+		t.Errorf("backend.replicas did not pick up .infra.replicas=3 (%s):\n%s", bvPath, backendValues)
+	}
 }

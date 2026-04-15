@@ -25,10 +25,22 @@ type HelmEngine struct{}
 
 var _ renderer.Engine = (*HelmEngine)(nil)
 
-// Render produces Chart.yaml + templates/*.yaml from the values dictionary.
+// Render produces the sub-chart contents for one node.
+//
+//   - Generative mode (nodeCtx.Source is nil): generate Chart.yaml + templates/*.yaml
+//     from the values dictionary (current behaviour).
+//   - Sourced mode (nodeCtx.Source is a non-empty string): copy the user's local
+//     Helm chart verbatim. The umbrella builder emits a dependency entry using
+//     the user's chart name with `alias: <instance_id>` so values propagation
+//     works while allowing multiple instances of the same source chart.
 func (e *HelmEngine) Render(ctx context.Context, values map[string]interface{}, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	// Sourced mode — copy the chart verbatim.
+	if s, ok := nodeCtx.Source.(string); ok && s != "" {
+		return copySourcedChart(s)
 	}
 
 	out := map[string][]byte{}

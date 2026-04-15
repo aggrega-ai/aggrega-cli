@@ -168,6 +168,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			InstanceID: nodeID,
 			Version:    node.ResolvedVersion,
 			Values:     values,
+			Source:     nodeCtx.Source,
 		})
 		if boundaries[bp].composer == nil {
 			if c, ok := engine.(BoundaryComposer); ok {

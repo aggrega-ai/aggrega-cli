@@ -61,21 +61,33 @@ func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 	deps := make([]umbrellaChartDependency, 0, len(subCharts))
 	values := make(map[string]interface{}, len(subCharts))
 	for _, sc := range subCharts {
-		subName := sanitizeChartName(sc.InstanceID)
+		alias := sanitizeChartName(sc.InstanceID)
 		version := sc.Version
 		if version == "" {
 			version = defaultChartVersion
 		}
+		// Sourced sub-charts: dep `name` = user's chart name from Chart.yaml;
+		// `alias` = instance_id so Helm scopes umbrella values under that key
+		// and multiple instances of the same source chart don't collide.
+		// Generative sub-charts: name == alias == instance_id (no user chart).
+		depName := alias
+		if s, ok := sc.Source.(string); ok && s != "" {
+			name, err := readChartName(s)
+			if err != nil {
+				return nil, err
+			}
+			depName = name
+		}
 		deps = append(deps, umbrellaChartDependency{
-			Name:       subName,
+			Name:       depName,
 			Version:    version,
-			Alias:      subName,
-			Repository: "file://charts/" + subName,
+			Alias:      alias,
+			Repository: "file://charts/" + alias,
 		})
 		if sc.Values != nil {
-			values[subName] = sc.Values
+			values[alias] = sc.Values
 		} else {
-			values[subName] = map[string]interface{}{}
+			values[alias] = map[string]interface{}{}
 		}
 	}
 

@@ -45,6 +45,7 @@ type SubChartInfo struct {
 	InstanceID string                 // dot-notation node ID
 	Version    string                 // resolved version
 	Values     map[string]interface{} // per-sub-chart values for umbrella values.yaml
+	Source     interface{}            // forwarded recipe.spec.source; nil for generative sub-charts
 }
 
 // NodeRenderContext provides identity metadata for manifest generation.

@@ -144,8 +144,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
 	}
 
-	// Write output
+	// Write output. Clean dist/boundaries/ first so stale files from a prior
+	// build of a different variant don't leak into this one (GitOps consumers
+	// must see exactly what the compiler just produced).
 	outDir := filepath.Join("dist")
+	if err := os.RemoveAll(filepath.Join(outDir, "boundaries")); err != nil {
+		return fmt.Errorf("clean %s/boundaries: %w", outDir, err)
+	}
 	if err := writeArtifacts(outDir, renderResult.Files); err != nil {
 		return fmt.Errorf("write output: %w", err)
 	}
