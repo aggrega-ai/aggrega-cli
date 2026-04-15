@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package helm
+package helmchart
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func TestHelmEngine_Render_SimpleDeployment(t *testing.T) {
 	}
 
 	// Deployment exists
-	depKey := "templates/api-server-deployment.yaml"
+	depKey := "templates/deployment.yaml"
 	depYAML, ok := out[depKey]
 	if !ok {
 		t.Fatalf("missing %s", depKey)
@@ -71,7 +71,7 @@ func TestHelmEngine_Render_SimpleDeployment(t *testing.T) {
 	}
 
 	// Service exists
-	svcKey := "templates/api-server-svc.yaml"
+	svcKey := "templates/svc.yaml"
 	if _, ok := out[svcKey]; !ok {
 		t.Error("missing service YAML")
 	}
@@ -90,7 +90,7 @@ func TestHelmEngine_Render_AggreraLabels(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	depStr := string(out["templates/api-server-deployment.yaml"])
+	depStr := string(out["templates/deployment.yaml"])
 
 	// aggrega.ai/* labels
 	checks := []string{
@@ -138,7 +138,7 @@ func TestHelmEngine_Render_DefaultImage(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	depStr := string(out["templates/api-server-deployment.yaml"])
+	depStr := string(out["templates/deployment.yaml"])
 	if !strings.Contains(depStr, defaultImage) {
 		t.Errorf("expected default image %q in deployment", defaultImage)
 	}
@@ -158,7 +158,7 @@ func TestHelmEngine_Render_Replicas(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	depStr := string(out["templates/api-server-deployment.yaml"])
+	depStr := string(out["templates/deployment.yaml"])
 	if !strings.Contains(depStr, "replicas: 3") {
 		t.Errorf("expected replicas: 3, got:\n%s", depStr)
 	}
@@ -183,7 +183,7 @@ func TestHelmEngine_Render_DeterministicEnvOrder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		depStr := string(out["templates/api-server-deployment.yaml"])
+		depStr := string(out["templates/deployment.yaml"])
 		if i == 0 {
 			firstOutput = depStr
 		} else if depStr != firstOutput {
@@ -209,9 +209,11 @@ func TestHelmEngine_Render_ChartName(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// Sub-chart Chart.yaml uses the instance_id (node ID), not the aggregate name.
+	// The umbrella chart (produced by ComposeBoundary) uses aggregate + boundary.
 	chartStr := string(out["Chart.yaml"])
-	if !strings.Contains(chartStr, "name: test-app") {
-		t.Errorf("Chart.yaml should use aggregate name, got:\n%s", chartStr)
+	if !strings.Contains(chartStr, "name: api-server") {
+		t.Errorf("Chart.yaml should use instance_id as sub-chart name, got:\n%s", chartStr)
 	}
 }
 
@@ -228,7 +230,7 @@ func TestHelmEngine_Render_DotNotationNodeID(t *testing.T) {
 	}
 
 	// Container name should sanitize dots
-	depStr := string(out["templates/data-layer.main-db-deployment.yaml"])
+	depStr := string(out["templates/deployment.yaml"])
 	if !strings.Contains(depStr, "name: data-layer-main-db") {
 		t.Errorf("container name should sanitize dots, got:\n%s", depStr)
 	}

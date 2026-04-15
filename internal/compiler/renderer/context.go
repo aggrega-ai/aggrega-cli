@@ -74,7 +74,7 @@ func AssembleNodeContext(
 	var metadata *types.TemplateMetadata
 	if graph.Spec.Provenance.ReleaseVersion != "" || graph.Spec.Provenance.AggregateVersion != "" {
 		metadata = &types.TemplateMetadata{
-			AggregateName: graph.Metadata.AppName,
+			AggregateName: graph.Metadata.AggregateName,
 		}
 	}
 
@@ -88,7 +88,7 @@ func AssembleNodeContext(
 		},
 		Values:   ensureMap(values),
 		Infra:    ensureMap(infra),
-		Outputs:  ensureStringMap(allProvides[nodeID]),
+		Locals:   ensureStringMap(allProvides[nodeID]),
 		Features: features,
 		Secrets:  secrets,
 		Metadata: metadata,

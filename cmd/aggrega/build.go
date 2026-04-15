@@ -13,7 +13,7 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
+	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
@@ -123,7 +123,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		CatalogLookup: catalogLookup,
 	}
 
-	renderResult, err := renderer.RenderAll(context.Background(), rendererInput, recipeLookup, &renderHelm.HelmEngine{})
+	renderResult, err := renderer.RenderAll(context.Background(), rendererInput, recipeLookup, &renderHelmChart.HelmEngine{})
 	if err != nil {
 		return fmt.Errorf("Step 5 (render): %w", err)
 	}

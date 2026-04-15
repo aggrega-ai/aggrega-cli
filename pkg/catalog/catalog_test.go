@@ -46,6 +46,35 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if _, ok := c.Aggregates["db-module"]; !ok {
 		t.Error("missing db-module aggregate")
 	}
+
+	if len(c.Providers) != 1 {
+		t.Errorf("expected 1 provider, got %d", len(c.Providers))
+	}
+	if _, ok := c.Providers["helm-chart"]; !ok {
+		t.Error("missing helm-chart provider")
+	}
+}
+
+func TestProviderLookup(t *testing.T) {
+	t.Parallel()
+
+	c, err := Load("testdata")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p, ok := c.ProviderLookup("helm-chart")
+	if !ok {
+		t.Fatal("expected helm-chart provider")
+	}
+	if p.Spec.BaseSchema == "" {
+		t.Error("expected baseSchema to be populated")
+	}
+
+	_, ok = c.ProviderLookup("nonexistent")
+	if ok {
+		t.Error("expected not found")
+	}
 }
 
 func TestLoad_CatalogLookup(t *testing.T) {

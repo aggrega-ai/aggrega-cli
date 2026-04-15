@@ -9,7 +9,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "8080"
-  outputs:
+  locals:
     primary_compute: api
     listen_port: "8080"
   valuesMapping: |

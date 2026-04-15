@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package helm
+package helmchart
 
 // Chart is the Helm Chart.yaml document (apiVersion v2).
 type Chart struct {

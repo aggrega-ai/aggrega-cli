@@ -11,14 +11,14 @@ spec:
     backend:
       type: core/api-server
       values:
-        port: 8080
+        port: 8082
       uses:
         databases:
           - data.main-db
     frontend:
       type: core/web-ui
       values:
-        port: 3000
+        port: 3003
       uses:
         apis:
           my-api:

@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm-chart
+  version: "1.0.0"
+spec:
+  plugin: "builtin:helm-chart"
+  baseSchema: |
+    image: string
+    ports?: [...string]
+    environment?: [string]: string
+    replicas?: int & >=1

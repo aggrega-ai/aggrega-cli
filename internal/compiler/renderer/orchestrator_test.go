@@ -12,7 +12,7 @@ import (
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
+	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -20,7 +20,7 @@ import (
 func testInput() renderer.RendererInput {
 	return renderer.RendererInput{
 		Graph: &types.IRGraph{
-			Metadata: types.IRMetadata{AppName: "test-app"},
+			Metadata: types.IRMetadata{AggregateName: "test-app"},
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {
@@ -61,7 +61,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 							"host":         `{{ .context.instance_id }}.svc.cluster.local`,
 							"service_port": `8080`,
 						},
-						Outputs:       map[string]string{"primary_compute": "api"},
+						Locals:        map[string]string{"primary_compute": "api"},
 						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"], "environment": {"PORT": "8080"}}`,
 					},
 				}, true
@@ -77,7 +77,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 func TestRenderAll_SimpleNode(t *testing.T) {
 	t.Parallel()
 
-	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), &helm.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), &helmchart.HelmEngine{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helm.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helm.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 
 	var firstKeys []string
 	for i := 0; i < 10; i++ {
-		result, err := renderer.RenderAll(context.Background(), input, lookup, &helm.HelmEngine{})
+		result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

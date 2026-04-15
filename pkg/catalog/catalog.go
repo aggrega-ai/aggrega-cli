@@ -21,8 +21,9 @@ type Catalog struct {
 	Components     map[string]types.Component
 	Features       map[string]types.Feature
 	Recipes        map[string]types.Recipe        // keyed by spec.implements
-	FeatureRecipes map[string]types.FeatureRecipe  // keyed by spec.implements
-	Aggregates     map[string]types.Aggregate      // keyed by metadata.name
+	FeatureRecipes map[string]types.FeatureRecipe // keyed by spec.implements
+	Aggregates     map[string]types.Aggregate     // keyed by metadata.name
+	Providers      map[string]types.Provider      // keyed by metadata.name (e.g. "helm", "helm-chart")
 }
 
 // Load scans a directory recursively for .yaml files and indexes all entities.
@@ -33,6 +34,7 @@ func Load(dir string) (*Catalog, error) {
 		Recipes:        make(map[string]types.Recipe),
 		FeatureRecipes: make(map[string]types.FeatureRecipe),
 		Aggregates:     make(map[string]types.Aggregate),
+		Providers:      make(map[string]types.Provider),
 	}
 
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -97,9 +99,22 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return fmt.Errorf("unmarshal Aggregate %q: %w", path, err)
 		}
 		c.Aggregates[e.Metadata.Name] = e
+	case "Provider":
+		var e types.Provider
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return fmt.Errorf("unmarshal Provider %q: %w", path, err)
+		}
+		c.Providers[e.Metadata.Name] = e
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil
+}
+
+// ProviderLookup returns a provider by name (e.g. "helm", "helm-chart").
+// Returns the zero value + false if not found.
+func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
+	p, ok := c.Providers[name]
+	return p, ok
 }
 
 // CatalogLookup returns resolver-compatible lookup callbacks.

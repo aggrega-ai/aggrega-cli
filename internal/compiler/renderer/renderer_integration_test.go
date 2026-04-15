@@ -12,7 +12,7 @@ import (
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
+	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -22,7 +22,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
-			Metadata: types.IRMetadata{AppName: "test"},
+			Metadata: types.IRMetadata{AggregateName: "test"},
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {Component: "core/api-server"},
@@ -46,7 +46,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, &helm.HelmEngine{})
+	_, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
 	if err == nil {
 		t.Fatal("expected error for provides self-containment violation")
 	}
@@ -60,7 +60,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
-			Metadata: types.IRMetadata{AppName: "test"},
+			Metadata: types.IRMetadata{AggregateName: "test"},
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {Component: "core/api-server", BoundaryPath: "local"},
@@ -119,7 +119,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helm.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
-			Metadata: types.IRMetadata{AppName: "labeled-app"},
+			Metadata: types.IRMetadata{AggregateName: "labeled-app"},
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {
@@ -173,7 +173,7 @@ func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, &helm.HelmEngine{})
+	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,4 +197,68 @@ func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 		}
 	}
 	t.Error("no deployment found")
+}
+
+// TestIntegration_ValuesAndInfraFlow proves the correctness fix from WI-3:
+// .values from the Aggregate and .infra from the Release boundary must flow
+// through the valuesMapping template to reach the rendered K8s manifest.
+func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
+	t.Parallel()
+
+	valuesRaw, _ := json.Marshal(map[string]interface{}{"port": 8080})
+	infraRaw, _ := json.Marshal(map[string]interface{}{"replicas": 3})
+
+	input := renderer.RendererInput{
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "flow-test"},
+			Spec: types.IRSpec{
+				Nodes: map[string]types.IRNode{
+					"api": {
+						Component:    "core/api-server",
+						Labels:       map[string]string{"component.aggrega.ai/type": "server"},
+						BoundaryPath: "local",
+					},
+				},
+				ValuesMapping: map[string]json.RawMessage{"api": valuesRaw},
+				InfraMapping:  map[string]json.RawMessage{"api": infraRaw},
+			},
+		},
+		FeatureOrder: ir.FeatureOrder{},
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "flow-test"}},
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+	}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(string) (*types.Recipe, bool) {
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "api-recipe"},
+				Spec: types.RecipeSpec{
+					// Template reads .values.port and .infra.replicas — the critical flow
+					ValuesMapping: `{"image": "api:latest", "ports": ["{{ .values.port }}:{{ .values.port }}"], "replicas": {{ .infra.replicas }}}`,
+				},
+			}, true
+		},
+		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, &helmchart.HelmEngine{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for path, content := range result.Files {
+		if strings.Contains(path, "api") && strings.Contains(path, "deployment") {
+			s := string(content)
+			if !strings.Contains(s, "containerPort: 8080") {
+				t.Errorf("expected containerPort: 8080 (from .values.port), got:\n%s", s)
+			}
+			if !strings.Contains(s, "replicas: 3") {
+				t.Errorf("expected replicas: 3 (from .infra.replicas), got:\n%s", s)
+			}
+			return
+		}
+	}
+	t.Error("no api deployment found")
 }

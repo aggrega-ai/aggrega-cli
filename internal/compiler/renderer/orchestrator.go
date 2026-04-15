@@ -61,6 +61,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, fmt.Errorf("Step 5 Pass 1: %w", err)
 	}
 
+	// Detect optional BoundaryComposer (umbrella chart producers like helm-chart)
+	composer, hasComposer := engine.(BoundaryComposer)
+
+	// Track per-boundary sub-chart info for umbrella composition
+	type pendingBoundary struct {
+		files     map[string]map[string][]byte // nodeID → per-node file map
+		subCharts []SubChartInfo
+	}
+	boundaries := map[string]*pendingBoundary{}
+	orderedBoundaries := []string{}
+
 	// Per-node rendering
 	for _, nodeID := range nodeIDs {
 		node := graph.Spec.Nodes[nodeID]
@@ -108,6 +119,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
 
+		// Sourceless baseSchema validation: if the Recipe has no source and a ProviderLookup
+		// is available, validate the valuesMapping output against the provider's baseSchema.
+		if recipe != nil && input.ProviderLookup != nil && isSourceless(recipe) {
+			if err := ValidateValuesAgainstBaseSchema(
+				recipe.Spec.Provider,
+				input.ProviderLookup,
+				values,
+				fmt.Sprintf("node %q recipe %q", nodeID, recipe.Metadata.Name),
+			); err != nil {
+				return nil, fmt.Errorf("Step 5 node %q baseSchema: %w", nodeID, err)
+			}
+		}
+
 		// Phase C: validate pipeline (no execution today)
 		if recipe != nil && len(recipe.Spec.Pipeline) > 0 {
 			result.Warnings = append(result.Warnings,
@@ -115,20 +139,68 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			)
 		}
 
-		// Helm render
+		// Per-node engine render
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		files, err := engine.Render(ctx, values, nodeCtx)
 		if err != nil {
 			return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
 		}
 
-		// Collect files with boundary prefix
-		boundaryPrefix := ""
-		if node.BoundaryPath != "" {
-			boundaryPrefix = "boundaries/" + node.BoundaryPath + "/"
+		// Group per boundary
+		bp := node.BoundaryPath
+		if _, ok := boundaries[bp]; !ok {
+			boundaries[bp] = &pendingBoundary{files: map[string]map[string][]byte{}}
+			orderedBoundaries = append(orderedBoundaries, bp)
 		}
-		for path, content := range files {
-			result.Files[boundaryPrefix+path] = content
+		boundaries[bp].files[nodeID] = files
+		boundaries[bp].subCharts = append(boundaries[bp].subCharts, SubChartInfo{
+			InstanceID: nodeID,
+			Version:    node.ResolvedVersion,
+			Values:     values,
+		})
+	}
+
+	// Finalize per-boundary output
+	sort.Strings(orderedBoundaries)
+	for _, bp := range orderedBoundaries {
+		pb := boundaries[bp]
+		boundaryPrefix := ""
+		if bp != "" {
+			boundaryPrefix = "boundaries/" + bp + "/"
+		}
+
+		// If engine is a BoundaryComposer (helm-chart) AND the boundary is non-empty:
+		// nest per-node under charts/<nodeID>/ and emit boundary-level umbrella files.
+		if hasComposer && bp != "" {
+			info := BoundaryInfo{
+				BoundaryPath:  bp,
+				AggregateName: graph.Metadata.AggregateName,
+				SubCharts:     pb.subCharts,
+			}
+			boundaryFiles, nestPerNode, err := composer.ComposeBoundary(ctx, info)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 boundary %q compose: %w", bp, err)
+			}
+			for p, c := range boundaryFiles {
+				result.Files[boundaryPrefix+p] = c
+			}
+			// Node files go under charts/<nodeID>/ (or flat if composer says no nesting)
+			for nodeID, nodeFiles := range pb.files {
+				nodePrefix := boundaryPrefix
+				if nestPerNode {
+					nodePrefix += "charts/" + nodeID + "/"
+				}
+				for p, c := range nodeFiles {
+					result.Files[nodePrefix+p] = c
+				}
+			}
+		} else {
+			// Flat: per-node files directly under boundary
+			for _, nodeFiles := range pb.files {
+				for p, c := range nodeFiles {
+					result.Files[boundaryPrefix+p] = c
+				}
+			}
 		}
 	}
 
@@ -188,8 +260,8 @@ func buildNodeRenderContext(
 			AggregateVersion: graph.Spec.Provenance.AggregateVersion,
 		},
 	}
-	if graph.Metadata.AppName != "" {
-		nrc.Provenance.AggregateName = graph.Metadata.AppName
+	if graph.Metadata.AggregateName != "" {
+		nrc.Provenance.AggregateName = graph.Metadata.AggregateName
 	}
 	if input.ResolveResult != nil && input.ResolveResult.Release != nil {
 		nrc.Provenance.ReleaseName = input.ResolveResult.Release.Metadata.Name

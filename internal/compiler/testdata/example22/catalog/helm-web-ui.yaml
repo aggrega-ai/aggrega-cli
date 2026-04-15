@@ -9,7 +9,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "3000"
-  outputs:
+  locals:
     primary_compute: web
   valuesMapping: |
     {

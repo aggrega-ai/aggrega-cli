@@ -11,10 +11,11 @@ import (
 
 // RendererInput holds all data needed for Step 5 rendering.
 type RendererInput struct {
-	Graph         *types.IRGraph
-	FeatureOrder  ir.FeatureOrder
-	ResolveResult *resolver.ResolveResult
-	CatalogLookup resolver.CatalogLookup
+	Graph          *types.IRGraph
+	FeatureOrder   ir.FeatureOrder
+	ResolveResult  *resolver.ResolveResult
+	CatalogLookup  resolver.CatalogLookup
+	ProviderLookup ProviderLookup // Optional: enables baseSchema validation in sourceless mode
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).
@@ -27,7 +28,7 @@ type ProvidesContext struct {
 	Context ProvidesContextBlock       `json:"context"`
 	Values  map[string]interface{}     `json:"values"`
 	Infra   map[string]interface{}     `json:"infra"`
-	Outputs map[string]string          `json:"outputs"`
+	Locals map[string]string          `json:"locals"`
 }
 
 // ProvidesContextBlock holds only the instance_id for provides evaluation.

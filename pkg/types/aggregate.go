@@ -33,7 +33,7 @@ type AggregateMetadata struct {
 type AggregateSpec struct {
 	Parameters         map[string]interface{}       `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 	Aggregates         map[string]SubAggregate      `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
-	ExportedComponents map[string]string            `json:"exported_components,omitempty" yaml:"exported_components,omitempty"`
+	ExportedComponents map[string]string            `json:"exportedComponents,omitempty" yaml:"exportedComponents,omitempty"`
 	Subsystems         map[string]Subsystem         `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
 	Components         map[string]ComponentInstance `json:"components,omitempty" yaml:"components,omitempty"`
 }

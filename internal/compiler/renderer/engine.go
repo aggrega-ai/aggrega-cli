@@ -6,10 +6,39 @@ package renderer
 import "context"
 
 // Engine renders one node's values dictionary into on-disk-style artifacts.
-// Keys are relative paths (e.g., "Chart.yaml", "templates/api-deployment.yaml");
-// values are file contents.
+// Keys are relative paths (e.g., "Chart.yaml", "templates/deployment.yaml");
+// values are file contents. Per-node files are later prefixed by the orchestrator
+// with the boundary path (and, for chart-structure engines, a `charts/<nodeID>/`
+// sub-chart prefix).
 type Engine interface {
 	Render(ctx context.Context, values map[string]interface{}, nodeCtx NodeRenderContext) (map[string][]byte, error)
+}
+
+// BoundaryComposer is an optional interface for engines that produce
+// boundary-level artifacts after all per-node Render calls for that boundary.
+// The helm-chart provider uses this to emit an umbrella Chart.yaml + values.yaml
+// listing each component as a sub-chart dependency. Engines that only produce
+// flat per-node output (e.g. a future helm provider producing rendered K8s YAML)
+// do not implement this.
+type BoundaryComposer interface {
+	// ComposeBoundary returns files relative to the boundary root.
+	// The orchestrator prefixes them with `boundaries/<boundaryPath>/`.
+	// Also signals whether per-node files should be nested under `charts/<nodeID>/`.
+	ComposeBoundary(ctx context.Context, info BoundaryInfo) (files map[string][]byte, nestPerNode bool, err error)
+}
+
+// BoundaryInfo carries everything the BoundaryComposer needs.
+type BoundaryInfo struct {
+	BoundaryPath  string
+	AggregateName string
+	SubCharts     []SubChartInfo
+}
+
+// SubChartInfo describes one sub-chart contributing to an umbrella chart.
+type SubChartInfo struct {
+	InstanceID string                 // dot-notation node ID
+	Version    string                 // resolved version
+	Values     map[string]interface{} // per-sub-chart values for umbrella values.yaml
 }
 
 // NodeRenderContext provides identity metadata for manifest generation.

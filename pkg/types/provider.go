@@ -25,7 +25,9 @@ type ProviderMetadata struct {
 	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// ProviderSpec contains the plugin URI for the rendering engine.
+// ProviderSpec contains the plugin URI for the rendering engine and the
+// baseSchema used to validate valuesMapping output in sourceless (generative) mode.
 type ProviderSpec struct {
-	Plugin string `json:"plugin" yaml:"plugin"`
+	Plugin     string `json:"plugin,omitempty" yaml:"plugin,omitempty"`
+	BaseSchema string `json:"baseSchema,omitempty" yaml:"baseSchema,omitempty"` // CUE schema for sourceless-mode validation
 }

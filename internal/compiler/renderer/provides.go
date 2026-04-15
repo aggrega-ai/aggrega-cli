@@ -68,7 +68,7 @@ func EvaluateAllProvides(
 			Context: ProvidesContextBlock{InstanceID: nodeID},
 			Values:  ensureMap(values),
 			Infra:   ensureMap(infra),
-			Outputs: ensureStringMap(recipe.Spec.Outputs),
+			Locals:  ensureStringMap(recipe.Spec.Locals),
 		}
 
 		// Evaluate each provides template

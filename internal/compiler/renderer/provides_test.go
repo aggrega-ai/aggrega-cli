@@ -68,7 +68,7 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 					"host":         `{{ .context.instance_id }}.svc.cluster.local`,
 					"service_port": `5432`,
 				},
-				Outputs: map[string]string{"primary_compute": "postgres"},
+				Locals: map[string]string{"primary_compute": "postgres"},
 			},
 		},
 	}

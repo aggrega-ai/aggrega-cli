@@ -145,7 +145,7 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 		APIVersion: types.IRAPIVersion,
 		Kind:       types.IRKind,
 		Metadata: types.IRMetadata{
-			AppName: res.Aggregate.Metadata.Name,
+			AggregateName: res.Aggregate.Metadata.Name,
 		},
 		Spec: types.IRSpec{
 			Nodes:                irNodes,

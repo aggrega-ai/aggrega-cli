@@ -9,7 +9,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "5432"
-  outputs:
+  locals:
     primary_compute: postgres
   valuesMapping: |
     {"image": "postgres:15", "ports": ["5432:5432"]}

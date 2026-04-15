@@ -29,7 +29,7 @@ type FeatureRecipeMetadata struct {
 type FeatureRecipeSpec struct {
 	Provider             string            `json:"provider" yaml:"provider"`
 	Implements           string            `json:"implements" yaml:"implements"`
-	Outputs              map[string]string `json:"outputs,omitempty" yaml:"outputs,omitempty"`
+	Locals               map[string]string `json:"locals,omitempty" yaml:"locals,omitempty"`
 	Provides             map[string]string `json:"provides,omitempty" yaml:"provides,omitempty"`
 	Source               interface{}       `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
 	ValuesMapping        string            `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`

@@ -138,8 +138,8 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	}
 
 	// Metadata
-	if graph.Metadata.AppName != "test-app" {
-		t.Errorf("app name: %q", graph.Metadata.AppName)
+	if graph.Metadata.AggregateName != "test-app" {
+		t.Errorf("app name: %q", graph.Metadata.AggregateName)
 	}
 	if graph.APIVersion != types.IRAPIVersion || graph.Kind != types.IRKind {
 		t.Errorf("api/kind: %q/%q", graph.APIVersion, graph.Kind)

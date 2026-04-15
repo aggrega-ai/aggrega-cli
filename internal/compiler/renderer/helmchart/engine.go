@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package helm
+package helmchart
 
 import (
 	"context"
@@ -98,7 +98,7 @@ func (e *HelmEngine) Render(ctx context.Context, values map[string]interface{}, 
 	if err != nil {
 		return nil, fmt.Errorf("helm: node %q deployment marshal: %w", nodeCtx.NodeID, err)
 	}
-	out[fmt.Sprintf("templates/%s-deployment.yaml", nodeCtx.NodeID)] = depYAML
+	out["templates/deployment.yaml"] = depYAML
 
 	// Service (only if ports exist)
 	if len(svcPorts) > 0 {
@@ -119,7 +119,7 @@ func (e *HelmEngine) Render(ctx context.Context, values map[string]interface{}, 
 		if err != nil {
 			return nil, fmt.Errorf("helm: node %q service marshal: %w", nodeCtx.NodeID, err)
 		}
-		out[fmt.Sprintf("templates/%s-svc.yaml", nodeCtx.NodeID)] = svcYAML
+		out["templates/svc.yaml"] = svcYAML
 	}
 
 	return out, nil

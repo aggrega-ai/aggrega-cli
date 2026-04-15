@@ -14,7 +14,7 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	t.Parallel()
 
 	graph := &types.IRGraph{
-		Metadata: types.IRMetadata{AppName: "test-app"},
+		Metadata: types.IRMetadata{AggregateName: "test-app"},
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
 				"api": {
@@ -100,8 +100,8 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	}
 
 	// Outputs (from provides)
-	if ctx.Outputs["listen_port"] != "8080" {
-		t.Errorf("outputs: %v", ctx.Outputs)
+	if ctx.Locals["listen_port"] != "8080" {
+		t.Errorf("locals: %v", ctx.Locals)
 	}
 
 	// Features
@@ -129,7 +129,7 @@ func TestAssembleNodeContext_EmptyNode(t *testing.T) {
 	t.Parallel()
 
 	graph := &types.IRGraph{
-		Metadata: types.IRMetadata{AppName: "test"},
+		Metadata: types.IRMetadata{AggregateName: "test"},
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
 				"simple": {Component: "core/worker"},

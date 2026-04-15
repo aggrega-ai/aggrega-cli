@@ -11,7 +11,7 @@ type TemplateContext struct {
 	Context    ContextBlock               `json:"context" yaml:"context"`
 	Values     map[string]interface{}     `json:"values" yaml:"values"`
 	Infra      map[string]interface{}     `json:"infra" yaml:"infra"`
-	Outputs    map[string]string          `json:"outputs" yaml:"outputs"`
+	Locals     map[string]string          `json:"locals" yaml:"locals"`
 	Provides   map[string]string          `json:"provides,omitempty" yaml:"provides,omitempty"`
 	Features   map[string]TemplateFeature `json:"features,omitempty" yaml:"features,omitempty"`
 	Secrets    map[string]TemplateSecret  `json:"secrets,omitempty" yaml:"secrets,omitempty"`

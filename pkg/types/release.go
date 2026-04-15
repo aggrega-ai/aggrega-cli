@@ -33,7 +33,7 @@ type ReleaseSpec struct {
 	Extends        string                 `json:"extends,omitempty" yaml:"extends,omitempty"`
 	Parameters     map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 	ParametersFrom []string               `json:"parametersFrom,omitempty" yaml:"parametersFrom,omitempty"`
-	SyncWaves      map[string][]string    `json:"sync_waves,omitempty" yaml:"sync_waves,omitempty"`
+	SyncWaves      map[string][]string    `json:"syncWaves,omitempty" yaml:"syncWaves,omitempty"`
 	Boundaries     map[string]Boundary    `json:"boundaries" yaml:"boundaries"`
 }
 
@@ -42,7 +42,7 @@ type ReleaseSpec struct {
 type Boundary struct {
 	Description  string                       `json:"description,omitempty" yaml:"description,omitempty"`
 	Directory    string                       `json:"directory,omitempty" yaml:"directory,omitempty"`
-	SubDirectory string                       `json:"sub_directory,omitempty" yaml:"sub_directory,omitempty"`
+	SubDirectory string                       `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
 	Annotations  map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 	Features     map[string]interface{}       `json:"features,omitempty" yaml:"features,omitempty"`
 	Secrets      map[string]interface{}       `json:"secrets,omitempty" yaml:"secrets,omitempty"`
@@ -55,7 +55,8 @@ type Boundary struct {
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component
 type BoundaryComponent struct {
 	Description  string                     `json:"description,omitempty" yaml:"description,omitempty"`
-	SubDirectory string                     `json:"sub_directory,omitempty" yaml:"sub_directory,omitempty"`
+	SubDirectory string                     `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
+	Annotations  map[string]string          `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 	Infra        map[string]interface{}     `json:"infra,omitempty" yaml:"infra,omitempty"`
 	Features     map[string]BoundaryFeature `json:"features,omitempty" yaml:"features,omitempty"`
 	Secrets      map[string]BoundaryFeature `json:"secrets,omitempty" yaml:"secrets,omitempty"`

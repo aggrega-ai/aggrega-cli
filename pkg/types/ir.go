@@ -22,7 +22,7 @@ type IRGraph struct {
 
 // IRMetadata carries document-level metadata for an IR graph.
 type IRMetadata struct {
-	AppName string `json:"appName"`
+	AggregateName string `json:"aggregate_name"`
 }
 
 // IRSpec is the spec subtree of an IR document.

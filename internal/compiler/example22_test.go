@@ -11,7 +11,7 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
+	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
@@ -111,7 +111,7 @@ func TestExample22_TheProof(t *testing.T) {
 		context.Background(),
 		rendererInput,
 		recipeLookup,
-		&renderHelm.HelmEngine{},
+		&renderHelmChart.HelmEngine{},
 	)
 	if err != nil {
 		t.Fatalf("Step 5 (render): %v", err)
