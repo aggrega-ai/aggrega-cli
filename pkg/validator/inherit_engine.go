@@ -57,7 +57,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("circular extends detected: %s already in chain", current.Extends),
 					Suggestion: "Remove the circular extends reference",
-					Err:        ErrInheritanceMerge,
+					Err:        ErrCyclicExtension,
 				}},
 			}
 		}
@@ -88,11 +88,15 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 		}
 	}
 
-	// Phase 2: unify CUE schemas from root ancestor → child
-	var unifiedCUE string
+	// Phase 2: verify CUE schemas unify without conflict, emit concatenated source.
+	// CUE's `&` semantics are preserved by concatenation — compiling the joined
+	// string is equivalent to pairwise unification, with the upside that downstream
+	// consumers (evaluateSchema, ValidatePillar) receive a real CUE source they can
+	// recompile without losing constraints (MarshalJSON would have dropped them).
 	ctx := cuecontext.New()
-	var cueVal = ctx.CompileString("{}")
+	cueVal := ctx.CompileString("{}")
 
+	var sourceParts []string
 	for i := len(chain) - 1; i >= 0; i-- {
 		if chain[i].CUE == "" {
 			continue
@@ -117,15 +121,34 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 				Errors:         translateCUEErrors(cueVal.Err(), entry.URI, ErrInheritanceMerge),
 			}
 		}
-	}
-
-	// Extract the unified CUE as a string for downstream consumption
-	if cueBytes, err := cueVal.MarshalJSON(); err == nil {
-		unifiedCUE = string(cueBytes)
+		sourceParts = append(sourceParts, chain[i].CUE)
 	}
 
 	return InheritanceResult{
 		MergedMetadata: mergedMeta,
-		UnifiedCUE:     unifiedCUE,
+		UnifiedCUE:     joinCUESources(sourceParts),
 	}
+}
+
+// joinCUESources concatenates CUE source fragments with a blank line between each.
+// CUE parses the joined document as pairwise unification.
+func joinCUESources(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	var total int
+	for _, p := range parts {
+		total += len(p) + 2
+	}
+	buf := make([]byte, 0, total)
+	for i, p := range parts {
+		if i > 0 {
+			buf = append(buf, '\n', '\n')
+		}
+		buf = append(buf, p...)
+	}
+	return string(buf)
 }

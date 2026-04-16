@@ -22,6 +22,7 @@ var (
 	ErrUnknownUsesSocket        = errors.New("unknown uses socket")
 	ErrSelfInjectForbidden      = errors.New("self-inject on component without spec.inject allowlist")
 	ErrInjectKeyCollision       = errors.New("duplicate delivery key across inject sources")
+	ErrSchemaValidation         = errors.New("cueSchema validation failed")
 )
 
 // ResolverError is a structured error with entity and field context.

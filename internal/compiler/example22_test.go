@@ -76,7 +76,7 @@ func runExample22(t *testing.T, variant string) *example22Result {
 	catalogLookup := cat.CatalogLookup()
 
 	// Step 1a: Guards — MUST pass for the end-to-end proof.
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup)
+	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
 	if len(guardErrs) > 0 {
 		for _, e := range guardErrs {
 			t.Errorf("guard: %s", e.Error())

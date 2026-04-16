@@ -22,9 +22,10 @@ type CatalogLookup struct {
 //  4. Credential label partition
 //  5. requiredFeatures completeness
 //  6. Release Feature merge
+//  7. cueSchema pillar validation (.values from Aggregate, .infra from Release boundary)
 //
 // All violations are collected — earlier guards do not mask later ones.
-func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
+func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra) []*ResolverError {
 	var errs []*ResolverError
 	errs = append(errs, guardUsesSocket(agg, catalog)...)
 	errs = append(errs, guardSelfInject(agg, catalog)...)
@@ -32,5 +33,6 @@ func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLook
 	errs = append(errs, guardCredentialPartition(agg, catalog)...)
 	errs = append(errs, guardRequiredFeatures(agg, release, catalog)...)
 	errs = append(errs, guardFeatureMerge(agg, release)...)
+	errs = append(errs, guardCueSchema(agg, catalog, boundaryInfra)...)
 	return errs
 }

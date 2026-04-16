@@ -16,16 +16,23 @@ import (
 // GenerateBaseUsesCueSchema builds a CUE schema string from a component/feature usesSchema map.
 // Each socket category becomes an optional struct in the uses pillar. If inject is allowlisted,
 // only those mechanisms are allowed; if omitted, inject is forbidden (Black-Box pattern).
+//
+// Each socket carries two CUE attribute tags for downstream tooling (policy engines,
+// inspection output): `@selector("<expr>")` with the original selector expression, and
+// `@inject("env,file")` when an allowlist is present. CUE attributes are metadata —
+// they don't affect validation; the selector itself is enforced by the analyzer
+// (Step 4 selector matcher), not here.
 func GenerateBaseUsesCueSchema(usesSchema map[string]types.UsesSchemaEntry) string {
 	if len(usesSchema) == 0 {
 		return ""
 	}
 
 	var b strings.Builder
-	b.WriteString("{\n")
-	b.WriteString("\tuses?: {\n")
+	// Emit as file-level `uses:` field declaration (not wrapped in extra braces)
+	// so `LookupPath("uses")` resolves to the close() struct. `close()` rejects
+	// socket names not declared in usesSchema.
+	b.WriteString("uses: close({\n")
 
-	// Sort keys for deterministic output
 	keys := make([]string, 0, len(usesSchema))
 	for k := range usesSchema {
 		keys = append(keys, k)
@@ -34,24 +41,30 @@ func GenerateBaseUsesCueSchema(usesSchema map[string]types.UsesSchemaEntry) stri
 
 	for _, socketName := range keys {
 		entry := usesSchema[socketName]
-		b.WriteString(fmt.Sprintf("\t\t%s?: {\n", socketName))
-		b.WriteString("\t\t\t[string]: {\n")
-		b.WriteString("\t\t\t\ttarget: string\n")
+		// Selector attribute: always present, even if the selector string is empty —
+		// the socket is still a declared topology slot. @inject attribute
+		// reflects the allowlist for downstream policy tooling (Black-Box when absent).
+		b.WriteString(fmt.Sprintf("\t%s?: {\n", socketName))
+		b.WriteString(fmt.Sprintf("\t\t@selector(%q)\n", entry.Selector))
+		if len(entry.Inject) > 0 {
+			b.WriteString(fmt.Sprintf("\t\t@inject(%q)\n", strings.Join(entry.Inject, ",")))
+		}
+		b.WriteString("\t\t[string]: {\n")
+		b.WriteString("\t\t\ttarget: string\n")
 
 		if len(entry.Inject) > 0 {
-			b.WriteString("\t\t\t\tinject?: {\n")
+			b.WriteString("\t\t\tinject?: {\n")
 			for _, mechanism := range entry.Inject {
-				b.WriteString(fmt.Sprintf("\t\t\t\t\t%s?: {[string]: string}\n", mechanism))
+				b.WriteString(fmt.Sprintf("\t\t\t\t%s?: {[string]: string}\n", mechanism))
 			}
-			b.WriteString("\t\t\t\t}\n")
+			b.WriteString("\t\t\t}\n")
 		}
 
-		b.WriteString("\t\t\t}\n")
 		b.WriteString("\t\t}\n")
+		b.WriteString("\t}\n")
 	}
 
-	b.WriteString("\t}\n")
-	b.WriteString("}\n")
+	b.WriteString("})\n")
 	return b.String()
 }
 

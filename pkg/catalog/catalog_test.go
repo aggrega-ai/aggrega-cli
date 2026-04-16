@@ -215,6 +215,66 @@ spec:
 	}
 }
 
+func TestResolveAllExtends_ComponentChain(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "base.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server/base
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  cueSchema: |
+    values: { port?: int & >=1024 }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "api.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server/api
+  version: "1.0.0"
+  labels:
+    tier: prod
+spec:
+  extends: core/server/base
+  cueSchema: |
+    values: { port?: int & <=65535 }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cat, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// Before resolution: child has only its own cueSchema.
+	if cat.Components["core/server/api"].Spec.CueSchema == "" {
+		t.Fatal("child component missing cueSchema before resolution")
+	}
+
+	errs := cat.ResolveAllExtends()
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	resolved := cat.Components["core/server/api"]
+	if resolved.Metadata.Labels["component.aggrega.ai/type"] != "server" {
+		t.Errorf("expected inherited type label, got %v", resolved.Metadata.Labels)
+	}
+	if resolved.Metadata.Labels["tier"] != "prod" {
+		t.Errorf("child tier label lost, got %v", resolved.Metadata.Labels)
+	}
+	// Both constraints present in unified schema
+	if !strings.Contains(resolved.Spec.CueSchema, ">=1024") || !strings.Contains(resolved.Spec.CueSchema, "<=65535") {
+		t.Errorf("unified schema missing constraints:\n%s", resolved.Spec.CueSchema)
+	}
+}
+
 func TestLoad_RelativeRecipeSourceResolvedToAbsPath(t *testing.T) {
 	t.Parallel()
 

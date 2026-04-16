@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -33,44 +32,22 @@ func runInspect(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
+	// Resolve extends chains so the printed cueSchema reflects inheritance.
+	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
+	}
+
 	comp, found := cat.Components[componentType]
 	if !found {
 		return fmt.Errorf("component %q not found in catalog", componentType)
 	}
 
-	// If component has extends, resolve inheritance chain
+	header := fmt.Sprintf("// Component: %s", componentType)
 	if comp.Spec.Extends != "" {
-		entry := validator.CatalogEntry{
-			URI:     comp.Metadata.Name,
-			Extends: comp.Spec.Extends,
-			CUE:     comp.Spec.CueSchema,
-		}
-		lookup := func(uri string) (validator.CatalogEntry, bool) {
-			c, ok := cat.Components[uri]
-			if !ok {
-				return validator.CatalogEntry{}, false
-			}
-			return validator.CatalogEntry{
-				URI:     c.Metadata.Name,
-				Extends: c.Spec.Extends,
-				CUE:     c.Spec.CueSchema,
-			}, true
-		}
-
-		result := validator.ResolveInheritance(entry, lookup)
-		if len(result.Errors) > 0 {
-			return fmt.Errorf("resolve inheritance for %q: %s", componentType, result.Errors[0].Error())
-		}
-
-		fmt.Printf("// Component: %s (resolved from inheritance chain)\n", componentType)
-		if result.UnifiedCUE != "" {
-			fmt.Println(result.UnifiedCUE)
-		}
-		return nil
+		header += " (resolved from inheritance chain)"
 	}
+	fmt.Println(header)
 
-	// No inheritance — print raw CUE schema
-	fmt.Printf("// Component: %s\n", componentType)
 	if comp.Spec.CueSchema != "" {
 		fmt.Println(comp.Spec.CueSchema)
 	} else if comp.Spec.CueSchemaRef != "" {

@@ -324,7 +324,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 		},
 	}
 
-	errs := RunGuards(agg, nil, testCatalog())
+	errs := RunGuards(agg, nil, testCatalog(), nil)
 	if len(errs) < 2 {
 		t.Fatalf("expected at least 2 violations (credential + required), got %d", len(errs))
 	}
@@ -348,7 +348,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 }
 
 func TestRunGuards_NilInputs(t *testing.T) {
-	errs := RunGuards(nil, nil, CatalogLookup{})
+	errs := RunGuards(nil, nil, CatalogLookup{}, nil)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for nil inputs, got %d", len(errs))
 	}

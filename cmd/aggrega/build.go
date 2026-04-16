@@ -49,6 +49,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
+	// Resolve extends inheritance for every Component and Feature so downstream
+	// guards/renderer see the fully-merged entity (inherited labels, secretNames,
+	// usesSchema, unified cueSchema).
+	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+		for _, e := range extErrs {
+			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+		}
+		return fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs))
+	}
+
 	// Step 1: Resolve
 	relData, err := os.ReadFile(releasePath)
 	if err != nil {
@@ -77,7 +87,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Run guards
 	catalogLookup := cat.CatalogLookup()
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup)
+	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
 	if len(guardErrs) > 0 {
 		for _, e := range guardErrs {
 			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)

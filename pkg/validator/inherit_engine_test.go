@@ -100,8 +100,8 @@ func TestResolveInheritance_CycleDetection(t *testing.T) {
 	if len(result.Errors) == 0 {
 		t.Fatal("expected cycle detection error")
 	}
-	if !errors.Is(result.Errors[0], ErrInheritanceMerge) {
-		t.Errorf("expected ErrInheritanceMerge, got %v", result.Errors[0].Err)
+	if !errors.Is(result.Errors[0], ErrCyclicExtension) {
+		t.Errorf("expected ErrCyclicExtension, got %v", result.Errors[0].Err)
 	}
 	if result.Errors[0].Constraint == "" {
 		t.Error("expected non-empty constraint message")

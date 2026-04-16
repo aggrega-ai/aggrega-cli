@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/cognitio/aggrega-cli/pkg/validator"
 	"gopkg.in/yaml.v3"
 )
 
@@ -133,6 +135,63 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
 	p, ok := c.Providers[name]
 	return p, ok
+}
+
+// ResolveAllExtends walks every Component and Feature in the catalog and resolves
+// its extends chain in-place: merged metadata, merged spec fields, unified CUE
+// schema. Must be called before the catalog is consumed by guards or the renderer
+// so downstream sees the fully-inherited entity. Deterministic via sorted-name
+// iteration. Collects and returns every validation error — does not short-circuit,
+// so one broken chain doesn't mask other problems.
+func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
+	var errs []*validator.ValidationError
+
+	compLookup := func(uri string) (types.Component, bool) {
+		comp, ok := c.Components[uri]
+		return comp, ok
+	}
+	featLookup := func(uri string) (types.Feature, bool) {
+		feat, ok := c.Features[uri]
+		return feat, ok
+	}
+
+	compKeys := make([]string, 0, len(c.Components))
+	for k := range c.Components {
+		compKeys = append(compKeys, k)
+	}
+	sort.Strings(compKeys)
+	for _, name := range compKeys {
+		comp := c.Components[name]
+		if comp.Spec.Extends == "" {
+			continue
+		}
+		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
+		if len(vErrs) > 0 {
+			errs = append(errs, vErrs...)
+			continue
+		}
+		c.Components[name] = resolved
+	}
+
+	featKeys := make([]string, 0, len(c.Features))
+	for k := range c.Features {
+		featKeys = append(featKeys, k)
+	}
+	sort.Strings(featKeys)
+	for _, name := range featKeys {
+		feat := c.Features[name]
+		if feat.Spec.Extends == "" {
+			continue
+		}
+		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)
+		if len(vErrs) > 0 {
+			errs = append(errs, vErrs...)
+			continue
+		}
+		c.Features[name] = resolved
+	}
+
+	return errs
 }
 
 // CatalogLookup returns resolver-compatible lookup callbacks.

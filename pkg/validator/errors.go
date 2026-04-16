@@ -12,6 +12,7 @@ import (
 var (
 	ErrSchemaValidation      = errors.New("schema validation failed")
 	ErrInheritanceMerge      = errors.New("inheritance merge failed")
+	ErrCyclicExtension       = errors.New("cyclic extends chain")
 	ErrUsesSchemaUnification = errors.New("usesSchema unification failed")
 )
 

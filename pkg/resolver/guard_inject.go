@@ -5,8 +5,11 @@ package resolver
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
 
 // guardInjectKeys validates that every inject block's "from" key references
@@ -52,22 +55,118 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 }
 
 func validateInjectBlock(entity, fieldPath string, inject types.InjectBlock, targetType string, catalog CatalogLookup) []*ResolverError {
-	// Look up the target component to get its provides keys
 	comp, found := catalog.Component(targetType)
 	if !found {
-		// If catalog lookup fails, skip inject validation (catalog may not be loaded yet)
+		// Unknown type is another guard's concern; skip here.
 		return nil
 	}
 
-	// Extract provides keys from the component's CUE schema
-	// For now, we check against the component's spec — full CUE provides extraction
-	// will be added when the CUE provides parser is implemented
-	_ = comp
-	_ = inject
+	providesKeys, extractErrs := validator.ExtractProvidesKeys(comp.Spec.CueSchema)
+	if len(extractErrs) > 0 {
+		// cueSchema compiles with errors — surface once per inject block but don't
+		// mask downstream inject-key issues (which we can't validate without the schema).
+		return []*ResolverError{{
+			Entity:  entity,
+			Field:   fieldPath + ".cueSchema",
+			Message: extractErrs[0].Constraint,
+			Err:     ErrInvalidInjectKey,
+		}}
+	}
+	if len(providesKeys) == 0 {
+		// Target has no provides pillar — nothing to reference.
+		return nil
+	}
+	validSet := make(map[string]bool, len(providesKeys))
+	for _, k := range providesKeys {
+		validSet[k] = true
+	}
 
-	// TODO: Parse provides keys from comp.Spec.CueSchema and validate inject.from keys
-	// This requires a CUE parser for the provides pillar, which will be implemented
-	// as part of the Step 1 CUE integration. For now, the guard structure is in place.
+	var errs []*ResolverError
+	for _, pair := range injectMechanisms(inject) {
+		errs = append(errs, validateMechanismFromKeys(entity, fieldPath, pair.mech, pair.raw, validSet, providesKeys)...)
+	}
+	return errs
+}
 
-	return nil
+type mechanismRaw struct {
+	mech string
+	raw  interface{}
+}
+
+// injectMechanisms returns the known inject mechanisms (env/file/arg + additional)
+// in sorted order for deterministic error output.
+func injectMechanisms(inject types.InjectBlock) []mechanismRaw {
+	out := []mechanismRaw{
+		{"arg", inject.Arg}, // sorted alphabetically
+		{"env", inject.Env},
+		{"file", inject.File},
+	}
+	additionalNames := make([]string, 0, len(inject.Additional))
+	for k := range inject.Additional {
+		additionalNames = append(additionalNames, k)
+	}
+	sort.Strings(additionalNames)
+	for _, k := range additionalNames {
+		out = append(out, mechanismRaw{k, inject.Additional[k]})
+	}
+	return out
+}
+
+// validateMechanismFromKeys walks one mechanism's raw inject entries, extracts
+// each entry's from-key, and validates that the from-key exists in validSet.
+// Entries that look like literals (value, not from) are skipped.
+func validateMechanismFromKeys(entity, fieldPath, mech string, raw interface{}, validSet map[string]bool, validKeys []string) []*ResolverError {
+	from := extractInjectFromKeys(raw)
+	if len(from) == 0 {
+		return nil
+	}
+
+	var errs []*ResolverError
+	localKeys := make([]string, 0, len(from))
+	for k := range from {
+		localKeys = append(localKeys, k)
+	}
+	sort.Strings(localKeys)
+
+	for _, localKey := range localKeys {
+		fromKey := from[localKey]
+		if fromKey == "" || validSet[fromKey] {
+			continue
+		}
+		errs = append(errs, &ResolverError{
+			Entity:  entity,
+			Field:   fmt.Sprintf("%s.%s.%s", fieldPath, mech, localKey),
+			Message: fmt.Sprintf("from-key %q does not match any provides key on target; valid keys: %s", fromKey, strings.Join(validKeys, ", ")),
+			Err:     ErrInvalidInjectKey,
+		})
+	}
+	return errs
+}
+
+// extractInjectFromKeys normalizes compact ({DB_URL: "host"}) and verbose
+// ({DB_URL: {from: "host"}}) inject forms into {localKey: fromKey}. Empty
+// fromKey means the entry is a literal value (verbose with "value:" only) and
+// is skipped by the validator above.
+func extractInjectFromKeys(raw interface{}) map[string]string {
+	out := map[string]string{}
+	switch v := raw.(type) {
+	case map[string]string:
+		for k, val := range v {
+			out[k] = val
+		}
+	case map[string]interface{}:
+		for k, val := range v {
+			switch vv := val.(type) {
+			case string:
+				out[k] = vv
+			case map[string]interface{}:
+				if fromStr, ok := vv["from"]; ok {
+					if s, sok := fromStr.(string); sok {
+						out[k] = s
+					}
+				}
+			}
+		}
+	}
+	return out
 }
