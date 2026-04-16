@@ -5,7 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: helm
-  implements: core/web-ui
+  implements: core/server/web-ui
   source: ./charts/web-ui
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"

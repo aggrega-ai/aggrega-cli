@@ -18,7 +18,7 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
 				"api": {
-					Component:          "core/api-server",
+					Component:          "core/server/api-server",
 					Labels:             map[string]string{types.ComponentTypeLabel: "server"},
 					ResolvedVersion:    "1.0.0",
 					BoundaryPath:       "local/default",
@@ -26,7 +26,7 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 					ReleaseAnnotations: map[string]string{"env": "local"},
 				},
 				"db": {
-					Component:       "core/postgres",
+					Component:       "core/database/postgres",
 					Labels:          map[string]string{types.ComponentTypeLabel: "stateful-server"},
 					ResolvedVersion: "2.0.0",
 				},

@@ -24,7 +24,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 			Metadata: types.IRMetadata{AggregateName: "test"},
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
-					"api": {Component: "core/api-server"},
+					"api": {Component: "core/server/api-server"},
 				},
 			},
 		},
@@ -62,7 +62,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 			Metadata: types.IRMetadata{AggregateName: "test"},
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
-					"api": {Component: "core/api-server", BoundaryPath: "local"},
+					"api": {Component: "core/server/api-server", BoundaryPath: "local"},
 				},
 				Edges: []types.IREdge{
 					{Source: "api", Target: "db", Socket: "databases", Alias: "main-db",
@@ -81,19 +81,19 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 		},
 	}
 	// Add db node for provides
-	input.Graph.Spec.Nodes["db"] = types.IRNode{Component: "core/postgres"}
+	input.Graph.Spec.Nodes["db"] = types.IRNode{Component: "core/database/postgres"}
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(ct string) (*types.Recipe, bool) {
 			switch ct {
-			case "core/api-server":
+			case "core/server/api-server":
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						ValuesMapping: `{"image": "api:latest", "environment": {"DB_URL": "{{ .context.inject.env.DB_URL }}"}}`,
 					},
 				}, true
-			case "core/postgres":
+			case "core/database/postgres":
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
@@ -145,7 +145,7 @@ func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {
-						Component:       "core/api-server",
+						Component:       "core/server/api-server",
 						Labels:          map[string]string{"component.aggrega.ai/type": "server"},
 						BoundaryPath:    "prod/eks",
 						ResolvedVersion: "1.0.0",
@@ -213,7 +213,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {
-						Component:    "core/api-server",
+						Component:    "core/server/api-server",
 						Labels:       map[string]string{"component.aggrega.ai/type": "server"},
 						BoundaryPath: "local",
 					},

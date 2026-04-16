@@ -42,7 +42,7 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/api-server"},
+			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {

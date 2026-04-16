@@ -21,7 +21,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Components) != 1 {
 		t.Errorf("expected 1 component, got %d", len(c.Components))
 	}
-	if _, ok := c.Components["core/api-server"]; !ok {
+	if _, ok := c.Components["core/server/api-server"]; !ok {
 		t.Error("missing core/api-server component")
 	}
 
@@ -35,7 +35,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Recipes) != 1 {
 		t.Errorf("expected 1 recipe, got %d", len(c.Recipes))
 	}
-	if _, ok := c.Recipes["core/api-server"]; !ok {
+	if _, ok := c.Recipes["core/server/api-server"]; !ok {
 		t.Error("missing recipe implementing core/api-server")
 	}
 
@@ -90,7 +90,7 @@ func TestLoad_CatalogLookup(t *testing.T) {
 
 	lookup := c.CatalogLookup()
 
-	comp, found := lookup.Component("core/api-server")
+	comp, found := lookup.Component("core/server/api-server")
 	if !found {
 		t.Fatal("expected to find core/api-server")
 	}
@@ -122,7 +122,7 @@ func TestLoad_RecipeLookup(t *testing.T) {
 
 	lookup := c.RecipeLookup()
 
-	r, found := lookup.Recipe("core/api-server")
+	r, found := lookup.Recipe("core/server/api-server")
 	if !found {
 		t.Fatal("expected to find recipe for core/api-server")
 	}

@@ -1,4 +1,4 @@
 apiVersion: v2
 name: web-ui
 version: 0.1.0
-description: Example22 sourced chart for core/web-ui.
+description: Example22 sourced chart for core/server/web-ui.

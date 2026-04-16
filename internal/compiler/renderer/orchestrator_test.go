@@ -32,7 +32,7 @@ func testInput() renderer.RendererInput {
 			Spec: types.IRSpec{
 				Nodes: map[string]types.IRNode{
 					"api": {
-						Component:       "core/api-server",
+						Component:       "core/server/api-server",
 						Labels:          map[string]string{"component.aggrega.ai/type": "server"},
 						ResolvedVersion: "1.0.0",
 						BoundaryPath:    "local/default",
@@ -59,12 +59,12 @@ func testInput() renderer.RendererInput {
 func testRecipeLookup() renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe: func(componentType string) (*types.Recipe, bool) {
-			if componentType == "core/api-server" {
+			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
-						Implements: "core/api-server",
+						Implements: "core/server/api-server",
 						Provides: map[string]string{
 							"host":         `{{ .context.instance_id }}.svc.cluster.local`,
 							"service_port": `8080`,
@@ -109,7 +109,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 
 	input := testInput()
 	input.Graph.Spec.Nodes["db"] = types.IRNode{
-		Component: "core/postgres",
+		Component: "core/database/postgres",
 		Labels:    map[string]string{"component.aggrega.ai/type": "stateful-server"},
 	}
 	input.Graph.Spec.Edges = []types.IREdge{
@@ -120,14 +120,14 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 	lookup := renderer.RecipeLookup{
 		Recipe: func(componentType string) (*types.Recipe, bool) {
 			switch componentType {
-			case "core/api-server":
+			case "core/server/api-server":
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						ValuesMapping: `{"image": "api:latest", "environment": {"DB_HOST": "{{ .context.inject.env.DB_HOST }}"}}`,
 					},
 				}, true
-			case "core/postgres":
+			case "core/database/postgres":
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
@@ -195,7 +195,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 
 	input := testInput()
 	input.Graph.Spec.Nodes["z-worker"] = types.IRNode{Component: "core/worker"}
-	input.Graph.Spec.Nodes["a-db"] = types.IRNode{Component: "core/postgres"}
+	input.Graph.Spec.Nodes["a-db"] = types.IRNode{Component: "core/database/postgres"}
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(string) (*types.Recipe, bool) {

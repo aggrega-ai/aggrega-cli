@@ -19,10 +19,10 @@ func integrationCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/api-server":
+			case "core/server/api-server":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/api-server",
+						Name:    "core/server/api-server",
 						Version: "1.0.0",
 						Labels:  map[string]string{types.ComponentTypeLabel: "server"},
 					},
@@ -33,10 +33,10 @@ func integrationCatalog() resolver.CatalogLookup {
 						},
 					},
 				}, true
-			case "core/postgres":
+			case "core/database/postgres":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/postgres",
+						Name:    "core/database/postgres",
 						Version: "2.0.0",
 						Labels:  map[string]string{types.ComponentTypeLabel: "stateful-server"},
 					},
@@ -149,8 +149,8 @@ func TestPipeline_SimpleTopology(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "simple-app", Version: "1.0.0"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"api":     {Type: "core/api-server", Uses: map[string]interface{}{"databases": []interface{}{"main-db"}}},
-				"main-db": {Type: "core/postgres"},
+				"api":     {Type: "core/server/api-server", Uses: map[string]interface{}{"databases": []interface{}{"main-db"}}},
+				"main-db": {Type: "core/database/postgres"},
 			},
 		},
 	}
@@ -179,7 +179,7 @@ func TestPipeline_PolymorphicUses(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Uses: map[string]interface{}{
 						"databases": map[string]interface{}{
 							"hr-db": map[string]interface{}{
@@ -191,7 +191,7 @@ func TestPipeline_PolymorphicUses(t *testing.T) {
 						},
 					},
 				},
-				"main-db": {Type: "core/postgres"},
+				"main-db": {Type: "core/database/postgres"},
 			},
 		},
 	}
@@ -217,7 +217,7 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "data-module"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"child-db": {Type: "core/postgres"},
+				"child-db": {Type: "core/database/postgres"},
 			},
 			ExportedComponents: map[string]string{"db": "child-db"},
 		},
@@ -227,7 +227,7 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "root-app"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"api": {Type: "core/api-server", Uses: map[string]interface{}{"databases": []interface{}{"data-mod.child-db"}}},
+				"api": {Type: "core/server/api-server", Uses: map[string]interface{}{"databases": []interface{}{"data-mod.child-db"}}},
 			},
 			Aggregates: map[string]types.SubAggregate{
 				"data-mod": {Type: "modules/data-layer"},
@@ -296,7 +296,7 @@ func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Features: map[string]types.FeatureInstance{
 						"mon": {
 							Type: "core/monitoring",
@@ -330,7 +330,7 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Features: map[string]types.FeatureInstance{
 						"mon": {Type: "core/monitoring", Values: map[string]interface{}{"level": "warn"}},
 					},
@@ -379,7 +379,7 @@ func TestPipeline_SelectorViolation(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "bad-app"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"api":   {Type: "core/api-server", Uses: map[string]interface{}{"databases": []interface{}{"cache"}}},
+				"api":   {Type: "core/server/api-server", Uses: map[string]interface{}{"databases": []interface{}{"cache"}}},
 				"cache": {Type: "core/redis"}, // resource, not stateful-server
 			},
 		},
@@ -404,7 +404,7 @@ func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Features: map[string]types.FeatureInstance{
 						"feat": {Type: "type-a", Values: map[string]interface{}{"x": 1}},
 					},
@@ -446,10 +446,10 @@ func TestPipeline_DeterministicOutput(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "det-app"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"z-svc": {Type: "core/api-server", Uses: map[string]interface{}{"databases": []interface{}{"db"}}},
-				"a-svc": {Type: "core/api-server", Uses: map[string]interface{}{"databases": []interface{}{"db"}}},
-				"m-svc": {Type: "core/api-server", Uses: map[string]interface{}{"databases": []interface{}{"db"}}},
-				"db":    {Type: "core/postgres"},
+				"z-svc": {Type: "core/server/api-server", Uses: map[string]interface{}{"databases": []interface{}{"db"}}},
+				"a-svc": {Type: "core/server/api-server", Uses: map[string]interface{}{"databases": []interface{}{"db"}}},
+				"m-svc": {Type: "core/server/api-server", Uses: map[string]interface{}{"databases": []interface{}{"db"}}},
+				"db":    {Type: "core/database/postgres"},
 			},
 		},
 	}

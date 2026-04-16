@@ -15,10 +15,10 @@ func testCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/api-server":
+			case "core/server/api-server":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/api-server",
+						Name:    "core/server/api-server",
 						Version: "1.0.0",
 						Labels:  map[string]string{types.ComponentTypeLabel: "server"},
 						Annotations: map[string]string{
@@ -26,10 +26,10 @@ func testCatalog() resolver.CatalogLookup {
 						},
 					},
 				}, true
-			case "core/postgres":
+			case "core/database/postgres":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/postgres",
+						Name:    "core/database/postgres",
 						Version: "2.0.0",
 						Labels:  map[string]string{types.ComponentTypeLabel: "stateful-server"},
 					},
@@ -57,8 +57,8 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"api":     {InstanceID: "api", ComponentType: "core/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}, Values: map[string]interface{}{"port": 8080}},
-			"main-db": {InstanceID: "main-db", ComponentType: "core/postgres", Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"}},
+			"api":     {InstanceID: "api", ComponentType: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}, Values: map[string]interface{}{"port": 8080}},
+			"main-db": {InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"}},
 		},
 		Edges: []topology.NormalizedEdge{
 			{Source: "api", Target: "main-db", Socket: "databases", Alias: "main-db"},
@@ -101,7 +101,7 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	if apiNode.ResolvedVersion != "1.0.0" {
 		t.Errorf("api resolved version: %q", apiNode.ResolvedVersion)
 	}
-	if apiNode.Component != "core/api-server" {
+	if apiNode.Component != "core/server/api-server" {
 		t.Errorf("api component: %q", apiNode.Component)
 	}
 
@@ -154,7 +154,7 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
+			"api": {InstanceID: "api", ComponentType: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
 		},
 		Edges: nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
@@ -217,8 +217,8 @@ func TestBuildIR_SyncWave(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"db":  {InstanceID: "db", ComponentType: "core/postgres"},
-			"api": {InstanceID: "api", ComponentType: "core/api-server"},
+			"db":  {InstanceID: "db", ComponentType: "core/database/postgres"},
+			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
 		},
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
@@ -260,7 +260,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/api-server"},
+			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
 		},
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},

@@ -9,14 +9,14 @@ spec:
       type: db-module
   components:
     backend:
-      type: core/api-server
+      type: core/server/api-server
       values:
         port: 8082
       uses:
         databases:
           - data.main-db
     frontend:
-      type: core/web-ui
+      type: core/server/web-ui
       values:
         port: 3003
       uses:

@@ -55,7 +55,7 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"db": {Component: "core/postgres"},
+				"db": {Component: "core/database/postgres"},
 			},
 		},
 	}

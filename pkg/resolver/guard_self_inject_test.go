@@ -19,9 +19,9 @@ func selfInjectCatalog() CatalogLookup {
 					Metadata: types.ComponentMetadata{Name: "core/web-server"},
 					Spec:     types.ComponentSpec{Inject: []string{"env", "file"}},
 				}, true
-			case "core/postgres": // Black-Box: no spec.inject
+			case "core/database/postgres": // Black-Box: no spec.inject
 				return types.Component{
-					Metadata: types.ComponentMetadata{Name: "core/postgres"},
+					Metadata: types.ComponentMetadata{Name: "core/database/postgres"},
 					Spec:     types.ComponentSpec{},
 				}, true
 			default:
@@ -61,7 +61,7 @@ func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"db": {
-					Type:   "core/postgres",
+					Type:   "core/database/postgres",
 					Inject: &types.InjectBlock{Env: map[string]interface{}{"X": "1"}},
 				},
 			},
@@ -145,7 +145,7 @@ func TestGuardSelfInject_NoInjectNilPasses(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"db": {Type: "core/postgres"}, // no inject
+				"db": {Type: "core/database/postgres"}, // no inject
 			},
 		},
 	}

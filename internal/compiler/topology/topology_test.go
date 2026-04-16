@@ -18,13 +18,13 @@ func TestBuild_SimpleTopology(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Uses: map[string]interface{}{
 						"databases": []interface{}{"main-db"},
 					},
 				},
 				"main-db": {
-					Type: "core/postgres",
+					Type: "core/database/postgres",
 				},
 			},
 		},
@@ -33,17 +33,17 @@ func TestBuild_SimpleTopology(t *testing.T) {
 	catalog := resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/api-server":
+			case "core/server/api-server":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/api-server",
+						Name:   "core/server/api-server",
 						Labels: map[string]string{types.ComponentTypeLabel: "server"},
 					},
 				}, true
-			case "core/postgres":
+			case "core/database/postgres":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/postgres",
+						Name:   "core/database/postgres",
 						Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"},
 					},
 				}, true
@@ -128,7 +128,7 @@ func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Features: map[string]types.FeatureInstance{
 						"monitoring": {
 							Type: "core/monitoring",
@@ -139,7 +139,7 @@ func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 					},
 				},
 				"metrics-db": {
-					Type: "core/postgres",
+					Type: "core/database/postgres",
 				},
 			},
 		},
@@ -169,7 +169,7 @@ func TestBuild_BoundaryPath(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"api": {Type: "core/api-server"},
+				"api": {Type: "core/server/api-server"},
 			},
 		},
 	}

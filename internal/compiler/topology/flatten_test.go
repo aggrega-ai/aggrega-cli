@@ -18,7 +18,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"api":    {Type: "core/api-server"},
+				"api":    {Type: "core/server/api-server"},
 				"worker": {Type: "core/worker"},
 			},
 		},
@@ -34,7 +34,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 	if result.Nodes["api"] == nil || result.Nodes["worker"] == nil {
 		t.Error("expected api and worker nodes")
 	}
-	if result.Nodes["api"].ComponentType != "core/api-server" {
+	if result.Nodes["api"].ComponentType != "core/server/api-server" {
 		t.Errorf("api type: %q", result.Nodes["api"].ComponentType)
 	}
 }
@@ -48,7 +48,7 @@ func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 			Subsystems: map[string]types.Subsystem{
 				"data-layer": {
 					Components: map[string]types.ComponentInstance{
-						"main-db": {Type: "core/postgres"},
+						"main-db": {Type: "core/database/postgres"},
 					},
 				},
 			},
@@ -78,7 +78,7 @@ func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 					Subsystems: map[string]types.Subsystem{
 						"inner": {
 							Components: map[string]types.ComponentInstance{
-								"deep-db": {Type: "core/postgres"},
+								"deep-db": {Type: "core/database/postgres"},
 							},
 						},
 					},
@@ -106,7 +106,7 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "child-module"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"child-db": {Type: "core/postgres"},
+				"child-db": {Type: "core/database/postgres"},
 			},
 			ExportedComponents: map[string]string{
 				"db": "child-db",
@@ -118,7 +118,7 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 		Metadata: types.AggregateMetadata{Name: "root"},
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
-				"api": {Type: "core/api-server"},
+				"api": {Type: "core/server/api-server"},
 			},
 			Aggregates: map[string]types.SubAggregate{
 				"data-module": {Type: "modules/data-layer"},
@@ -200,7 +200,7 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 		Spec: types.AggregateSpec{
 			Components: map[string]types.ComponentInstance{
 				"api": {
-					Type: "core/api-server",
+					Type: "core/server/api-server",
 					Features: map[string]types.FeatureInstance{
 						"monitoring": {Type: "core/monitoring"},
 					},

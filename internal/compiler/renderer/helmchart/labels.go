@@ -16,7 +16,6 @@ func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":      nodeCtx.NodeID,
 		"aggrega.ai/component-id":     nodeCtx.NodeID,
-		"aggrega.ai/component-type":   nodeCtx.Component,
 	}
 	if nodeCtx.BoundaryPath != "" {
 		labels["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath

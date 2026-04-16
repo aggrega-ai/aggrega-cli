@@ -14,10 +14,10 @@ func analyzerCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/api-server":
+			case "core/server/api-server":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/api-server",
+						Name:   "core/server/api-server",
 						Labels: map[string]string{types.ComponentTypeLabel: "server"},
 					},
 					Spec: types.ComponentSpec{
@@ -26,10 +26,10 @@ func analyzerCatalog() resolver.CatalogLookup {
 						},
 					},
 				}, true
-			case "core/postgres":
+			case "core/database/postgres":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/postgres",
+						Name:   "core/database/postgres",
 						Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"},
 					},
 				}, true
@@ -56,8 +56,8 @@ func TestAnalyze_SelectorPass(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"api":     {Component: "core/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
-				"main-db": {Component: "core/postgres", Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"}},
+				"api":     {Component: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
+				"main-db": {Component: "core/database/postgres", Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"}},
 			},
 			Edges: []types.IREdge{
 				{Source: "api", Target: "main-db", Socket: "databases"},
@@ -77,7 +77,7 @@ func TestAnalyze_SelectorFail(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"api":   {Component: "core/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
+				"api":   {Component: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
 				"cache": {Component: "core/redis", Labels: map[string]string{types.ComponentTypeLabel: "resource"}},
 			},
 			Edges: []types.IREdge{
@@ -105,9 +105,9 @@ func TestAnalyze_PathsCalculated(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"gateway": {Component: "core/api-server"},
-				"api":     {Component: "core/api-server"},
-				"db":      {Component: "core/postgres"},
+				"gateway": {Component: "core/server/api-server"},
+				"api":     {Component: "core/server/api-server"},
+				"db":      {Component: "core/database/postgres"},
 			},
 			Edges: []types.IREdge{
 				{Source: "api", Target: "db", Socket: "databases"},
@@ -141,7 +141,7 @@ func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
 			Nodes: map[string]types.IRNode{
-				"api": {Component: "core/api-server", ResolvedVersion: "1.0.0", Labels: map[string]string{"a": "b"}},
+				"api": {Component: "core/server/api-server", ResolvedVersion: "1.0.0", Labels: map[string]string{"a": "b"}},
 			},
 			Edges: nil,
 		},
@@ -155,7 +155,7 @@ func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 		t.Errorf("expected 1 policy node, got %d", len(result.PolicyInput.Graph.Nodes))
 	}
 	pn := result.PolicyInput.Graph.Nodes["api"]
-	if pn.Component != "core/api-server" || pn.ResolvedVersion != "1.0.0" {
+	if pn.Component != "core/server/api-server" || pn.ResolvedVersion != "1.0.0" {
 		t.Errorf("policy node: %+v", pn)
 	}
 }

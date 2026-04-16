@@ -15,7 +15,7 @@ func testNodeCtx() renderer.NodeRenderContext {
 	return renderer.NodeRenderContext{
 		NodeID:    "api-server",
 		Labels:    map[string]string{"component.aggrega.ai/type": "server"},
-		Component: "core/api-server",
+		Component: "core/server/api-server",
 		BoundaryPath: "aws-prod/eks-main",
 		Provenance: renderer.ProvenanceContext{
 			CompilerVersion:  "0.1.0",
@@ -95,7 +95,6 @@ func TestHelmEngine_Render_AggreraLabels(t *testing.T) {
 	// aggrega.ai/* labels
 	checks := []string{
 		"aggrega.ai/component-id: api-server",
-		"aggrega.ai/component-type: core/api-server",
 		"aggrega.ai/boundary-path: aws-prod/eks-main",
 		"aggrega.ai/compiler-version: 0.1.0",
 		"aggrega.ai/aggregate-name: test-app",

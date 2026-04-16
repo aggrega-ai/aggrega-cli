@@ -5,7 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: helm-chart
-  implements: core/api-server
+  implements: core/server/api-server
   source: ./charts/api-server
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
