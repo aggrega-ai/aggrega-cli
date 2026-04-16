@@ -133,6 +133,33 @@ func TestHelmEngine_Sourced_RendersChart(t *testing.T) {
 	}
 }
 
+func TestHelmEngine_Sourced_CarriesAggreraLabels(t *testing.T) {
+	t.Parallel()
+	// Sourced-mode chart output must carry aggrega.ai/* provenance labels —
+	// sourceless mode injects them during generation; sourced mode post-processes.
+	eng := &helm.HelmEngine{}
+	values := map[string]interface{}{"image": "api:2.0.0"}
+	files, err := eng.Render(context.Background(), values, nodeCtx("api", "testdata/minimal-chart"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var dep string
+	for k, v := range files {
+		if strings.Contains(k, "deployment.yaml") {
+			dep = string(v)
+		}
+	}
+	if dep == "" {
+		t.Fatal("no deployment.yaml")
+	}
+	if !strings.Contains(dep, "aggrega.ai/aggregate-name: t") {
+		t.Errorf("missing aggrega.ai/aggregate-name label:\n%s", dep)
+	}
+	if !strings.Contains(dep, "aggrega.ai/component-id: api") {
+		t.Errorf("missing aggrega.ai/component-id label:\n%s", dep)
+	}
+}
+
 func keys(m map[string][]byte) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

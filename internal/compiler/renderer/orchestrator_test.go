@@ -185,8 +185,15 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 	if len(result.Warnings) == 0 {
 		t.Error("expected Phase C pipeline warning")
 	}
-	if !strings.Contains(result.Warnings[0], "not executed") {
-		t.Errorf("warning: %s", result.Warnings[0])
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "not executed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("missing pipeline warning in %v", result.Warnings)
 	}
 }
 
@@ -435,6 +442,44 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 	// .inject top-level was built from the IR secret entry's inject block
 	if !strings.Contains(body, "BINDING") || !strings.Contains(body, "ref:root_password") {
 		t.Errorf("expected .inject.env.DB_PASSWORD=ref:root_password in rendered manifest, got:\n%s", body)
+	}
+}
+
+func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	// Values has {port: 8080} from testInput(); add an unused infra knob.
+	input.Graph.Spec.InfraMapping = map[string]json.RawMessage{
+		"api": json.RawMessage(`{"replicas":3}`),
+	}
+
+	// valuesMapping reads ONLY .values.port — ignores .infra.replicas.
+	lookup := renderer.RecipeLookup{
+		Recipe: func(string) (*types.Recipe, bool) {
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "ghost-recipe"},
+				Spec: types.RecipeSpec{
+					ValuesMapping: `{"image": "app:latest", "port": {{ .values.port }}}`,
+				},
+			}, true
+		},
+		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var gotInfra bool
+	for _, w := range result.Warnings {
+		if strings.Contains(w, ".infra") && strings.Contains(w, "replicas") {
+			gotInfra = true
+		}
+	}
+	if !gotInfra {
+		t.Errorf("expected a ghost warning for unused .infra.replicas, got: %v", result.Warnings)
 	}
 }
 

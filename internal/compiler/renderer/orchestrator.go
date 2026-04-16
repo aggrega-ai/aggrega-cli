@@ -114,6 +114,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		tmplCtx.Locals = resolvedLocals
 
+		// Evaluate Recipe.Source as a template (strings or structured) so authors
+		// can parameterise chart version / path / registry per boundary. Sees the
+		// same self-contained context as locals (values/infra/provides only).
+		// Copy the Recipe locally — never mutate the catalog's version.
+		if recipe != nil && recipe.Spec.Source != nil {
+			resolvedSource, err := EvaluateRecipeSource(
+				recipe.Spec.Source, nodeID, tmplCtx.Values, tmplCtx.Infra, allProvides[nodeID],
+			)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			}
+			localRecipe := *recipe
+			localRecipe.Spec.Source = resolvedSource
+			recipe = &localRecipe
+		}
+
 		// Phase A: injectMapping from FeatureRecipes in Onion Model order
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
 		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
@@ -124,6 +140,25 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		values, err := ExecutePhaseB(tmplCtx, recipe)
 		if err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+		}
+
+		// Ghost Infrastructure: compare valuesMapping template references against
+		// the keys actually in .values / .infra — unused keys emit a warning so
+		// catalog authors notice when a Release infra knob is never consumed.
+		// Skip file-based templates (too large; defer) and nil recipes.
+		if recipe != nil && recipe.Spec.ValuesMapping != "" {
+			if refs, parseErr := CollectTemplateFieldAccesses(recipe.Spec.ValuesMapping); parseErr == nil {
+				for _, k := range UnreadKeys(refs, ".values", tmplCtx.Values) {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("node %q: unused .values key %q (not referenced by valuesMapping of recipe %q)",
+							nodeID, k, recipe.Metadata.Name))
+				}
+				for _, k := range UnreadKeys(refs, ".infra", tmplCtx.Infra) {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("node %q: unused .infra key %q (not referenced by valuesMapping of recipe %q)",
+							nodeID, k, recipe.Metadata.Name))
+				}
+			}
 		}
 
 		// Sourceless baseSchema validation: if the Recipe has no source and a ProviderLookup

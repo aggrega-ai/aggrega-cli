@@ -64,7 +64,10 @@ func renderSourced(
 	}
 
 	// rendered is map[path]string. Path format: "<chart>/templates/<file>.yaml".
-	// Flatten with nodeID prefix for output determinism.
+	// Flatten with nodeID prefix for output determinism. Each rendered document
+	// is post-processed to merge aggrega.ai/* provenance labels into
+	// metadata.labels so sourced mode matches sourceless-mode's labeling.
+	aggreraLabels := buildAggreraLabels(nodeCtx)
 	out := make(map[string][]byte, len(rendered))
 	keys := make([]string, 0, len(rendered))
 	for k := range rendered {
@@ -83,8 +86,12 @@ func renderSourced(
 		if strings.HasPrefix(base, "_") {
 			continue
 		}
+		labeled, err := injectAggreraLabels([]byte(content+"\n"), aggreraLabels)
+		if err != nil {
+			return nil, fmt.Errorf("helm: node %q: inject labels into %q: %w", nodeCtx.NodeID, base, err)
+		}
 		outKey := nodeCtx.NodeID + "-" + base
-		out[outKey] = []byte(content + "\n")
+		out[outKey] = labeled
 	}
 
 	return out, nil
