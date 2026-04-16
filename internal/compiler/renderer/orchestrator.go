@@ -105,6 +105,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}
 
+		// Phase B preamble: evaluate Recipe .locals (self-contained; sees values/infra/provides).
+		resolvedLocals, err := EvaluateRecipeLocals(
+			recipe, nodeID, tmplCtx.Values, tmplCtx.Infra, allProvides[nodeID],
+		)
+		if err != nil {
+			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+		}
+		tmplCtx.Locals = resolvedLocals
+
 		// Phase A: injectMapping from FeatureRecipes in Onion Model order
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
 		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
@@ -163,7 +172,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			boundaries[bp] = &pendingBoundary{files: map[string]map[string][]byte{}}
 			orderedBoundaries = append(orderedBoundaries, bp)
 		}
-		boundaries[bp].files[nodeID] = files
+		nodeFileMap := make(map[string][]byte, len(files))
+		for p, c := range files {
+			nodeFileMap[p] = c
+		}
+		boundaries[bp].files[nodeID] = nodeFileMap
 		boundaries[bp].subCharts = append(boundaries[bp].subCharts, SubChartInfo{
 			InstanceID: nodeID,
 			Version:    node.ResolvedVersion,
@@ -173,6 +186,60 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if boundaries[bp].composer == nil {
 			if c, ok := engine.(BoundaryComposer); ok {
 				boundaries[bp].composer = c
+			}
+		}
+
+		// Phase B.5: FeatureRecipe Resource Generation.
+		// For each attached FR that carries source or valuesMapping (resource-generating,
+		// i.e. not inject-only), in Onion Model order: evaluate FR locals as templates,
+		// build feature-scoped context, evaluate FR valuesMapping, dispatch to the engine
+		// named by the FR's own provider, and append output files under features/<instance>/.
+		for _, ref := range featureRefs {
+			fr := ref.FeatureRecipe
+			if !isResourceGeneratingFR(fr) {
+				continue
+			}
+
+			feat, hasFeat := tmplCtx.Features[ref.InstanceName]
+			frCtx := *tmplCtx // shallow copy; we'll overwrite Values/Infra/Locals
+			if hasFeat {
+				frCtx.Values = feat.Values
+				frCtx.Infra = feat.Infra
+			}
+
+			frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
+				fr, ref.InstanceName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
+			)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 node %q feature %q: %w", nodeID, ref.InstanceName, err)
+			}
+			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
+
+			frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 node %q feature %q: %w", nodeID, ref.InstanceName, err)
+			}
+
+			frEngine, err := engineFactory(fr.Spec.Provider)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 node %q feature %q engine factory: %w", nodeID, ref.InstanceName, err)
+			}
+
+			frNodeCtx := nodeCtx
+			if src, ok := fr.Spec.Source.(string); ok && src != "" {
+				frNodeCtx.Source = src
+			} else if fr.Spec.Source != nil {
+				frNodeCtx.Source = fr.Spec.Source
+			}
+
+			frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 node %q feature %q render: %w", nodeID, ref.InstanceName, err)
+			}
+
+			prefix := "features/" + ref.InstanceName + "/"
+			for p, c := range frFiles {
+				boundaries[bp].files[nodeID][prefix+p] = c
 			}
 		}
 	}

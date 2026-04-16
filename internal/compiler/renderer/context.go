@@ -88,7 +88,9 @@ func AssembleNodeContext(
 		},
 		Values:   ensureMap(values),
 		Infra:    ensureMap(infra),
-		Locals:   ensureStringMap(allProvides[nodeID]),
+		// Locals starts empty; the orchestrator overwrites it with the resolved
+		// Recipe.Spec.Locals map (Phase B preamble, see EvaluateRecipeLocals).
+		Locals:   map[string]string{},
 		Provides: ensureStringMap(allProvides[nodeID]),
 		Features: features,
 		Secrets:  secrets,

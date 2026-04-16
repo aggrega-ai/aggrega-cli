@@ -30,11 +30,15 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 
 		// Build feature-scoped context: swap .values/.infra to the feature's own
+		// and overlay FR-own locals over the base Recipe's evaluated locals
+		// (FR wins on collision). WI-1 uses raw-string overlay;
+		// WI-2 will upgrade FR locals to template-evaluated overlay.
 		featureCtx := *ctx // shallow copy
 		if feat, ok := ctx.Features[ref.InstanceName]; ok {
 			featureCtx.Values = feat.Values
 			featureCtx.Infra = feat.Infra
 		}
+		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, ref.FeatureRecipe.Spec.Locals)
 
 		// Evaluate injectMapping with the feature-scoped context
 		output, err := EvalTemplate(

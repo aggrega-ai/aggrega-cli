@@ -131,6 +131,57 @@ func TestExecutePhaseA_LastWins(t *testing.T) {
 	}
 }
 
+func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
+	t.Parallel()
+
+	// Base Recipe locals (already evaluated by orchestrator preamble in real flow).
+	ctx := &types.TemplateContext{
+		Context: types.ContextBlock{
+			Inject: types.InjectPipe{Env: map[string]string{}, File: map[string]string{}, Arg: map[string]string{}, All: map[string]string{}},
+		},
+		Locals:   map[string]string{"host": "db-base.svc", "port": "5432"},
+		Features: map[string]types.TemplateFeature{"mon": {Type: "core/monitoring"}},
+	}
+
+	// FR with own locals — "host" collides (FR wins), "scrape_path" is new.
+	// injectMapping references .locals to prove the merged map is visible.
+	refs := []FeatureRecipeRef{
+		{
+			InstanceName: "mon",
+			FeatureRecipe: &types.FeatureRecipe{
+				Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
+				Spec: types.FeatureRecipeSpec{
+					Locals: map[string]string{
+						"host":         "db-fr.svc",  // collision — FR should win
+						"scrape_path": "/metrics",
+					},
+					InjectMapping: `{"env": {"SCRAPE_HOST": "{{ .locals.host }}", "SCRAPE_PATH": "{{ .locals.scrape_path }}"}}`,
+				},
+			},
+		},
+	}
+
+	if err := ExecutePhaseA(ctx, refs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// FR's own "host" overrides base
+	if got := ctx.Context.Inject.Env["SCRAPE_HOST"]; got != "db-fr.svc" {
+		t.Errorf("SCRAPE_HOST: got %q, want %q (FR locals should override base)", got, "db-fr.svc")
+	}
+	// FR-only key "scrape_path" visible
+	if got := ctx.Context.Inject.Env["SCRAPE_PATH"]; got != "/metrics" {
+		t.Errorf("SCRAPE_PATH: got %q, want %q", got, "/metrics")
+	}
+	// Parent ctx.Locals untouched (shallow-copy contract)
+	if ctx.Locals["host"] != "db-base.svc" {
+		t.Errorf("parent ctx.Locals was mutated: got %q", ctx.Locals["host"])
+	}
+	if _, exists := ctx.Locals["scrape_path"]; exists {
+		t.Error("FR-only local leaked into parent ctx")
+	}
+}
+
 func TestExecutePhaseA_NilRecipe(t *testing.T) {
 	t.Parallel()
 

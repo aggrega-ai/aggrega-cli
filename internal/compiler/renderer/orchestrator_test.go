@@ -226,6 +226,139 @@ func TestRenderAll_Deterministic(t *testing.T) {
 	}
 }
 
+func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	input.Graph.Spec.FeatureValuesMapping = map[string]map[string]types.IRFeatureEntry{
+		"api": {
+			"mon": {
+				Type:   "core/monitoring",
+				Values: map[string]interface{}{"scrape_port": float64(9090), "tier": "prod"},
+			},
+		},
+	}
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"mon"}}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec: types.RecipeSpec{
+						Provider:      "helm-chart",
+						Implements:    "core/server/api-server",
+						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"]}`,
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+			if featureType == "core/monitoring" {
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
+					Spec: types.FeatureRecipeSpec{
+						Provider:      "helm-chart",
+						Implements:    "core/monitoring",
+						Locals:        map[string]string{"scrape_target": `{{ .values.tier }}-{{ .values.scrape_port }}`},
+						ValuesMapping: `{"image": "prom/mon:v1", "ports": ["{{ .values.scrape_port }}:9090"]}`,
+					},
+				}, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	keys := fileKeys(result.Files)
+
+	// Base Recipe files live under charts/api/ (umbrella nesting)
+	foundBaseDep := false
+	// FR files live under charts/api/features/mon/
+	foundFRDep := false
+	frFiles := []string{}
+	for _, k := range keys {
+		if strings.Contains(k, "boundaries/local/default/charts/api/templates/deployment.yaml") &&
+			!strings.Contains(k, "features/") {
+			foundBaseDep = true
+		}
+		if strings.Contains(k, "boundaries/local/default/charts/api/features/mon/") {
+			frFiles = append(frFiles, k)
+			if strings.Contains(k, "templates/deployment.yaml") {
+				foundFRDep = true
+			}
+		}
+	}
+	if !foundBaseDep {
+		t.Errorf("missing base Recipe deployment under charts/api/, got: %v", keys)
+	}
+	if !foundFRDep {
+		t.Errorf("missing FR deployment under charts/api/features/mon/, got: %v", keys)
+	}
+	if len(frFiles) < 2 {
+		t.Errorf("expected multiple FR files under features/mon/, got %d: %v", len(frFiles), frFiles)
+	}
+
+	// FR rendered image should reflect FR valuesMapping
+	for _, k := range frFiles {
+		if strings.Contains(k, "deployment.yaml") {
+			if !strings.Contains(string(result.Files[k]), "prom/mon:v1") {
+				t.Errorf("FR deployment missing FR image, got:\n%s", result.Files[k])
+			}
+		}
+	}
+}
+
+func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	input.Graph.Spec.FeatureValuesMapping = map[string]map[string]types.IRFeatureEntry{
+		"api": {"dns": {Type: "core/dns-resolver"}},
+	}
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"dns"}}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec:     types.RecipeSpec{ValuesMapping: `{"image": "app:latest"}`},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+			if featureType == "core/dns-resolver" {
+				// Inject-only FR (only injectMapping, no source/valuesMapping) — must NOT generate resources.
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "ops/dns"},
+					Spec: types.FeatureRecipeSpec{
+						Provider:      "helm-chart",
+						InjectMapping: `{"env": {"RESOLVER": "corefile"}}`,
+					},
+				}, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for k := range result.Files {
+		if strings.Contains(k, "features/") {
+			t.Errorf("inject-only FR must not produce resource files, found: %s", k)
+		}
+	}
+}
+
 func fileKeys(m map[string][]byte) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
