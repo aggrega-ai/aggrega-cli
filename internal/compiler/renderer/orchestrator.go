@@ -242,6 +242,63 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				boundaries[bp].files[nodeID][prefix+p] = c
 			}
 		}
+
+		// Phase B.6: Credential FeatureRecipe rendering.
+		// Secrets live in graph.Spec.Secrets[nodeID] (IR partitions credential features
+		// here via guardCredentialPartition). For each secret, resolve the FR, build a
+		// feature-scoped context with .secret_name + top-level .inject populated, then
+		// render via the FR's own provider engine. Output files go under secrets/<name>/.
+		if secretsForNode, ok := graph.Spec.Secrets[nodeID]; ok && len(secretsForNode) > 0 && recipeLookup.FeatureRecipe != nil {
+			secretNames := sortedStringKeys(secretsForNode)
+			for _, secretName := range secretNames {
+				entry := secretsForNode[secretName]
+				fr, found := recipeLookup.FeatureRecipe(entry.Type)
+				if !found {
+					continue
+				}
+
+				frCtx := *tmplCtx // shallow copy
+				frCtx.Values = ensureMap(entry.Values)
+				frCtx.Infra = map[string]interface{}{}
+
+				frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
+					fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
+				)
+				if err != nil {
+					return nil, fmt.Errorf("Step 5 node %q secret %q: %w", nodeID, secretName, err)
+				}
+				frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
+				frCtx.SecretName = secretName
+				frCtx.Inject = buildSecretInject(entry)
+
+				frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
+				if err != nil {
+					return nil, fmt.Errorf("Step 5 node %q secret %q: %w", nodeID, secretName, err)
+				}
+
+				frEngine, err := engineFactory(fr.Spec.Provider)
+				if err != nil {
+					return nil, fmt.Errorf("Step 5 node %q secret %q engine factory: %w", nodeID, secretName, err)
+				}
+
+				frNodeCtx := nodeCtx
+				if src, ok := fr.Spec.Source.(string); ok && src != "" {
+					frNodeCtx.Source = src
+				} else if fr.Spec.Source != nil {
+					frNodeCtx.Source = fr.Spec.Source
+				}
+
+				frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
+				if err != nil {
+					return nil, fmt.Errorf("Step 5 node %q secret %q render: %w", nodeID, secretName, err)
+				}
+
+				prefix := "secrets/" + secretName + "/"
+				for p, c := range frFiles {
+					boundaries[bp].files[nodeID][prefix+p] = c
+				}
+			}
+		}
 	}
 
 	// Finalize per-boundary output

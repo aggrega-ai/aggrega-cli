@@ -359,6 +359,85 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 	}
 }
 
+func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	// Attach a credential secret to the api node.
+	input.Graph.Spec.Secrets = map[string]map[string]types.IRSecretEntry{
+		"api": {
+			"root_password": {
+				Type: "core/db-password",
+				Values: map[string]interface{}{
+					"length": float64(32),
+				},
+				Inject: map[string]map[string]string{
+					"env": {"DB_PASSWORD": "ref:root_password"},
+				},
+			},
+		},
+	}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec: types.RecipeSpec{
+						Provider:      "helm-chart",
+						Implements:    "core/server/api-server",
+						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"]}`,
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+			if featureType == "core/db-password" {
+				// Credential FR: its valuesMapping references .secret_name AND
+				// the top-level .inject map populated by buildSecretInject.
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "ops/db-password"},
+					Spec: types.FeatureRecipeSpec{
+						Provider:      "helm-chart",
+						Implements:    "core/db-password",
+						ValuesMapping: `{"image": "pw-gen:v1", "environment": {"SECRET_NAME": "{{ .secret_name }}", "BINDING": "{{ .inject.env.DB_PASSWORD }}"}}`,
+					},
+				}, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Credential FR files live under secrets/<secretName>/ inside charts/<nodeID>/
+	var secretDep string
+	for k := range result.Files {
+		if strings.Contains(k, "boundaries/local/default/charts/api/secrets/root_password/") &&
+			strings.Contains(k, "templates/deployment.yaml") {
+			secretDep = k
+			break
+		}
+	}
+	if secretDep == "" {
+		t.Fatalf("missing credential FR deployment under secrets/root_password/, keys: %v", fileKeys(result.Files))
+	}
+
+	body := string(result.Files[secretDep])
+	// .secret_name propagates into the rendered manifest
+	if !strings.Contains(body, "SECRET_NAME") || !strings.Contains(body, "root_password") {
+		t.Errorf("expected .secret_name=root_password in rendered manifest, got:\n%s", body)
+	}
+	// .inject top-level was built from the IR secret entry's inject block
+	if !strings.Contains(body, "BINDING") || !strings.Contains(body, "ref:root_password") {
+		t.Errorf("expected .inject.env.DB_PASSWORD=ref:root_password in rendered manifest, got:\n%s", body)
+	}
+}
+
 func fileKeys(m map[string][]byte) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
