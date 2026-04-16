@@ -137,6 +137,37 @@ func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
 	return p, ok
 }
 
+// DeprecationWarnings returns non-fatal notices about deprecated catalog shapes.
+// Callers (e.g. cmd/aggrega/build.go) print these to stderr after catalog load.
+// Currently flags components and features that use legacy `secretNames` —
+// authors should migrate to the richer `secretsSchema`.
+func (c *Catalog) DeprecationWarnings() []string {
+	var msgs []string
+	compNames := make([]string, 0, len(c.Components))
+	for name := range c.Components {
+		compNames = append(compNames, name)
+	}
+	sort.Strings(compNames)
+	for _, name := range compNames {
+		comp := c.Components[name]
+		if len(comp.Spec.SecretNames) > 0 && len(comp.Spec.SecretsSchema) == 0 {
+			msgs = append(msgs, fmt.Sprintf("Component %q uses deprecated secretNames; migrate to secretsSchema", name))
+		}
+	}
+	featNames := make([]string, 0, len(c.Features))
+	for name := range c.Features {
+		featNames = append(featNames, name)
+	}
+	sort.Strings(featNames)
+	for _, name := range featNames {
+		feat := c.Features[name]
+		if len(feat.Spec.SecretNames) > 0 && len(feat.Spec.SecretsSchema) == 0 {
+			msgs = append(msgs, fmt.Sprintf("Feature %q uses deprecated secretNames; migrate to secretsSchema", name))
+		}
+	}
+	return msgs
+}
+
 // ResolveAllExtends walks every Component and Feature in the catalog and resolves
 // its extends chain in-place: merged metadata, merged spec fields, unified CUE
 // schema. Must be called before the catalog is consumed by guards or the renderer

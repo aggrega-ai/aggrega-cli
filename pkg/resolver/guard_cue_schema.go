@@ -33,10 +33,11 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 			continue // unknown-type errors are the concern of a different guard
 		}
 
-		// Build the unified schema: generated baseUsesCueSchema & user cueSchema.
-		// The generated base enforces socket-name and inject-mechanism constraints
-		// on .uses even when the user schema omits them.
-		schema := validator.BuildUnifiedSchema(comp.Spec.CueSchema, comp.Spec.UsesSchema)
+		// Build the unified schema: generated baseUsesCueSchema &
+		// generated baseSecretsCueSchema & user cueSchema. The generated bases
+		// enforce socket-name / inject-mechanism / secret-slot constraints on
+		// .uses and .secrets even when the user schema omits them.
+		schema := validator.BuildUnifiedSchemaFull(comp.Spec.CueSchema, comp.Spec.UsesSchema, comp.Spec.SecretsSchema)
 		if schema == "" {
 			continue
 		}
@@ -71,9 +72,95 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 				errs = append(errs, translateValidationError(ve, pair.name))
 			}
 		}
+
+		// Secrets pillar — validates slot names declared in secretsSchema and
+		// inject mechanism allowlisting (Black-Box slots reject any inject).
+		// Required slots fail validation when absent. Run whenever either side
+		// has content; close() on the generated pillar enforces the contract.
+		if len(comp.Spec.SecretsSchema) > 0 || len(pair.inst.Secrets) > 0 {
+			secretsData := normalizeSecretsForCUE(pair.inst.Secrets)
+			secretErrs := validator.ValidatePillar(schema, "secrets", secretsData, entity)
+			for _, ve := range secretErrs {
+				errs = append(errs, translateValidationError(ve, pair.name))
+			}
+		}
 	}
 
 	return errs
+}
+
+// normalizeSecretsForCUE converts Aggregate `secrets` entries (map[string]SecretInstance)
+// into a map[string]interface{} shape CUE can unify with the generated secrets
+// pillar. Each SecretInstance's Inject (*InjectBlock) is normalized to a plain
+// map[string]map[string]string so CUE sees `inject.env.KEY = "value"`-style
+// entries matching the generated pillar's shape.
+func normalizeSecretsForCUE(secrets map[string]types.SecretInstance) map[string]interface{} {
+	if len(secrets) == 0 {
+		return map[string]interface{}{}
+	}
+	out := make(map[string]interface{}, len(secrets))
+	for name, sec := range secrets {
+		entry := map[string]interface{}{}
+		if sec.Type != "" {
+			entry["type"] = sec.Type
+		}
+		if len(sec.Values) > 0 {
+			entry["values"] = sec.Values
+		}
+		if len(sec.Uses) > 0 {
+			entry["uses"] = sec.Uses
+		}
+		if sec.Inject != nil {
+			inj := map[string]interface{}{}
+			if env := normalizeInjectMechanism(sec.Inject.Env); env != nil {
+				inj["env"] = env
+			}
+			if file := normalizeInjectMechanism(sec.Inject.File); file != nil {
+				inj["file"] = file
+			}
+			if arg := normalizeInjectMechanism(sec.Inject.Arg); arg != nil {
+				inj["arg"] = arg
+			}
+			for mech, raw := range sec.Inject.Additional {
+				if m := normalizeInjectMechanism(raw); m != nil {
+					inj[mech] = m
+				}
+			}
+			if len(inj) > 0 {
+				entry["inject"] = inj
+			}
+		}
+		out[name] = entry
+	}
+	return out
+}
+
+// normalizeInjectMechanism coerces the polymorphic InjectBlock mechanism field
+// (map[string]interface{} from YAML) into map[string]string for CUE unification.
+// Returns nil on unrecognized shapes so the caller can skip the mechanism entirely.
+func normalizeInjectMechanism(raw interface{}) map[string]string {
+	switch v := raw.(type) {
+	case nil:
+		return nil
+	case map[string]string:
+		if len(v) == 0 {
+			return nil
+		}
+		return v
+	case map[string]interface{}:
+		if len(v) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(v))
+		for k, val := range v {
+			if s, ok := val.(string); ok {
+				out[k] = s
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // normalizeUsesForCUE converts the polymorphic `uses` block (map[string]interface{})

@@ -31,7 +31,8 @@ type ComponentMetadata struct {
 // ComponentSpec defines validation schemas and constraints for a catalog Component.
 type ComponentSpec struct {
 	Extends          string                     `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretNames      []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"`
+	SecretNames      []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema. Kept as a fallback during transition.
+	SecretsSchema    map[string]SecretSlot      `json:"secretsSchema,omitempty" yaml:"secretsSchema,omitempty"`
 	RequiredFeatures []string                   `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
 	Inject           []string                   `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).
 	UsesSchema       map[string]UsesSchemaEntry `json:"usesSchema,omitempty" yaml:"usesSchema,omitempty"`
@@ -43,5 +44,17 @@ type ComponentSpec struct {
 // Schema: component-v1alpha1.schema.json#/properties/spec/properties/usesSchema
 type UsesSchemaEntry struct {
 	Selector string   `json:"selector" yaml:"selector"`
+	Required bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject   []string `json:"inject,omitempty" yaml:"inject,omitempty"`
+}
+
+// SecretSlot declares one credential slot in a Component or Feature secretsSchema.
+// Required=true means the slot must be populated in the Aggregate. Inject is a
+// allowlist of delivery mechanisms for this secret — empty means Black-Box
+// (the secret is consumed by a Recipe internally, not delivered to the workload).
+// Schema: component-v1alpha1.schema.json#/properties/spec/properties/secretsSchema
+type SecretSlot struct {
+	Required    bool     `json:"required,omitempty" yaml:"required,omitempty"`
+	Inject      []string `json:"inject,omitempty" yaml:"inject,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
 }

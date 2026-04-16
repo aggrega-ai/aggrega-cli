@@ -31,7 +31,8 @@ type FeatureMetadata struct {
 // FeatureSpec defines the validation, targeting, and interoperability of a catalog Feature.
 type FeatureSpec struct {
 	Extends              string                     `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretNames          []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"`
+	SecretNames          []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema.
+	SecretsSchema        map[string]SecretSlot      `json:"secretsSchema,omitempty" yaml:"secretsSchema,omitempty"`
 	AppliesTo            map[string]string          `json:"appliesTo,omitempty" yaml:"appliesTo,omitempty"`
 	AppliesToExpressions []LabelSelectorRequirement `json:"appliesToExpressions,omitempty" yaml:"appliesToExpressions,omitempty"`
 	AppliesToAnyOf       []SelectorTerm             `json:"appliesToAnyOf,omitempty" yaml:"appliesToAnyOf,omitempty"`

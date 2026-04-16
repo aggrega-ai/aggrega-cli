@@ -221,6 +221,126 @@ func TestGuardCueSchema_UsesPillarValidSocket(t *testing.T) {
 	}
 }
 
+// secretsCatalog returns a CatalogLookup where "core/db/postgres" exposes a
+// configurable secretsSchema. Each table-driven case swaps the schema inline.
+func secretsCatalog(schema map[string]types.SecretSlot) CatalogLookup {
+	return CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			if typeURI == "core/db/postgres" {
+				return types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/db/postgres"},
+					Spec:     types.ComponentSpec{SecretsSchema: schema},
+				}, true
+			}
+			return types.Component{}, false
+		},
+		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
+	}
+}
+
+func TestGuardCueSchema_SecretsPillarTable(t *testing.T) {
+	t.Parallel()
+
+	type tc struct {
+		name        string
+		schema      map[string]types.SecretSlot
+		secrets     map[string]types.SecretInstance
+		expectError bool
+		errContains string
+	}
+	cases := []tc{
+		{
+			name:   "required + blackbox declared passes",
+			schema: map[string]types.SecretSlot{"root_password": {Required: true}},
+			secrets: map[string]types.SecretInstance{
+				"root_password": {Type: "core/db-password"},
+			},
+			expectError: false,
+		},
+		{
+			name:        "required + blackbox missing rejected",
+			schema:      map[string]types.SecretSlot{"root_password": {Required: true}},
+			secrets:     map[string]types.SecretInstance{}, // omitted
+			expectError: true,
+			errContains: "root_password",
+		},
+		{
+			name:   "optional + transparent with inject.env declared passes",
+			schema: map[string]types.SecretSlot{"root_password": {Required: false, Inject: []string{"env"}}},
+			secrets: map[string]types.SecretInstance{
+				"root_password": {
+					Type: "core/db-password",
+					Inject: &types.InjectBlock{
+						Env: map[string]interface{}{"DB_PASSWORD": "v"},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:   "blackbox with inject declared rejected",
+			schema: map[string]types.SecretSlot{"root_password": {Required: true}},
+			secrets: map[string]types.SecretInstance{
+				"root_password": {
+					Type: "core/db-password",
+					Inject: &types.InjectBlock{
+						Env: map[string]interface{}{"FORBIDDEN": "v"},
+					},
+				},
+			},
+			expectError: true,
+			errContains: "inject",
+		},
+		{
+			name:   "undeclared secret name rejected",
+			schema: map[string]types.SecretSlot{"root_password": {Required: true}},
+			secrets: map[string]types.SecretInstance{
+				"root_password":   {Type: "core/db-password"},
+				"unknown_secret":  {Type: "core/other"},
+			},
+			expectError: true,
+			errContains: "unknown_secret",
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			agg := &types.Aggregate{
+				Spec: types.AggregateSpec{
+					Components: map[string]types.ComponentInstance{
+						"db": {
+							Type:    "core/db/postgres",
+							Secrets: c.secrets,
+						},
+					},
+				},
+			}
+			errs := guardCueSchema(agg, secretsCatalog(c.schema), nil)
+			if c.expectError {
+				if len(errs) == 0 {
+					t.Fatalf("expected error, got none")
+				}
+				if !errors.Is(errs[0], ErrSchemaValidation) {
+					t.Errorf("expected ErrSchemaValidation, got %v", errs[0].Err)
+				}
+				combined := ""
+				for _, e := range errs {
+					combined += e.Error() + " | "
+				}
+				if c.errContains != "" && !strings.Contains(combined, c.errContains) {
+					t.Errorf("errors %q should mention %q", combined, c.errContains)
+				}
+			} else {
+				if len(errs) != 0 {
+					t.Errorf("unexpected errors: %v", errs)
+				}
+			}
+		})
+	}
+}
+
 func TestGuardCueSchema_UsesPillarUnknownSocketRejected(t *testing.T) {
 	t.Parallel()
 	// usesSchema declares only "databases"; aggregate references an undeclared "caches" socket.

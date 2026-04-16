@@ -112,6 +112,50 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	}
 }
 
+func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
+	t.Parallel()
+	parent := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/db/base", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			SecretsSchema: map[string]types.SecretSlot{
+				"root_password": {Required: true, Inject: []string{"env"}},
+				"tls_ca":        {Required: false},
+			},
+		},
+	}
+	child := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/db/strict", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends: "core/db/base",
+			SecretsSchema: map[string]types.SecretSlot{
+				// Override parent's root_password with stricter allowlist (only "env")
+				// and add a new slot.
+				"root_password": {Required: true, Inject: []string{"env"}, Description: "strict"},
+				"api_token":     {Required: true},
+			},
+		},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		if uri == "core/db/base" {
+			return parent, true
+		}
+		return types.Component{}, false
+	}
+	got, errs := ResolveComponentExtends(child, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if got.Spec.SecretsSchema["root_password"].Description != "strict" {
+		t.Errorf("child slot should override parent's, got %v", got.Spec.SecretsSchema["root_password"])
+	}
+	if _, ok := got.Spec.SecretsSchema["tls_ca"]; !ok {
+		t.Error("parent-only slot lost during merge")
+	}
+	if _, ok := got.Spec.SecretsSchema["api_token"]; !ok {
+		t.Error("child-only slot missing")
+	}
+}
+
 func TestResolveComponentExtends_ChildOverridesUsesSchema(t *testing.T) {
 	t.Parallel()
 	parent := types.Component{

@@ -68,6 +68,66 @@ func GenerateBaseUsesCueSchema(usesSchema map[string]types.UsesSchemaEntry) stri
 	return b.String()
 }
 
+// GenerateBaseSecretsCueSchema builds a CUE schema string from a Component or
+// Feature secretsSchema map. Each slot becomes a field in the `secrets` pillar:
+//
+//   - Required=true → `<name>: { ... }` (mandatory; close() rejects absence).
+//   - Required=false → `<name>?: { ... }` (optional).
+//   - Inject empty (Black-Box) → no `inject` field emitted, so the pillar
+//     rejects any inject declared in the Aggregate (close() + absent field).
+//   - Inject non-empty (Transparent) → `inject?: { <mech>?: {[string]: string} }`
+//     limited to allowlisted mechanisms.
+//
+// @required and @inject CUE attribute tags surface slot semantics for
+// downstream policy tools. Deterministic via sorted slot names.
+func GenerateBaseSecretsCueSchema(secretsSchema map[string]types.SecretSlot) string {
+	if len(secretsSchema) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("secrets: close({\n")
+
+	keys := make([]string, 0, len(secretsSchema))
+	for k := range secretsSchema {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, slotName := range keys {
+		slot := secretsSchema[slotName]
+		// Required slots omit the "?" optional marker on the slot field and
+		// make `type` mandatory inside the slot — a missing slot leaves `type`
+		// incomplete, so Validate(Concrete, Final) flags it. Optional slots
+		// carry "?" so absence is fine.
+		if slot.Required {
+			b.WriteString(fmt.Sprintf("\t%s: close({\n", slotName))
+		} else {
+			b.WriteString(fmt.Sprintf("\t%s?: close({\n", slotName))
+		}
+		b.WriteString(fmt.Sprintf("\t\t@required(%q)\n", fmt.Sprintf("%t", slot.Required)))
+		if slot.Required {
+			b.WriteString("\t\ttype: string\n")
+		} else {
+			b.WriteString("\t\ttype?: string\n")
+		}
+		b.WriteString("\t\tvalues?: {...}\n")
+		b.WriteString("\t\tuses?: {...}\n")
+		if len(slot.Inject) > 0 {
+			b.WriteString(fmt.Sprintf("\t\t@inject(%q)\n", strings.Join(slot.Inject, ",")))
+			b.WriteString("\t\tinject?: {\n")
+			for _, mechanism := range slot.Inject {
+				b.WriteString(fmt.Sprintf("\t\t\t%s?: {[string]: string}\n", mechanism))
+			}
+			b.WriteString("\t\t}\n")
+		}
+		b.WriteString("\t})\n")
+	}
+
+	b.WriteString("})\n")
+	return b.String()
+}
+
 // UnifySchemas unifies a base CUE schema with a user CUE schema (base & user).
 // Returns translated errors if unification fails.
 func UnifySchemas(baseCUE, userCUE, entity string) []*ValidationError {

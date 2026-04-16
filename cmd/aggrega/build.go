@@ -59,6 +59,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs))
 	}
 
+	// Surface non-fatal deprecation notices (e.g. legacy secretNames usage).
+	for _, w := range cat.DeprecationWarnings() {
+		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
+	}
+
 	// Step 1: Resolve
 	relData, err := os.ReadFile(releasePath)
 	if err != nil {
