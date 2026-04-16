@@ -89,6 +89,7 @@ func AssembleNodeContext(
 		Values:   ensureMap(values),
 		Infra:    ensureMap(infra),
 		Locals:   ensureStringMap(allProvides[nodeID]),
+		Provides: ensureStringMap(allProvides[nodeID]),
 		Features: features,
 		Secrets:  secrets,
 		Metadata: metadata,

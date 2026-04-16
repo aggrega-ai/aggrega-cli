@@ -4,6 +4,7 @@
 package analyzer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
@@ -96,6 +97,112 @@ func TestAnalyze_SelectorFail(t *testing.T) {
 	}
 	if e.Selector != "component.aggrega.ai/type=stateful-server" {
 		t.Errorf("selector: %q", e.Selector)
+	}
+}
+
+func analyzerCatalogWithFeature(feat types.Feature) resolver.CatalogLookup {
+	base := analyzerCatalog()
+	return resolver.CatalogLookup{
+		Component: base.Component,
+		Feature: func(typeURI string) (types.Feature, bool) {
+			if typeURI == feat.Metadata.Name {
+				return feat, true
+			}
+			return types.Feature{}, false
+		},
+	}
+}
+
+func TestAnalyze_AppliesToPass(t *testing.T) {
+	t.Parallel()
+
+	feat := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
+		Spec: types.FeatureSpec{
+			AppliesTo: map[string]string{types.ComponentTypeLabel: "server"},
+		},
+	}
+
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: map[string]types.IRNode{
+				"api": {Component: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
+			},
+			FeatureValuesMapping: map[string]map[string]types.IRFeatureEntry{
+				"api": {"monitoring": {Type: "core/monitoring"}},
+			},
+		},
+	}
+
+	result := Analyze(graph, analyzerCatalogWithFeature(feat))
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors, got %d: %+v", len(result.Errors), result.Errors)
+	}
+}
+
+func TestAnalyze_AppliesToFail(t *testing.T) {
+	t.Parallel()
+
+	feat := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
+		Spec: types.FeatureSpec{
+			AppliesTo: map[string]string{types.ComponentTypeLabel: "server"},
+		},
+	}
+
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: map[string]types.IRNode{
+				"db": {Component: "core/database/postgres", Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"}},
+			},
+			FeatureValuesMapping: map[string]map[string]types.IRFeatureEntry{
+				"db": {"monitoring": {Type: "core/monitoring"}},
+			},
+		},
+	}
+
+	result := Analyze(graph, analyzerCatalogWithFeature(feat))
+	if len(result.Errors) != 1 {
+		t.Fatalf("expected 1 error, got %d: %+v", len(result.Errors), result.Errors)
+	}
+	e := result.Errors[0]
+	if e.Source != "db" || e.Target != "monitoring" {
+		t.Errorf("error fields: %+v", e)
+	}
+	if !strings.Contains(e.Message, "appliesTo constraint not satisfied") {
+		t.Errorf("message: %q", e.Message)
+	}
+	if !strings.Contains(e.Selector, "component.aggrega.ai/type=server") {
+		t.Errorf("selector: %q", e.Selector)
+	}
+}
+
+func TestAnalyze_AppliesToExpressions(t *testing.T) {
+	t.Parallel()
+
+	feat := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
+		Spec: types.FeatureSpec{
+			AppliesToExpressions: []types.LabelSelectorRequirement{
+				{Key: types.ComponentTypeLabel, Operator: "In", Values: []string{"server", "worker"}},
+			},
+		},
+	}
+
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: map[string]types.IRNode{
+				"worker": {Component: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "worker"}},
+			},
+			FeatureValuesMapping: map[string]map[string]types.IRFeatureEntry{
+				"worker": {"mon": {Type: "core/monitoring"}},
+			},
+		},
+	}
+
+	result := Analyze(graph, analyzerCatalogWithFeature(feat))
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors (worker matches In [server, worker]), got %d: %+v", len(result.Errors), result.Errors)
 	}
 }
 

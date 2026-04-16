@@ -33,20 +33,24 @@ type PrecalculatedPath struct {
 
 // Analyze executes Step 4 of the compiler pipeline:
 //  1. Validate @selector rules on every edge
-//  2. Calculate precalculated_paths via cycle-safe DFS
-//  3. Assemble PolicyValidatorInput
+//  2. Validate Feature appliesTo against target node labels
+//  3. Calculate precalculated_paths via cycle-safe DFS
+//  4. Assemble PolicyValidatorInput
 func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *AnalysisResult {
-	// 1. Selector validation
-	selectorErrors := validateSelectors(graph, catalogLookup)
+	// 1. Selector validation (edge @selector rules)
+	errs := validateSelectors(graph, catalogLookup)
 
-	// 2. DFS path calculation
+	// 2. Feature appliesTo validation
+	errs = append(errs, validateAppliesTo(graph, catalogLookup)...)
+
+	// 3. DFS path calculation
 	paths := calculatePaths(graph)
 
-	// 3. Assemble policy input
+	// 4. Assemble policy input
 	policyInput := assemblePolicyInput(graph, paths)
 
 	return &AnalysisResult{
-		Errors:      selectorErrors,
+		Errors:      errs,
 		Paths:       paths,
 		PolicyInput: policyInput,
 	}

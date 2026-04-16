@@ -115,3 +115,31 @@ func TestBuildInjectAll_Deterministic(t *testing.T) {
 		t.Errorf("all: %v", all)
 	}
 }
+
+func TestBuildInjectAll_CustomMechanisms(t *testing.T) {
+	t.Parallel()
+
+	inject := types.InjectPipe{
+		Env:  map[string]string{"ENV_KEY": "e"},
+		File: map[string]string{"FILE_KEY": "f"},
+		Arg:  map[string]string{"ARG_KEY": "a"},
+		Additional: map[string]map[string]string{
+			"vault":   {"VAULT_KEY": "v"},
+			"ssm":     {"SSM_KEY": "s"},
+			"azurekv": {"AZ_KEY": "z"},
+		},
+	}
+
+	all := buildInjectAll(inject)
+	if len(all) != 6 {
+		t.Fatalf("expected 6 keys (3 std + 3 custom), got %d: %v", len(all), all)
+	}
+	for k, want := range map[string]string{
+		"ENV_KEY": "e", "FILE_KEY": "f", "ARG_KEY": "a",
+		"VAULT_KEY": "v", "SSM_KEY": "s", "AZ_KEY": "z",
+	} {
+		if all[k] != want {
+			t.Errorf("all[%q] = %q, want %q", k, all[k], want)
+		}
+	}
+}

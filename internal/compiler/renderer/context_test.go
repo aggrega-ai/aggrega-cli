@@ -103,6 +103,9 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	if ctx.Locals["listen_port"] != "8080" {
 		t.Errorf("locals: %v", ctx.Locals)
 	}
+	if ctx.Provides["listen_port"] != "8080" {
+		t.Errorf("provides: %v", ctx.Provides)
+	}
 
 	// Features
 	if ctx.Features["monitoring"].Type != "core/monitoring" {
@@ -122,6 +125,29 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	// Inject guaranteed keys
 	if ctx.Context.Inject.Env == nil || ctx.Context.Inject.File == nil || ctx.Context.Inject.Arg == nil {
 		t.Error("inject pipe missing guaranteed keys")
+	}
+}
+
+func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
+	t.Parallel()
+
+	graph := &types.IRGraph{
+		Metadata: types.IRMetadata{AggregateName: "t"},
+		Spec: types.IRSpec{
+			Nodes: map[string]types.IRNode{"db": {Component: "core/database/postgres"}},
+		},
+	}
+	allProvides := NodeProvides{"db": {"host": "db.svc.cluster.local", "port": "5432"}}
+	inject, injectRaw := BuildInjectPipe(nil)
+	ctx := AssembleNodeContext("db", graph, allProvides, inject, injectRaw)
+
+	out, err := EvalTemplate("test-values", `{"dsn":"postgres://{{ .provides.host }}:{{ .provides.port }}"}`, ctx)
+	if err != nil {
+		t.Fatalf("EvalTemplate failed: %v", err)
+	}
+	want := `{"dsn":"postgres://db.svc.cluster.local:5432"}`
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
 	}
 }
 
