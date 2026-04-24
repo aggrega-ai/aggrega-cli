@@ -5,19 +5,27 @@ package renderer
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
 	"text/template"
 
 	sprig "github.com/Masterminds/sprig/v3"
 )
 
-// EvalTemplate evaluates a Go template string with Sprig functions and missingkey=zero.
-// Data is serialized to JSON and back to map[string]interface{} so that template
-// references use lowercase JSON tag names (.context, .values, .infra) matching
-// the template-context-v1alpha1.schema.json contract.
+// EvalTemplate evaluates a Go template string with Sprig functions and
+// missingkey=zero. The input struct is walked reflectively and converted to
+// a tree of plain Go values (maps / slices / scalars) with lowercase JSON-
+// tag keys, so template authors write `.context.values.foo` matching the
+// template-context-v1alpha1.schema.json contract.
+//
+// OrderedMap values are unwrapped during the walk into plain map[string]any
+// containers. Text/template then iterates them in alphabetical key order
+// (Go stdlib default). Author-order preservation across the JSON-
+// serialization boundary (IR, --trace, Wasm payloads) lives in
+// OrderedMap.MarshalJSON; the template-iteration layer is intentionally
+// alphabetical per the contract.
 func EvalTemplate(name, tmplText string, data interface{}) (string, error) {
-	// Convert struct fields to lowercase JSON keys for template consumption
 	templateData := toLowercaseMap(data)
 
 	t, err := template.New(name).
@@ -34,16 +42,213 @@ func EvalTemplate(name, tmplText string, data interface{}) (string, error) {
 	return buf.String(), nil
 }
 
-// toLowercaseMap converts a Go struct to map[string]interface{} using JSON
-// round-trip so that field names become their lowercase JSON tag values.
+// orderedMapForTemplate is satisfied by types.OrderedMap[V] for every V via
+// its value-receiver TemplateAlphabeticalMap method. The walker uses this
+// interface to detect OrderedMap values without depending on the generic
+// type parameter.
+type orderedMapForTemplate interface {
+	TemplateAlphabeticalMap() map[string]any
+}
+
+// toLowercaseMap walks an arbitrary Go value and produces a representation
+// shaped for Go text/template consumption. The walker replaces an earlier
+// json.Marshal / json.Unmarshal round-trip that was destroying OrderedMap
+// author-order at the JSON-decode step — author-order is load-bearing for
+// JSON-serialization consumers (IR output, --trace debug, Wasm payloads)
+// but irrelevant for text/template's alphabetical map-range default. The
+// walker preserves OrderedMap shape all the way to the template boundary
+// and then intentionally converts to map[string]any at that boundary — the
+// controlled handoff from "author-order Go data" to "alphabetical-iteration
+// template data" documented in .
+//
+// Conversion rules:
+//   - Struct fields: reflected by JSON tag (first token before `,`).
+//     `json:"-"` skips the field. No tag falls back to the lowercased field
+//     name. `omitempty` and `omitzero` cause zero-valued fields to be
+//     omitted (matching the prior JSON round-trip behavior).
+//   - types.OrderedMap[V] (detected via orderedMapForTemplate interface):
+//     unwrapped to map[string]any via TemplateAlphabeticalMap, then values
+//     recursively walked.
+//   - map[K]V where K is string-convertible: walked recursively, emitted
+//     as map[string]any.
+//   - Slices / arrays: walked element-wise, emitted as []any.
+//   - Pointers / interfaces: dereferenced, then walked.
+//   - Scalars (bool, numeric, string): passed through unchanged.
 func toLowercaseMap(data interface{}) interface{} {
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return data
+	if data == nil {
+		return nil
 	}
-	var mapData interface{}
-	if err := json.Unmarshal(jsonBytes, &mapData); err != nil {
-		return data
+	return walkForTemplate(reflect.ValueOf(data))
+}
+
+func walkForTemplate(v reflect.Value) interface{} {
+	if !v.IsValid() {
+		return nil
 	}
-	return mapData
+
+	// Peel off pointers and interfaces uniformly.
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		return nil
+	}
+
+	// OrderedMap detection — via value-receiver marker interface. Check both
+	// the value type and its pointer type to catch both addressable values
+	// and pointer-held copies.
+	if v.CanInterface() {
+		if om, ok := v.Interface().(orderedMapForTemplate); ok {
+			raw := om.TemplateAlphabeticalMap()
+			out := make(map[string]any, len(raw))
+			for k, inner := range raw {
+				out[k] = walkForTemplate(reflect.ValueOf(inner))
+			}
+			return out
+		}
+	}
+	if v.CanAddr() && v.Addr().CanInterface() {
+		if om, ok := v.Addr().Interface().(orderedMapForTemplate); ok {
+			raw := om.TemplateAlphabeticalMap()
+			out := make(map[string]any, len(raw))
+			for k, inner := range raw {
+				out[k] = walkForTemplate(reflect.ValueOf(inner))
+			}
+			return out
+		}
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		return walkStruct(v)
+	case reflect.Map:
+		return walkMap(v)
+	case reflect.Slice, reflect.Array:
+		return walkSlice(v)
+	default:
+		// Scalars (bool, numeric, string, etc.) and anything else passes
+		// through as-is. CanInterface guards against unexported-field
+		// reflection panics in edge cases.
+		if v.CanInterface() {
+			return v.Interface()
+		}
+		return nil
+	}
+}
+
+func walkStruct(v reflect.Value) map[string]any {
+	t := v.Type()
+	out := make(map[string]any, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		name, omitEmpty, skip := fieldJSONName(field)
+		if skip {
+			continue
+		}
+		fv := v.Field(i)
+		if omitEmpty && isEmptyForTemplate(fv) {
+			continue
+		}
+		out[name] = walkForTemplate(fv)
+	}
+	return out
+}
+
+func walkMap(v reflect.Value) map[string]any {
+	out := make(map[string]any, v.Len())
+	iter := v.MapRange()
+	for iter.Next() {
+		k := iter.Key()
+		var keyStr string
+		switch k.Kind() {
+		case reflect.String:
+			keyStr = k.String()
+		default:
+			// Non-string keys: format via fmt to preserve behavior. Rare in
+			// practice — compiler TemplateContext maps are all string-keyed.
+			keyStr = fmt.Sprint(k.Interface())
+		}
+		out[keyStr] = walkForTemplate(iter.Value())
+	}
+	return out
+}
+
+func walkSlice(v reflect.Value) []any {
+	if v.Kind() == reflect.Slice && v.IsNil() {
+		return nil
+	}
+	out := make([]any, v.Len())
+	for i := 0; i < v.Len(); i++ {
+		out[i] = walkForTemplate(v.Index(i))
+	}
+	return out
+}
+
+// fieldJSONName returns the emission-side name of a struct field per its
+// json tag, plus whether `omitempty`/`omitzero` is declared, plus whether
+// the field should be skipped entirely (`json:"-"`). Falls back to the
+// lowercased field name when the struct has no json tag.
+func fieldJSONName(f reflect.StructField) (name string, omitEmpty bool, skip bool) {
+	tag := f.Tag.Get("json")
+	if tag == "-" {
+		return "", false, true
+	}
+	if tag == "" {
+		return strings.ToLower(f.Name), false, false
+	}
+	parts := strings.Split(tag, ",")
+	name = parts[0]
+	if name == "" {
+		name = strings.ToLower(f.Name)
+	}
+	for _, opt := range parts[1:] {
+		if opt == "omitempty" || opt == "omitzero" {
+			omitEmpty = true
+		}
+	}
+	return name, omitEmpty, false
+}
+
+// isEmptyForTemplate matches encoding/json's omitempty semantics plus the
+// Go 1.24 omitzero semantics. Keeps the walker's output shape equivalent
+// to what the prior JSON round-trip produced.
+func isEmptyForTemplate(v reflect.Value) bool {
+	if !v.IsValid() {
+		return true
+	}
+	switch v.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return v.Len() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Interface, reflect.Ptr:
+		return v.IsNil()
+	case reflect.Struct:
+		// Honor IsZero() method if present (matches omitzero semantics for
+		// types.OrderedMap and any other type implementing it).
+		if v.CanInterface() {
+			if z, ok := v.Interface().(interface{ IsZero() bool }); ok {
+				return z.IsZero()
+			}
+		}
+		if v.CanAddr() && v.Addr().CanInterface() {
+			if z, ok := v.Addr().Interface().(interface{ IsZero() bool }); ok {
+				return z.IsZero()
+			}
+		}
+		return false
+	}
+	return false
 }

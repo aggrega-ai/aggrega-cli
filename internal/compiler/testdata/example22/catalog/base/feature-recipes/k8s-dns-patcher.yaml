@@ -7,10 +7,22 @@ spec:
   provider: helm
   implements: "core/k8s-dns-resolver"
   injectMapping: |
+    {{- /*
+      Pick the alphabetically-first uses-edge as the deterministic winner.
+      per the contract, ordered-semantic data flows as lists or OrderedMap in
+      the schema; template map iteration stays alphabetical. The earlier
+      `range .context.uses` + last-write-wins shape made the "winner"
+      dependent on iteration order — the fix is to choose explicitly.
+      Recipes that need a specific edge (not "the first") should expose a
+      priority field on `infra` and select by that field instead.
+    */ -}}
     {{- $targetVar := .infra.target_var -}}
+    {{- $aliases := keys .context.uses | sortAlpha -}}
     {{- $targetHost := "" -}}
     {{- $namespace := "" -}}
-    {{- range $alias, $edge := .context.uses -}}
+    {{- if $aliases -}}
+      {{- $winner := first $aliases -}}
+      {{- $edge := index .context.uses $winner -}}
       {{- $targetHost = $edge.target -}}
       {{- if and $edge.annotations $edge.annotations.release -}}
         {{- $ns := index $edge.annotations.release "aggrega.ai/namespace" -}}

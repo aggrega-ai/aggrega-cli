@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -152,20 +153,66 @@ func stringFromValues(values map[string]interface{}, key, fallback string) strin
 	return fallback
 }
 
-func mapStringFromValues(values map[string]interface{}, key string) map[string]string {
+// mapStringFromValues plucks an order-preserving map under `key` from the
+// caller-supplied values dict. Returns *types.OrderedMap[string] so downstream
+// consumers (envVarsFromMap) iterate in author order via OrderedMap.All().
+//
+// Detection rules match the helm engine's equivalent — see
+// internal/compiler/renderer/helm/sourceless.go for the full rationale.
+// Plain Go maps are inserted alphabetically (the deterministic choice per
+//  when no author order is carried in); OrderedMap variants are
+// preserved as-is.
+func mapStringFromValues(values map[string]interface{}, key string) *types.OrderedMap[string] {
 	v, ok := values[key]
 	if !ok || v == nil {
 		return nil
 	}
 	switch m := v.(type) {
+	case *types.OrderedMap[string]:
+		return m
+	case types.OrderedMap[string]:
+		out := types.NewOrderedMap[string]()
+		for k, val := range m.All() {
+			out.Set(k, val)
+		}
+		return out
+	case *types.OrderedMap[any]:
+		if m == nil {
+			return nil
+		}
+		out := types.NewOrderedMap[string]()
+		for k, val := range m.All() {
+			out.Set(k, fmt.Sprintf("%v", val))
+		}
+		return out
+	case types.OrderedMap[any]:
+		out := types.NewOrderedMap[string]()
+		for k, val := range m.All() {
+			out.Set(k, fmt.Sprintf("%v", val))
+		}
+		return out
 	case map[string]interface{}:
-		out := make(map[string]string, len(m))
-		for k, val := range m {
-			out[k] = fmt.Sprintf("%v", val)
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := types.NewOrderedMap[string]()
+		for _, k := range keys {
+			out.Set(k, fmt.Sprintf("%v", m[k]))
 		}
 		return out
 	case map[string]string:
-		return m
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := types.NewOrderedMap[string]()
+		for _, k := range keys {
+			out.Set(k, m[k])
+		}
+		return out
 	default:
 		return nil
 	}
@@ -205,18 +252,18 @@ func intFromValues(values map[string]interface{}, key string, fallback int) int 
 	return fallback
 }
 
-func envVarsFromMap(m map[string]string) []EnvVar {
-	if len(m) == 0 {
+// envVarsFromMap emits a []EnvVar in author order from the supplied
+// OrderedMap. Kubernetes `env` is an ordered list — later entries can
+// $(VAR)-reference earlier ones — so preserving the author's declared
+// order matters for correctness, not just for determinism. See 
+// for the ordered-semantic-data principle this method applies.
+func envVarsFromMap(m *types.OrderedMap[string]) []EnvVar {
+	if m == nil || m.Len() == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := make([]EnvVar, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, EnvVar{Name: k, Value: m[k]})
+	out := make([]EnvVar, 0, m.Len())
+	for k, v := range m.All() {
+		out = append(out, EnvVar{Name: k, Value: v})
 	}
 	return out
 }

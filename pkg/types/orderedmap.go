@@ -59,6 +59,27 @@ func (m OrderedMap[V]) IsZero() bool {
 	return len(m.keys) == 0
 }
 
+// TemplateAlphabeticalMap returns a plain map[string]any representation of
+// the ordered map, intended exclusively for the renderer's template-
+// preparation walker. The caller (text/template) iterates the returned map
+// in alphabetical key order (Go stdlib default), not in author order — see
+// . For author-order iteration, callers access Keys() and All()
+// directly; this method is the intentional bridge to the alphabetical-
+// iteration template boundary.
+//
+// Value receiver so the method dispatches when OrderedMap is a field value
+// (same rationale as MarshalYAML / MarshalJSON).
+func (m OrderedMap[V]) TemplateAlphabeticalMap() map[string]any {
+	if len(m.keys) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(m.keys))
+	for _, k := range m.keys {
+		out[k] = m.values[k]
+	}
+	return out
+}
+
 // Get returns the value stored at k and whether k is present.
 func (m *OrderedMap[V]) Get(k string) (V, bool) {
 	var zero V

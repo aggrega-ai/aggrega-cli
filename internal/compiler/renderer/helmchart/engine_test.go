@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 func testNodeCtx() renderer.NodeRenderContext {
@@ -163,17 +164,24 @@ func TestHelmEngine_Render_Replicas(t *testing.T) {
 	}
 }
 
-func TestHelmEngine_Render_DeterministicEnvOrder(t *testing.T) {
+func TestHelmEngine_Render_AuthorOrderEnvVars(t *testing.T) {
 	t.Parallel()
+
+	// Input carries author-order via OrderedMap — Set calls in declared
+	// sequence Z, A, M. Renamed from ...DeterministicEnvOrder because the
+	// earlier assertion pinned alphabetical order, which codified the bug
+	// fixed in this work item. per the contract, ordered-semantic data (K8s
+	// `env` — later entries may $(VAR)-reference earlier ones) flows
+	// through OrderedMap-backed state and preserves author insertion order.
+	env := types.OrderedMap[string]{}
+	env.Set("Z_VAR", "z")
+	env.Set("A_VAR", "a")
+	env.Set("M_VAR", "m")
 
 	engine := &HelmEngine{}
 	values := map[string]interface{}{
-		"image": "app:latest",
-		"environment": map[string]interface{}{
-			"Z_VAR": "z",
-			"A_VAR": "a",
-			"M_VAR": "m",
-		},
+		"image":       "app:latest",
+		"environment": env,
 	}
 
 	var firstOutput string
@@ -190,12 +198,15 @@ func TestHelmEngine_Render_DeterministicEnvOrder(t *testing.T) {
 		}
 	}
 
-	// Verify sorted: A_VAR < M_VAR < Z_VAR
+	// Assert author order: Z_VAR precedes A_VAR, which precedes M_VAR.
+	zIdx := strings.Index(firstOutput, "Z_VAR")
 	aIdx := strings.Index(firstOutput, "A_VAR")
 	mIdx := strings.Index(firstOutput, "M_VAR")
-	zIdx := strings.Index(firstOutput, "Z_VAR")
-	if aIdx >= mIdx || mIdx >= zIdx {
-		t.Errorf("env vars not sorted: A=%d M=%d Z=%d", aIdx, mIdx, zIdx)
+	if zIdx < 0 || aIdx < 0 || mIdx < 0 {
+		t.Fatalf("one or more env vars missing from output: Z=%d A=%d M=%d", zIdx, aIdx, mIdx)
+	}
+	if !(zIdx < aIdx && aIdx < mIdx) {
+		t.Errorf("env vars not in author order Z<A<M: Z=%d A=%d M=%d", zIdx, aIdx, mIdx)
 	}
 }
 
