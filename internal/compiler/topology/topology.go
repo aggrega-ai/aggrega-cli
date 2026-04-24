@@ -23,8 +23,8 @@ type TopologyResult struct {
 type TopologyNode struct {
 	InstanceID      string
 	ComponentType   string
-	Labels          map[string]string
-	Values          map[string]interface{}
+	Labels          types.OrderedMap[string]
+	Values          types.OrderedMap[interface{}]
 	SelfInject      *types.InjectBlock // Component-level self-inject (carried to IR for Pass 2a)
 	SubsystemPath   string
 	BoundaryPath    string
@@ -103,7 +103,7 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 	for _, nodeID := range nodeIDs {
 		// Component uses
 		comp := findComponent(agg, nodeID)
-		if comp != nil && len(comp.Uses) > 0 {
+		if comp != nil && comp.Uses.Len() > 0 {
 			compEdges, err := normalizeUses(comp.Uses, nodeID, "")
 			if err != nil {
 				return nil, err
@@ -114,7 +114,7 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 		// 5. Feature uses (create edges with OriginFeature)
 		if feats, ok := flat.FeatureAttachments[nodeID]; ok {
 			for _, fa := range feats {
-				if len(fa.Feature.Uses) > 0 {
+				if fa.Feature.Uses.Len() > 0 {
 					featEdges, err := normalizeUses(fa.Feature.Uses, nodeID, fa.Feature.Type)
 					if err != nil {
 						return nil, err
@@ -127,7 +127,7 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 		// Secret uses
 		if secs, ok := flat.SecretAttachments[nodeID]; ok {
 			for _, sa := range secs {
-				if len(sa.Secret.Uses) > 0 {
+				if sa.Secret.Uses.Len() > 0 {
 					secEdges, err := normalizeUses(sa.Secret.Uses, nodeID, sa.Secret.Type)
 					if err != nil {
 						return nil, err
@@ -150,11 +150,11 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 // findComponent looks up a ComponentInstance by name in the root Aggregate.
 // Does not search sub-aggregates (they are already flattened).
 func findComponent(agg *types.Aggregate, name string) *types.ComponentInstance {
-	if comp, ok := agg.Spec.Components[name]; ok {
+	if comp, ok := agg.Spec.Components.Get(name); ok {
 		return &comp
 	}
 	// Search subsystems
-	for _, sub := range agg.Spec.Subsystems {
+	for _, sub := range agg.Spec.Subsystems.All() {
 		if c := findComponentInSubsystem(sub, name); c != nil {
 			return c
 		}
@@ -163,10 +163,10 @@ func findComponent(agg *types.Aggregate, name string) *types.ComponentInstance {
 }
 
 func findComponentInSubsystem(sub types.Subsystem, name string) *types.ComponentInstance {
-	if comp, ok := sub.Components[name]; ok {
+	if comp, ok := sub.Components.Get(name); ok {
 		return &comp
 	}
-	for _, nested := range sub.Subsystems {
+	for _, nested := range sub.Subsystems.All() {
 		if c := findComponentInSubsystem(nested, name); c != nil {
 			return c
 		}

@@ -14,55 +14,55 @@ type Aggregate struct {
 
 // AggregateMetadata carries identity, versioning, and optional metadata for an Aggregate.
 type AggregateMetadata struct {
-	Name        string            `json:"name" yaml:"name"`
-	Version     string            `json:"version" yaml:"version"`
-	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer      `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string            `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string            `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string            `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string          `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	Name        string       `json:"name" yaml:"name"`
+	Version     string       `json:"version" yaml:"version"`
+	Description string       `json:"description,omitempty" yaml:"description,omitempty"`
+	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
+	License     string       `json:"license,omitempty" yaml:"license,omitempty"`
+	Repository  string       `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Home        string       `json:"home,omitempty" yaml:"home,omitempty"`
+	Keywords    []string     `json:"keywords,omitempty" yaml:"keywords,omitempty"`
+	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 	// Labels are module-level duck-typing labels for catalog discovery and policy evaluation.
 	// They describe the Aggregate's identity as a reusable module and do NOT cascade to child
 	// component nodes. Component labels come exclusively from the Component catalog entity.
-	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 }
 
 // AggregateSpec defines the components, sub-aggregates, subsystems, and parameters.
 type AggregateSpec struct {
-	Parameters         map[string]interface{}       `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	Aggregates         map[string]SubAggregate      `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
-	ExportedComponents map[string]string            `json:"exportedComponents,omitempty" yaml:"exportedComponents,omitempty"`
-	Subsystems         map[string]Subsystem         `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
-	Components         map[string]ComponentInstance `json:"components,omitempty" yaml:"components,omitempty"`
+	Parameters         OrderedMap[interface{}]       `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
+	Aggregates         OrderedMap[SubAggregate]      `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
+	ExportedComponents OrderedMap[string]            `json:"exportedComponents,omitempty,omitzero" yaml:"exportedComponents,omitempty"`
+	Subsystems         OrderedMap[Subsystem]         `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
+	Components         OrderedMap[ComponentInstance] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 }
 
 // SubAggregate is a nested aggregate acting as an imported module.
 // Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates
 type SubAggregate struct {
-	Type       string                 `json:"type" yaml:"type"`
-	Parameters map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Type       string                  `json:"type" yaml:"type"`
+	Parameters OrderedMap[interface{}] `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 }
 
 // Subsystem is a logical grouping of developer intent. Recursive via nested Subsystems.
 // Schema: aggregate-v1alpha1.schema.json#/$defs/subsystem
 type Subsystem struct {
-	Description string                       `json:"description,omitempty" yaml:"description,omitempty"`
-	Annotations map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Features    map[string]FeatureInstance   `json:"features,omitempty" yaml:"features,omitempty"`
-	Subsystems  map[string]Subsystem         `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
-	Components  map[string]ComponentInstance `json:"components,omitempty" yaml:"components,omitempty"`
+	Description string                        `json:"description,omitempty" yaml:"description,omitempty"`
+	Annotations OrderedMap[string]            `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	Features    OrderedMap[FeatureInstance]   `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Subsystems  OrderedMap[Subsystem]         `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
+	Components  OrderedMap[ComponentInstance] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 }
 
 // ComponentInstance is one logical node in the aggregate topology (Developer-authored).
 // Schema: aggregate-v1alpha1.schema.json#/$defs/component_instance
 type ComponentInstance struct {
-	Type        string                     `json:"type" yaml:"type"`
-	Description string                     `json:"description,omitempty" yaml:"description,omitempty"`
-	Values      map[string]interface{}     `json:"values,omitempty" yaml:"values,omitempty"`
-	Inject      *InjectBlock               `json:"inject,omitempty" yaml:"inject,omitempty"` // Component-level self-inject
-	Uses        map[string]interface{}     `json:"uses,omitempty" yaml:"uses,omitempty"`     // UsesBlock: socket → simple []string or verbose map
-	Features    map[string]FeatureInstance `json:"features,omitempty" yaml:"features,omitempty"`
-	Secrets     map[string]SecretInstance  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Type        string                      `json:"type" yaml:"type"`
+	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      OrderedMap[interface{}]     `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"` // Component-level self-inject
+	Uses        OrderedMap[interface{}]     `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose map
+	Features    OrderedMap[FeatureInstance] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }

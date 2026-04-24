@@ -4,8 +4,6 @@
 package validator
 
 import (
-	"sort"
-
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -189,18 +187,16 @@ func mergeFeature(parent, child types.Feature) types.Feature {
 	return out
 }
 
-// mergeStringMap returns a new map with parent entries overridden by child entries.
-// Nil-safe; empty input returns an empty map unless both sides are empty (then nil).
-func mergeStringMap(parent, child map[string]string) map[string]string {
-	if len(parent) == 0 && len(child) == 0 {
-		return nil
+// mergeStringMap returns a new OrderedMap with parent entries overridden by child entries.
+// Parent keys come first (in author order), then child keys that weren't in parent.
+// Empty input returns an empty OrderedMap.
+func mergeStringMap(parent, child types.OrderedMap[string]) types.OrderedMap[string] {
+	out := types.OrderedMap[string]{}
+	for k, v := range parent.All() {
+		out.Set(k, v)
 	}
-	out := make(map[string]string, len(parent)+len(child))
-	for k, v := range parent {
-		out[k] = v
-	}
-	for k, v := range child {
-		out[k] = v
+	for k, v := range child.All() {
+		out.Set(k, v)
 	}
 	return out
 }
@@ -230,42 +226,27 @@ func concatDedupeString(parent, child []string) []string {
 // mergeSecretsSchema overlays parent and child secretsSchema entries. Child
 // wins on the same slot name; slots unique to the parent are preserved.
 // Same semantics as mergeUsesSchema.
-func mergeSecretsSchema(parent, child map[string]types.SecretSlot) map[string]types.SecretSlot {
-	if len(parent) == 0 && len(child) == 0 {
-		return nil
+func mergeSecretsSchema(parent, child types.OrderedMap[types.SecretSlot]) types.OrderedMap[types.SecretSlot] {
+	out := types.OrderedMap[types.SecretSlot]{}
+	for k, v := range parent.All() {
+		out.Set(k, v)
 	}
-	out := make(map[string]types.SecretSlot, len(parent)+len(child))
-	for k, v := range parent {
-		out[k] = v
-	}
-	for k, v := range child {
-		out[k] = v
+	for k, v := range child.All() {
+		out.Set(k, v)
 	}
 	return out
 }
 
 // mergeUsesSchema overlays parent and child usesSchema entries. Child wins on
-// the same socket name; sockets unique to the parent are preserved. Output
-// keys are sorted for deterministic downstream YAML/CUE generation.
-func mergeUsesSchema(parent, child map[string]types.UsesSchemaEntry) map[string]types.UsesSchemaEntry {
-	if len(parent) == 0 && len(child) == 0 {
-		return nil
+// the same socket name; sockets unique to the parent are preserved. Preserves
+// author order — parent keys first, then child-only keys.
+func mergeUsesSchema(parent, child types.OrderedMap[types.UsesSchemaEntry]) types.OrderedMap[types.UsesSchemaEntry] {
+	out := types.OrderedMap[types.UsesSchemaEntry]{}
+	for k, v := range parent.All() {
+		out.Set(k, v)
 	}
-	out := make(map[string]types.UsesSchemaEntry, len(parent)+len(child))
-	for k, v := range parent {
-		out[k] = v
+	for k, v := range child.All() {
+		out.Set(k, v)
 	}
-	for k, v := range child {
-		out[k] = v
-	}
-	// Re-insert in sorted order for determinism (map iteration is unordered;
-	// Go maps preserve whatever order insertion gave them for printf/etc, but
-	// downstream consumers that iterate may still rely on sorted keys — this
-	// is a no-op for correctness, present for defense-in-depth).
-	keys := make([]string, 0, len(out))
-	for k := range out {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	return out
 }

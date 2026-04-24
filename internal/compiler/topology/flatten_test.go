@@ -17,10 +17,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api":    {Type: "core/server/api-server"},
-				"worker": {Type: "core/worker"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api-server"}); _m.Set("worker", types.ComponentInstance{Type: "core/worker"}); return _m }(),
 		},
 	}
 
@@ -45,13 +42,9 @@ func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Subsystems: map[string]types.Subsystem{
-				"data-layer": {
-					Components: map[string]types.ComponentInstance{
-						"main-db": {Type: "core/database/postgres"},
-					},
-				},
-			},
+			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("data-layer", types.Subsystem{
+					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -73,17 +66,11 @@ func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Subsystems: map[string]types.Subsystem{
-				"outer": {
-					Subsystems: map[string]types.Subsystem{
-						"inner": {
-							Components: map[string]types.ComponentInstance{
-								"deep-db": {Type: "core/database/postgres"},
-							},
-						},
-					},
-				},
-			},
+			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("outer", types.Subsystem{
+					Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("inner", types.Subsystem{
+							Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("deep-db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+						}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -105,24 +92,16 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 	childAgg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "child-module"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"child-db": {Type: "core/database/postgres"},
-			},
-			ExportedComponents: map[string]string{
-				"db": "child-db",
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("child-db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+			ExportedComponents: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("db", "child-db"); return _m }(),
 		},
 	}
 
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "root"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {Type: "core/server/api-server"},
-			},
-			Aggregates: map[string]types.SubAggregate{
-				"data-module": {Type: "modules/data-layer"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api-server"}); return _m }(),
+			Aggregates: func() types.OrderedMap[types.SubAggregate] { _m := types.OrderedMap[types.SubAggregate]{}; _m.Set("data-module", types.SubAggregate{Type: "modules/data-layer"}); return _m }(),
 		},
 	}
 
@@ -155,9 +134,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 		return &types.Aggregate{
 			Metadata: types.AggregateMetadata{Name: "circular"},
 			Spec: types.AggregateSpec{
-				Aggregates: map[string]types.SubAggregate{
-					"self": {Type: "circular-module"},
-				},
+				Aggregates: func() types.OrderedMap[types.SubAggregate] { _m := types.OrderedMap[types.SubAggregate]{}; _m.Set("self", types.SubAggregate{Type: "circular-module"}); return _m }(),
 			},
 		}, nil
 	}
@@ -165,9 +142,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "root"},
 		Spec: types.AggregateSpec{
-			Aggregates: map[string]types.SubAggregate{
-				"loop": {Type: "circular-module"},
-			},
+			Aggregates: func() types.OrderedMap[types.SubAggregate] { _m := types.OrderedMap[types.SubAggregate]{}; _m.Set("loop", types.SubAggregate{Type: "circular-module"}); return _m }(),
 		},
 	}
 
@@ -198,17 +173,11 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type: "core/server/api-server",
-					Features: map[string]types.FeatureInstance{
-						"monitoring": {Type: "core/monitoring"},
-					},
-					Secrets: map[string]types.SecretInstance{
-						"db-creds": {Type: "core/db-credentials"},
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("monitoring", types.FeatureInstance{Type: "core/monitoring"}); return _m }(),
+					Secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("db-creds", types.SecretInstance{Type: "core/db-credentials"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 

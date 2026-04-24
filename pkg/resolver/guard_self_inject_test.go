@@ -38,12 +38,10 @@ func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type:   "core/web-server",
 					Inject: &types.InjectBlock{Env: map[string]interface{}{"PORT": "8080"}},
-				},
-			},
+				}); return _m }(),
 		},
 	}
 
@@ -59,12 +57,10 @@ func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"db": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
 					Type:   "core/database/postgres",
 					Inject: &types.InjectBlock{Env: map[string]interface{}{"X": "1"}},
-				},
-			},
+				}); return _m }(),
 		},
 	}
 
@@ -83,12 +79,10 @@ func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
-					Type:   "core/web-server",              // allows env, file
-					Inject: &types.InjectBlock{Arg: map[string]interface{}{"--flag": "value"}}, // arg not in allowlist
-				},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
+					Type:   "core/web-server",              
+					Inject: &types.InjectBlock{Arg: map[string]interface{}{"--flag": "value"}}, 
+				}); return _m }(),
 		},
 	}
 
@@ -107,22 +101,18 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type:   "core/web-server",
 					Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_URL": "localhost"}},
-					Uses: map[string]interface{}{
-						"databases": map[string]interface{}{
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{
 							"db": map[string]interface{}{
 								"target": "my-db",
 								"inject": map[string]interface{}{
-									"env": map[string]interface{}{"DB_URL": "host"}, // collision!
+									"env": map[string]interface{}{"DB_URL": "host"}, 
 								},
 							},
-						},
-					},
-				},
-			},
+						}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -144,9 +134,7 @@ func TestGuardSelfInject_NoInjectNilPasses(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"db": {Type: "core/database/postgres"}, // no inject
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
 		},
 	}
 

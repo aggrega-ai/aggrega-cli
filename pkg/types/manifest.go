@@ -13,6 +13,11 @@ type Manifest struct {
 	Spec       ManifestSpec     `json:"spec" yaml:"spec"`
 }
 
+// AnnotationBinding is an empty stub in this intent; fields land in
+// annotation-expansion. Declared here so the deterministic-ordering refactor
+// can reserve the MappingTier.Annotations slot with an OrderedMap-typed field.
+type AnnotationBinding struct{}
+
 // ManifestMetadata carries identity for a Manifest entity.
 type ManifestMetadata struct {
 	Name        string       `json:"name" yaml:"name"`
@@ -28,8 +33,8 @@ type ManifestMetadata struct {
 
 // ManifestSpec defines the provider-grouped mappings and optional base inheritance.
 type ManifestSpec struct {
-	Extends  string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Mappings map[string]ProviderMappings `json:"mappings" yaml:"mappings"` // keyed by provider name
+	Extends  string                         `json:"extends,omitempty" yaml:"extends,omitempty"`
+	Mappings OrderedMap[ProviderMappings]   `json:"mappings" yaml:"mappings"` // keyed by provider name
 }
 
 // ProviderMappings holds the component and feature mapping tiers for one provider.
@@ -43,6 +48,10 @@ type ProviderMappings struct {
 // Resolution order: name wins over type. Versioned type keys win over unversioned.
 // Schema: manifest-v1alpha1.schema.json#/$defs/mapping_tier
 type MappingTier struct {
-	Type map[string]string `json:"type,omitempty" yaml:"type,omitempty"`
-	Name map[string]string `json:"name,omitempty" yaml:"name,omitempty"`
+	Type        OrderedMap[string]            `json:"type,omitempty,omitzero" yaml:"type,omitempty"`
+	Name        OrderedMap[string]            `json:"name,omitempty,omitzero" yaml:"name,omitempty"`
+	// *Pointer: nil vs empty matters for the annotation-expansion intent — a nil
+	// pointer means the author did not declare annotation bindings at all; an
+	// empty OrderedMap is currently authorable but may carry meaning later.
+	Annotations *OrderedMap[AnnotationBinding] `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }

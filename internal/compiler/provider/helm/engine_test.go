@@ -13,7 +13,7 @@ import (
 )
 
 func TestHelmEngine_Render_ChartMetadata(t *testing.T) {
-	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "my-app", Boundaries: map[string]types.Boundary{}}}
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "my-app", Boundaries: types.OrderedMap[types.Boundary]{}}}
 	graph := minimalGraph(t, "web", "server", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, "")
 	if err != nil {
@@ -29,7 +29,7 @@ func TestHelmEngine_Render_ChartMetadata(t *testing.T) {
 }
 
 func TestHelmEngine_Render_GatewayLoadBalancer(t *testing.T) {
-	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "gwchart", Boundaries: map[string]types.Boundary{}}}
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "gwchart", Boundaries: types.OrderedMap[types.Boundary]{}}}
 	graph := minimalGraph(t, "ingress", "ai-gateway", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, "")
 	if err != nil {
@@ -42,7 +42,7 @@ func TestHelmEngine_Render_GatewayLoadBalancer(t *testing.T) {
 }
 
 func TestHelmEngine_Render_ResolvedTypeGatewayString(t *testing.T) {
-	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "x", Boundaries: map[string]types.Boundary{}}}
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "x", Boundaries: types.OrderedMap[types.Boundary]{}}}
 	graph := minimalGraph(t, "edge", "gateway", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, "")
 	if err != nil {
@@ -55,7 +55,7 @@ func TestHelmEngine_Render_ResolvedTypeGatewayString(t *testing.T) {
 }
 
 func TestHelmEngine_Render_StandardClusterIP(t *testing.T) {
-	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "app", Boundaries: map[string]types.Boundary{}}}
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "app", Boundaries: types.OrderedMap[types.Boundary]{}}}
 	graph := minimalGraph(t, "api", "server", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, "")
 	if err != nil {
@@ -71,7 +71,7 @@ func TestHelmEngine_Render_StandardClusterIP(t *testing.T) {
 }
 
 func TestHelmEngine_Render_StrictNetworkingAnnotation(t *testing.T) {
-	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "a", Boundaries: map[string]types.Boundary{}}}
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "a", Boundaries: types.OrderedMap[types.Boundary]{}}}
 	graph := minimalGraph(t, "api", "server", map[string]interface{}{})
 	out, err := (&HelmEngine{}).Render(context.Background(), graph, rel, "")
 	if err != nil {
@@ -84,7 +84,7 @@ func TestHelmEngine_Render_StrictNetworkingAnnotation(t *testing.T) {
 }
 
 func TestHelmEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T) {
-	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "kong-app", Boundaries: map[string]types.Boundary{}}}
+	rel := &types.Release{Spec: types.ReleaseSpec{Aggregate: "kong-app", Boundaries: types.OrderedMap[types.Boundary]{}}}
 	vals := map[string]interface{}{
 		"image": "kong:3.4",
 		"environment": map[string]interface{}{
@@ -112,13 +112,11 @@ func TestHelmEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T) {
 func TestHelmEngine_Render_InvalidValuesMapping(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{"bad": {Labels: map[string]string{}, Component: "c/bad", ResolvedVersion: "1.0.0"}},
-			ValuesMapping: map[string]json.RawMessage{
-				"bad": json.RawMessage(`not-json`),
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("bad", types.IRNode{Labels: types.OrderedMap[string]{}, Component: "c/bad", ResolvedVersion: "1.0.0"}); return _m }(),
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("bad", json.RawMessage(`not-json`)); return _m }(),
 		},
 	}
-	_, err := (&HelmEngine{}).Render(context.Background(), graph, &types.Release{Spec: types.ReleaseSpec{Aggregate: "x", Boundaries: map[string]types.Boundary{}}}, "")
+	_, err := (&HelmEngine{}).Render(context.Background(), graph, &types.Release{Spec: types.ReleaseSpec{Aggregate: "x", Boundaries: types.OrderedMap[types.Boundary]{}}}, "")
 	if err == nil || !strings.Contains(err.Error(), `node "bad"`) {
 		t.Fatalf("expected error mentioning node, got %v", err)
 	}
@@ -132,14 +130,12 @@ func minimalGraph(t *testing.T, id, ontologyType string, values map[string]inter
 	}
 	return &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				id: {
-					Labels:          map[string]string{types.ComponentTypeLabel: ontologyType},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set(id, types.IRNode{
+					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, ontologyType); return _m }(),
 					Component:       "c/" + id,
 					ResolvedVersion: "1.0.0",
-				},
-			},
-			ValuesMapping: map[string]json.RawMessage{id: raw},
+				}); return _m }(),
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set(id, raw); return _m }(),
 		},
 	}
 }

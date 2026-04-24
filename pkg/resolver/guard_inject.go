@@ -22,9 +22,9 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components {
+	for compName, comp := range agg.Spec.Components.All() {
 		// Check inject blocks on features
-		for featName, feat := range comp.Features {
+		for featName, feat := range comp.Features.All() {
 			if feat.Inject != nil {
 				errs = append(errs, validateInjectBlock(
 					entity,
@@ -37,7 +37,7 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 		}
 
 		// Check inject blocks on secrets
-		for secName, sec := range comp.Secrets {
+		for secName, sec := range comp.Secrets.All() {
 			if sec.Inject != nil {
 				errs = append(errs, validateInjectBlock(
 					entity,

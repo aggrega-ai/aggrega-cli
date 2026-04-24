@@ -34,7 +34,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		// (FR wins on collision). WI-1 uses raw-string overlay;
 		// WI-2 will upgrade FR locals to template-evaluated overlay.
 		featureCtx := *ctx // shallow copy
-		if feat, ok := ctx.Features[ref.InstanceName]; ok {
+		if feat, ok := ctx.Features.Get(ref.InstanceName); ok {
 			featureCtx.Values = feat.Values
 			featureCtx.Infra = feat.Infra
 		}

@@ -15,31 +15,31 @@ type Feature struct {
 // FeatureMetadata carries identity and optional labels for a Feature.
 // The label feature.aggrega.ai/kind with value "secret" marks this as a credential Feature.
 type FeatureMetadata struct {
-	Name        string            `json:"name" yaml:"name"`
-	Version     string            `json:"version" yaml:"version"`
-	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer      `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string            `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string            `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string            `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string          `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Name        string             `json:"name" yaml:"name"`
+	Version     string             `json:"version" yaml:"version"`
+	Description string             `json:"description,omitempty" yaml:"description,omitempty"`
+	Maintainers []Maintainer       `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
+	License     string             `json:"license,omitempty" yaml:"license,omitempty"`
+	Repository  string             `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Home        string             `json:"home,omitempty" yaml:"home,omitempty"`
+	Keywords    []string           `json:"keywords,omitempty" yaml:"keywords,omitempty"`
+	Deprecated  bool               `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	Labels      OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
+	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 }
 
 // FeatureSpec defines the validation, targeting, and interoperability of a catalog Feature.
 type FeatureSpec struct {
-	Extends              string                     `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretNames          []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema.
-	SecretsSchema        map[string]SecretSlot      `json:"secretsSchema,omitempty" yaml:"secretsSchema,omitempty"`
-	AppliesTo            map[string]string          `json:"appliesTo,omitempty" yaml:"appliesTo,omitempty"`
-	AppliesToExpressions []LabelSelectorRequirement `json:"appliesToExpressions,omitempty" yaml:"appliesToExpressions,omitempty"`
-	AppliesToAnyOf       []SelectorTerm             `json:"appliesToAnyOf,omitempty" yaml:"appliesToAnyOf,omitempty"`
-	Interoperability     *Interoperability          `json:"interoperability,omitempty" yaml:"interoperability,omitempty"`
-	UsesSchema           map[string]UsesSchemaEntry `json:"usesSchema,omitempty" yaml:"usesSchema,omitempty"`
-	CueSchema            string                     `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
-	CueSchemaRef         string                     `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
+	Extends              string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
+	SecretNames          []string                    `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema.
+	SecretsSchema        OrderedMap[SecretSlot]      `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
+	AppliesTo            OrderedMap[string]          `json:"appliesTo,omitempty,omitzero" yaml:"appliesTo,omitempty"`
+	AppliesToExpressions []LabelSelectorRequirement  `json:"appliesToExpressions,omitempty" yaml:"appliesToExpressions,omitempty"`
+	AppliesToAnyOf       []SelectorTerm              `json:"appliesToAnyOf,omitempty" yaml:"appliesToAnyOf,omitempty"`
+	Interoperability     *Interoperability           `json:"interoperability,omitempty" yaml:"interoperability,omitempty"`
+	UsesSchema           OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
+	CueSchema            string                      `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
+	CueSchemaRef         string                      `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
 }
 
 // LabelSelectorRequirement is a single label selector requirement (AND logic).
@@ -53,7 +53,7 @@ type LabelSelectorRequirement struct {
 // SelectorTerm is one selector term in appliesToAnyOf (OR logic between terms, AND within).
 // Schema: feature-v1alpha1.schema.json#/properties/spec/properties/appliesToAnyOf/items
 type SelectorTerm struct {
-	MatchLabels      map[string]string          `json:"matchLabels,omitempty" yaml:"matchLabels,omitempty"`
+	MatchLabels      OrderedMap[string]         `json:"matchLabels,omitempty,omitzero" yaml:"matchLabels,omitempty"`
 	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty" yaml:"matchExpressions,omitempty"`
 }
 

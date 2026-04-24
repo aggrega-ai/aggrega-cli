@@ -15,29 +15,29 @@ type Component struct {
 // ComponentMetadata carries identity and duck-typing labels for a Component.
 // The labels field is required and must include the component.aggrega.ai/type key.
 type ComponentMetadata struct {
-	Name        string            `json:"name" yaml:"name"`
-	Version     string            `json:"version" yaml:"version"`
-	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer      `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string            `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string            `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string            `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string          `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool              `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-	Labels      map[string]string `json:"labels" yaml:"labels"`
-	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Name        string             `json:"name" yaml:"name"`
+	Version     string             `json:"version" yaml:"version"`
+	Description string             `json:"description,omitempty" yaml:"description,omitempty"`
+	Maintainers []Maintainer       `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
+	License     string             `json:"license,omitempty" yaml:"license,omitempty"`
+	Repository  string             `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Home        string             `json:"home,omitempty" yaml:"home,omitempty"`
+	Keywords    []string           `json:"keywords,omitempty" yaml:"keywords,omitempty"`
+	Deprecated  bool               `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	Labels      OrderedMap[string] `json:"labels" yaml:"labels"`
+	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 }
 
 // ComponentSpec defines validation schemas and constraints for a catalog Component.
 type ComponentSpec struct {
-	Extends          string                     `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretNames      []string                   `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema. Kept as a fallback during transition.
-	SecretsSchema    map[string]SecretSlot      `json:"secretsSchema,omitempty" yaml:"secretsSchema,omitempty"`
-	RequiredFeatures []string                   `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
-	Inject           []string                   `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).
-	UsesSchema       map[string]UsesSchemaEntry `json:"usesSchema,omitempty" yaml:"usesSchema,omitempty"`
-	CueSchema        string                     `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
-	CueSchemaRef     string                     `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
+	Extends          string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
+	SecretNames      []string                    `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema. Kept as a fallback during transition.
+	SecretsSchema    OrderedMap[SecretSlot]      `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
+	RequiredFeatures []string                    `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
+	Inject           []string                    `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).
+	UsesSchema       OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
+	CueSchema        string                      `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
+	CueSchemaRef     string                      `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
 }
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.

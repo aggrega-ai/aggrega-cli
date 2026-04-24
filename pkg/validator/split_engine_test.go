@@ -12,12 +12,10 @@ import (
 )
 
 func TestGenerateBaseUsesCueSchema_Simple(t *testing.T) {
-	schema := map[string]types.UsesSchemaEntry{
-		"databases": {
+	schema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{
 			Selector: `component.aggrega.ai/type in (resource, stateful-server)`,
 			Inject:   []string{"env", "file"},
-		},
-	}
+		}); return _m }()
 
 	cue := GenerateBaseUsesCueSchema(schema)
 	if cue == "" {
@@ -38,11 +36,9 @@ func TestGenerateBaseUsesCueSchema_Simple(t *testing.T) {
 }
 
 func TestGenerateBaseUsesCueSchema_NoInject(t *testing.T) {
-	schema := map[string]types.UsesSchemaEntry{
-		"apis": {
+	schema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("apis", types.UsesSchemaEntry{
 			Selector: `component.aggrega.ai/type in (server)`,
-		},
-	}
+		}); return _m }()
 
 	cue := GenerateBaseUsesCueSchema(schema)
 	if strings.Contains(cue, "inject?:") {
@@ -51,30 +47,27 @@ func TestGenerateBaseUsesCueSchema_NoInject(t *testing.T) {
 }
 
 func TestGenerateBaseUsesCueSchema_Empty(t *testing.T) {
-	cue := GenerateBaseUsesCueSchema(nil)
+	cue := GenerateBaseUsesCueSchema(types.OrderedMap[types.UsesSchemaEntry]{})
 	if cue != "" {
 		t.Errorf("expected empty string for nil usesSchema, got: %s", cue)
 	}
 }
 
 func TestGenerateBaseUsesCueSchema_Deterministic(t *testing.T) {
-	schema := map[string]types.UsesSchemaEntry{
-		"z_socket": {Selector: "s1"},
-		"a_socket": {Selector: "s2"},
-		"m_socket": {Selector: "s3"},
-	}
+	schema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("z_socket", types.UsesSchemaEntry{Selector: "s1"}); _m.Set("a_socket", types.UsesSchemaEntry{Selector: "s2"}); _m.Set("m_socket", types.UsesSchemaEntry{Selector: "s3"}); return _m }()
 
 	cue1 := GenerateBaseUsesCueSchema(schema)
 	cue2 := GenerateBaseUsesCueSchema(schema)
 	if cue1 != cue2 {
 		t.Error("expected deterministic output across calls")
 	}
-	// Verify sorted order
+	// assertion refreshed for OrderedMap author-order iteration; was alphabetical under map[string]X
+	// Verify author-insertion order: z, a, m (as declared by the test fixture)
+	zIdx := strings.Index(cue1, "z_socket")
 	aIdx := strings.Index(cue1, "a_socket")
 	mIdx := strings.Index(cue1, "m_socket")
-	zIdx := strings.Index(cue1, "z_socket")
-	if !(aIdx < mIdx && mIdx < zIdx) {
-		t.Errorf("expected alphabetical order, got a=%d m=%d z=%d", aIdx, mIdx, zIdx)
+	if !(zIdx < aIdx && aIdx < mIdx) {
+		t.Errorf("expected author order, got z=%d a=%d m=%d", zIdx, aIdx, mIdx)
 	}
 }
 

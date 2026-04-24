@@ -20,10 +20,10 @@ type PolicyGraph struct {
 
 // PolicyNode is one node visible to the policy validator.
 type PolicyNode struct {
-	Component       string                       `json:"component"`
-	ResolvedVersion string                       `json:"resolved_version"`
-	Labels          map[string]string            `json:"labels"`
-	Features        map[string]types.IRFeatureEntry `json:"features,omitempty"`
+	Component       string                              `json:"component"`
+	ResolvedVersion string                              `json:"resolved_version"`
+	Labels          types.OrderedMap[string]            `json:"labels"`
+	Features        types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty,omitzero"`
 }
 
 // PolicyEdge is one edge visible to the policy validator.

@@ -54,9 +54,7 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"db": {Component: "core/database/postgres"},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("db", types.IRNode{Component: "core/database/postgres"}); return _m }(),
 		},
 	}
 
@@ -64,11 +62,8 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 		"db": {
 			Metadata: types.RecipeMetadata{Name: "postgres-recipe"},
 			Spec: types.RecipeSpec{
-				Provides: map[string]string{
-					"host":         `{{ .context.instance_id }}.svc.cluster.local`,
-					"service_port": `5432`,
-				},
-				Locals: map[string]string{"primary_compute": "postgres"},
+				Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id }}.svc.cluster.local`); _m.Set("service_port", `5432`); return _m }(),
+				Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("primary_compute", "postgres"); return _m }(),
 			},
 		},
 	}
@@ -77,11 +72,12 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result["db"]["host"] != "db.svc.cluster.local" {
-		t.Errorf("host: %q", result["db"]["host"])
+	dbProv := result["db"]
+	if host, _ := dbProv.Get("host"); host != "db.svc.cluster.local" {
+		t.Errorf("host: %q", host)
 	}
-	if result["db"]["service_port"] != "5432" {
-		t.Errorf("service_port: %q", result["db"]["service_port"])
+	if sp, _ := dbProv.Get("service_port"); sp != "5432" {
+		t.Errorf("service_port: %q", sp)
 	}
 }
 
@@ -90,9 +86,7 @@ func TestEvaluateAllProvides_SelfContainmentViolation(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"api": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{}); return _m }(),
 		},
 	}
 
@@ -100,9 +94,7 @@ func TestEvaluateAllProvides_SelfContainmentViolation(t *testing.T) {
 		"api": {
 			Metadata: types.RecipeMetadata{Name: "bad-recipe"},
 			Spec: types.RecipeSpec{
-				Provides: map[string]string{
-					"url": `{{ .context.inject.env.TARGET }}`,
-				},
+				Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("url", `{{ .context.inject.env.TARGET }}`); return _m }(),
 			},
 		},
 	}
@@ -121,9 +113,7 @@ func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"api": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{}); return _m }(),
 		},
 	}
 
@@ -131,8 +121,9 @@ func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result["api"]) != 0 {
-		t.Errorf("expected empty provides for api, got %v", result["api"])
+	apiProv := result["api"]
+	if apiProv.Len() != 0 {
+		t.Errorf("expected empty provides for api, got %v", apiProv.Keys())
 	}
 }
 
@@ -141,9 +132,7 @@ func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"api": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{}); return _m }(),
 		},
 	}
 
@@ -151,9 +140,7 @@ func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 		"api": {
 			Metadata: types.RecipeMetadata{Name: "sprig-recipe"},
 			Spec: types.RecipeSpec{
-				Provides: map[string]string{
-					"host": `{{ .context.instance_id | upper }}`,
-				},
+				Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id | upper }}`); return _m }(),
 			},
 		},
 	}
@@ -162,7 +149,9 @@ func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result["api"]["host"] != "API" {
-		t.Errorf("expected 'API', got %q", result["api"]["host"])
+	apiProv := result["api"]
+	host, _ := apiProv.Get("host")
+	if host != "API" {
+		t.Errorf("expected 'API', got %q", host)
 	}
 }

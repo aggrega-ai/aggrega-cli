@@ -8,6 +8,8 @@ import (
 	"strings"
 	"text/template"
 	"text/template/parse"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 // CollectTemplateFieldAccesses parses a Go template source and returns the set
@@ -97,8 +99,8 @@ func collectFromPipe(p *parse.PipeNode, seen map[string]bool) {
 // NOT referenced by any entry in `references`. Used to emit "unused key"
 // warnings for Ghost Infrastructure — catalog authors add infra/values entries
 // that the Recipe's valuesMapping never consumes.
-func UnreadKeys(references []string, root string, data map[string]interface{}) []string {
-	if len(data) == 0 {
+func UnreadKeys(references []string, root string, data types.OrderedMap[interface{}]) []string {
+	if data.Len() == 0 {
 		return nil
 	}
 	// Reference paths begin with ".". Build the "readset" of top-level subkeys
@@ -131,7 +133,7 @@ func UnreadKeys(references []string, root string, data map[string]interface{}) [
 		return nil
 	}
 	var unread []string
-	for key := range data {
+	for _, key := range data.Keys() {
 		if !readset[key] {
 			unread = append(unread, key)
 		}

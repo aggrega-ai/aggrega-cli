@@ -20,10 +20,8 @@ func testCatalog() resolver.CatalogLookup {
 					Metadata: types.ComponentMetadata{
 						Name:    "core/server/api-server",
 						Version: "1.0.0",
-						Labels:  map[string]string{types.ComponentTypeLabel: "server"},
-						Annotations: map[string]string{
-							"catalog.aggrega.ai/tier": "standard",
-						},
+						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+						Annotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("catalog.aggrega.ai/tier", "standard"); return _m }(),
 					},
 				}, true
 			case "core/database/postgres":
@@ -31,7 +29,7 @@ func testCatalog() resolver.CatalogLookup {
 					Metadata: types.ComponentMetadata{
 						Name:    "core/database/postgres",
 						Version: "2.0.0",
-						Labels:  map[string]string{types.ComponentTypeLabel: "stateful-server"},
+						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
 					},
 				}, true
 			default:
@@ -43,7 +41,7 @@ func testCatalog() resolver.CatalogLookup {
 				return types.Feature{
 					Metadata: types.FeatureMetadata{
 						Name:   "core/db-creds",
-						Labels: map[string]string{types.FeatureKindLabel: types.FeatureKindSecret},
+						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.FeatureKindLabel, types.FeatureKindSecret); return _m }(),
 					},
 				}, true
 			}
@@ -57,8 +55,8 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"api":     {InstanceID: "api", ComponentType: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}, Values: map[string]interface{}{"port": 8080}},
-			"main-db": {InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"}},
+			"api":     {InstanceID: "api", ComponentType: "core/server/api-server", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(), Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 8080); return _m }()},
+			"main-db": {InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }()},
 		},
 		Edges: []topology.NormalizedEdge{
 			{Source: "api", Target: "main-db", Socket: "databases", Alias: "main-db"},
@@ -73,13 +71,13 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 		},
 		Release: &types.Release{
 			Metadata: types.ReleaseMetadata{Name: "test-release", Version: "1.0.0", Environment: "local"},
-			Spec:     types.ReleaseSpec{Boundaries: map[string]types.Boundary{}},
+			Spec:     types.ReleaseSpec{Boundaries: types.OrderedMap[types.Boundary]{}},
 		},
 		Manifest: &types.Manifest{
 			Metadata: types.ManifestMetadata{Version: "1.0.0"},
 		},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{
-			"api": {BoundaryPath: "local/default", Annotations: map[string]string{"env": "local"}},
+			"api": {BoundaryPath: "local/default", Annotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("env", "local"); return _m }()},
 		},
 	}
 
@@ -94,10 +92,10 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	}
 
 	// Nodes
-	if len(graph.Spec.Nodes) != 2 {
-		t.Fatalf("expected 2 nodes, got %d", len(graph.Spec.Nodes))
+	if graph.Spec.Nodes.Len() != 2 {
+		t.Fatalf("expected 2 nodes, got %d", graph.Spec.Nodes.Len())
 	}
-	apiNode := graph.Spec.Nodes["api"]
+	apiNode, _ := graph.Spec.Nodes.Get("api")
 	if apiNode.ResolvedVersion != "1.0.0" {
 		t.Errorf("api resolved version: %q", apiNode.ResolvedVersion)
 	}
@@ -114,16 +112,18 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	}
 
 	// Values mapping
-	if graph.Spec.ValuesMapping["api"] == nil {
+	if _, ok := graph.Spec.ValuesMapping.Get("api"); !ok {
 		t.Error("expected api values mapping")
 	}
 
 	// Annotations
-	if apiNode.CatalogAnnotations["catalog.aggrega.ai/tier"] != "standard" {
-		t.Errorf("catalog annotations: %v", apiNode.CatalogAnnotations)
+	tier, _ := apiNode.CatalogAnnotations.Get("catalog.aggrega.ai/tier")
+	if tier != "standard" {
+		t.Errorf("catalog annotations: %v", apiNode.CatalogAnnotations.Keys())
 	}
-	if apiNode.ReleaseAnnotations["env"] != "local" {
-		t.Errorf("release annotations: %v", apiNode.ReleaseAnnotations)
+	env, _ := apiNode.ReleaseAnnotations.Get("env")
+	if env != "local" {
+		t.Errorf("release annotations: %v", apiNode.ReleaseAnnotations.Keys())
 	}
 
 	// Infra mapping
@@ -154,17 +154,17 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/server/api-server", Labels: map[string]string{types.ComponentTypeLabel: "server"}},
+			"api": {InstanceID: "api", ComponentType: "core/server/api-server", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }()},
 		},
 		Edges: nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
-				{InstanceName: "logging", Feature: types.FeatureInstance{Type: "core/logging", Values: map[string]interface{}{"level": "warn"}}},
+				{InstanceName: "logging", Feature: types.FeatureInstance{Type: "core/logging", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("level", "warn"); return _m }()}},
 			},
 		},
 		SecretAttachments: map[string][]topology.SecretAttachment{
 			"api": {
-				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: map[string]interface{}{"path": "/secret"}}},
+				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("path", "/secret"); return _m }()}},
 			},
 		},
 	}
@@ -184,17 +184,23 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 	}
 
 	// Features
-	if fvm := graph.Spec.FeatureValuesMapping["api"]; fvm == nil {
+	if fvm, ok := graph.Spec.FeatureValuesMapping.Get("api"); !ok || fvm.Len() == 0 {
 		t.Fatal("expected feature values mapping for api")
-	} else if fvm["logging"].Type != "core/logging" {
-		t.Errorf("feature type: %q", fvm["logging"].Type)
+	} else {
+		loggingEntry, _ := fvm.Get("logging")
+		if loggingEntry.Type != "core/logging" {
+			t.Errorf("feature type: %q", loggingEntry.Type)
+		}
 	}
 
 	// Secrets
-	if sec := graph.Spec.Secrets["api"]; sec == nil {
+	if sec, ok := graph.Spec.Secrets.Get("api"); !ok || sec.Len() == 0 {
 		t.Fatal("expected secrets for api")
-	} else if sec["db-creds"].Type != "core/db-creds" {
-		t.Errorf("secret type: %q", sec["db-creds"].Type)
+	} else {
+		dbEntry, _ := sec.Get("db-creds")
+		if dbEntry.Type != "core/db-creds" {
+			t.Errorf("secret type: %q", dbEntry.Type)
+		}
 	}
 
 	// Feature order
@@ -229,11 +235,8 @@ func TestBuildIR_SyncWave(t *testing.T) {
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		Release: &types.Release{
 			Spec: types.ReleaseSpec{
-				SyncWaves: map[string][]string{
-					"1-infra":    {"db"},
-					"2-services": {"api"},
-				},
-				Boundaries: map[string]types.Boundary{},
+				SyncWaves: func() types.OrderedMap[[]string] { _m := types.OrderedMap[[]string]{}; _m.Set("1-infra", []string{"db"}); _m.Set("2-services", []string{"api"}); return _m }(),
+				Boundaries: types.OrderedMap[types.Boundary]{},
 			},
 		},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
@@ -247,11 +250,13 @@ func TestBuildIR_SyncWave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if graph.Spec.Nodes["db"].SyncWave != "1-infra" {
-		t.Errorf("db sync wave: %q", graph.Spec.Nodes["db"].SyncWave)
+	dbNode, _ := graph.Spec.Nodes.Get("db")
+	if dbNode.SyncWave != "1-infra" {
+		t.Errorf("db sync wave: %q", dbNode.SyncWave)
 	}
-	if graph.Spec.Nodes["api"].SyncWave != "2-services" {
-		t.Errorf("api sync wave: %q", graph.Spec.Nodes["api"].SyncWave)
+	apiNode, _ := graph.Spec.Nodes.Get("api")
+	if apiNode.SyncWave != "2-services" {
+		t.Errorf("api sync wave: %q", apiNode.SyncWave)
 	}
 }
 
@@ -270,7 +275,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 	resolveResult := &resolver.ResolveResult{
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{
-			"api": {Infra: map[string]interface{}{"replicas": 3, "cpu": "500m"}},
+			"api": {Infra: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("replicas", 3); _m.Set("cpu", "500m"); return _m }()},
 		},
 	}
 
@@ -282,7 +287,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if graph.Spec.InfraMapping["api"] == nil {
+	if _, ok := graph.Spec.InfraMapping.Get("api"); !ok {
 		t.Fatal("expected infra mapping for api")
 	}
 }

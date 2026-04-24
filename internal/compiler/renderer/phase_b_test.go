@@ -17,11 +17,11 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 		Context: types.ContextBlock{
 			InstanceID: "api",
 			Inject: types.InjectPipe{
-				Env: map[string]string{"DB_URL": "db.svc.cluster.local:5432"},
+				Env: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "db.svc.cluster.local:5432"); return _m }(),
 			},
 		},
-		Values: map[string]interface{}{"port": 8080},
-		Infra:  map[string]interface{}{"replicas": 3},
+		Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 8080); return _m }(),
+		Infra:  func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("replicas", 3); return _m }(),
 	}
 
 	recipe := &types.Recipe{
@@ -50,7 +50,7 @@ func TestExecutePhaseB_NoValuesMapping(t *testing.T) {
 	t.Parallel()
 
 	ctx := &types.TemplateContext{
-		Values: map[string]interface{}{"key": "value"},
+		Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("key", "value"); return _m }(),
 	}
 
 	recipe := &types.Recipe{
@@ -122,10 +122,10 @@ func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			Inject: types.InjectPipe{
-				Env: map[string]string{"DB_URL": "db.svc:5432"},
+				Env: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "db.svc:5432"); return _m }(),
 			},
 		},
-		Values: map[string]interface{}{},
+		Values: types.OrderedMap[interface{}]{},
 	}
 
 	recipe := &types.Recipe{

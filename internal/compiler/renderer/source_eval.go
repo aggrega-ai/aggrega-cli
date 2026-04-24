@@ -6,6 +6,8 @@ package renderer
 import (
 	"fmt"
 	"strings"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 // EvaluateRecipeSource renders Go templates inside a Recipe's source field with
@@ -23,18 +25,18 @@ import (
 func EvaluateRecipeSource(
 	source interface{},
 	nodeID string,
-	values map[string]interface{},
-	infra map[string]interface{},
-	provides map[string]string,
+	values types.OrderedMap[interface{}],
+	infra types.OrderedMap[interface{}],
+	provides types.OrderedMap[string],
 ) (interface{}, error) {
 	if source == nil {
 		return nil, nil
 	}
 	ctx := LocalsContext{
 		Context:  ProvidesContextBlock{InstanceID: nodeID},
-		Values:   ensureMap(values),
-		Infra:    ensureMap(infra),
-		Provides: ensureStringMap(provides),
+		Values:   values,
+		Infra:    infra,
+		Provides: provides,
 	}
 
 	switch s := source.(type) {

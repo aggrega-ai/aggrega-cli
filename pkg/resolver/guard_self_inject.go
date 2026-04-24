@@ -22,9 +22,7 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	compNames := sortedKeys(agg.Spec.Components)
-	for _, compName := range compNames {
-		comp := agg.Spec.Components[compName]
+	for compName, comp := range agg.Spec.Components.All() {
 		if comp.Inject == nil {
 			continue
 		}
@@ -139,12 +137,12 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 }
 
 // collectUsesInjectDeliveryKeys extracts delivery keys from all uses-level inject blocks.
-func collectUsesInjectDeliveryKeys(uses map[string]interface{}) map[string][]string {
+func collectUsesInjectDeliveryKeys(uses types.OrderedMap[interface{}]) map[string][]string {
 	result := map[string][]string{}
-	if uses == nil {
+	if uses.Len() == 0 {
 		return result
 	}
-	for _, socketRaw := range uses {
+	for _, socketRaw := range uses.All() {
 		m, ok := socketRaw.(map[string]interface{})
 		if !ok {
 			continue

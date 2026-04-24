@@ -5,7 +5,6 @@ package validator
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"cuelang.org/go/cue/cuecontext"
@@ -22,8 +21,8 @@ import (
 // `@inject("env,file")` when an allowlist is present. CUE attributes are metadata —
 // they don't affect validation; the selector itself is enforced by the analyzer
 // (Step 4 selector matcher), not here.
-func GenerateBaseUsesCueSchema(usesSchema map[string]types.UsesSchemaEntry) string {
-	if len(usesSchema) == 0 {
+func GenerateBaseUsesCueSchema(usesSchema types.OrderedMap[types.UsesSchemaEntry]) string {
+	if usesSchema.Len() == 0 {
 		return ""
 	}
 
@@ -33,14 +32,7 @@ func GenerateBaseUsesCueSchema(usesSchema map[string]types.UsesSchemaEntry) stri
 	// socket names not declared in usesSchema.
 	b.WriteString("uses: close({\n")
 
-	keys := make([]string, 0, len(usesSchema))
-	for k := range usesSchema {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, socketName := range keys {
-		entry := usesSchema[socketName]
+	for socketName, entry := range usesSchema.All() {
 		// Selector attribute: always present, even if the selector string is empty —
 		// the socket is still a declared topology slot. @inject attribute
 		// reflects the allowlist for downstream policy tooling (Black-Box when absent).
@@ -80,22 +72,15 @@ func GenerateBaseUsesCueSchema(usesSchema map[string]types.UsesSchemaEntry) stri
 //
 // @required and @inject CUE attribute tags surface slot semantics for
 // downstream policy tools. Deterministic via sorted slot names.
-func GenerateBaseSecretsCueSchema(secretsSchema map[string]types.SecretSlot) string {
-	if len(secretsSchema) == 0 {
+func GenerateBaseSecretsCueSchema(secretsSchema types.OrderedMap[types.SecretSlot]) string {
+	if secretsSchema.Len() == 0 {
 		return ""
 	}
 
 	var b strings.Builder
 	b.WriteString("secrets: close({\n")
 
-	keys := make([]string, 0, len(secretsSchema))
-	for k := range secretsSchema {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, slotName := range keys {
-		slot := secretsSchema[slotName]
+	for slotName, slot := range secretsSchema.All() {
 		// Required slots omit the "?" optional marker on the slot field and
 		// make `type` mandatory inside the slot — a missing slot leaves `type`
 		// incomplete, so Validate(Concrete, Final) flags it. Optional slots

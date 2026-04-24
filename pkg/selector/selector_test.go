@@ -5,6 +5,8 @@ package selector
 
 import (
 	"testing"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 func TestParse(t *testing.T) {
@@ -51,16 +53,17 @@ func TestParse(t *testing.T) {
 func TestMatchString(t *testing.T) {
 	t.Parallel()
 
-	labels := map[string]string{
-		"component.aggrega.ai/type":       "stateful-server",
-		"compliance.aggrega.ai/data-class": "restricted",
-		"datastore.aggrega.ai/engine":     "relational",
-	}
+	labels := types.OrderedMap[string]{}
+	labels.Set("component.aggrega.ai/type", "stateful-server")
+	labels.Set("compliance.aggrega.ai/data-class", "restricted")
+	labels.Set("datastore.aggrega.ai/engine", "relational")
+
+	nilLabels := types.OrderedMap[string]{}
 
 	tests := []struct {
 		name     string
 		selector string
-		labels   map[string]string
+		labels   types.OrderedMap[string]
 		want     bool
 		wantErr  bool
 	}{
@@ -175,19 +178,19 @@ func TestMatchString(t *testing.T) {
 		{
 			name:     "nil labels empty selector",
 			selector: "",
-			labels:   nil,
+			labels:   nilLabels,
 			want:     true,
 		},
 		{
 			name:     "nil labels exists fails",
 			selector: "key",
-			labels:   nil,
+			labels:   nilLabels,
 			want:     false,
 		},
 		{
 			name:     "nil labels does not exist matches",
 			selector: "!key",
-			labels:   nil,
+			labels:   nilLabels,
 			want:     true,
 		},
 	}

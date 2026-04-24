@@ -9,26 +9,34 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+func makeLabels(pairs ...string) types.OrderedMap[string] {
+	m := types.OrderedMap[string]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i], pairs[i+1])
+	}
+	return m
+}
+
 func TestMatchLabels(t *testing.T) {
 	t.Parallel()
 
-	labels := map[string]string{
-		"component.aggrega.ai/type": "server",
-		"env":                       "prod",
-	}
+	labels := makeLabels(
+		"component.aggrega.ai/type", "server",
+		"env", "prod",
+	)
 
 	tests := []struct {
 		name        string
-		matchLabels map[string]string
+		matchLabels types.OrderedMap[string]
 		want        bool
 	}{
-		{"nil matches all", nil, true},
-		{"empty matches all", map[string]string{}, true},
-		{"single match", map[string]string{"env": "prod"}, true},
-		{"single no match", map[string]string{"env": "staging"}, false},
-		{"both match", map[string]string{"component.aggrega.ai/type": "server", "env": "prod"}, true},
-		{"one fails", map[string]string{"component.aggrega.ai/type": "server", "env": "staging"}, false},
-		{"missing key", map[string]string{"nonexistent": "value"}, false},
+		{"nil matches all", types.OrderedMap[string]{}, true},
+		{"empty matches all", types.OrderedMap[string]{}, true},
+		{"single match", makeLabels("env", "prod"), true},
+		{"single no match", makeLabels("env", "staging"), false},
+		{"both match", makeLabels("component.aggrega.ai/type", "server", "env", "prod"), true},
+		{"one fails", makeLabels("component.aggrega.ai/type", "server", "env", "staging"), false},
+		{"missing key", makeLabels("nonexistent", "value"), false},
 	}
 
 	for _, tt := range tests {
@@ -36,7 +44,7 @@ func TestMatchLabels(t *testing.T) {
 			t.Parallel()
 			got := MatchLabels(tt.matchLabels, labels)
 			if got != tt.want {
-				t.Errorf("MatchLabels(%v) = %v, want %v", tt.matchLabels, got, tt.want)
+				t.Errorf("MatchLabels(%v) = %v, want %v", tt.matchLabels.Keys(), got, tt.want)
 			}
 		})
 	}
@@ -45,10 +53,10 @@ func TestMatchLabels(t *testing.T) {
 func TestMatchExpressions(t *testing.T) {
 	t.Parallel()
 
-	labels := map[string]string{
-		"component.aggrega.ai/type": "server",
-		"env":                       "prod",
-	}
+	labels := makeLabels(
+		"component.aggrega.ai/type", "server",
+		"env", "prod",
+	)
 
 	tests := []struct {
 		name  string
@@ -139,10 +147,10 @@ func TestMatchExpressions(t *testing.T) {
 func TestMatchAnyOf(t *testing.T) {
 	t.Parallel()
 
-	labels := map[string]string{
-		"component.aggrega.ai/type": "server",
-		"env":                       "prod",
-	}
+	labels := makeLabels(
+		"component.aggrega.ai/type", "server",
+		"env", "prod",
+	)
 
 	tests := []struct {
 		name  string
@@ -153,35 +161,35 @@ func TestMatchAnyOf(t *testing.T) {
 		{"empty matches all", []types.SelectorTerm{}, true},
 		{
 			"single term matches",
-			[]types.SelectorTerm{{MatchLabels: map[string]string{"env": "prod"}}},
+			[]types.SelectorTerm{{MatchLabels: makeLabels("env", "prod")}},
 			true,
 		},
 		{
 			"single term fails",
-			[]types.SelectorTerm{{MatchLabels: map[string]string{"env": "staging"}}},
+			[]types.SelectorTerm{{MatchLabels: makeLabels("env", "staging")}},
 			false,
 		},
 		{
 			"OR first matches",
 			[]types.SelectorTerm{
-				{MatchLabels: map[string]string{"env": "prod"}},
-				{MatchLabels: map[string]string{"env": "staging"}},
+				{MatchLabels: makeLabels("env", "prod")},
+				{MatchLabels: makeLabels("env", "staging")},
 			},
 			true,
 		},
 		{
 			"OR second matches",
 			[]types.SelectorTerm{
-				{MatchLabels: map[string]string{"env": "staging"}},
-				{MatchLabels: map[string]string{"env": "prod"}},
+				{MatchLabels: makeLabels("env", "staging")},
+				{MatchLabels: makeLabels("env", "prod")},
 			},
 			true,
 		},
 		{
 			"OR none match",
 			[]types.SelectorTerm{
-				{MatchLabels: map[string]string{"env": "staging"}},
-				{MatchLabels: map[string]string{"env": "dev"}},
+				{MatchLabels: makeLabels("env", "staging")},
+				{MatchLabels: makeLabels("env", "dev")},
 			},
 			false,
 		},
@@ -189,7 +197,7 @@ func TestMatchAnyOf(t *testing.T) {
 			"term with matchLabels AND matchExpressions",
 			[]types.SelectorTerm{
 				{
-					MatchLabels:      map[string]string{"env": "prod"},
+					MatchLabels:      makeLabels("env", "prod"),
 					MatchExpressions: []types.LabelSelectorRequirement{{Key: "component.aggrega.ai/type", Operator: "In", Values: []string{"server"}}},
 				},
 			},
@@ -199,7 +207,7 @@ func TestMatchAnyOf(t *testing.T) {
 			"term matchLabels pass but matchExpressions fail",
 			[]types.SelectorTerm{
 				{
-					MatchLabels:      map[string]string{"env": "prod"},
+					MatchLabels:      makeLabels("env", "prod"),
 					MatchExpressions: []types.LabelSelectorRequirement{{Key: "component.aggrega.ai/type", Operator: "In", Values: []string{"worker"}}},
 				},
 			},

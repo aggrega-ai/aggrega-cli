@@ -28,31 +28,31 @@ type IRMetadata struct {
 // IRSpec is the spec subtree of an IR document.
 // Schema: ir-v1alpha1.schema.json#/properties/spec
 type IRSpec struct {
-	Nodes                map[string]IRNode                    `json:"nodes"`
-	Edges                []IREdge                             `json:"edges"`
-	FeatureMarkers       []string                             `json:"feature_markers"`
-	ValuesMapping        map[string]json.RawMessage           `json:"values_mapping"`
-	InfraMapping         map[string]json.RawMessage           `json:"infra_mapping"`
-	FeatureValuesMapping map[string]map[string]IRFeatureEntry `json:"feature_values_mapping"`
-	Secrets              map[string]map[string]IRSecretEntry  `json:"secrets"`
-	Provenance           IRProvenance                         `json:"provenance"`
+	Nodes                OrderedMap[IRNode]                       `json:"nodes"`
+	Edges                []IREdge                                 `json:"edges"`
+	FeatureMarkers       []string                                 `json:"feature_markers"`
+	ValuesMapping        OrderedMap[json.RawMessage]              `json:"values_mapping"`
+	InfraMapping         OrderedMap[json.RawMessage]              `json:"infra_mapping"`
+	FeatureValuesMapping OrderedMap[OrderedMap[IRFeatureEntry]]   `json:"feature_values_mapping"`
+	Secrets              OrderedMap[OrderedMap[IRSecretEntry]]    `json:"secrets"`
+	Provenance           IRProvenance                             `json:"provenance"`
 }
 
 // IRNode is a single node in the IR graph. Purely topological — no opaque payload.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/nodes
 type IRNode struct {
-	Description          string            `json:"description,omitempty"`
-	Labels               map[string]string `json:"labels"`
-	Component            string            `json:"component"`
-	ResolvedVersion      string            `json:"resolved_version"`
-	SyncWave             string            `json:"sync_wave,omitempty"`
-	BoundaryPath         string            `json:"boundary_path,omitempty"`
-	SubsystemPath        string            `json:"subsystem_path,omitempty"`
-	CatalogMetadata      *CatalogMetadata  `json:"catalog_metadata,omitempty"`
-	CatalogAnnotations   map[string]string `json:"catalog_annotations,omitempty"`
-	ReleaseAnnotations   map[string]string `json:"release_annotations,omitempty"`
-	AggregateAnnotations map[string]string `json:"aggregate_annotations,omitempty"`
-	SelfInject           *InjectBlock      `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
+	Description          string             `json:"description,omitempty"`
+	Labels               OrderedMap[string] `json:"labels"`
+	Component            string             `json:"component"`
+	ResolvedVersion      string             `json:"resolved_version"`
+	SyncWave             string             `json:"sync_wave,omitempty"`
+	BoundaryPath         string             `json:"boundary_path,omitempty"`
+	SubsystemPath        string             `json:"subsystem_path,omitempty"`
+	CatalogMetadata      *CatalogMetadata   `json:"catalog_metadata,omitempty"`
+	CatalogAnnotations   OrderedMap[string] `json:"catalog_annotations,omitempty,omitzero"`
+	ReleaseAnnotations   OrderedMap[string] `json:"release_annotations,omitempty,omitzero"`
+	AggregateAnnotations OrderedMap[string] `json:"aggregate_annotations,omitempty,omitzero"`
+	SelfInject           *InjectBlock       `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.
@@ -69,32 +69,32 @@ type CatalogMetadata struct {
 // IREdge is a directed logical relationship between IR nodes.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/edges/items
 type IREdge struct {
-	Source        string                       `json:"source"`
-	Target        string                       `json:"target"`
-	Socket        string                       `json:"socket,omitempty"`
-	Alias         string                       `json:"alias,omitempty"`
-	OriginFeature string                       `json:"origin_feature,omitempty"`
-	Inject        map[string]map[string]string `json:"inject,omitempty"`
+	Source        string                         `json:"source"`
+	Target        string                         `json:"target"`
+	Socket        string                         `json:"socket,omitempty"`
+	Alias         string                         `json:"alias,omitempty"`
+	OriginFeature string                         `json:"origin_feature,omitempty"`
+	Inject        OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 }
 
 // IRFeatureEntry is one feature attached to a node in the feature_values_mapping.
 // Schema: ir-v1alpha1.schema.json feature_values_mapping entry
 type IRFeatureEntry struct {
-	Type            string                       `json:"type"`
-	ResolvedVersion string                       `json:"resolved_version"`
-	Values          map[string]interface{}       `json:"values,omitempty"`
-	Infra           map[string]interface{}       `json:"infra,omitempty"`
-	Inject          map[string]map[string]string `json:"inject,omitempty"`
-	Secrets         map[string]IRSecretEntry     `json:"secrets,omitempty"`
+	Type            string                         `json:"type"`
+	ResolvedVersion string                         `json:"resolved_version"`
+	Values          OrderedMap[interface{}]        `json:"values,omitempty,omitzero"`
+	Infra           OrderedMap[interface{}]        `json:"infra,omitempty,omitzero"`
+	Inject          OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
+	Secrets         OrderedMap[IRSecretEntry]      `json:"secrets,omitempty,omitzero"`
 }
 
 // IRSecretEntry is a validated credential request for a node.
 // Schema: ir-v1alpha1.schema.json secrets entry
 type IRSecretEntry struct {
-	Type            string                       `json:"type"`
-	ResolvedVersion string                       `json:"resolved_version"`
-	Values          map[string]interface{}       `json:"values,omitempty"`
-	Inject          map[string]map[string]string `json:"inject,omitempty"`
+	Type            string                         `json:"type"`
+	ResolvedVersion string                         `json:"resolved_version"`
+	Values          OrderedMap[interface{}]        `json:"values,omitempty,omitzero"`
+	Inject          OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 }
 
 // IRProvenance records compiler and source traceability for an IR build.

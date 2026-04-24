@@ -20,10 +20,10 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components {
+	for compName, comp := range agg.Spec.Components.All() {
 		releaseFeatures := collectReleaseBoundaryFeaturesForComponent(release.Spec.Boundaries, compName)
 
-		for featName, aggFeat := range comp.Features {
+		for featName, aggFeat := range comp.Features.All() {
 			relFeat, ok := releaseFeatures[featName]
 			if !ok {
 				continue // Feature only in Aggregate — no merge needed
@@ -44,11 +44,11 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 	return errs
 }
 
-func collectReleaseBoundaryFeaturesForComponent(boundaries map[string]types.Boundary, compName string) map[string]types.BoundaryFeature {
+func collectReleaseBoundaryFeaturesForComponent(boundaries types.OrderedMap[types.Boundary], compName string) map[string]types.BoundaryFeature {
 	result := map[string]types.BoundaryFeature{}
-	for _, boundary := range boundaries {
-		if bc, ok := boundary.Components[compName]; ok {
-			for featName, feat := range bc.Features {
+	for _, boundary := range boundaries.All() {
+		if bc, ok := boundary.Components.Get(compName); ok {
+			for featName, feat := range bc.Features.All() {
 				result[featName] = feat
 			}
 		}

@@ -30,17 +30,15 @@ func testInput() renderer.RendererInput {
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test-app"},
 			Spec: types.IRSpec{
-				Nodes: map[string]types.IRNode{
-					"api": {
+				Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{
 						Component:       "core/server/api-server",
-						Labels:          map[string]string{"component.aggrega.ai/type": "server"},
+						Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("component.aggrega.ai/type", "server"); return _m }(),
 						ResolvedVersion: "1.0.0",
 						BoundaryPath:    "local/default",
-					},
-				},
+					}); return _m }(),
 				Edges:          nil,
-				ValuesMapping:  map[string]json.RawMessage{"api": json.RawMessage(`{"port":8080}`)},
-				InfraMapping:   map[string]json.RawMessage{},
+				ValuesMapping:  func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", json.RawMessage(`{"port":8080}`)); return _m }(),
+				InfraMapping:   types.OrderedMap[json.RawMessage]{},
 				FeatureMarkers: nil,
 				Provenance:     types.IRProvenance{CompilerVersion: "0.1.0", AggregateVersion: "1.0.0"},
 			},
@@ -65,11 +63,8 @@ func testRecipeLookup() renderer.RecipeLookup {
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
 						Implements: "core/server/api-server",
-						Provides: map[string]string{
-							"host":         `{{ .context.instance_id }}.svc.cluster.local`,
-							"service_port": `8080`,
-						},
-						Locals:        map[string]string{"primary_compute": "api"},
+						Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id }}.svc.cluster.local`); _m.Set("service_port", `8080`); return _m }(),
+						Locals:        func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("primary_compute", "api"); return _m }(),
 						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"], "environment": {"PORT": "8080"}}`,
 					},
 				}, true
@@ -108,13 +103,18 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 	t.Parallel()
 
 	input := testInput()
-	input.Graph.Spec.Nodes["db"] = types.IRNode{
+	dbLabels := types.OrderedMap[string]{}
+	dbLabels.Set("component.aggrega.ai/type", "stateful-server")
+	input.Graph.Spec.Nodes.Set("db", types.IRNode{
 		Component: "core/database/postgres",
-		Labels:    map[string]string{"component.aggrega.ai/type": "stateful-server"},
-	}
+		Labels:    dbLabels,
+	})
+	envInj := types.OrderedMap[string]{}
+	envInj.Set("DB_HOST", "host")
+	edgeInj := types.OrderedMap[types.OrderedMap[string]]{}
+	edgeInj.Set("env", envInj)
 	input.Graph.Spec.Edges = []types.IREdge{
-		{Source: "api", Target: "db", Socket: "databases", Alias: "main-db",
-			Inject: map[string]map[string]string{"env": {"DB_HOST": "host"}}},
+		{Source: "api", Target: "db", Socket: "databases", Alias: "main-db", Inject: edgeInj},
 	}
 
 	lookup := renderer.RecipeLookup{
@@ -131,9 +131,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
-						Provides: map[string]string{
-							"host": `{{ .context.instance_id }}.svc.cluster.local`,
-						},
+						Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id }}.svc.cluster.local`); return _m }(),
 						ValuesMapping: `{"image": "postgres:15"}`,
 					},
 				}, true
@@ -201,8 +199,8 @@ func TestRenderAll_Deterministic(t *testing.T) {
 	t.Parallel()
 
 	input := testInput()
-	input.Graph.Spec.Nodes["z-worker"] = types.IRNode{Component: "core/worker"}
-	input.Graph.Spec.Nodes["a-db"] = types.IRNode{Component: "core/database/postgres"}
+	input.Graph.Spec.Nodes.Set("z-worker", types.IRNode{Component: "core/worker"})
+	input.Graph.Spec.Nodes.Set("a-db", types.IRNode{Component: "core/database/postgres"})
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(string) (*types.Recipe, bool) {
@@ -237,14 +235,19 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 	t.Parallel()
 
 	input := testInput()
-	input.Graph.Spec.FeatureValuesMapping = map[string]map[string]types.IRFeatureEntry{
-		"api": {
-			"mon": {
-				Type:   "core/monitoring",
-				Values: map[string]interface{}{"scrape_port": float64(9090), "tier": "prod"},
-			},
-		},
-	}
+	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+		vals := types.OrderedMap[interface{}]{}
+		vals.Set("scrape_port", float64(9090))
+		vals.Set("tier", "prod")
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("mon", types.IRFeatureEntry{
+			Type:   "core/monitoring",
+			Values: vals,
+		})
+		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
 	input.FeatureOrder = ir.FeatureOrder{"api": []string{"mon"}}
 
 	lookup := renderer.RecipeLookup{
@@ -268,7 +271,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 					Spec: types.FeatureRecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/monitoring",
-						Locals:        map[string]string{"scrape_target": `{{ .values.tier }}-{{ .values.scrape_port }}`},
+						Locals:        func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("scrape_target", `{{ .values.tier }}-{{ .values.scrape_port }}`); return _m }(),
 						ValuesMapping: `{"image": "prom/mon:v1", "ports": ["{{ .values.scrape_port }}:9090"]}`,
 					},
 				}, true
@@ -325,9 +328,13 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 	t.Parallel()
 
 	input := testInput()
-	input.Graph.Spec.FeatureValuesMapping = map[string]map[string]types.IRFeatureEntry{
-		"api": {"dns": {Type: "core/dns-resolver"}},
-	}
+	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("dns", types.IRFeatureEntry{Type: "core/dns-resolver"})
+		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
 	input.FeatureOrder = ir.FeatureOrder{"api": []string{"dns"}}
 
 	lookup := renderer.RecipeLookup{
@@ -371,19 +378,23 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 
 	input := testInput()
 	// Attach a credential secret to the api node.
-	input.Graph.Spec.Secrets = map[string]map[string]types.IRSecretEntry{
-		"api": {
-			"root_password": {
-				Type: "core/db-password",
-				Values: map[string]interface{}{
-					"length": float64(32),
-				},
-				Inject: map[string]map[string]string{
-					"env": {"DB_PASSWORD": "ref:root_password"},
-				},
-			},
-		},
-	}
+	input.Graph.Spec.Secrets = func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
+		vals := types.OrderedMap[interface{}]{}
+		vals.Set("length", float64(32))
+		envInj := types.OrderedMap[string]{}
+		envInj.Set("DB_PASSWORD", "ref:root_password")
+		inj := types.OrderedMap[types.OrderedMap[string]]{}
+		inj.Set("env", envInj)
+		inner := types.OrderedMap[types.IRSecretEntry]{}
+		inner.Set("root_password", types.IRSecretEntry{
+			Type:   "core/db-password",
+			Values: vals,
+			Inject: inj,
+		})
+		outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(componentType string) (*types.Recipe, bool) {
@@ -450,9 +461,11 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 
 	input := testInput()
 	// Values has {port: 8080} from testInput(); add an unused infra knob.
-	input.Graph.Spec.InfraMapping = map[string]json.RawMessage{
-		"api": json.RawMessage(`{"replicas":3}`),
-	}
+	input.Graph.Spec.InfraMapping = func() types.OrderedMap[json.RawMessage] {
+		m := types.OrderedMap[json.RawMessage]{}
+		m.Set("api", json.RawMessage(`{"replicas":3}`))
+		return m
+	}()
 
 	// valuesMapping reads ONLY .values.port — ignores .infra.replicas.
 	lookup := renderer.RecipeLookup{

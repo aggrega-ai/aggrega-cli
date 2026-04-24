@@ -5,7 +5,6 @@ package topology
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -22,6 +21,7 @@ type flattenResult struct {
 
 // flattenAggregate recursively walks an Aggregate tree, flattening all components
 // (including sub-aggregate components) into a flat node map with dot-notation IDs.
+// Walks are in author order (OrderedMap iteration).
 func flattenAggregate(
 	agg *types.Aggregate,
 	prefix string,
@@ -41,10 +41,8 @@ func flattenAggregate(
 		ExportedComponents: make(map[string]string),
 	}
 
-	// Walk top-level components (sorted for determinism)
-	compNames := sortedMapKeys(agg.Spec.Components)
-	for _, name := range compNames {
-		comp := agg.Spec.Components[name]
+	// Walk top-level components in author order
+	for name, comp := range agg.Spec.Components.All() {
 		nodeID := qualifiedID(prefix, name)
 		result.Nodes[nodeID] = &TopologyNode{
 			InstanceID:      nodeID,
@@ -57,19 +55,15 @@ func flattenAggregate(
 		collectAttachments(result, nodeID, comp, 0)
 	}
 
-	// Walk subsystems (sorted, recursive)
-	subNames := sortedMapKeysSubsystems(agg.Spec.Subsystems)
-	for _, subName := range subNames {
-		sub := agg.Spec.Subsystems[subName]
+	// Walk subsystems in author order (recursive)
+	for subName, sub := range agg.Spec.Subsystems.All() {
 		subPath := qualifiedID(subsystemPath, subName)
 		flattenSubsystem(result, prefix, subPath, sub)
 	}
 
-	// Walk sub-aggregates (sorted)
+	// Walk sub-aggregates in author order
 	if loader != nil {
-		aggNames := sortedMapKeysSubAggregates(agg.Spec.Aggregates)
-		for _, aggName := range aggNames {
-			subAgg := agg.Spec.Aggregates[aggName]
+		for aggName, subAgg := range agg.Spec.Aggregates.All() {
 			childPrefix := qualifiedID(prefix, aggName)
 
 			if visited[subAgg.Type] {
@@ -102,9 +96,7 @@ func flattenAggregate(
 
 			// Rewire exported_components: alias scoped to sub-aggregate prefix
 			if childAgg != nil {
-				exportNames := sortedMapKeysStringMap(childAgg.Spec.ExportedComponents)
-				for _, exportAlias := range exportNames {
-					localRef := childAgg.Spec.ExportedComponents[exportAlias]
+				for exportAlias, localRef := range childAgg.Spec.ExportedComponents.All() {
 					resolvedID := qualifiedID(childPrefix, localRef)
 					result.ExportedComponents[qualifiedID(childPrefix, exportAlias)] = resolvedID
 				}
@@ -116,9 +108,7 @@ func flattenAggregate(
 }
 
 func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) {
-	compNames := sortedMapKeys(sub.Components)
-	for _, name := range compNames {
-		comp := sub.Components[name]
+	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
 		result.Nodes[nodeID] = &TopologyNode{
 			InstanceID:      nodeID,
@@ -132,19 +122,15 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub t
 	}
 
 	// Recurse into nested subsystems
-	subNames := sortedMapKeysSubsystems(sub.Subsystems)
-	for _, subName := range subNames {
-		nested := sub.Subsystems[subName]
+	for subName, nested := range sub.Subsystems.All() {
 		nestedPath := subsystemPath + "." + subName
 		flattenSubsystem(result, prefix, nestedPath, nested)
 	}
 }
 
 func collectAttachments(result *flattenResult, nodeID string, comp types.ComponentInstance, tier int) {
-	// Features (sorted)
-	featNames := sortedMapKeysFeatures(comp.Features)
-	for _, fname := range featNames {
-		feat := comp.Features[fname]
+	// Features (author order)
+	for fname, feat := range comp.Features.All() {
 		result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
 			InstanceName: fname,
 			Feature:      feat,
@@ -152,10 +138,8 @@ func collectAttachments(result *flattenResult, nodeID string, comp types.Compone
 		})
 	}
 
-	// Secrets (sorted)
-	secNames := sortedMapKeysSecrets(comp.Secrets)
-	for _, sname := range secNames {
-		sec := comp.Secrets[sname]
+	// Secrets (author order)
+	for sname, sec := range comp.Secrets.All() {
 		result.SecretAttachments[nodeID] = append(result.SecretAttachments[nodeID], SecretAttachment{
 			InstanceName: sname,
 			Secret:       sec,
@@ -177,60 +161,4 @@ func copyVisited(m map[string]bool) map[string]bool {
 		out[k] = v
 	}
 	return out
-}
-
-// Sorted key helpers for deterministic map iteration.
-
-func sortedMapKeys(m map[string]types.ComponentInstance) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeysSubsystems(m map[string]types.Subsystem) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeysSubAggregates(m map[string]types.SubAggregate) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeysFeatures(m map[string]types.FeatureInstance) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeysSecrets(m map[string]types.SecretInstance) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeysStringMap(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

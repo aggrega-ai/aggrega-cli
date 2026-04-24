@@ -4,7 +4,10 @@
 package types
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"iter"
 
 	"gopkg.in/yaml.v3"
@@ -28,12 +31,32 @@ type OrderedMap[V any] struct {
 	values map[string]V
 }
 
+// NewOrderedMap returns an empty, initialized OrderedMap suitable for
+// immediate Set calls. Prefer this over `OrderedMap[V]{}` literals when the
+// map will receive writes — the zero value's Set works but uses a lazy
+// allocation path that's fine for one-shot callers but adds one conditional
+// per Set call.
+func NewOrderedMap[V any]() *OrderedMap[V] {
+	return &OrderedMap[V]{
+		values: make(map[string]V),
+	}
+}
+
 // Len returns the number of entries.
 func (m *OrderedMap[V]) Len() int {
 	if m == nil {
 		return 0
 	}
 	return len(m.keys)
+}
+
+// IsZero reports whether the map is empty. Used by yaml.v3's omitempty (via
+// the yaml.IsZeroer interface) and by encoding/json's omitzero struct tag
+// (Go 1.24+) so that empty OrderedMap fields on struct types with the
+// appropriate tag are omitted from marshaled output rather than emitting as
+// `{}`.
+func (m OrderedMap[V]) IsZero() bool {
+	return len(m.keys) == 0
 }
 
 // Get returns the value stored at k and whether k is present.
@@ -173,4 +196,100 @@ func (m OrderedMap[V]) MarshalYAML() (any, error) {
 		out.Content = append(out.Content, keyNode, valueNode)
 	}
 	return out, nil
+}
+
+// MarshalJSON emits a JSON object with keys in author order. Value receiver
+// matches MarshalYAML's dispatch rationale. The encoding/json package does
+// not expose a way to influence its default map-key ordering, so we build
+// the JSON object manually and delegate to json.Marshal for each value.
+func (m OrderedMap[V]) MarshalJSON() ([]byte, error) {
+	if len(m.keys) == 0 {
+		return []byte("{}"), nil
+	}
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, k := range m.keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		keyBytes, err := json.Marshal(k)
+		if err != nil {
+			return nil, fmt.Errorf("OrderedMap: encoding JSON key %q: %w", k, err)
+		}
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+		valueBytes, err := json.Marshal(m.values[k])
+		if err != nil {
+			return nil, fmt.Errorf("OrderedMap: encoding JSON value for key %q: %w", k, err)
+		}
+		buf.Write(valueBytes)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes a JSON object preserving key order. Uses a streaming
+// json.Decoder with Token() to observe keys in source order — encoding/json's
+// default json.Unmarshal into a map collapses order, so we parse the object
+// manually one key-value pair at a time.
+//
+// Rejects duplicate keys with the duplicate key name in the error.
+func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
+	if m.values == nil {
+		m.values = make(map[string]V)
+	}
+	m.keys = m.keys[:0]
+
+	// Handle the literal null — JSON null decodes into a nil-equivalent state,
+	// i.e. an empty OrderedMap, without error.
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("OrderedMap: reading JSON opening token: %w", err)
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim != '{' {
+		return fmt.Errorf("OrderedMap: expected JSON object, got token %v", tok)
+	}
+
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("OrderedMap: reading JSON key: %w", err)
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return fmt.Errorf("OrderedMap: expected string key, got token %v", keyTok)
+		}
+
+		if _, exists := m.values[key]; exists {
+			return fmt.Errorf("OrderedMap: duplicate key %q", key)
+		}
+
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return fmt.Errorf("OrderedMap: reading JSON value for key %q: %w", key, err)
+		}
+
+		var v V
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return fmt.Errorf("OrderedMap: decoding JSON value for key %q: %w", key, err)
+		}
+
+		m.keys = append(m.keys, key)
+		m.values[key] = v
+	}
+
+	// Consume the closing '}' token.
+	if _, err := dec.Token(); err != nil && err != io.EOF {
+		return fmt.Errorf("OrderedMap: reading JSON closing token: %w", err)
+	}
+
+	return nil
 }

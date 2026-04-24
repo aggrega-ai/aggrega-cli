@@ -27,7 +27,7 @@ func featureCatalog() resolver.CatalogLookup {
 				return types.Feature{
 					Metadata: types.FeatureMetadata{
 						Name:   "core/db-creds",
-						Labels: map[string]string{types.FeatureKindLabel: types.FeatureKindSecret},
+						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.FeatureKindLabel, types.FeatureKindSecret); return _m }(),
 					},
 				}, true
 			default:
@@ -46,7 +46,7 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
-				{InstanceName: "monitoring", Feature: types.FeatureInstance{Type: "core/monitoring", Values: map[string]interface{}{"enabled": true}}},
+				{InstanceName: "monitoring", Feature: types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("enabled", true); return _m }()}},
 			},
 		},
 	}
@@ -58,15 +58,16 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Features) != 1 {
-		t.Fatalf("expected 1 feature, got %d", len(result.Features))
+	if result.Features.Len() != 1 {
+		t.Fatalf("expected 1 feature, got %d", result.Features.Len())
 	}
-	f := result.Features["monitoring"]
+	f, _ := result.Features.Get("monitoring")
 	if f.Type != "core/monitoring" {
 		t.Errorf("type: %q", f.Type)
 	}
-	if f.Values["enabled"] != true {
-		t.Errorf("values: %v", f.Values)
+	enabled, _ := f.Values.Get("enabled")
+	if enabled != true {
+		t.Errorf("values: %v", f.Values.Keys())
 	}
 	if len(result.FeatureOrder) != 1 || result.FeatureOrder[0] != "monitoring" {
 		t.Errorf("order: %v", result.FeatureOrder)
@@ -82,7 +83,7 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 		},
 		SecretAttachments: map[string][]topology.SecretAttachment{
 			"api": {
-				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: map[string]interface{}{"vault_path": "/secret/db"}}},
+				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("vault_path", "/secret/db"); return _m }()}},
 			},
 		},
 	}
@@ -94,13 +95,13 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Features) != 0 {
-		t.Errorf("expected 0 features, got %d (credential should be in secrets)", len(result.Features))
+	if result.Features.Len() != 0 {
+		t.Errorf("expected 0 features, got %d (credential should be in secrets)", result.Features.Len())
 	}
-	if len(result.Secrets) != 1 {
-		t.Fatalf("expected 1 secret, got %d", len(result.Secrets))
+	if result.Secrets.Len() != 1 {
+		t.Fatalf("expected 1 secret, got %d", result.Secrets.Len())
 	}
-	s := result.Secrets["db-creds"]
+	s, _ := result.Secrets.Get("db-creds")
 	if s.Type != "core/db-creds" {
 		t.Errorf("type: %q", s.Type)
 	}
@@ -142,8 +143,8 @@ func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
-				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: map[string]interface{}{"level": "warn", "port": 9090}}},
-				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: map[string]interface{}{"level": "info"}}},
+				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("level", "warn"); _m.Set("port", 9090); return _m }()}},
+				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("level", "info"); return _m }()}},
 			},
 		},
 	}
@@ -155,12 +156,14 @@ func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	f := result.Features["mon"]
-	if f.Values["level"] != "info" {
-		t.Errorf("expected 'info' (last wins), got %v", f.Values["level"])
+	f, _ := result.Features.Get("mon")
+	level, _ := f.Values.Get("level")
+	if level != "info" {
+		t.Errorf("expected 'info' (last wins), got %v", level)
 	}
-	if f.Values["port"] != 9090 {
-		t.Errorf("expected port 9090 preserved, got %v", f.Values["port"])
+	port, _ := f.Values.Get("port")
+	if port != 9090 {
+		t.Errorf("expected port 9090 preserved, got %v", port)
 	}
 }
 

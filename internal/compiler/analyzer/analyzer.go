@@ -57,14 +57,14 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 }
 
 func assemblePolicyInput(graph *types.IRGraph, paths []PrecalculatedPath) *PolicyValidatorInput {
-	policyNodes := make(map[string]PolicyNode, len(graph.Spec.Nodes))
-	for id, node := range graph.Spec.Nodes {
+	policyNodes := make(map[string]PolicyNode, graph.Spec.Nodes.Len())
+	for id, node := range graph.Spec.Nodes.All() {
 		pn := PolicyNode{
 			Component:       node.Component,
 			ResolvedVersion: node.ResolvedVersion,
 			Labels:          node.Labels,
 		}
-		if fvm, ok := graph.Spec.FeatureValuesMapping[id]; ok {
+		if fvm, ok := graph.Spec.FeatureValuesMapping.Get(id); ok {
 			pn.Features = fvm
 		}
 		policyNodes[id] = pn

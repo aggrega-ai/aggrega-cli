@@ -37,8 +37,8 @@ func ExecutePhaseB(ctx *types.TemplateContext, recipe *types.Recipe) (map[string
 	}
 
 	if tmplText == "" {
-		// No valuesMapping — return values from context as-is
-		return ctx.Values, nil
+		// No valuesMapping — return values from context as-is (flattened for engine)
+		return flattenOrderedMap(ctx.Values), nil
 	}
 
 	// Evaluate template

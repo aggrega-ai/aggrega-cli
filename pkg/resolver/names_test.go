@@ -14,14 +14,8 @@ func TestValidateInstanceNames_ValidNames(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web-server": {Type: "core/server:1.0.0"},
-				"my_worker":  {Type: "core/worker:1.0.0"},
-				"api123":     {Type: "core/server:1.0.0"},
-			},
-			Aggregates: map[string]types.SubAggregate{
-				"auth-module": {Type: "auth/module:1.0.0"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web-server", types.ComponentInstance{Type: "core/server:1.0.0"}); _m.Set("my_worker", types.ComponentInstance{Type: "core/worker:1.0.0"}); _m.Set("api123", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
+			Aggregates: func() types.OrderedMap[types.SubAggregate] { _m := types.OrderedMap[types.SubAggregate]{}; _m.Set("auth-module", types.SubAggregate{Type: "auth/module:1.0.0"}); return _m }(),
 		},
 	}
 
@@ -35,9 +29,7 @@ func TestValidateInstanceNames_DotRejected(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"nested.component": {Type: "core/server:1.0.0"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("nested.component", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
 		},
 	}
 
@@ -54,9 +46,7 @@ func TestValidateInstanceNames_SpaceRejected(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"bad name": {Type: "core/server:1.0.0"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bad name", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
 		},
 	}
 
@@ -70,9 +60,7 @@ func TestValidateInstanceNames_SpecialCharsRejected(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"bad@name": {Type: "core/server:1.0.0"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bad@name", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
 		},
 	}
 
@@ -86,13 +74,9 @@ func TestValidateInstanceNames_NestedSubsystem(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Subsystems: map[string]types.Subsystem{
-				"valid-subsystem": {
-					Components: map[string]types.ComponentInstance{
-						"bad.comp": {Type: "core/server:1.0.0"},
-					},
-				},
-			},
+			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("valid-subsystem", types.Subsystem{
+					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bad.comp", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -106,14 +90,10 @@ func TestValidateInstanceNames_FeatureNames(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"bad.feature": {Type: "ops/logging:1.0.0"},
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("bad.feature", types.FeatureInstance{Type: "ops/logging:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 

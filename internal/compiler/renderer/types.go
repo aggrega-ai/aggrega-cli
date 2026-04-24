@@ -20,15 +20,15 @@ type RendererInput struct {
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).
 // Key: nodeID, Value: provides dictionary (key → resolved value string).
-type NodeProvides map[string]map[string]string
+type NodeProvides map[string]types.OrderedMap[string]
 
 // ProvidesContext is the restricted context available during provides evaluation.
 // Only self-contained data: instance_id, outputs, values, infra.
 type ProvidesContext struct {
-	Context ProvidesContextBlock       `json:"context"`
-	Values  map[string]interface{}     `json:"values"`
-	Infra   map[string]interface{}     `json:"infra"`
-	Locals map[string]string          `json:"locals"`
+	Context ProvidesContextBlock    `json:"context"`
+	Values  types.OrderedMap[interface{}] `json:"values"`
+	Infra   types.OrderedMap[interface{}] `json:"infra"`
+	Locals  types.OrderedMap[string]      `json:"locals"`
 }
 
 // ProvidesContextBlock holds only the instance_id for provides evaluation.

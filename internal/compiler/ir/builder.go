@@ -31,19 +31,25 @@ type FeatureOrder map[string][]string
 //  4. Populate values/infra/feature mappings
 //  5. Build annotation buckets
 //  6. Generate provenance
+//
+// Iteration over the topology's flattened node map is sorted alphabetically
+// (topology stores nodes in a plain map for lookup); the output OrderedMap
+// carries that same ordering. Author order from the Aggregate flows through
+// the IR ValuesMapping and FeatureValuesMapping via the per-component
+// OrderedMap values.
 func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult
 
-	irNodes := make(map[string]types.IRNode)
-	valuesMapping := make(map[string]json.RawMessage)
-	infraMapping := make(map[string]json.RawMessage)
-	featureValuesMapping := make(map[string]map[string]types.IRFeatureEntry)
-	secrets := make(map[string]map[string]types.IRSecretEntry)
+	irNodes := types.OrderedMap[types.IRNode]{}
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	infraMapping := types.OrderedMap[json.RawMessage]{}
+	featureValuesMapping := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	secrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
 	featureOrder := make(FeatureOrder)
 	allMarkers := map[string]bool{}
 
-	// 1. Build IR nodes (sorted for determinism)
+	// 1. Build IR nodes (sorted for determinism — topo.Nodes is a plain map keyed by flattened ID)
 	nodeIDs := sortedStringKeys(topo.Nodes)
 	for _, nodeID := range nodeIDs {
 		topoNode := topo.Nodes[nodeID]
@@ -77,21 +83,21 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 			irNode.SyncWave = findSyncWave(res.Release.Spec.SyncWaves, nodeID)
 		}
 
-		irNodes[nodeID] = irNode
+		irNodes.Set(nodeID, irNode)
 
 		// 4. Values mapping
-		if topoNode.Values != nil {
+		if topoNode.Values.Len() > 0 {
 			raw, err := json.Marshal(topoNode.Values)
 			if err == nil {
-				valuesMapping[nodeID] = raw
+				valuesMapping.Set(nodeID, raw)
 			}
 		}
 
 		// Infra mapping from boundary infra
-		if bi, ok := res.BoundaryInfra[nodeID]; ok && bi != nil && bi.Infra != nil {
+		if bi, ok := res.BoundaryInfra[nodeID]; ok && bi != nil && bi.Infra.Len() > 0 {
 			raw, err := json.Marshal(bi.Infra)
 			if err == nil {
-				infraMapping[nodeID] = raw
+				infraMapping.Set(nodeID, raw)
 			}
 		}
 
@@ -103,12 +109,12 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 			return nil, nil, err
 		}
 
-		if len(featResult.Features) > 0 {
-			featureValuesMapping[nodeID] = featResult.Features
+		if featResult.Features.Len() > 0 {
+			featureValuesMapping.Set(nodeID, featResult.Features)
 			featureOrder[nodeID] = featResult.FeatureOrder
 		}
-		if len(featResult.Secrets) > 0 {
-			secrets[nodeID] = featResult.Secrets
+		if featResult.Secrets.Len() > 0 {
+			secrets.Set(nodeID, featResult.Secrets)
 		}
 		for _, m := range featResult.Markers {
 			allMarkers[m] = true
@@ -163,43 +169,44 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 }
 
 // convertInjectBlock converts a topology InjectBlock to the IR edge inject format.
-func convertInjectBlock(inject *types.InjectBlock) map[string]map[string]string {
+func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
+	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
-		return nil
+		return result
 	}
-	result := map[string]map[string]string{}
 	convert := func(mech string, raw interface{}) {
 		if raw == nil {
 			return
 		}
 		switch v := raw.(type) {
 		case map[string]interface{}:
-			m := make(map[string]string, len(v))
+			m := types.OrderedMap[string]{}
 			for k, val := range v {
 				if s, ok := val.(string); ok {
-					m[k] = s
+					m.Set(k, s)
 				}
 			}
-			if len(m) > 0 {
-				result[mech] = m
+			if m.Len() > 0 {
+				result.Set(mech, m)
 			}
 		case map[string]string:
 			if len(v) > 0 {
-				result[mech] = v
+				m := types.OrderedMap[string]{}
+				for k, val := range v {
+					m.Set(k, val)
+				}
+				result.Set(mech, m)
 			}
 		}
 	}
 	convert("env", inject.Env)
 	convert("file", inject.File)
 	convert("arg", inject.Arg)
-	if len(result) == 0 {
-		return nil
-	}
 	return result
 }
 
-func findSyncWave(syncWaves map[string][]string, nodeID string) string {
-	for wave, nodes := range syncWaves {
+func findSyncWave(syncWaves types.OrderedMap[[]string], nodeID string) string {
+	for wave, nodes := range syncWaves.All() {
 		for _, n := range nodes {
 			if n == nodeID {
 				return wave

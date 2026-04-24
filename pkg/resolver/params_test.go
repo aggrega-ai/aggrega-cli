@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 func TestInterpolateParameters_ValidTemplate(t *testing.T) {
@@ -138,7 +140,8 @@ func TestLoadParametersFrom_FileNotFound(t *testing.T) {
 }
 
 func TestMergeParameters_ReleaseOverridesExternal(t *testing.T) {
-	release := map[string]interface{}{"key": "release-val"}
+	release := types.OrderedMap[interface{}]{}
+	release.Set("key", "release-val")
 	external := map[string]interface{}{"key": "external-val", "extra": "ext"}
 
 	merged := MergeParameters(release, external)

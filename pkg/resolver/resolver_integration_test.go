@@ -30,10 +30,10 @@ func TestResolve_Integration(t *testing.T) {
 				if result.Aggregate.Metadata.Name != "test-app" {
 					t.Errorf("expected name test-app, got %s", result.Aggregate.Metadata.Name)
 				}
-				if _, ok := result.Aggregate.Spec.Components["web"]; !ok {
+				if _, ok := result.Aggregate.Spec.Components.Get("web"); !ok {
 					t.Error("expected component 'web'")
 				}
-				if _, ok := result.Aggregate.Spec.Components["worker"]; !ok {
+				if _, ok := result.Aggregate.Spec.Components.Get("worker"); !ok {
 					t.Error("expected component 'worker'")
 				}
 				if result.Release == nil {
@@ -53,14 +53,16 @@ func TestResolve_Integration(t *testing.T) {
 			wantErr:  nil,
 			validate: func(t *testing.T, result *ResolveResult) {
 				t.Helper()
-				comp, ok := result.Aggregate.Spec.Components["api"]
+				comp, ok := result.Aggregate.Spec.Components.Get("api")
 				if !ok {
 					t.Fatal("expected component 'api'")
 				}
-				if fmt.Sprint(comp.Values["port"]) != "8080" {
-					t.Errorf("expected interpolated port 8080, got %v", comp.Values["port"])
+				port, _ := comp.Values.Get("port")
+				if fmt.Sprint(port) != "8080" {
+					t.Errorf("expected interpolated port 8080, got %v", port)
 				}
-				host, _ := comp.Values["host"].(string)
+				hostVal, _ := comp.Values.Get("host")
+				host, _ := hostVal.(string)
 				if host != "staging-db.internal" {
 					t.Errorf("expected interpolated host staging-db.internal, got %s", host)
 				}
@@ -82,8 +84,8 @@ func TestResolve_Integration(t *testing.T) {
 				if webInfra.BoundaryPath != "local" {
 					t.Errorf("expected boundary path 'local', got %s", webInfra.BoundaryPath)
 				}
-				if webInfra.Infra == nil {
-					t.Error("expected non-nil infra for 'web'")
+				if webInfra.Infra.Len() == 0 {
+					t.Error("expected non-empty infra for 'web'")
 				}
 			},
 		},
@@ -184,8 +186,9 @@ spec:
 	}
 
 	// Release parameters override external: db.host should be release-db.internal (Release wins)
-	comp := result.Aggregate.Spec.Components["api"]
-	host, _ := comp.Values["host"].(string)
+	comp, _ := result.Aggregate.Spec.Components.Get("api")
+	hostVal, _ := comp.Values.Get("host")
+	host, _ := hostVal.(string)
 	if host != "release-db.internal" {
 		t.Errorf("expected Release db.host to win over external, got %s", host)
 	}
@@ -207,8 +210,8 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 	}
 
 	// Verify parameters were interpolated (not raw template expressions)
-	comp := result.Aggregate.Spec.Components["api"]
-	port := comp.Values["port"]
+	comp, _ := result.Aggregate.Spec.Components.Get("api")
+	port, _ := comp.Values.Get("port")
 	portStr := fmt.Sprint(port)
 	if portStr == "{{ .parameters.api_port | default \"3000\" }}" {
 		t.Error("parameter expression was not interpolated")
@@ -253,8 +256,9 @@ spec:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	comp := result.Aggregate.Spec.Components["api"]
-	if fmt.Sprint(comp.Values["port"]) != "3000" {
-		t.Errorf("expected Sprig default 3000, got %v", comp.Values["port"])
+	comp, _ := result.Aggregate.Spec.Components.Get("api")
+	port, _ := comp.Values.Get("port")
+	if fmt.Sprint(port) != "3000" {
+		t.Errorf("expected Sprig default 3000, got %v", port)
 	}
 }

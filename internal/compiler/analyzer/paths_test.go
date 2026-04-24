@@ -14,11 +14,7 @@ func TestCalculatePaths_LinearChain(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"a": {},
-				"b": {},
-				"c": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); _m.Set("c", types.IRNode{}); return _m }(),
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 				{Source: "b", Target: "c"},
@@ -47,10 +43,7 @@ func TestCalculatePaths_CyclicGraph(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"a": {},
-				"b": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 				{Source: "b", Target: "a"},
@@ -77,12 +70,7 @@ func TestCalculatePaths_Diamond(t *testing.T) {
 	// a → b, a → c, b → d, c → d
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"a": {},
-				"b": {},
-				"c": {},
-				"d": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); _m.Set("c", types.IRNode{}); _m.Set("d", types.IRNode{}); return _m }(),
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 				{Source: "a", Target: "c"},
@@ -106,10 +94,7 @@ func TestCalculatePaths_NoEdges(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"a": {},
-				"b": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
 			Edges: nil,
 		},
 	}
@@ -125,17 +110,20 @@ func TestCalculatePaths_AttachedFeatures(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"a": {},
-				"b": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 			},
-			FeatureValuesMapping: map[string]map[string]types.IRFeatureEntry{
-				"a": {"monitoring": {Type: "core/monitoring"}},
-				"b": {"logging": {Type: "core/logging"}},
-			},
+			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+				aInner := types.OrderedMap[types.IRFeatureEntry]{}
+				aInner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring"})
+				bInner := types.OrderedMap[types.IRFeatureEntry]{}
+				bInner.Set("logging", types.IRFeatureEntry{Type: "core/logging"})
+				outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+				outer.Set("a", aInner)
+				outer.Set("b", bInner)
+				return outer
+			}(),
 		},
 	}
 
@@ -157,11 +145,7 @@ func TestCalculatePaths_DeterministicOrder(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"z": {},
-				"a": {},
-				"m": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("z", types.IRNode{}); _m.Set("a", types.IRNode{}); _m.Set("m", types.IRNode{}); return _m }(),
 			Edges: []types.IREdge{
 				{Source: "z", Target: "a"},
 				{Source: "m", Target: "a"},
@@ -194,10 +178,7 @@ func TestCalculatePaths_PathIDs(t *testing.T) {
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"a": {},
-				"b": {},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 			},

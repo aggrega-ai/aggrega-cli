@@ -16,20 +16,22 @@ func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 		Context: types.ContextBlock{
 			InstanceID: "api",
 			Inject: types.InjectPipe{
-				Env:  map[string]string{"DB_URL": "original"},
-				File: map[string]string{},
-				Arg:  map[string]string{},
-				All:  map[string]string{"DB_URL": "original"},
+				Env:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "original"); return _m }(),
+				File: types.OrderedMap[string]{},
+				Arg:  types.OrderedMap[string]{},
+				All:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "original"); return _m }(),
 			},
-			Uses: map[string]types.EnrichedEdge{
-				"my-db": {
+			Uses: func() types.OrderedMap[types.EnrichedEdge] { _m := types.OrderedMap[types.EnrichedEdge]{}; _m.Set("my-db", types.EnrichedEdge{
 					Target:   "db",
-					Provides: map[string]string{"host": "db.namespace.svc.cluster.local"},
+					Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "db.namespace.svc.cluster.local"); return _m }(),
 					Annotations: &types.AnnotationBuckets{
-						Release: map[string]string{"namespace": "payments"},
+						Release: func() types.OrderedMap[string] {
+							m := types.OrderedMap[string]{}
+							m.Set("namespace", "payments")
+							return m
+						}(),
 					},
-				},
-			},
+				}); return _m }(),
 		},
 	}
 
@@ -51,12 +53,14 @@ func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 	}
 
 	// DB_URL should be overwritten by the injectMapping
-	if ctx.Context.Inject.Env["DB_URL"] != "db.namespace.svc.cluster.local" {
-		t.Errorf("DB_URL = %q, want %q", ctx.Context.Inject.Env["DB_URL"], "db.namespace.svc.cluster.local")
+	dbURL, _ := ctx.Context.Inject.Env.Get("DB_URL")
+	if dbURL != "db.namespace.svc.cluster.local" {
+		t.Errorf("DB_URL = %q, want %q", dbURL, "db.namespace.svc.cluster.local")
 	}
 	// .all should be rebuilt
-	if ctx.Context.Inject.All["DB_URL"] != "db.namespace.svc.cluster.local" {
-		t.Errorf("all.DB_URL = %q", ctx.Context.Inject.All["DB_URL"])
+	allDBURL, _ := ctx.Context.Inject.All.Get("DB_URL")
+	if allDBURL != "db.namespace.svc.cluster.local" {
+		t.Errorf("all.DB_URL = %q", allDBURL)
 	}
 }
 
@@ -66,8 +70,8 @@ func TestExecutePhaseA_NoInjectMapping(t *testing.T) {
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			Inject: types.InjectPipe{
-				Env: map[string]string{"X": "1"},
-				All: map[string]string{"X": "1"},
+				Env: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("X", "1"); return _m }(),
+				All: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("X", "1"); return _m }(),
 			},
 		},
 	}
@@ -86,7 +90,7 @@ func TestExecutePhaseA_NoInjectMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ctx.Context.Inject.Env["X"] != "1" {
+	if v, _ := ctx.Context.Inject.Env.Get("X"); v != "1" {
 		t.Error("inject should be unchanged")
 	}
 }
@@ -97,10 +101,10 @@ func TestExecutePhaseA_LastWins(t *testing.T) {
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			Inject: types.InjectPipe{
-				Env:  map[string]string{},
-				File: map[string]string{},
-				Arg:  map[string]string{},
-				All:  map[string]string{},
+				Env:  types.OrderedMap[string]{},
+				File: types.OrderedMap[string]{},
+				Arg:  types.OrderedMap[string]{},
+				All:  types.OrderedMap[string]{},
 			},
 		},
 	}
@@ -126,8 +130,9 @@ func TestExecutePhaseA_LastWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ctx.Context.Inject.Env["HOST"] != "second-value" {
-		t.Errorf("HOST = %q, want 'second-value' (last wins)", ctx.Context.Inject.Env["HOST"])
+	host, _ := ctx.Context.Inject.Env.Get("HOST")
+	if host != "second-value" {
+		t.Errorf("HOST = %q, want 'second-value' (last wins)", host)
 	}
 }
 
@@ -137,10 +142,10 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 	// Base Recipe locals (already evaluated by orchestrator preamble in real flow).
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
-			Inject: types.InjectPipe{Env: map[string]string{}, File: map[string]string{}, Arg: map[string]string{}, All: map[string]string{}},
+			Inject: types.InjectPipe{Env: types.OrderedMap[string]{}, File: types.OrderedMap[string]{}, Arg: types.OrderedMap[string]{}, All: types.OrderedMap[string]{}},
 		},
-		Locals:   map[string]string{"host": "db-base.svc", "port": "5432"},
-		Features: map[string]types.TemplateFeature{"mon": {Type: "core/monitoring"}},
+		Locals:   func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "db-base.svc"); _m.Set("port", "5432"); return _m }(),
+		Features: func() types.OrderedMap[types.TemplateFeature] { _m := types.OrderedMap[types.TemplateFeature]{}; _m.Set("mon", types.TemplateFeature{Type: "core/monitoring"}); return _m }(),
 	}
 
 	// FR with own locals — "host" collides (FR wins), "scrape_path" is new.
@@ -151,10 +156,7 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 			FeatureRecipe: &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
 				Spec: types.FeatureRecipeSpec{
-					Locals: map[string]string{
-						"host":         "db-fr.svc",  // collision — FR should win
-						"scrape_path": "/metrics",
-					},
+					Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "db-fr.svc"); _m.Set("scrape_path", "/metrics"); return _m }(),
 					InjectMapping: `{"env": {"SCRAPE_HOST": "{{ .locals.host }}", "SCRAPE_PATH": "{{ .locals.scrape_path }}"}}`,
 				},
 			},
@@ -166,18 +168,18 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 	}
 
 	// FR's own "host" overrides base
-	if got := ctx.Context.Inject.Env["SCRAPE_HOST"]; got != "db-fr.svc" {
+	if got, _ := ctx.Context.Inject.Env.Get("SCRAPE_HOST"); got != "db-fr.svc" {
 		t.Errorf("SCRAPE_HOST: got %q, want %q (FR locals should override base)", got, "db-fr.svc")
 	}
 	// FR-only key "scrape_path" visible
-	if got := ctx.Context.Inject.Env["SCRAPE_PATH"]; got != "/metrics" {
+	if got, _ := ctx.Context.Inject.Env.Get("SCRAPE_PATH"); got != "/metrics" {
 		t.Errorf("SCRAPE_PATH: got %q, want %q", got, "/metrics")
 	}
 	// Parent ctx.Locals untouched (shallow-copy contract)
-	if ctx.Locals["host"] != "db-base.svc" {
-		t.Errorf("parent ctx.Locals was mutated: got %q", ctx.Locals["host"])
+	if got, _ := ctx.Locals.Get("host"); got != "db-base.svc" {
+		t.Errorf("parent ctx.Locals was mutated: got %q", got)
 	}
-	if _, exists := ctx.Locals["scrape_path"]; exists {
+	if _, exists := ctx.Locals.Get("scrape_path"); exists {
 		t.Error("FR-only local leaked into parent ctx")
 	}
 }
@@ -187,7 +189,7 @@ func TestExecutePhaseA_NilRecipe(t *testing.T) {
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
-			Inject: types.InjectPipe{Env: map[string]string{}},
+			Inject: types.InjectPipe{Env: types.OrderedMap[string]{}},
 		},
 	}
 

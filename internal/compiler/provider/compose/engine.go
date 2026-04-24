@@ -72,10 +72,11 @@ func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, releas
 		}
 	}
 
-	ids := nodeIDsSorted(graph.Spec.Nodes)
+	ids := graph.Spec.Nodes.Keys()
+	sort.Strings(ids)
 	for _, nodeID := range ids {
-		node := graph.Spec.Nodes[nodeID]
-		raw := graph.Spec.ValuesMapping[nodeID]
+		node, _ := graph.Spec.Nodes.Get(nodeID)
+		raw, _ := graph.Spec.ValuesMapping.Get(nodeID)
 		payload, err := parseValuesPayload(raw, nodeID)
 		if err != nil {
 			return nil, err
@@ -92,7 +93,7 @@ func (e *ComposeEngine) Render(ctx context.Context, graph *types.IRGraph, releas
 
 		if strictNet {
 			svc.Networks = []string{strictNetworkName}
-			if node.Labels[types.ComponentTypeLabel] == gatewayResolvedType && len(payload.ports) > 0 {
+			if typeLabel, _ := node.Labels.Get(types.ComponentTypeLabel); typeLabel == gatewayResolvedType && len(payload.ports) > 0 {
 				svc.Ports = append([]string(nil), payload.ports...)
 			}
 		} else {
@@ -118,15 +119,6 @@ func strictNetworkingEnabled(_ *types.Release) bool {
 	return true
 }
 
-func nodeIDsSorted(nodes map[string]types.IRNode) []string {
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 type extractedPayload struct {
 	image       string
 	ports       []string
@@ -140,7 +132,7 @@ func composePortFallbacks(node types.IRNode, strict bool, p extractedPayload) ex
 		return p
 	}
 	if strict {
-		if node.Labels[types.ComponentTypeLabel] == gatewayResolvedType {
+		if typeLabel, _ := node.Labels.Get(types.ComponentTypeLabel); typeLabel == gatewayResolvedType {
 			p.ports = []string{"8080:8080"}
 		}
 		return p

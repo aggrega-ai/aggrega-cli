@@ -5,7 +5,6 @@ package resolver
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -22,13 +21,10 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	// Walk components in sorted order for deterministic errors
-	compNames := sortedKeys(agg.Spec.Components)
-	for _, compName := range compNames {
-		comp := agg.Spec.Components[compName]
-
+	// Walk components in author order (OrderedMap iteration)
+	for compName, comp := range agg.Spec.Components.All() {
 		// Validate component uses against Component usesSchema
-		if len(comp.Uses) > 0 && catalog.Component != nil {
+		if comp.Uses.Len() > 0 && catalog.Component != nil {
 			errs = append(errs, validateUsesAgainstSchema(
 				entity,
 				fmt.Sprintf(".spec.components[%q].uses", compName),
@@ -40,10 +36,8 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 
 		// Validate feature uses against Feature usesSchema
 		if catalog.Feature != nil {
-			featNames := sortedKeysFeatures(comp.Features)
-			for _, featName := range featNames {
-				feat := comp.Features[featName]
-				if len(feat.Uses) > 0 {
+			for featName, feat := range comp.Features.All() {
+				if feat.Uses.Len() > 0 {
 					errs = append(errs, validateFeatureUsesAgainstSchema(
 						entity,
 						fmt.Sprintf(".spec.components[%q].features[%q].uses", compName, featName),
@@ -54,10 +48,8 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				}
 			}
 
-			secNames := sortedKeysSecrets(comp.Secrets)
-			for _, secName := range secNames {
-				sec := comp.Secrets[secName]
-				if len(sec.Uses) > 0 {
+			for secName, sec := range comp.Secrets.All() {
+				if sec.Uses.Len() > 0 {
 					errs = append(errs, validateFeatureUsesAgainstSchema(
 						entity,
 						fmt.Sprintf(".spec.components[%q].secrets[%q].uses", compName, secName),
@@ -70,10 +62,8 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 		}
 	}
 
-	// Walk subsystems recursively
-	subNames := sortedKeysSubsystems(agg.Spec.Subsystems)
-	for _, subName := range subNames {
-		sub := agg.Spec.Subsystems[subName]
+	// Walk subsystems recursively (author order)
+	for subName, sub := range agg.Spec.Subsystems.All() {
 		errs = append(errs, guardUsesSocketSubsystem(entity, ".spec.subsystems."+subName, sub, catalog)...)
 	}
 
@@ -84,10 +74,8 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog CatalogLookup) []*ResolverError {
 	var errs []*ResolverError
 
-	compNames := sortedKeysSubComponents(sub.Components)
-	for _, compName := range compNames {
-		comp := sub.Components[compName]
-		if len(comp.Uses) > 0 && catalog.Component != nil {
+	for compName, comp := range sub.Components.All() {
+		if comp.Uses.Len() > 0 && catalog.Component != nil {
 			errs = append(errs, validateUsesAgainstSchema(
 				entity,
 				fmt.Sprintf("%s.components[%q].uses", path, compName),
@@ -98,10 +86,8 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 		}
 
 		if catalog.Feature != nil {
-			featNames := sortedKeysFeatures(comp.Features)
-			for _, featName := range featNames {
-				feat := comp.Features[featName]
-				if len(feat.Uses) > 0 {
+			for featName, feat := range comp.Features.All() {
+				if feat.Uses.Len() > 0 {
 					errs = append(errs, validateFeatureUsesAgainstSchema(
 						entity,
 						fmt.Sprintf("%s.components[%q].features[%q].uses", path, compName, featName),
@@ -112,10 +98,8 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 				}
 			}
 
-			secNames := sortedKeysSecrets(comp.Secrets)
-			for _, secName := range secNames {
-				sec := comp.Secrets[secName]
-				if len(sec.Uses) > 0 {
+			for secName, sec := range comp.Secrets.All() {
+				if sec.Uses.Len() > 0 {
 					errs = append(errs, validateFeatureUsesAgainstSchema(
 						entity,
 						fmt.Sprintf("%s.components[%q].secrets[%q].uses", path, compName, secName),
@@ -129,26 +113,23 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 	}
 
 	// Recurse into nested subsystems
-	nestedNames := sortedKeysSubsystems(sub.Subsystems)
-	for _, nestedName := range nestedNames {
-		nested := sub.Subsystems[nestedName]
+	for nestedName, nested := range sub.Subsystems.All() {
 		errs = append(errs, guardUsesSocketSubsystem(entity, path+".subsystems."+nestedName, nested, catalog)...)
 	}
 
 	return errs
 }
 
-func validateUsesAgainstSchema(entity, fieldPath string, uses map[string]interface{}, compType string, catalog CatalogLookup) []*ResolverError {
+func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[interface{}], compType string, catalog CatalogLookup) []*ResolverError {
 	catComp, found := catalog.Component(compType)
 	if !found {
 		return nil // catalog not available, skip
 	}
 
-	if len(catComp.Spec.UsesSchema) == 0 {
+	if catComp.Spec.UsesSchema.Len() == 0 {
 		// Component has no usesSchema — uses is not allowed
-		socketNames := sortedKeysInterface(uses)
 		var errs []*ResolverError
-		for _, socket := range socketNames {
+		for socket := range uses.All() {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
@@ -160,14 +141,13 @@ func validateUsesAgainstSchema(entity, fieldPath string, uses map[string]interfa
 	}
 
 	// Validate each socket name exists in usesSchema
-	socketNames := sortedKeysInterface(uses)
 	var errs []*ResolverError
-	for _, socket := range socketNames {
-		if _, ok := catComp.Spec.UsesSchema[socket]; !ok {
+	for socket := range uses.All() {
+		if _, ok := catComp.Spec.UsesSchema.Get(socket); !ok {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
-				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)", socket, compType, sortedKeysUsesSchema(catComp.Spec.UsesSchema)),
+				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)", socket, compType, catComp.Spec.UsesSchema.Keys()),
 				Err:     ErrUnknownUsesSocket,
 			})
 		}
@@ -175,16 +155,15 @@ func validateUsesAgainstSchema(entity, fieldPath string, uses map[string]interfa
 	return errs
 }
 
-func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses map[string]interface{}, featType string, catalog CatalogLookup) []*ResolverError {
+func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[interface{}], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {
 		return nil
 	}
 
-	if len(catFeat.Spec.UsesSchema) == 0 {
-		socketNames := sortedKeysInterface(uses)
+	if catFeat.Spec.UsesSchema.Len() == 0 {
 		var errs []*ResolverError
-		for _, socket := range socketNames {
+		for socket := range uses.All() {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
@@ -195,77 +174,16 @@ func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses map[string]
 		return errs
 	}
 
-	socketNames := sortedKeysInterface(uses)
 	var errs []*ResolverError
-	for _, socket := range socketNames {
-		if _, ok := catFeat.Spec.UsesSchema[socket]; !ok {
+	for socket := range uses.All() {
+		if _, ok := catFeat.Spec.UsesSchema.Get(socket); !ok {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
-				Message: fmt.Sprintf("socket %q not defined in feature type %q usesSchema (valid: %v)", socket, featType, sortedKeysUsesSchema(catFeat.Spec.UsesSchema)),
+				Message: fmt.Sprintf("socket %q not defined in feature type %q usesSchema (valid: %v)", socket, featType, catFeat.Spec.UsesSchema.Keys()),
 				Err:     ErrUnknownUsesSocket,
 			})
 		}
 	}
 	return errs
-}
-
-// Sorted key helpers for deterministic iteration.
-
-func sortedKeys(m map[string]types.ComponentInstance) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedKeysFeatures(m map[string]types.FeatureInstance) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedKeysSecrets(m map[string]types.SecretInstance) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedKeysSubsystems(m map[string]types.Subsystem) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedKeysSubComponents(m map[string]types.ComponentInstance) []string {
-	return sortedKeys(m)
-}
-
-func sortedKeysInterface(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedKeysUsesSchema(m map[string]types.UsesSchemaEntry) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

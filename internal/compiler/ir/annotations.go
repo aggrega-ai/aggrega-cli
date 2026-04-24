@@ -17,18 +17,18 @@ func buildAnnotationBuckets(
 	compType string,
 	catalogLookup resolver.CatalogLookup,
 	boundaryInfra map[string]*resolver.BoundaryInfra,
-) (catalog, release, aggregate map[string]string) {
+) (catalog, release, aggregate types.OrderedMap[string]) {
 	// Catalog annotations
 	if catalogLookup.Component != nil {
 		catComp, found := catalogLookup.Component(compType)
-		if found && len(catComp.Metadata.Annotations) > 0 {
-			catalog = copyStringMap(catComp.Metadata.Annotations)
+		if found && catComp.Metadata.Annotations.Len() > 0 {
+			catalog = copyOrderedStringMap(catComp.Metadata.Annotations)
 		}
 	}
 
 	// Release annotations (from boundary infra, already cascaded)
-	if bi, ok := boundaryInfra[nodeID]; ok && bi != nil && len(bi.Annotations) > 0 {
-		release = copyStringMap(bi.Annotations)
+	if bi, ok := boundaryInfra[nodeID]; ok && bi != nil && bi.Annotations.Len() > 0 {
+		release = copyOrderedStringMap(bi.Annotations)
 	}
 
 	// Aggregate annotations: reserved for future use.
@@ -65,10 +65,10 @@ func buildCatalogMetadata(compType string, catalogLookup resolver.CatalogLookup)
 	return meta
 }
 
-func copyStringMap(m map[string]string) map[string]string {
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
+func copyOrderedStringMap(m types.OrderedMap[string]) types.OrderedMap[string] {
+	out := types.OrderedMap[string]{}
+	for k, v := range m.All() {
+		out.Set(k, v)
 	}
 	return out
 }

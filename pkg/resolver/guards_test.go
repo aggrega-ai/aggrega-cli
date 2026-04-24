@@ -19,7 +19,7 @@ func testCatalog() CatalogLookup {
 					Metadata: types.ComponentMetadata{
 						Name:    "server",
 						Version: "1.0.0",
-						Labels:  map[string]string{types.ComponentTypeLabel: "server"},
+						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
 					},
 					Spec: types.ComponentSpec{
 						RequiredFeatures: []string{"ops/logging:1.0.0"},
@@ -30,7 +30,7 @@ func testCatalog() CatalogLookup {
 					Metadata: types.ComponentMetadata{
 						Name:    "worker",
 						Version: "1.0.0",
-						Labels:  map[string]string{types.ComponentTypeLabel: "worker"},
+						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "worker"); return _m }(),
 					},
 				}, true
 			}
@@ -47,7 +47,7 @@ func testCatalog() CatalogLookup {
 					Metadata: types.FeatureMetadata{
 						Name:    "vault",
 						Version: "1.0.0",
-						Labels:  map[string]string{types.FeatureKindLabel: types.FeatureKindSecret},
+						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.FeatureKindLabel, types.FeatureKindSecret); return _m }(),
 					},
 				}, true
 			case "ops/metrics:1.0.0":
@@ -66,17 +66,11 @@ func TestGuardCredentialPartition_CorrectPlacement(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"logging": {Type: "ops/logging:1.0.0"},
-					},
-					Secrets: map[string]types.SecretInstance{
-						"vault": {Type: "security/vault:1.0.0"},
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("logging", types.FeatureInstance{Type: "ops/logging:1.0.0"}); return _m }(),
+					Secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("vault", types.SecretInstance{Type: "security/vault:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -90,14 +84,10 @@ func TestGuardCredentialPartition_CredentialInFeatures(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"vault": {Type: "security/vault:1.0.0"}, // WRONG: credential in features
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("vault", types.FeatureInstance{Type: "security/vault:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -114,14 +104,10 @@ func TestGuardCredentialPartition_NonCredentialInSecrets(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Secrets: map[string]types.SecretInstance{
-						"logging": {Type: "ops/logging:1.0.0"}, // WRONG: non-credential in secrets
-					},
-				},
-			},
+					Secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("logging", types.SecretInstance{Type: "ops/logging:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -140,14 +126,10 @@ func TestGuardRequiredFeatures_AllSatisfied(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"logging": {Type: "ops/logging:1.0.0"},
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("logging", types.FeatureInstance{Type: "ops/logging:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -161,12 +143,10 @@ func TestGuardRequiredFeatures_Missing(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type:     "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{}, // logging NOT attached
-				},
-			},
+					Features: types.OrderedMap[types.FeatureInstance]{}, 
+				}); return _m }(),
 		},
 	}
 
@@ -183,27 +163,19 @@ func TestGuardRequiredFeatures_SatisfiedByRelease(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type:     "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{},
-				},
-			},
+					Features: types.OrderedMap[types.FeatureInstance]{},
+				}); return _m }(),
 		},
 	}
 	release := &types.Release{
 		Spec: types.ReleaseSpec{
-			Boundaries: map[string]types.Boundary{
-				"prod": {
-					Components: map[string]types.BoundaryComponent{
-						"web": {
-							Features: map[string]types.BoundaryFeature{
-								"logging": {Type: "ops/logging:1.0.0"},
-							},
-						},
-					},
-				},
-			},
+			Boundaries: func() types.OrderedMap[types.Boundary] { _m := types.OrderedMap[types.Boundary]{}; _m.Set("prod", types.Boundary{
+					Components: func() types.OrderedMap[types.BoundaryComponent] { _m := types.OrderedMap[types.BoundaryComponent]{}; _m.Set("web", types.BoundaryComponent{
+							Features: func() types.OrderedMap[types.BoundaryFeature] { _m := types.OrderedMap[types.BoundaryFeature]{}; _m.Set("logging", types.BoundaryFeature{Type: "ops/logging:1.0.0"}); return _m }(),
+						}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -217,9 +189,7 @@ func TestGuardRequiredFeatures_NoRequirements(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"bg": {Type: "core/worker:1.0.0"}, // worker has no requiredFeatures
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bg", types.ComponentInstance{Type: "core/worker:1.0.0"}); return _m }(),
 		},
 	}
 
@@ -235,29 +205,19 @@ func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"metrics": {Type: "ops/metrics:1.0.0"},
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("metrics", types.FeatureInstance{Type: "ops/metrics:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 	release := &types.Release{
 		Spec: types.ReleaseSpec{
-			Boundaries: map[string]types.Boundary{
-				"prod": {
-					Components: map[string]types.BoundaryComponent{
-						"web": {
-							Features: map[string]types.BoundaryFeature{
-								"metrics": {Type: "ops/metrics:1.0.0", Infra: map[string]interface{}{"cpu": "500m"}},
-							},
-						},
-					},
-				},
-			},
+			Boundaries: func() types.OrderedMap[types.Boundary] { _m := types.OrderedMap[types.Boundary]{}; _m.Set("prod", types.Boundary{
+					Components: func() types.OrderedMap[types.BoundaryComponent] { _m := types.OrderedMap[types.BoundaryComponent]{}; _m.Set("web", types.BoundaryComponent{
+							Features: func() types.OrderedMap[types.BoundaryFeature] { _m := types.OrderedMap[types.BoundaryFeature]{}; _m.Set("metrics", types.BoundaryFeature{Type: "ops/metrics:1.0.0", Infra: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("cpu", "500m"); return _m }()}); return _m }(),
+						}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -271,29 +231,19 @@ func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"metrics": {Type: "ops/metrics:1.0.0"},
-					},
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("metrics", types.FeatureInstance{Type: "ops/metrics:1.0.0"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 	release := &types.Release{
 		Spec: types.ReleaseSpec{
-			Boundaries: map[string]types.Boundary{
-				"prod": {
-					Components: map[string]types.BoundaryComponent{
-						"web": {
-							Features: map[string]types.BoundaryFeature{
-								"metrics": {Type: "ops/logging:1.0.0"}, // MISMATCH
-							},
-						},
-					},
-				},
-			},
+			Boundaries: func() types.OrderedMap[types.Boundary] { _m := types.OrderedMap[types.Boundary]{}; _m.Set("prod", types.Boundary{
+					Components: func() types.OrderedMap[types.BoundaryComponent] { _m := types.OrderedMap[types.BoundaryComponent]{}; _m.Set("web", types.BoundaryComponent{
+							Features: func() types.OrderedMap[types.BoundaryFeature] { _m := types.OrderedMap[types.BoundaryFeature]{}; _m.Set("metrics", types.BoundaryFeature{Type: "ops/logging:1.0.0"}); return _m }(),
+						}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -312,15 +262,11 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"web": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
 					Type: "core/server:1.0.0",
-					Features: map[string]types.FeatureInstance{
-						"vault": {Type: "security/vault:1.0.0"}, // credential in features (partition violation)
-					},
-					// No logging feature attached (requiredFeatures violation)
-				},
-			},
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("vault", types.FeatureInstance{Type: "security/vault:1.0.0"}); return _m }(),
+					
+				}); return _m }(),
 		},
 	}
 

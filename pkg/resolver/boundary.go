@@ -9,11 +9,11 @@ import (
 
 // BoundaryInfra holds the collected infra and annotations for one component from the Release boundaries.
 type BoundaryInfra struct {
-	Infra        map[string]interface{} // physical sizing from boundary_component.infra
-	Annotations  map[string]string      // cascaded from boundary.annotations
-	BoundaryPath string                 // e.g. "aws-prod/eks-main/payments"
-	Directory    string                 // resolved output directory
-	SubDirectory string                 // resolved sub-directory
+	Infra        types.OrderedMap[interface{}] // physical sizing from boundary_component.infra
+	Annotations  types.OrderedMap[string]      // cascaded from boundary.annotations
+	BoundaryPath string                        // e.g. "aws-prod/eks-main/payments"
+	Directory    string                        // resolved output directory
+	SubDirectory string                        // resolved sub-directory
 }
 
 // WireBoundaryInfra walks the recursive Release boundaries and collects per-component
@@ -24,13 +24,13 @@ func WireBoundaryInfra(release *types.Release) map[string]*BoundaryInfra {
 		return nil
 	}
 	result := map[string]*BoundaryInfra{}
-	for bName, boundary := range release.Spec.Boundaries {
-		walkBoundary(bName, "", boundary, nil, result)
+	for bName, boundary := range release.Spec.Boundaries.All() {
+		walkBoundary(bName, "", boundary, types.OrderedMap[string]{}, result)
 	}
 	return result
 }
 
-func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations map[string]string, result map[string]*BoundaryInfra) {
+func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations types.OrderedMap[string], result map[string]*BoundaryInfra) {
 	currentPath := name
 	if parentPath != "" {
 		currentPath = parentPath + "/" + name
@@ -40,7 +40,7 @@ func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations m
 	mergedAnnotations := mergeStringMaps(parentAnnotations, b.Annotations)
 
 	// Collect components in this boundary
-	for compName, comp := range b.Components {
+	for compName, comp := range b.Components.All() {
 		// BoundaryComponent.Annotations override the boundary chain per key.
 		compAnnotations := mergeStringMaps(mergedAnnotations, comp.Annotations)
 		bi := &BoundaryInfra{
@@ -54,7 +54,7 @@ func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations m
 	}
 
 	// Recurse into nested boundaries
-	for childName, childBoundary := range b.Boundaries {
+	for childName, childBoundary := range b.Boundaries.All() {
 		walkBoundary(childName, currentPath, childBoundary, mergedAnnotations, result)
 	}
 }
@@ -66,16 +66,13 @@ func resolveSubDirectory(boundaryLevel, componentLevel string) string {
 	return boundaryLevel
 }
 
-func mergeStringMaps(base, overlay map[string]string) map[string]string {
-	if base == nil && overlay == nil {
-		return nil
+func mergeStringMaps(base, overlay types.OrderedMap[string]) types.OrderedMap[string] {
+	result := types.OrderedMap[string]{}
+	for k, v := range base.All() {
+		result.Set(k, v)
 	}
-	result := make(map[string]string)
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range overlay {
-		result[k] = v
+	for k, v := range overlay.All() {
+		result.Set(k, v)
 	}
 	return result
 }

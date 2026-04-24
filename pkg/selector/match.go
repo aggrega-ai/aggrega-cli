@@ -10,9 +10,10 @@ import (
 // MatchLabels evaluates a matchLabels map (AND logic) against the provided labels.
 // Returns true if every key in matchLabels exists in labels with the same value.
 // An empty or nil matchLabels matches everything.
-func MatchLabels(matchLabels map[string]string, labels map[string]string) bool {
-	for k, v := range matchLabels {
-		if labels[k] != v {
+func MatchLabels(matchLabels types.OrderedMap[string], labels types.OrderedMap[string]) bool {
+	for k, v := range matchLabels.All() {
+		got, ok := labels.Get(k)
+		if !ok || got != v {
 			return false
 		}
 	}
@@ -22,7 +23,7 @@ func MatchLabels(matchLabels map[string]string, labels map[string]string) bool {
 // MatchExpressions evaluates a list of LabelSelectorRequirement (AND logic).
 // Operators: In, NotIn, Exists, DoesNotExist.
 // Returns true if all requirements are satisfied.
-func MatchExpressions(exprs []types.LabelSelectorRequirement, labels map[string]string) bool {
+func MatchExpressions(exprs []types.LabelSelectorRequirement, labels types.OrderedMap[string]) bool {
 	for _, expr := range exprs {
 		if !matchExpression(expr, labels) {
 			return false
@@ -31,8 +32,8 @@ func MatchExpressions(exprs []types.LabelSelectorRequirement, labels map[string]
 	return true
 }
 
-func matchExpression(expr types.LabelSelectorRequirement, labels map[string]string) bool {
-	val, exists := labels[expr.Key]
+func matchExpression(expr types.LabelSelectorRequirement, labels types.OrderedMap[string]) bool {
+	val, exists := labels.Get(expr.Key)
 	switch expr.Operator {
 	case "In":
 		if !exists {
@@ -66,7 +67,7 @@ func matchExpression(expr types.LabelSelectorRequirement, labels map[string]stri
 // MatchAnyOf evaluates appliesToAnyOf (OR between terms, AND within each term).
 // Returns true if at least one SelectorTerm matches.
 // An empty or nil list matches everything (no constraint).
-func MatchAnyOf(terms []types.SelectorTerm, labels map[string]string) bool {
+func MatchAnyOf(terms []types.SelectorTerm, labels types.OrderedMap[string]) bool {
 	if len(terms) == 0 {
 		return true
 	}
@@ -78,7 +79,7 @@ func MatchAnyOf(terms []types.SelectorTerm, labels map[string]string) bool {
 	return false
 }
 
-func matchTerm(term types.SelectorTerm, labels map[string]string) bool {
+func matchTerm(term types.SelectorTerm, labels types.OrderedMap[string]) bool {
 	if !MatchLabels(term.MatchLabels, labels) {
 		return false
 	}

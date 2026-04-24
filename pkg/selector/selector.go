@@ -3,10 +3,14 @@
 
 package selector
 
+import (
+	"github.com/cognitio/aggrega-cli/pkg/types"
+)
+
 // MatchString parses a Kubernetes-style label selector string and evaluates it
 // against the provided labels. Returns true if all requirements are satisfied.
 // An empty selector matches everything.
-func MatchString(selectorStr string, labels map[string]string) (bool, error) {
+func MatchString(selectorStr string, labels types.OrderedMap[string]) (bool, error) {
 	reqs, err := Parse(selectorStr)
 	if err != nil {
 		return false, err
@@ -19,8 +23,8 @@ func MatchString(selectorStr string, labels map[string]string) (bool, error) {
 	return true, nil
 }
 
-func matchRequirement(req Requirement, labels map[string]string) bool {
-	val, exists := labels[req.Key]
+func matchRequirement(req Requirement, labels types.OrderedMap[string]) bool {
+	val, exists := labels.Get(req.Key)
 	switch req.Operator {
 	case OpEquals:
 		return exists && val == req.Values[0]

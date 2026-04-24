@@ -37,50 +37,50 @@ func EvaluateAllProvides(
 ) (NodeProvides, error) {
 	result := make(NodeProvides)
 
-	// Sorted node iteration for determinism
-	nodeIDs := sortedStringKeys(graph.Spec.Nodes)
+	// Sorted node iteration for determinism — graph.Spec.Nodes preserves
+	// whatever ordering the IR builder produced (currently alphabetical).
+	nodeIDs := graph.Spec.Nodes.Keys()
+	sort.Strings(nodeIDs)
 	for _, nodeID := range nodeIDs {
-		node := graph.Spec.Nodes[nodeID]
+		node, _ := graph.Spec.Nodes.Get(nodeID)
 		recipe, ok := recipes[nodeID]
-		if !ok || recipe == nil || len(recipe.Spec.Provides) == 0 {
-			result[nodeID] = map[string]string{}
+		if !ok || recipe == nil || recipe.Spec.Provides.Len() == 0 {
+			result[nodeID] = types.OrderedMap[string]{}
 			continue
 		}
 
 		// Check self-containment for each provides template
-		for key, tmplText := range recipe.Spec.Provides {
+		for key, tmplText := range recipe.Spec.Provides.All() {
 			if err := CheckProvidesSelfContainment(tmplText, recipe.Metadata.Name); err != nil {
 				return nil, fmt.Errorf("node %q provides[%q]: %w", nodeID, key, err)
 			}
 		}
 
 		// Build restricted context
-		var values map[string]interface{}
-		if raw, ok := graph.Spec.ValuesMapping[nodeID]; ok {
+		values := types.OrderedMap[interface{}]{}
+		if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
 			_ = json.Unmarshal(raw, &values)
 		}
-		var infra map[string]interface{}
-		if raw, ok := graph.Spec.InfraMapping[nodeID]; ok {
+		infra := types.OrderedMap[interface{}]{}
+		if raw, ok := graph.Spec.InfraMapping.Get(nodeID); ok {
 			_ = json.Unmarshal(raw, &infra)
 		}
 
 		pCtx := ProvidesContext{
 			Context: ProvidesContextBlock{InstanceID: nodeID},
-			Values:  ensureMap(values),
-			Infra:   ensureMap(infra),
-			Locals:  ensureStringMap(recipe.Spec.Locals),
+			Values:  values,
+			Infra:   infra,
+			Locals:  recipe.Spec.Locals,
 		}
 
-		// Evaluate each provides template
-		resolved := make(map[string]string, len(recipe.Spec.Provides))
-		provKeys := sortedStringMapKeys(recipe.Spec.Provides)
-		for _, key := range provKeys {
-			tmplText := recipe.Spec.Provides[key]
+		// Evaluate each provides template in author order
+		resolved := types.OrderedMap[string]{}
+		for key, tmplText := range recipe.Spec.Provides.All() {
 			val, err := evalTemplateString(tmplText, pCtx, fmt.Sprintf("provides[%q]", key))
 			if err != nil {
 				return nil, fmt.Errorf("%w: node %q provides[%q]: %v", ErrProvidesEvaluation, nodeID, key, err)
 			}
-			resolved[key] = strings.TrimSpace(val)
+			resolved.Set(key, strings.TrimSpace(val))
 		}
 
 		// Also resolve component type version for the provides
@@ -98,30 +98,34 @@ func evalTemplateString(tmplText string, data interface{}, name string) (string,
 	return EvalTemplate(name, tmplText, data)
 }
 
-func ensureMap(m map[string]interface{}) map[string]interface{} {
-	if m == nil {
-		return map[string]interface{}{}
+// flattenOrderedStringMap copies an OrderedMap[string] into a plain
+// map[string]string. Used at the boundary with engine and provider types that
+// require map-shaped inputs.
+func flattenOrderedStringMap(m types.OrderedMap[string]) map[string]string {
+	if m.Len() == 0 {
+		return nil
 	}
-	return m
+	out := make(map[string]string, m.Len())
+	for k, v := range m.All() {
+		out[k] = v
+	}
+	return out
 }
 
-func ensureStringMap(m map[string]string) map[string]string {
-	if m == nil {
-		return map[string]string{}
+// flattenOrderedMap copies an OrderedMap[interface{}] into a plain
+// map[string]interface{}. Used at the boundary with engines/provider types.
+func flattenOrderedMap(m types.OrderedMap[interface{}]) map[string]interface{} {
+	if m.Len() == 0 {
+		return map[string]interface{}{}
 	}
-	return m
+	out := make(map[string]interface{}, m.Len())
+	for k, v := range m.All() {
+		out[k] = v
+	}
+	return out
 }
 
 func sortedStringKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedStringMapKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -45,9 +45,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 	// Resolve recipes per node
 	nodeRecipes := make(map[string]*types.Recipe)
-	nodeIDs := sortedNodeIDs(graph.Spec.Nodes)
+	nodeIDs := graph.Spec.Nodes.Keys()
+	sort.Strings(nodeIDs)
 	for _, nodeID := range nodeIDs {
-		node := graph.Spec.Nodes[nodeID]
+		node, _ := graph.Spec.Nodes.Get(nodeID)
 		if recipeLookup.Recipe != nil {
 			if r, found := recipeLookup.Recipe(node.Component); found {
 				nodeRecipes[nodeID] = r
@@ -72,7 +73,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 	// Per-node rendering
 	for _, nodeID := range nodeIDs {
-		node := graph.Spec.Nodes[nodeID]
+		node, _ := graph.Spec.Nodes.Get(nodeID)
 		recipe := nodeRecipes[nodeID]
 
 		// Pass 2a: Self-inject resolution (component-level inject)
@@ -235,7 +236,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				continue
 			}
 
-			feat, hasFeat := tmplCtx.Features[ref.InstanceName]
+			feat, hasFeat := tmplCtx.Features.Get(ref.InstanceName)
 			frCtx := *tmplCtx // shallow copy; we'll overwrite Values/Infra/Locals
 			if hasFeat {
 				frCtx.Values = feat.Values
@@ -283,18 +284,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// here via guardCredentialPartition). For each secret, resolve the FR, build a
 		// feature-scoped context with .secret_name + top-level .inject populated, then
 		// render via the FR's own provider engine. Output files go under secrets/<name>/.
-		if secretsForNode, ok := graph.Spec.Secrets[nodeID]; ok && len(secretsForNode) > 0 && recipeLookup.FeatureRecipe != nil {
-			secretNames := sortedStringKeys(secretsForNode)
+		if secretsForNode, ok := graph.Spec.Secrets.Get(nodeID); ok && secretsForNode.Len() > 0 && recipeLookup.FeatureRecipe != nil {
+			secretNames := secretsForNode.Keys()
+			sort.Strings(secretNames)
 			for _, secretName := range secretNames {
-				entry := secretsForNode[secretName]
+				entry, _ := secretsForNode.Get(secretName)
 				fr, found := recipeLookup.FeatureRecipe(entry.Type)
 				if !found {
 					continue
 				}
 
 				frCtx := *tmplCtx // shallow copy
-				frCtx.Values = ensureMap(entry.Values)
-				frCtx.Infra = map[string]interface{}{}
+				frCtx.Values = entry.Values
+				frCtx.Infra = types.OrderedMap[interface{}]{}
 
 				frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 					fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
@@ -394,14 +396,14 @@ func resolveFeatureRecipes(
 		return nil
 	}
 
-	fvm := graph.Spec.FeatureValuesMapping[nodeID]
-	if fvm == nil {
+	fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
+	if !ok {
 		return nil
 	}
 
 	var refs []FeatureRecipeRef
 	for _, instanceName := range order {
-		entry, ok := fvm[instanceName]
+		entry, ok := fvm.Get(instanceName)
 		if !ok {
 			continue
 		}
@@ -425,8 +427,8 @@ func buildNodeRenderContext(
 ) NodeRenderContext {
 	nrc := NodeRenderContext{
 		NodeID:          nodeID,
-		Labels:          node.Labels,
-		Annotations:     node.ReleaseAnnotations,
+		Labels:          flattenOrderedStringMap(node.Labels),
+		Annotations:     flattenOrderedStringMap(node.ReleaseAnnotations),
 		BoundaryPath:    node.BoundaryPath,
 		SyncWave:        node.SyncWave,
 		ResolvedVersion: node.ResolvedVersion,
@@ -446,35 +448,22 @@ func buildNodeRenderContext(
 	return nrc
 }
 
-func sortedNodeIDs(nodes map[string]types.IRNode) []string {
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
-		ids = append(ids, id)
+func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[interface{}] {
+	out := types.OrderedMap[interface{}]{}
+	raw, ok := graph.Spec.ValuesMapping.Get(nodeID)
+	if !ok {
+		return out
 	}
-	sort.Strings(ids)
-	return ids
+	_ = json.Unmarshal(raw, &out)
+	return out
 }
 
-func tmplCtxValues(graph *types.IRGraph, nodeID string) map[string]interface{} {
-	raw, ok := graph.Spec.ValuesMapping[nodeID]
+func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interface{}] {
+	out := types.OrderedMap[interface{}]{}
+	raw, ok := graph.Spec.InfraMapping.Get(nodeID)
 	if !ok {
-		return map[string]interface{}{}
+		return out
 	}
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return map[string]interface{}{}
-	}
-	return m
-}
-
-func tmplCtxInfra(graph *types.IRGraph, nodeID string) map[string]interface{} {
-	raw, ok := graph.Spec.InfraMapping[nodeID]
-	if !ok {
-		return map[string]interface{}{}
-	}
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return map[string]interface{}{}
-	}
-	return m
+	_ = json.Unmarshal(raw, &out)
+	return out
 }

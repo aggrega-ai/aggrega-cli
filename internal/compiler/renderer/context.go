@@ -18,17 +18,17 @@ func AssembleNodeContext(
 	inject types.InjectPipe,
 	injectRaw interface{},
 ) *types.TemplateContext {
-	node := graph.Spec.Nodes[nodeID]
+	node, _ := graph.Spec.Nodes.Get(nodeID)
 
 	// Values from values_mapping
-	var values map[string]interface{}
-	if raw, ok := graph.Spec.ValuesMapping[nodeID]; ok {
+	values := types.OrderedMap[interface{}]{}
+	if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
 		_ = json.Unmarshal(raw, &values)
 	}
 
 	// Infra from infra_mapping
-	var infra map[string]interface{}
-	if raw, ok := graph.Spec.InfraMapping[nodeID]; ok {
+	infra := types.OrderedMap[interface{}]{}
+	if raw, ok := graph.Spec.InfraMapping.Get(nodeID); ok {
 		_ = json.Unmarshal(raw, &infra)
 	}
 
@@ -37,7 +37,7 @@ func AssembleNodeContext(
 
 	// Annotation buckets
 	var annotations *types.AnnotationBuckets
-	if node.CatalogAnnotations != nil || node.ReleaseAnnotations != nil || node.AggregateAnnotations != nil {
+	if node.CatalogAnnotations.Len() > 0 || node.ReleaseAnnotations.Len() > 0 || node.AggregateAnnotations.Len() > 0 {
 		annotations = &types.AnnotationBuckets{
 			Catalog:   node.CatalogAnnotations,
 			Release:   node.ReleaseAnnotations,
@@ -45,28 +45,26 @@ func AssembleNodeContext(
 		}
 	}
 
-	// Features from feature_values_mapping
-	var features map[string]types.TemplateFeature
-	if fvm, ok := graph.Spec.FeatureValuesMapping[nodeID]; ok && len(fvm) > 0 {
-		features = make(map[string]types.TemplateFeature, len(fvm))
-		for name, entry := range fvm {
-			features[name] = types.TemplateFeature{
+	// Features from feature_values_mapping (author-order preserved)
+	features := types.OrderedMap[types.TemplateFeature]{}
+	if fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok && fvm.Len() > 0 {
+		for name, entry := range fvm.All() {
+			features.Set(name, types.TemplateFeature{
 				Type:   entry.Type,
 				Values: entry.Values,
 				Infra:  entry.Infra,
-			}
+			})
 		}
 	}
 
-	// Secrets from secrets mapping
-	var secrets map[string]types.TemplateSecret
-	if sec, ok := graph.Spec.Secrets[nodeID]; ok && len(sec) > 0 {
-		secrets = make(map[string]types.TemplateSecret, len(sec))
-		for name, entry := range sec {
-			secrets[name] = types.TemplateSecret{
+	// Secrets from secrets mapping (author-order preserved)
+	secrets := types.OrderedMap[types.TemplateSecret]{}
+	if sec, ok := graph.Spec.Secrets.Get(nodeID); ok && sec.Len() > 0 {
+		for name, entry := range sec.All() {
+			secrets.Set(name, types.TemplateSecret{
 				Type:   entry.Type,
 				Values: entry.Values,
-			}
+			})
 		}
 	}
 
@@ -78,6 +76,8 @@ func AssembleNodeContext(
 		}
 	}
 
+	providesForNode := allProvides[nodeID]
+
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			InstanceID:  nodeID,
@@ -86,15 +86,15 @@ func AssembleNodeContext(
 			Inject:      inject,
 			Uses:        uses,
 		},
-		Values:   ensureMap(values),
-		Infra:    ensureMap(infra),
+		Values: values,
+		Infra:  infra,
 		// Locals starts empty; the orchestrator overwrites it with the resolved
 		// Recipe.Spec.Locals map (Phase B preamble, see EvaluateRecipeLocals).
-		Locals:   map[string]string{},
-		Provides: ensureStringMap(allProvides[nodeID]),
-		Features: features,
-		Secrets:  secrets,
-		Metadata: metadata,
+		Locals:    types.OrderedMap[string]{},
+		Provides:  providesForNode,
+		Features:  features,
+		Secrets:   secrets,
+		Metadata:  metadata,
 		InjectRaw: injectRaw,
 	}
 

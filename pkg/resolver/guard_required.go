@@ -19,7 +19,7 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components {
+	for compName, comp := range agg.Spec.Components.All() {
 		catComp, found := catalog.Component(comp.Type)
 		if !found {
 			continue
@@ -54,19 +54,19 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 }
 
 func collectAttachedFeatureTypes(comp types.ComponentInstance) map[string]bool {
-	types := map[string]bool{}
-	for _, feat := range comp.Features {
+	attached := map[string]bool{}
+	for _, feat := range comp.Features.All() {
 		if feat.Type != "" {
-			types[feat.Type] = true
+			attached[feat.Type] = true
 		}
 	}
-	return types
+	return attached
 }
 
-func collectReleaseBoundaryFeatureTypes(boundaries map[string]types.Boundary, compName string, attached map[string]bool) {
-	for _, boundary := range boundaries {
-		if bc, ok := boundary.Components[compName]; ok {
-			for _, feat := range bc.Features {
+func collectReleaseBoundaryFeatureTypes(boundaries types.OrderedMap[types.Boundary], compName string, attached map[string]bool) {
+	for _, boundary := range boundaries.All() {
+		if bc, ok := boundary.Components.Get(compName); ok {
+			for _, feat := range bc.Features.All() {
 				if feat.Type != "" {
 					attached[feat.Type] = true
 				}

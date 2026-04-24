@@ -11,6 +11,20 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
 
+// orderedMapToMap flattens an OrderedMap[interface{}] into a plain map[string]interface{}
+// for boundaries that accept map-shaped payloads (CUE pillar validation, JSON marshaling).
+// Ordering is lost at this boundary; CUE unification does not care about author order.
+func orderedMapToMap(m types.OrderedMap[interface{}]) map[string]interface{} {
+	if m.Len() == 0 {
+		return map[string]interface{}{}
+	}
+	out := make(map[string]interface{}, m.Len())
+	for k, v := range m.All() {
+		out[k] = v
+	}
+	return out
+}
+
 // guardCueSchema validates each component instance's .values (from the Aggregate)
 // and .infra (from the Release boundary) against the catalog Component's cueSchema
 // using the "values" and "infra" pillars respectively. Missing pillars are no-ops.
@@ -46,7 +60,7 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 			comp.Metadata.Name, pair.name, pair.inst.Type)
 
 		// Values pillar — data from the Aggregate component instance.
-		valuesErrs := validator.ValidatePillar(schema, "values", pair.inst.Values, entity)
+		valuesErrs := validator.ValidatePillar(schema, "values", orderedMapToMap(pair.inst.Values), entity)
 		for _, ve := range valuesErrs {
 			errs = append(errs, translateValidationError(ve, pair.name))
 		}
@@ -54,7 +68,7 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 		// Infra pillar — data from the Release boundary for this instance.
 		var infra map[string]interface{}
 		if bi, ok := boundaryInfra[pair.name]; ok && bi != nil {
-			infra = bi.Infra
+			infra = orderedMapToMap(bi.Infra)
 		}
 		infraErrs := validator.ValidatePillar(schema, "infra", infra, entity)
 		for _, ve := range infraErrs {
@@ -65,7 +79,7 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 		// socket names exist in usesSchema and inject mechanisms are allowlisted.
 		// Short-circuit when both the schema and the data are empty to avoid
 		// spurious validation over unstructured map[string]interface{} conversion.
-		if len(comp.Spec.UsesSchema) > 0 || len(pair.inst.Uses) > 0 {
+		if comp.Spec.UsesSchema.Len() > 0 || pair.inst.Uses.Len() > 0 {
 			usesData := normalizeUsesForCUE(pair.inst.Uses)
 			usesErrs := validator.ValidatePillar(schema, "uses", usesData, entity)
 			for _, ve := range usesErrs {
@@ -77,7 +91,7 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 		// inject mechanism allowlisting (Black-Box slots reject any inject).
 		// Required slots fail validation when absent. Run whenever either side
 		// has content; close() on the generated pillar enforces the contract.
-		if len(comp.Spec.SecretsSchema) > 0 || len(pair.inst.Secrets) > 0 {
+		if comp.Spec.SecretsSchema.Len() > 0 || pair.inst.Secrets.Len() > 0 {
 			secretsData := normalizeSecretsForCUE(pair.inst.Secrets)
 			secretErrs := validator.ValidatePillar(schema, "secrets", secretsData, entity)
 			for _, ve := range secretErrs {
@@ -94,21 +108,21 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 // pillar. Each SecretInstance's Inject (*InjectBlock) is normalized to a plain
 // map[string]map[string]string so CUE sees `inject.env.KEY = "value"`-style
 // entries matching the generated pillar's shape.
-func normalizeSecretsForCUE(secrets map[string]types.SecretInstance) map[string]interface{} {
-	if len(secrets) == 0 {
+func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[string]interface{} {
+	if secrets.Len() == 0 {
 		return map[string]interface{}{}
 	}
-	out := make(map[string]interface{}, len(secrets))
-	for name, sec := range secrets {
+	out := make(map[string]interface{}, secrets.Len())
+	for name, sec := range secrets.All() {
 		entry := map[string]interface{}{}
 		if sec.Type != "" {
 			entry["type"] = sec.Type
 		}
-		if len(sec.Values) > 0 {
-			entry["values"] = sec.Values
+		if sec.Values.Len() > 0 {
+			entry["values"] = orderedMapToMap(sec.Values)
 		}
-		if len(sec.Uses) > 0 {
-			entry["uses"] = sec.Uses
+		if sec.Uses.Len() > 0 {
+			entry["uses"] = orderedMapToMap(sec.Uses)
 		}
 		if sec.Inject != nil {
 			inj := map[string]interface{}{}
@@ -170,12 +184,12 @@ func normalizeInjectMechanism(raw interface{}) map[string]string {
 // expects the verbose form, so compact-style lists are skipped at this layer (an
 // unknown socket would still fire in the data shape; list normalization is a
 // separate concern handled by Step 2).
-func normalizeUsesForCUE(uses map[string]interface{}) map[string]interface{} {
-	if uses == nil {
+func normalizeUsesForCUE(uses types.OrderedMap[interface{}]) map[string]interface{} {
+	if uses.Len() == 0 {
 		return map[string]interface{}{}
 	}
-	out := make(map[string]interface{}, len(uses))
-	for socket, raw := range uses {
+	out := make(map[string]interface{}, uses.Len())
+	for socket, raw := range uses.All() {
 		// Only forward the verbose form — compact arrays don't match the
 		// generated `{ [string]: { target: string } }` shape.
 		if m, ok := raw.(map[string]interface{}); ok {
@@ -196,7 +210,7 @@ type instancePair struct {
 // for deterministic error ordering.
 func collectComponentInstances(agg *types.Aggregate) []instancePair {
 	var out []instancePair
-	for name, inst := range agg.Spec.Components {
+	for name, inst := range agg.Spec.Components.All() {
 		out = append(out, instancePair{name: name, inst: inst})
 	}
 	collectFromSubsystems(agg.Spec.Subsystems, &out)
@@ -204,9 +218,9 @@ func collectComponentInstances(agg *types.Aggregate) []instancePair {
 	return out
 }
 
-func collectFromSubsystems(subs map[string]types.Subsystem, out *[]instancePair) {
-	for _, sub := range subs {
-		for name, inst := range sub.Components {
+func collectFromSubsystems(subs types.OrderedMap[types.Subsystem], out *[]instancePair) {
+	for _, sub := range subs.All() {
+		for name, inst := range sub.Components.All() {
 			*out = append(*out, instancePair{name: name, inst: inst})
 		}
 		collectFromSubsystems(sub.Subsystems, out)

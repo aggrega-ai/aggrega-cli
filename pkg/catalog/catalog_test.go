@@ -263,11 +263,13 @@ spec:
 	}
 
 	resolved := cat.Components["core/server/api"]
-	if resolved.Metadata.Labels["component.aggrega.ai/type"] != "server" {
-		t.Errorf("expected inherited type label, got %v", resolved.Metadata.Labels)
+	typeLabel, _ := resolved.Metadata.Labels.Get("component.aggrega.ai/type")
+	if typeLabel != "server" {
+		t.Errorf("expected inherited type label, got %v", resolved.Metadata.Labels.Keys())
 	}
-	if resolved.Metadata.Labels["tier"] != "prod" {
-		t.Errorf("child tier label lost, got %v", resolved.Metadata.Labels)
+	tierLabel, _ := resolved.Metadata.Labels.Get("tier")
+	if tierLabel != "prod" {
+		t.Errorf("child tier label lost, got %v", resolved.Metadata.Labels.Keys())
 	}
 	// Both constraints present in unified schema
 	if !strings.Contains(resolved.Spec.CueSchema, ">=1024") || !strings.Contains(resolved.Spec.CueSchema, "<=65535") {

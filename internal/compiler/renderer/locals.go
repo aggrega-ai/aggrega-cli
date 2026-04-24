@@ -15,10 +15,10 @@ import (
 // Self-contained data only: instance_id, values, infra, provides (Pass 1 output).
 // Locals templates MUST NOT reference .context.inject or .context.uses.
 type LocalsContext struct {
-	Context  ProvidesContextBlock   `json:"context"`
-	Values   map[string]interface{} `json:"values"`
-	Infra    map[string]interface{} `json:"infra"`
-	Provides map[string]string      `json:"provides"`
+	Context  ProvidesContextBlock          `json:"context"`
+	Values   types.OrderedMap[interface{}] `json:"values"`
+	Infra    types.OrderedMap[interface{}] `json:"infra"`
+	Provides types.OrderedMap[string]      `json:"provides"`
 }
 
 // forbiddenLocalsRefs matches template actions referencing cross-node or inject data.
@@ -37,53 +37,51 @@ func CheckLocalsSelfContainment(templateText, recipeID, key string) error {
 }
 
 // EvaluateRecipeLocals evaluates each entry in recipe.Spec.Locals as a Go template
-// against the restricted LocalsContext. Returns a deterministic resolved map.
+// against the restricted LocalsContext. Returns a deterministic resolved OrderedMap.
 // Runs as a Phase B preamble: after Pass 1 (provides available), before Phase A/B.
+// Iteration is in author order (recipe.Spec.Locals is an OrderedMap).
 func EvaluateRecipeLocals(
 	recipe *types.Recipe,
 	nodeID string,
-	values map[string]interface{},
-	infra map[string]interface{},
-	provides map[string]string,
-) (map[string]string, error) {
-	if recipe == nil || len(recipe.Spec.Locals) == 0 {
-		return map[string]string{}, nil
+	values types.OrderedMap[interface{}],
+	infra types.OrderedMap[interface{}],
+	provides types.OrderedMap[string],
+) (types.OrderedMap[string], error) {
+	resolved := types.OrderedMap[string]{}
+	if recipe == nil || recipe.Spec.Locals.Len() == 0 {
+		return resolved, nil
 	}
 
 	lCtx := LocalsContext{
 		Context:  ProvidesContextBlock{InstanceID: nodeID},
-		Values:   ensureMap(values),
-		Infra:    ensureMap(infra),
-		Provides: ensureStringMap(provides),
+		Values:   values,
+		Infra:    infra,
+		Provides: provides,
 	}
 
-	resolved := make(map[string]string, len(recipe.Spec.Locals))
-	keys := sortedStringMapKeys(recipe.Spec.Locals)
-	for _, key := range keys {
-		tmplText := recipe.Spec.Locals[key]
+	for key, tmplText := range recipe.Spec.Locals.All() {
 		if err := CheckLocalsSelfContainment(tmplText, recipe.Metadata.Name, key); err != nil {
-			return nil, err
+			return types.OrderedMap[string]{}, err
 		}
 		val, err := EvalTemplate(fmt.Sprintf("locals[%q]", key), tmplText, lCtx)
 		if err != nil {
-			return nil, fmt.Errorf("Recipe %q locals[%q]: %w", recipe.Metadata.Name, key, err)
+			return types.OrderedMap[string]{}, fmt.Errorf("Recipe %q locals[%q]: %w", recipe.Metadata.Name, key, err)
 		}
-		resolved[key] = strings.TrimSpace(val)
+		resolved.Set(key, strings.TrimSpace(val))
 	}
 	return resolved, nil
 }
 
 // mergeFeatureLocals returns the merge of base Recipe's evaluated locals and a
 // FeatureRecipe's own locals. FR entries override base entries on key collision.
-// WI-1 treats FR-own locals as raw strings; WI-2 will upgrade to
-// template-evaluated overlay using feature-scoped context.
-func mergeFeatureLocals(base, frOwn map[string]string) map[string]string {
-	out := make(map[string]string, len(base)+len(frOwn))
-	for k, v := range base {
-		out[k] = v
+// Author order preserved — base first, then FR-only entries.
+func mergeFeatureLocals(base, frOwn types.OrderedMap[string]) types.OrderedMap[string] {
+	out := types.OrderedMap[string]{}
+	for k, v := range base.All() {
+		out.Set(k, v)
 	}
-	for k, v := range frOwn {
-		out[k] = v
+	for k, v := range frOwn.All() {
+		out.Set(k, v)
 	}
 	return out
 }

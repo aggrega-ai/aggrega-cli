@@ -27,14 +27,14 @@ type FeatureRecipeMetadata struct {
 
 // FeatureRecipeSpec defines the provider binding, mapping, and pipeline for a FeatureRecipe.
 type FeatureRecipeSpec struct {
-	Provider             string            `json:"provider" yaml:"provider"`
-	Implements           string            `json:"implements" yaml:"implements"`
-	Locals               map[string]string `json:"locals,omitempty" yaml:"locals,omitempty"`
-	Provides             map[string]string `json:"provides,omitempty" yaml:"provides,omitempty"`
-	Source               interface{}       `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
-	ValuesMapping        string            `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
-	ValuesMappingFile    string            `json:"valuesMappingFile,omitempty" yaml:"valuesMappingFile,omitempty"`
-	ValuesMappingJsonnet string            `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`
-	InjectMapping        string            `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
-	Pipeline             []PipelineStep    `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
+	Provider             string             `json:"provider" yaml:"provider"`
+	Implements           string             `json:"implements" yaml:"implements"`
+	Locals               OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
+	Provides             OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	Source               interface{}        `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
+	ValuesMapping        string             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
+	ValuesMappingFile    string             `json:"valuesMappingFile,omitempty" yaml:"valuesMappingFile,omitempty"`
+	ValuesMappingJsonnet string             `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`
+	InjectMapping        string             `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
+	Pipeline             []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
 }

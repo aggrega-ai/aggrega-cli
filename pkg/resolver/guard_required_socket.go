@@ -5,7 +5,6 @@ package resolver
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -26,18 +25,12 @@ func guardRequiredUsesSockets(agg *types.Aggregate, catalog CatalogLookup) []*Re
 		if !ok {
 			continue // unknown-type errors handled by a different guard
 		}
-		if len(comp.Spec.UsesSchema) == 0 {
+		if comp.Spec.UsesSchema.Len() == 0 {
 			continue
 		}
 
-		socketNames := make([]string, 0, len(comp.Spec.UsesSchema))
-		for name := range comp.Spec.UsesSchema {
-			socketNames = append(socketNames, name)
-		}
-		sort.Strings(socketNames)
-
-		for _, socketName := range socketNames {
-			entry := comp.Spec.UsesSchema[socketName]
+		// Iterate in author order from the catalog entity (UsesSchema is OrderedMap).
+		for socketName, entry := range comp.Spec.UsesSchema.All() {
 			if !entry.Required {
 				continue
 			}
@@ -60,8 +53,8 @@ func guardRequiredUsesSockets(agg *types.Aggregate, catalog CatalogLookup) []*Re
 // (`socket: [target1, target2]`) and the verbose map form
 // (`socket: {alias: {target: ..., ...}}`). Empty strings in a list and empty
 // maps count as not-populated.
-func socketIsPopulated(uses map[string]interface{}, socket string) bool {
-	raw, ok := uses[socket]
+func socketIsPopulated(uses types.OrderedMap[interface{}], socket string) bool {
+	raw, ok := uses.Get(socket)
 	if !ok || raw == nil {
 		return false
 	}

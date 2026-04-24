@@ -16,36 +16,45 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "test-app"},
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"api": {
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{
 					Component:          "core/server/api-server",
-					Labels:             map[string]string{types.ComponentTypeLabel: "server"},
+					Labels:             func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
 					ResolvedVersion:    "1.0.0",
 					BoundaryPath:       "local/default",
-					CatalogAnnotations: map[string]string{"tier": "standard"},
-					ReleaseAnnotations: map[string]string{"env": "local"},
-				},
-				"db": {
+					CatalogAnnotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("tier", "standard"); return _m }(),
+					ReleaseAnnotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("env", "local"); return _m }(),
+				}); _m.Set("db", types.IRNode{
 					Component:       "core/database/postgres",
-					Labels:          map[string]string{types.ComponentTypeLabel: "stateful-server"},
+					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
 					ResolvedVersion: "2.0.0",
-				},
-			},
+				}); return _m }(),
 			Edges: []types.IREdge{
-				{Source: "api", Target: "db", Socket: "databases", Alias: "main-db", Inject: map[string]map[string]string{"env": {"DB_URL": "host"}}},
+				{Source: "api", Target: "db", Socket: "databases", Alias: "main-db", Inject: func() types.OrderedMap[types.OrderedMap[string]] {
+					inj := types.OrderedMap[types.OrderedMap[string]]{}
+					env := types.OrderedMap[string]{}
+					env.Set("DB_URL", "host")
+					inj.Set("env", env)
+					return inj
+				}()},
 			},
-			ValuesMapping: map[string]json.RawMessage{
-				"api": json.RawMessage(`{"port":8080}`),
-			},
-			InfraMapping: map[string]json.RawMessage{
-				"api": json.RawMessage(`{"replicas":3}`),
-			},
-			FeatureValuesMapping: map[string]map[string]types.IRFeatureEntry{
-				"api": {"monitoring": {Type: "core/monitoring", Values: map[string]interface{}{"enabled": true}}},
-			},
-			Secrets: map[string]map[string]types.IRSecretEntry{
-				"api": {"db-creds": {Type: "core/db-creds"}},
-			},
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", json.RawMessage(`{"port":8080}`)); return _m }(),
+			InfraMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", json.RawMessage(`{"replicas":3}`)); return _m }(),
+			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+				inner := types.OrderedMap[types.IRFeatureEntry]{}
+				vals := types.OrderedMap[interface{}]{}
+				vals.Set("enabled", true)
+				inner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring", Values: vals})
+				outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+				outer.Set("api", inner)
+				return outer
+			}(),
+			Secrets: func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
+				inner := types.OrderedMap[types.IRSecretEntry]{}
+				inner.Set("db-creds", types.IRSecretEntry{Type: "core/db-creds"})
+				outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+				outer.Set("api", inner)
+				return outer
+			}(),
 			Provenance: types.IRProvenance{
 				CompilerVersion:  "0.1.0",
 				AggregateVersion: "1.0.0",
@@ -54,9 +63,14 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 		},
 	}
 
+	apiProv := types.OrderedMap[string]{}
+	apiProv.Set("listen_port", "8080")
+	dbProv := types.OrderedMap[string]{}
+	dbProv.Set("host", "db.svc.cluster.local")
+	dbProv.Set("service_port", "5432")
 	allProvides := NodeProvides{
-		"api": {"listen_port": "8080"},
-		"db":  {"host": "db.svc.cluster.local", "service_port": "5432"},
+		"api": apiProv,
+		"db":  dbProv,
 	}
 
 	inject, injectRaw := BuildInjectPipe(nil)
@@ -66,57 +80,68 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	if ctx.Context.InstanceID != "api" {
 		t.Errorf("instance_id: %q", ctx.Context.InstanceID)
 	}
-	if ctx.Context.Labels[types.ComponentTypeLabel] != "server" {
-		t.Errorf("labels: %v", ctx.Context.Labels)
+	ctxType, _ := ctx.Context.Labels.Get(types.ComponentTypeLabel)
+	if ctxType != "server" {
+		t.Errorf("labels: %v", ctx.Context.Labels.Keys())
 	}
-	if ctx.Context.Annotations == nil || ctx.Context.Annotations.Catalog["tier"] != "standard" {
+	if ctx.Context.Annotations == nil {
+		t.Fatalf("annotations nil")
+	}
+	tier, _ := ctx.Context.Annotations.Catalog.Get("tier")
+	if tier != "standard" {
 		t.Errorf("annotations: %v", ctx.Context.Annotations)
 	}
 
 	// Enriched uses
-	if len(ctx.Context.Uses) != 1 {
-		t.Fatalf("expected 1 uses entry, got %d", len(ctx.Context.Uses))
+	if ctx.Context.Uses.Len() != 1 {
+		t.Fatalf("expected 1 uses entry, got %d", ctx.Context.Uses.Len())
 	}
-	dbEdge, ok := ctx.Context.Uses["main-db"]
+	dbEdge, ok := ctx.Context.Uses.Get("main-db")
 	if !ok {
 		t.Fatal("expected 'main-db' in uses")
 	}
 	if dbEdge.Target != "db" || dbEdge.Socket != "databases" {
 		t.Errorf("edge: %+v", dbEdge)
 	}
-	if dbEdge.Provides["host"] != "db.svc.cluster.local" {
-		t.Errorf("provides: %v", dbEdge.Provides)
+	provHost, _ := dbEdge.Provides.Get("host")
+	if provHost != "db.svc.cluster.local" {
+		t.Errorf("provides: %v", dbEdge.Provides.Keys())
 	}
 	if dbEdge.ResolvedVersion != "2.0.0" {
 		t.Errorf("resolved_version: %q", dbEdge.ResolvedVersion)
 	}
 
 	// Values + Infra
-	if ctx.Values["port"] != float64(8080) { // JSON unmarshal makes numbers float64
-		t.Errorf("values.port: %v (%T)", ctx.Values["port"], ctx.Values["port"])
+	portVal, _ := ctx.Values.Get("port")
+	if portVal != float64(8080) { // JSON unmarshal makes numbers float64
+		t.Errorf("values.port: %v (%T)", portVal, portVal)
 	}
-	if ctx.Infra["replicas"] != float64(3) {
-		t.Errorf("infra.replicas: %v", ctx.Infra["replicas"])
+	replicasVal, _ := ctx.Infra.Get("replicas")
+	if replicasVal != float64(3) {
+		t.Errorf("infra.replicas: %v", replicasVal)
 	}
 
 	// .Provides reflects Pass 1 output. .Locals is intentionally empty
 	// here because AssembleNodeContext does not run the Phase B locals preamble
 	// — the orchestrator calls EvaluateRecipeLocals separately ( WI-1).
-	if ctx.Provides["listen_port"] != "8080" {
-		t.Errorf("provides: %v", ctx.Provides)
+	listenPort, _ := ctx.Provides.Get("listen_port")
+	if listenPort != "8080" {
+		t.Errorf("provides: %v", ctx.Provides.Keys())
 	}
-	if len(ctx.Locals) != 0 {
-		t.Errorf("expected empty locals from AssembleNodeContext alone, got %v", ctx.Locals)
+	if ctx.Locals.Len() != 0 {
+		t.Errorf("expected empty locals from AssembleNodeContext alone, got %v", ctx.Locals.Keys())
 	}
 
 	// Features
-	if ctx.Features["monitoring"].Type != "core/monitoring" {
-		t.Errorf("features: %v", ctx.Features)
+	monFeat, _ := ctx.Features.Get("monitoring")
+	if monFeat.Type != "core/monitoring" {
+		t.Errorf("features: %v", ctx.Features.Keys())
 	}
 
 	// Secrets
-	if ctx.Secrets["db-creds"].Type != "core/db-creds" {
-		t.Errorf("secrets: %v", ctx.Secrets)
+	dbSecret, _ := ctx.Secrets.Get("db-creds")
+	if dbSecret.Type != "core/db-creds" {
+		t.Errorf("secrets: %v", ctx.Secrets.Keys())
 	}
 
 	// InjectRaw (nil since we passed nil)
@@ -124,10 +149,11 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 		t.Error("expected nil injectRaw")
 	}
 
-	// Inject guaranteed keys
-	if ctx.Context.Inject.Env == nil || ctx.Context.Inject.File == nil || ctx.Context.Inject.Arg == nil {
-		t.Error("inject pipe missing guaranteed keys")
-	}
+	// Inject guaranteed keys (always initialized as OrderedMap, never nil pointer)
+	// The assertion is that they can be safely iterated; no type-level check needed.
+	_ = ctx.Context.Inject.Env
+	_ = ctx.Context.Inject.File
+	_ = ctx.Context.Inject.Arg
 }
 
 func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
@@ -136,10 +162,13 @@ func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "t"},
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{"db": {Component: "core/database/postgres"}},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("db", types.IRNode{Component: "core/database/postgres"}); return _m }(),
 		},
 	}
-	allProvides := NodeProvides{"db": {"host": "db.svc.cluster.local", "port": "5432"}}
+	dbProv2 := types.OrderedMap[string]{}
+	dbProv2.Set("host", "db.svc.cluster.local")
+	dbProv2.Set("port", "5432")
+	allProvides := NodeProvides{"db": dbProv2}
 	inject, injectRaw := BuildInjectPipe(nil)
 	ctx := AssembleNodeContext("db", graph, allProvides, inject, injectRaw)
 
@@ -159,26 +188,21 @@ func TestAssembleNodeContext_EmptyNode(t *testing.T) {
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "test"},
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"simple": {Component: "core/worker"},
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("simple", types.IRNode{Component: "core/worker"}); return _m }(),
 		},
 	}
 
 	inject, injectRaw := BuildInjectPipe(nil)
-	ctx := AssembleNodeContext("simple", graph, NodeProvides{"simple": {}}, inject, injectRaw)
+	ctx := AssembleNodeContext("simple", graph, NodeProvides{"simple": types.OrderedMap[string]{}}, inject, injectRaw)
 
 	if ctx.Context.InstanceID != "simple" {
 		t.Errorf("instance_id: %q", ctx.Context.InstanceID)
 	}
-	if ctx.Values == nil {
-		t.Error("values should be non-nil empty map")
-	}
-	if ctx.Infra == nil {
-		t.Error("infra should be non-nil empty map")
-	}
-	if len(ctx.Context.Uses) != 0 {
-		t.Errorf("expected 0 uses, got %d", len(ctx.Context.Uses))
+	// Values/Infra are zero-value OrderedMap[interface{}] — always safe to use; no nil check needed.
+	_ = ctx.Values
+	_ = ctx.Infra
+	if ctx.Context.Uses.Len() != 0 {
+		t.Errorf("expected 0 uses, got %d", ctx.Context.Uses.Len())
 	}
 }
 

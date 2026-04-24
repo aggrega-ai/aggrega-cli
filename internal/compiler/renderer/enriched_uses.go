@@ -11,19 +11,22 @@ import (
 // Each entry is a JOIN projection of the target node's resolved provides,
 // labels, annotations, component type, version, and boundary_path.
 // Keyed by the developer's alias (from the edge).
+//
+// The returned OrderedMap preserves edge emission order from the IR (which in
+// turn reflects Aggregate author order through the topology builder).
 func AssembleEnrichedUses(
 	nodeID string,
 	graph *types.IRGraph,
 	allProvides NodeProvides,
-) map[string]types.EnrichedEdge {
-	result := make(map[string]types.EnrichedEdge)
+) types.OrderedMap[types.EnrichedEdge] {
+	result := types.OrderedMap[types.EnrichedEdge]{}
 
 	for _, edge := range graph.Spec.Edges {
 		if edge.Source != nodeID {
 			continue
 		}
 
-		targetNode, ok := graph.Spec.Nodes[edge.Target]
+		targetNode, ok := graph.Spec.Nodes.Get(edge.Target)
 		if !ok {
 			continue
 		}
@@ -31,7 +34,7 @@ func AssembleEnrichedUses(
 		ee := types.EnrichedEdge{
 			Target:          edge.Target,
 			Socket:          edge.Socket,
-			Provides:        ensureStringMap(allProvides[edge.Target]),
+			Provides:        allProvides[edge.Target],
 			Inject:          edge.Inject,
 			Labels:          targetNode.Labels,
 			Component:       targetNode.Component,
@@ -41,7 +44,7 @@ func AssembleEnrichedUses(
 		}
 
 		// Target annotations as buckets
-		if targetNode.CatalogAnnotations != nil || targetNode.ReleaseAnnotations != nil || targetNode.AggregateAnnotations != nil {
+		if targetNode.CatalogAnnotations.Len() > 0 || targetNode.ReleaseAnnotations.Len() > 0 || targetNode.AggregateAnnotations.Len() > 0 {
 			ee.Annotations = &types.AnnotationBuckets{
 				Catalog:   targetNode.CatalogAnnotations,
 				Release:   targetNode.ReleaseAnnotations,
@@ -54,7 +57,7 @@ func AssembleEnrichedUses(
 		if alias == "" {
 			alias = edge.Target
 		}
-		result[alias] = ee
+		result.Set(alias, ee)
 	}
 
 	return result

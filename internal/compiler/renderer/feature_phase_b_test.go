@@ -16,36 +16,38 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
 		Spec: types.FeatureRecipeSpec{
-			Locals: map[string]string{
-				"scrape_target": `{{ .provides.host }}:{{ .values.scrape_port }}`,
-				"tier":          `{{ .values.tier }}`,
-			},
+			Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("scrape_target", `{{ .provides.host }}:{{ .values.scrape_port }}`); _m.Set("tier", `{{ .values.tier }}`); return _m }(),
 		},
 	}
 	// Feature-scoped values/infra (FR's own, not base Recipe's)
-	values := map[string]interface{}{"scrape_port": float64(9090), "tier": "prod"}
-	provides := map[string]string{"host": "api.svc"}
+	values := types.OrderedMap[interface{}]{}
+	values.Set("scrape_port", float64(9090))
+	values.Set("tier", "prod")
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", "api.svc")
 
-	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, nil, provides)
+	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, types.OrderedMap[interface{}]{}, provides)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got["scrape_target"] != "api.svc:9090" {
-		t.Errorf("scrape_target: %q", got["scrape_target"])
+	scrapeTarget, _ := got.Get("scrape_target")
+	if scrapeTarget != "api.svc:9090" {
+		t.Errorf("scrape_target: %q", scrapeTarget)
 	}
-	if got["tier"] != "prod" {
-		t.Errorf("tier: %q", got["tier"])
+	tier, _ := got.Get("tier")
+	if tier != "prod" {
+		t.Errorf("tier: %q", tier)
 	}
 }
 
 func TestEvaluateFeatureRecipeLocals_NilFR(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "n", nil, nil, nil)
+	got, err := EvaluateFeatureRecipeLocals(nil, "n", types.OrderedMap[interface{}]{}, types.OrderedMap[interface{}]{}, types.OrderedMap[string]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 0 {
-		t.Errorf("expected empty, got %v", got)
+	if got.Len() != 0 {
+		t.Errorf("expected empty, got %v", got.Keys())
 	}
 }
 
@@ -54,12 +56,10 @@ func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "ops/bad"},
 		Spec: types.FeatureRecipeSpec{
-			Locals: map[string]string{
-				"leak": `{{ .context.inject.env.DB_URL }}`,
-			},
+			Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("leak", `{{ .context.inject.env.DB_URL }}`); return _m }(),
 		},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "n", nil, nil, nil)
+	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[interface{}]{}, types.OrderedMap[interface{}]{}, types.OrderedMap[string]{})
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}
@@ -78,7 +78,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 		},
 	}
 	ctx := &types.TemplateContext{
-		Values: map[string]interface{}{"tag": "v1", "port": float64(9090)},
+		Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("tag", "v1"); _m.Set("port", float64(9090)); return _m }(),
 	}
 
 	values, err := ExecutePhaseBForFeature(ctx, fr)
@@ -107,7 +107,7 @@ func TestExecutePhaseBForFeature_NilFR(t *testing.T) {
 func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "ops/x"}}
-	ctx := &types.TemplateContext{Values: map[string]interface{}{"a": float64(1)}}
+	ctx := &types.TemplateContext{Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("a", float64(1)); return _m }()}
 	got, err := ExecutePhaseBForFeature(ctx, fr)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)

@@ -36,7 +36,7 @@ spec:
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	root := comp.Spec.SecretsSchema["root_password"]
+	root, _ := comp.Spec.SecretsSchema.Get("root_password")
 	if !root.Required {
 		t.Errorf("root_password.required: got false, want true")
 	}
@@ -47,7 +47,7 @@ spec:
 		t.Errorf("root_password.description: %q", root.Description)
 	}
 
-	tls := comp.Spec.SecretsSchema["tls_ca"]
+	tls, _ := comp.Spec.SecretsSchema.Get("tls_ca")
 	if tls.Required {
 		t.Errorf("tls_ca.required: got true, want false")
 	}
@@ -76,8 +76,8 @@ spec:
 	if len(comp.Spec.SecretNames) != 2 {
 		t.Errorf("secretNames: %v", comp.Spec.SecretNames)
 	}
-	if len(comp.Spec.SecretsSchema) != 0 {
-		t.Errorf("expected no SecretsSchema on legacy component, got %v", comp.Spec.SecretsSchema)
+	if comp.Spec.SecretsSchema.Len() != 0 {
+		t.Errorf("expected no SecretsSchema on legacy component, got %v", comp.Spec.SecretsSchema.Keys())
 	}
 }
 
@@ -106,7 +106,8 @@ spec:
 	if len(comp.Spec.SecretNames) != 1 || comp.Spec.SecretNames[0] != "old_key" {
 		t.Errorf("SecretNames: %v", comp.Spec.SecretNames)
 	}
-	if !comp.Spec.SecretsSchema["new_key"].Required {
+	newKey, _ := comp.Spec.SecretsSchema.Get("new_key")
+	if !newKey.Required {
 		t.Errorf("SecretsSchema.new_key.required missing")
 	}
 }

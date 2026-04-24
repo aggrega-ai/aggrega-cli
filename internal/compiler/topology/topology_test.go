@@ -16,17 +16,12 @@ func TestBuild_SimpleTopology(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type: "core/server/api-server",
-					Uses: map[string]interface{}{
-						"databases": []interface{}{"main-db"},
-					},
-				},
-				"main-db": {
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"main-db"}); return _m }(),
+				}); _m.Set("main-db", types.ComponentInstance{
 					Type: "core/database/postgres",
-				},
-			},
+				}); return _m }(),
 		},
 	}
 
@@ -37,14 +32,14 @@ func TestBuild_SimpleTopology(t *testing.T) {
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:   "core/server/api-server",
-						Labels: map[string]string{types.ComponentTypeLabel: "server"},
+						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
 					},
 				}, true
 			case "core/database/postgres":
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:   "core/database/postgres",
-						Labels: map[string]string{types.ComponentTypeLabel: "stateful-server"},
+						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
 					},
 				}, true
 			default:
@@ -67,11 +62,13 @@ func TestBuild_SimpleTopology(t *testing.T) {
 	if len(result.Nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(result.Nodes))
 	}
-	if result.Nodes["api"].Labels[types.ComponentTypeLabel] != "server" {
-		t.Errorf("api labels: %v", result.Nodes["api"].Labels)
+	apiLabel, _ := result.Nodes["api"].Labels.Get(types.ComponentTypeLabel)
+	if apiLabel != "server" {
+		t.Errorf("api labels: %v", result.Nodes["api"].Labels.Keys())
 	}
-	if result.Nodes["main-db"].Labels[types.ComponentTypeLabel] != "stateful-server" {
-		t.Errorf("main-db labels: %v", result.Nodes["main-db"].Labels)
+	dbLabel, _ := result.Nodes["main-db"].Labels.Get(types.ComponentTypeLabel)
+	if dbLabel != "stateful-server" {
+		t.Errorf("main-db labels: %v", result.Nodes["main-db"].Labels.Keys())
 	}
 
 	if len(result.Edges) != 1 {
@@ -89,20 +86,13 @@ func TestBuild_CyclicEdges(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "cyclic-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"agent-a": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("agent-a", types.ComponentInstance{
 					Type: "core/agent",
-					Uses: map[string]interface{}{
-						"delegates": []interface{}{"agent-b"},
-					},
-				},
-				"agent-b": {
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("delegates", []interface{}{"agent-b"}); return _m }(),
+				}); _m.Set("agent-b", types.ComponentInstance{
 					Type: "core/agent",
-					Uses: map[string]interface{}{
-						"delegates": []interface{}{"agent-a"},
-					},
-				},
-			},
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("delegates", []interface{}{"agent-a"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 
@@ -126,22 +116,15 @@ func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type: "core/server/api-server",
-					Features: map[string]types.FeatureInstance{
-						"monitoring": {
+					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("monitoring", types.FeatureInstance{
 							Type: "core/monitoring",
-							Uses: map[string]interface{}{
-								"targets": []interface{}{"metrics-db"},
-							},
-						},
-					},
-				},
-				"metrics-db": {
+							Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("targets", []interface{}{"metrics-db"}); return _m }(),
+						}); return _m }(),
+				}); _m.Set("metrics-db", types.ComponentInstance{
 					Type: "core/database/postgres",
-				},
-			},
+				}); return _m }(),
 		},
 	}
 
@@ -168,9 +151,7 @@ func TestBuild_BoundaryPath(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {Type: "core/server/api-server"},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api-server"}); return _m }(),
 		},
 	}
 
@@ -196,11 +177,7 @@ func TestBuild_DeterministicEdgeOrder(t *testing.T) {
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"z-svc": {Type: "t", Uses: map[string]interface{}{"s": []interface{}{"target"}}},
-				"a-svc": {Type: "t", Uses: map[string]interface{}{"s": []interface{}{"target"}}},
-				"m-svc": {Type: "t", Uses: map[string]interface{}{"s": []interface{}{"target"}}},
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("z-svc", types.ComponentInstance{Type: "t", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("s", []interface{}{"target"}); return _m }()}); _m.Set("a-svc", types.ComponentInstance{Type: "t", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("s", []interface{}{"target"}); return _m }()}); _m.Set("m-svc", types.ComponentInstance{Type: "t", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("s", []interface{}{"target"}); return _m }()}); return _m }(),
 		},
 	}
 

@@ -17,22 +17,15 @@ import (
 //
 // The sourceNodeID is the fully-qualified dot-notation ID of the source node.
 // If originFeature is non-empty, the edge originated from a Feature's uses block.
-func normalizeUses(uses map[string]interface{}, sourceNodeID, originFeature string) ([]NormalizedEdge, error) {
-	if len(uses) == 0 {
+func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeature string) ([]NormalizedEdge, error) {
+	if uses.Len() == 0 {
 		return nil, nil
 	}
 
 	var edges []NormalizedEdge
 
-	// Sorted socket iteration for determinism
-	sockets := make([]string, 0, len(uses))
-	for s := range uses {
-		sockets = append(sockets, s)
-	}
-	sort.Strings(sockets)
-
-	for _, socket := range sockets {
-		raw := uses[socket]
+	// Author-order socket iteration (OrderedMap)
+	for socket, raw := range uses.All() {
 		if raw == nil {
 			continue
 		}

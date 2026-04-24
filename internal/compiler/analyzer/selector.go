@@ -22,7 +22,7 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 	var errs []AnalysisError
 
 	for _, edge := range graph.Spec.Edges {
-		sourceNode, ok := graph.Spec.Nodes[edge.Source]
+		sourceNode, ok := graph.Spec.Nodes.Get(edge.Source)
 		if !ok {
 			continue
 		}
@@ -38,12 +38,12 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 		if edge.OriginFeature != "" && catalogLookup.Feature != nil {
 			catFeat, fFound := catalogLookup.Feature(edge.OriginFeature)
 			if fFound {
-				if entry, ok := catFeat.Spec.UsesSchema[edge.Socket]; ok {
+				if entry, ok := catFeat.Spec.UsesSchema.Get(edge.Socket); ok {
 					selectorStr = entry.Selector
 				}
 			}
 		} else {
-			if entry, ok := catComp.Spec.UsesSchema[edge.Socket]; ok {
+			if entry, ok := catComp.Spec.UsesSchema.Get(edge.Socket); ok {
 				selectorStr = entry.Selector
 			}
 		}
@@ -53,7 +53,7 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 		}
 
 		// Get target node labels
-		targetNode, ok := graph.Spec.Nodes[edge.Target]
+		targetNode, ok := graph.Spec.Nodes.Get(edge.Target)
 		if !ok {
 			continue
 		}

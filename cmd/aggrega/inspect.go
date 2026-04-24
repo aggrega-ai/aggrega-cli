@@ -57,9 +57,9 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print usesSchema if present
-	if len(comp.Spec.UsesSchema) > 0 {
+	if comp.Spec.UsesSchema.Len() > 0 {
 		fmt.Println("\n// usesSchema:")
-		for socket, entry := range comp.Spec.UsesSchema {
+		for socket, entry := range comp.Spec.UsesSchema.All() {
 			fmt.Printf("//   %s: selector=%q\n", socket, entry.Selector)
 		}
 	}

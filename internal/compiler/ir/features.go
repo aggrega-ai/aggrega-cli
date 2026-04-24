@@ -14,8 +14,8 @@ import (
 
 // featureResult holds the normalized features and secrets for one node.
 type featureResult struct {
-	Features     map[string]types.IRFeatureEntry
-	Secrets      map[string]types.IRSecretEntry
+	Features     types.OrderedMap[types.IRFeatureEntry]
+	Secrets      types.OrderedMap[types.IRSecretEntry]
 	FeatureOrder []string // deterministic order following Onion Model
 	Markers      []string // canonical feature type strings
 }
@@ -30,8 +30,8 @@ func collectNodeFeatures(
 	catalogLookup resolver.CatalogLookup,
 ) (*featureResult, error) {
 	result := &featureResult{
-		Features: make(map[string]types.IRFeatureEntry),
-		Secrets:  make(map[string]types.IRSecretEntry),
+		Features: types.OrderedMap[types.IRFeatureEntry]{},
+		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
 	}
 
 	markerSet := map[string]bool{}
@@ -64,19 +64,19 @@ func collectNodeFeatures(
 	if topoNode.BoundaryPath != "" && resolveResult.Release != nil {
 		boundaryFeatures := collectBoundaryWideFeatures(resolveResult.Release.Spec.Boundaries, topoNode.BoundaryPath)
 		for _, bf := range boundaryFeatures {
-			feat := types.FeatureInstance{Type: bf.feat.Type, Values: nil} // Release provides infra only, not values
+			feat := types.FeatureInstance{Type: bf.feat.Type} // Release provides infra only, not values
 			if err := mergeFeature(result, bf.name, feat, markerSet, catalogLookup, nodeID); err != nil {
 				return nil, err
 			}
 			// Merge infra separately for Release features
-			if existing, ok := result.Features[bf.name]; ok && bf.feat.Infra != nil {
-				if existing.Infra == nil {
-					existing.Infra = make(map[string]interface{})
+			if existing, ok := result.Features.Get(bf.name); ok && bf.feat.Infra.Len() > 0 {
+				if existing.Infra.Len() == 0 {
+					existing.Infra = types.OrderedMap[interface{}]{}
 				}
-				for k, v := range bf.feat.Infra {
-					existing.Infra[k] = v
+				for k, v := range bf.feat.Infra.All() {
+					existing.Infra.Set(k, v)
 				}
-				result.Features[bf.name] = existing
+				result.Features.Set(bf.name, existing)
 			}
 		}
 	}
@@ -89,14 +89,14 @@ func collectNodeFeatures(
 			if err := mergeFeature(result, cf.name, feat, markerSet, catalogLookup, nodeID); err != nil {
 				return nil, err
 			}
-			if existing, ok := result.Features[cf.name]; ok && cf.feat.Infra != nil {
-				if existing.Infra == nil {
-					existing.Infra = make(map[string]interface{})
+			if existing, ok := result.Features.Get(cf.name); ok && cf.feat.Infra.Len() > 0 {
+				if existing.Infra.Len() == 0 {
+					existing.Infra = types.OrderedMap[interface{}]{}
 				}
-				for k, v := range cf.feat.Infra {
-					existing.Infra[k] = v
+				for k, v := range cf.feat.Infra.All() {
+					existing.Infra.Set(k, v)
 				}
-				result.Features[cf.name] = existing
+				result.Features.Set(cf.name, existing)
 			}
 		}
 	}
@@ -104,10 +104,10 @@ func collectNodeFeatures(
 	// Collect secrets from topology attachments
 	if attachments, ok := topoResult.SecretAttachments[nodeID]; ok {
 		for _, sa := range attachments {
-			result.Secrets[sa.InstanceName] = types.IRSecretEntry{
+			result.Secrets.Set(sa.InstanceName, types.IRSecretEntry{
 				Type:   sa.Secret.Type,
 				Values: sa.Secret.Values,
-			}
+			})
 			markerSet[sa.Secret.Type] = true
 		}
 	}
@@ -134,21 +134,21 @@ func mergeFeature(
 ) error {
 	// Check if credential feature
 	if isCredential(feat.Type, catalogLookup) {
-		result.Secrets[instanceName] = types.IRSecretEntry{
+		result.Secrets.Set(instanceName, types.IRSecretEntry{
 			Type:   feat.Type,
 			Values: feat.Values,
-		}
+		})
 		markerSet[feat.Type] = true
 		return nil
 	}
 
-	existing, exists := result.Features[instanceName]
+	existing, exists := result.Features.Get(instanceName)
 	if !exists {
 		// New feature
-		result.Features[instanceName] = types.IRFeatureEntry{
+		result.Features.Set(instanceName, types.IRFeatureEntry{
 			Type:   feat.Type,
 			Values: feat.Values,
-		}
+		})
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
 		markerSet[feat.Type] = true
 		return nil
@@ -163,18 +163,18 @@ func mergeFeature(
 	}
 
 	// "Last wins" on values
-	if feat.Values != nil {
-		if existing.Values == nil {
-			existing.Values = make(map[string]interface{})
+	if feat.Values.Len() > 0 {
+		if existing.Values.Len() == 0 {
+			existing.Values = types.OrderedMap[interface{}]{}
 		}
-		for k, v := range feat.Values {
-			existing.Values[k] = v
+		for k, v := range feat.Values.All() {
+			existing.Values.Set(k, v)
 		}
 	}
 	if feat.Type != "" {
 		existing.Type = feat.Type
 	}
-	result.Features[instanceName] = existing
+	result.Features.Set(instanceName, existing)
 	markerSet[feat.Type] = true
 	return nil
 }
@@ -187,7 +187,8 @@ func isCredential(typeURI string, catalogLookup resolver.CatalogLookup) bool {
 	if !found {
 		return false
 	}
-	return feat.Metadata.Labels[types.FeatureKindLabel] == types.FeatureKindSecret
+	kind, _ := feat.Metadata.Labels.Get(types.FeatureKindLabel)
+	return kind == types.FeatureKindSecret
 }
 
 // namedFeature pairs an instance name with a FeatureInstance for ordered collection.
@@ -203,7 +204,7 @@ type namedBoundaryFeature struct {
 }
 
 // collectSubsystemFeatures walks the subsystem tree from root to the target path,
-// collecting features at each level (outer-to-inner, sorted keys).
+// collecting features at each level (outer-to-inner, in author order).
 func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []namedFeature {
 	parts := splitPath(subsystemPath)
 	if len(parts) == 0 {
@@ -214,14 +215,13 @@ func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []name
 	current := agg.Spec.Subsystems
 
 	for _, part := range parts {
-		sub, ok := current[part]
+		sub, ok := current.Get(part)
 		if !ok {
 			break
 		}
-		// Collect this subsystem's features (sorted)
-		featNames := sortedStringKeys(sub.Features)
-		for _, fname := range featNames {
-			result = append(result, namedFeature{name: fname, feat: sub.Features[fname]})
+		// Collect this subsystem's features (author order)
+		for fname, feat := range sub.Features.All() {
+			result = append(result, namedFeature{name: fname, feat: feat})
 		}
 		current = sub.Subsystems
 	}
@@ -231,7 +231,7 @@ func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []name
 
 // collectBoundaryWideFeatures walks the Release boundary tree from root to the
 // target boundary path, collecting boundary-wide features (outer-to-inner).
-func collectBoundaryWideFeatures(boundaries map[string]types.Boundary, boundaryPath string) []namedBoundaryFeature {
+func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], boundaryPath string) []namedBoundaryFeature {
 	parts := splitPath(boundaryPath)
 	if len(parts) == 0 {
 		return nil
@@ -241,14 +241,12 @@ func collectBoundaryWideFeatures(boundaries map[string]types.Boundary, boundaryP
 	current := boundaries
 
 	for _, part := range parts {
-		boundary, ok := current[part]
+		boundary, ok := current.Get(part)
 		if !ok {
 			break
 		}
-		// Collect boundary-wide features (sorted)
-		featNames := sortedInterfaceKeys(boundary.Features)
-		for _, fname := range featNames {
-			raw := boundary.Features[fname]
+		// Collect boundary-wide features (author order)
+		for fname, raw := range boundary.Features.All() {
 			bf := parseBoundaryFeature(raw)
 			result = append(result, namedBoundaryFeature{name: fname, feat: bf})
 		}
@@ -260,25 +258,17 @@ func collectBoundaryWideFeatures(boundaries map[string]types.Boundary, boundaryP
 
 // collectReleaseComponentFeatures finds component-specific features for a node
 // across all Release boundaries.
-func collectReleaseComponentFeatures(boundaries map[string]types.Boundary, nodeID string) []namedBoundaryFeature {
+func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary], nodeID string) []namedBoundaryFeature {
 	var result []namedBoundaryFeature
 	collectCompFeaturesRecursive(boundaries, nodeID, &result)
 	return result
 }
 
-func collectCompFeaturesRecursive(boundaries map[string]types.Boundary, nodeID string, result *[]namedBoundaryFeature) {
-	bNames := make([]string, 0, len(boundaries))
-	for k := range boundaries {
-		bNames = append(bNames, k)
-	}
-	sort.Strings(bNames)
-
-	for _, bName := range bNames {
-		boundary := boundaries[bName]
-		if bc, ok := boundary.Components[nodeID]; ok {
-			featNames := sortedBoundaryFeatureKeys(bc.Features)
-			for _, fname := range featNames {
-				*result = append(*result, namedBoundaryFeature{name: fname, feat: bc.Features[fname]})
+func collectCompFeaturesRecursive(boundaries types.OrderedMap[types.Boundary], nodeID string, result *[]namedBoundaryFeature) {
+	for _, boundary := range boundaries.All() {
+		if bc, ok := boundary.Components.Get(nodeID); ok {
+			for fname, feat := range bc.Features.All() {
+				*result = append(*result, namedBoundaryFeature{name: fname, feat: feat})
 			}
 		}
 		collectCompFeaturesRecursive(boundary.Boundaries, nodeID, result)
@@ -295,7 +285,20 @@ func parseBoundaryFeature(raw interface{}) types.BoundaryFeature {
 		bf.Type = t
 	}
 	if infra, ok := m["infra"].(map[string]interface{}); ok {
-		bf.Infra = infra
+		om := types.OrderedMap[interface{}]{}
+		// parseBoundaryFeature can see infra as a map[string]interface{} coming
+		// from YAML unmarshal of `Boundary.Features` which is OrderedMap[interface{}]
+		// — the inner infra payload is not itself ordered at this layer. Sort
+		// keys for stability at this boundary.
+		keys := make([]string, 0, len(infra))
+		for k := range infra {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			om.Set(k, infra[k])
+		}
+		bf.Infra = om
 	}
 	return bf
 }
@@ -323,24 +326,6 @@ func splitPath(path string) []string {
 // Sorted key helpers.
 
 func sortedStringKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedInterfaceKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedBoundaryFeatureKeys(m map[string]types.BoundaryFeature) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -6,6 +6,8 @@ package renderer
 import (
 	"reflect"
 	"testing"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 func TestCollectTemplateFieldAccesses_Basic(t *testing.T) {
@@ -87,11 +89,19 @@ func TestCollectTemplateFieldAccesses_ParseError(t *testing.T) {
 	}
 }
 
+func mkData(pairs ...interface{}) types.OrderedMap[interface{}] {
+	m := types.OrderedMap[interface{}]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i].(string), pairs[i+1])
+	}
+	return m
+}
+
 func TestUnreadKeys_BasicGhost(t *testing.T) {
 	t.Parallel()
 	// Acceptance scenario: valuesMapping reads only .image; Values: {image, port} → port unused.
 	refs := []string{".values.image"}
-	data := map[string]interface{}{"image": "myapp:v1", "port": 8080}
+	data := mkData("image", "myapp:v1", "port", 8080)
 	unread := UnreadKeys(refs, ".values", data)
 	want := []string{"port"}
 	if !reflect.DeepEqual(unread, want) {
@@ -102,7 +112,7 @@ func TestUnreadKeys_BasicGhost(t *testing.T) {
 func TestUnreadKeys_AllRead(t *testing.T) {
 	t.Parallel()
 	refs := []string{".values.image", ".values.port"}
-	data := map[string]interface{}{"image": "x", "port": 80}
+	data := mkData("image", "x", "port", 80)
 	unread := UnreadKeys(refs, ".values", data)
 	if len(unread) != 0 {
 		t.Errorf("expected no unread, got %v", unread)
@@ -111,9 +121,8 @@ func TestUnreadKeys_AllRead(t *testing.T) {
 
 func TestUnreadKeys_WholeObjectReadSkipsAll(t *testing.T) {
 	t.Parallel()
-	// `range .values` marks everything as read.
 	refs := []string{".values"}
-	data := map[string]interface{}{"image": "x", "port": 80, "unused": 1}
+	data := mkData("image", "x", "port", 80, "unused", 1)
 	unread := UnreadKeys(refs, ".values", data)
 	if unread != nil {
 		t.Errorf("whole-object read should skip all, got %v", unread)
@@ -123,7 +132,7 @@ func TestUnreadKeys_WholeObjectReadSkipsAll(t *testing.T) {
 func TestUnreadKeys_NestedAccessMarksTopLevelKey(t *testing.T) {
 	t.Parallel()
 	refs := []string{".values.db.host", ".values.db.port"}
-	data := map[string]interface{}{"db": map[string]interface{}{}, "other": "x"}
+	data := mkData("db", map[string]interface{}{}, "other", "x")
 	unread := UnreadKeys(refs, ".values", data)
 	want := []string{"other"}
 	if !reflect.DeepEqual(unread, want) {
@@ -134,7 +143,7 @@ func TestUnreadKeys_NestedAccessMarksTopLevelKey(t *testing.T) {
 func TestUnreadKeys_RootWithoutLeadingDot(t *testing.T) {
 	t.Parallel()
 	refs := []string{".values.image"}
-	data := map[string]interface{}{"image": "x", "port": 80}
+	data := mkData("image", "x", "port", 80)
 	unread := UnreadKeys(refs, "values", data)
 	if !reflect.DeepEqual(unread, []string{"port"}) {
 		t.Errorf("got %v", unread)
@@ -143,7 +152,7 @@ func TestUnreadKeys_RootWithoutLeadingDot(t *testing.T) {
 
 func TestUnreadKeys_EmptyData(t *testing.T) {
 	t.Parallel()
-	unread := UnreadKeys([]string{".values.x"}, ".values", nil)
+	unread := UnreadKeys([]string{".values.x"}, ".values", types.OrderedMap[interface{}]{})
 	if unread != nil {
 		t.Errorf("expected nil for empty data, got %v", unread)
 	}

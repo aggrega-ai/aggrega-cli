@@ -144,10 +144,11 @@ func (e *HelmEngine) Render(ctx context.Context, graph *types.IRGraph, release *
 		"Chart.yaml": chartYAML,
 	}
 
-	ids := nodeIDsSorted(graph.Spec.Nodes)
+	ids := graph.Spec.Nodes.Keys()
+	sort.Strings(ids)
 	for _, nodeID := range ids {
-		node := graph.Spec.Nodes[nodeID]
-		raw := graph.Spec.ValuesMapping[nodeID]
+		node, _ := graph.Spec.Nodes.Get(nodeID)
+		raw, _ := graph.Spec.ValuesMapping.Get(nodeID)
 		payload, err := parseValuesPayload(raw, nodeID)
 		if err != nil {
 			return nil, err
@@ -255,20 +256,11 @@ func strictNetworkingEnabled(_ *types.Release) bool {
 }
 
 func serviceTypeForNode(node types.IRNode) string {
-	rt := node.Labels[types.ComponentTypeLabel]
+	rt, _ := node.Labels.Get(types.ComponentTypeLabel)
 	if rt == "gateway" || rt == "ai-gateway" {
 		return "LoadBalancer"
 	}
 	return "ClusterIP"
-}
-
-func nodeIDsSorted(nodes map[string]types.IRNode) []string {
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
 }
 
 type extractedPayload struct {
@@ -282,7 +274,7 @@ func helmPortFallbacks(node types.IRNode, p extractedPayload) extractedPayload {
 	if len(p.ports) > 0 {
 		return p
 	}
-	rt := node.Labels[types.ComponentTypeLabel]
+	rt, _ := node.Labels.Get(types.ComponentTypeLabel)
 	if rt == "ai-gateway" || rt == "gateway" {
 		p.ports = []string{"443:8443"}
 		return p

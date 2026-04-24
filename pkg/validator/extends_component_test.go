@@ -32,14 +32,12 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 		Metadata: types.ComponentMetadata{
 			Name:    "core/server/base",
 			Version: "1.0.0",
-			Labels:  map[string]string{types.ComponentTypeLabel: "server", "tier": "base"},
+			Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); _m.Set("tier", "base"); return _m }(),
 		},
 		Spec: types.ComponentSpec{
 			SecretNames: []string{"root_password"},
 			Inject:      []string{"env"},
-			UsesSchema: map[string]types.UsesSchemaEntry{
-				"databases": {Selector: "component.aggrega.ai/type=stateful-server"},
-			},
+			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); return _m }(),
 			CueSchema: `values: { port?: int & >=1024 }`,
 		},
 	}
@@ -47,15 +45,13 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 		Metadata: types.ComponentMetadata{
 			Name:    "core/server/api",
 			Version: "1.0.0",
-			Labels:  map[string]string{"tier": "prod"}, // overrides parent tier=base
+			Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("tier", "prod"); return _m }(), // overrides parent tier=base
 		},
 		Spec: types.ComponentSpec{
 			Extends:     "core/server/base",
 			SecretNames: []string{"api_token"},
 			Inject:      []string{"env", "file"},
-			UsesSchema: map[string]types.UsesSchemaEntry{
-				"caches": {Selector: "component.aggrega.ai/type=resource"},
-			},
+			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("caches", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=resource"}); return _m }(),
 			CueSchema: `values: { name: string }`,
 		},
 	}
@@ -73,11 +69,13 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	}
 
 	// Merged labels: parent keys present, child overrides shared keys
-	if got.Metadata.Labels["component.aggrega.ai/type"] != "server" {
-		t.Errorf("expected inherited type label, got %v", got.Metadata.Labels)
+	typeLbl, _ := got.Metadata.Labels.Get("component.aggrega.ai/type")
+	if typeLbl != "server" {
+		t.Errorf("expected inherited type label, got %v", got.Metadata.Labels.Keys())
 	}
-	if got.Metadata.Labels["tier"] != "prod" {
-		t.Errorf("child should win on tier, got %q", got.Metadata.Labels["tier"])
+	tierLbl, _ := got.Metadata.Labels.Get("tier")
+	if tierLbl != "prod" {
+		t.Errorf("child should win on tier, got %q", tierLbl)
 	}
 
 	// Concatenated + deduped secret names
@@ -91,10 +89,10 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	}
 
 	// Merged usesSchema: both sockets present
-	if _, ok := got.Spec.UsesSchema["databases"]; !ok {
+	if _, ok := got.Spec.UsesSchema.Get("databases"); !ok {
 		t.Error("expected inherited 'databases' socket")
 	}
-	if _, ok := got.Spec.UsesSchema["caches"]; !ok {
+	if _, ok := got.Spec.UsesSchema.Get("caches"); !ok {
 		t.Error("expected child 'caches' socket")
 	}
 
@@ -117,22 +115,14 @@ func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/base", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			SecretsSchema: map[string]types.SecretSlot{
-				"root_password": {Required: true, Inject: []string{"env"}},
-				"tls_ca":        {Required: false},
-			},
+			SecretsSchema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}}); _m.Set("tls_ca", types.SecretSlot{Required: false}); return _m }(),
 		},
 	}
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
 			Extends: "core/db/base",
-			SecretsSchema: map[string]types.SecretSlot{
-				// Override parent's root_password with stricter allowlist (only "env")
-				// and add a new slot.
-				"root_password": {Required: true, Inject: []string{"env"}, Description: "strict"},
-				"api_token":     {Required: true},
-			},
+			SecretsSchema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}, Description: "strict"}); _m.Set("api_token", types.SecretSlot{Required: true}); return _m }(),
 		},
 	}
 	lookup := func(uri string) (types.Component, bool) {
@@ -145,13 +135,14 @@ func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if got.Spec.SecretsSchema["root_password"].Description != "strict" {
-		t.Errorf("child slot should override parent's, got %v", got.Spec.SecretsSchema["root_password"])
+	rootSlot, _ := got.Spec.SecretsSchema.Get("root_password")
+	if rootSlot.Description != "strict" {
+		t.Errorf("child slot should override parent's, got %v", rootSlot)
 	}
-	if _, ok := got.Spec.SecretsSchema["tls_ca"]; !ok {
+	if _, ok := got.Spec.SecretsSchema.Get("tls_ca"); !ok {
 		t.Error("parent-only slot lost during merge")
 	}
-	if _, ok := got.Spec.SecretsSchema["api_token"]; !ok {
+	if _, ok := got.Spec.SecretsSchema.Get("api_token"); !ok {
 		t.Error("child-only slot missing")
 	}
 }
@@ -161,19 +152,14 @@ func TestResolveComponentExtends_ChildOverridesUsesSchema(t *testing.T) {
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/base", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			UsesSchema: map[string]types.UsesSchemaEntry{
-				"databases": {Selector: "component.aggrega.ai/type=generic"},
-			},
+			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=generic"}); return _m }(),
 		},
 	}
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
 			Extends: "core/base",
-			UsesSchema: map[string]types.UsesSchemaEntry{
-				// Same socket, stricter selector — child wins.
-				"databases": {Selector: "component.aggrega.ai/type=stateful-server"},
-			},
+			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); return _m }(),
 		},
 	}
 	lookup := func(uri string) (types.Component, bool) {
@@ -186,9 +172,9 @@ func TestResolveComponentExtends_ChildOverridesUsesSchema(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if got.Spec.UsesSchema["databases"].Selector != "component.aggrega.ai/type=stateful-server" {
-		t.Errorf("child usesSchema entry should override parent, got %q",
-			got.Spec.UsesSchema["databases"].Selector)
+	dbEntry, _ := got.Spec.UsesSchema.Get("databases")
+	if dbEntry.Selector != "component.aggrega.ai/type=stateful-server" {
+		t.Errorf("child usesSchema entry should override parent, got %q", dbEntry.Selector)
 	}
 }
 

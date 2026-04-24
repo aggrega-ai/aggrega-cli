@@ -19,9 +19,9 @@ func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*Re
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components {
+	for compName, comp := range agg.Spec.Components.All() {
 		// Check features: block — must NOT contain credential Features
-		for featName, feat := range comp.Features {
+		for featName, feat := range comp.Features.All() {
 			if isCredentialFeature(feat.Type, catalog) {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
@@ -33,7 +33,7 @@ func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*Re
 		}
 
 		// Check secrets: block — must ONLY contain credential Features
-		for secName, sec := range comp.Secrets {
+		for secName, sec := range comp.Secrets.All() {
 			if !isCredentialFeature(sec.Type, catalog) {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
@@ -58,5 +58,6 @@ func isCredentialFeature(typeURI string, catalog CatalogLookup) bool {
 	if !found {
 		return false
 	}
-	return feat.Metadata.Labels[types.FeatureKindLabel] == types.FeatureKindSecret
+	kind, _ := feat.Metadata.Labels.Get(types.FeatureKindLabel)
+	return kind == types.FeatureKindSecret
 }

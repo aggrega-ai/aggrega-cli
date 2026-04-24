@@ -121,24 +121,21 @@ func buildAdjacency(edges []types.IREdge) map[string][]string {
 // collectFeatureTypes collects all feature types attached to each node (from feature_values_mapping).
 func collectFeatureTypes(graph *types.IRGraph) map[string][]string {
 	result := map[string][]string{}
-	for nodeID, features := range graph.Spec.FeatureValuesMapping {
-		var types []string
-		for _, entry := range features {
+	for nodeID, features := range graph.Spec.FeatureValuesMapping.All() {
+		var featTypes []string
+		for _, entry := range features.All() {
 			if entry.Type != "" {
-				types = append(types, entry.Type)
+				featTypes = append(featTypes, entry.Type)
 			}
 		}
-		sort.Strings(types)
-		result[nodeID] = types
+		sort.Strings(featTypes)
+		result[nodeID] = featTypes
 	}
 	return result
 }
 
-func sortedNodeIDs(nodes map[string]types.IRNode) []string {
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
-		ids = append(ids, id)
-	}
+func sortedNodeIDs(nodes types.OrderedMap[types.IRNode]) []string {
+	ids := nodes.Keys()
 	sort.Strings(ids)
 	return ids
 }

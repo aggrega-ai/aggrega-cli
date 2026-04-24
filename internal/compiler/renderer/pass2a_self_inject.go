@@ -16,16 +16,16 @@ var forbiddenSelfInjectRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|us
 
 // SelfInjectContext is the restricted template context for self-inject value: evaluation.
 type SelfInjectContext struct {
-	Values      map[string]interface{}     `json:"values"`
-	Infra       map[string]interface{}     `json:"infra"`
-	Context     SelfInjectContextBlock     `json:"context"`
-	Metadata    *types.TemplateMetadata    `json:"metadata,omitempty"`
+	Values   types.OrderedMap[interface{}] `json:"values"`
+	Infra    types.OrderedMap[interface{}] `json:"infra"`
+	Context  SelfInjectContextBlock        `json:"context"`
+	Metadata *types.TemplateMetadata       `json:"metadata,omitempty"`
 }
 
 // SelfInjectContextBlock holds the restricted context fields for self-inject templates.
 type SelfInjectContextBlock struct {
-	InstanceID  string                `json:"instance_id"`
-	Labels      map[string]string     `json:"labels,omitempty"`
+	InstanceID  string                   `json:"instance_id"`
+	Labels      types.OrderedMap[string] `json:"labels,omitempty,omitzero"`
 	Annotations *types.AnnotationBuckets `json:"annotations,omitempty"`
 }
 
@@ -40,7 +40,7 @@ func ExecutePass2a(
 	inject *types.InjectPipe,
 	selfInject *types.InjectBlock,
 	nodeID string,
-	ownProvides map[string]string,
+	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
 ) (map[string]map[string]string, error) {
 	if selfInject == nil {
@@ -51,13 +51,13 @@ func ExecutePass2a(
 	selfKeys := map[string]map[string]string{} // mechanism → key → value
 
 	// Process each mechanism
-	if err := processSelfInjectMechanism(inject.Env, "env", selfInject.Env, ownProvides, siCtx, selfKeys); err != nil {
+	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx, selfKeys); err != nil {
 		return nil, fmt.Errorf("node %q self-inject: %w", nodeID, err)
 	}
-	if err := processSelfInjectMechanism(inject.File, "file", selfInject.File, ownProvides, siCtx, selfKeys); err != nil {
+	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx, selfKeys); err != nil {
 		return nil, fmt.Errorf("node %q self-inject: %w", nodeID, err)
 	}
-	if err := processSelfInjectMechanism(inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, selfKeys); err != nil {
+	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, selfKeys); err != nil {
 		return nil, fmt.Errorf("node %q self-inject: %w", nodeID, err)
 	}
 
@@ -84,10 +84,10 @@ func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, inject typ
 }
 
 func processSelfInjectMechanism(
-	dest map[string]string,
+	dest *types.OrderedMap[string],
 	mechName string,
 	raw interface{},
-	ownProvides map[string]string,
+	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
 	selfKeys map[string]map[string]string,
 ) error {
@@ -112,7 +112,7 @@ func processSelfInjectMechanism(
 		if err != nil {
 			return err
 		}
-		dest[key] = resolved
+		dest.Set(key, resolved)
 
 		if selfKeys[mechName] == nil {
 			selfKeys[mechName] = map[string]string{}
@@ -171,7 +171,7 @@ func resolveSelfInjectEntry(
 	key string,
 	entry selfInjectEntry,
 	mechName string,
-	ownProvides map[string]string,
+	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
 ) (string, error) {
 	// Compact literal
@@ -181,7 +181,7 @@ func resolveSelfInjectEntry(
 
 	// from: → resolve from own provides
 	if entry.from != "" {
-		val, ok := ownProvides[entry.from]
+		val, ok := ownProvides.Get(entry.from)
 		if !ok {
 			return "", fmt.Errorf("%s[%q]: from key %q not found in component provides", mechName, key, entry.from)
 		}

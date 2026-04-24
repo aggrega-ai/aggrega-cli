@@ -10,7 +10,7 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// DeepMergeInject merges an overlay inject pipe over the base inject pipe.
+// DeepMergeInject merges an overlay flat map over the base inject pipe.
 // "Last wins" semantics: overlay values overwrite base values for the same key.
 // Used in Phase A to merge injectMapping outputs over .context.inject.
 func DeepMergeInject(base *types.InjectPipe, overlay map[string]string) {
@@ -18,15 +18,16 @@ func DeepMergeInject(base *types.InjectPipe, overlay map[string]string) {
 		return
 	}
 
-	// Overlay is a flat map — we need to determine which mechanism each key belongs to.
-	// Phase A injectMapping outputs are flat key-value maps that merge into .context.inject.env.
-	// The injectMapping template is expected to output JSON with mechanism keys.
-	// For simple string overlays, merge into env by default.
-	for k, v := range overlay {
-		if base.Env == nil {
-			base.Env = make(map[string]string)
-		}
-		base.Env[k] = v
+	// Phase A injectMapping outputs are flat key-value maps that merge into
+	// .context.inject.env. Iterate overlay in sorted order for stability since
+	// it arrives as a plain map.
+	keys := make([]string, 0, len(overlay))
+	for k := range overlay {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		base.Env.Set(k, overlay[k])
 	}
 
 	// Rebuild .all
@@ -48,20 +49,9 @@ func DeepMergeInjectStructured(base *types.InjectPipe, overlay *types.InjectPipe
 	base.All = buildInjectAll(*base)
 }
 
-func mergeMechanism(base *map[string]string, overlay map[string]string) {
-	if len(overlay) == 0 {
-		return
-	}
-	if *base == nil {
-		*base = make(map[string]string)
-	}
-	keys := make([]string, 0, len(overlay))
-	for k := range overlay {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		(*base)[k] = overlay[k]
+func mergeMechanism(base *types.OrderedMap[string], overlay types.OrderedMap[string]) {
+	for k, v := range overlay.All() {
+		base.Set(k, v)
 	}
 }
 
@@ -75,12 +65,12 @@ func ParseInjectMappingOutput(output string) (*types.InjectPipe, error) {
 
 	// Try structured parse (with env/file/arg keys)
 	var structured struct {
-		Env  map[string]string `json:"env"`
-		File map[string]string `json:"file"`
-		Arg  map[string]string `json:"arg"`
+		Env  types.OrderedMap[string] `json:"env"`
+		File types.OrderedMap[string] `json:"file"`
+		Arg  types.OrderedMap[string] `json:"arg"`
 	}
 	if err := json.Unmarshal([]byte(output), &structured); err == nil {
-		if structured.Env != nil || structured.File != nil || structured.Arg != nil {
+		if structured.Env.Len() > 0 || structured.File.Len() > 0 || structured.Arg.Len() > 0 {
 			return &types.InjectPipe{
 				Env:  structured.Env,
 				File: structured.File,
@@ -90,8 +80,8 @@ func ParseInjectMappingOutput(output string) (*types.InjectPipe, error) {
 	}
 
 	// Fallback: try flat map (all goes to env)
-	var flat map[string]string
-	if err := json.Unmarshal([]byte(output), &flat); err == nil && len(flat) > 0 {
+	var flat types.OrderedMap[string]
+	if err := json.Unmarshal([]byte(output), &flat); err == nil && flat.Len() > 0 {
 		return &types.InjectPipe{Env: flat}, nil
 	}
 

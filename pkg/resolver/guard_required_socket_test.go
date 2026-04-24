@@ -18,15 +18,12 @@ func requiredSocketCatalog() CatalogLookup {
 				return types.Component{
 					Metadata: types.ComponentMetadata{Name: "core/server/api"},
 					Spec: types.ComponentSpec{
-						UsesSchema: map[string]types.UsesSchemaEntry{
-							"databases": {
+						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{
 								Selector: "component.aggrega.ai/type=stateful-server",
 								Required: true,
-							},
-							"caches": {
+							}); _m.Set("caches", types.UsesSchemaEntry{
 								Selector: "component.aggrega.ai/type=resource",
-							},
-						},
+							}); return _m }(),
 					},
 				}, true
 			}
@@ -40,9 +37,7 @@ func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {Type: "core/server/api"}, // no uses block at all
-			},
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api"}); return _m }(),
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -65,16 +60,12 @@ func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 	// "caches" is optional — its absence is fine, only "databases" (required) triggers.
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type: "core/server/api",
-					Uses: map[string]interface{}{
-						"databases": map[string]interface{}{
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{
 							"main": map[string]interface{}{"target": "db"},
-						},
-					},
-				},
-			},
+						}); return _m }(),
+				}); return _m }(),
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -88,14 +79,10 @@ func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 	// Compact list form: `databases: [db]` should count as populated.
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type: "core/server/api",
-					Uses: map[string]interface{}{
-						"databases": []interface{}{"db"},
-					},
-				},
-			},
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"db"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -108,14 +95,10 @@ func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: map[string]types.ComponentInstance{
-				"api": {
+			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
 					Type: "core/server/api",
-					Uses: map[string]interface{}{
-						"databases": map[string]interface{}{},
-					},
-				},
-			},
+					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{}); return _m }(),
+				}); return _m }(),
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -131,13 +114,9 @@ func TestGuardRequiredUsesSockets_SubsystemRecursion(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Subsystems: map[string]types.Subsystem{
-				"frontend": {
-					Components: map[string]types.ComponentInstance{
-						"nested-api": {Type: "core/server/api"}, // missing required socket
-					},
-				},
-			},
+			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("frontend", types.Subsystem{
+					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("nested-api", types.ComponentInstance{Type: "core/server/api"}); return _m }(),
+				}); return _m }(),
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())

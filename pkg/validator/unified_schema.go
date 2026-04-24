@@ -11,14 +11,14 @@ import "github.com/cognitio/aggrega-cli/pkg/types"
 // unification, and all constraints from every fragment (including `@selector`,
 // `@inject`, `@required` attributes and allowlisted mechanism types) survive
 // intact. Empty fragments are skipped.
-func BuildUnifiedSchema(userCUE string, usesSchema map[string]types.UsesSchemaEntry) string {
-	return BuildUnifiedSchemaFull(userCUE, usesSchema, nil)
+func BuildUnifiedSchema(userCUE string, usesSchema types.OrderedMap[types.UsesSchemaEntry]) string {
+	return BuildUnifiedSchemaFull(userCUE, usesSchema, types.OrderedMap[types.SecretSlot]{})
 }
 
 // BuildUnifiedSchemaFull is the richer variant that also concatenates a
 // generated secretsSchema base. Callers that don't care about secrets can
 // still use BuildUnifiedSchema.
-func BuildUnifiedSchemaFull(userCUE string, usesSchema map[string]types.UsesSchemaEntry, secretsSchema map[string]types.SecretSlot) string {
+func BuildUnifiedSchemaFull(userCUE string, usesSchema types.OrderedMap[types.UsesSchemaEntry], secretsSchema types.OrderedMap[types.SecretSlot]) string {
 	parts := []string{
 		GenerateBaseUsesCueSchema(usesSchema),
 		GenerateBaseSecretsCueSchema(secretsSchema),

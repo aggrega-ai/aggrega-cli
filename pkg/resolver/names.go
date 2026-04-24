@@ -31,7 +31,7 @@ func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
 	var errs []*ResolverError
 
 	// Top-level components
-	for name := range agg.Spec.Components {
+	for name, comp := range agg.Spec.Components.All() {
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -41,11 +41,11 @@ func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
 			})
 		}
 		// Validate feature and secret names within the component
-		errs = append(errs, validateComponentInstanceNames(entity, name, agg.Spec.Components[name])...)
+		errs = append(errs, validateComponentInstanceNames(entity, name, comp)...)
 	}
 
 	// Top-level aggregates (nested modules)
-	for name := range agg.Spec.Aggregates {
+	for name := range agg.Spec.Aggregates.All() {
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -57,7 +57,7 @@ func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
 	}
 
 	// Subsystems (recursive)
-	for name, sub := range agg.Spec.Subsystems {
+	for name, sub := range agg.Spec.Subsystems.All() {
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -91,7 +91,7 @@ func validateComponentInstanceNames(entity, compName string, comp types.Componen
 	var errs []*ResolverError
 	basePath := fmt.Sprintf(".spec.components[%q]", compName)
 
-	for fname := range comp.Features {
+	for fname := range comp.Features.All() {
 		if !instanceNamePattern.MatchString(fname) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -102,7 +102,7 @@ func validateComponentInstanceNames(entity, compName string, comp types.Componen
 		}
 	}
 
-	for sname := range comp.Secrets {
+	for sname := range comp.Secrets.All() {
 		if !instanceNamePattern.MatchString(sname) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -119,7 +119,7 @@ func validateComponentInstanceNames(entity, compName string, comp types.Componen
 func validateSubsystemNames(entity, path string, sub types.Subsystem) []*ResolverError {
 	var errs []*ResolverError
 
-	for name := range sub.Components {
+	for name, comp := range sub.Components.All() {
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -128,10 +128,10 @@ func validateSubsystemNames(entity, path string, sub types.Subsystem) []*Resolve
 				Err:     ErrInvalidInstanceName,
 			})
 		}
-		errs = append(errs, validateComponentInstanceNames(entity, name, sub.Components[name])...)
+		errs = append(errs, validateComponentInstanceNames(entity, name, comp)...)
 	}
 
-	for name := range sub.Features {
+	for name := range sub.Features.All() {
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
@@ -142,7 +142,7 @@ func validateSubsystemNames(entity, path string, sub types.Subsystem) []*Resolve
 		}
 	}
 
-	for name, nested := range sub.Subsystems {
+	for name, nested := range sub.Subsystems.All() {
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,

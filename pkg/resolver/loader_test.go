@@ -35,7 +35,7 @@ spec:
 	if agg.Metadata.Version != "1.0.0" {
 		t.Errorf("expected version 1.0.0, got %s", agg.Metadata.Version)
 	}
-	if _, ok := agg.Spec.Components["web"]; !ok {
+	if _, ok := agg.Spec.Components.Get("web"); !ok {
 		t.Error("expected component 'web'")
 	}
 }
@@ -97,7 +97,7 @@ spec:
 	if rel.Metadata.Environment != "production" {
 		t.Errorf("expected environment production, got %s", rel.Metadata.Environment)
 	}
-	if _, ok := rel.Spec.Boundaries["aws-prod"]; !ok {
+	if _, ok := rel.Spec.Boundaries.Get("aws-prod"); !ok {
 		t.Error("expected boundary 'aws-prod'")
 	}
 }
@@ -126,7 +126,7 @@ spec:
 	if man.Metadata.Name != "test-manifest" {
 		t.Errorf("expected name test-manifest, got %s", man.Metadata.Name)
 	}
-	if _, ok := man.Spec.Mappings["helm"]; !ok {
+	if _, ok := man.Spec.Mappings.Get("helm"); !ok {
 		t.Error("expected mappings for 'helm' provider")
 	}
 }

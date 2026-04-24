@@ -11,6 +11,8 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 	"gopkg.in/yaml.v3"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 // InterpolateParameters processes Go template expressions in raw YAML bytes
@@ -70,19 +72,35 @@ func LoadParametersFrom(paths []string) (map[string]interface{}, error) {
 	return merged, nil
 }
 
-// MergeParameters merges Release parameters with externally loaded parameters.
-// External parameters are applied first, then Release parameters override.
-func MergeParameters(release, external map[string]interface{}) map[string]interface{} {
-	if release == nil && external == nil {
+// MergeParameters merges Release parameters (OrderedMap) with externally loaded
+// parameters (plain map). External parameters are applied first, then Release
+// parameters override. Author order of Release parameters is lost here at the
+// boundary with the Go template engine — template data does not preserve order.
+func MergeParameters(release types.OrderedMap[interface{}], external map[string]interface{}) map[string]interface{} {
+	releasePlain := orderedMapToPlain(release)
+	if releasePlain == nil && external == nil {
 		return map[string]interface{}{}
 	}
 	if external == nil {
-		return copyMap(release)
+		return copyMap(releasePlain)
 	}
-	if release == nil {
+	if releasePlain == nil {
 		return copyMap(external)
 	}
-	return deepMerge(external, release)
+	return deepMerge(external, releasePlain)
+}
+
+// orderedMapToPlain flattens an OrderedMap[interface{}] into a plain map for
+// template evaluation. Returns nil when the input is empty.
+func orderedMapToPlain(m types.OrderedMap[interface{}]) map[string]interface{} {
+	if m.Len() == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, m.Len())
+	for k, v := range m.All() {
+		out[k] = v
+	}
+	return out
 }
 
 // PurgeParameters zeroes and nils the parameter map for security enforcement.

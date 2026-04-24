@@ -28,52 +28,52 @@ type ReleaseMetadata struct {
 
 // ReleaseSpec defines the aggregate reference, manifest, parameters, and boundary routing.
 type ReleaseSpec struct {
-	Aggregate      string                 `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
-	Manifest       string                 `json:"manifest,omitempty" yaml:"manifest,omitempty"`
-	Extends        string                 `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Parameters     map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	ParametersFrom []string               `json:"parametersFrom,omitempty" yaml:"parametersFrom,omitempty"`
-	SyncWaves      map[string][]string    `json:"syncWaves,omitempty" yaml:"syncWaves,omitempty"`
-	Boundaries     map[string]Boundary    `json:"boundaries" yaml:"boundaries"`
+	Aggregate      string                    `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
+	Manifest       string                    `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+	Extends        string                    `json:"extends,omitempty" yaml:"extends,omitempty"`
+	Parameters     OrderedMap[interface{}]   `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
+	ParametersFrom []string                  `json:"parametersFrom,omitempty" yaml:"parametersFrom,omitempty"`
+	SyncWaves      OrderedMap[[]string]      `json:"syncWaves,omitempty,omitzero" yaml:"syncWaves,omitempty"`
+	Boundaries     OrderedMap[Boundary]      `json:"boundaries" yaml:"boundaries"`
 }
 
 // Boundary is a recursive logical box into which components are routed.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary
 type Boundary struct {
-	Description  string                       `json:"description,omitempty" yaml:"description,omitempty"`
-	Directory    string                       `json:"directory,omitempty" yaml:"directory,omitempty"`
-	SubDirectory string                       `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
-	Annotations  map[string]string            `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Features     map[string]interface{}       `json:"features,omitempty" yaml:"features,omitempty"`
-	Secrets      map[string]interface{}       `json:"secrets,omitempty" yaml:"secrets,omitempty"`
-	Boundaries   map[string]Boundary          `json:"boundaries,omitempty" yaml:"boundaries,omitempty"`
-	Components   map[string]BoundaryComponent `json:"components,omitempty" yaml:"components,omitempty"`
-	Aggregates   map[string]AggregateRouting  `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
+	Description  string                         `json:"description,omitempty" yaml:"description,omitempty"`
+	Directory    string                         `json:"directory,omitempty" yaml:"directory,omitempty"`
+	SubDirectory string                         `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
+	Annotations  OrderedMap[string]             `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	Features     OrderedMap[interface{}]        `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets      OrderedMap[interface{}]        `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Boundaries   OrderedMap[Boundary]           `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
+	Components   OrderedMap[BoundaryComponent]  `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
+	Aggregates   OrderedMap[AggregateRouting]   `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 }
 
 // BoundaryComponent is a component instance routed into a boundary with optional sizing and feature attachments.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component
 type BoundaryComponent struct {
-	Description  string                     `json:"description,omitempty" yaml:"description,omitempty"`
-	SubDirectory string                     `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
-	Annotations  map[string]string          `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Infra        map[string]interface{}     `json:"infra,omitempty" yaml:"infra,omitempty"`
-	Features     map[string]BoundaryFeature `json:"features,omitempty" yaml:"features,omitempty"`
-	Secrets      map[string]BoundaryFeature `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Description  string                       `json:"description,omitempty" yaml:"description,omitempty"`
+	SubDirectory string                       `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
+	Annotations  OrderedMap[string]           `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	Infra        OrderedMap[interface{}]      `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Features     OrderedMap[BoundaryFeature]  `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets      OrderedMap[BoundaryFeature]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }
 
 // BoundaryFeature is a feature or secret attachment within a Release boundary.
 // Release provides only type (for Ops-injected) and infra (physical sizing). Never values.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
 type BoundaryFeature struct {
-	Type        string                 `json:"type,omitempty" yaml:"type,omitempty"`
-	Description string                 `json:"description,omitempty" yaml:"description,omitempty"`
-	Infra       map[string]interface{} `json:"infra,omitempty" yaml:"infra,omitempty"`
+	Type        string                  `json:"type,omitempty" yaml:"type,omitempty"`
+	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
+	Infra       OrderedMap[interface{}] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 }
 
 // AggregateRouting routes a nested Aggregate sub-module's components into a boundary.
 // Schema: release-v1alpha1.schema.json#/$defs/aggregate_routing
 type AggregateRouting struct {
-	Components map[string]BoundaryComponent `json:"components,omitempty" yaml:"components,omitempty"`
-	Aggregates map[string]AggregateRouting  `json:"aggregates,omitempty" yaml:"aggregates,omitempty"`
+	Components OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
+	Aggregates OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 }

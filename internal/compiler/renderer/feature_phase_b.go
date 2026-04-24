@@ -15,39 +15,35 @@ import (
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the
 // feature-scoped context and returns the resolved map. Same self-containment
 // rules as Recipe locals: no .context.inject / .context.uses references.
-// This is the WI-2 upgrade over the raw-string overlay used in
-// Phase A by WI-1 — FR locals that are templates get rendered here with
-// the feature's own values/infra and the node's provides.
+// Iteration is in author order (fr.Spec.Locals is an OrderedMap).
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
 	instanceName string,
-	values map[string]interface{},
-	infra map[string]interface{},
-	provides map[string]string,
-) (map[string]string, error) {
-	if fr == nil || len(fr.Spec.Locals) == 0 {
-		return map[string]string{}, nil
+	values types.OrderedMap[interface{}],
+	infra types.OrderedMap[interface{}],
+	provides types.OrderedMap[string],
+) (types.OrderedMap[string], error) {
+	resolved := types.OrderedMap[string]{}
+	if fr == nil || fr.Spec.Locals.Len() == 0 {
+		return resolved, nil
 	}
 
 	lCtx := LocalsContext{
 		Context:  ProvidesContextBlock{InstanceID: instanceName},
-		Values:   ensureMap(values),
-		Infra:    ensureMap(infra),
-		Provides: ensureStringMap(provides),
+		Values:   values,
+		Infra:    infra,
+		Provides: provides,
 	}
 
-	resolved := make(map[string]string, len(fr.Spec.Locals))
-	keys := sortedStringMapKeys(fr.Spec.Locals)
-	for _, key := range keys {
-		tmplText := fr.Spec.Locals[key]
+	for key, tmplText := range fr.Spec.Locals.All() {
 		if err := CheckLocalsSelfContainment(tmplText, fr.Metadata.Name, key); err != nil {
-			return nil, err
+			return types.OrderedMap[string]{}, err
 		}
 		val, err := EvalTemplate(fmt.Sprintf("fr-locals[%q]", key), tmplText, lCtx)
 		if err != nil {
-			return nil, fmt.Errorf("FeatureRecipe %q locals[%q]: %w", fr.Metadata.Name, key, err)
+			return types.OrderedMap[string]{}, fmt.Errorf("FeatureRecipe %q locals[%q]: %w", fr.Metadata.Name, key, err)
 		}
-		resolved[key] = strings.TrimSpace(val)
+		resolved.Set(key, strings.TrimSpace(val))
 	}
 	return resolved, nil
 }
@@ -76,7 +72,11 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 
 	if tmplText == "" {
 		// No valuesMapping — return feature-scoped .values as-is.
-		return ctx.Values, nil
+		out := make(map[string]interface{}, ctx.Values.Len())
+		for k, v := range ctx.Values.All() {
+			out[k] = v
+		}
+		return out, nil
 	}
 
 	output, err := EvalTemplate(

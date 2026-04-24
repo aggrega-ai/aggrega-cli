@@ -5,6 +5,7 @@ package types
 
 import (
 	"bytes"
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -387,6 +388,213 @@ func TestOrderedMap_EmbeddedAsStructField(t *testing.T) {
 	}
 	if got := w2.Data.Keys(); !slices.Equal(got, wantKeys) {
 		t.Errorf("after round-trip Data.Keys = %v, want %v", got, wantKeys)
+	}
+}
+
+func TestOrderedMap_JSONRoundTrip_FlatValues(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`{"charlie":3,"alpha":1,"bravo":2}`)
+
+	var m OrderedMap[int]
+	if err := json.Unmarshal(src, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	wantKeys := []string{"charlie", "alpha", "bravo"}
+	if got := m.Keys(); !slices.Equal(got, wantKeys) {
+		t.Errorf("Keys after JSON Unmarshal = %v, want %v (author order lost)", got, wantKeys)
+	}
+
+	out, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, src) {
+		t.Errorf("JSON round-trip mismatch:\ngot:  %s\nwant: %s", out, src)
+	}
+}
+
+func TestOrderedMap_JSONRoundTrip_NestedStruct(t *testing.T) {
+	t.Parallel()
+
+	type entry struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+
+	src := []byte(`{"zulu":{"name":"zz","count":26},"alpha":{"name":"aa","count":1}}`)
+
+	var m OrderedMap[entry]
+	if err := json.Unmarshal(src, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	wantKeys := []string{"zulu", "alpha"}
+	if got := m.Keys(); !slices.Equal(got, wantKeys) {
+		t.Errorf("Keys = %v, want %v (author order lost at outer level)", got, wantKeys)
+	}
+
+	if v, _ := m.Get("zulu"); v != (entry{Name: "zz", Count: 26}) {
+		t.Errorf("Get(zulu) = %+v, want {Name:zz Count:26}", v)
+	}
+
+	out, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, src) {
+		t.Errorf("JSON round-trip mismatch:\ngot:  %s\nwant: %s", out, src)
+	}
+}
+
+func TestOrderedMap_JSONRoundTrip_Nested(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`{"outer_b":{"inner_y":2,"inner_x":1},"outer_a":{"inner_z":3}}`)
+
+	var m OrderedMap[OrderedMap[int]]
+	if err := json.Unmarshal(src, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	wantOuter := []string{"outer_b", "outer_a"}
+	if got := m.Keys(); !slices.Equal(got, wantOuter) {
+		t.Errorf("outer Keys = %v, want %v (author order lost at outer level)", got, wantOuter)
+	}
+
+	inner, ok := m.Get("outer_b")
+	if !ok {
+		t.Fatal("Get(outer_b) not present")
+	}
+	wantInner := []string{"inner_y", "inner_x"}
+	if got := inner.Keys(); !slices.Equal(got, wantInner) {
+		t.Errorf("outer_b inner Keys = %v, want %v (author order lost at inner level)", got, wantInner)
+	}
+
+	out, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, src) {
+		t.Errorf("JSON round-trip mismatch:\ngot:  %s\nwant: %s", out, src)
+	}
+}
+
+func TestOrderedMap_JSONRejectsDuplicateKey(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`{"a":1,"b":2,"a":3}`)
+
+	var m OrderedMap[int]
+	err := json.Unmarshal(src, &m)
+	if err == nil {
+		t.Fatal("Unmarshal of duplicate-key JSON succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "duplicate key") || !strings.Contains(err.Error(), `"a"`) {
+		t.Errorf("error message = %q, want substring \"duplicate key\" and key name \"a\"", err.Error())
+	}
+}
+
+func TestOrderedMap_JSONRejectsNonObject(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`[1,2,3]`)
+
+	var m OrderedMap[int]
+	err := json.Unmarshal(src, &m)
+	if err == nil {
+		t.Fatal("Unmarshal of array into OrderedMap succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "expected JSON object") {
+		t.Errorf("error message = %q, want substring \"expected JSON object\"", err.Error())
+	}
+}
+
+func TestOrderedMap_JSONEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`{}`)
+
+	var m OrderedMap[int]
+	if err := json.Unmarshal(src, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if m.Len() != 0 {
+		t.Errorf("Len after Unmarshal({}) = %d, want 0", m.Len())
+	}
+
+	out, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, src) {
+		t.Errorf("empty round-trip mismatch:\ngot:  %s\nwant: %s", out, src)
+	}
+}
+
+func TestOrderedMap_JSONNullDecodesAsEmpty(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`null`)
+
+	var m OrderedMap[int]
+	if err := json.Unmarshal(src, &m); err != nil {
+		t.Fatalf("Unmarshal(null): %v", err)
+	}
+	if m.Len() != 0 {
+		t.Errorf("Len after Unmarshal(null) = %d, want 0", m.Len())
+	}
+}
+
+func TestOrderedMap_JSONEmbeddedAsStructField(t *testing.T) {
+	t.Parallel()
+
+	type wrapper struct {
+		Name string             `json:"name"`
+		Data OrderedMap[string] `json:"data"`
+	}
+
+	src := []byte(`{"name":"example","data":{"zeta":"z","alpha":"a","mu":"m"}}`)
+
+	var w wrapper
+	if err := json.Unmarshal(src, &w); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if w.Name != "example" {
+		t.Errorf("Name = %q, want %q", w.Name, "example")
+	}
+	wantKeys := []string{"zeta", "alpha", "mu"}
+	if got := w.Data.Keys(); !slices.Equal(got, wantKeys) {
+		t.Errorf("Data.Keys = %v, want %v", got, wantKeys)
+	}
+
+	out, err := json.Marshal(&w)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, src) {
+		t.Errorf("wrapper JSON round-trip mismatch:\ngot:  %s\nwant: %s", out, src)
+	}
+}
+
+func TestOrderedMap_JSONTenTimesOrderStability(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`{"k3":"v3","k1":"v1","k5":"v5","k2":"v2","k4":"v4"}`)
+
+	for i := 0; i < 10; i++ {
+		var m OrderedMap[string]
+		if err := json.Unmarshal(src, &m); err != nil {
+			t.Fatalf("iteration %d Unmarshal: %v", i, err)
+		}
+		out, err := json.Marshal(&m)
+		if err != nil {
+			t.Fatalf("iteration %d Marshal: %v", i, err)
+		}
+		if !bytes.Equal(out, src) {
+			t.Fatalf("iteration %d JSON order drift:\ngot:  %s\nwant: %s", i, out, src)
+		}
 	}
 }
 

@@ -150,7 +150,7 @@ func (c *Catalog) DeprecationWarnings() []string {
 	sort.Strings(compNames)
 	for _, name := range compNames {
 		comp := c.Components[name]
-		if len(comp.Spec.SecretNames) > 0 && len(comp.Spec.SecretsSchema) == 0 {
+		if len(comp.Spec.SecretNames) > 0 && comp.Spec.SecretsSchema.Len() == 0 {
 			msgs = append(msgs, fmt.Sprintf("Component %q uses deprecated secretNames; migrate to secretsSchema", name))
 		}
 	}
@@ -161,7 +161,7 @@ func (c *Catalog) DeprecationWarnings() []string {
 	sort.Strings(featNames)
 	for _, name := range featNames {
 		feat := c.Features[name]
-		if len(feat.Spec.SecretNames) > 0 && len(feat.Spec.SecretsSchema) == 0 {
+		if len(feat.Spec.SecretNames) > 0 && feat.Spec.SecretsSchema.Len() == 0 {
 			msgs = append(msgs, fmt.Sprintf("Feature %q uses deprecated secretNames; migrate to secretsSchema", name))
 		}
 	}

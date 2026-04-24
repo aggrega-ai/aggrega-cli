@@ -32,16 +32,12 @@ func TestComposeEngine_Render_GatewayPortsUnderStrict(t *testing.T) {
 	gwVals, _ := json.Marshal(map[string]interface{}{})
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"gw": {
-					Labels:          map[string]string{types.ComponentTypeLabel: "ai-gateway"},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("gw", types.IRNode{
+					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "ai-gateway"); return _m }(),
 					Component:       "c/gw",
 					ResolvedVersion: "1.0.0",
-				},
-			},
-			ValuesMapping: map[string]json.RawMessage{
-				"gw": gwVals,
-			},
+				}); return _m }(),
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("gw", gwVals); return _m }(),
 		},
 	}
 	eng := &ComposeEngine{}
@@ -82,14 +78,12 @@ func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T)
 	}
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"gw": {
-					Labels:          map[string]string{types.ComponentTypeLabel: "ai-gateway"},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("gw", types.IRNode{
+					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "ai-gateway"); return _m }(),
 					Component:       "kong",
 					ResolvedVersion: "1.0.0",
-				},
-			},
-			ValuesMapping: map[string]json.RawMessage{"gw": vals},
+				}); return _m }(),
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("gw", vals); return _m }(),
 		},
 	}
 	out, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, "")
@@ -111,12 +105,8 @@ func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T)
 func TestComposeEngine_Render_InvalidValuesMapping(t *testing.T) {
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"bad": {Labels: map[string]string{}, Component: "c/bad", ResolvedVersion: "1.0.0"},
-			},
-			ValuesMapping: map[string]json.RawMessage{
-				"bad": json.RawMessage(`not-json`),
-			},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("bad", types.IRNode{Labels: types.OrderedMap[string]{}, Component: "c/bad", ResolvedVersion: "1.0.0"}); return _m }(),
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("bad", json.RawMessage(`not-json`)); return _m }(),
 		},
 	}
 	_, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, "")
@@ -133,14 +123,12 @@ func sampleGraph(t *testing.T) *types.IRGraph {
 	}
 	return &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: map[string]types.IRNode{
-				"web": {
-					Labels:          map[string]string{types.ComponentTypeLabel: "server"},
+			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("web", types.IRNode{
+					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
 					Component:       "c/web",
 					ResolvedVersion: "1.0.0",
-				},
-			},
-			ValuesMapping: map[string]json.RawMessage{"web": vals},
+				}); return _m }(),
+			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("web", vals); return _m }(),
 		},
 	}
 }

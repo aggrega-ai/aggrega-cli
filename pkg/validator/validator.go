@@ -60,7 +60,7 @@ func (v *Validator) ValidateComponentValues(comp types.Component, values map[str
 		}
 	} else if comp.Spec.CueSchema != "" {
 		// Split Schema: unify baseUsesCueSchema with user cueSchema
-		if len(comp.Spec.UsesSchema) > 0 {
+		if comp.Spec.UsesSchema.Len() > 0 {
 			baseCUE := GenerateBaseUsesCueSchema(comp.Spec.UsesSchema)
 			errs := UnifySchemas(baseCUE, comp.Spec.CueSchema, entity)
 			allErrs = append(allErrs, errs...)
@@ -105,7 +105,7 @@ func (v *Validator) ValidateFeatureValues(feat types.Feature, values map[string]
 			allErrs = append(allErrs, errs...)
 		}
 	} else if feat.Spec.CueSchema != "" {
-		if len(feat.Spec.UsesSchema) > 0 {
+		if feat.Spec.UsesSchema.Len() > 0 {
 			baseCUE := GenerateBaseUsesCueSchema(feat.Spec.UsesSchema)
 			errs := UnifySchemas(baseCUE, feat.Spec.CueSchema, entity)
 			allErrs = append(allErrs, errs...)
