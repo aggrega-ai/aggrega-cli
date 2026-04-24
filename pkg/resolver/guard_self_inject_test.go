@@ -34,14 +34,12 @@ func selfInjectCatalog() CatalogLookup {
 
 func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 	t.Parallel()
-
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]interface{}{"PORT": "8080"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type:   "core/web-server",
-					Inject: &types.InjectBlock{Env: map[string]interface{}{"PORT": "8080"}},
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -53,14 +51,12 @@ func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 
 func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 	t.Parallel()
-
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/database/postgres", Inject: &types.InjectBlock{Env: map[string]interface{}{"X": "1"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type:   "core/database/postgres",
-					Inject: &types.InjectBlock{Env: map[string]interface{}{"X": "1"}},
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -75,14 +71,12 @@ func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 
 func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 	t.Parallel()
-
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Arg: map[string]interface{}{"--flag": "value"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type:   "core/web-server",              
-					Inject: &types.InjectBlock{Arg: map[string]interface{}{"--flag": "value"}}, 
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -97,22 +91,14 @@ func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 
 func TestGuardSelfInject_KeyCollision(t *testing.T) {
 	t.Parallel()
-
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", map[string]interface{}{"db": map[string]interface{}{"target": "my-db", "inject": map[string]interface{}{"env": map[string]interface{}{"DB_URL": "host"}}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_URL": "localhost"}}, Uses: uses})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type:   "core/web-server",
-					Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_URL": "localhost"}},
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{
-							"db": map[string]interface{}{
-								"target": "my-db",
-								"inject": map[string]interface{}{
-									"env": map[string]interface{}{"DB_URL": "host"}, 
-								},
-							},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -130,11 +116,13 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 
 func TestGuardSelfInject_NoInjectNilPasses(t *testing.T) {
 	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
 
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+			Components: components,
 		},
 	}
 

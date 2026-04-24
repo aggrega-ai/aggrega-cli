@@ -12,32 +12,41 @@ import (
 
 func TestGuardUsesSocket(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
+	usesSchema.Set("tools", types.UsesSchemaEntry{Selector: "tool.aggrega.ai/impact=read-only"})
 
 	webServer := types.Component{
 		Metadata: types.ComponentMetadata{
 			Name:    "core/web-server",
 			Version: "1.0.0",
-			Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+			Labels:  labels,
 		},
 		Spec: types.ComponentSpec{
-			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); _m.Set("tools", types.UsesSchemaEntry{Selector: "tool.aggrega.ai/impact=read-only"}); return _m }(),
+			UsesSchema: usesSchema,
 		},
 	}
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set(types.ComponentTypeLabel, "stateful-server")
 	noUsesComp := types.Component{
 		Metadata: types.ComponentMetadata{
 			Name:    "core/postgres-db",
 			Version: "1.0.0",
-			Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
+			Labels:  labels2,
 		},
 		Spec: types.ComponentSpec{},
 	}
+	usesSchema2 := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema2.Set("targets", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=server"})
 	featureWithUses := types.Feature{
 		Metadata: types.FeatureMetadata{
 			Name:    "core/monitoring",
 			Version: "1.0.0",
 		},
 		Spec: types.FeatureSpec{
-			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("targets", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=server"}); return _m }(),
+			UsesSchema: usesSchema2,
 		},
 	}
 	featureNoUses := types.Feature{
@@ -70,7 +79,38 @@ func TestGuardUsesSocket(t *testing.T) {
 			}
 		},
 	}
-
+	uses4 := types.OrderedMap[interface{}]{}
+	uses4.Set("targets", []interface{}{"api"})
+	uses5 := types.OrderedMap[interface{}]{}
+	uses5.Set("unknown-socket", []interface{}{"x"})
+	uses6 := types.OrderedMap[interface{}]{}
+	uses6.Set("something", []interface{}{"x"})
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", []interface{}{"my-db"})
+	uses2 := types.OrderedMap[interface{}]{}
+	uses2.Set("caches", []interface{}{"my-cache"})
+	uses3 := types.OrderedMap[interface{}]{}
+	uses3.Set("anything", []interface{}{"target"})
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses4})
+	features2 := types.OrderedMap[types.FeatureInstance]{}
+	features2.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses5})
+	features3 := types.OrderedMap[types.FeatureInstance]{}
+	features3.Set("log", types.FeatureInstance{Type: "core/logging", Uses: uses6})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Uses: uses})
+	components2 := types.OrderedMap[types.ComponentInstance]{}
+	components2.Set("api", types.ComponentInstance{Type: "core/web-server", Uses: uses2})
+	components3 := types.OrderedMap[types.ComponentInstance]{}
+	components3.Set("db", types.ComponentInstance{Type: "core/postgres-db", Uses: uses3})
+	components4 := types.OrderedMap[types.ComponentInstance]{}
+	components4.Set("db", types.ComponentInstance{Type: "core/postgres-db"})
+	components5 := types.OrderedMap[types.ComponentInstance]{}
+	components5.Set("api", types.ComponentInstance{Type: "core/web-server", Features: features})
+	components6 := types.OrderedMap[types.ComponentInstance]{}
+	components6.Set("api", types.ComponentInstance{Type: "core/web-server", Features: features2})
+	components7 := types.OrderedMap[types.ComponentInstance]{}
+	components7.Set("api", types.ComponentInstance{Type: "core/web-server", Features: features3})
 	tests := []struct {
 		name    string
 		agg     *types.Aggregate
@@ -82,10 +122,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-							Type: "core/web-server",
-							Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"my-db"}); return _m }(),
-						}); return _m }(),
+					Components: components,
 				},
 			},
 			wantErr: false,
@@ -95,10 +132,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-							Type: "core/web-server",
-							Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("caches", []interface{}{"my-cache"}); return _m }(),
-						}); return _m }(),
+					Components: components2,
 				},
 			},
 			wantErr: true,
@@ -109,10 +143,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-							Type: "core/postgres-db",
-							Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("anything", []interface{}{"target"}); return _m }(),
-						}); return _m }(),
+					Components: components3,
 				},
 			},
 			wantErr: true,
@@ -123,7 +154,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{Type: "core/postgres-db"}); return _m }(),
+					Components: components4,
 				},
 			},
 			wantErr: false,
@@ -133,13 +164,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-							Type: "core/web-server",
-							Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("mon", types.FeatureInstance{
-									Type: "core/monitoring",
-									Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("targets", []interface{}{"api"}); return _m }(),
-								}); return _m }(),
-						}); return _m }(),
+					Components: components5,
 				},
 			},
 			wantErr: false,
@@ -149,13 +174,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-							Type: "core/web-server",
-							Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("mon", types.FeatureInstance{
-									Type: "core/monitoring",
-									Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("unknown-socket", []interface{}{"x"}); return _m }(),
-								}); return _m }(),
-						}); return _m }(),
+					Components: components6,
 				},
 			},
 			wantErr: true,
@@ -166,13 +185,7 @@ func TestGuardUsesSocket(t *testing.T) {
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-							Type: "core/web-server",
-							Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("log", types.FeatureInstance{
-									Type: "core/logging",
-									Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("something", []interface{}{"x"}); return _m }(),
-								}); return _m }(),
-						}); return _m }(),
+					Components: components7,
 				},
 			},
 			wantErr: true,
@@ -220,15 +233,26 @@ func TestGuardUsesSocket_DeterministicOrder(t *testing.T) {
 			return types.Feature{}, false
 		},
 	}
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("a", nil)
+	uses2 := types.OrderedMap[interface{}]{}
+	uses2.Set("b", nil)
+	uses3 := types.OrderedMap[interface{}]{}
+	uses3.Set("c", nil)
+	components := types.OrderedMap[types.ComponentInstance]{
 
+		// Run multiple times to verify determinism
+	}
+	components.Set("zebra", types.ComponentInstance{Type: "core/db", Uses: uses})
+	components.Set("alpha", types.ComponentInstance{Type: "core/db", Uses: uses2})
+	components.Set("mid", types.ComponentInstance{Type: "core/db", Uses: uses3})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("zebra", types.ComponentInstance{Type: "core/db", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("a", nil); return _m }()}); _m.Set("alpha", types.ComponentInstance{Type: "core/db", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("b", nil); return _m }()}); _m.Set("mid", types.ComponentInstance{Type: "core/db", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("c", nil); return _m }()}); return _m }(),
+			Components: components,
 		},
 	}
 
-	// Run multiple times to verify determinism
 	var firstFields []string
 	for i := 0; i < 10; i++ {
 		errs := guardUsesSocket(agg, catalog)

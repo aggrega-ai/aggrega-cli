@@ -18,12 +18,14 @@ import (
 
 func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server"})
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test"},
 			Spec: types.IRSpec{
-				Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{Component: "core/server/api-server"}); return _m }(),
+				Nodes: nodes,
 			},
 		},
 		FeatureOrder:  ir.FeatureOrder{},
@@ -32,10 +34,12 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(string) (*types.Recipe, bool) {
+			provides := types.OrderedMap[string]{}
+			provides.Set("host", `{{ .context.inject.env.TARGET }}`)
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "bad-recipe"},
 				Spec: types.RecipeSpec{
-					Provides:      func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.inject.env.TARGET }}`); return _m }(),
+					Provides:      provides,
 					ValuesMapping: `{"image": "app:latest"}`,
 				},
 			}, true
@@ -54,12 +58,14 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 
 func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", BoundaryPath: "local"})
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test"},
 			Spec: types.IRSpec{
-				Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{Component: "core/server/api-server", BoundaryPath: "local"}); return _m }(),
+				Nodes: nodes,
 				Edges: []types.IREdge{
 					{Source: "api", Target: "db", Socket: "databases", Alias: "main-db",
 						Inject: func() types.OrderedMap[types.OrderedMap[string]] {
@@ -100,10 +106,12 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 					},
 				}, true
 			case "core/database/postgres":
+				provides := types.OrderedMap[string]{}
+				provides.Set("host", "original-host.svc")
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
-						Provides:      func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "original-host.svc"); return _m }(),
+						Provides:      provides,
 						ValuesMapping: `{"image": "pg:15"}`,
 					},
 				}, true
@@ -144,24 +152,24 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 
 func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set("component.aggrega.ai/type", "server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, BoundaryPath: "prod/eks", ResolvedVersion: "1.0.0"})
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "labeled-app"},
 			Spec: types.IRSpec{
-				Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{
-						Component:       "core/server/api-server",
-						Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("component.aggrega.ai/type", "server"); return _m }(),
-						BoundaryPath:    "prod/eks",
-						ResolvedVersion: "1.0.0",
-					}); return _m }(),
+				Nodes: nodes,
+
 				Provenance: types.IRProvenance{CompilerVersion: "0.2.0", AggregateVersion: "1.0.0"},
 			},
 		},
 		FeatureOrder: ir.FeatureOrder{},
 		ResolveResult: &resolver.ResolveResult{
-			Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "labeled-app"}},
-			Release:   &types.Release{Metadata: types.ReleaseMetadata{Name: "prod", Environment: "production"}},
+			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "labeled-app"}},
+			Release:       &types.Release{Metadata: types.ReleaseMetadata{Name: "prod", Environment: "production"}},
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 		},
 	}
@@ -210,18 +218,23 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 
 	valuesRaw, _ := json.Marshal(map[string]interface{}{"port": 8080})
 	infraRaw, _ := json.Marshal(map[string]interface{}{"replicas": 3})
+	labels := types.OrderedMap[string]{}
+	labels.Set("component.aggrega.ai/type", "server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, BoundaryPath: "local"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("api", valuesRaw)
+	infraMapping := types.OrderedMap[json.RawMessage]{}
+	infraMapping.Set("api", infraRaw)
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "flow-test"},
 			Spec: types.IRSpec{
-				Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{
-						Component:    "core/server/api-server",
-						Labels:       func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("component.aggrega.ai/type", "server"); return _m }(),
-						BoundaryPath: "local",
-					}); return _m }(),
-				ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", valuesRaw); return _m }(),
-				InfraMapping:  func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", infraRaw); return _m }(),
+				Nodes: nodes,
+
+				ValuesMapping: valuesMapping,
+				InfraMapping:  infraMapping,
 			},
 		},
 		FeatureOrder: ir.FeatureOrder{},

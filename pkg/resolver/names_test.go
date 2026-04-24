@@ -11,11 +11,17 @@ import (
 )
 
 func TestValidateInstanceNames_ValidNames(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("web-server", types.ComponentInstance{Type: "core/server:1.0.0"})
+	components.Set("my_worker", types.ComponentInstance{Type: "core/worker:1.0.0"})
+	components.Set("api123", types.ComponentInstance{Type: "core/server:1.0.0"})
+	aggregates := types.OrderedMap[types.SubAggregate]{}
+	aggregates.Set("auth-module", types.SubAggregate{Type: "auth/module:1.0.0"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web-server", types.ComponentInstance{Type: "core/server:1.0.0"}); _m.Set("my_worker", types.ComponentInstance{Type: "core/worker:1.0.0"}); _m.Set("api123", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
-			Aggregates: func() types.OrderedMap[types.SubAggregate] { _m := types.OrderedMap[types.SubAggregate]{}; _m.Set("auth-module", types.SubAggregate{Type: "auth/module:1.0.0"}); return _m }(),
+			Components: components,
+			Aggregates: aggregates,
 		},
 	}
 
@@ -26,10 +32,12 @@ func TestValidateInstanceNames_ValidNames(t *testing.T) {
 }
 
 func TestValidateInstanceNames_DotRejected(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("nested.component", types.ComponentInstance{Type: "core/server:1.0.0"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("nested.component", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -43,10 +51,12 @@ func TestValidateInstanceNames_DotRejected(t *testing.T) {
 }
 
 func TestValidateInstanceNames_SpaceRejected(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("bad name", types.ComponentInstance{Type: "core/server:1.0.0"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bad name", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -57,10 +67,12 @@ func TestValidateInstanceNames_SpaceRejected(t *testing.T) {
 }
 
 func TestValidateInstanceNames_SpecialCharsRejected(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("bad@name", types.ComponentInstance{Type: "core/server:1.0.0"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bad@name", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -71,12 +83,14 @@ func TestValidateInstanceNames_SpecialCharsRejected(t *testing.T) {
 }
 
 func TestValidateInstanceNames_NestedSubsystem(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("bad.comp", types.ComponentInstance{Type: "core/server:1.0.0"})
+	subsystems := types.OrderedMap[types.Subsystem]{}
+	subsystems.Set("valid-subsystem", types.Subsystem{Components: components})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("valid-subsystem", types.Subsystem{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("bad.comp", types.ComponentInstance{Type: "core/server:1.0.0"}); return _m }(),
-				}); return _m }(),
+			Subsystems: subsystems,
 		},
 	}
 
@@ -87,13 +101,14 @@ func TestValidateInstanceNames_NestedSubsystem(t *testing.T) {
 }
 
 func TestValidateInstanceNames_FeatureNames(t *testing.T) {
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("bad.feature", types.FeatureInstance{Type: "ops/logging:1.0.0"})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("web", types.ComponentInstance{
-					Type: "core/server:1.0.0",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("bad.feature", types.FeatureInstance{Type: "ops/logging:1.0.0"}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 

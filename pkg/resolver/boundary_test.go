@@ -12,17 +12,20 @@ import (
 
 func TestWireBoundaryInfra_BoundaryComponentAnnotationsOverride(t *testing.T) {
 	t.Parallel()
+	annotations2 := types.OrderedMap[string]{}
+	annotations2.Set("aggrega.ai/namespace", "backend-api-ns")
+	annotations := types.OrderedMap[string]{}
+	annotations.Set("aggrega.ai/namespace", "backend-zone")
+	annotations.Set("aggrega.ai/image-registry", "registry.example.com")
+	components := types.OrderedMap[types.BoundaryComponent]{}
+	components.Set("api", types.BoundaryComponent{Annotations: annotations2})
+	components.Set("worker", types.BoundaryComponent{})
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set("backend-zone", types.Boundary{Annotations: annotations, Components: components})
 
 	rel := &types.Release{
 		Spec: types.ReleaseSpec{
-			Boundaries: func() types.OrderedMap[types.Boundary] { _m := types.OrderedMap[types.Boundary]{}; _m.Set("backend-zone", types.Boundary{
-					Annotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("aggrega.ai/namespace", "backend-zone"); _m.Set("aggrega.ai/image-registry", "registry.example.com"); return _m }(),
-					Components: func() types.OrderedMap[types.BoundaryComponent] { _m := types.OrderedMap[types.BoundaryComponent]{}; _m.Set("api", types.BoundaryComponent{
-							Annotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("aggrega.ai/namespace", "backend-api-ns"); return _m }(),
-						}); _m.Set("worker", types.BoundaryComponent{
-							
-						}); return _m }(),
-				}); return _m }(),
+			Boundaries: boundaries,
 		},
 	}
 

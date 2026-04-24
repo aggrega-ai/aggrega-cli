@@ -12,10 +12,8 @@ import (
 )
 
 func TestGenerateBaseUsesCueSchema_Simple(t *testing.T) {
-	schema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{
-			Selector: `component.aggrega.ai/type in (resource, stateful-server)`,
-			Inject:   []string{"env", "file"},
-		}); return _m }()
+	schema := types.OrderedMap[types.UsesSchemaEntry]{}
+	schema.Set("databases", types.UsesSchemaEntry{Selector: `component.aggrega.ai/type in (resource, stateful-server)`, Inject: []string{"env", "file"}})
 
 	cue := GenerateBaseUsesCueSchema(schema)
 	if cue == "" {
@@ -36,9 +34,8 @@ func TestGenerateBaseUsesCueSchema_Simple(t *testing.T) {
 }
 
 func TestGenerateBaseUsesCueSchema_NoInject(t *testing.T) {
-	schema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("apis", types.UsesSchemaEntry{
-			Selector: `component.aggrega.ai/type in (server)`,
-		}); return _m }()
+	schema := types.OrderedMap[types.UsesSchemaEntry]{}
+	schema.Set("apis", types.UsesSchemaEntry{Selector: `component.aggrega.ai/type in (server)`})
 
 	cue := GenerateBaseUsesCueSchema(schema)
 	if strings.Contains(cue, "inject?:") {
@@ -54,7 +51,10 @@ func TestGenerateBaseUsesCueSchema_Empty(t *testing.T) {
 }
 
 func TestGenerateBaseUsesCueSchema_Deterministic(t *testing.T) {
-	schema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("z_socket", types.UsesSchemaEntry{Selector: "s1"}); _m.Set("a_socket", types.UsesSchemaEntry{Selector: "s2"}); _m.Set("m_socket", types.UsesSchemaEntry{Selector: "s3"}); return _m }()
+	schema := types.OrderedMap[types.UsesSchemaEntry]{}
+	schema.Set("z_socket", types.UsesSchemaEntry{Selector: "s1"})
+	schema.Set("a_socket", types.UsesSchemaEntry{Selector: "s2"})
+	schema.Set("m_socket", types.UsesSchemaEntry{Selector: "s3"})
 
 	cue1 := GenerateBaseUsesCueSchema(schema)
 	cue2 := GenerateBaseUsesCueSchema(schema)

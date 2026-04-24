@@ -15,15 +15,13 @@ func requiredSocketCatalog() CatalogLookup {
 	return CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			if typeURI == "core/server/api" {
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server", Required: true})
+				usesSchema.Set("caches", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=resource"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{Name: "core/server/api"},
 					Spec: types.ComponentSpec{
-						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{
-								Selector: "component.aggrega.ai/type=stateful-server",
-								Required: true,
-							}); _m.Set("caches", types.UsesSchemaEntry{
-								Selector: "component.aggrega.ai/type=resource",
-							}); return _m }(),
+						UsesSchema: usesSchema,
 					},
 				}, true
 			}
@@ -35,9 +33,11 @@ func requiredSocketCatalog() CatalogLookup {
 
 func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api"})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api"}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -57,15 +57,15 @@ func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 	t.Parallel()
-	// "caches" is optional — its absence is fine, only "databases" (required) triggers.
+	uses :=
+		// "caches" is optional — its absence is fine, only "databases" (required) triggers.
+		types.OrderedMap[interface{}]{}
+	uses.Set("databases", map[string]interface{}{"main": map[string]interface{}{"target": "db"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api",
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{
-							"main": map[string]interface{}{"target": "db"},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -76,13 +76,15 @@ func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 	t.Parallel()
-	// Compact list form: `databases: [db]` should count as populated.
+	uses :=
+		// Compact list form: `databases: [db]` should count as populated.
+		types.OrderedMap[interface{}]{}
+	uses.Set("databases", []interface{}{"db"})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api",
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"db"}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -93,12 +95,13 @@ func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 	t.Parallel()
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", map[string]interface{}{})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api",
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
@@ -112,11 +115,13 @@ func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_SubsystemRecursion(t *testing.T) {
 	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("nested-api", types.ComponentInstance{Type: "core/server/api"})
+	subsystems := types.OrderedMap[types.Subsystem]{}
+	subsystems.Set("frontend", types.Subsystem{Components: components})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("frontend", types.Subsystem{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("nested-api", types.ComponentInstance{Type: "core/server/api"}); return _m }(),
-				}); return _m }(),
+			Subsystems: subsystems,
 		},
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())

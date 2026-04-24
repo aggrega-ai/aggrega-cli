@@ -16,27 +16,35 @@ func analyzerCatalog() resolver.CatalogLookup {
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
 			case "core/server/api-server":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "server")
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:   "core/server/api-server",
-						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+						Labels: labels,
 					},
 					Spec: types.ComponentSpec{
-						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); return _m }(),
+						UsesSchema: usesSchema,
 					},
 				}, true
 			case "core/database/postgres":
+				labels2 := types.OrderedMap[string]{}
+				labels2.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:   "core/database/postgres",
-						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
+						Labels: labels2,
 					},
 				}, true
 			case "core/redis":
+				labels3 := types.OrderedMap[string]{}
+				labels3.Set(types.ComponentTypeLabel, "resource")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:   "core/redis",
-						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "resource"); return _m }(),
+						Labels: labels3,
 					},
 				}, true
 			default:
@@ -51,10 +59,17 @@ func analyzerCatalog() resolver.CatalogLookup {
 
 func TestAnalyze_SelectorPass(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set(types.ComponentTypeLabel, "stateful-server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("main-db", types.IRNode{Component: "core/database/postgres", Labels: labels2})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{Component: "core/server/api-server", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }()}); _m.Set("main-db", types.IRNode{Component: "core/database/postgres", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }()}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "api", Target: "main-db", Socket: "databases"},
 			},
@@ -69,10 +84,17 @@ func TestAnalyze_SelectorPass(t *testing.T) {
 
 func TestAnalyze_SelectorFail(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set(types.ComponentTypeLabel, "resource")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("cache", types.IRNode{Component: "core/redis", Labels: labels2})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{Component: "core/server/api-server", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }()}); _m.Set("cache", types.IRNode{Component: "core/redis", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "resource"); return _m }()}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "api", Target: "cache", Socket: "databases"},
 			},
@@ -107,17 +129,23 @@ func analyzerCatalogWithFeature(feat types.Feature) resolver.CatalogLookup {
 
 func TestAnalyze_AppliesToPass(t *testing.T) {
 	t.Parallel()
+	appliesTo := types.OrderedMap[string]{}
+	appliesTo.Set(types.ComponentTypeLabel, "server")
 
 	feat := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
 		Spec: types.FeatureSpec{
-			AppliesTo: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+			AppliesTo: appliesTo,
 		},
 	}
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{Component: "core/server/api-server", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }()}); return _m }(),
+			Nodes: nodes,
 			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
 				inner := types.OrderedMap[types.IRFeatureEntry]{}
 				inner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring"})
@@ -136,17 +164,23 @@ func TestAnalyze_AppliesToPass(t *testing.T) {
 
 func TestAnalyze_AppliesToFail(t *testing.T) {
 	t.Parallel()
+	appliesTo := types.OrderedMap[string]{}
+	appliesTo.Set(types.ComponentTypeLabel, "server")
 
 	feat := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
 		Spec: types.FeatureSpec{
-			AppliesTo: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+			AppliesTo: appliesTo,
 		},
 	}
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "stateful-server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("db", types.IRNode{Component: "core/database/postgres", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("db", types.IRNode{Component: "core/database/postgres", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }()}); return _m }(),
+			Nodes: nodes,
 			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
 				inner := types.OrderedMap[types.IRFeatureEntry]{}
 				inner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring"})
@@ -184,10 +218,14 @@ func TestAnalyze_AppliesToExpressions(t *testing.T) {
 			},
 		},
 	}
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "worker")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("worker", types.IRNode{Component: "core/server/api-server", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("worker", types.IRNode{Component: "core/server/api-server", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "worker"); return _m }()}); return _m }(),
+			Nodes: nodes,
 			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
 				inner := types.OrderedMap[types.IRFeatureEntry]{}
 				inner.Set("mon", types.IRFeatureEntry{Type: "core/monitoring"})
@@ -206,10 +244,14 @@ func TestAnalyze_AppliesToExpressions(t *testing.T) {
 
 func TestAnalyze_PathsCalculated(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("gateway", types.IRNode{Component: "core/server/api-server"})
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server"})
+	nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("gateway", types.IRNode{Component: "core/server/api-server"}); _m.Set("api", types.IRNode{Component: "core/server/api-server"}); _m.Set("db", types.IRNode{Component: "core/database/postgres"}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "api", Target: "db", Socket: "databases"},
 				{Source: "gateway", Target: "api", Socket: "apis"},
@@ -238,10 +280,14 @@ func TestAnalyze_PathsCalculated(t *testing.T) {
 
 func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set("a", "b")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", ResolvedVersion: "1.0.0", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{Component: "core/server/api-server", ResolvedVersion: "1.0.0", Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("a", "b"); return _m }()}); return _m }(),
+			Nodes: nodes,
 			Edges: nil,
 		},
 	}

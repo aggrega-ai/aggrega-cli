@@ -12,22 +12,27 @@ import (
 
 func TestAssembleNodeContext_FullContext(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	catalogAnnotations := types.OrderedMap[string]{}
+	catalogAnnotations.Set("tier", "standard")
+	releaseAnnotations := types.OrderedMap[string]{}
+	releaseAnnotations.Set("env", "local")
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set(types.ComponentTypeLabel, "stateful-server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default", CatalogAnnotations: catalogAnnotations, ReleaseAnnotations: releaseAnnotations})
+	nodes.Set("db", types.IRNode{Component: "core/database/postgres", Labels: labels2, ResolvedVersion: "2.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("api", json.RawMessage(`{"port":8080}`))
+	infraMapping := types.OrderedMap[json.RawMessage]{}
+	infraMapping.Set("api", json.RawMessage(`{"replicas":3}`))
 
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "test-app"},
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{
-					Component:          "core/server/api-server",
-					Labels:             func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
-					ResolvedVersion:    "1.0.0",
-					BoundaryPath:       "local/default",
-					CatalogAnnotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("tier", "standard"); return _m }(),
-					ReleaseAnnotations: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("env", "local"); return _m }(),
-				}); _m.Set("db", types.IRNode{
-					Component:       "core/database/postgres",
-					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
-					ResolvedVersion: "2.0.0",
-				}); return _m }(),
+			Nodes: nodes,
+
 			Edges: []types.IREdge{
 				{Source: "api", Target: "db", Socket: "databases", Alias: "main-db", Inject: func() types.OrderedMap[types.OrderedMap[string]] {
 					inj := types.OrderedMap[types.OrderedMap[string]]{}
@@ -37,8 +42,8 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 					return inj
 				}()},
 			},
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", json.RawMessage(`{"port":8080}`)); return _m }(),
-			InfraMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", json.RawMessage(`{"replicas":3}`)); return _m }(),
+			ValuesMapping: valuesMapping,
+			InfraMapping:  infraMapping,
 			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
 				inner := types.OrderedMap[types.IRFeatureEntry]{}
 				vals := types.OrderedMap[interface{}]{}
@@ -158,11 +163,13 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 
 func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
 
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "t"},
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("db", types.IRNode{Component: "core/database/postgres"}); return _m }(),
+			Nodes: nodes,
 		},
 	}
 	dbProv2 := types.OrderedMap[string]{}
@@ -184,11 +191,13 @@ func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
 
 func TestAssembleNodeContext_EmptyNode(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("simple", types.IRNode{Component: "core/worker"})
 
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "test"},
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("simple", types.IRNode{Component: "core/worker"}); return _m }(),
+			Nodes: nodes,
 		},
 	}
 

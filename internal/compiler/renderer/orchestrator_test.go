@@ -26,18 +26,20 @@ func testHelmChartFactory() renderer.EngineFactory {
 }
 
 func testInput() renderer.RendererInput {
+	labels := types.OrderedMap[string]{}
+	labels.Set("component.aggrega.ai/type", "server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("api", json.RawMessage(`{"port":8080}`))
 	return renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test-app"},
 			Spec: types.IRSpec{
-				Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{
-						Component:       "core/server/api-server",
-						Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("component.aggrega.ai/type", "server"); return _m }(),
-						ResolvedVersion: "1.0.0",
-						BoundaryPath:    "local/default",
-					}); return _m }(),
+				Nodes: nodes,
+
 				Edges:          nil,
-				ValuesMapping:  func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("api", json.RawMessage(`{"port":8080}`)); return _m }(),
+				ValuesMapping:  valuesMapping,
 				InfraMapping:   types.OrderedMap[json.RawMessage]{},
 				FeatureMarkers: nil,
 				Provenance:     types.IRProvenance{CompilerVersion: "0.1.0", AggregateVersion: "1.0.0"},
@@ -58,13 +60,18 @@ func testRecipeLookup() renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe: func(componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
+				provides := types.OrderedMap[string]{}
+				provides.Set("host", `{{ .context.instance_id }}.svc.cluster.local`)
+				provides.Set("service_port", `8080`)
+				locals := types.OrderedMap[string]{}
+				locals.Set("primary_compute", "api")
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Provider:   "helm",
-						Implements: "core/server/api-server",
-						Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id }}.svc.cluster.local`); _m.Set("service_port", `8080`); return _m }(),
-						Locals:        func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("primary_compute", "api"); return _m }(),
+						Provider:      "helm",
+						Implements:    "core/server/api-server",
+						Provides:      provides,
+						Locals:        locals,
 						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"], "environment": {"PORT": "8080"}}`,
 					},
 				}, true
@@ -128,10 +135,12 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 					},
 				}, true
 			case "core/database/postgres":
+				provides := types.OrderedMap[string]{}
+				provides.Set("host", `{{ .context.instance_id }}.svc.cluster.local`)
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
-						Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id }}.svc.cluster.local`); return _m }(),
+						Provides:      provides,
 						ValuesMapping: `{"image": "postgres:15"}`,
 					},
 				}, true
@@ -266,12 +275,14 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 		},
 		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/monitoring" {
+				locals := types.OrderedMap[string]{}
+				locals.Set("scrape_target", `{{ .values.tier }}-{{ .values.scrape_port }}`)
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
 					Spec: types.FeatureRecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/monitoring",
-						Locals:        func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("scrape_target", `{{ .values.tier }}-{{ .values.scrape_port }}`); return _m }(),
+						Locals:        locals,
 						ValuesMapping: `{"image": "prom/mon:v1", "ports": ["{{ .values.scrape_port }}:9090"]}`,
 					},
 				}, true

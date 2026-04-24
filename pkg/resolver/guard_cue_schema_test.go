@@ -15,10 +15,12 @@ func cueSchemaCatalog(schema string) CatalogLookup {
 	return CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			if typeURI == "core/server/api" {
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:   "core/server/api",
-						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+						Labels: labels,
 					},
 					Spec: types.ComponentSpec{CueSchema: schema},
 				}, true
@@ -32,9 +34,13 @@ func cueSchemaCatalog(schema string) CatalogLookup {
 func TestGuardCueSchema_ValuesPillarValid(t *testing.T) {
 	t.Parallel()
 	schema := `values: { port?: int & >=1024 | *8080 }`
+	values := types.OrderedMap[interface{}]{}
+	values.Set("port", 8080)
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Values: values})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 8080); return _m }()}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(schema), nil)
@@ -46,9 +52,13 @@ func TestGuardCueSchema_ValuesPillarValid(t *testing.T) {
 func TestGuardCueSchema_ValuesPillarInvalid(t *testing.T) {
 	t.Parallel()
 	schema := `values: { port: int & >=1024 }`
+	values := types.OrderedMap[interface{}]{}
+	values.Set("port", 80)
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Values: values})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 80); return _m }()}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(schema), nil)
@@ -70,13 +80,17 @@ func TestGuardCueSchema_ValuesPillarInvalid(t *testing.T) {
 func TestGuardCueSchema_InfraPillarFromBoundary(t *testing.T) {
 	t.Parallel()
 	schema := `infra: { replicas: int & >0 }`
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api"})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api"}); return _m }(),
+			Components: components,
 		},
 	}
+	infra := types.OrderedMap[interface{}]{}
+	infra.Set("replicas", 0)
 	bi := map[string]*BoundaryInfra{
-		"api": {Infra: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("replicas", 0); return _m }()}, // violates >0
+		"api": {Infra: infra}, // violates >0
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(schema), bi)
 	if len(errs) == 0 {
@@ -91,13 +105,19 @@ func TestGuardCueSchema_MissingInfraPillarIsNoOp(t *testing.T) {
 	t.Parallel()
 	// Schema only declares values — arbitrary infra should be allowed.
 	schema := `values: { port: int }`
+	values := types.OrderedMap[interface{}]{}
+	values.Set("port", 8080)
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Values: values})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 8080); return _m }()}); return _m }(),
+			Components: components,
 		},
 	}
+	infra := types.OrderedMap[interface{}]{}
+	infra.Set("anything", "goes")
 	bi := map[string]*BoundaryInfra{
-		"api": {Infra: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("anything", "goes"); return _m }()},
+		"api": {Infra: infra},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(schema), bi)
 	if len(errs) != 0 {
@@ -108,14 +128,21 @@ func TestGuardCueSchema_MissingInfraPillarIsNoOp(t *testing.T) {
 func TestGuardCueSchema_SubsystemRecursion(t *testing.T) {
 	t.Parallel()
 	schema := `values: { port: int & >=1024 }`
+	values2 := types.OrderedMap[interface{}]{}
+	values2.Set("port", 443)
+	values := types.OrderedMap[interface{}]{}
+	values.Set("port", 80)
+	components2 := types.OrderedMap[types.ComponentInstance]{}
+	components2.Set("deep", types.ComponentInstance{Type: "core/server/api", Values: values2})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("ui", types.ComponentInstance{Type: "core/server/api", Values: values})
+	subsystems2 := types.OrderedMap[types.Subsystem]{}
+	subsystems2.Set("nested", types.Subsystem{Components: components2})
+	subsystems := types.OrderedMap[types.Subsystem]{}
+	subsystems.Set("frontend", types.Subsystem{Components: components, Subsystems: subsystems2})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("frontend", types.Subsystem{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("ui", types.ComponentInstance{Type: "core/server/api", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 80); return _m }()}); return _m }(),
-					Subsystems: func() types.OrderedMap[types.Subsystem] { _m := types.OrderedMap[types.Subsystem]{}; _m.Set("nested", types.Subsystem{
-							Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("deep", types.ComponentInstance{Type: "core/server/api", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 443); return _m }()}); return _m }(),
-						}); return _m }(),
-				}); return _m }(),
+			Subsystems: subsystems,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(schema), nil)
@@ -130,9 +157,11 @@ func TestGuardCueSchema_SubsystemRecursion(t *testing.T) {
 
 func TestGuardCueSchema_EmptyCueSchemaSkipped(t *testing.T) {
 	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api"})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api"}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(""), nil)
@@ -143,9 +172,11 @@ func TestGuardCueSchema_EmptyCueSchemaSkipped(t *testing.T) {
 
 func TestGuardCueSchema_UnknownTypeSkipped(t *testing.T) {
 	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/nonexistent"})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/nonexistent"}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalog(`values: {}`), nil)
@@ -161,13 +192,12 @@ func cueSchemaCatalogWithUsesSchema() CatalogLookup {
 	return CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			if typeURI == "core/server/api" {
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server", Inject: []string{"env"}})
 				return types.Component{
 					Metadata: types.ComponentMetadata{Name: "core/server/api"},
 					Spec: types.ComponentSpec{
-						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{
-								Selector: "component.aggrega.ai/type=stateful-server",
-								Inject:   []string{"env"},
-							}); return _m }(),
+						UsesSchema: usesSchema,
 					},
 				}, true
 			}
@@ -179,14 +209,13 @@ func cueSchemaCatalogWithUsesSchema() CatalogLookup {
 
 func TestGuardCueSchema_UsesPillarValidSocket(t *testing.T) {
 	t.Parallel()
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", map[string]interface{}{"main": map[string]interface{}{"target": "db"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api",
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{
-							"main": map[string]interface{}{"target": "db"},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalogWithUsesSchema(), nil)
@@ -222,47 +251,62 @@ func TestGuardCueSchema_SecretsPillarTable(t *testing.T) {
 		expectError bool
 		errContains string
 	}
+	schema2 := types.OrderedMap[types.SecretSlot]{}
+	schema2.Set("root_password", types.SecretSlot{Required: true})
+	secrets2 := types.OrderedMap[types.SecretInstance]{}
+	secrets2.Set("root_password", types.SecretInstance{Type: "core/db-password"})
+	schema3 := types.OrderedMap[types.SecretSlot]{}
+	schema3.Set("root_password", types.SecretSlot{Required: true})
+	schema4 := types.OrderedMap[types.SecretSlot]{}
+	schema4.Set("root_password", types.SecretSlot{Required: false, Inject:
+
+	// omitted
+
+	[]string{"env"}})
+	secrets3 := types.OrderedMap[types.SecretInstance]{}
+	secrets3.Set("root_password", types.SecretInstance{Type: "core/db-password", Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_PASSWORD": "v"}}})
+	schema5 := types.OrderedMap[types.SecretSlot]{}
+	schema5.Set("root_password", types.SecretSlot{Required: true})
+	secrets4 := types.OrderedMap[types.SecretInstance]{}
+	secrets4.Set("root_password", types.SecretInstance{Type: "core/db-password", Inject: &types.InjectBlock{Env: map[string]interface{}{"FORBIDDEN": "v"}}})
+	schema6 := types.OrderedMap[types.SecretSlot]{}
+	schema6.Set("root_password", types.SecretSlot{Required: true})
+	secrets5 := types.OrderedMap[types.SecretInstance]{}
+	secrets5.Set("root_password", types.SecretInstance{Type: "core/db-password"})
+	secrets5.Set("unknown_secret", types.SecretInstance{Type: "core/other"})
 	cases := []tc{
 		{
-			name:   "required + blackbox declared passes",
-			schema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true}); return _m }(),
-			secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("root_password", types.SecretInstance{Type: "core/db-password"}); return _m }(),
+			name:        "required + blackbox declared passes",
+			schema:      schema2,
+			secrets:     secrets2,
 			expectError: false,
 		},
 		{
 			name:        "required + blackbox missing rejected",
-			schema:      func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true}); return _m }(),
-			secrets:     types.OrderedMap[types.SecretInstance]{}, // omitted
+			schema:      schema3,
+			secrets:     types.OrderedMap[types.SecretInstance]{},
 			expectError: true,
 			errContains: "root_password",
 		},
 		{
-			name:   "optional + transparent with inject.env declared passes",
-			schema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: false, Inject: []string{"env"}}); return _m }(),
-			secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("root_password", types.SecretInstance{
-					Type: "core/db-password",
-					Inject: &types.InjectBlock{
-						Env: map[string]interface{}{"DB_PASSWORD": "v"},
-					},
-				}); return _m }(),
+			name:    "optional + transparent with inject.env declared passes",
+			schema:  schema4,
+			secrets: secrets3,
+
 			expectError: false,
 		},
 		{
-			name:   "blackbox with inject declared rejected",
-			schema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true}); return _m }(),
-			secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("root_password", types.SecretInstance{
-					Type: "core/db-password",
-					Inject: &types.InjectBlock{
-						Env: map[string]interface{}{"FORBIDDEN": "v"},
-					},
-				}); return _m }(),
+			name:    "blackbox with inject declared rejected",
+			schema:  schema5,
+			secrets: secrets4,
+
 			expectError: true,
 			errContains: "inject",
 		},
 		{
-			name:   "undeclared secret name rejected",
-			schema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true}); return _m }(),
-			secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("root_password", types.SecretInstance{Type: "core/db-password"}); _m.Set("unknown_secret", types.SecretInstance{Type: "core/other"}); return _m }(),
+			name:        "undeclared secret name rejected",
+			schema:      schema6,
+			secrets:     secrets5,
 			expectError: true,
 			errContains: "unknown_secret",
 		},
@@ -272,12 +316,11 @@ func TestGuardCueSchema_SecretsPillarTable(t *testing.T) {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
+			components := types.OrderedMap[types.ComponentInstance]{}
+			components.Set("db", types.ComponentInstance{Type: "core/db/postgres", Secrets: c.secrets})
 			agg := &types.Aggregate{
 				Spec: types.AggregateSpec{
-					Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-							Type:    "core/db/postgres",
-							Secrets: c.secrets,
-						}); return _m }(),
+					Components: components,
 				},
 			}
 			errs := guardCueSchema(agg, secretsCatalog(c.schema), nil)
@@ -306,15 +349,15 @@ func TestGuardCueSchema_SecretsPillarTable(t *testing.T) {
 
 func TestGuardCueSchema_UsesPillarUnknownSocketRejected(t *testing.T) {
 	t.Parallel()
-	// usesSchema declares only "databases"; aggregate references an undeclared "caches" socket.
+	uses :=
+		// usesSchema declares only "databases"; aggregate references an undeclared "caches" socket.
+		types.OrderedMap[interface{}]{}
+	uses.Set("caches", map[string]interface{}{"ephemeral": map[string]interface{}{"target": "redis"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api",
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("caches", map[string]interface{}{
-							"ephemeral": map[string]interface{}{"target": "redis"},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardCueSchema(agg, cueSchemaCatalogWithUsesSchema(), nil)

@@ -30,14 +30,17 @@ func TestComposeEngine_Render_StrictNetworking(t *testing.T) {
 
 func TestComposeEngine_Render_GatewayPortsUnderStrict(t *testing.T) {
 	gwVals, _ := json.Marshal(map[string]interface{}{})
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "ai-gateway")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("gw", types.IRNode{Labels: labels, Component: "c/gw", ResolvedVersion: "1.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("gw", gwVals)
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("gw", types.IRNode{
-					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "ai-gateway"); return _m }(),
-					Component:       "c/gw",
-					ResolvedVersion: "1.0.0",
-				}); return _m }(),
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("gw", gwVals); return _m }(),
+			Nodes: nodes,
+
+			ValuesMapping: valuesMapping,
 		},
 	}
 	eng := &ComposeEngine{}
@@ -76,14 +79,17 @@ func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "ai-gateway")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("gw", types.IRNode{Labels: labels, Component: "kong", ResolvedVersion: "1.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("gw", vals)
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("gw", types.IRNode{
-					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "ai-gateway"); return _m }(),
-					Component:       "kong",
-					ResolvedVersion: "1.0.0",
-				}); return _m }(),
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("gw", vals); return _m }(),
+			Nodes: nodes,
+
+			ValuesMapping: valuesMapping,
 		},
 	}
 	out, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, "")
@@ -103,10 +109,14 @@ func TestComposeEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T)
 }
 
 func TestComposeEngine_Render_InvalidValuesMapping(t *testing.T) {
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("bad", types.IRNode{Labels: types.OrderedMap[string]{}, Component: "c/bad", ResolvedVersion: "1.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("bad", json.RawMessage(`not-json`))
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("bad", types.IRNode{Labels: types.OrderedMap[string]{}, Component: "c/bad", ResolvedVersion: "1.0.0"}); return _m }(),
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("bad", json.RawMessage(`not-json`)); return _m }(),
+			Nodes:         nodes,
+			ValuesMapping: valuesMapping,
 		},
 	}
 	_, err := (&ComposeEngine{}).Render(context.Background(), graph, nil, "")
@@ -121,14 +131,17 @@ func sampleGraph(t *testing.T) *types.IRGraph {
 	if err != nil {
 		t.Fatal(err)
 	}
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("web", types.IRNode{Labels: labels, Component: "c/web", ResolvedVersion: "1.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("web", vals)
 	return &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("web", types.IRNode{
-					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
-					Component:       "c/web",
-					ResolvedVersion: "1.0.0",
-				}); return _m }(),
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("web", vals); return _m }(),
+			Nodes: nodes,
+
+			ValuesMapping: valuesMapping,
 		},
 	}
 }

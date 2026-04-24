@@ -20,49 +20,64 @@ func integrationCatalog() resolver.CatalogLookup {
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
 			case "core/server/api-server":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "server")
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
+				usesSchema.Set("tools", types.UsesSchemaEntry{Selector: "tool.aggrega.ai/impact=read-only"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:    "core/server/api-server",
 						Version: "1.0.0",
-						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); return _m }(),
+						Labels:  labels,
 					},
 					Spec: types.ComponentSpec{
-						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); _m.Set("tools", types.UsesSchemaEntry{Selector: "tool.aggrega.ai/impact=read-only"}); return _m }(),
+						UsesSchema: usesSchema,
 					},
 				}, true
 			case "core/database/postgres":
+				labels2 := types.OrderedMap[string]{}
+				labels2.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:    "core/database/postgres",
 						Version: "2.0.0",
-						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "stateful-server"); return _m }(),
+						Labels:  labels2,
 					},
 				}, true
 			case "core/redis":
+				labels3 := types.OrderedMap[string]{}
+				labels3.Set(types.ComponentTypeLabel, "resource")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:    "core/redis",
 						Version: "1.0.0",
-						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "resource"); return _m }(),
+						Labels:  labels3,
 					},
 				}, true
 			case "core/agent":
+				labels4 := types.OrderedMap[string]{}
+				labels4.Set(types.ComponentTypeLabel, "worker")
+				usesSchema2 := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema2.Set("delegates", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=worker"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:    "core/agent",
 						Version: "1.0.0",
-						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "worker"); return _m }(),
+						Labels:  labels4,
 					},
 					Spec: types.ComponentSpec{
-						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("delegates", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=worker"}); return _m }(),
+						UsesSchema: usesSchema2,
 					},
 				}, true
 			case "core/worker":
+				labels5 := types.OrderedMap[string]{}
+				labels5.Set(types.ComponentTypeLabel, "worker")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
 						Name:    "core/worker",
 						Version: "1.0.0",
-						Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "worker"); return _m }(),
+						Labels:  labels5,
 					},
 				}, true
 			default:
@@ -72,17 +87,21 @@ func integrationCatalog() resolver.CatalogLookup {
 		Feature: func(typeURI string) (types.Feature, bool) {
 			switch typeURI {
 			case "core/monitoring":
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("targets", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=server"})
 				return types.Feature{
 					Metadata: types.FeatureMetadata{Name: "core/monitoring", Version: "1.0.0"},
 					Spec: types.FeatureSpec{
-						UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("targets", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=server"}); return _m }(),
+						UsesSchema: usesSchema,
 					},
 				}, true
 			case "core/db-creds":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.FeatureKindLabel, types.FeatureKindSecret)
 				return types.Feature{
 					Metadata: types.FeatureMetadata{
 						Name:   "core/db-creds",
-						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.FeatureKindLabel, types.FeatureKindSecret); return _m }(),
+						Labels: labels,
 					},
 				}, true
 			default:
@@ -93,12 +112,14 @@ func integrationCatalog() resolver.CatalogLookup {
 }
 
 func buildResolveResult(agg *types.Aggregate) *resolver.ResolveResult {
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set("local", types.Boundary{Directory: "./output"})
 	return &resolver.ResolveResult{
 		Aggregate: agg,
 		Release: &types.Release{
 			Metadata: types.ReleaseMetadata{Name: "test-release", Version: "1.0.0", Environment: "local"},
 			Spec: types.ReleaseSpec{
-				Boundaries: func() types.OrderedMap[types.Boundary] { _m := types.OrderedMap[types.Boundary]{}; _m.Set("local", types.Boundary{Directory: "./output"}); return _m }(),
+				Boundaries: boundaries,
 			},
 		},
 		Manifest:      &types.Manifest{Metadata: types.ManifestMetadata{Version: "1.0.0"}},
@@ -135,11 +156,15 @@ func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.
 
 func TestPipeline_SimpleTopology(t *testing.T) {
 	t.Parallel()
-
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", []interface{}{"main-db"})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "simple-app", Version: "1.0.0"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"main-db"}); return _m }()}); _m.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -161,21 +186,15 @@ func TestPipeline_SimpleTopology(t *testing.T) {
 
 func TestPipeline_PolymorphicUses(t *testing.T) {
 	t.Parallel()
-
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", map[string]interface{}{"hr-db": map[string]interface{}{"target": "main-db", "inject": map[string]interface{}{"env": map[string]interface{}{"DB_URL": "host"}}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "poly-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api-server",
-					Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", map[string]interface{}{
-							"hr-db": map[string]interface{}{
-								"target": "main-db",
-								"inject": map[string]interface{}{
-									"env": map[string]interface{}{"DB_URL": "host"},
-								},
-							},
-						}); return _m }(),
-				}); _m.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -195,20 +214,29 @@ func TestPipeline_PolymorphicUses(t *testing.T) {
 
 func TestPipeline_SubAggregateFlattening(t *testing.T) {
 	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("child-db", types.ComponentInstance{Type: "core/database/postgres"})
+	exportedComponents := types.OrderedMap[string]{}
+	exportedComponents.Set("db", "child-db")
 
 	childAgg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "data-module"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("child-db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
-			ExportedComponents: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("db", "child-db"); return _m }(),
+			Components:         components,
+			ExportedComponents: exportedComponents,
 		},
 	}
-
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", []interface{}{"data-mod.child-db"})
+	components2 := types.OrderedMap[types.ComponentInstance]{}
+	components2.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	aggregates := types.OrderedMap[types.SubAggregate]{}
+	aggregates.Set("data-mod", types.SubAggregate{Type: "modules/data-layer"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "root-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"data-mod.child-db"}); return _m }()}); return _m }(),
-			Aggregates: func() types.OrderedMap[types.SubAggregate] { _m := types.OrderedMap[types.SubAggregate]{}; _m.Set("data-mod", types.SubAggregate{Type: "modules/data-layer"}); return _m }(),
+			Components: components2,
+			Aggregates: aggregates,
 		},
 	}
 
@@ -239,11 +267,20 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 
 func TestPipeline_CyclicEdges(t *testing.T) {
 	t.Parallel()
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("delegates", []interface{}{"agent-b"})
+	uses2 := types.OrderedMap[interface{}]{}
+	uses2.Set("delegates", []interface{}{"agent-a"})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("agent-a", types.ComponentInstance{Type: "core/agent", Uses: uses})
+	components.Set("agent-b", types.ComponentInstance{Type: "core/agent",
 
+		// Selector: delegates requires worker type — both agents are workers, should pass
+		Uses: uses2})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "cyclic-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("agent-a", types.ComponentInstance{Type: "core/agent", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("delegates", []interface{}{"agent-b"}); return _m }()}); _m.Set("agent-b", types.ComponentInstance{Type: "core/agent", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("delegates", []interface{}{"agent-a"}); return _m }()}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -252,7 +289,7 @@ func TestPipeline_CyclicEdges(t *testing.T) {
 	if len(graph.Spec.Edges) != 2 {
 		t.Fatalf("expected 2 edges (cyclic), got %d", len(graph.Spec.Edges))
 	}
-	// Selector: delegates requires worker type — both agents are workers, should pass
+
 	if len(analysis.Errors) != 0 {
 		t.Errorf("expected 0 errors (agents are workers), got %d: %s", len(analysis.Errors), analysis.Errors[0].Message)
 	}
@@ -264,23 +301,24 @@ func TestPipeline_CyclicEdges(t *testing.T) {
 
 func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 	t.Parallel()
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("targets", []interface{}{"api"})
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("mon", types.FeatureInstance{Type: "core/monitoring",
 
+		// The feature uses should create an edge with OriginFeature
+		Uses: uses})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "feat-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api-server",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("mon", types.FeatureInstance{
-							Type: "core/monitoring",
-							Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("targets", []interface{}{"api"}); return _m }(),
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
 	graph, _ := runPipeline(t, agg)
 
-	// The feature uses should create an edge with OriginFeature
 	found := false
 	for _, e := range graph.Spec.Edges {
 		if e.OriginFeature == "core/monitoring" {
@@ -294,21 +332,31 @@ func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 
 func TestPipeline_FeatureNormalization(t *testing.T) {
 	t.Parallel()
+	values := types.OrderedMap[interface{}]{}
+	values.Set("level", "warn")
+	values2 := types.OrderedMap[interface{}]{}
+	values2.Set("path", "/secret")
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("mon", types.FeatureInstance{Type: "core/monitoring",
 
+		// Feature should be in feature_values_mapping
+		Values: values})
+	secrets := types.OrderedMap[types.SecretInstance]{}
+	secrets.Set("creds", types.SecretInstance{Type: "core/db-creds", Values: values2})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features, Secrets:
+
+	// Secret should be in secrets (credential partition)
+	secrets})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "feat-norm-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api-server",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("mon", types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("level", "warn"); return _m }()}); return _m }(),
-					Secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("creds", types.SecretInstance{Type: "core/db-creds", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("path", "/secret"); return _m }()}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
 	graph, _ := runPipeline(t, agg)
 
-	// Feature should be in feature_values_mapping
 	fvm, ok := graph.Spec.FeatureValuesMapping.Get("api")
 	if !ok || fvm.Len() == 0 {
 		t.Fatal("expected feature_values_mapping for api")
@@ -318,7 +366,6 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 		t.Errorf("feature type: %q", monEntry.Type)
 	}
 
-	// Secret should be in secrets (credential partition)
 	sec, ok := graph.Spec.Secrets.Get("api")
 	if !ok || sec.Len() == 0 {
 		t.Fatal("expected secrets for api")
@@ -340,11 +387,15 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 
 func TestPipeline_SelectorViolation(t *testing.T) {
 	t.Parallel()
-
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", []interface{}{"cache"})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	components.Set("cache", types.ComponentInstance{Type: "core/redis"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "bad-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"cache"}); return _m }()}); _m.Set("cache", types.ComponentInstance{Type: "core/redis"}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -361,14 +412,16 @@ func TestPipeline_SelectorViolation(t *testing.T) {
 
 func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 	t.Parallel()
-
+	values := types.OrderedMap[interface{}]{}
+	values.Set("x", 1)
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("feat", types.FeatureInstance{Type: "type-a", Values: values})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "mismatch-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("api", types.ComponentInstance{
-					Type: "core/server/api-server",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("feat", types.FeatureInstance{Type: "type-a", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("x", 1); return _m }()}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -400,11 +453,21 @@ func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 
 func TestPipeline_DeterministicOutput(t *testing.T) {
 	t.Parallel()
-
+	uses := types.OrderedMap[interface{}]{}
+	uses.Set("databases", []interface{}{"db"})
+	uses2 := types.OrderedMap[interface{}]{}
+	uses2.Set("databases", []interface{}{"db"})
+	uses3 := types.OrderedMap[interface{}]{}
+	uses3.Set("databases", []interface{}{"db"})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("z-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	components.Set("a-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses2})
+	components.Set("m-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses3})
+	components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "det-app"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("z-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"db"}); return _m }()}); _m.Set("a-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"db"}); return _m }()}); _m.Set("m-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("databases", []interface{}{"db"}); return _m }()}); _m.Set("db", types.ComponentInstance{Type: "core/database/postgres"}); return _m }(),
+			Components: components,
 		},
 	}
 

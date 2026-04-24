@@ -110,10 +110,14 @@ func TestHelmEngine_Render_ValuesImageEnvironmentAndInjectedEnv(t *testing.T) {
 }
 
 func TestHelmEngine_Render_InvalidValuesMapping(t *testing.T) {
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("bad", types.IRNode{Labels: types.OrderedMap[string]{}, Component: "c/bad", ResolvedVersion: "1.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set("bad", json.RawMessage(`not-json`))
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("bad", types.IRNode{Labels: types.OrderedMap[string]{}, Component: "c/bad", ResolvedVersion: "1.0.0"}); return _m }(),
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set("bad", json.RawMessage(`not-json`)); return _m }(),
+			Nodes:         nodes,
+			ValuesMapping: valuesMapping,
 		},
 	}
 	_, err := (&HelmEngine{}).Render(context.Background(), graph, &types.Release{Spec: types.ReleaseSpec{Aggregate: "x", Boundaries: types.OrderedMap[types.Boundary]{}}}, "")
@@ -128,14 +132,17 @@ func minimalGraph(t *testing.T, id, ontologyType string, values map[string]inter
 	if err != nil {
 		t.Fatal(err)
 	}
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, ontologyType)
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set(id, types.IRNode{Labels: labels, Component: "c/" + id, ResolvedVersion: "1.0.0"})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set(id, raw)
 	return &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set(id, types.IRNode{
-					Labels:          func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, ontologyType); return _m }(),
-					Component:       "c/" + id,
-					ResolvedVersion: "1.0.0",
-				}); return _m }(),
-			ValuesMapping: func() types.OrderedMap[json.RawMessage] { _m := types.OrderedMap[json.RawMessage]{}; _m.Set(id, raw); return _m }(),
+			Nodes: nodes,
+
+			ValuesMapping: valuesMapping,
 		},
 	}
 }

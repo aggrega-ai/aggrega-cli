@@ -28,31 +28,40 @@ func TestResolveComponentExtends_NoExtends(t *testing.T) {
 
 func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	labels.Set("tier", "base")
+	usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{
 			Name:    "core/server/base",
 			Version: "1.0.0",
-			Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.ComponentTypeLabel, "server"); _m.Set("tier", "base"); return _m }(),
+			Labels:  labels,
 		},
 		Spec: types.ComponentSpec{
 			SecretNames: []string{"root_password"},
 			Inject:      []string{"env"},
-			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); return _m }(),
-			CueSchema: `values: { port?: int & >=1024 }`,
+			UsesSchema:  usesSchema,
+			CueSchema:   `values: { port?: int & >=1024 }`,
 		},
 	}
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set("tier", "prod")
+	usesSchema2 := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema2.Set("caches", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=resource"})
 	child := types.Component{
 		Metadata: types.ComponentMetadata{
 			Name:    "core/server/api",
 			Version: "1.0.0",
-			Labels:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("tier", "prod"); return _m }(), // overrides parent tier=base
+			Labels:  labels2, // overrides parent tier=base
 		},
 		Spec: types.ComponentSpec{
 			Extends:     "core/server/base",
 			SecretNames: []string{"api_token"},
 			Inject:      []string{"env", "file"},
-			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("caches", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=resource"}); return _m }(),
-			CueSchema: `values: { name: string }`,
+			UsesSchema:  usesSchema2,
+			CueSchema:   `values: { name: string }`,
 		},
 	}
 
@@ -112,17 +121,23 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 
 func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
 	t.Parallel()
+	secretsSchema := types.OrderedMap[types.SecretSlot]{}
+	secretsSchema.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}})
+	secretsSchema.Set("tls_ca", types.SecretSlot{Required: false})
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/base", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			SecretsSchema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}}); _m.Set("tls_ca", types.SecretSlot{Required: false}); return _m }(),
+			SecretsSchema: secretsSchema,
 		},
 	}
+	secretsSchema2 := types.OrderedMap[types.SecretSlot]{}
+	secretsSchema2.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}, Description: "strict"})
+	secretsSchema2.Set("api_token", types.SecretSlot{Required: true})
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			Extends: "core/db/base",
-			SecretsSchema: func() types.OrderedMap[types.SecretSlot] { _m := types.OrderedMap[types.SecretSlot]{}; _m.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}, Description: "strict"}); _m.Set("api_token", types.SecretSlot{Required: true}); return _m }(),
+			Extends:       "core/db/base",
+			SecretsSchema: secretsSchema2,
 		},
 	}
 	lookup := func(uri string) (types.Component, bool) {
@@ -149,17 +164,21 @@ func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
 
 func TestResolveComponentExtends_ChildOverridesUsesSchema(t *testing.T) {
 	t.Parallel()
+	usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=generic"})
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/base", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=generic"}); return _m }(),
+			UsesSchema: usesSchema,
 		},
 	}
+	usesSchema2 := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema2.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			Extends: "core/base",
-			UsesSchema: func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"}); return _m }(),
+			Extends:    "core/base",
+			UsesSchema: usesSchema2,
 		},
 	}
 	lookup := func(uri string) (types.Component, bool) {

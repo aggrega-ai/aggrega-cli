@@ -12,16 +12,21 @@ import (
 
 func TestExecutePhaseB_Simple(t *testing.T) {
 	t.Parallel()
-
+	env := types.OrderedMap[string]{}
+	env.Set("DB_URL", "db.svc.cluster.local:5432")
+	values2 := types.OrderedMap[interface{}]{}
+	values2.Set("port", 8080)
+	infra := types.OrderedMap[interface{}]{}
+	infra.Set("replicas", 3)
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			InstanceID: "api",
 			Inject: types.InjectPipe{
-				Env: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "db.svc.cluster.local:5432"); return _m }(),
+				Env: env,
 			},
 		},
-		Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("port", 8080); return _m }(),
-		Infra:  func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("replicas", 3); return _m }(),
+		Values: values2,
+		Infra:  infra,
 	}
 
 	recipe := &types.Recipe{
@@ -48,9 +53,10 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 
 func TestExecutePhaseB_NoValuesMapping(t *testing.T) {
 	t.Parallel()
-
+	values2 := types.OrderedMap[interface{}]{}
+	values2.Set("key", "value")
 	ctx := &types.TemplateContext{
-		Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("key", "value"); return _m }(),
+		Values: values2,
 	}
 
 	recipe := &types.Recipe{
@@ -118,11 +124,13 @@ func TestExecutePhaseB_InvalidJSON(t *testing.T) {
 
 func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 	t.Parallel()
+	env := types.OrderedMap[string]{}
+	env.Set("DB_URL", "db.svc:5432")
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			Inject: types.InjectPipe{
-				Env: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "db.svc:5432"); return _m }(),
+				Env: env,
 			},
 		},
 		Values: types.OrderedMap[interface{}]{},

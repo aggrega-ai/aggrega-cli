@@ -11,27 +11,29 @@ import (
 
 func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 	t.Parallel()
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", "db.namespace.svc.cluster.local")
+	env := types.OrderedMap[string]{}
+	env.Set("DB_URL", "original")
+	all := types.OrderedMap[string]{}
+	all.Set("DB_URL", "original")
+	uses := types.OrderedMap[types.EnrichedEdge]{}
+	uses.Set("my-db", types.EnrichedEdge{Target: "db", Provides: provides, Annotations: &types.AnnotationBuckets{Release: func() types.OrderedMap[string] {
+		m := types.OrderedMap[string]{}
+		m.Set("namespace", "payments")
+		return m
 
+	}()}})
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			InstanceID: "api",
 			Inject: types.InjectPipe{
-				Env:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "original"); return _m }(),
+				Env:  env,
 				File: types.OrderedMap[string]{},
 				Arg:  types.OrderedMap[string]{},
-				All:  func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("DB_URL", "original"); return _m }(),
+				All:  all,
 			},
-			Uses: func() types.OrderedMap[types.EnrichedEdge] { _m := types.OrderedMap[types.EnrichedEdge]{}; _m.Set("my-db", types.EnrichedEdge{
-					Target:   "db",
-					Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "db.namespace.svc.cluster.local"); return _m }(),
-					Annotations: &types.AnnotationBuckets{
-						Release: func() types.OrderedMap[string] {
-							m := types.OrderedMap[string]{}
-							m.Set("namespace", "payments")
-							return m
-						}(),
-					},
-				}); return _m }(),
+			Uses: uses,
 		},
 	}
 
@@ -66,12 +68,16 @@ func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 
 func TestExecutePhaseA_NoInjectMapping(t *testing.T) {
 	t.Parallel()
+	env := types.OrderedMap[string]{}
+	env.Set("X", "1")
+	all := types.OrderedMap[string]{}
+	all.Set("X", "1")
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			Inject: types.InjectPipe{
-				Env: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("X", "1"); return _m }(),
-				All: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("X", "1"); return _m }(),
+				Env: env,
+				All: all,
 			},
 		},
 	}
@@ -138,25 +144,37 @@ func TestExecutePhaseA_LastWins(t *testing.T) {
 
 func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 	t.Parallel()
+	locals :=
 
-	// Base Recipe locals (already evaluated by orchestrator preamble in real flow).
+		// Base Recipe locals (already evaluated by orchestrator preamble in real flow).
+		types.OrderedMap[string]{}
+	locals.Set("host", "db-base.svc")
+	locals.Set("port", "5432")
+	features := types.OrderedMap[types.TemplateFeature]{}
+	features.Set("mon", types.TemplateFeature{Type: "core/monitoring"})
+
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
 			Inject: types.InjectPipe{Env: types.OrderedMap[string]{}, File: types.OrderedMap[string]{}, Arg: types.OrderedMap[string]{}, All: types.OrderedMap[string]{}},
 		},
-		Locals:   func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "db-base.svc"); _m.Set("port", "5432"); return _m }(),
-		Features: func() types.OrderedMap[types.TemplateFeature] { _m := types.OrderedMap[types.TemplateFeature]{}; _m.Set("mon", types.TemplateFeature{Type: "core/monitoring"}); return _m }(),
+		Locals:   locals,
+		Features: features,
 	}
+	locals2 :=
 
-	// FR with own locals — "host" collides (FR wins), "scrape_path" is new.
-	// injectMapping references .locals to prove the merged map is visible.
+		// FR with own locals — "host" collides (FR wins), "scrape_path" is new.
+		// injectMapping references .locals to prove the merged map is visible.
+		types.OrderedMap[string]{}
+	locals2.Set("host", "db-fr.svc")
+	locals2.Set("scrape_path", "/metrics")
+
 	refs := []FeatureRecipeRef{
 		{
 			InstanceName: "mon",
 			FeatureRecipe: &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
 				Spec: types.FeatureRecipeSpec{
-					Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", "db-fr.svc"); _m.Set("scrape_path", "/metrics"); return _m }(),
+					Locals:        locals2,
 					InjectMapping: `{"env": {"SCRAPE_HOST": "{{ .locals.host }}", "SCRAPE_PATH": "{{ .locals.scrape_path }}"}}`,
 				},
 			},

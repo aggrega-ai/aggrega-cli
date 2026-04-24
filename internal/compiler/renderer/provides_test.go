@@ -51,19 +51,26 @@ func TestCheckProvidesSelfContainment_StringLiteralOK(t *testing.T) {
 
 func TestEvaluateAllProvides_Simple(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("db", types.IRNode{Component: "core/database/postgres"}); return _m }(),
+			Nodes: nodes,
 		},
 	}
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", `{{ .context.instance_id }}.svc.cluster.local`)
+	provides.Set("service_port", `5432`)
+	locals := types.OrderedMap[string]{}
+	locals.Set("primary_compute", "postgres")
 
 	recipes := map[string]*types.Recipe{
 		"db": {
 			Metadata: types.RecipeMetadata{Name: "postgres-recipe"},
 			Spec: types.RecipeSpec{
-				Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id }}.svc.cluster.local`); _m.Set("service_port", `5432`); return _m }(),
-				Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("primary_compute", "postgres"); return _m }(),
+				Provides: provides,
+				Locals:   locals,
 			},
 		},
 	}
@@ -83,18 +90,22 @@ func TestEvaluateAllProvides_Simple(t *testing.T) {
 
 func TestEvaluateAllProvides_SelfContainmentViolation(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 		},
 	}
+	provides := types.OrderedMap[string]{}
+	provides.Set("url", `{{ .context.inject.env.TARGET }}`)
 
 	recipes := map[string]*types.Recipe{
 		"api": {
 			Metadata: types.RecipeMetadata{Name: "bad-recipe"},
 			Spec: types.RecipeSpec{
-				Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("url", `{{ .context.inject.env.TARGET }}`); return _m }(),
+				Provides: provides,
 			},
 		},
 	}
@@ -110,10 +121,12 @@ func TestEvaluateAllProvides_SelfContainmentViolation(t *testing.T) {
 
 func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 		},
 	}
 
@@ -129,18 +142,22 @@ func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 
 func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("api", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 		},
 	}
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", `{{ .context.instance_id | upper }}`)
 
 	recipes := map[string]*types.Recipe{
 		"api": {
 			Metadata: types.RecipeMetadata{Name: "sprig-recipe"},
 			Spec: types.RecipeSpec{
-				Provides: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("host", `{{ .context.instance_id | upper }}`); return _m }(),
+				Provides: provides,
 			},
 		},
 	}

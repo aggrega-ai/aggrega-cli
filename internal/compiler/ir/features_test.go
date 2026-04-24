@@ -24,10 +24,12 @@ func featureCatalog() resolver.CatalogLookup {
 					Metadata: types.FeatureMetadata{Name: "core/monitoring", Version: "1.0.0"},
 				}, true
 			case "core/db-creds":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.FeatureKindLabel, types.FeatureKindSecret)
 				return types.Feature{
 					Metadata: types.FeatureMetadata{
 						Name:   "core/db-creds",
-						Labels: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set(types.FeatureKindLabel, types.FeatureKindSecret); return _m }(),
+						Labels: labels,
 					},
 				}, true
 			default:
@@ -39,14 +41,15 @@ func featureCatalog() resolver.CatalogLookup {
 
 func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 	t.Parallel()
-
+	values := types.OrderedMap[interface{}]{}
+	values.Set("enabled", true)
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
 			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
-				{InstanceName: "monitoring", Feature: types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("enabled", true); return _m }()}},
+				{InstanceName: "monitoring", Feature: types.FeatureInstance{Type: "core/monitoring", Values: values}},
 			},
 		},
 	}
@@ -76,14 +79,15 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 
 func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	t.Parallel()
-
+	values := types.OrderedMap[interface{}]{}
+	values.Set("vault_path", "/secret/db")
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
 			"api": {InstanceID: "api"},
 		},
 		SecretAttachments: map[string][]topology.SecretAttachment{
 			"api": {
-				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("vault_path", "/secret/db"); return _m }()}},
+				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: values}},
 			},
 		},
 	}
@@ -136,15 +140,19 @@ func TestCollectNodeFeatures_TypeMismatchError(t *testing.T) {
 
 func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 	t.Parallel()
-
+	values := types.OrderedMap[interface{}]{}
+	values.Set("level", "warn")
+	values.Set("port", 9090)
+	values2 := types.OrderedMap[interface{}]{}
+	values2.Set("level", "info")
 	topoResult := &topology.TopologyResult{
 		Nodes: map[string]*topology.TopologyNode{
 			"api": {InstanceID: "api"},
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
-				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("level", "warn"); _m.Set("port", 9090); return _m }()}},
-				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("level", "info"); return _m }()}},
+				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: values}},
+				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: values2}},
 			},
 		},
 	}

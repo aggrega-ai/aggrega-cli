@@ -11,10 +11,14 @@ import (
 
 func TestCalculatePaths_LinearChain(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("b", types.IRNode{})
+	nodes.Set("c", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); _m.Set("c", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 				{Source: "b", Target: "c"},
@@ -40,10 +44,13 @@ func TestCalculatePaths_LinearChain(t *testing.T) {
 
 func TestCalculatePaths_CyclicGraph(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("b", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 				{Source: "b", Target: "a"},
@@ -66,11 +73,18 @@ func TestCalculatePaths_CyclicGraph(t *testing.T) {
 
 func TestCalculatePaths_Diamond(t *testing.T) {
 	t.Parallel()
+	nodes :=
 
-	// a → b, a → c, b → d, c → d
+		// a → b, a → c, b → d, c → d
+		types.OrderedMap[types.IRNode]{}
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("b", types.IRNode{})
+	nodes.Set("c", types.IRNode{})
+	nodes.Set("d", types.IRNode{})
+
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); _m.Set("c", types.IRNode{}); _m.Set("d", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 				{Source: "a", Target: "c"},
@@ -91,10 +105,13 @@ func TestCalculatePaths_Diamond(t *testing.T) {
 
 func TestCalculatePaths_NoEdges(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("b", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: nil,
 		},
 	}
@@ -107,10 +124,13 @@ func TestCalculatePaths_NoEdges(t *testing.T) {
 
 func TestCalculatePaths_AttachedFeatures(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("b", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 			},
@@ -142,10 +162,14 @@ func TestCalculatePaths_AttachedFeatures(t *testing.T) {
 
 func TestCalculatePaths_DeterministicOrder(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("z", types.IRNode{})
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("m", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("z", types.IRNode{}); _m.Set("a", types.IRNode{}); _m.Set("m", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "z", Target: "a"},
 				{Source: "m", Target: "a"},
@@ -175,10 +199,13 @@ func TestCalculatePaths_DeterministicOrder(t *testing.T) {
 
 func TestCalculatePaths_PathIDs(t *testing.T) {
 	t.Parallel()
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("a", types.IRNode{})
+	nodes.Set("b", types.IRNode{})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
-			Nodes: func() types.OrderedMap[types.IRNode] { _m := types.OrderedMap[types.IRNode]{}; _m.Set("a", types.IRNode{}); _m.Set("b", types.IRNode{}); return _m }(),
+			Nodes: nodes,
 			Edges: []types.IREdge{
 				{Source: "a", Target: "b"},
 			},

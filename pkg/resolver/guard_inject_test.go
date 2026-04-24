@@ -32,20 +32,16 @@ func injectTargetCatalog() CatalogLookup {
 
 func TestGuardInjectKeys_TypoFromKey(t *testing.T) {
 	t.Parallel()
-	// Feature attached to the db component has inject.env.DB_HOST from "hots" — typo for "host".
+	features :=
+		// Feature attached to the db component has inject.env.DB_HOST from "hots" — typo for "host".
+		types.OrderedMap[types.FeatureInstance]{}
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_HOST": "hots"}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "typo-test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("telemetry", types.FeatureInstance{
-							Inject: &types.InjectBlock{
-								Env: map[string]interface{}{
-									"DB_HOST": "hots", 
-								},
-							},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 
@@ -70,17 +66,14 @@ func TestGuardInjectKeys_TypoFromKey(t *testing.T) {
 
 func TestGuardInjectKeys_ValidFromKey(t *testing.T) {
 	t.Parallel()
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_HOST": "host", "DB_PORT": "port"}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "ok-test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("telemetry", types.FeatureInstance{
-							Inject: &types.InjectBlock{
-								Env: map[string]interface{}{"DB_HOST": "host", "DB_PORT": "port"},
-							},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	if errs := guardInjectKeys(agg, injectTargetCatalog()); len(errs) != 0 {
@@ -90,20 +83,16 @@ func TestGuardInjectKeys_ValidFromKey(t *testing.T) {
 
 func TestGuardInjectKeys_VerboseForm(t *testing.T) {
 	t.Parallel()
-	// Verbose form: DB_URL has {from: "hots"} — typo through the verbose path.
+	features :=
+		// Verbose form: DB_URL has {from: "hots"} — typo through the verbose path.
+		types.OrderedMap[types.FeatureInstance]{}
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_URL": map[string]interface{}{"from": "hots"}}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "verbose-test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("telemetry", types.FeatureInstance{
-							Inject: &types.InjectBlock{
-								Env: map[string]interface{}{
-									"DB_URL": map[string]interface{}{"from": "hots"},
-								},
-							},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardInjectKeys(agg, injectTargetCatalog())
@@ -117,21 +106,17 @@ func TestGuardInjectKeys_VerboseForm(t *testing.T) {
 
 func TestGuardInjectKeys_VerboseLiteralSkipped(t *testing.T) {
 	t.Parallel()
-	// Verbose literal: only "value" set (no "from") — this is a literal inject,
-	// not a provides reference. Validator should skip it.
+	features :=
+		// Verbose literal: only "value" set (no "from") — this is a literal inject,
+		// not a provides reference. Validator should skip it.
+		types.OrderedMap[types.FeatureInstance]{}
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_TAG": map[string]interface{}{"value": "production"}}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "literal-test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("telemetry", types.FeatureInstance{
-							Inject: &types.InjectBlock{
-								Env: map[string]interface{}{
-									"DB_TAG": map[string]interface{}{"value": "production"},
-								},
-							},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	if errs := guardInjectKeys(agg, injectTargetCatalog()); len(errs) != 0 {
@@ -148,12 +133,13 @@ func TestGuardInjectKeys_NoCueSchema(t *testing.T) {
 		},
 		Feature: func(typeURI string) (types.Feature, bool) { return types.Feature{}, false },
 	}
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"K": "anything"}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"K": "anything"}}}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	if errs := guardInjectKeys(agg, catalog); len(errs) != 0 {
@@ -172,12 +158,13 @@ func TestGuardInjectKeys_NoProvidesPillar(t *testing.T) {
 		},
 		Feature: func(typeURI string) (types.Feature, bool) { return types.Feature{}, false },
 	}
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"K": "anything"}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Features: func() types.OrderedMap[types.FeatureInstance] { _m := types.OrderedMap[types.FeatureInstance]{}; _m.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"K": "anything"}}}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	if errs := guardInjectKeys(agg, catalog); len(errs) != 0 {
@@ -187,16 +174,16 @@ func TestGuardInjectKeys_NoProvidesPillar(t *testing.T) {
 
 func TestGuardInjectKeys_SecretInjectAlsoValidated(t *testing.T) {
 	t.Parallel()
-	// Same typo via a secret inject block instead of a feature.
+	secrets :=
+		// Same typo via a secret inject block instead of a feature.
+		types.OrderedMap[types.SecretInstance]{}
+	secrets.Set("root_password", types.SecretInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"PW": "hots"}}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("db", types.ComponentInstance{Type: "core/db", Secrets: secrets})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "secret-test"},
 		Spec: types.AggregateSpec{
-			Components: func() types.OrderedMap[types.ComponentInstance] { _m := types.OrderedMap[types.ComponentInstance]{}; _m.Set("db", types.ComponentInstance{
-					Type: "core/db",
-					Secrets: func() types.OrderedMap[types.SecretInstance] { _m := types.OrderedMap[types.SecretInstance]{}; _m.Set("root_password", types.SecretInstance{
-							Inject: &types.InjectBlock{Env: map[string]interface{}{"PW": "hots"}},
-						}); return _m }(),
-				}); return _m }(),
+			Components: components,
 		},
 	}
 	errs := guardInjectKeys(agg, injectTargetCatalog())

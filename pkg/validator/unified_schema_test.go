@@ -13,7 +13,8 @@ import (
 func TestBuildUnifiedSchema_BothParts(t *testing.T) {
 	t.Parallel()
 	user := `values: { port: int }`
-	usesSchema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: `component.aggrega.ai/type=stateful-server`, Inject: []string{"env"}}); return _m }()
+	usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema.Set("databases", types.UsesSchemaEntry{Selector: `component.aggrega.ai/type=stateful-server`, Inject: []string{"env"}})
 	unified := BuildUnifiedSchema(user, usesSchema)
 	if !strings.Contains(unified, "values: { port: int }") {
 		t.Errorf("user schema missing: %s", unified)
@@ -40,7 +41,9 @@ func TestBuildUnifiedSchema_EmptyUses(t *testing.T) {
 
 func TestBuildUnifiedSchema_EmptyUser(t *testing.T) {
 	t.Parallel()
-	usesSchema := func() types.OrderedMap[types.UsesSchemaEntry] { _m := types.OrderedMap[types.UsesSchemaEntry]{}; _m.Set("databases", types.UsesSchemaEntry{Selector: "x"}); return _m }()
+	usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+	usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "x"})
+
 	unified := BuildUnifiedSchema("", usesSchema)
 	if !strings.Contains(unified, "uses:") {
 		t.Errorf("expected base only, got: %s", unified)

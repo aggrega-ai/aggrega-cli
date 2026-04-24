@@ -12,11 +12,14 @@ import (
 
 func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	t.Parallel()
+	locals := types.OrderedMap[string]{}
+	locals.Set("scrape_target", `{{ .provides.host }}:{{ .values.scrape_port }}`)
+	locals.Set("tier", `{{ .values.tier }}`)
 
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
 		Spec: types.FeatureRecipeSpec{
-			Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("scrape_target", `{{ .provides.host }}:{{ .values.scrape_port }}`); _m.Set("tier", `{{ .values.tier }}`); return _m }(),
+			Locals: locals,
 		},
 	}
 	// Feature-scoped values/infra (FR's own, not base Recipe's)
@@ -53,10 +56,12 @@ func TestEvaluateFeatureRecipeLocals_NilFR(t *testing.T) {
 
 func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 	t.Parallel()
+	locals := types.OrderedMap[string]{}
+	locals.Set("leak", `{{ .context.inject.env.DB_URL }}`)
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "ops/bad"},
 		Spec: types.FeatureRecipeSpec{
-			Locals: func() types.OrderedMap[string] { _m := types.OrderedMap[string]{}; _m.Set("leak", `{{ .context.inject.env.DB_URL }}`); return _m }(),
+			Locals: locals,
 		},
 	}
 	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[interface{}]{}, types.OrderedMap[interface{}]{}, types.OrderedMap[string]{})
@@ -77,8 +82,11 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 			ValuesMapping: `{"image": "prom/mon:{{ .values.tag }}", "port": {{ .values.port }}}`,
 		},
 	}
+	values2 := types.OrderedMap[interface{}]{}
+	values2.Set("tag", "v1")
+	values2.Set("port", float64(9090))
 	ctx := &types.TemplateContext{
-		Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("tag", "v1"); _m.Set("port", float64(9090)); return _m }(),
+		Values: values2,
 	}
 
 	values, err := ExecutePhaseBForFeature(ctx, fr)
@@ -107,7 +115,9 @@ func TestExecutePhaseBForFeature_NilFR(t *testing.T) {
 func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "ops/x"}}
-	ctx := &types.TemplateContext{Values: func() types.OrderedMap[interface{}] { _m := types.OrderedMap[interface{}]{}; _m.Set("a", float64(1)); return _m }()}
+	values := types.OrderedMap[interface{}]{}
+	values.Set("a", float64(1))
+	ctx := &types.TemplateContext{Values: values}
 	got, err := ExecutePhaseBForFeature(ctx, fr)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
