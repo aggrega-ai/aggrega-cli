@@ -4,60 +4,23 @@
 package renderer
 
 import (
-	"fmt"
-	"os"
-
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// ExecutePhaseB runs Phase B (Base Rendering) for one node.
-// It evaluates the Recipe's valuesMapping (or valuesMappingFile) Go template
-// and returns the values dictionary as map[string]interface{}.
-// The provider engine consumes this dictionary to render K8s manifests.
+// ExecutePhaseB is the legacy entry point for Phase B's valuesMapping
+// evaluation. Production renders no longer call it — the orchestrator
+// runs the sub-pass pipeline (phaseB0 → Phase A → phaseB1 → ...) directly
+// per WI04.
+//
+// Retained for the dedicated phase B unit tests in phase_b_test.go and
+// number_shape_test.go that exercise yaml-decode edge cases (block
+// scalars, numeric-shape drift between yaml.v3 and encoding/json,
+// JSON-shape parity). The body delegates to phaseB1 so behaviour and
+// edge cases stay aligned with the production sub-pass.
 func ExecutePhaseB(ctx *types.TemplateContext, recipe *types.Recipe) (map[string]interface{}, error) {
-	if recipe == nil {
-		return map[string]interface{}{}, nil
+	state := &PhaseBState{Recipe: recipe}
+	if err := phaseB1(ctx, state); err != nil {
+		return nil, err
 	}
-
-	// Check for unsupported Jsonnet
-	if recipe.Spec.ValuesMappingJsonnet != "" {
-		return nil, fmt.Errorf("%w: recipe %q uses valuesMappingJsonnet", ErrJsonnetNotSupported, recipe.Metadata.Name)
-	}
-
-	// Determine template text
-	tmplText := recipe.Spec.ValuesMapping
-	if tmplText == "" && recipe.Spec.ValuesMappingFile != "" {
-		data, err := os.ReadFile(recipe.Spec.ValuesMappingFile)
-		if err != nil {
-			return nil, fmt.Errorf("Phase B: recipe %q valuesMappingFile %q: %w",
-				recipe.Metadata.Name, recipe.Spec.ValuesMappingFile, err)
-		}
-		tmplText = string(data)
-	}
-
-	if tmplText == "" {
-		// No valuesMapping — return values from context as-is (flattened for engine)
-		return flattenOrderedMap(ctx.Values), nil
-	}
-
-	// Evaluate template
-	output, err := EvalTemplate(
-		fmt.Sprintf("valuesMapping[%s]", recipe.Metadata.Name),
-		tmplText,
-		ctx,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("Phase B: recipe %q valuesMapping: %w", recipe.Metadata.Name, err)
-	}
-
-	// Template output is YAML per the contract (yaml.v3 reads valid JSON
-	// natively; new Recipes can use block scalars, comments, etc.).
-	var values map[string]interface{}
-	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return nil, fmt.Errorf("Phase B: recipe %q valuesMapping output is not valid YAML: %w",
-			recipe.Metadata.Name, err)
-	}
-
-	return values, nil
+	return state.ResolvedValues, nil
 }

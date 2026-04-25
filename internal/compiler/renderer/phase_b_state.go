@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package renderer
+
+import "github.com/cognitio/aggrega-cli/pkg/types"
+
+// PhaseBState is the accumulator threaded through Phase B sub-passes B.0
+// through B.6. It carries the parsed Recipe (read by every sub-pass), the
+// rendered values dictionary (B.1 produces; engines consume), the parsed
+// Workload (B.2 produces; B.4 hands to the synthesizer), the accumulated
+// emitted files (B.1, B.3, B.4 contribute), and the high-water-mark phase
+// indicator that the context-availability matrix tests assert against.
+//
+// The state is owned by the orchestrator's per-node loop; sub-pass functions
+// receive it by pointer and mutate it in place.
+type PhaseBState struct {
+	// Recipe is the per-node Recipe. Read at every sub-pass entry.
+	Recipe *types.Recipe
+
+	// NodeID is the flattened instance ID (e.g., "billing.api"). Threaded
+	// into error messages and used by the eventual collision-detector.
+	NodeID string
+
+	// BoundaryPath is the boundary the node belongs to. Used by the
+	// orchestrator's per-boundary file collection; not consumed by Phase B
+	// sub-passes today but kept for forward compatibility (B.5 may need
+	// it once cross-boundary detection lands in a future intent).
+	BoundaryPath string
+
+	// RecipePath / RecipeName / RecipeVersion are operator-facing
+	// identifiers threaded into validator errors (Workload validation,
+	// secretsSchema check, rule 7 collision detection).
+	RecipePath    string
+	RecipeName    string
+	RecipeVersion string
+
+	// ResolvedValues is the values dictionary B.1 produces (or, for
+	// sourceless Recipes today, the values context flattened into a plain
+	// map). Engines consume this via engine.Render. Populated at B.1; nil
+	// before then.
+	ResolvedValues map[string]interface{}
+
+	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal
+	// + validator.ValidateWorkload + validator.ValidateWorkloadSecrets all
+	// succeed. nil before B.2 and for Recipes that don't declare
+	// workload: / workloadFrom:.
+	ParsedWorkload *types.Workload
+
+	// EmittedFiles accumulates the per-input-kind file contributions across
+	// B.1 (sourced), B.3 (artifacts; stub today), and B.4 (workload
+	// synthesis). Order is preserved per the contract; B.5 detects cross-origin
+	// collisions over this list.
+	EmittedFiles []EmittedFile
+
+	// PhaseReached records the last completed sub-pass index (0..6).
+	//
+	// Test instrumentation only — production sub-pass logic does NOT branch
+	// on this value. Sub-passes write it on completion; only the context-
+	// availability matrix tests (phase_b_subpasses_test.go) read it.
+	// Future contributors: do not start gating production behavior on
+	// PhaseReached. If a real pipeline coordinator needs phase-aware
+	// routing, model it as a separate field with explicit pipeline
+	// semantics.
+	PhaseReached int
+}
+
+// NewPhaseBState constructs a fresh accumulator for one node's Phase B run.
+// Operator-facing identifiers (RecipePath / RecipeName / RecipeVersion) and
+// node identity are populated up-front; the per-sub-pass mutable fields
+// (ResolvedValues, ParsedWorkload, EmittedFiles, PhaseReached) start at
+// their zero values.
+func NewPhaseBState(recipe *types.Recipe, nodeID, boundaryPath, recipePath string) *PhaseBState {
+	state := &PhaseBState{
+		Recipe:       recipe,
+		NodeID:       nodeID,
+		BoundaryPath: boundaryPath,
+		RecipePath:   recipePath,
+		PhaseReached: -1, // -1 = no sub-pass has completed yet
+	}
+	if recipe != nil {
+		state.RecipeName = recipe.Metadata.Name
+		state.RecipeVersion = recipe.Metadata.Version
+	}
+	return state
+}

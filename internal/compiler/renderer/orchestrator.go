@@ -106,42 +106,36 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}
 
-		// Phase B preamble: evaluate Recipe .locals (self-contained; sees values/infra/provides).
-		resolvedLocals, err := EvaluateRecipeLocals(
-			recipe, nodeID, tmplCtx.Values, tmplCtx.Infra, allProvides[nodeID],
-		)
-		if err != nil {
+		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
+		// sub-pass accumulators (resolved values, parsed workload, emitted
+		// files). Recipe path is empty here today — the catalog loader does
+		// not retain the on-disk path on the parsed Recipe; validator errors
+		// surfacing through the sub-passes show "" for the path. Future
+		// improvement: thread the path through the catalog resolver.
+		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
+
+		// Phase B.0 — locals + source-as-template eval; populates
+		// ctx.Locals + ctx.Source. May replace state.Recipe with a local
+		// copy whose Spec.Source carries the resolved value.
+		if err := phaseB0(tmplCtx, state, allProvides[nodeID]); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
-		tmplCtx.Locals = resolvedLocals
+		recipe = state.Recipe // pick up the local copy with resolved source
 
-		// Evaluate Recipe.Source as a template (strings or structured) so authors
-		// can parameterise chart version / path / registry per boundary. Sees the
-		// same self-contained context as locals (values/infra/provides only).
-		// Copy the Recipe locally — never mutate the catalog's version.
-		if recipe != nil && recipe.Spec.Source != nil {
-			resolvedSource, err := EvaluateRecipeSource(
-				recipe.Spec.Source, nodeID, tmplCtx.Values, tmplCtx.Infra, allProvides[nodeID],
-			)
-			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
-			}
-			localRecipe := *recipe
-			localRecipe.Spec.Source = resolvedSource
-			recipe = &localRecipe
-		}
-
-		// Phase A: injectMapping from FeatureRecipes in Onion Model order
+		// Phase A: injectMapping from FeatureRecipes in Onion Model order.
+		// Sits between B.0 and B.1 — chapter 16 sub-pass numbering scopes
+		// to Phase B; Phase A is a separate phase and stays at the
+		// orchestrator level.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
 		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
 
-		// Phase B: valuesMapping → values dictionary
-		values, err := ExecutePhaseB(tmplCtx, recipe)
-		if err != nil {
+		// Phase B.1 — valuesMapping → state.ResolvedValues.
+		if err := phaseB1(tmplCtx, state); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
+		values := state.ResolvedValues
 
 		// Ghost Infrastructure: compare valuesMapping template references against
 		// the keys actually in .values / .infra — unused keys emit a warning so
@@ -192,7 +186,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, fmt.Errorf("Step 5 node %q engine factory: %w", nodeID, err)
 		}
 
-		// Per-node engine render
+		// Per-node engine render — sourced/sourceless rendering. Output
+		// files are tagged EmitOriginSource and accumulated on the state
+		// for B.5's collision detector.
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		if recipe != nil {
 			nodeCtx.Source = recipe.Spec.Source
@@ -201,16 +197,64 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err != nil {
 			return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
 		}
+		// Tag with EmitOriginSource and accumulate (deterministic per LDR
+		// 0026: iterate the engine.Render output by sorted filename so
+		// state.EmittedFiles order is stable across runs).
+		sourceNames := make([]string, 0, len(files))
+		for p := range files {
+			sourceNames = append(sourceNames, p)
+		}
+		sort.Strings(sourceNames)
+		for _, p := range sourceNames {
+			state.EmittedFiles = append(state.EmittedFiles, EmittedFile{
+				Name:   p,
+				Origin: EmitOriginSource,
+				Body:   files[p],
+			})
+		}
 
-		// Group per boundary
+		// Phase B.2 — workload eval + ValidateWorkload + ValidateWorkloadSecrets.
+		// No-op for Recipes that don't declare workload: / workloadFrom:.
+		// Slots lookup deferred to inside the function body (passes empty
+		// when no workload is declared); future enhancement: thread the
+		// Component's secretsSchema from input.CatalogLookup when Workload
+		// recipes ship in WI05.
+		emptySlots := types.OrderedMap[types.SecretSlot]{}
+		if err := phaseB2(tmplCtx, state, emptySlots); err != nil {
+			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+		}
+
+		// Phase B.3 — artifacts STUB. Errors loud if Recipe declares
+		// artifacts: / artifactsFrom:; no-op otherwise.
+		if err := phaseB3(state); err != nil {
+			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+		}
+
+		// Phase B.4 — workload synthesizer dispatch. No-op for sourced/
+		// sourceless paths (state.ParsedWorkload is nil); active when WI05
+		// helm Workload synthesizer + Workload-bearing Recipes ship.
+		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
+			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+		}
+
+		// Phase B.5 — filename collision detection across input-kind
+		// origins (rule 7). With current fixtures only EmitOriginSource
+		// contributes; collisions surface when WI05 lands Workload
+		// synthesis or when artifacts evaluation lands.
+		if err := phaseB5(state); err != nil {
+			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+		}
+
+		// Group per boundary. Per-node file map is built from
+		// state.EmittedFiles (carries every input-kind contribution).
 		bp := node.BoundaryPath
 		if _, ok := boundaries[bp]; !ok {
 			boundaries[bp] = &pendingBoundary{files: map[string]map[string][]byte{}}
 			orderedBoundaries = append(orderedBoundaries, bp)
 		}
-		nodeFileMap := make(map[string][]byte, len(files))
-		for p, c := range files {
-			nodeFileMap[p] = c
+		nodeFileMap := make(map[string][]byte, len(state.EmittedFiles))
+		for _, f := range state.EmittedFiles {
+			nodeFileMap[f.Name] = f.Body
 		}
 		boundaries[bp].files[nodeID] = nodeFileMap
 		boundaries[bp].subCharts = append(boundaries[bp].subCharts, SubChartInfo{
@@ -225,116 +269,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 
-		// Phase B.5: FeatureRecipe Resource Generation.
-		// For each attached FR that carries source or valuesMapping (resource-generating,
-		// i.e. not inject-only), in Onion Model order: evaluate FR locals as templates,
-		// build feature-scoped context, evaluate FR valuesMapping, dispatch to the engine
-		// named by the FR's own provider, and append output files under features/<instance>/.
-		for _, ref := range featureRefs {
-			fr := ref.FeatureRecipe
-			if !isResourceGeneratingFR(fr) {
-				continue
-			}
-
-			feat, hasFeat := tmplCtx.Features.Get(ref.InstanceName)
-			frCtx := *tmplCtx // shallow copy; we'll overwrite Values/Infra/Locals
-			if hasFeat {
-				frCtx.Values = feat.Values
-				frCtx.Infra = feat.Infra
-			}
-
-			frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-				fr, ref.InstanceName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
-			)
-			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q feature %q: %w", nodeID, ref.InstanceName, err)
-			}
-			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
-
-			frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
-			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q feature %q: %w", nodeID, ref.InstanceName, err)
-			}
-
-			frEngine, err := engineFactory(fr.Spec.Provider)
-			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q feature %q engine factory: %w", nodeID, ref.InstanceName, err)
-			}
-
-			frNodeCtx := nodeCtx
-			if src, ok := fr.Spec.Source.(string); ok && src != "" {
-				frNodeCtx.Source = src
-			} else if fr.Spec.Source != nil {
-				frNodeCtx.Source = fr.Spec.Source
-			}
-
-			frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
-			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q feature %q render: %w", nodeID, ref.InstanceName, err)
-			}
-
-			prefix := "features/" + ref.InstanceName + "/"
-			for p, c := range frFiles {
-				boundaries[bp].files[nodeID][prefix+p] = c
-			}
+		// Phase B.6 — FeatureRecipe Resource Generation (both non-credential
+		// and credential FRs). Returns prefixed paths
+		// ("features/<instance>/<file>", "secrets/<name>/<file>") merged
+		// into the per-node files map alongside source/workload outputs.
+		secretsForNode, _ := graph.Spec.Secrets.Get(nodeID)
+		frFiles, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx)
+		if err != nil {
+			return nil, err
 		}
-
-		// Phase B.6: Credential FeatureRecipe rendering.
-		// Secrets live in graph.Spec.Secrets[nodeID] (IR partitions credential features
-		// here via guardCredentialPartition). For each secret, resolve the FR, build a
-		// feature-scoped context with .secret_name + top-level .inject populated, then
-		// render via the FR's own provider engine. Output files go under secrets/<name>/.
-		if secretsForNode, ok := graph.Spec.Secrets.Get(nodeID); ok && secretsForNode.Len() > 0 && recipeLookup.FeatureRecipe != nil {
-			secretNames := secretsForNode.Keys()
-			sort.Strings(secretNames)
-			for _, secretName := range secretNames {
-				entry, _ := secretsForNode.Get(secretName)
-				fr, found := recipeLookup.FeatureRecipe(entry.Type)
-				if !found {
-					continue
-				}
-
-				frCtx := *tmplCtx // shallow copy
-				frCtx.Values = entry.Values
-				frCtx.Infra = types.OrderedMap[interface{}]{}
-
-				frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-					fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
-				)
-				if err != nil {
-					return nil, fmt.Errorf("Step 5 node %q secret %q: %w", nodeID, secretName, err)
-				}
-				frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
-				frCtx.SecretName = secretName
-				frCtx.Inject = buildSecretInject(entry)
-
-				frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
-				if err != nil {
-					return nil, fmt.Errorf("Step 5 node %q secret %q: %w", nodeID, secretName, err)
-				}
-
-				frEngine, err := engineFactory(fr.Spec.Provider)
-				if err != nil {
-					return nil, fmt.Errorf("Step 5 node %q secret %q engine factory: %w", nodeID, secretName, err)
-				}
-
-				frNodeCtx := nodeCtx
-				if src, ok := fr.Spec.Source.(string); ok && src != "" {
-					frNodeCtx.Source = src
-				} else if fr.Spec.Source != nil {
-					frNodeCtx.Source = fr.Spec.Source
-				}
-
-				frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
-				if err != nil {
-					return nil, fmt.Errorf("Step 5 node %q secret %q render: %w", nodeID, secretName, err)
-				}
-
-				prefix := "secrets/" + secretName + "/"
-				for p, c := range frFiles {
-					boundaries[bp].files[nodeID][prefix+p] = c
-				}
-			}
+		for path, content := range frFiles {
+			boundaries[bp].files[nodeID][path] = content
 		}
 	}
 

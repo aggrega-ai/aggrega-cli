@@ -7,6 +7,13 @@ package types
 // Recipe and FeatureRecipe Go templates during Step 5. This is NOT persisted to disk;
 // it exists only in compiler memory during rendering.
 // Schema: template-context-v1alpha1.schema.json
+//
+// Phase B sub-pass field availability:
+//   - .source — populated at Phase B.0 from Recipe.Spec.Source after Go-template
+//     evaluation. nil before B.0; nil for Recipes that don't declare source.
+//   - .workload — populated at Phase B.2 after Workload yaml.Unmarshal +
+//     validator.ValidateWorkload + validator.ValidateWorkloadSecrets succeed.
+//     nil before B.2; nil for Recipes that don't declare workload / workloadFrom.
 type TemplateContext struct {
 	Context    ContextBlock                `json:"context" yaml:"context"`
 	Values     OrderedMap[interface{}]     `json:"values" yaml:"values"`
@@ -20,6 +27,8 @@ type TemplateContext struct {
 	Inject     *InjectPipe                 `json:"inject,omitempty" yaml:"inject,omitempty"`         // secret-specific inject
 	InjectRaw  interface{}                 `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
 	Steps      OrderedMap[StepOutput]      `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
+	Source     interface{}                 `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
+	Workload   *Workload                   `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
 }
 
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.
