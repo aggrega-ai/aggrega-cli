@@ -97,32 +97,12 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 	}
 }
 
-// rule1Strict gates strict enforcement of rule 1 (valuesMapping requires
-// source). It is `false` during the synthesis-foundations transition: the
-// earlier sourceless-helm code path at renderer/helm/sourceless.go still
-// ships, and shipping integration tests (TestExample22_HelmGenerative,
-// TestExample22_HelmChartGenerative, TestDeterministicCompilation_*) exercise
-// it via fixtures that declare valuesMapping without source. Flipping this
-// flag to true breaks those tests; the  replacement is the synthesized
-// input kind (workload:), which lands in WI05 (helm Workload synthesizer).
-//
-// TODO(synthesis-foundations WI05): activate strict rule 1 enforcement after
-// sourceless-helm fixtures migrate to the workload: input kind. Removal
-// contract: delete the rule1Strict declaration and the early-return guard
-// in validateRecipeRule1 below; the strict body activates verbatim. WI05's
-// acceptance carries this gate-removal as a tracked deliverable.
-var rule1Strict = false
-
 // validateRecipeRule1: valuesMapping requires source.
 //
 // Sourced-mode authoring presents a Source pointer alongside a values overlay.
 // A Recipe with valuesMapping but no Source has no chart/module to overlay
 // values onto.
 func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
-	if !rule1Strict {
-		// Transitional accept; see rule1Strict godoc.
-		return nil
-	}
 	hasValuesMapping := r.Spec.ValuesMapping != "" || r.Spec.ValuesMappingFile != ""
 	if !hasValuesMapping {
 		return nil
@@ -190,12 +170,6 @@ func validateRecipeRule3(r *types.Recipe, sourcePath string) error {
 //  3. Artifacts — artifacts OR artifactsFrom.
 //
 // A Recipe with none of these declared has no rendering surface.
-//
-// Rule 5 honours the rule1Strict gate: while rule 1 is non-strict, a Recipe
-// with `valuesMapping` (or valuesMappingFile) alone — the earlier sourceless
-// pattern — counts as a declared input kind. WI05's gate flip removes both
-// this branch and rule 1's early-return; rule 5 then enforces the strict
-// three-kinds enumeration verbatim.
 func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 	if !sourceIsEmpty(r.Spec.Source) {
 		return nil
@@ -204,11 +178,6 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		return nil
 	}
 	if r.Spec.Artifacts.Len() > 0 || len(r.Spec.ArtifactsFrom) > 0 {
-		return nil
-	}
-	if !rule1Strict && (r.Spec.ValuesMapping != "" || r.Spec.ValuesMappingFile != "") {
-		// Transitional: earlier sourceless-helm pattern (valuesMapping
-		// alone) is accepted while rule 1 is gated. Removed in WI05.
 		return nil
 	}
 	return &RecipeValidationError{

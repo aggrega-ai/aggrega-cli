@@ -11,9 +11,17 @@ spec:
     service_port: "5432"
   locals:
     primary_compute: postgres
-  valuesMapping: |
-    {
-      "image": "postgres:15",
-      "replicas": {{ .infra.replicas | default 1 }},
-      "ports": ["5432:5432"]
-    }
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      postgres:
+        image: postgres:15
+        ports:
+          db: 5432
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: 5432

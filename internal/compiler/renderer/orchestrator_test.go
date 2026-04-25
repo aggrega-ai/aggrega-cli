@@ -12,16 +12,20 @@ import (
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
+	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// testHelmChartFactory returns an EngineFactory that always returns the
-// helm-chart engine — used by tests that predate the per-node factory dispatch.
-func testHelmChartFactory() renderer.EngineFactory {
+// testHelmFactory returns an EngineFactory that always returns the helm
+// engine — used by tests that predate the per-node factory dispatch.
+// Renamed from testHelmChartFactory in the WI05b helm-chart sourceless
+// removal; the helm engine supports sourceless rendering for orchestration
+// unit tests' purposes (helm-chart's sourceless path was removed in the
+// schema transition).
+func testHelmFactory() renderer.EngineFactory {
 	return func(string) (renderer.Engine, error) {
-		return &helmchart.HelmEngine{}, nil
+		return &renderHelm.HelmEngine{}, nil
 	}
 }
 
@@ -87,7 +91,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 func TestRenderAll_SimpleNode(t *testing.T) {
 	t.Parallel()
 
-	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +155,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +189,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -223,7 +227,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 
 	var firstKeys []string
 	for i := 0; i < 10; i++ {
-		result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+		result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -291,35 +295,36 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	keys := fileKeys(result.Files)
 
-	// Base Recipe files live under charts/api/ (umbrella nesting)
+	// Base Recipe files live at the boundary root (flat-helm output;
+	// per-instance file naming is "<instance>-<kind>.yaml")
 	foundBaseDep := false
-	// FR files live under charts/api/features/mon/
+	// FR files live under features/<instance>/ off the boundary root
 	foundFRDep := false
 	frFiles := []string{}
 	for _, k := range keys {
-		if strings.Contains(k, "boundaries/local/default/charts/api/templates/deployment.yaml") &&
+		if strings.Contains(k, "boundaries/local/default/api-deployment.yaml") &&
 			!strings.Contains(k, "features/") {
 			foundBaseDep = true
 		}
-		if strings.Contains(k, "boundaries/local/default/charts/api/features/mon/") {
+		if strings.Contains(k, "boundaries/local/default/features/mon/") {
 			frFiles = append(frFiles, k)
-			if strings.Contains(k, "templates/deployment.yaml") {
+			if strings.Contains(k, "deployment.yaml") {
 				foundFRDep = true
 			}
 		}
 	}
 	if !foundBaseDep {
-		t.Errorf("missing base Recipe deployment under charts/api/, got: %v", keys)
+		t.Errorf("missing base Recipe deployment at boundary root, got: %v", keys)
 	}
 	if !foundFRDep {
-		t.Errorf("missing FR deployment under charts/api/features/mon/, got: %v", keys)
+		t.Errorf("missing FR deployment under features/mon/, got: %v", keys)
 	}
 	if len(frFiles) < 2 {
 		t.Errorf("expected multiple FR files under features/mon/, got %d: %v", len(frFiles), frFiles)
@@ -373,7 +378,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -438,16 +443,16 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Credential FR files live under secrets/<secretName>/ inside charts/<nodeID>/
+	// Credential FR files live under secrets/<secretName>/ off the boundary root
 	var secretDep string
 	for k := range result.Files {
-		if strings.Contains(k, "boundaries/local/default/charts/api/secrets/root_password/") &&
-			strings.Contains(k, "templates/deployment.yaml") {
+		if strings.Contains(k, "boundaries/local/default/secrets/root_password/") &&
+			strings.Contains(k, "deployment.yaml") {
 			secretDep = k
 			break
 		}
@@ -491,7 +496,7 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

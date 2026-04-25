@@ -156,9 +156,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 
-		// Sourceless baseSchema validation: if the Recipe has no source and a ProviderLookup
-		// is available, validate the valuesMapping output against the provider's baseSchema.
-		if recipe != nil && input.ProviderLookup != nil && isSourceless(recipe) {
+		// Sourceless baseSchema validation: if the Recipe has no source AND no
+		// workload AND a ProviderLookup is available, validate the
+		// valuesMapping output against the provider's baseSchema. The baseSchema
+		// check is earlier validation against the values-dict-driven sourceless
+		// path; it doesn't apply to the  workload-driven path (where the
+		// rendering input lives inside the parsed Workload, not in the values
+		// dict). Phase B.2 + ValidateWorkload + ValidateWorkloadSecrets cover
+		// the workload-mode validation surface.
+		hasWorkload := recipe != nil && (recipe.Spec.Workload != "" || recipe.Spec.WorkloadFrom != "")
+		if recipe != nil && input.ProviderLookup != nil && isSourceless(recipe) && !hasWorkload {
 			if err := ValidateValuesAgainstBaseSchema(
 				recipe.Spec.Provider,
 				input.ProviderLookup,
@@ -189,13 +196,31 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Per-node engine render — sourced/sourceless rendering. Output
 		// files are tagged EmitOriginSource and accumulated on the state
 		// for B.5's collision detector.
+		//
+		// Skipped when the Recipe declares workload: / workloadFrom: but no
+		// source: (workload-only path). The Workload synthesizer at Phase
+		// B.4 is the source of truth for that path; engine.Render's
+		// sourceless mode would produce a duplicate Deployment that rule
+		// 7 (filename collision) correctly rejects. Pure sourceless (no
+		// source, no workload) and sourced (source declared) paths still
+		// run engine.Render normally; both coexist with workload synthesis
+		// when a Recipe declares both source and workload.
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		if recipe != nil {
 			nodeCtx.Source = recipe.Spec.Source
 		}
-		files, err := engine.Render(ctx, values, nodeCtx)
-		if err != nil {
-			return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
+		sourceEmpty := nodeCtx.Source == nil
+		if s, ok := nodeCtx.Source.(string); ok && s == "" {
+			sourceEmpty = true
+		}
+		runEngineRender := !(hasWorkload && sourceEmpty)
+		var files map[string][]byte
+		if runEngineRender {
+			var err error
+			files, err = engine.Render(ctx, values, nodeCtx)
+			if err != nil {
+				return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
+			}
 		}
 		// Tag with EmitOriginSource and accumulate (deterministic per LDR
 		// 0026: iterate the engine.Render output by sorted filename so

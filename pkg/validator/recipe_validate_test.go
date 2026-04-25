@@ -41,7 +41,6 @@ func TestValidateRecipe_Rule1_ValuesMappingWithSource_Passes(t *testing.T) {
 
 func TestValidateRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
 	t.Parallel()
-	t.Skip("rule 1 strict enforcement is gated until WI05 (helm Workload synthesizer); see rule1Strict in recipe_validate.go")
 	r := newRecipe("helm")
 	r.Spec.ValuesMapping = `{"image": "demo:1.0"}` // no source
 	err := validator.ValidateRecipe(r, tFile)
@@ -52,7 +51,6 @@ func TestValidateRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
 
 func TestValidateRecipe_Rule1_ValuesMappingFileWithoutSource_Fails(t *testing.T) {
 	t.Parallel()
-	t.Skip("rule 1 strict enforcement is gated until WI05 (helm Workload synthesizer); see rule1Strict in recipe_validate.go")
 	r := newRecipe("helm")
 	r.Spec.ValuesMappingFile = "./values.tmpl" // no source
 	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeRule1) {

@@ -42,7 +42,6 @@ type variantMode int
 
 const (
 	modeHelmFlat variantMode = iota
-	modeHelmChartUmbrella
 )
 
 type example22Result struct {
@@ -199,13 +198,6 @@ func assertCommonProof(t *testing.T, res *example22Result, mode variantMode) {
 		if hasSubChart {
 			t.Errorf("[helm] unexpected charts/<instance_id>/ nesting; files: %v", sortedKeys(res.Files))
 		}
-	case modeHelmChartUmbrella:
-		if !hasBoundaryChart {
-			t.Errorf("[helm-chart] missing umbrella Chart.yaml at boundary root; files: %v", sortedKeys(res.Files))
-		}
-		if !hasSubChart {
-			t.Errorf("[helm-chart] missing charts/<instance_id>/ sub-chart nesting; files: %v", sortedKeys(res.Files))
-		}
 	}
 }
 
@@ -262,12 +254,6 @@ func TestExample22_HelmSourced(t *testing.T) {
 	t.Parallel()
 	res := runExample22(t, "helm-sourced")
 	assertCommonProof(t, res, modeHelmFlat)
-}
-
-func TestExample22_HelmChartGenerative(t *testing.T) {
-	t.Parallel()
-	res := runExample22(t, "helm-chart-generative")
-	assertCommonProof(t, res, modeHelmChartUmbrella)
 }
 
 func TestExample22_HelmChartSourced(t *testing.T) {

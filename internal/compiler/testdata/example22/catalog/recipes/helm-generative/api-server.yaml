@@ -11,12 +11,19 @@ spec:
     service_port: "{{ .values.port }}"
   locals:
     primary_compute: api
-  valuesMapping: |
-    {
-      "image": "api-server:latest",
-      "replicas": {{ .infra.replicas | default 1 }},
-      "ports": ["{{ .values.port }}:{{ .values.port }}"],
-      "environment": {
-        "PORT": "{{ .values.port }}"
-      }
-    }
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      api-server:
+        image: api-server:latest
+        variables:
+          PORT: "{{ .values.port }}"
+        ports:
+          web: {{ .values.port }}
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}

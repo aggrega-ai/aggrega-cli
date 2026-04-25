@@ -11,18 +11,25 @@ spec:
     service_port: "{{ .values.port }}"
   locals:
     primary_compute: web
-  valuesMapping: |
-    {
-      "image": "web-ui:latest",
-      "replicas": {{ .infra.replicas | default 1 }},
-      "ports": ["{{ .values.port }}:{{ .values.port }}"],
-      "environment": {
-        "PORT": "{{ .values.port }}"
-        {{- if .context.inject.env.API_HOST }},
-        "API_HOST": "{{ .context.inject.env.API_HOST }}"
-        {{- end }}
-        {{- if .context.inject.env.API_PORT }},
-        "API_PORT": "{{ .context.inject.env.API_PORT }}"
-        {{- end }}
-      }
-    }
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      web-ui:
+        image: web-ui:latest
+        variables:
+          PORT: "{{ .values.port }}"
+          {{- if .context.inject.env.API_HOST }}
+          API_HOST: "{{ .context.inject.env.API_HOST }}"
+          {{- end }}
+          {{- if .context.inject.env.API_PORT }}
+          API_PORT: "{{ .context.inject.env.API_PORT }}"
+          {{- end }}
+        ports:
+          web: {{ .values.port }}
+    services:
+      ui:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}

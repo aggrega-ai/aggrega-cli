@@ -47,7 +47,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err == nil {
 		t.Fatal("expected error for provides self-containment violation")
 	}
@@ -132,7 +132,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestIntegration_AggreraLabelsPresent(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmChartFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
