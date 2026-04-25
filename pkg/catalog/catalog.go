@@ -96,6 +96,13 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return fmt.Errorf("unmarshal Recipe %q: %w", path, err)
 		}
+		// Load-time shape rules (chapter 16): valuesMapping ⇔ source pairing,
+		// workload/workloadFrom mutex, at-least-one-input-kind, artifacts
+		// basename collision, eval-provider input-kind ban. Returns a
+		// CATALOG_ERROR-shaped error on violation.
+		if err := validator.ValidateRecipe(&e, path); err != nil {
+			return err
+		}
 		// Resolve relative string sources against the Recipe file's directory so
 		// co-located charts stay bundled with their Recipe (on disk today, OCI
 		// artifact tomorrow). Absolute paths and non-string sources pass through.

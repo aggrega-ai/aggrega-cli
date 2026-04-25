@@ -26,6 +26,22 @@ type RecipeMetadata struct {
 }
 
 // RecipeSpec defines the provider binding, source, mapping, and pipeline for a Recipe.
+//
+// Three input kinds are supported (sourced / synthesized / artifacts), surfaced
+// through the field groups below:
+//
+//   - Sourced mode: Source + ValuesMapping (or ValuesMappingFile / ValuesMappingJsonnet).
+//     The compiler fetches a chart/module pointed at by Source and overlays the
+//     templated values dictionary.
+//
+//   - Synthesized mode: Workload (inline template) or WorkloadFrom (template file).
+//     The compiler templates a Workload YAML body and hands the parsed Workload to
+//     the provider's WorkloadSynthesizer for translation into provider-native
+//     manifests.
+//
+//   - Artifacts mode: Artifacts (inline filename → template map) and/or ArtifactsFrom
+//     (list of template files). Each template is evaluated and emitted as a file
+//     in the boundary's output directory.
 type RecipeSpec struct {
 	Provider             string             `json:"provider" yaml:"provider"`
 	Implements           string             `json:"implements" yaml:"implements"`
@@ -35,5 +51,9 @@ type RecipeSpec struct {
 	ValuesMapping        string             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
 	ValuesMappingFile    string             `json:"valuesMappingFile,omitempty" yaml:"valuesMappingFile,omitempty"`
 	ValuesMappingJsonnet string             `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`
+	Workload             string             `json:"workload,omitempty" yaml:"workload,omitempty"`
+	WorkloadFrom         string             `json:"workloadFrom,omitempty" yaml:"workloadFrom,omitempty"`
+	Artifacts            OrderedMap[string] `json:"artifacts,omitempty,omitzero" yaml:"artifacts,omitempty"`
+	ArtifactsFrom        []string           `json:"artifactsFrom,omitempty" yaml:"artifactsFrom,omitempty"`
 	Pipeline             []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
 }

@@ -25,9 +25,16 @@ type ProviderMetadata struct {
 	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// ProviderSpec contains the plugin URI for the rendering engine and the
-// baseSchema used to validate valuesMapping output in sourceless (generative) mode.
+// ProviderSpec contains the plugin URI for the rendering engine, the
+// baseSchema used to validate valuesMapping output in sourceless mode, and
+// the workloadSchema declaring how this provider materialises a Workload.
+//
+// A Provider that declares a non-empty WorkloadSchema supports Recipes that
+// use the synthesized input kind (`workload:` or `workloadFrom:`). A
+// Provider that omits WorkloadSchema rejects synthesized-mode Recipes at
+// load time.
 type ProviderSpec struct {
-	Plugin     string `json:"plugin,omitempty" yaml:"plugin,omitempty"`
-	BaseSchema string `json:"baseSchema,omitempty" yaml:"baseSchema,omitempty"` // CUE schema for sourceless-mode validation
+	Plugin         string `json:"plugin,omitempty" yaml:"plugin,omitempty"`
+	BaseSchema     string `json:"baseSchema,omitempty" yaml:"baseSchema,omitempty"`         // CUE schema for sourceless-mode validation
+	WorkloadSchema string `json:"workloadSchema,omitempty" yaml:"workloadSchema,omitempty"` // CUE-style documentation of Workload → provider-native translation
 }

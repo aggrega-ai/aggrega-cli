@@ -186,6 +186,7 @@ metadata:
 spec:
   provider: helm
   implements: core/x
+  source: ./fake-chart
   valuesMapping: '{}'
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -198,6 +199,7 @@ metadata:
 spec:
   provider: helm-chart
   implements: core/y
+  source: ./fake-chart
   valuesMapping: '{}'
 `), 0o644); err != nil {
 		t.Fatal(err)

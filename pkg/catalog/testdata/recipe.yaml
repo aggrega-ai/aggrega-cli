@@ -6,6 +6,7 @@ metadata:
 spec:
   provider: helm
   implements: "core/server/api-server"
+  source: ./test-chart
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "8080"
