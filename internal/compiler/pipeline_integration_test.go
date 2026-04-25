@@ -257,7 +257,8 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 		t.Fatalf("topology.Build: %v", err)
 	}
 
-	if topoResult.Nodes["data-mod.child-db"] == nil {
+	childDB, ok := topoResult.Nodes.Get("data-mod.child-db")
+	if !ok || childDB == nil {
 		t.Fatal("expected data-mod.child-db node")
 	}
 	if topoResult.ExportedComponents["data-mod.db"] != "data-mod.child-db" {

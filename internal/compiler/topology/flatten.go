@@ -12,8 +12,14 @@ import (
 const maxSubAggregateDepth = 10
 
 // flattenResult is the intermediate output of aggregate flattening.
+//
+// Nodes uses OrderedMap so the Aggregate's author-declared component order
+// (and the order of components in any sub-aggregate it imports) survives
+// subsystem flattening. Downstream consumers (IR construction → IR JSON
+// emission) rely on this author-order propagation per the deterministic-
+// ordering contract.
 type flattenResult struct {
-	Nodes              map[string]*TopologyNode
+	Nodes              types.OrderedMap[*TopologyNode]
 	FeatureAttachments map[string][]FeatureAttachment
 	SecretAttachments  map[string][]SecretAttachment
 	ExportedComponents map[string]string
@@ -35,7 +41,7 @@ func flattenAggregate(
 	}
 
 	result := &flattenResult{
-		Nodes:              make(map[string]*TopologyNode),
+		Nodes:              types.OrderedMap[*TopologyNode]{},
 		FeatureAttachments: make(map[string][]FeatureAttachment),
 		SecretAttachments:  make(map[string][]SecretAttachment),
 		ExportedComponents: make(map[string]string),
@@ -44,14 +50,14 @@ func flattenAggregate(
 	// Walk top-level components in author order
 	for name, comp := range agg.Spec.Components.All() {
 		nodeID := qualifiedID(prefix, name)
-		result.Nodes[nodeID] = &TopologyNode{
+		result.Nodes.Set(nodeID, &TopologyNode{
 			InstanceID:      nodeID,
 			ComponentType:   comp.Type,
 			Values:          comp.Values,
 			SelfInject:      comp.Inject,
 			SubsystemPath:   subsystemPath,
 			SourceAggregate: prefix,
-		}
+		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
 
@@ -83,9 +89,9 @@ func flattenAggregate(
 				return nil, err
 			}
 
-			// Merge child results
-			for id, node := range childResult.Nodes {
-				result.Nodes[id] = node
+			// Merge child results — preserve child's author-order during merge.
+			for id, node := range childResult.Nodes.All() {
+				result.Nodes.Set(id, node)
 			}
 			for id, feats := range childResult.FeatureAttachments {
 				result.FeatureAttachments[id] = append(result.FeatureAttachments[id], feats...)
@@ -110,14 +116,14 @@ func flattenAggregate(
 func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) {
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
-		result.Nodes[nodeID] = &TopologyNode{
+		result.Nodes.Set(nodeID, &TopologyNode{
 			InstanceID:      nodeID,
 			ComponentType:   comp.Type,
 			Values:          comp.Values,
 			SelfInject:      comp.Inject,
 			SubsystemPath:   subsystemPath,
 			SourceAggregate: prefix,
-		}
+		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
 

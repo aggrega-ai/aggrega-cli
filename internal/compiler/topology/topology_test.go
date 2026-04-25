@@ -62,16 +62,18 @@ func TestBuild_SimpleTopology(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result.Nodes) != 2 {
-		t.Fatalf("expected 2 nodes, got %d", len(result.Nodes))
+	if result.Nodes.Len() != 2 {
+		t.Fatalf("expected 2 nodes, got %d", result.Nodes.Len())
 	}
-	apiLabel, _ := result.Nodes["api"].Labels.Get(types.ComponentTypeLabel)
+	apiNode, _ := result.Nodes.Get("api")
+	apiLabel, _ := apiNode.Labels.Get(types.ComponentTypeLabel)
 	if apiLabel != "server" {
-		t.Errorf("api labels: %v", result.Nodes["api"].Labels.Keys())
+		t.Errorf("api labels: %v", apiNode.Labels.Keys())
 	}
-	dbLabel, _ := result.Nodes["main-db"].Labels.Get(types.ComponentTypeLabel)
+	dbNode, _ := result.Nodes.Get("main-db")
+	dbLabel, _ := dbNode.Labels.Get(types.ComponentTypeLabel)
 	if dbLabel != "stateful-server" {
-		t.Errorf("main-db labels: %v", result.Nodes["main-db"].Labels.Keys())
+		t.Errorf("main-db labels: %v", dbNode.Labels.Keys())
 	}
 
 	if len(result.Edges) != 1 {
@@ -169,8 +171,9 @@ func TestBuild_BoundaryPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Nodes["api"].BoundaryPath != "aws-prod/eks-main" {
-		t.Errorf("boundary path: %q", result.Nodes["api"].BoundaryPath)
+	apiNode2, _ := result.Nodes.Get("api")
+	if apiNode2.BoundaryPath != "aws-prod/eks-main" {
+		t.Errorf("boundary path: %q", apiNode2.BoundaryPath)
 	}
 }
 

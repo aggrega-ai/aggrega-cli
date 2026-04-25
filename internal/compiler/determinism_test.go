@@ -162,31 +162,20 @@ func TestDeterministicCompilation_FullPipeline(t *testing.T) {
 // JSON-emitted `nodes` object preserves the Aggregate's author-declared
 // component order (e.g., zulu, alpha, middle) rather than alphabetical.
 //
-// SKIPPED — WI07 surfaced a real gap: the IR builder at
-// internal/compiler/ir/builder.go:53 explicitly sorts node IDs
-// alphabetically via `sortedStringKeys(topo.Nodes)` before populating the
-// IRSpec.Nodes OrderedMap. The OrderedMap field type carries whatever
-// order the builder Set's into it; alphabetical Set ordering produces
-// alphabetical iteration regardless of the field type. WI06's B1 walker
-// fix repaired the template-preparation path; it did not modify IR
-// construction, which still alphabetizes at the source.
+// Activated 2026-04-25 after topology.Build was refactored to preserve
+// author order through subsystem flattening (TopologyResult.Nodes became
+// types.OrderedMap[*TopologyNode]; the IR builder now iterates via .All()
+// rather than the old sortedStringKeys path). The contract is end-to-end:
+// Aggregate author order → topology flattening → IR construction → IR
+// JSON emission via OrderedMap.MarshalJSON.
 //
-// The fix requires topology.Build to preserve the Aggregate's author
-// order through subsystem flattening (today topology.Nodes is a plain
-// map[string]TopologyNode keyed by flattened ID, so author order is
-// already lost at that boundary). That work is out of scope for the
-// deterministic-ordering intent's WI07 — it touches the topology
-// builder's data structure choices.
-//
-// This test stays in place as scaffolding for the eventual fix: the
-// extractNodeOrderFromJSON helper, the JSON-token-stream parsing
-// approach, and the assertion shape are all reusable when the topology
-// fix lands. Remove the t.Skip() at that point.
-//
-// Logged as observation in run-2026-04-25-001/run.md.
+// Author order applies to author-declared collections (Aggregate
+// components, Workload containers, env vars, etc.). Synthesized derived
+// collections (edges, sentinel lists) intentionally use alphabetical
+// ordering; see the rationale comment at
+// internal/compiler/topology/topology.go around the sortedNodeIDs call.
 func TestDeterministicCompilation_IRAuthorOrder(t *testing.T) {
 	t.Parallel()
-	t.Skip("IR construction alphabetizes at internal/compiler/ir/builder.go:53; fix requires topology.Build to preserve Aggregate author order; deferred per run-2026-04-25-001 observation")
 
 	result := compileInProcess(t)
 

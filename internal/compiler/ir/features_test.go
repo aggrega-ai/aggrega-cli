@@ -43,10 +43,11 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 	t.Parallel()
 	values := types.OrderedMap[interface{}]{}
 	values.Set("enabled", true)
+	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
-		},
+		Nodes: nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
 				{InstanceName: "monitoring", Feature: types.FeatureInstance{Type: "core/monitoring", Values: values}},
@@ -57,7 +58,7 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 	}
 
-	result, err := collectNodeFeatures("api", topoResult.Nodes["api"], topoResult, resolveResult, featureCatalog())
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,10 +82,11 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	t.Parallel()
 	values := types.OrderedMap[interface{}]{}
 	values.Set("vault_path", "/secret/db")
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api"},
-		},
+		Nodes: nodes,
 		SecretAttachments: map[string][]topology.SecretAttachment{
 			"api": {
 				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: values}},
@@ -95,7 +97,7 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 	}
 
-	result, err := collectNodeFeatures("api", topoResult.Nodes["api"], topoResult, resolveResult, featureCatalog())
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,10 +116,11 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 func TestCollectNodeFeatures_TypeMismatchError(t *testing.T) {
 	t.Parallel()
 
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api"},
-		},
+		Nodes: nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
 				{InstanceName: "feat", Feature: types.FeatureInstance{Type: "type-a"}},
@@ -129,7 +132,7 @@ func TestCollectNodeFeatures_TypeMismatchError(t *testing.T) {
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 	}
 
-	_, err := collectNodeFeatures("api", topoResult.Nodes["api"], topoResult, resolveResult, featureCatalog())
+	_, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
 	if err == nil {
 		t.Fatal("expected error for type mismatch")
 	}
@@ -145,10 +148,11 @@ func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 	values.Set("port", 9090)
 	values2 := types.OrderedMap[interface{}]{}
 	values2.Set("level", "info")
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api"},
-		},
+		Nodes: nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
 				{InstanceName: "mon", Feature: types.FeatureInstance{Type: "core/monitoring", Values: values}},
@@ -160,7 +164,7 @@ func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 	}
 
-	result, err := collectNodeFeatures("api", topoResult.Nodes["api"], topoResult, resolveResult, featureCatalog())
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,10 +182,11 @@ func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 func TestCollectNodeFeatures_MarkersDeduplicatedAndSorted(t *testing.T) {
 	t.Parallel()
 
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api"},
-		},
+		Nodes: nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
 				{InstanceName: "z-feat", Feature: types.FeatureInstance{Type: "z-type"}},
@@ -194,7 +199,7 @@ func TestCollectNodeFeatures_MarkersDeduplicatedAndSorted(t *testing.T) {
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 	}
 
-	result, err := collectNodeFeatures("api", topoResult.Nodes["api"], topoResult, resolveResult, featureCatalog())
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

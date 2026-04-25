@@ -66,11 +66,11 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	values.Set("port", 8080)
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "stateful-server")
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels, Values: values})
+	nodes.Set("main-db", &topology.TopologyNode{InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: labels2})
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api":     {InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels, Values: values},
-			"main-db": {InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: labels2},
-		},
+		Nodes: nodes,
 		Edges: []topology.NormalizedEdge{
 			{Source: "api", Target: "main-db", Socket: "databases", Alias: "main-db"},
 		},
@@ -172,10 +172,10 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 	values.Set("level", "warn")
 	values2 := types.OrderedMap[interface{}]{}
 	values2.Set("path", "/secret")
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels})
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels},
-		},
+		Nodes: nodes,
 		Edges: nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
@@ -241,11 +241,11 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 func TestBuildIR_SyncWave(t *testing.T) {
 	t.Parallel()
 
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/database/postgres"})
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"})
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"db":  {InstanceID: "db", ComponentType: "core/database/postgres"},
-			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
-		},
+		Nodes:              nodes,
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
 		SecretAttachments:  map[string][]topology.SecretAttachment{},
@@ -285,10 +285,10 @@ func TestBuildIR_SyncWave(t *testing.T) {
 func TestBuildIR_InfraMapping(t *testing.T) {
 	t.Parallel()
 
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"})
 	topoResult := &topology.TopologyResult{
-		Nodes: map[string]*topology.TopologyNode{
-			"api": {InstanceID: "api", ComponentType: "core/server/api-server"},
-		},
+		Nodes:              nodes,
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
 		SecretAttachments:  map[string][]topology.SecretAttachment{},

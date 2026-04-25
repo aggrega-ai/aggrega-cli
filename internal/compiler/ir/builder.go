@@ -32,11 +32,12 @@ type FeatureOrder map[string][]string
 //  5. Build annotation buckets
 //  6. Generate provenance
 //
-// Iteration over the topology's flattened node map is sorted alphabetically
-// (topology stores nodes in a plain map for lookup); the output OrderedMap
-// carries that same ordering. Author order from the Aggregate flows through
-// the IR ValuesMapping and FeatureValuesMapping via the per-component
-// OrderedMap values.
+// Iteration over the topology's flattened nodes preserves the Aggregate's
+// author-declared component order (topology.Nodes is now an OrderedMap
+// populated during subsystem flattening in author order). Author order
+// flows through to IR JSON output via OrderedMap.MarshalJSON, satisfying
+// the determinism contract for downstream JSON consumers (policy engines,
+// GitOps repos, --trace output).
 func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult
@@ -49,10 +50,8 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	featureOrder := make(FeatureOrder)
 	allMarkers := map[string]bool{}
 
-	// 1. Build IR nodes (sorted for determinism — topo.Nodes is a plain map keyed by flattened ID)
-	nodeIDs := sortedStringKeys(topo.Nodes)
-	for _, nodeID := range nodeIDs {
-		topoNode := topo.Nodes[nodeID]
+	// 1. Build IR nodes in author order (topo.Nodes is OrderedMap-backed).
+	for nodeID, topoNode := range topo.Nodes.All() {
 
 		catalogAnnotations, releaseAnnotations, aggregateAnnotations := buildAnnotationBuckets(
 			nodeID, topoNode.ComponentType, cfg.CatalogLookup, res.BoundaryInfra,

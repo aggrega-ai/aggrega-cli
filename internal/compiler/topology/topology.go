@@ -11,8 +11,16 @@ import (
 )
 
 // TopologyResult is the output of the Step 2 topology builder.
+//
+// Nodes carries author-declaration order from the Aggregate (and recursively
+// from its sub-aggregates) through subsystem flattening. The OrderedMap
+// shape is load-bearing for IR JSON emission, where downstream consumers
+// (policy engines, GitOps repos, --trace output) rely on author-order
+// preservation. Iteration via .All() preserves order; the edges-derived
+// collection (Edges) is a separately-ordered alphabetical-by-source-node
+// slice — see the rationale at the sortedNodeIDs call site below.
 type TopologyResult struct {
-	Nodes              map[string]*TopologyNode
+	Nodes              types.OrderedMap[*TopologyNode]
 	Edges              []NormalizedEdge
 	FeatureAttachments map[string][]FeatureAttachment
 	SecretAttachments  map[string][]SecretAttachment
@@ -82,7 +90,7 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 
 	// 2. Populate labels from catalog
 	if cfg.CatalogLookup.Component != nil {
-		for _, node := range flat.Nodes {
+		for _, node := range flat.Nodes.All() {
 			catComp, found := cfg.CatalogLookup.Component(node.ComponentType)
 			if found {
 				node.Labels = catComp.Metadata.Labels
@@ -91,13 +99,20 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 	}
 
 	// 3. Populate boundary paths from resolver
-	for nodeID, node := range flat.Nodes {
+	for nodeID, node := range flat.Nodes.All() {
 		if bi, ok := cfg.ResolveResult.BoundaryInfra[nodeID]; ok && bi != nil {
 			node.BoundaryPath = bi.BoundaryPath
 		}
 	}
 
-	// 4. Normalize uses → edges (sorted node iteration)
+	// 4. Normalize uses → edges. Edges are a synthesized collection (one
+	// node may originate many edges, derived from its `uses` declarations);
+	// no single author declared the *order* of edges. Alphabetical-by-
+	// source-node is the deterministic ordering convention for synthesized
+	// derived data, distinct from the author-order contract that applies to
+	// author-declared collections (Aggregate.Components, Workload
+	// containers, etc.). The sortedNodeIDs call below intentionally drives
+	// alphabetical edge emission.
 	var edges []NormalizedEdge
 	nodeIDs := sortedNodeIDs(flat.Nodes)
 	for _, nodeID := range nodeIDs {
@@ -174,9 +189,9 @@ func findComponentInSubsystem(sub types.Subsystem, name string) *types.Component
 	return nil
 }
 
-func sortedNodeIDs(nodes map[string]*TopologyNode) []string {
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
+func sortedNodeIDs(nodes types.OrderedMap[*TopologyNode]) []string {
+	ids := make([]string, 0, nodes.Len())
+	for id := range nodes.All() {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)

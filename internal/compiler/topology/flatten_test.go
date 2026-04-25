@@ -28,14 +28,16 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Nodes) != 2 {
-		t.Fatalf("expected 2 nodes, got %d", len(result.Nodes))
+	if result.Nodes.Len() != 2 {
+		t.Fatalf("expected 2 nodes, got %d", result.Nodes.Len())
 	}
-	if result.Nodes["api"] == nil || result.Nodes["worker"] == nil {
+	apiNode, hasAPI := result.Nodes.Get("api")
+	workerNode, hasWorker := result.Nodes.Get("worker")
+	if !hasAPI || apiNode == nil || !hasWorker || workerNode == nil {
 		t.Error("expected api and worker nodes")
 	}
-	if result.Nodes["api"].ComponentType != "core/server/api-server" {
-		t.Errorf("api type: %q", result.Nodes["api"].ComponentType)
+	if apiNode.ComponentType != "core/server/api-server" {
+		t.Errorf("api type: %q", apiNode.ComponentType)
 	}
 }
 
@@ -57,11 +59,12 @@ func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Nodes["main-db"] == nil {
+	mainDB, ok := result.Nodes.Get("main-db")
+	if !ok || mainDB == nil {
 		t.Fatal("expected main-db node")
 	}
-	if result.Nodes["main-db"].SubsystemPath != "data-layer" {
-		t.Errorf("subsystem path: %q", result.Nodes["main-db"].SubsystemPath)
+	if mainDB.SubsystemPath != "data-layer" {
+		t.Errorf("subsystem path: %q", mainDB.SubsystemPath)
 	}
 }
 
@@ -85,11 +88,12 @@ func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Nodes["deep-db"] == nil {
+	deepDB, ok := result.Nodes.Get("deep-db")
+	if !ok || deepDB == nil {
 		t.Fatal("expected deep-db node")
 	}
-	if result.Nodes["deep-db"].SubsystemPath != "outer.inner" {
-		t.Errorf("subsystem path: %q, want %q", result.Nodes["deep-db"].SubsystemPath, "outer.inner")
+	if deepDB.SubsystemPath != "outer.inner" {
+		t.Errorf("subsystem path: %q, want %q", deepDB.SubsystemPath, "outer.inner")
 	}
 }
 
@@ -131,10 +135,11 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Nodes) != 2 {
-		t.Fatalf("expected 2 nodes, got %d", len(result.Nodes))
+	if result.Nodes.Len() != 2 {
+		t.Fatalf("expected 2 nodes, got %d", result.Nodes.Len())
 	}
-	if result.Nodes["data-module.child-db"] == nil {
+	childDB, ok := result.Nodes.Get("data-module.child-db")
+	if !ok || childDB == nil {
 		t.Fatal("expected data-module.child-db node with dot-notation ID")
 	}
 	if result.ExportedComponents["data-module.db"] != "data-module.child-db" {
