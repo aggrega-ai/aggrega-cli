@@ -4,6 +4,8 @@
 package renderer
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -257,6 +259,144 @@ func TestEvalTemplate_OrderedMapKeysPipeline(t *testing.T) {
 	if out != "A-target" {
 		t.Errorf("sortAlpha|first winner = %q, want A-target", out)
 	}
+}
+
+// TestTemplateContext_JSONBoundaryAuthorOrder constructs a
+// TemplateContext whose .Values OrderedMap is populated via Set calls in
+// deliberately non-alphabetical author order, serializes the entire
+// TemplateContext via json.Marshal, and asserts the emitted JSON's
+// `values` object key sequence matches author order.
+//
+// This is the  +  contract at the JSON-boundary: every
+// downstream JSON consumer (IR emission, --trace output, Wasm guest
+// payloads, diagnostics) reads keys in author order. Author order is
+// preserved through OrderedMap.MarshalJSON; the construction-time Set
+// sequence is what determines the emitted order.
+//
+// The test guards against future regressions where someone might switch
+// OrderedMap.MarshalJSON to alphabetical-iteration in the name of "more
+// canonical output," silently violating the contract's author-order pillar
+// for user-committable artifacts.
+func TestTemplateContext_JSONBoundaryAuthorOrder(t *testing.T) {
+	t.Parallel()
+
+	values := types.OrderedMap[interface{}]{}
+	values.Set("zeta", "z-value")
+	values.Set("alpha", "a-value")
+	values.Set("mu", "m-value")
+
+	infra := types.OrderedMap[interface{}]{}
+	infra.Set("zulu-region", "us-west-2")
+	infra.Set("alpha-region", "us-east-1")
+
+	ctx := &types.TemplateContext{
+		Values: values,
+		Infra:  infra,
+	}
+
+	jsonBytes, err := json.Marshal(ctx)
+	if err != nil {
+		t.Fatalf("Marshal TemplateContext: %v", err)
+	}
+
+	gotValuesOrder := readObjectKeyOrder(t, jsonBytes, "values")
+	wantValuesOrder := []string{"zeta", "alpha", "mu"}
+	if !slicesEqual(gotValuesOrder, wantValuesOrder) {
+		t.Errorf(".values key order in JSON = %v, want %v (author order lost)\nfull JSON:\n%s",
+			gotValuesOrder, wantValuesOrder, jsonBytes)
+	}
+
+	gotInfraOrder := readObjectKeyOrder(t, jsonBytes, "infra")
+	wantInfraOrder := []string{"zulu-region", "alpha-region"}
+	if !slicesEqual(gotInfraOrder, wantInfraOrder) {
+		t.Errorf(".infra key order in JSON = %v, want %v (author order lost)\nfull JSON:\n%s",
+			gotInfraOrder, wantInfraOrder, jsonBytes)
+	}
+}
+
+// readObjectKeyOrder walks JSON tokens and returns the keys of the object
+// stored at the named top-level field, in source order. Used to verify
+// JSON-boundary author-order preservation without losing order to
+// json.Unmarshal-into-map collapsing.
+func readObjectKeyOrder(t *testing.T, jsonBytes []byte, topLevelKey string) []string {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
+
+	tok, err := dec.Token()
+	if err != nil {
+		t.Fatalf("opening token: %v", err)
+	}
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		t.Fatalf("expected outer '{', got %v", tok)
+	}
+
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			t.Fatalf("read top-level key: %v", err)
+		}
+		key := keyTok.(string)
+		if key != topLevelKey {
+			skipNextValue(t, dec)
+			continue
+		}
+		if d, err := dec.Token(); err != nil {
+			t.Fatalf("read inner opening: %v", err)
+		} else if delim, ok := d.(json.Delim); !ok || delim != '{' {
+			t.Fatalf("inner %q is not an object: %v", topLevelKey, d)
+		}
+		var keys []string
+		for dec.More() {
+			innerTok, err := dec.Token()
+			if err != nil {
+				t.Fatalf("read inner key: %v", err)
+			}
+			keys = append(keys, innerTok.(string))
+			skipNextValue(t, dec)
+		}
+		return keys
+	}
+	t.Fatalf("top-level key %q not found in JSON: %s", topLevelKey, jsonBytes)
+	return nil
+}
+
+func skipNextValue(t *testing.T, dec *json.Decoder) {
+	t.Helper()
+	tok, err := dec.Token()
+	if err != nil {
+		t.Fatalf("skipNextValue token: %v", err)
+	}
+	delim, isDelim := tok.(json.Delim)
+	if !isDelim {
+		return
+	}
+	depth := 1
+	for depth > 0 {
+		next, err := dec.Token()
+		if err != nil {
+			t.Fatalf("skipNextValue depth-loop token: %v", err)
+		}
+		if d, ok := next.(json.Delim); ok {
+			if d == '{' || d == '[' {
+				depth++
+			} else if d == '}' || d == ']' {
+				depth--
+			}
+		}
+	}
+	_ = delim
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // TestEvalTemplate_DnsPatcherPattern exercises the exact template body

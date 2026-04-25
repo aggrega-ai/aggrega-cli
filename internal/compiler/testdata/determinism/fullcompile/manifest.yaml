@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: determinism-test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    helm:
+      components:
+        type:
+          core/server: ops/server-recipe:1.0.0

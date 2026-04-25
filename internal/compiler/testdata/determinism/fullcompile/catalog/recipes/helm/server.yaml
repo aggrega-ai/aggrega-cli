@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: ops/server-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server
+  valuesMapping: |
+    {
+      "image": "test-server:latest",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .values.port }}:{{ .values.port }}"]
+    }

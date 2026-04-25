@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: determinism-test
+  version: "1.0.0"
+spec:
+  components:
+    zulu:
+      type: core/server
+      values:
+        port: 9090
+    alpha:
+      type: core/server
+      values:
+        port: 8080
+    middle:
+      type: core/server
+      values:
+        port: 8888
