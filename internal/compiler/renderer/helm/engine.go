@@ -15,9 +15,16 @@ import (
 // Deployment + Service from validated values dict) based on the Recipe's
 // `source` field. Source is passed in via NodeRenderContext.SourceHint below,
 // populated by the orchestrator.
+//
+// Implements renderer.WorkloadSynthesizer via SynthesizeWorkload (defined in
+// workload_synth.go) — Phase B.4 dispatches to that method when the bound
+// Recipe declares workload: or workloadFrom:.
 type HelmEngine struct{}
 
-var _ renderer.Engine = (*HelmEngine)(nil)
+var (
+	_ renderer.Engine              = (*HelmEngine)(nil)
+	_ renderer.WorkloadSynthesizer = (*HelmEngine)(nil)
+)
 
 // Render produces a map of relative file paths → YAML bytes.
 // File keys are flat (no subdirectory prefix) — e.g., "<nodeID>-deployment.yaml".

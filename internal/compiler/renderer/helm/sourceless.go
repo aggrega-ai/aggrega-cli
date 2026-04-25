@@ -239,7 +239,7 @@ func parsePorts(ports []string) ([]ContainerPort, []ServicePort) {
 		sPorts = append(sPorts, ServicePort{
 			Name:       fmt.Sprintf("port-%d", i),
 			Port:       int32(host),
-			TargetPort: int32(container),
+			TargetPort: strconv.Itoa(container),
 		})
 	}
 	return cPorts, sPorts
