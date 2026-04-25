@@ -1,0 +1,8 @@
+services:
+    api:
+        image: api:2.0
+        ports:
+            - 8080:8080
+    api-logger:
+        image: logger:1.0
+        network_mode: service:api

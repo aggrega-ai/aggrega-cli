@@ -57,8 +57,17 @@ func (o EmitOrigin) String() string {
 // per the contract's deterministic-output invariant — the collision detector
 // sorts findings alphabetically for output stability, but the emitted-files
 // list itself preserves the order they were produced.
+//
+// Intermediate=true marks a file as transient input to a ReleaseComposer
+// (see synthesis.go). The orchestrator collects intermediates into the
+// per-boundary state for ReleaseComposer to consume but does NOT write them
+// under boundaries/<bp>/ in the final output. Used by the compose provider:
+// per-node Workload synthesis emits one fragment file per node; the compose
+// ReleaseComposer reads the fragments and emits a single docker-compose.yaml
+// at the Release output root, replacing every fragment.
 type EmittedFile struct {
-	Name   string     // boundary-relative path (e.g., "deployment.yaml")
-	Origin EmitOrigin // input kind that produced this file
-	Body   []byte     // file contents
+	Name         string     // boundary-relative path (e.g., "deployment.yaml")
+	Origin       EmitOrigin // input kind that produced this file
+	Body         []byte     // file contents
+	Intermediate bool       // true → consumed by ReleaseComposer; not written to dist
 }

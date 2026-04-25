@@ -18,6 +18,26 @@ type RenderResult struct {
 	Warnings []string
 }
 
+// pendingBoundary holds per-boundary state across the per-node loop and the
+// per-boundary BoundaryComposer / Release-end ReleaseComposer passes.
+//
+// intermediates carries Intermediate=true EmittedFiles separately from files
+// so the orchestrator never writes them under boundaries/<bp>/; they flow
+// only to ReleaseComposer at Release-end. nodeAnnotations and nodeComponent
+// are the per-node metadata ReleaseComposer needs to assemble its input
+// (annotations for per-boundary network derivation, component for
+// ReleaseNodeInfo). engineByNode lets the Release-end pass group nodes by
+// the ReleaseComposer-implementing engine instance that rendered each node.
+type pendingBoundary struct {
+	files           map[string]map[string][]byte
+	intermediates   map[string][]EmittedFile
+	nodeAnnotations map[string]map[string]string
+	nodeComponent   map[string]string
+	subCharts       []SubChartInfo
+	composer        BoundaryComposer
+	engineByNode    map[string]Engine
+}
+
 // RecipeLookup resolves a component type to its Recipe and FeatureRecipes.
 type RecipeLookup struct {
 	Recipe        func(componentType string) (*types.Recipe, bool)
@@ -62,12 +82,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, fmt.Errorf("Step 5 Pass 1: %w", err)
 	}
 
-	// Track per-boundary sub-chart info for umbrella composition
-	type pendingBoundary struct {
-		files     map[string]map[string][]byte // nodeID → per-node file map
-		subCharts []SubChartInfo
-		composer  BoundaryComposer // first composer engine seen in this boundary (if any)
-	}
 	boundaries := map[string]*pendingBoundary{}
 	orderedBoundaries := []string{}
 
@@ -225,6 +239,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Tag with EmitOriginSource and accumulate (deterministic per LDR
 		// 0026: iterate the engine.Render output by sorted filename so
 		// state.EmittedFiles order is stable across runs).
+		//
+		// Intermediate marking. When the engine implements ReleaseComposer
+		// (today: compose), Render's output is intermediate input to the
+		// Release-level merger and must NOT be written to dist alongside
+		// per-node files. The orchestrator marks every Render output as
+		// Intermediate=true for ReleaseComposer engines; the merger reads
+		// fragments and emits the canonical Release-root file. Engines
+		// that are not ReleaseComposers (helm / helm-chart) keep
+		// Intermediate=false — their Render outputs ship as-is.
+		_, isReleaseComposer := engine.(ReleaseComposer)
 		sourceNames := make([]string, 0, len(files))
 		for p := range files {
 			sourceNames = append(sourceNames, p)
@@ -232,9 +256,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		sort.Strings(sourceNames)
 		for _, p := range sourceNames {
 			state.EmittedFiles = append(state.EmittedFiles, EmittedFile{
-				Name:   p,
-				Origin: EmitOriginSource,
-				Body:   files[p],
+				Name:         p,
+				Origin:       EmitOriginSource,
+				Body:         files[p],
+				Intermediate: isReleaseComposer,
 			})
 		}
 
@@ -272,16 +297,32 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Group per boundary. Per-node file map is built from
 		// state.EmittedFiles (carries every input-kind contribution).
+		// Intermediate=true entries are split off into intermediates so
+		// the orchestrator never writes them under boundaries/<bp>/;
+		// they flow only to ReleaseComposer at Release-end.
 		bp := node.BoundaryPath
 		if _, ok := boundaries[bp]; !ok {
-			boundaries[bp] = &pendingBoundary{files: map[string]map[string][]byte{}}
+			boundaries[bp] = &pendingBoundary{
+				files:           map[string]map[string][]byte{},
+				intermediates:   map[string][]EmittedFile{},
+				nodeAnnotations: map[string]map[string]string{},
+				nodeComponent:   map[string]string{},
+				engineByNode:    map[string]Engine{},
+			}
 			orderedBoundaries = append(orderedBoundaries, bp)
 		}
 		nodeFileMap := make(map[string][]byte, len(state.EmittedFiles))
 		for _, f := range state.EmittedFiles {
+			if f.Intermediate {
+				boundaries[bp].intermediates[nodeID] = append(boundaries[bp].intermediates[nodeID], f)
+				continue
+			}
 			nodeFileMap[f.Name] = f.Body
 		}
 		boundaries[bp].files[nodeID] = nodeFileMap
+		boundaries[bp].nodeAnnotations[nodeID] = nodeCtx.Annotations
+		boundaries[bp].nodeComponent[nodeID] = node.Component
+		boundaries[bp].engineByNode[nodeID] = engine
 		boundaries[bp].subCharts = append(boundaries[bp].subCharts, SubChartInfo{
 			InstanceID: nodeID,
 			Version:    node.ResolvedVersion,
@@ -352,7 +393,121 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
+	// Release-end pass — invoke each distinct ReleaseComposer at most once
+	// with a ReleaseInfo scoped to its own nodes. Used by the compose
+	// engine to merge per-node fragments into a single docker-compose.yaml
+	// at the Release output root. ReleaseComposers run AFTER per-boundary
+	// composition so they can rely on per-boundary state being final.
+	if err := dispatchReleaseComposers(ctx, graph, boundaries, orderedBoundaries, result); err != nil {
+		return nil, err
+	}
+
 	return result, nil
+}
+
+// dispatchReleaseComposers detects every distinct ReleaseComposer instance
+// across the Release's engines and invokes ComposeRelease once per instance,
+// passing a ReleaseInfo scoped to that engine's contributing nodes. Files
+// returned by ComposeRelease are merged into result.Files under the Release
+// output root (no boundary prefix).
+//
+// Determinism note. ReleaseComposer instances are walked in
+// (boundary-path, node-ID) ascending order; the FIRST node bound to each
+// distinct *engine instance* fixes that engine's ReleaseComposer position
+// in the dispatch list. This makes the order in which ComposeRelease
+// implementations run a deterministic function of the IR graph + the
+// engineFactory closure's returned-instance choices.
+func dispatchReleaseComposers(
+	ctx context.Context,
+	graph *types.IRGraph,
+	boundaries map[string]*pendingBoundary,
+	orderedBoundaries []string,
+	result *RenderResult,
+) error {
+	type composerEntry struct {
+		composer ReleaseComposer
+		// nodeBoundaries: per-boundary contributing-node info for this
+		// composer. Map key is boundary path; value is the list of nodes
+		// in that boundary whose engine equals composer.
+		nodeBoundaries map[string][]string
+	}
+
+	var ordered []*composerEntry
+	indexByComposer := map[ReleaseComposer]*composerEntry{}
+
+	for _, bp := range orderedBoundaries {
+		pb := boundaries[bp]
+		nodeIDs := make([]string, 0, len(pb.engineByNode))
+		for nid := range pb.engineByNode {
+			nodeIDs = append(nodeIDs, nid)
+		}
+		sort.Strings(nodeIDs)
+		for _, nid := range nodeIDs {
+			engine := pb.engineByNode[nid]
+			rc, ok := engine.(ReleaseComposer)
+			if !ok {
+				continue
+			}
+			entry, found := indexByComposer[rc]
+			if !found {
+				entry = &composerEntry{composer: rc, nodeBoundaries: map[string][]string{}}
+				indexByComposer[rc] = entry
+				ordered = append(ordered, entry)
+			}
+			entry.nodeBoundaries[bp] = append(entry.nodeBoundaries[bp], nid)
+		}
+	}
+
+	for _, entry := range ordered {
+		info := buildReleaseInfo(graph, boundaries, entry.nodeBoundaries)
+		files, err := entry.composer.ComposeRelease(ctx, info)
+		if err != nil {
+			return fmt.Errorf("Step 5 release-compose: %w", err)
+		}
+		for path, body := range files {
+			result.Files[path] = body
+		}
+	}
+	return nil
+}
+
+// buildReleaseInfo assembles the ReleaseInfo passed to one ReleaseComposer.
+// nodeBoundaries scopes the info to that composer's contributing nodes only.
+func buildReleaseInfo(
+	graph *types.IRGraph,
+	boundaries map[string]*pendingBoundary,
+	nodeBoundaries map[string][]string,
+) ReleaseInfo {
+	info := ReleaseInfo{
+		AggregateName: graph.Metadata.AggregateName,
+		Edges:         append([]types.IREdge(nil), graph.Spec.Edges...),
+	}
+
+	bps := make([]string, 0, len(nodeBoundaries))
+	for bp := range nodeBoundaries {
+		bps = append(bps, bp)
+	}
+	sort.Strings(bps)
+
+	for _, bp := range bps {
+		pb := boundaries[bp]
+		bi := ReleaseBoundaryInfo{
+			BoundaryPath: bp,
+			Annotations:  map[string]map[string]string{},
+		}
+		nids := append([]string(nil), nodeBoundaries[bp]...)
+		sort.Strings(nids)
+		for _, nid := range nids {
+			bi.Annotations[nid] = pb.nodeAnnotations[nid]
+			bi.Nodes = append(bi.Nodes, ReleaseNodeInfo{
+				NodeID:            nid,
+				ResolvedComponent: pb.nodeComponent[nid],
+				IntermediateFiles: pb.intermediates[nid],
+			})
+		}
+		info.Boundaries = append(info.Boundaries, bi)
+	}
+	return info
 }
 
 func resolveFeatureRecipes(

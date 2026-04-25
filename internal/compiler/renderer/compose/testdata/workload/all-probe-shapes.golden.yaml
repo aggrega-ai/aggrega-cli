@@ -1,0 +1,26 @@
+services:
+    multi:
+        image: http-probe:1.0
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - curl -f http://localhost:8080/healthz || exit 1
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 30s
+    multi-exec-side:
+        image: exec-probe:1.0
+        network_mode: service:multi
+        healthcheck:
+            test:
+                - CMD
+                - check.sh
+                - --ready
+    multi-tcp-side:
+        image: tcp-probe:1.0
+        network_mode: service:multi
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - nc -z localhost 50051
