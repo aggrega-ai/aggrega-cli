@@ -96,7 +96,8 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 	if values["image"] != "prom/mon:v1" {
 		t.Errorf("image: %v", values["image"])
 	}
-	if values["port"] != float64(9090) {
+	gotPort, ok := asNumber(values["port"])
+	if !ok || gotPort != 9090 {
 		t.Errorf("port: %v (%T)", values["port"], values["port"])
 	}
 }
@@ -139,17 +140,17 @@ func TestExecutePhaseBForFeature_RejectsJsonnet(t *testing.T) {
 	}
 }
 
-func TestExecutePhaseBForFeature_InvalidJSON(t *testing.T) {
+func TestExecutePhaseBForFeature_InvalidYAML(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "ops/bad"},
-		Spec:     types.FeatureRecipeSpec{ValuesMapping: `not json`},
+		Spec:     types.FeatureRecipeSpec{ValuesMapping: `not a mapping`},
 	}
 	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
 	if err == nil {
-		t.Fatal("expected JSON parse error")
+		t.Fatal("expected YAML parse error")
 	}
-	if !strings.Contains(err.Error(), "not valid JSON") {
+	if !strings.Contains(err.Error(), "not valid YAML") {
 		t.Errorf("unexpected message: %v", err)
 	}
 }

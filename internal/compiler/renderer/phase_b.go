@@ -4,10 +4,10 @@
 package renderer
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -51,10 +51,11 @@ func ExecutePhaseB(ctx *types.TemplateContext, recipe *types.Recipe) (map[string
 		return nil, fmt.Errorf("Phase B: recipe %q valuesMapping: %w", recipe.Metadata.Name, err)
 	}
 
-	// Parse output as JSON → map[string]interface{}
+	// Template output is YAML per the contract (yaml.v3 reads valid JSON
+	// natively; new Recipes can use block scalars, comments, etc.).
 	var values map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &values); err != nil {
-		return nil, fmt.Errorf("Phase B: recipe %q valuesMapping output is not valid JSON: %w",
+	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
+		return nil, fmt.Errorf("Phase B: recipe %q valuesMapping output is not valid YAML: %w",
 			recipe.Metadata.Name, err)
 	}
 

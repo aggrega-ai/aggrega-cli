@@ -4,11 +4,11 @@
 package renderer
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -89,8 +89,8 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 	}
 
 	var values map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &values); err != nil {
-		return nil, fmt.Errorf("Phase B (feature): FeatureRecipe %q valuesMapping output is not valid JSON: %w",
+	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
+		return nil, fmt.Errorf("Phase B (feature): FeatureRecipe %q valuesMapping output is not valid YAML: %w",
 			fr.Metadata.Name, err)
 	}
 

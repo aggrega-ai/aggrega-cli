@@ -4,9 +4,9 @@
 package renderer
 
 import (
-	"encoding/json"
 	"sort"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -55,21 +55,23 @@ func mergeMechanism(base *types.OrderedMap[string], overlay types.OrderedMap[str
 	}
 }
 
-// ParseInjectMappingOutput parses the injectMapping template output (JSON string)
-// into a structured inject pipe for deep-merging.
+// ParseInjectMappingOutput parses the injectMapping template output (YAML or
+// JSON; yaml.v3 reads valid JSON natively) into a structured inject pipe for
+// deep-merging.
 func ParseInjectMappingOutput(output string) (*types.InjectPipe, error) {
 	output = trimWhitespace(output)
 	if output == "" || output == "{}" {
 		return nil, nil
 	}
 
-	// Try structured parse (with env/file/arg keys)
+	// Try structured parse (with env/file/arg keys). The struct's yaml tags
+	// match the JSON shape (lowercase) so yaml.v3 decodes both shapes.
 	var structured struct {
-		Env  types.OrderedMap[string] `json:"env"`
-		File types.OrderedMap[string] `json:"file"`
-		Arg  types.OrderedMap[string] `json:"arg"`
+		Env  types.OrderedMap[string] `yaml:"env"`
+		File types.OrderedMap[string] `yaml:"file"`
+		Arg  types.OrderedMap[string] `yaml:"arg"`
 	}
-	if err := json.Unmarshal([]byte(output), &structured); err == nil {
+	if err := parse.TemplateOutput([]byte(output), &structured); err == nil {
 		if structured.Env.Len() > 0 || structured.File.Len() > 0 || structured.Arg.Len() > 0 {
 			return &types.InjectPipe{
 				Env:  structured.Env,
@@ -79,9 +81,9 @@ func ParseInjectMappingOutput(output string) (*types.InjectPipe, error) {
 		}
 	}
 
-	// Fallback: try flat map (all goes to env)
+	// Fallback: try flat map (all goes to env).
 	var flat types.OrderedMap[string]
-	if err := json.Unmarshal([]byte(output), &flat); err == nil && flat.Len() > 0 {
+	if err := parse.TemplateOutput([]byte(output), &flat); err == nil && flat.Len() > 0 {
 		return &types.InjectPipe{Env: flat}, nil
 	}
 

@@ -43,11 +43,15 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 	if values["image"] != "myapp:latest" {
 		t.Errorf("image: %v", values["image"])
 	}
-	if values["port"] != float64(8080) {
-		t.Errorf("port: %v", values["port"])
+	// yaml.v3 decodes integer literals as int (vs encoding/json's float64);
+	// asNumber canonicalises both shapes to float64 for the comparison.
+	gotPort, ok := asNumber(values["port"])
+	if !ok || gotPort != 8080 {
+		t.Errorf("port: %v (%T)", values["port"], values["port"])
 	}
-	if values["replicas"] != float64(3) {
-		t.Errorf("replicas: %v", values["replicas"])
+	gotReplicas, ok := asNumber(values["replicas"])
+	if !ok || gotReplicas != 3 {
+		t.Errorf("replicas: %v (%T)", values["replicas"], values["replicas"])
 	}
 }
 
@@ -105,20 +109,22 @@ func TestExecutePhaseB_NilRecipe(t *testing.T) {
 	}
 }
 
-func TestExecutePhaseB_InvalidJSON(t *testing.T) {
+func TestExecutePhaseB_InvalidYAML(t *testing.T) {
 	t.Parallel()
 
 	ctx := &types.TemplateContext{}
 	recipe := &types.Recipe{
-		Metadata: types.RecipeMetadata{Name: "bad-json"},
+		Metadata: types.RecipeMetadata{Name: "bad-output"},
 		Spec: types.RecipeSpec{
-			ValuesMapping: `not json at all`,
+			// A bare scalar is parseable YAML but cannot decode into a
+			// map[string]interface{}; the parse-into-map step fails.
+			ValuesMapping: `not a mapping at all`,
 		},
 	}
 
 	_, err := ExecutePhaseB(ctx, recipe)
 	if err == nil {
-		t.Fatal("expected error for invalid JSON output")
+		t.Fatal("expected error for non-mapping template output")
 	}
 }
 

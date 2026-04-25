@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -148,7 +149,7 @@ func parseValuesPayload(raw json.RawMessage, nodeID string) (extractedPayload, e
 	}
 
 	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
+	if err := parse.IRPayload(raw, &m); err != nil {
 		return extractedPayload{}, fmt.Errorf("compose: node %q: values_mapping: %w", nodeID, err)
 	}
 

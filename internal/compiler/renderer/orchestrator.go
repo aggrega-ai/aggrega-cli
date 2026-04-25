@@ -5,10 +5,10 @@ package renderer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -454,7 +454,7 @@ func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[interfa
 	if !ok {
 		return out
 	}
-	_ = json.Unmarshal(raw, &out)
+	_ = parse.IRPayload(raw, &out)
 	return out
 }
 
@@ -464,6 +464,6 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 	if !ok {
 		return out
 	}
-	_ = json.Unmarshal(raw, &out)
+	_ = parse.IRPayload(raw, &out)
 	return out
 }

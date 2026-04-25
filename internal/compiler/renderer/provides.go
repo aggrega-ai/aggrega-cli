@@ -4,12 +4,12 @@
 package renderer
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -59,11 +59,11 @@ func EvaluateAllProvides(
 		// Build restricted context
 		values := types.OrderedMap[interface{}]{}
 		if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
-			_ = json.Unmarshal(raw, &values)
+			_ = parse.IRPayload(raw, &values)
 		}
 		infra := types.OrderedMap[interface{}]{}
 		if raw, ok := graph.Spec.InfraMapping.Get(nodeID); ok {
-			_ = json.Unmarshal(raw, &infra)
+			_ = parse.IRPayload(raw, &infra)
 		}
 
 		pCtx := ProvidesContext{

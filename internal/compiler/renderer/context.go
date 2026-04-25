@@ -4,8 +4,7 @@
 package renderer
 
 import (
-	"encoding/json"
-
+	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -23,13 +22,13 @@ func AssembleNodeContext(
 	// Values from values_mapping
 	values := types.OrderedMap[interface{}]{}
 	if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
-		_ = json.Unmarshal(raw, &values)
+		_ = parse.IRPayload(raw, &values)
 	}
 
 	// Infra from infra_mapping
 	infra := types.OrderedMap[interface{}]{}
 	if raw, ok := graph.Spec.InfraMapping.Get(nodeID); ok {
-		_ = json.Unmarshal(raw, &infra)
+		_ = parse.IRPayload(raw, &infra)
 	}
 
 	// Enriched uses
