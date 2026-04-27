@@ -7,9 +7,26 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// MatchString parses a Kubernetes-style label selector string and evaluates it
-// against the provided labels. Returns true if all requirements are satisfied.
-// An empty selector matches everything.
+// MatchString is the string-selector entry point: it threads selectorStr
+// through Parse to obtain the slice of Requirement clauses, then ANDs the
+// per-clause results from matchRequirement against the supplied labels.
+// Comma-separated requirements combine with AND logic per the Kubernetes
+// label-selector convention; an empty selector parses to zero requirements
+// and the function returns (true, nil) — the "no constraint" case Step 4's
+// usesSchema-selector validator (analyzer/selector.go) relies on to skip
+// edges whose source socket declares no selector.
+//
+// The Parse/match split (this function = orchestration; parse.go = syntax;
+// match.go = structured-selector evaluation) keeps the string parsing
+// concerns separate from the predicate evaluation concerns. matchRequirement
+// below covers all six Operator constants — including the parse-only
+// Equals / NotEquals pair — because the string path lands clauses in
+// Requirement form regardless of whether the surface input was "key=value"
+// or "key in (value)".
+//
+// Errors propagate from Parse only; matchRequirement is total over the
+// closed Operator set (unknown operators would mean a Requirement was
+// constructed by someone other than Parse, which is not a supported usage).
 func MatchString(selectorStr string, labels types.OrderedMap[string]) (bool, error) {
 	reqs, err := Parse(selectorStr)
 	if err != nil {

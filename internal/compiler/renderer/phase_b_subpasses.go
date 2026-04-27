@@ -72,13 +72,13 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode typ
 // state.ResolvedValues. The values dictionary is what the provider engine
 // consumes via engine.Render in the sourced and sourceless rendering paths.
 //
-// Per WI03 / chapter 16 strict reading, valuesMapping is meaningful only
-// when source is also declared (rule 1). Until WI05 lands the synthesised-
-// mode replacement, the earlier sourceless-helm path remains supported:
-// rule 1 is gated, so a Recipe with valuesMapping but no source is
-// accepted at load time and reaches B.1 with a non-empty ValuesMapping.
-// B.1 evaluates it identically in both modes; the engine selects sourced
-// vs sourceless rendering based on whether state.Recipe.Spec.Source is set.
+// Per chapter 16's strict reading, valuesMapping is meaningful only when
+// source is also declared (rule 1). The legacy sourceless-helm path
+// remains supported until the synthesised-mode replacement lands: rule 1
+// is gated, so a Recipe with valuesMapping but no source is accepted at
+// load time and reaches B.1 with a non-empty ValuesMapping. B.1 evaluates
+// it identically in both modes; the engine selects sourced vs sourceless
+// rendering based on whether state.Recipe.Spec.Source is set.
 func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 1
@@ -252,8 +252,8 @@ func phaseB5(state *PhaseBState) error {
 }
 
 // phaseB6 runs FeatureRecipe Resource Generation per the existing
-// mechanism (chapter 16; preserved verbatim from  semantics — only
-// re-positioned in the sub-pass sequence). Two inner loops:
+// mechanism (chapter 16; the prior semantics are preserved verbatim —
+// only re-positioned in the sub-pass sequence). Two inner loops:
 //
 //  1. Non-credential FRs: walks featureRefs filtered by
 //     isResourceGeneratingFR; per FR, evaluates locals + valuesMapping in

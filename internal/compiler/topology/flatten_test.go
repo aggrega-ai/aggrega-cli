@@ -1,6 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Unit tests for the flattenAggregate recursion and its companions.
+// Each test calls flattenAggregate directly with hand-built Aggregate
+// fixtures so the assertions can pin specific recursion behaviours
+// without going through the full Build orchestrator.
+//
+// Behaviour clusters:
+//
+//   - TestFlattenAggregate_SimpleComponents — happy path: top-level
+//     components flatten with un-prefixed IDs.
+//   - TestFlattenAggregate_SubsystemComponents — subsystem-scoped
+//     components carry SubsystemPath; the subsystem itself does not
+//     prefix the InstanceID (subsystems contribute to subsystemPath,
+//     not to ID composition).
+//   - TestFlattenAggregate_NestedSubsystems — dotted SubsystemPath
+//     accumulates correctly across nested subsystem levels.
+//   - TestFlattenAggregate_SubAggregate — sub-aggregate import
+//     produces dot-notation child IDs; ExportedComponents are rewired
+//     to dotted IDs that resolve through the parent aggregate's
+//     namespace.
+//   - TestFlattenAggregate_CircularSubAggregate — pins the visited-set
+//     cycle detection on the inclusion graph: a sub-aggregate that
+//     transitively imports itself returns ErrSubAggregateLoad.
+//   - TestFlattenAggregate_MaxDepth — pins the depth bound: invoking
+//     flattenAggregate with depth above maxSubAggregateDepth returns
+//     ErrMaxDepth.
+//   - TestFlattenAggregate_FeatureAttachments — pins
+//     collectAttachments: Feature and Secret attachments authored on
+//     a component instance flow into the per-node attachment slices
+//     in author order.
+
 package topology
 
 import (

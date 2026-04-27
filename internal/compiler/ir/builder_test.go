@@ -1,6 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Tests for the BuildIR orchestrator — the integration-shaped surface
+// that exercises the package end-to-end. testCatalog provides an in-test
+// CatalogLookup faking the two component types and one credential
+// feature the assertions depend on.
+//
+// Test cases group by behaviour cluster, one per BuildIR concern:
+//
+//   - TestBuildIR_SimpleGraph — the happy-path pin: two nodes, one edge,
+//     ResolvedVersion populated from the catalog, CatalogAnnotations and
+//     ReleaseAnnotations from their distinct sources, ValuesMapping
+//     populated from topology values, Provenance carrying the supplied
+//     CompilerVersion + AggregateVersion. No features in this case.
+//   - TestBuildIR_FeatureNormalization — pins the FeatureValuesMapping
+//     and Secrets split (an operational feature lands in Features; a
+//     credential-labelled one routes to Secrets via the
+//     credential-routing branch) plus the FeatureOrder return value and
+//     the feature_markers slice's deduplicate-and-sort discipline.
+//   - TestBuildIR_SyncWave — pins findSyncWave's per-node lookup against
+//     a Release.Spec.SyncWaves declaration with two waves.
+//   - TestBuildIR_InfraMapping — pins the InfraMapping population from
+//     resolver BoundaryInfra.Infra.
+//
+// Tests use the package-private symbols directly; the integration
+// surface is package-internal because BuildIR's three callers (the
+// orchestrator and two compiler-level integration tests) all sit
+// outside this package.
+
 package ir
 
 import (

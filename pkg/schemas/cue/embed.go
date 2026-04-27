@@ -10,7 +10,7 @@ import _ "embed"
 
 // WorkloadCUE is the CUE source for the aggrega.ai/v1alpha1 Workload kind.
 // Mirrors workload-v1alpha1.schema.json in the aggrega-schemas repo. Consumers compile
-// and unify this against parsed Workload values during Phase B.2 —  WI-3.
+// and unify this against parsed Workload values during Phase B.2.
 //
 //go:embed workload.cue
 var WorkloadCUE string

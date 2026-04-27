@@ -14,7 +14,8 @@ spec:
       environment?: {[string]: string | int}
     }
   # workloadSchema documents how the aggrega.ai/v1alpha1 Workload kind
-  # translates to helm output. Documentation-only today.
+  # translates to helm output. Documentation-only today; becomes
+  # executable input to Wasm translators in a future iteration.
   workloadSchema: |
     // See specs/cue/workload.cue for the Workload kind surface.
     #WorkloadSupported: true

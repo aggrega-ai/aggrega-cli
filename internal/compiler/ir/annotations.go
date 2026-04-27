@@ -8,10 +8,28 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// buildAnnotationBuckets assembles the three cascading annotation origins for a node.
-// - CatalogAnnotations: from the Component catalog entity's metadata.annotations
-// - ReleaseAnnotations: from Release boundary annotations (cascaded by resolver)
-// - AggregateAnnotations: from the Aggregate ComponentInstance (currently not supported in types, reserved)
+// buildAnnotationBuckets returns the three independent annotation buckets
+// for one node — the IR's structural answer to "annotations come from
+// distinct authoring surfaces and must not be merged into a single
+// annotation map."
+//
+// Bucket sources:
+//
+//   - catalog (CatalogAnnotations) — the Component catalog entity's
+//     metadata.annotations. Authored by the Architect at the catalog
+//     layer; immutable from the Developer's and Operator's perspective.
+//   - release (ReleaseAnnotations) — the Release boundary annotations,
+//     already cascaded down to the per-node level by the resolver and
+//     surfaced via BoundaryInfra.Annotations. Authored by the Operator.
+//   - aggregate (AggregateAnnotations) — reserved. **Empty today.**
+//     The schema bans `annotations:` on Aggregate ComponentInstance
+//     blocks, so the Aggregate offers no per-instance annotation
+//     authoring surface for this bucket to draw from. The bucket exists
+//     in the return signature to keep the IRNode.AggregateAnnotations
+//     field populated symmetrically with the other two; if a future
+//     authoring surface (per-instance subsystem-style annotation
+//     cascading) is introduced, this is where its read would land.
+//     The inline comment in the body marks the future-extension point.
 func buildAnnotationBuckets(
 	nodeID string,
 	compType string,
@@ -38,7 +56,20 @@ func buildAnnotationBuckets(
 	return catalog, release, aggregate
 }
 
-// buildCatalogMetadata extracts the enterprise metadata suite from a catalog Component.
+// buildCatalogMetadata extracts the enterprise-metadata suite (license,
+// repository, home, keywords, deprecated, maintainers) from a catalog
+// Component's metadata into a *types.CatalogMetadata for embedding in the
+// IRNode.
+//
+// The conditional-return pattern at the bottom of the function — return
+// nil when every field is empty — is deliberate: the caller writes
+// IRNode.CatalogMetadata = buildCatalogMetadata(...), and the field's
+// JSON tag carries `omitempty`. Returning the zero-valued struct would
+// emit an empty `{}` object on every node that lacks enterprise
+// metadata; returning nil collapses the field out of IR JSON entirely.
+// The same input therefore yields the same compact output, which keeps
+// the IR diff stable across runs and avoids visual noise in
+// `aggrega ir --blueprint` output.
 func buildCatalogMetadata(compType string, catalogLookup resolver.CatalogLookup) *types.CatalogMetadata {
 	if catalogLookup.Component == nil {
 		return nil

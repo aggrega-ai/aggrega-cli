@@ -19,10 +19,9 @@ import (
 
 // testHelmFactory returns an EngineFactory that always returns the helm
 // engine — used by tests that predate the per-node factory dispatch.
-// Renamed from testHelmChartFactory in the WI05b helm-chart sourceless
-// removal; the helm engine supports sourceless rendering for orchestration
-// unit tests' purposes (helm-chart's sourceless path was removed in the
-// schema transition).
+// The helm engine supports sourceless rendering for orchestration unit
+// tests' purposes; the helm-chart provider's sourceless path is no
+// longer supported.
 func testHelmFactory() renderer.EngineFactory {
 	return func(string) (renderer.Engine, error) {
 		return &renderHelm.HelmEngine{}, nil

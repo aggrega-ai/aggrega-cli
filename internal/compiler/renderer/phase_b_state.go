@@ -49,8 +49,8 @@ type PhaseBState struct {
 
 	// EmittedFiles accumulates the per-input-kind file contributions across
 	// B.1 (sourced), B.3 (artifacts; stub today), and B.4 (workload
-	// synthesis). Order is preserved per the contract; B.5 detects cross-origin
-	// collisions over this list.
+	// synthesis). Order is preserved (byte-for-byte deterministic output);
+	// B.5 detects cross-origin collisions over this list.
 	EmittedFiles []EmittedFile
 
 	// PhaseReached records the last completed sub-pass index (0..6).

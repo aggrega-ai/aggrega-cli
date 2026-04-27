@@ -1,6 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Integration-shaped tests for the Build orchestrator. Each test
+// constructs a *types.Aggregate fixture in-memory plus a CatalogLookup
+// stub, calls Build directly, and asserts on the returned
+// TopologyResult. Coverage groups one cluster per Build behaviour:
+//
+//   - TestBuild_SimpleTopology — happy-path pin: two-component graph,
+//     one edge, Labels populated from the catalog stub, edge
+//     Source/Target/Socket present and correct.
+//   - TestBuild_CyclicEdges — pins the cycles-supported contract:
+//     two components mutually `uses` each other; Build returns no
+//     error and emits both back-edges (the runtime topology supports
+//     cyclic edges; only the sub-aggregate inclusion graph rejects
+//     cycles).
+//   - TestBuild_FeatureUsesCreatesEdge — pins the per-edge origin
+//     marker: a Feature's own `uses` block produces an edge whose
+//     OriginFeature equals the Feature type URI, keeping
+//     Feature-authored edges separable from Component-authored edges.
+//   - TestBuild_BoundaryPath — pins phase 3: BoundaryInfra-supplied
+//     boundary path lands on the per-node TopologyNode.
+//   - TestBuild_DeterministicEdgeOrder — pins the synthesized-derived-
+//     data ordering discipline at the edges slice: ten consecutive
+//     Builds against the same input produce byte-identical edge
+//     ordering, and the order is alphabetical-by-source-node
+//     regardless of the OrderedMap's author insertion order.
+
 package topology
 
 import (

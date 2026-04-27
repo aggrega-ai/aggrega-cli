@@ -24,7 +24,7 @@ import (
 // (Go stdlib default). Author-order preservation across the JSON-
 // serialization boundary (IR, --trace, Wasm payloads) lives in
 // OrderedMap.MarshalJSON; the template-iteration layer is intentionally
-// alphabetical per the contract.
+// alphabetical to match Helm-community authoring expectations.
 func EvalTemplate(name, tmplText string, data interface{}) (string, error) {
 	templateData := toLowercaseMap(data)
 
@@ -57,9 +57,9 @@ type orderedMapForTemplate interface {
 // JSON-serialization consumers (IR output, --trace debug, Wasm payloads)
 // but irrelevant for text/template's alphabetical map-range default. The
 // walker preserves OrderedMap shape all the way to the template boundary
-// and then intentionally converts to map[string]any at that boundary — the
-// controlled handoff from "author-order Go data" to "alphabetical-iteration
-// template data" documented in .
+// and then intentionally converts to map[string]any at that boundary —
+// the controlled handoff from "author-order Go data" to
+// "alphabetical-iteration template data."
 //
 // Conversion rules:
 //   - Struct fields: reflected by JSON tag (first token before `,`).

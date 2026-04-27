@@ -118,8 +118,8 @@ func stringFromValues(values map[string]interface{}, key, fallback string) strin
 //     preserved.
 //   - map[string]interface{} / map[string]string: input has no author order
 //     (Go map iteration is hash-random), so keys are inserted into the
-//     result alphabetically — the deterministic choice per the contract when
-//     no author order is available upstream.
+//     result alphabetically — the deterministic choice when no author
+//     order is available upstream.
 //   - Everything else: nil.
 func mapStringFromValues(values map[string]interface{}, key string) *types.OrderedMap[string] {
 	v, ok := values[key]
@@ -214,8 +214,10 @@ func intFromValues(values map[string]interface{}, key string, fallback int) int 
 // envVarsFromMap emits a []EnvVar in author order from the supplied
 // OrderedMap. Kubernetes `env` is an ordered list — later entries can
 // $(VAR)-reference earlier ones — so preserving the author's declared
-// order matters for correctness, not just for determinism. See 
-// for the ordered-semantic-data principle this method applies.
+// order matters for correctness, not just for determinism. The
+// ordered-semantic-data principle applies: ordering that the runtime
+// observes belongs in lists or OrderedMaps in the schema, not in
+// template iteration.
 func envVarsFromMap(m *types.OrderedMap[string]) []EnvVar {
 	if m == nil || m.Len() == 0 {
 		return nil

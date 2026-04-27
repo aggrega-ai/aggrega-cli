@@ -62,10 +62,10 @@ func (m OrderedMap[V]) IsZero() bool {
 // TemplateAlphabeticalMap returns a plain map[string]any representation of
 // the ordered map, intended exclusively for the renderer's template-
 // preparation walker. The caller (text/template) iterates the returned map
-// in alphabetical key order (Go stdlib default), not in author order — see
-// . For author-order iteration, callers access Keys() and All()
-// directly; this method is the intentional bridge to the alphabetical-
-// iteration template boundary.
+// in alphabetical key order (Go stdlib default), not in author order. For
+// author-order iteration, callers access Keys() and All() directly; this
+// method is the intentional bridge to the alphabetical-iteration template
+// boundary that matches Helm-community authoring expectations.
 //
 // Value receiver so the method dispatches when OrderedMap is a field value
 // (same rationale as MarshalYAML / MarshalJSON).

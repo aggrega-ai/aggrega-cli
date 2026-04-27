@@ -1,6 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Tests for pkg/catalog. Coverage spans the four behaviours the package
+// commits to:
+//
+//   - End-to-end load against testdata fixtures (one of each catalog-resident
+//     kind: Component, Feature, Recipe, FeatureRecipe, Aggregate, Provider)
+//     plus per-callback-returner round-trips through CatalogLookup,
+//     RecipeLookup, SubAggregateLoader, and ProviderLookup. Each round-trip
+//     pins the lookup contract (hit returns the entity; miss returns the
+//     bool false / error path the renderer or topology package expects).
+//
+//   - Multi-directory merge via LoadAll across two temp dirs — pins the
+//     last-write-wins layered-catalog semantics by loading two Recipes
+//     keyed on different spec.implements URIs and asserting both survive
+//     into the merged Catalog.
+//
+//   - Empty-directory load, asserting Load returns an empty Catalog rather
+//     than an error when the input directory carries no entity YAML.
+//
+//   - ResolveAllExtends round-trip on a parent / child Component pair —
+//     pins both the inherited-label persistence and the unified-cueSchema
+//     constraint propagation that the Two-Tiered Inheritance Merge
+//     (deep YAML merge + monotonic CUE unification) guarantees.
+//
+//   - Recipe relative-source resolution to absolute path so co-located
+//     charts stay resolvable regardless of the consumer's working directory.
+//
+// Tests use t.TempDir + os.WriteFile to build per-test fixtures inline
+// where the testdata/ tree's single-of-each-kind shape isn't enough; the
+// canonical six-fixture testdata/ tree drives the all-entity-types test.
+
 package catalog
 
 import (

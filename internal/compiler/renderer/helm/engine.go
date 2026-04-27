@@ -49,7 +49,8 @@ func (e *HelmEngine) Render(
 		return renderSourced(ctx, s, values, nodeCtx)
 	default:
 		// Structured source objects (e.g. {repo: ..., chart: ..., version: ...}) are
-		// reserved for future registry integration;  supports only filesystem paths.
-		return nil, fmt.Errorf("helm: node %q: structured source not supported in ", nodeCtx.NodeID)
+		// reserved for future registry integration; the helm provider supports
+		// only filesystem paths today.
+		return nil, fmt.Errorf("helm: node %q: structured source not supported", nodeCtx.NodeID)
 	}
 }

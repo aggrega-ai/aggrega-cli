@@ -1,16 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package topology implements Step 2 of the Aggrega compiler pipeline:
-// the Topology Builder & Mutation Gate.
+// Package topology is Step 2 of the compiler pipeline — the Topology
+// Builder & Mutation Gate. It consumes a resolver.ResolveResult (the Step
+// 1 output: a resolved Aggregate / Manifest / Release plus per-node
+// boundary infra and a CatalogLookup) and produces a TopologyResult — the
+// flattened node graph with directed edges, per-node feature/secret
+// attachments, and a compiler-internal map of exported-component aliases.
+// The result is the upstream input to Step 3 (the IR builder); this
+// package is the load-bearing seam between resolver-side validation and
+// IR-side normalisation.
 //
-// It consumes a resolver.ResolveResult and produces a TopologyResult containing
-// flattened nodes (dot-notation IDs), directed edges (from uses declarations),
-// feature/secret attachments, and exported component mappings.
+// Build is the orchestrator entry point. The body proceeds in five
+// phases (numbered in the function): flatten the Aggregate tree (sub-
+// aggregates → dot-notation IDs); populate node Labels from the catalog;
+// populate BoundaryPath from the resolver; normalise polymorphic `uses`
+// declarations into NormalizedEdge instances; and collect feature and
+// secret `uses` edges, marking them with OriginFeature so the IR-side
+// edge-atomicity contract carries downstream.
 //
-// Key behaviors:
-//   - Polymorphic uses normalization (string arrays and verbose maps)
-//   - Sub-aggregate recursive flattening with dot-notation IDs
-//   - Cyclic edges allowed (no DAG constraint)
-//   - Deterministic output (all arrays from sorted map iteration)
+// Naming and authoring conventions the package relies on:
+//
+//   - Dotted node IDs. The dot is reserved as the compiler-internal
+//     path separator; user-authored instance names cannot contain dots
+//     (schema-banned), so flattening's dotted IDs are unambiguous.
+//   - Cyclic edges. Build does not topologically sort or reject
+//     back-edges; cycles flow through the IR intact for downstream
+//     rendering. The runtime `uses` graph supports cycles (multi-agent
+//     loops are a legitimate authoring shape); only the orthogonal
+//     sub-aggregate inclusion graph rejects them.
+//   - Per-edge origin marker. NormalizedEdge.OriginFeature keeps
+//     Feature-authored edges separable from Component-authored edges.
+//     The IR builder reads this field directly into IREdge.
+//   - Sub-aggregate depth bound. flattenAggregate enforces a maximum
+//     inclusion depth of 10 (maxSubAggregateDepth), halting with
+//     ErrMaxDepth on overflow. The bound caps pathological depth and
+//     converts cyclic includes into deterministic compile-time errors.
+//   - Map-based root topology. Aggregate.Spec.Components, Subsystems,
+//     Aggregates are all OrderedMap[V]; flattenAggregate iterates them
+//     via .All() to preserve author order from the Aggregate's YAML
+//     through to the flattened Nodes map.
+//   - Determinism. Author-declared collections (Nodes from OrderedMap
+//     iteration) preserve YAML order; synthesized derived collections
+//     (Edges) sort alphabetically by source-node. The distinction is
+//     documented at the sortedNodeIDs call site in topology.go and
+//     consumed by Step 3 / IR as a cross-package contract.
+//   - Upstream guarantees. The resolver validates `uses` socket names
+//     against usesSchema before this package runs; normalizeUses
+//     therefore trusts that every socket name it parses is
+//     catalog-recognised.
+//
+// Mutator-plugin contract status. The MutatorInput / MutatorOutput /
+// CompilationContext / MutatorGraph / MutatorNode types in wasm_types.go
+// are contract definitions only — the Wasm plugin that consumes them
+// has no production caller yet (zero importers outside this package).
+// The types ship as deliberately stable surface for downstream
+// Wasm-runtime work to bind against once the mutator socket lands.
+//
+// Downstream consumers. The IR builder (`internal/compiler/ir`) is the
+// production reader of TopologyResult — see its package doc.go for the
+// node / edge / attachment consumption pattern. Tests in this repo
+// (`internal/compiler/example22_test.go`, `pipeline_integration_test.go`,
+// `determinism_test.go`) construct topology results directly to exercise
+// the pipeline end-to-end.
 package topology

@@ -40,10 +40,10 @@ var (
 //
 // Track 1 dispatch: Workload-mode arrives via Phase B.4 dispatching to
 // SynthesizeWorkload; Render itself is reached only when no Workload is
-// declared. For the  compose surface every supported Recipe declares
-// Workload, so this entry point is a defensive stub that errors on the empty
-// case (matching helm.HelmEngine.Render's source-classification structure for
-// symmetry).
+// declared. For the current compose surface every supported Recipe
+// declares Workload, so this entry point is a defensive stub that errors
+// on the empty case (matching helm.HelmEngine.Render's
+// source-classification structure for symmetry).
 func (e *ComposeEngine) Render(
 	ctx context.Context,
 	values map[string]interface{},

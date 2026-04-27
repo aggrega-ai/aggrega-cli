@@ -77,7 +77,7 @@ func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, inject typ
 	// This means both sources wrote the same key → collision
 	// We detect by checking if the current value differs from what self-inject wrote
 	// Actually simpler: we track self-inject keys and uses-inject keys separately
-	// we rely on the Step 1 resolver catching static collisions.
+	// Today we rely on the Step 1 resolver catching static collisions.
 	// Runtime collision detection for template-expanded keys is a future enhancement.
 
 	return nil

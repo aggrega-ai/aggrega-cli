@@ -268,7 +268,7 @@ func TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts(t *testing.T) {
 	goldenCheck(t, "service-type-nodeport-publishes-ports", files[0].Body)
 }
 
-// TestSynthesizeWorkload_ByteIdenticalAcrossRuns —  alignment.
+// TestSynthesizeWorkload_ByteIdenticalAcrossRuns — determinism check.
 // Synthesizing the same Workload twice must produce byte-identical output.
 func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 	t.Parallel()

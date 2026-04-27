@@ -17,18 +17,19 @@
 //     the same name, ComposeRelease returns TRANSLATION_ERROR naming every
 //     contributing (boundary, nodeID, serviceName) tuple.
 //   - Top-level volumes. Per-node volume entries union across the Release;
-//     name collisions silently merge (named volumes are content-free
-//     schema shape, so a collision means the same physical volume).
+//     name collisions silently merge (named volumes are content-free in
+//     the current shape, so a collision means the same physical volume).
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute to this ReleaseComposer, add `depends_on: { <target>: ... }`
 //     to the source service. Condition is `service_healthy` when the target
 //     service has a healthcheck declared; `service_started` otherwise.
 //   - Author order. Map-shaped top-level fields (services, volumes, networks)
 //     are alphabetised by yaml.v3 on marshal — the
-//     alphabetical-by-derivation-key principle of  for synthesised
-//     collections. Within a service, lists (ports, depends_on, volumes,
-//     networks) are kept in stable order: edges and IR nodes iterate
-//     alphabetically; ports retain the order their fragment carried.
+//     alphabetical-by-derivation-key principle for synthesised collections
+//     where no author order applies upstream. Within a service, lists
+//     (ports, depends_on, volumes, networks) are kept in stable order:
+//     edges and IR nodes iterate alphabetically; ports retain the order
+//     their fragment carried.
 
 package compose
 
@@ -94,7 +95,7 @@ func (e *ComposeEngine) ComposeRelease(_ context.Context, info renderer.ReleaseI
 			}
 
 			// Volumes: union (later contributors silently overwrite empty
-			// bodies — both are `<name>: {}` per the  shape).
+			// bodies — both are `<name>: {}` in the current shape).
 			for k, v := range frag.Volumes {
 				merged.Volumes[k] = v
 			}

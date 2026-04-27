@@ -13,13 +13,13 @@ import (
 
 // detectFilenameCollisions walks state.EmittedFiles and groups by Name.
 // Any name with EmittedFiles from more than one Origin produces a rule 7
-// CATALOG_ERROR per WI02's reserved sentinel format. Within-origin
+// CATALOG_ERROR matching the reserved sentinel format. Within-origin
 // duplicates (e.g., two artifacts: entries with the same name; engine
 // emitting the same file twice) are NOT rule 7 violations — those classes
 // are caught by rule 6 (load-time) or by engine-internal logic.
 //
-// Findings are sorted alphabetically by filename for output stability per
-// . Multiple cross-origin collisions in one Recipe produce one
+// Findings are sorted alphabetically by filename for output stability.
+// Multiple cross-origin collisions in one Recipe produce one
 // RecipeValidationError carrying every collision in its Detail line.
 func detectFilenameCollisions(state *PhaseBState) error {
 	if state == nil || len(state.EmittedFiles) == 0 {

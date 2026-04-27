@@ -8,7 +8,15 @@ import (
 	"strings"
 )
 
-// Operator is a label selector operator.
+// Operator is the closed set of label-selector operators this package
+// recognises in a parsed Requirement. The six exported constants below are
+// the only valid values; callers compare against the constants and never
+// against the underlying string. The string-typed backing exists only so the
+// constants double as the literal tokens emitted by the string-selector
+// parser ("=", "!=", "in", "notin"); structured-selector callers using
+// types.LabelSelectorRequirement supply the K8s-API operator names ("In",
+// "NotIn", "Exists", "DoesNotExist") which match.go handles directly without
+// going through this Operator type.
 type Operator string
 
 const (
@@ -20,22 +28,44 @@ const (
 	OpDoesNotExist Operator = "doesnotexist"
 )
 
-// Requirement is one parsed label selector requirement.
+// Requirement is one parsed label-selector clause: a key, an operator, and
+// (for value-bearing operators) one or more values. Exists / DoesNotExist
+// requirements carry an empty Values slice — the operator alone determines
+// the predicate. Equals / NotEquals carry exactly one Values entry; In /
+// NotIn carry one or more.
+//
+// Requirement is the internal currency of the string-selector path
+// (Parse → matchRequirement in selector.go). Callers using structured
+// selectors via Feature appliesTo* fields work in
+// types.LabelSelectorRequirement / types.SelectorTerm directly and never
+// construct Requirement.
 type Requirement struct {
 	Key      string
 	Operator Operator
 	Values   []string // empty for Exists/DoesNotExist
 }
 
-// Parse parses a Kubernetes-style label selector string into requirements.
-// Requirements are separated by commas (AND logic).
-// Supported forms:
-//   - key=value
-//   - key!=value
-//   - key in (v1,v2)
-//   - key notin (v1,v2)
-//   - key          (exists)
-//   - !key         (does not exist)
+// Parse parses a Kubernetes-style label-selector string into a slice of
+// Requirement values. Comma-separated clauses combine with AND semantics
+// (every clause must hold for the selector to match); parentheses around
+// In / NotIn value sets are not split. An empty or whitespace-only selector
+// returns (nil, nil), which downstream callers treat as "no constraint" —
+// see MatchString in selector.go.
+//
+// Supported forms (one per requirement):
+//   - key=value      (Equals)
+//   - key!=value     (NotEquals)
+//   - key in (v1,v2) (In)
+//   - key notin (v1,v2) (NotIn)
+//   - key            (Exists)
+//   - !key           (DoesNotExist)
+//
+// Errors surface as a wrapped "selector: ..." message and only fire when a
+// clause cannot be classified into one of the six forms — specifically
+// (a) "!" prefix with an empty key, and (b) " in (" or " notin (" present
+// without a closing ")". Bare-key clauses always succeed as Exists, so most
+// malformed inputs fail downstream at match time (selector references a key
+// that does not exist on any node) rather than at parse time.
 func Parse(selector string) ([]Requirement, error) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {

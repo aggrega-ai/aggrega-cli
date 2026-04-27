@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Tests for the string-selector path. TestParse covers the syntactic surface
+// — every supported clause shape (key=value, key!=value, key in (...),
+// key notin (...), bare-key Exists, !key DoesNotExist), comma-AND of
+// multiple clauses, and whitespace tolerance — by counting parsed
+// Requirements per input rather than asserting structural equality, which
+// keeps the table compact while still catching shape regressions.
+// TestMatchString covers the end-to-end string→bool flow through
+// Parse + matchRequirement against a labels set drawn from the standard
+// 7-Type ontology + compliance + datastore vocabularies, with explicit
+// rows for the asymmetric missing-key behaviour (NotEquals / NotIn match
+// when the key is absent; In / Equals fail when it is) and for the
+// nil-labels / empty-selector edge cases.
+
 package selector
 
 import (

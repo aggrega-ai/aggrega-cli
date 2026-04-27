@@ -54,9 +54,10 @@ func (o EmitOrigin) String() string {
 // and reports cross-origin collisions via the rule 7 CATALOG_ERROR.
 //
 // EmittedFiles accumulate in declaration order across the sub-pass pipeline
-// per the contract's deterministic-output invariant — the collision detector
-// sorts findings alphabetically for output stability, but the emitted-files
-// list itself preserves the order they were produced.
+// to satisfy the byte-for-byte deterministic-output invariant — the
+// collision detector sorts findings alphabetically for output stability,
+// but the emitted-files list itself preserves the order they were
+// produced.
 //
 // Intermediate=true marks a file as transient input to a ReleaseComposer
 // (see synthesis.go). The orchestrator collects intermediates into the

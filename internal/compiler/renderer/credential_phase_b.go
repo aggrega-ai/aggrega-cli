@@ -10,7 +10,7 @@ import (
 // buildSecretInject constructs the top-level TemplateContext.Inject for a
 // credential FeatureRecipe from an IRSecretEntry.Inject map (mechanism → key → value).
 // Guarantees non-zero OrderedMaps for env/file/arg and builds .All via the shared helper.
-// Custom mechanisms beyond env/file/arg are not surfaced in this iteration.
+// Custom mechanisms beyond env/file/arg are not surfaced today.
 func buildSecretInject(entry types.IRSecretEntry) *types.InjectPipe {
 	env, _ := entry.Inject.Get("env")
 	file, _ := entry.Inject.Get("file")

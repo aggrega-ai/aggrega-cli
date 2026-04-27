@@ -11,9 +11,9 @@ import (
 )
 
 // HelmEngine produces sub-chart contents for one node by copying the user's
-// local Helm chart verbatim. Sourced mode is the only supported path post-
-// the helm-chart provider's role is umbrella + sub-chart composition
-// for sourced charts. Workload synthesis is the helm provider's concern
+// local Helm chart verbatim. Sourced mode is the only supported path: the
+// helm-chart provider's role is umbrella + sub-chart composition for
+// sourced charts. Workload synthesis is the helm provider's concern
 // (renderer/helm/HelmEngine.SynthesizeWorkload) and is not implemented at
 // the helm-chart provider level — chapter 16 assigns synthesis exclusively
 // to helm.
@@ -28,7 +28,7 @@ var _ renderer.Engine = (*HelmEngine)(nil)
 // the user's chart name with `alias: <instance_id>` so values propagation
 // works while allowing multiple instances of the same source chart.
 //
-// The earlier sourceless path (generative rendering of Chart.yaml +
+// The legacy sourceless path (generative rendering of Chart.yaml +
 // templates/*.yaml from a values dict) was removed when chapter 16's
 // three-input-kinds model assigned workload synthesis to helm exclusively.
 // A nil/empty source is rejected with a clear error.

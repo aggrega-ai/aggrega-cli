@@ -47,12 +47,12 @@
 // per the Healthcheck doc comment in types.go. Probe timeouts copy through
 // (K8s seconds → compose Go-duration string `<n>s`).
 //
-// Author-order preservation ( / ). Containers / Variables /
-// Ports / Secrets / Volumes / Services iterated via OrderedMap.All(). Top-
-// level maps (Services, Volumes) inside ComposeFile are Go map[string]X —
-// yaml.v3 sorts keys alphabetically on marshal, which is the
-// alphabetical-by-derivation-key principle for synthesised collections per
-// .
+// Author-order preservation. Containers / Variables / Ports / Secrets /
+// Volumes / Services iterated via OrderedMap.All(). Top-level maps
+// (Services, Volumes) inside ComposeFile are Go map[string]X — yaml.v3
+// sorts keys alphabetically on marshal, which is the
+// alphabetical-by-derivation-key choice for synthesised collections
+// where no author order applies upstream.
 
 package compose
 
@@ -92,8 +92,8 @@ func (e *ComposeEngine) SynthesizeWorkload(
 
 	// Translate every container into a service. Author-order isn't
 	// preserved across services in the YAML output (compose is map-shaped at
-	// the services: key) — the marshaler sorts alphabetically per the contract's
-	// alphabetical-by-derivation-key principle for synthesised maps.
+	// the services: key) — the marshaler sorts alphabetically, the
+	// alphabetical-by-derivation-key choice for synthesised maps.
 	mainServiceName := nodeCtx.NodeID
 	mainContainerName, hasMain := pickMainContainerName(w)
 
@@ -198,8 +198,8 @@ func translateContainer(
 	// compose `environment:` accepts both list and map forms — we emit map
 	// form for clarity, but Go map iteration order is unstable, so use the
 	// OrderedMap iterator and copy into a map only at the last step. yaml.v3
-	// sorts map keys alphabetically on marshal — author order is lost in the
-	// output but the same input always produces the same output per the contract.
+	// sorts map keys alphabetically on marshal — author order is lost in
+	// the output but the same input always produces the same output.
 	if c.Variables.Len() > 0 {
 		svc.Environment = map[string]string{}
 		for k, v := range c.Variables.All() {
@@ -474,7 +474,8 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //   - Workload.InitContainers              → no compose equivalent (compose
 //     has no startup ordering primitive beyond depends_on)
 //   - Workload.Replicas                    → no equivalent at the service
-//     level (compose `deploy.replicas` is swarm-only; out of scope for)
+//     level (compose `deploy.replicas` is swarm-only; out of scope for the
+//     current single-host compose target)
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) {
 	if svc.User != "" {
 		return // container-level User wins
@@ -567,9 +568,8 @@ func sanitizeServiceName(name string) string {
 
 // marshalDeterministic wraps yaml.Marshal at a single call point. yaml.v3
 // sorts map keys alphabetically — synthesised top-level maps (services,
-// volumes, networks) inherit alphabetical-by-derivation-key ordering per
-// . byte-identical input produces byte-identical output across
-// compilations per the contract.
+// volumes, networks) inherit alphabetical-by-derivation-key ordering.
+// byte-identical input produces byte-identical output across compilations.
 func marshalDeterministic(v any) ([]byte, error) {
 	return yaml.Marshal(v)
 }

@@ -31,8 +31,8 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 
 		// Build feature-scoped context: swap .values/.infra to the feature's own
 		// and overlay FR-own locals over the base Recipe's evaluated locals
-		// (FR wins on collision). WI-1 uses raw-string overlay;
-		// WI-2 will upgrade FR locals to template-evaluated overlay.
+		// (FR wins on collision). The current implementation uses a raw-string
+		// overlay; template-evaluated overlay is a future enhancement.
 		featureCtx := *ctx // shallow copy
 		if feat, ok := ctx.Features.Get(ref.InstanceName); ok {
 			featureCtx.Values = feat.Values

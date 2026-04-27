@@ -1,6 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Unit tests for collectNodeFeatures and the helper functions in
+// features.go — focused per-behaviour coverage that complements the
+// integration-shaped tests in builder_test.go. featureCatalog provides a
+// minimal CatalogLookup with one operational feature ("core/monitoring")
+// and one credential feature ("core/db-creds", labelled with the
+// `feature.aggrega.ai/kind: secret` label).
+//
+// Test cases cover the three mergeFeature behaviour rules plus the
+// determinism discipline at the markers slice:
+//
+//   - TestCollectNodeFeatures_SimpleComponent — happy path: one
+//     operational feature lands in Features with values intact and the
+//     instance name appearing in FeatureOrder.
+//   - TestCollectNodeFeatures_CredentialToSecrets — pins the
+//     credential-routing branch: a kind:secret feature ends up in
+//     Secrets and Features stays empty.
+//   - TestCollectNodeFeatures_TypeMismatchError — pins the type-match
+//     fatal halt: same instance name with two different types returns
+//     ErrFeatureTypeMismatch via errors.Is.
+//   - TestCollectNodeFeatures_LastWinsMerge — pins the "last wins"
+//     deep-merge on values: two attachments of the same instance name
+//     merge per-key with the second writer winning where both declare
+//     the same key.
+//   - TestCollectNodeFeatures_MarkersDeduplicatedAndSorted — pins the
+//     determinism discipline at the markers slice: duplicate types
+//     collapse to one entry and the slice is sorted.
+//   - TestSplitPath — pins the dual-separator path tokeniser used by
+//     subsystem and boundary path traversal.
+
 package ir
 
 import (

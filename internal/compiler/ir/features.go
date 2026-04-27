@@ -20,8 +20,45 @@ type featureResult struct {
 	Markers      []string // canonical feature type strings
 }
 
-// collectNodeFeatures implements the 5-Tier Onion Model for one node.
-// Tiers are collected in order; "last wins" deep-merge on values.
+// collectNodeFeatures assembles the merged Feature list for one node by
+// processing five ordered cascade tiers in sequence. mergeFeature handles
+// per-instance "last wins" on values, the type-mismatch fatal halt that
+// guards same-instance-name divergence between Aggregate and Release,
+// and the credential-routing branch that diverts kind:secret features
+// into the per-node Secrets map rather than Features.
+//
+// Tier order, with the data sources each tier reads from:
+//
+//   - Tier 1 — Sub-aggregate component features. Already collected into
+//     topoResult.FeatureAttachments by the topology builder's
+//     flattenAggregate; iterated here in attachment order.
+//   - Tier 2 — Root Aggregate component features. Same source; the
+//     topology builder appends Tier 2 attachments after Tier 1 so a
+//     single iteration over FeatureAttachments processes both in the
+//     correct outer-to-inner order.
+//   - Tier 3 — Root Aggregate subsystem features (outer-to-inner).
+//     collectSubsystemFeatures walks the subsystem path on the resolved
+//     Aggregate, emitting features at each level in author order.
+//   - Tier 4 — Release boundary-wide features (outer-to-inner).
+//     collectBoundaryWideFeatures walks the boundary path on the Release
+//     and reads boundary-level Features. Release contributions to a
+//     same-named instance are infra-only — values come from the
+//     Aggregate side, infra from the Release side; see the post-merge
+//     infra overlay block here.
+//   - Tier 5 — Release component-specific features.
+//     collectReleaseComponentFeatures recursively scans every boundary's
+//     per-component Features map for entries keyed by nodeID.
+//
+// After the five tiers, secret attachments from topology are added
+// directly into result.Secrets — these are typed Secret instances rather
+// than label-discriminated credential Features, so they bypass the
+// mergeFeature credential-routing branch and land straight in the
+// secrets bucket.
+//
+// Markers (the canonical feature-type strings the IR exposes via
+// FeatureMarkers) are accumulated into a set across all five tiers plus
+// the Secret pass, then sort-extracted at the end so byte-identical
+// input produces byte-identical output across runs.
 func collectNodeFeatures(
 	nodeID string,
 	topoNode *topology.TopologyNode,
@@ -121,9 +158,33 @@ func collectNodeFeatures(
 	return result, nil
 }
 
-// mergeFeature merges a feature into the result following "last wins" semantics.
-// Type mismatch between existing and new → fatal error.
-// Credential features (kind=secret label) go to Secrets, not Features.
+// mergeFeature accepts one (instanceName, FeatureInstance) pair from one
+// of the five cascade tiers and folds it into the per-node featureResult.
+// Three rules govern the fold:
+//
+//   - Credential routing. isCredential checks the feature type URI
+//     against the catalog and returns true when the catalog entity
+//     carries the feature.aggrega.ai/kind: secret label (see
+//     types.FeatureKindLabel / FeatureKindSecret). Credential features
+//     route into result.Secrets and never appear in result.Features —
+//     this preserves the architectural separation between operational
+//     features and credentials at the IR layer.
+//   - Type-match fatal halt. When an existing feature entry for
+//     instanceName carries a non-empty Type that disagrees with the
+//     incoming Type, the merge halts with ErrFeatureTypeMismatch
+//     wrapping the conflict. The check is what makes the pillar-split
+//     merge (values from Aggregate, infra from Release) coherent: same
+//     instance name across tiers must describe the same Feature.
+//   - "Last wins" deep-merge on values. When the existing entry is
+//     compatible (same type or untyped on either side), incoming Values
+//     entries are written over existing ones key-by-key — later tiers
+//     override earlier tiers per-key without wholesale replacement.
+//     FeatureOrder is appended only on first sight of an instance name,
+//     so the order vector is stable across re-merges of the same
+//     instance.
+//
+// The markerSet parameter aggregates feature-type strings across all
+// tiers; the caller sort-extracts at the end of collectNodeFeatures.
 func mergeFeature(
 	result *featureResult,
 	instanceName string,
@@ -203,8 +264,18 @@ type namedBoundaryFeature struct {
 	feat types.BoundaryFeature
 }
 
-// collectSubsystemFeatures walks the subsystem tree from root to the target path,
-// collecting features at each level (outer-to-inner, in author order).
+// collectSubsystemFeatures implements the per-subsystem cascade level:
+// for a node sitting inside a subsystem path like "subsys-a/subsys-b",
+// walk the Aggregate's subsystem tree from root toward the leaf, emitting
+// every subsystem-level Feature attached at each level in OrderedMap
+// author order. Outer subsystems are emitted before inner subsystems so
+// the same Feature declared at a deeper level overrides one declared at
+// a shallower level via "last wins" in mergeFeature.
+//
+// The path traversal stops short on the first missing path part so that
+// a subsystem-path the topology asserts but the resolved Aggregate no
+// longer contains (a defensive condition; should not happen on a clean
+// pipeline) returns the partial outer-tier list rather than panicking.
 func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []namedFeature {
 	parts := splitPath(subsystemPath)
 	if len(parts) == 0 {
@@ -229,8 +300,21 @@ func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []name
 	return result
 }
 
-// collectBoundaryWideFeatures walks the Release boundary tree from root to the
-// target boundary path, collecting boundary-wide features (outer-to-inner).
+// collectBoundaryWideFeatures implements the per-Release-boundary cascade
+// level: for a node sitting inside a Release boundary path, walk the
+// boundary tree from root toward the leaf, emitting every boundary-level
+// Feature attached at each level in author order. Outer boundaries are
+// emitted before inner boundaries — same cascade discipline as the
+// per-subsystem level.
+//
+// Boundary feature payloads arrive as untyped interface{} (Boundary
+// .Features is OrderedMap[interface{}]) because Release boundary YAML
+// authors features as opaque maps the renderer interprets per-feature;
+// parseBoundaryFeature below extracts the type and infra fields.
+// Mergeable values are NOT collected here — Release boundaries
+// contribute infra-only under the pillar-split rule (values from the
+// Aggregate, infra from the Release), and collectNodeFeatures applies
+// that infra overlay separately after the merge.
 func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], boundaryPath string) []namedBoundaryFeature {
 	parts := splitPath(boundaryPath)
 	if len(parts) == 0 {
@@ -256,8 +340,19 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 	return result
 }
 
-// collectReleaseComponentFeatures finds component-specific features for a node
-// across all Release boundaries.
+// collectReleaseComponentFeatures implements the most-specific cascade
+// level — boundary entries that name a particular component instance
+// directly (rather than cascading boundary-wide). For a given nodeID,
+// recursively scan every Release boundary's per-component Features map
+// and emit the entries keyed by nodeID. This level merges last so it
+// wins on collisions with the broader boundary-wide cascade.
+//
+// The recursion is unconstrained by boundary path: any boundary anywhere
+// in the tree may carry a per-component Features map for nodeID, and all
+// of them contribute. As with the boundary-wide level, Features-instance
+// payloads here arrive as the same opaque BoundaryFeature shape and
+// contribute infra only — collectNodeFeatures applies the infra overlay
+// after merge.
 func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary], nodeID string) []namedBoundaryFeature {
 	var result []namedBoundaryFeature
 	collectCompFeaturesRecursive(boundaries, nodeID, &result)

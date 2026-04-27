@@ -25,9 +25,49 @@ type flattenResult struct {
 	ExportedComponents map[string]string
 }
 
-// flattenAggregate recursively walks an Aggregate tree, flattening all components
-// (including sub-aggregate components) into a flat node map with dot-notation IDs.
-// Walks are in author order (OrderedMap iteration).
+// flattenAggregate recursively walks an Aggregate tree, flattening all
+// components (including sub-aggregate components) into a single flat
+// node map with dot-notation IDs. The dot is reserved as the
+// compiler-internal path separator; user-authored instance names cannot
+// contain dots, so synthesised dotted IDs are unambiguous. Author order
+// is preserved at every level by iterating OrderedMap-backed
+// collections — root-topology blocks (`components`, `subsystems`,
+// `aggregates`) are YAML maps keyed by user-authored instance names so
+// the parser preserves declaration order.
+//
+// Walk order — three passes over the current Aggregate level, each in
+// author order:
+//
+//  1. Top-level components (agg.Spec.Components). Each becomes a node
+//     with the current `prefix` and `subsystemPath`; collectAttachments
+//     records its features and secrets.
+//  2. Subsystems (agg.Spec.Subsystems). flattenSubsystem walks each
+//     subsystem's components and nested sub-subsystems, accumulating
+//     dotted subsystemPath segments.
+//  3. Sub-aggregate imports (agg.Spec.Aggregates). For each, the loader
+//     resolves the type URI to a child Aggregate; the recursive call
+//     uses the imported Aggregate's name as the new prefix and merges
+//     the child's flattened nodes / attachments / exported components
+//     back into the parent's result.
+//
+// Two cycle / depth disciplines protect the recursion:
+//
+//   - The `visited` set is keyed by sub-aggregate type URI, copied per
+//     branch (copyVisited) so siblings don't poison each other; a
+//     repeat type URI on the same branch produces ErrSubAggregateLoad
+//     wrapping a "circular" message.
+//   - The `depth` counter is bounded by maxSubAggregateDepth (10);
+//     exceeding it produces ErrMaxDepth. The depth bound subsumes cycle
+//     detection when the visited-set check would have otherwise allowed
+//     infinite recursion via type-renaming tricks.
+//
+// Note on the runtime-graph cycle distinction: flattenAggregate's
+// cycle / depth checks operate on the sub-aggregate INCLUSION graph
+// (which authoring file embeds which). The runtime `uses` graph
+// supports cycles without restriction; it is built later in
+// normalizeUses. The two graphs are unrelated and the cycle rules
+// differ deliberately — runtime back-edges are a legitimate authoring
+// shape (multi-agent loops); inclusion cycles are authoring bugs.
 func flattenAggregate(
 	agg *types.Aggregate,
 	prefix string,
@@ -113,6 +153,20 @@ func flattenAggregate(
 	return result, nil
 }
 
+// flattenSubsystem walks a single subsystem's components and any nested
+// sub-subsystems, appending each component to the parent flattenResult's
+// node map and accumulating dotted subsystemPath segments as the recursion
+// descends. The subsystemPath ends up on each TopologyNode and feeds IR's
+// Tier-3 Onion Model traversal (collectSubsystemFeatures in
+// internal/compiler/ir/features.go) — the path string is what tells IR
+// which subsystem-level features cascade to the node and in what
+// outer-to-inner order.
+//
+// Subsystems are not gated by the sub-aggregate cycle / depth bounds:
+// they are part of the authoring root of the same Aggregate, so the
+// only bound is the YAML schema's structural validity. Pathologically
+// deep subsystem nesting in a single Aggregate would still reach the
+// recursion stack limit, but no LDR enshrines a depth bound here.
 func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) {
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
@@ -134,6 +188,19 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub t
 	}
 }
 
+// collectAttachments records a node's feature and secret attachments
+// into the per-node slices on flattenResult, preserving author order
+// from the Aggregate's component instance. The IR builder reads
+// FeatureAttachments[nodeID] and SecretAttachments[nodeID] in this
+// order and feeds them through the per-node feature-cascade
+// normalisation. Author order is the only ordering applied here; later
+// merge passes inside IR may dedupe by instance name with "last wins"
+// semantics, but topology surfaces the raw author-attached entries.
+//
+// The `tier` parameter is currently always 0 from both call sites; the
+// SourceTier field on the resulting attachment is therefore always 0
+// today. The field exists for future use; SourceTier carries no
+// meaningful tier information in the current implementation.
 func collectAttachments(result *flattenResult, nodeID string, comp types.ComponentInstance, tier int) {
 	// Features (author order)
 	for fname, feat := range comp.Features.All() {

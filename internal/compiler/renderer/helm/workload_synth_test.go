@@ -336,10 +336,10 @@ func TestSynthesizeWorkload_LoadBalancerService(t *testing.T) {
 	goldenCheck(t, "loadbalancer-service", concatBodies(files))
 }
 
-// TestSynthesizeWorkload_ByteIdenticalAcrossRuns verifies 
-// alignment: the same Workload input produces the same output on every
-// compile. Catches non-deterministic iteration that might creep in via Go
-// map ranges.
+// TestSynthesizeWorkload_ByteIdenticalAcrossRuns verifies the
+// byte-for-byte determinism contract: the same Workload input produces
+// the same output on every compile. Catches non-deterministic iteration
+// that might creep in via Go map ranges.
 func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()

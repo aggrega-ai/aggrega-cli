@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Tests for the structured-selector entry points (MatchLabels,
+// MatchExpressions, MatchAnyOf) — the surface Feature catalog YAML lands on
+// via Feature.Spec.AppliesTo, AppliesToExpressions, and AppliesToAnyOf.
+// Coverage is per-operator (one positive and one negative case per K8s
+// operator In/NotIn/Exists/DoesNotExist) plus the asymmetric missing-key
+// behaviour ("In" fails, "NotIn" succeeds) and the OR-between-terms /
+// AND-within-term semantics of MatchAnyOf. Tables are laid out one row per
+// behaviour so a regression renames itself in the failure output.
+
 package selector
 
 import (

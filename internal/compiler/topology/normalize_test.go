@@ -1,6 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Unit tests for normalizeUses, parseVerboseEntry, and parseInjectBlock
+// — the polymorphic uses-form normalisation that converges both
+// authoring shapes (string-array and verbose-map) onto NormalizedEdge.
+// mkUses is a small helper that assembles an OrderedMap[interface{}]
+// preserving the call-site key insertion order, mirroring how YAML
+// unmarshal would build the same map from authored YAML.
+//
+// Behaviour clusters:
+//
+//   - TestNormalizeUses_StringArray — pins string-array form; one edge
+//     per array entry; OriginFeature is empty for component-authored
+//     edges.
+//   - TestNormalizeUses_VerboseMap — pins verbose-map form: alias
+//     becomes Alias, inner `target:` overrides the alias as Target,
+//     inner `inject:` populates the edge's Inject block.
+//   - TestNormalizeUses_OriginFeature — pins the per-edge origin-marker
+//     carry-through: a non-empty originFeature parameter lands on
+//     every emitted edge.
+//   - TestNormalizeUses_Empty — pins the empty-input contract:
+//     zero-length uses returns no edges and no error.
+//   - TestNormalizeUses_InvalidArrayElement /
+//     TestNormalizeUses_InvalidType — pin the two ErrInvalidUsesFormat
+//     paths (non-string array element; non-array-non-map socket value).
+//   - TestNormalizeUses_DeterministicOrder — pins the OUTER socket-
+//     iteration discipline as AUTHOR ORDER (OrderedMap.All preserves
+//     insertion order). The inner verbose-map alias loop sorts
+//     alphabetically as a separate concern; this test exercises only
+//     the outer iteration via string-array entries.
+//   - TestNormalizeUses_VerboseSimpleString — pins the bare-string
+//     verbose-entry shorthand: `{"my-db": "target-name"}` is
+//     equivalent to `{"my-db": {"target": "target-name"}}`.
+
 package topology
 
 import (

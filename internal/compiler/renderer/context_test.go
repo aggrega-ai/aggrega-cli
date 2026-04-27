@@ -126,9 +126,9 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 		t.Errorf("infra.replicas: %v", replicasVal)
 	}
 
-	// .Provides reflects Pass 1 output. .Locals is intentionally empty
-	// here because AssembleNodeContext does not run the Phase B locals preamble
-	// — the orchestrator calls EvaluateRecipeLocals separately ( WI-1).
+	// .Provides reflects Pass 1 output. .Locals is intentionally empty here
+	// because AssembleNodeContext does not run the Phase B locals preamble
+	// — the orchestrator calls EvaluateRecipeLocals separately.
 	listenPort, _ := ctx.Provides.Get("listen_port")
 	if listenPort != "8080" {
 		t.Errorf("provides: %v", ctx.Provides.Keys())

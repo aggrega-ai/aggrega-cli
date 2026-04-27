@@ -17,12 +17,12 @@
 //     artifacts or Features).
 //   - ephemeral volume variant → emptyDir { sizeLimit }.
 //
-// Author-order preservation: containers, services, volumes,
-// container ports, container variables, container secrets — all iterated
-// via OrderedMap.All() so byte-identical input produces byte-identical
+// Author-order preservation: containers, services, volumes, container
+// ports, container variables, container secrets — all iterated via
+// OrderedMap.All() so byte-identical input produces byte-identical
 // output across compilations.
 //
-// Filename convention (WI05a §9): per-resource files named
+// Filename convention: per-resource files named
 // "<instance_id>-<kind>.yaml" for Deployment/StatefulSet/PVC, and
 // "<instance_id>-<service-key>-service.yaml" for Services. Matches the
 // existing sourceless.go naming pattern.
@@ -753,7 +753,7 @@ func intsToInt64s(s []int) []int64 {
 // marshalDeterministic wraps yaml.Marshal at a single call point. yaml.v3's
 // MarshalYAML is invoked recursively on each typed K8s shape; OrderedMap
 // fields preserve author order via OrderedMap.MarshalYAML. byte-identical
-// input produces byte-identical output across compilations per the contract.
+// input produces byte-identical output across compilations.
 func marshalDeterministic(v any) ([]byte, error) {
 	return yaml.Marshal(v)
 }

@@ -6,7 +6,7 @@ package analyzer
 import "github.com/cognitio/aggrega-cli/pkg/types"
 
 // PolicyValidatorInput is the payload sent to the policy-validator.wasm socket in Step 4.
-// Not yet executed — struct definition only.
+// Contract definition only — not yet executed.
 type PolicyValidatorInput struct {
 	Graph              PolicyGraph         `json:"graph"`
 	PrecalculatedPaths []PrecalculatedPath `json:"precalculated_paths"`

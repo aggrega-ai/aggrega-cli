@@ -173,11 +173,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Sourceless baseSchema validation: if the Recipe has no source AND no
 		// workload AND a ProviderLookup is available, validate the
 		// valuesMapping output against the provider's baseSchema. The baseSchema
-		// check is earlier validation against the values-dict-driven sourceless
-		// path; it doesn't apply to the  workload-driven path (where the
-		// rendering input lives inside the parsed Workload, not in the values
-		// dict). Phase B.2 + ValidateWorkload + ValidateWorkloadSecrets cover
-		// the workload-mode validation surface.
+		// check is the legacy validation against the values-dict-driven
+		// sourceless path; it doesn't apply to the workload-driven path
+		// (where the rendering input lives inside the parsed Workload, not in
+		// the values dict). Phase B.2 + ValidateWorkload + ValidateWorkloadSecrets
+		// cover the workload-mode validation surface.
 		hasWorkload := recipe != nil && (recipe.Spec.Workload != "" || recipe.Spec.WorkloadFrom != "")
 		if recipe != nil && input.ProviderLookup != nil && isSourceless(recipe) && !hasWorkload {
 			if err := ValidateValuesAgainstBaseSchema(

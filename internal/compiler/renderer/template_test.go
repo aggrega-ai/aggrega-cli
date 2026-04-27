@@ -200,11 +200,11 @@ func TestWalker_PlainMapAlphabetical(t *testing.T) {
 	}
 }
 
-// Template-iteration alphabetical-stability — the  contract:
-// after the walker unwraps OrderedMap, text/template range over the
-// resulting map iterates in alphabetical order regardless of the
-// OrderedMap's author insertion order. This is load-bearing and tested
-// here as a regression guard.
+// Template-iteration alphabetical-stability contract: after the walker
+// unwraps OrderedMap, text/template range over the resulting map
+// iterates in alphabetical order regardless of the OrderedMap's author
+// insertion order. This is load-bearing and tested here as a regression
+// guard.
 
 func TestEvalTemplate_MapIterationIsAlphabetical(t *testing.T) {
 	t.Parallel()
@@ -267,16 +267,16 @@ func TestEvalTemplate_OrderedMapKeysPipeline(t *testing.T) {
 // TemplateContext via json.Marshal, and asserts the emitted JSON's
 // `values` object key sequence matches author order.
 //
-// This is the  +  contract at the JSON-boundary: every
-// downstream JSON consumer (IR emission, --trace output, Wasm guest
-// payloads, diagnostics) reads keys in author order. Author order is
-// preserved through OrderedMap.MarshalJSON; the construction-time Set
-// sequence is what determines the emitted order.
+// This is the JSON-boundary author-order contract: every downstream JSON
+// consumer (IR emission, --trace output, Wasm guest payloads,
+// diagnostics) reads keys in author order. Author order is preserved
+// through OrderedMap.MarshalJSON; the construction-time Set sequence is
+// what determines the emitted order.
 //
 // The test guards against future regressions where someone might switch
 // OrderedMap.MarshalJSON to alphabetical-iteration in the name of "more
-// canonical output," silently violating the contract's author-order pillar
-// for user-committable artifacts.
+// canonical output," silently violating the author-order pillar for
+// user-committable artifacts.
 func TestTemplateContext_JSONBoundaryAuthorOrder(t *testing.T) {
 	t.Parallel()
 

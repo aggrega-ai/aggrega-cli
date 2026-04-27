@@ -12,7 +12,27 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// BuildIRConfig configures the IR graph builder.
+// BuildIRConfig is the input bundle for BuildIR. The four fields are all
+// required for a successful build:
+//
+//   - Topology supplies the flattened node graph plus edges and per-node
+//     feature/secret attachments. Step 2 produces it; the IR builder reads
+//     Nodes (in author order, OrderedMap-backed), Edges (already sorted),
+//     FeatureAttachments, and SecretAttachments.
+//   - ResolveResult supplies the original Aggregate / Manifest / Release
+//     plus per-node BoundaryInfra. The IR builder reads Aggregate for
+//     subsystem traversal (Tier 3), Release for boundary traversal (Tiers
+//     4 + 5) and sync-wave lookup, and BoundaryInfra for the IRSpec
+//     InfraMapping plus the release-annotations bucket.
+//   - CatalogLookup is the same callback shape produced by pkg/catalog. The
+//     IR builder uses it to resolve component `metadata.version` (for
+//     IRNode.ResolvedVersion), to extract catalog annotations and the
+//     CatalogMetadata enterprise suite, and to test feature catalog
+//     entities for the credential label that routes them into Secrets.
+//   - CompilerVersion is plumbed through to provenance generation so the
+//     emitted IRGraph records the binary that produced it. The orchestrator
+//     at cmd/aggrega/build.go is the production caller and supplies the
+//     CLI's version string here.
 type BuildIRConfig struct {
 	Topology        *topology.TopologyResult
 	ResolveResult   *resolver.ResolveResult
@@ -20,24 +40,56 @@ type BuildIRConfig struct {
 	CompilerVersion string
 }
 
-// FeatureOrder tracks deterministic feature ordering per node.
-// Key: nodeID, Value: ordered feature instance names following Onion Model.
+// FeatureOrder is BuildIR's secondary return value: per-node, the ordered
+// list of Feature instance names in cascade-tier sequence (sub-aggregate
+// component → root-aggregate component → root-aggregate subsystem →
+// release boundary → release component-specific). The map keys by
+// nodeID; the slice value is the deterministic execution order Phase A
+// and Phase B of the renderer must follow.
+//
+// FeatureOrder exists as a separate slice rather than relying on the Go
+// map iteration order of IRSpec.FeatureValuesMapping because Go map
+// iteration is deliberately randomised and would defeat the byte-for-byte
+// determinism contract the compiler commits to. The renderer's Phase A
+// reads FeatureOrder[nodeID] to dispatch FeatureRecipes in tier order —
+// see internal/compiler/renderer/phase_a.go's ExecutePhaseA.
 type FeatureOrder map[string][]string
 
 // BuildIR executes Step 3 of the compiler pipeline: graph finalization.
-//  1. Build IR nodes from topology nodes
-//  2. Convert topology edges to IR edges
-//  3. Collect and normalize features (5-Tier Onion Model)
-//  4. Populate values/infra/feature mappings
-//  5. Build annotation buckets
-//  6. Generate provenance
 //
-// Iteration over the topology's flattened nodes preserves the Aggregate's
-// author-declared component order (topology.Nodes is now an OrderedMap
-// populated during subsystem flattening in author order). Author order
-// flows through to IR JSON output via OrderedMap.MarshalJSON, satisfying
-// the determinism contract for downstream JSON consumers (policy engines,
-// GitOps repos, --trace output).
+// Steps performed (numbered to match the body's section comments):
+//
+//  1. Build IR nodes from topology nodes — including labels, paths,
+//     annotation buckets, catalog metadata, ResolvedVersion, SyncWave,
+//     and the SelfInject pipe.
+//  2. Convert topology edges to IR edges — preserving Source / Target /
+//     Socket / Alias / OriginFeature (the per-edge origin marker that
+//     keeps Feature-authored edges separable from Component-authored
+//     edges) and converting the typed inject block via convertInjectBlock.
+//  3. Collect and normalize features through the per-node feature
+//     cascade via collectNodeFeatures.
+//  4. Populate values / infra / feature mappings on the IRSpec.
+//  5. Build the three annotation buckets via buildAnnotationBuckets
+//     (catalog / release / aggregate; the aggregate bucket is empty
+//     today because the schema bans annotations on Aggregate
+//     ComponentInstance blocks).
+//  6. Generate provenance via buildProvenance.
+//
+// Determinism. Iteration over the topology's flattened nodes preserves the
+// Aggregate's author-declared component order — topology.Nodes is an
+// OrderedMap populated during subsystem flattening in author order, and
+// author order flows through to IR JSON output via OrderedMap.MarshalJSON.
+// The feature_markers slice is accumulated into a set then sort-extracted
+// for stability across runs; secrets and features within a node iterate
+// in the topology attachment order; the edges slice is inherited from
+// topology already sorted by Step 2.
+//
+// Error model. The function only returns an error if collectNodeFeatures
+// fails — which today happens exclusively on ErrFeatureTypeMismatch.
+// All other operations either succeed or fall through (missing
+// CatalogLookup, missing Release, JSON-marshal failures on values/infra
+// mapping leave the slot empty rather than aborting). Callers wrap the
+// error with the Step 3 prefix; see cmd/aggrega/build.go.
 func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult
@@ -167,7 +219,27 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	return graph, featureOrder, nil
 }
 
-// convertInjectBlock converts a topology InjectBlock to the IR edge inject format.
+// convertInjectBlock translates the topology layer's typed *types.InjectBlock
+// (with separate Env / File / Arg fields) into the IR edge's per-mechanism
+// shape — an outer OrderedMap keyed by mechanism name ("env", "file",
+// "arg") whose values are inner OrderedMaps of delivery-key → resolved
+// string. The shape mirrors the three standard inject mechanisms (env,
+// file, arg); custom mechanisms beyond those three would not surface
+// here today.
+//
+// Mechanism enumeration is fixed at the three call sites (Env / File /
+// Arg) because the topology's InjectBlock is itself a closed three-field
+// struct — adding a fourth mechanism is a coordinated change spanning the
+// topology types and this conversion.
+//
+// Type-coercion contract. The inner anonymous function accepts the typed
+// raw value and copies only string-valued entries: map[string]string is
+// copied verbatim; map[string]interface{} is copied entry-by-entry,
+// keeping only the entries whose values type-assert to string. Non-string
+// values are silently dropped. The string-only restriction matches the
+// IR's IREdge.Inject schema (string values per delivery key); the silent
+// drop is the function's current behaviour and may need revisiting if
+// upstream coercion bugs surface as missing inject entries downstream.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
@@ -204,6 +276,18 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 	return result
 }
 
+// findSyncWave returns the sync-wave name (the OrderedMap key) that
+// contains nodeID in its membership list, or "" if nodeID does not appear
+// in any wave. The Release authoring shape pairs each wave name with a
+// flat slice of node IDs (Release.Spec.SyncWaves is OrderedMap[[]string]),
+// so the lookup is a linear walk — acceptable because sync-wave lists
+// are small and the function runs once per node during IR construction.
+//
+// The "" return is the no-wave-assigned sentinel; IRNode.SyncWave's JSON
+// tag is `omitempty`, so an empty value disappears from emitted IR rather
+// than rendering as `"sync_wave": ""`. Sync-wave semantics themselves
+// (what waves mean for downstream sequencing, how they interact with
+// edges) are not currently anchored in any LDR; see the audit file.
 func findSyncWave(syncWaves types.OrderedMap[[]string], nodeID string) string {
 	for wave, nodes := range syncWaves.All() {
 		for _, n := range nodes {

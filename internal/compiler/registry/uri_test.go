@@ -1,6 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+// Tests for the URI shorthand expander. Coverage is split into three tables
+// matching the source work item's acceptance criteria:
+//
+//   - TestParseRecipeURI_specExamples carries the five canonical shorthand
+//     examples drawn from the spec (three component shorthands routing to
+//     the official "aggrega" namespace, one feature shorthand to the same,
+//     one feature shorthand to a third-party "lakera" namespace). These
+//     are the rows that pin the Scenario A / Scenario B routing decision.
+//
+//   - TestParseRecipeURI_edgeCases pins the no-error pass-through contract
+//     (empty rawURI returns ""; unknown recipeType returns rawURI unchanged;
+//     a non-core first segment routes Scenario B to a third-party namespace).
+//
+//   - TestCoreSets_coverIntentLists asserts that every identifier the
+//     authoring spec named as a core type is actually present in the
+//     coreComponents / coreFeatures maps — guards against silent drift if a
+//     map entry is removed without updating the spec.
+//
+// All three tests work the package through ParseRecipeURI (and the
+// unexported isCoreComponent / isCoreFeature predicates the maps gate)
+// without touching the registry network or the resolver — the package is a
+// pure, deterministic string transform.
+
 package registry
 
 import "testing"

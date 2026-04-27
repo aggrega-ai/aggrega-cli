@@ -17,8 +17,8 @@ type ComposeFile struct {
 // Service is one compose service definition. Fields populated only as needed
 // — omitempty on every field so per-node fragments stay minimal.
 //
-// The set of fields here is the  synthesisable surface. Expansion (e.g.,
-// configs, secrets, deploy) lands as needed in future intents.
+// The set of fields here is the currently synthesisable surface. Expansion
+// (e.g., configs, secrets, deploy) lands as needed in future iterations.
 type Service struct {
 	Image       string            `yaml:"image,omitempty"`
 	Command     []string          `yaml:"command,omitempty"`
@@ -52,10 +52,10 @@ type ServiceVolume struct {
 }
 
 // Volume is a top-level named volume declaration. Compose top-level volumes
-// have driver/driver_opts/external/labels/name; the  synthesizer emits the
-// minimum viable form (empty body — `<name>: {}`). Future expansion covers
-// driver options when Workload's persistent.class signals a non-default
-// storage class.
+// have driver/driver_opts/external/labels/name; the synthesizer emits the
+// minimum viable form (empty body — `<name>: {}`) today. Future expansion
+// covers driver options when Workload's persistent.class signals a
+// non-default storage class.
 type Volume struct {
 	Driver     string            `yaml:"driver,omitempty"`
 	DriverOpts map[string]string `yaml:"driver_opts,omitempty"`
