@@ -10,19 +10,42 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// instanceNamePattern validates user-authored dictionary keys (component names,
-// feature names, secret names, subsystem names, aggregate names).
-// The dot character is banned — it is reserved as the nested aggregate separator.
-// Rule 16.22: Instance Naming Conventions & The Dot Separator Rule.
+// instanceNamePattern validates every user-authored dictionary key the
+// developer or operator writes: component names, feature names, secret
+// names, subsystem names, aggregate (sub-aggregate) names, boundary names,
+// uses-socket names and aliases, and Manifest provider section names.
+//
+// The pattern allows alphanumerics, underscore, and hyphen — both
+// kebab-case and snake_case are valid. The period is reserved as the
+// compiler-generated separator for cross-aggregate component references
+// (e.g. data-layer.main-db is the flattened ID of component main-db
+// inside sub-aggregate data-layer), so authored names cannot contain it.
 var instanceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// targetRefPattern validates target references that may cross nested aggregate
-// boundaries. These use dots as path separators (e.g., "nested-agg.component-id").
-// Each segment must match the instance name pattern.
+// targetRefPattern validates a target reference that may cross nested
+// aggregate boundaries (e.g., a uses.target field referring to a component
+// inside a sub-aggregate). The reference is a dot-separated path of
+// segments, each of which must match instanceNamePattern.
+//
+// The pattern structure forbids leading dots, trailing dots, and consecutive
+// dots — every segment is required to be non-empty. A bare component name
+// (no dots) is accepted as a single-segment path.
 var targetRefPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
-// ValidateInstanceNames checks all user-authored dictionary keys in the Aggregate
-// against the instance name pattern. Returns all violations found.
+// ValidateInstanceNames walks every user-authored dictionary key in the
+// Aggregate (top-level components, top-level aggregates, top-level
+// subsystems, then recursively into each subsystem's components, features,
+// secrets, and nested subsystems) and checks each against
+// instanceNamePattern. Returns every violation found.
+//
+// Returned errors are sorted by (Entity, Field) for byte-identical output
+// across runs of the same input.
+//
+// Boundary names live on the Release rather than the Aggregate and are
+// validated against the same pattern by the Release JSON Schema, not by
+// this function.
+//
+// Returns nil when agg is nil.
 func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
 	if agg == nil {
 		return nil
@@ -73,8 +96,16 @@ func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
 	return errs
 }
 
-// ValidateTargetRef checks that a target reference (in uses blocks, type fields)
-// matches the target reference pattern (dot-separated segments of valid instance names).
+// ValidateTargetRef checks that a target reference — typically a uses.target
+// value or a Feature appliesTo type field that may cross nested aggregate
+// boundaries — matches targetRefPattern. The entity and field arguments
+// are attached to the returned ResolverError so callers can identify the
+// offending location.
+//
+// Returns nil for a valid reference.
+//
+// No production call sites today; intended for future uses-target
+// validation wiring.
 func ValidateTargetRef(ref, entity, field string) *ResolverError {
 	if !targetRefPattern.MatchString(ref) {
 		return &ResolverError{

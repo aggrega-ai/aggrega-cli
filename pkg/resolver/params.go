@@ -15,8 +15,16 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// InterpolateParameters processes Go template expressions in raw YAML bytes
-// using the provided parameter map. Sprig template functions are available.
+// InterpolateParameters renders Go template expressions in raw Aggregate
+// YAML bytes against a parameter map exposed under the .parameters key
+// (e.g. {{ .parameters.db_size }}). Sprig template functions are available.
+//
+// The template runs with missingkey=zero: a reference to an undefined
+// parameter renders as the zero value (empty string for string contexts)
+// rather than producing an error.
+//
+// Both template-parse and template-execute errors are wrapped as
+// ResolverError with ErrInvalidParameterRef.
 func InterpolateParameters(raw []byte, params map[string]interface{}) ([]byte, error) {
 	tmpl, err := template.New("aggregate").
 		Option("missingkey=zero").
@@ -44,8 +52,17 @@ func InterpolateParameters(raw []byte, params map[string]interface{}) ([]byte, e
 	return buf.Bytes(), nil
 }
 
-// LoadParametersFrom reads external parameter YAML files and deep-merges them
-// in order (later files override earlier). Returns the merged parameter map.
+// LoadParametersFrom reads each external parameter YAML file in declared
+// order and deep-merges them into a single map. The merge semantics are:
+//
+//   - For keys whose value is a map on both sides, the maps recurse.
+//   - For keys whose value is a scalar or array on either side, the later
+//     value replaces the earlier (no concat, no scalar-additive behavior).
+//   - For keys present only on one side, that side's value is carried
+//     through.
+//
+// Read or unmarshal errors are wrapped as ResolverError with
+// ErrParametersFromLoad and the offending path attached.
 func LoadParametersFrom(paths []string) (map[string]interface{}, error) {
 	merged := map[string]interface{}{}
 	for _, path := range paths {
@@ -72,10 +89,16 @@ func LoadParametersFrom(paths []string) (map[string]interface{}, error) {
 	return merged, nil
 }
 
-// MergeParameters merges Release parameters (OrderedMap) with externally loaded
-// parameters (plain map). External parameters are applied first, then Release
-// parameters override. Author order of Release parameters is lost here at the
-// boundary with the Go template engine — template data does not preserve order.
+// MergeParameters layers Release.spec.parameters on top of the
+// LoadParametersFrom result and returns the combined map for template use.
+//
+// Precedence is Release-wins-per-key: external parameter files supply the
+// base, and Release.spec.parameters override on collision.
+//
+// Author order of Release.spec.parameters is lost at this boundary because
+// Go's text/template data is plain map[string]interface{}, which does not
+// preserve insertion order. The lost ordering does not affect the rendered
+// output — template references are by key, not by iteration order.
 func MergeParameters(release types.OrderedMap[interface{}], external map[string]interface{}) map[string]interface{} {
 	releasePlain := orderedMapToPlain(release)
 	if releasePlain == nil && external == nil {
@@ -103,8 +126,12 @@ func orderedMapToPlain(m types.OrderedMap[interface{}]) map[string]interface{} {
 	return out
 }
 
-// PurgeParameters zeroes and nils the parameter map for security enforcement.
-// After Step 1 completes, parameter values must not linger in memory.
+// PurgeParameters actively zeroes every value, deletes every key, and nils
+// the map pointer. The function runs as the last step of Resolve. Removes
+// parameter values from memory before the result is returned so secret-bearing
+// values do not linger past the interpolation step.
+//
+// The function is a no-op on a nil pointer or nil map.
 func PurgeParameters(params *map[string]interface{}) {
 	if params == nil || *params == nil {
 		return

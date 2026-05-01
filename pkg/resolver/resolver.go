@@ -11,14 +11,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ResolveConfig configures the Step 1 resolver pipeline.
+// ResolveConfig configures the Step 1 resolver pipeline. All three paths are
+// required; relative paths resolve against the working directory of the
+// caller. The typical caller (cmd/aggrega/build.go) discovers AggregatePath
+// and ManifestPath from a pre-loaded Release.
 type ResolveConfig struct {
 	AggregatePath string // path to Aggregate YAML file
 	ReleasePath   string // path to Release YAML file
 	ManifestPath  string // path to Manifest YAML file
 }
 
-// ResolveResult is the output of the Step 1 resolver pipeline.
+// ResolveResult carries the artifacts produced by Step 1. The result is
+// passed by pointer through topology, IR, and renderer; mutations after
+// Resolve returns are not expected.
+//
+// Once Resolve returns, the parameter map used during interpolation has
+// been actively zeroed and nilled (see PurgeParameters). Parameter values
+// do not appear in any field of ResolveResult — they survive only in the
+// already-interpolated YAML bytes that produced Aggregate.
 type ResolveResult struct {
 	Aggregate     *types.Aggregate
 	Release       *types.Release
@@ -26,15 +36,40 @@ type ResolveResult struct {
 	BoundaryInfra map[string]*BoundaryInfra // per-component boundary context
 }
 
-// Resolve executes the full Step 1 pipeline:
-//  1. Load Release and Manifest
-//  2. Load parametersFrom external files (if any)
-//  3. Merge parameters (Release.parameters + external)
-//  4. Read raw Aggregate YAML and interpolate parameters
-//  5. Unmarshal interpolated Aggregate
-//  6. Validate instance names
-//  7. Wire boundary infra from Release
-//  8. Purge parameters from memory
+// Resolve executes the Step 1 pipeline against the configured paths and
+// returns the resolved artifacts. The pipeline is:
+//
+//  1. Load Release.
+//  2. Load Manifest.
+//  3. Load parametersFrom external files (deep-merge in declared order;
+//     later files override earlier).
+//  4. Merge Release.parameters over the external map (Release wins per key).
+//  5. Read raw Aggregate YAML bytes.
+//  6. Interpolate the merged parameter map into the raw bytes via Go
+//     template + Sprig (missingkey=zero, so undefined references render
+//     as empty rather than failing).
+//  7. Unmarshal the interpolated bytes into a typed Aggregate.
+//  8. Validate user-authored instance names against the dot-free pattern.
+//  9. Wire per-component boundary infra from the Release boundary tree.
+//  10. Actively zero-and-nil the parameter map before returning.
+//
+// Error semantics:
+//
+//   - Any I/O, unmarshal, or template error short-circuits the pipeline
+//     and is returned wrapped in a ResolverError with the source entity
+//     and path attached.
+//   - Instance-name validation returns only the first violation — the name
+//     pattern is a hard gate, and a single illegal name implies the
+//     Aggregate cannot be processed further.
+//   - Semantic guards (uses sockets, inject keys, requiredFeatures, etc.)
+//     are NOT run by Resolve. Callers invoke RunGuards separately after
+//     Resolve to obtain the catalog-aware checks; RunGuards collects all
+//     violations rather than short-circuiting.
+//
+// Steps must run in this order: name validation operates on the resolved
+// YAML, so it must follow interpolation and unmarshal; boundary infra
+// wiring depends on the Release; the parameter purge must run after every
+// step that consumes parameters.
 func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 	// 1. Load Release
 	release, err := LoadRelease(cfg.ReleasePath)

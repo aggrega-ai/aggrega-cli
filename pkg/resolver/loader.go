@@ -11,6 +11,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// The three Load* functions in this file are raw YAML readers: each reads a
+// path, unmarshals into the typed entity, and wraps any failure as a
+// ResolverError with the entity kind and source path attached. They do not
+// validate against the JSON Schema or the CUE schema — schema validation is
+// handled in pkg/validator and is invoked from RunGuards' cueSchema arm.
+//
+// LoadRelease and LoadManifest are used directly: cmd/aggrega/build.go
+// pre-loads the Release to discover the Aggregate and Manifest paths, and
+// Resolve loads the Manifest as part of its pipeline. LoadAggregate exists
+// for symmetry but is not used by Resolve, which reads raw Aggregate bytes
+// for parameter interpolation and unmarshals them only after interpolation.
+
 // LoadAggregate reads and unmarshals an Aggregate YAML file.
 func LoadAggregate(path string) (*types.Aggregate, error) {
 	data, err := os.ReadFile(path)
