@@ -50,6 +50,29 @@
 //     therefore trusts that every socket name it parses is
 //     catalog-recognised.
 //
+// Cross-package determinism contract. The IR builder (Step 3,
+// internal/compiler/ir) consumes TopologyResult.Nodes and
+// TopologyResult.Edges as inputs without re-validating their ordering. The
+// contract has three commitments:
+//
+//   - TopologyResult.Nodes preserves Aggregate author order via
+//     OrderedMap iteration over flattened components. Subsystem flattening,
+//     sub-aggregate import merges, and the Build labels / boundary-path
+//     phases all preserve author order; the OrderedMap shape is
+//     load-bearing for IR JSON emission downstream.
+//   - TopologyResult.Edges sorts alphabetical-by-source-node. Build's
+//     step 4 drives the outer iteration through sortedNodeIDs; no single
+//     author declared the order of edges as a whole, so alphabetical-by-
+//     source is the deterministic ordering convention for synthesized
+//     derived data.
+//   - The IR builder reads both as gospel. There is no in-package guard on
+//     the consumer side that would catch a topology-side ordering
+//     regression — a change here that flipped Edges back to author-order,
+//     or flipped Nodes to alphabetical, would silently break the IR
+//     builder's edges-from-topology pass and the IRGraph node-emission
+//     order. The corresponding consumer-side commitment lives in the IR
+//     package's doc.go.
+//
 // Mutator-plugin contract status. The MutatorInput / MutatorOutput /
 // CompilationContext / MutatorGraph / MutatorNode types in wasm_types.go
 // are contract definitions only — the Wasm plugin that consumes them

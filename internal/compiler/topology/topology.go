@@ -24,9 +24,11 @@ import (
 //     declarations — no single author declared the order of edges as a
 //     whole, so the package commits to alphabetical-by-source as the
 //     deterministic ordering convention. The discipline is documented at
-//     the sortedNodeIDs call site in Build below; the IR builder reads
-//     this slice as already-sorted (Session 5's IR builder doc anchors
-//     this cross-package contract).
+//     the sortedNodeIDs call site in Build below; the IR builder's
+//     BuildIR step 2 (topology→IR edge conversion loop) reads this slice
+//     in order without re-sorting. The full producer-and-consumer contract
+//     is documented in this package's doc.go (Cross-package determinism
+//     contract).
 //
 // FeatureAttachments and SecretAttachments are per-node slices; the
 // per-node iteration order is the YAML attachment order from
@@ -337,10 +339,11 @@ func findComponentInSubsystem(sub types.Subsystem, name string) *types.Component
 // sortedNodeIDs returns the node IDs in alphabetical order. It backs the
 // edge-emission discipline documented at the call site in Build (Edges
 // are synthesized derived data; alphabetical-by-source-node is the
-// deterministic ordering convention). The IR builder reads
-// TopologyResult.Edges as already-sorted; reversing this discipline
-// would silently break the cross-package contract Session 5's IR side
-// commits to.
+// deterministic ordering convention). The IR builder's BuildIR step 2
+// reads TopologyResult.Edges in slice order without re-sorting;
+// reversing this discipline here would silently break the cross-package
+// contract documented in this package's doc.go and the corresponding
+// consumer-side commitment in internal/compiler/ir/doc.go.
 func sortedNodeIDs(nodes types.OrderedMap[*TopologyNode]) []string {
 	ids := make([]string, 0, nodes.Len())
 	for id := range nodes.All() {

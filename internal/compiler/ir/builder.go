@@ -82,7 +82,10 @@ type FeatureOrder map[string][]string
 // The feature_markers slice is accumulated into a set then sort-extracted
 // for stability across runs; secrets and features within a node iterate
 // in the topology attachment order; the edges slice is inherited from
-// topology already sorted by Step 2.
+// topology already sorted alphabetical-by-source (topology.Build step 4
+// drives the ordering through sortedNodeIDs). Both inheritance commitments
+// are the consumer side of the cross-package determinism contract — see
+// this package's doc.go for the full statement.
 //
 // Error model. The function only returns an error if collectNodeFeatures
 // fails — which today happens exclusively on ErrFeatureTypeMismatch.
@@ -287,7 +290,9 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 // tag is `omitempty`, so an empty value disappears from emitted IR rather
 // than rendering as `"sync_wave": ""`. Sync-wave semantics themselves
 // (what waves mean for downstream sequencing, how they interact with
-// edges) are not currently anchored in any LDR; see the audit file.
+// edges) carry no architectural anchor today; the field plumbs the
+// authoring surface through to the IR without prescribing the runtime
+// interpretation.
 func findSyncWave(syncWaves types.OrderedMap[[]string], nodeID string) string {
 	for wave, nodes := range syncWaves.All() {
 		for _, n := range nodes {

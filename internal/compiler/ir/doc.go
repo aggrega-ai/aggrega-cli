@@ -40,8 +40,29 @@
 //     IRGraph output runs in deterministic order: the topology's Nodes
 //     OrderedMap preserves Aggregate author order; Markers are
 //     accumulated into a set then sort-extracted; the edges slice is
-//     inherited from topology already sorted; secrets and features
-//     per-node iterate the topology's already-ordered attachments.
+//     inherited from topology already sorted alphabetical-by-source;
+//     secrets and features per-node iterate the topology's
+//     already-ordered attachments.
+//
+// Cross-package determinism contract. This package consumes
+// topology.TopologyResult.Nodes and topology.TopologyResult.Edges as
+// inputs without re-validating their ordering. The producer-side
+// commitment from internal/compiler/topology has three points; the
+// consumer-side trust mirrors them:
+//
+//   - Nodes are trusted in author order. BuildIR iterates topo.Nodes.All()
+//     and builds IRSpec.Nodes in that order, propagating Aggregate
+//     authoring order into the emitted IRGraph.
+//   - Edges are trusted as alphabetical-by-source. BuildIR's step 2
+//     (the topology→IR edge conversion loop) walks topo.Edges in slice
+//     order and emits IRSpec.Edges in the same order without re-sorting.
+//   - Neither dimension is re-validated here. There is no in-package
+//     guard on this side that would catch a topology-side regression —
+//     a topology change that flipped Edges back to author-order, or
+//     flipped Nodes to alphabetical, would silently break IR emission
+//     ordering and any downstream consumer that reads IRGraph as a
+//     stable snapshot. The corresponding producer-side commitment lives
+//     in the topology package's doc.go.
 //
 // The package depends on `pkg/types`, `pkg/resolver`, and
 // `internal/compiler/topology`; downstream consumers are
