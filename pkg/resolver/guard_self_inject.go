@@ -10,10 +10,29 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// guardSelfInject validates component-level self-inject:
-//  1. If ComponentInstance.Inject is non-nil, the catalog ComponentSpec.Inject must be non-empty (White-Box)
-//  2. Each mechanism used in the self-inject must be in the catalog allowlist
-//  3. No delivery key collision between self-inject and uses-inject within the same mechanism
+// guardSelfInject validates component-level self-inject declarations
+// against three rules:
+//
+//  1. The catalog component's spec.inject allowlist must be non-empty.
+//     A component type with empty spec.inject is a Black-Box (Packaged
+//     Compute) — its Recipe handles internal wiring via valuesMapping
+//     and self-inject is structurally forbidden. A component type with
+//     non-empty spec.inject is a White-Box (Custom Code) where the
+//     Developer must dictate delivery, and self-inject is permitted up
+//     to the allowlist.
+//  2. Each mechanism used in the self-inject (env, file, arg, or
+//     additional mechanisms) must be a member of the allowlist.
+//  3. No delivery-key collision between component-level self-inject and
+//     uses-level inject within the same mechanism — the same key cannot
+//     be claimed by both delivery sources.
+//
+// Emits ErrSelfInjectForbidden for rule-1 and rule-2 violations and
+// ErrInjectKeyCollision for rule-3 violations. Errors sort by
+// (Entity, Field) for byte-identical output. Returns nil when agg is
+// nil or catalog.Component is nil. Components whose Inject field is nil
+// are skipped (no self-inject to validate); component types not in the
+// catalog are silently skipped — unknown-type reporting belongs to
+// other guards.
 func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
 	if agg == nil || catalog.Component == nil {
 		return nil
@@ -83,7 +102,10 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	return errs
 }
 
-// collectInjectMechanisms returns sorted mechanism names present in an InjectBlock.
+// collectInjectMechanisms returns the mechanism names present in an
+// InjectBlock, sorted alphabetically for deterministic iteration. Treats
+// nil sub-fields (Env, File, Arg) as absence; additional mechanisms are
+// included by key. Does not mutate the input.
 func collectInjectMechanisms(inject *types.InjectBlock) []string {
 	var mechs []string
 	if inject.Env != nil {
@@ -102,7 +124,10 @@ func collectInjectMechanisms(inject *types.InjectBlock) []string {
 	return mechs
 }
 
-// collectInjectDeliveryKeys extracts delivery key names per mechanism from an InjectBlock.
+// collectInjectDeliveryKeys returns delivery-key names indexed by
+// mechanism name. Each per-mechanism slice is sorted alphabetically
+// for deterministic iteration. Returns an empty map when inject is nil
+// or carries no recognized shape. Does not mutate the input.
 func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 	result := map[string][]string{}
 	if inject == nil {
@@ -136,7 +161,11 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 	return result
 }
 
-// collectUsesInjectDeliveryKeys extracts delivery keys from all uses-level inject blocks.
+// collectUsesInjectDeliveryKeys returns delivery-key names indexed by
+// mechanism name across every uses-level inject block on a component. Each
+// per-mechanism slice is sorted alphabetically for deterministic
+// iteration. Returns an empty map when uses is empty or carries no
+// recognized shape. Does not mutate the input.
 func collectUsesInjectDeliveryKeys(uses types.OrderedMap[interface{}]) map[string][]string {
 	result := map[string][]string{}
 	if uses.Len() == 0 {

@@ -9,9 +9,21 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// guardFeatureMerge validates that when both Aggregate and Release declare the same
-// feature on a component, their types match. The Aggregate provides values, the Release
-// provides infra — type mismatches indicate a configuration error.
+// guardFeatureMerge validates type agreement on features that the Aggregate
+// and Release both declare for the same component instance. When a feature
+// name appears in both surfaces, the two declarations merge into a single
+// feature attachment in downstream phases — the Aggregate side carries
+// values, the Release side carries infra. The merge only makes sense when
+// the two sides agree on the type URI; a disagreement indicates a
+// configuration error.
+//
+// Emits ErrFeatureMergeConflict for each (component, feature) pair where
+// both sides declare a non-empty type and the types differ. Features that
+// appear on only one side are not errors — the Aggregate may declare a
+// feature the Release does not (the Release adds infra optionally), and
+// the Release may add features absent from the Aggregate (per the
+// boundary-feature semantics). Errors sort by (Entity, Field) for
+// byte-identical output. Returns nil when either input is nil.
 func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*ResolverError {
 	if agg == nil || release == nil {
 		return nil
@@ -44,6 +56,12 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 	return errs
 }
 
+// collectReleaseBoundaryFeaturesForComponent walks the boundary tree
+// recursively and returns the union of feature attachments declared for the
+// named component across every boundary that contains it. The walk is
+// depth-first over the OrderedMap; on duplicate feature names across
+// nested boundaries (the same feature attached at more than one boundary
+// level), the deepest write wins.
 func collectReleaseBoundaryFeaturesForComponent(boundaries types.OrderedMap[types.Boundary], compName string) map[string]types.BoundaryFeature {
 	result := map[string]types.BoundaryFeature{}
 	for _, boundary := range boundaries.All() {

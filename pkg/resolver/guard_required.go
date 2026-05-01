@@ -9,8 +9,25 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// guardRequiredFeatures verifies that the merged feature list (Aggregate + subsystem + Release)
-// satisfies every type in each Component's requiredFeatures array.
+// guardRequiredFeatures verifies that every type in a Component's
+// requiredFeatures array is satisfied by at least one feature attachment
+// on each instance of that component.
+//
+// The check operates on the union of feature types declared on the
+// component instance (Aggregate side) plus feature types declared on
+// the same component name across every Release boundary (recursively). The
+// "merged" set is type-keyed: distinct feature instances of the same type
+// count as one entry. Each requirement matches against this set by exact
+// type equality.
+//
+// Scope: top-level Aggregate components only. Components inside subsystems
+// are not walked here; their requiredFeatures are not validated by this
+// guard.
+//
+// Silent skips: components whose type is not in the catalog, components
+// whose catalog entry has an empty requiredFeatures array. Errors sort
+// by (Entity, Field) for byte-identical output. Returns nil when agg is
+// nil or catalog.Component is nil.
 func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	if agg == nil || catalog.Component == nil {
 		return nil
@@ -53,6 +70,9 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 	return errs
 }
 
+// collectAttachedFeatureTypes returns the set of non-empty feature type URIs
+// declared on a component instance's Aggregate-side features block.
+// The map is a presence-set; values are always true.
 func collectAttachedFeatureTypes(comp types.ComponentInstance) map[string]bool {
 	attached := map[string]bool{}
 	for _, feat := range comp.Features.All() {
@@ -63,6 +83,10 @@ func collectAttachedFeatureTypes(comp types.ComponentInstance) map[string]bool {
 	return attached
 }
 
+// collectReleaseBoundaryFeatureTypes walks the boundary tree recursively
+// and adds every non-empty feature type declared for the named component
+// to the passed-in presence-set. Mutates the input map; does not return
+// a value.
 func collectReleaseBoundaryFeatureTypes(boundaries types.OrderedMap[types.Boundary], compName string, attached map[string]bool) {
 	for _, boundary := range boundaries.All() {
 		if bc, ok := boundary.Components.Get(compName); ok {

@@ -12,8 +12,21 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
 
-// guardInjectKeys validates that every inject block's "from" key references
-// a key that exists in the target Component's provides schema (from CUE).
+// guardInjectKeys validates that every inject block's from-key references
+// a key declared in the target Component's provides schema. Walks every
+// feature and secret declaration on every Aggregate-level component,
+// extracts the inject block's from-keys (compact and verbose forms),
+// and confirms each from-key matches a key the target component declares
+// as part of its provides contract.
+//
+// Emits ErrInvalidInjectKey per offending from-key, with the entity, the
+// JSON-path-style field locator (component → feature/secret → inject →
+// mechanism → delivery key), and a message naming the offending key plus
+// the valid set. Errors sort by (Entity, Field) for byte-identical output.
+//
+// Returns nil when agg is nil or catalog.Component is nil. Component
+// types not present in the catalog are silently skipped — unknown-type
+// reporting belongs to other guards.
 func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
 	if agg == nil || catalog.Component == nil {
 		return nil
@@ -54,6 +67,22 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	return errs
 }
 
+// validateInjectBlock validates one inject block against the target
+// component's provides schema. Walks the standard mechanisms (env, file,
+// arg) plus any additional mechanisms the catalog declares, and checks
+// each mechanism's from-keys against the target's provides keys.
+//
+// Degraded modes:
+//
+//   - Unknown target type — silently returns nil (handled by other guards).
+//   - Provides-schema extraction fails — emits exactly one
+//     ErrInvalidInjectKey for the inject block carrying the constraint
+//     message; from-key validation is skipped because the valid set cannot
+//     be computed without the schema.
+//   - Empty provides — silently returns nil (no keys to reference).
+//
+// Mechanisms are iterated in alphabetical order (additional mechanisms
+// sorted) for deterministic error output.
 func validateInjectBlock(entity, fieldPath string, inject types.InjectBlock, targetType string, catalog CatalogLookup) []*ResolverError {
 	comp, found := catalog.Component(targetType)
 	if !found {
@@ -93,8 +122,11 @@ type mechanismRaw struct {
 	raw  interface{}
 }
 
-// injectMechanisms returns the known inject mechanisms (env/file/arg + additional)
-// in sorted order for deterministic error output.
+// injectMechanisms returns the inject block's mechanisms paired with their
+// raw payloads. The three standard mechanisms (arg, env, file) are emitted
+// first in alphabetical order; any catalog-declared additional mechanisms
+// follow, also alphabetically sorted. The ordering is for deterministic
+// error output, not a semantic preference among mechanisms.
 func injectMechanisms(inject types.InjectBlock) []mechanismRaw {
 	out := []mechanismRaw{
 		{"arg", inject.Arg}, // sorted alphabetically

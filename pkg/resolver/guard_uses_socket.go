@@ -71,6 +71,12 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	return errs
 }
 
+// guardUsesSocketSubsystem applies the same uses-socket validation as the
+// top-level pass to every component, feature-attachment, and secret-attachment
+// inside a subsystem. Recurses into nested subsystems. Path strings build up
+// the dotted-aggregate-path used in error Field locators
+// (.spec.subsystems.<name>.components[...]). Errors are returned unsorted;
+// the caller (guardUsesSocket) sorts the combined output once at the end.
 func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog CatalogLookup) []*ResolverError {
 	var errs []*ResolverError
 
@@ -120,6 +126,20 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 	return errs
 }
 
+// validateUsesAgainstSchema validates a component instance's uses block
+// against the catalog Component's usesSchema. Two failure modes:
+//
+//   - The catalog Component declares no usesSchema (empty). Any uses
+//     declaration on its instances is rejected — the component has no
+//     defined sockets, so nothing can be connected to it. Emits one
+//     ErrUnknownUsesSocket per declared socket name.
+//   - The catalog Component declares a non-empty usesSchema, but the
+//     instance names a socket not present in the schema. Emits
+//     ErrUnknownUsesSocket per offending socket, with the valid socket
+//     names (in usesSchema author order) attached to the message.
+//
+// Silently returns nil when the component type is not in the catalog —
+// unknown-type reporting belongs to other guards.
 func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[interface{}], compType string, catalog CatalogLookup) []*ResolverError {
 	catComp, found := catalog.Component(compType)
 	if !found {
@@ -155,6 +175,12 @@ func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[i
 	return errs
 }
 
+// validateFeatureUsesAgainstSchema is the Feature-side mirror of
+// validateUsesAgainstSchema. Same two failure modes (no usesSchema =
+// declarations rejected; non-empty usesSchema = each socket must exist
+// as a key) and same silent-skip on unknown catalog Feature type. Used
+// for both feature attachments (.features) and secret attachments
+// (.secrets), which share the Feature catalog kind.
 func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[interface{}], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {
