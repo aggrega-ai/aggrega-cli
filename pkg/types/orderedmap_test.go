@@ -621,3 +621,120 @@ func TestOrderedMap_TenTimesOrderStability(t *testing.T) {
 		}
 	}
 }
+
+// TestOrderedMap_SetOnNilReceiverPanicsWithTypedMessage pins the
+// type-level contract that Set on a nil *OrderedMap[V] panics with a
+// typed message identifying the call site, mirroring the builtin map's
+// `m[k] = v` panic on nil map. Regression coverage for the
+// stdlib-mirroring convention documented on Set.
+func TestOrderedMap_SetOnNilReceiverPanicsWithTypedMessage(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected Set on nil receiver to panic")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T", r)
+		}
+		if !strings.Contains(msg, "OrderedMap.Set") {
+			t.Errorf("panic message lacks typed prefix: %q", msg)
+		}
+	}()
+
+	var m *OrderedMap[string]
+	m.Set("k", "v")
+}
+
+// TestOrderedMap_DeleteOnNilReceiverNoOps pins the contract that Delete
+// on a nil *OrderedMap[V] returns false without panicking, mirroring the
+// builtin map's `delete(m, k)` no-op on nil map.
+func TestOrderedMap_DeleteOnNilReceiverNoOps(t *testing.T) {
+	t.Parallel()
+
+	var m *OrderedMap[string]
+	if m.Delete("k") {
+		t.Error("expected Delete on nil receiver to return false")
+	}
+}
+
+// TestOrderedMap_ReUnmarshalIntoPopulatedReplacesContent pins the
+// spec-aligned overwrite-on-decode contract: each Unmarshal call replaces
+// the receiver's contents with the decoded document. Re-unmarshalling
+// into a populated OrderedMap produces a map containing only the keys
+// from the new document — prior content is discarded — and overlapping
+// keys do not trigger the duplicate-key check (which applies within a
+// single source document, not across the receiver's lifetime).
+//
+// Covers both YAML and JSON Unmarshal paths.
+func TestOrderedMap_ReUnmarshalIntoPopulatedReplacesContent(t *testing.T) {
+	t.Run("yaml", func(t *testing.T) {
+		t.Parallel()
+
+		var m OrderedMap[int]
+		first := []byte("alpha: 1\nbravo: 2\ncharlie: 3\n")
+		if err := yaml.Unmarshal(first, &m); err != nil {
+			t.Fatalf("first Unmarshal: %v", err)
+		}
+		if got := m.Keys(); !slices.Equal(got, []string{"alpha", "bravo", "charlie"}) {
+			t.Fatalf("after first Unmarshal Keys = %v, want [alpha bravo charlie]", got)
+		}
+
+		// Second document overlaps "alpha" with the first, adds "delta",
+		// drops "bravo" and "charlie". Spec-aligned overwrite semantics
+		// require this to succeed without a duplicate-key error and
+		// produce a map containing only the second document's keys.
+		second := []byte("alpha: 99\ndelta: 4\n")
+		if err := yaml.Unmarshal(second, &m); err != nil {
+			t.Fatalf("re-Unmarshal: %v", err)
+		}
+		if got := m.Keys(); !slices.Equal(got, []string{"alpha", "delta"}) {
+			t.Errorf("after re-Unmarshal Keys = %v, want [alpha delta] (prior content should be discarded)", got)
+		}
+		if v, ok := m.Get("alpha"); !ok || v != 99 {
+			t.Errorf("after re-Unmarshal Get(alpha) = %v ok=%v, want 99 ok=true (prior value should be replaced)", v, ok)
+		}
+		if v, ok := m.Get("delta"); !ok || v != 4 {
+			t.Errorf("after re-Unmarshal Get(delta) = %v ok=%v, want 4 ok=true", v, ok)
+		}
+		if _, ok := m.Get("bravo"); ok {
+			t.Error("after re-Unmarshal Get(bravo) reported ok=true, want absent (key from prior document)")
+		}
+		if _, ok := m.Get("charlie"); ok {
+			t.Error("after re-Unmarshal Get(charlie) reported ok=true, want absent (key from prior document)")
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		t.Parallel()
+
+		var m OrderedMap[int]
+		first := []byte(`{"alpha":1,"bravo":2,"charlie":3}`)
+		if err := json.Unmarshal(first, &m); err != nil {
+			t.Fatalf("first Unmarshal: %v", err)
+		}
+		if got := m.Keys(); !slices.Equal(got, []string{"alpha", "bravo", "charlie"}) {
+			t.Fatalf("after first Unmarshal Keys = %v, want [alpha bravo charlie]", got)
+		}
+
+		second := []byte(`{"alpha":99,"delta":4}`)
+		if err := json.Unmarshal(second, &m); err != nil {
+			t.Fatalf("re-Unmarshal: %v", err)
+		}
+		if got := m.Keys(); !slices.Equal(got, []string{"alpha", "delta"}) {
+			t.Errorf("after re-Unmarshal Keys = %v, want [alpha delta] (prior content should be discarded)", got)
+		}
+		if v, ok := m.Get("alpha"); !ok || v != 99 {
+			t.Errorf("after re-Unmarshal Get(alpha) = %v ok=%v, want 99 ok=true (prior value should be replaced)", v, ok)
+		}
+		if v, ok := m.Get("delta"); !ok || v != 4 {
+			t.Errorf("after re-Unmarshal Get(delta) = %v ok=%v, want 4 ok=true", v, ok)
+		}
+		if _, ok := m.Get("bravo"); ok {
+			t.Error("after re-Unmarshal Get(bravo) reported ok=true, want absent (key from prior document)")
+		}
+		if _, ok := m.Get("charlie"); ok {
+			t.Error("after re-Unmarshal Get(charlie) reported ok=true, want absent (key from prior document)")
+		}
+	})
+}

@@ -25,7 +25,17 @@ type FeatureRecipeMetadata struct {
 	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// FeatureRecipeSpec defines the provider binding, mapping, and pipeline for a FeatureRecipe.
+// FeatureRecipeSpec defines the provider binding, mapping, and pipeline
+// for a FeatureRecipe. Compared to [RecipeSpec], FeatureRecipes support
+// only the sourced input kind (Source + ValuesMapping*); the synthesized
+// (Workload / WorkloadFrom) and artifacts (Artifacts / ArtifactsFrom)
+// modes are Recipe-only.
+//
+// InjectMapping is unique to FeatureRecipes and carries the templated
+// string that maps Aggrega's typed inject block to the provider's
+// expected delivery format (e.g., Helm value paths, environment-variable
+// names). Where ValuesMapping transforms values data, InjectMapping
+// transforms inject delivery.
 type FeatureRecipeSpec struct {
 	Provider             string             `json:"provider" yaml:"provider"`
 	Implements           string             `json:"implements" yaml:"implements"`

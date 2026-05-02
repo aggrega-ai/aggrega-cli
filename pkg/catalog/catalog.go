@@ -128,11 +128,11 @@ type entityHeader struct {
 
 // indexFile is the single point of dispatch over the six catalog-resident
 // entity kinds — the SSOT for "what counts as a catalog entity" in this
-// package. The switch arms enumerate exactly the kinds enshrined in LDR
-// 0001's eight-entity taxonomy minus Manifest and Release (which are
-// deployment-side and are silently skipped — see LoadAll's error model).
-// Adding a new catalog-resident kind requires extending the switch here
-// AND adding the matching map field on Catalog.
+// package. The switch arms enumerate exactly the eight catalog entity
+// kinds minus Manifest and Release (which are deployment-side and are
+// silently skipped — see LoadAll's error model). Adding a new
+// catalog-resident kind requires extending the switch here AND adding
+// the matching map field on Catalog.
 func (c *Catalog) indexFile(data []byte, path string) error {
 	var header entityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
@@ -265,8 +265,8 @@ func (c *Catalog) DeprecationWarnings() []string {
 
 // ResolveAllExtends walks every Component and Feature in the catalog and
 // resolves its extends chain in-place via the validator package's
-// ResolveComponentExtends / ResolveFeatureExtends. The merge follows LDR
-// 0013's Two-Tiered Inheritance Merge: deep-merge the YAML envelope, unify
+// ResolveComponentExtends / ResolveFeatureExtends. The merge follows the
+// two-tiered inheritance pattern: deep-merge the YAML envelope, unify
 // the cueSchema with parent via CUE's `&` (monotonic — child may narrow,
 // never widen). Cycles are detected by the validator and surface as
 // errors rather than infinite loops.

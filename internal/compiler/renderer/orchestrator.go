@@ -236,9 +236,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
 			}
 		}
-		// Tag with EmitOriginSource and accumulate (deterministic per LDR
-		// 0026: iterate the engine.Render output by sorted filename so
-		// state.EmittedFiles order is stable across runs).
+		// Tag with EmitOriginSource and accumulate (deterministic across
+		// runs of identical input by iterating the engine.Render output
+		// by sorted filename; state.EmittedFiles order stays stable).
 		//
 		// Intermediate marking. When the engine implements ReleaseComposer
 		// (today: compose), Render's output is intermediate input to the

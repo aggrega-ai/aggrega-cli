@@ -71,8 +71,11 @@ type FeatureInstance struct {
 	Secrets     OrderedMap[SecretInstance] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }
 
-// SecretInstance is a credential feature attachment (labeled feature.aggrega.ai/kind: secret).
-// Used in Aggregate component.secrets, feature.secrets, and Release boundary secrets.
+// SecretInstance is a credential feature attachment (labeled
+// feature.aggrega.ai/kind: secret). Used in Aggregate component.secrets,
+// feature.secrets, and Release boundary secrets. Structurally parallel to
+// [FeatureInstance] except for nested Secrets: credentials are leaf
+// attachments and a SecretInstance cannot itself carry nested secrets.
 type SecretInstance struct {
 	Type        string                  `json:"type" yaml:"type"`
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`

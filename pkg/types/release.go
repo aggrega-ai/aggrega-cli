@@ -26,7 +26,12 @@ type ReleaseMetadata struct {
 	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// ReleaseSpec defines the aggregate reference, manifest, parameters, and boundary routing.
+// ReleaseSpec defines the aggregate reference, manifest, parameters, and
+// boundary routing. SyncWaves carries the wave-keyed deployment-ordering
+// map (wave name → list of node IDs); the IR builder reads this map and
+// projects a per-node sync_wave field via reverse lookup. Boundaries is
+// the only required field — every Release must declare at least one
+// boundary, since a Release with no boundaries has nothing to route into.
 type ReleaseSpec struct {
 	Aggregate      string                    `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
 	Manifest       string                    `json:"manifest,omitempty" yaml:"manifest,omitempty"`
@@ -39,6 +44,16 @@ type ReleaseSpec struct {
 
 // Boundary is a recursive logical box into which components are routed.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary
+//
+// The Features and Secrets fields are typed as OrderedMap[interface{}]
+// rather than OrderedMap[BoundaryFeature]: boundary-wide feature and
+// secret attachments arrive from YAML as opaque payloads that the IR
+// builder coerces into typed shapes via parseBoundaryFeature during
+// Step 3, parallel to how Tier 4/5 of the IR's feature cascade collects
+// boundary-wide attachments separately from per-component ones.
+//
+// Boundary carries no Infra field — physical sizing is per-component
+// concern and lives on [BoundaryComponent] only.
 type Boundary struct {
 	Description  string                         `json:"description,omitempty" yaml:"description,omitempty"`
 	Directory    string                         `json:"directory,omitempty" yaml:"directory,omitempty"`
@@ -51,8 +66,16 @@ type Boundary struct {
 	Aggregates   OrderedMap[AggregateRouting]   `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 }
 
-// BoundaryComponent is a component instance routed into a boundary with optional sizing and feature attachments.
-// Schema: release-v1alpha1.schema.json#/$defs/boundary_component
+// BoundaryComponent is a component instance routed into a boundary with
+// optional sizing and feature attachments. Schema:
+// release-v1alpha1.schema.json#/$defs/boundary_component
+//
+// Infra carries per-component physical-sizing payloads (instance type,
+// replica count, storage class, etc.) that flow into the IR's per-node
+// infra_mapping. The field's presence here distinguishes BoundaryComponent
+// from [Boundary]: the latter is a routing container with annotation-only
+// metadata; the former is the actual sizing carrier for a routed
+// component.
 type BoundaryComponent struct {
 	Description  string                       `json:"description,omitempty" yaml:"description,omitempty"`
 	SubDirectory string                       `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`

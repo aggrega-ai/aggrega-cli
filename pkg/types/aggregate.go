@@ -29,7 +29,12 @@ type AggregateMetadata struct {
 	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 }
 
-// AggregateSpec defines the components, sub-aggregates, subsystems, and parameters.
+// AggregateSpec defines the components, sub-aggregates, subsystems, and
+// parameters. Note the absence of a top-level Annotations field by design:
+// per-instance Annotations live on [Subsystem]; Aggregate-level annotation
+// cascading has no authoring surface, and the IR's per-node annotation
+// buckets that derive from this entity are sourced from Subsystem.Annotations
+// alone.
 type AggregateSpec struct {
 	Parameters         OrderedMap[interface{}]       `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 	Aggregates         OrderedMap[SubAggregate]      `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`

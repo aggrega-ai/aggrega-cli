@@ -25,7 +25,24 @@ type IRMetadata struct {
 	AggregateName string `json:"aggregate_name"`
 }
 
-// IRSpec is the spec subtree of an IR document.
+// IRSpec is the spec subtree of an IR document, carrying the eight
+// data classes that downstream stages consume:
+//
+//   - Nodes / Edges — the topological graph (nodes keyed by node ID,
+//     edges as a slice of directed source/target pairs).
+//   - FeatureMarkers — the marker labels collected from feature
+//     attachments, used by analyzer's policy-input assembly and by
+//     downstream selector enforcement.
+//   - ValuesMapping / InfraMapping — per-node opaque developer payloads
+//     keyed by node ID, carried as json.RawMessage so the renderer
+//     hands them through to provider engines without re-marshalling.
+//   - FeatureValuesMapping — per-node Feature attachment map (node ID
+//     → instance name → IRFeatureEntry) for the per-node Feature cascade.
+//   - Secrets — per-node credential attachment map paralleling
+//     FeatureValuesMapping but typed for credentials.
+//   - Provenance — compiler / aggregate / release / manifest version
+//     traceability for the IR build.
+//
 // Schema: ir-v1alpha1.schema.json#/properties/spec
 type IRSpec struct {
 	Nodes                OrderedMap[IRNode]                       `json:"nodes"`

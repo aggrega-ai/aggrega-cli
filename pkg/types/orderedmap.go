@@ -14,18 +14,57 @@ import (
 )
 
 // OrderedMap is a generic string-keyed map that preserves author insertion
-// order across YAML unmarshal/marshal round-trips. Iteration via Keys() or
-// All() yields keys in the order they were inserted (or, for unmarshalled
-// maps, the order they appeared in the source YAML).
+// order across YAML and JSON marshal/unmarshal round-trips. Iteration via
+// Keys() or All() yields keys in the order they were inserted (or, for
+// unmarshalled maps, the order they appeared in the source).
 //
 // Author-order iteration is load-bearing for the compiler's deterministic
 // output invariant: map[string]X iteration is hash-randomized, which breaks
 // byte-identical rebuilds when an iterated field contributes to rendered
-// output.
+// output. The marshal/unmarshal pair preserves order across round-trips, so
+// canonical YAML or JSON parsed into an OrderedMap and re-emitted produces
+// the same key order as the source — the property GitOps diff-based
+// reviewers depend on.
 //
 // OrderedMap is safe to use as a zero value. Set / Delete lazily initialize
 // the backing map. The type is not safe for concurrent mutation; callers
-// that share an OrderedMap across goroutines must serialize writes externally.
+// that share an OrderedMap across goroutines must serialize writes
+// externally.
+//
+// Mutation semantics on a nil receiver mirror Go's builtin map: Delete is
+// a no-op (returns false); Set panics with a typed error message.
+//
+// # Limitations of OrderedMap[interface{}]
+//
+// When V is interface{}, two properties of encoding/json's default
+// decoding interact with OrderedMap's design and produce surprising
+// round-trip behavior:
+//
+//   - Numeric precision: JSON numbers decode as float64 by default.
+//     Integer values larger than 2^53 (the largest integer exactly
+//     representable as float64) lose precision through marshal/unmarshal
+//     round-trip. Callers requiring exact integer preservation should
+//     use a typed V (e.g., json.Number, or a domain-specific numeric
+//     type) rather than interface{}.
+//
+//   - Nested-object order: JSON objects nested inside interface{}-typed
+//     values decode as map[string]interface{}, which does not preserve
+//     key order. Author-order preservation only holds at the OrderedMap
+//     level, not at deeper levels of an interface{}-typed payload.
+//     Callers requiring order preservation through nested structures
+//     should use a typed V (e.g., OrderedMap[OrderedMap[interface{}]]
+//     for one level of nesting) rather than OrderedMap[interface{}]
+//     alone.
+//
+// YAML round-trip exhibits the same nested-object order loss and
+// preserves integer precision (yaml.v3's default integer decoder uses
+// int64). The asymmetry is in encoding/json's defaults, not OrderedMap.
+//
+// These limitations are documented as interim discipline. A forthcoming
+// proposal will introduce OrderedMap-aware nested decoding that closes
+// both gaps at the type level; until that proposal lands, callers
+// requiring deep-order or numeric-precision preservation through JSON
+// round-trip should use typed V as recommended above.
 type OrderedMap[V any] struct {
 	keys   []string
 	values map[string]V
@@ -90,10 +129,17 @@ func (m *OrderedMap[V]) Get(k string) (V, bool) {
 	return v, ok
 }
 
-// Set inserts or updates the value at k. A new key is appended to the
-// iteration order; an existing key keeps its position and has its value
-// replaced.
+// Set inserts a new key/value pair or updates the value for an existing
+// key, preserving the key's position in the iteration order. Like the
+// builtin map's m[k] = v, calling Set on a nil *OrderedMap[V] panics; the
+// receiver must be a non-nil pointer to a (possibly zero-value) struct,
+// or constructed via NewOrderedMap[V].
 func (m *OrderedMap[V]) Set(k string, v V) {
+	if m == nil {
+		panic("types.OrderedMap.Set: receiver is nil; " +
+			"construct via NewOrderedMap or use a non-nil " +
+			"struct value")
+	}
 	if m.values == nil {
 		m.values = make(map[string]V)
 	}
@@ -103,8 +149,10 @@ func (m *OrderedMap[V]) Set(k string, v V) {
 	m.values[k] = v
 }
 
-// Delete removes k from the map and from the iteration order.
-// Returns true if k was present.
+// Delete removes a key from the map and from the iteration order,
+// returning true if the key was present. Like the builtin map's
+// delete(m, k), Delete on a nil *OrderedMap[V] is a no-op that returns
+// false.
 func (m *OrderedMap[V]) Delete(k string) bool {
 	if m == nil || m.values == nil {
 		return false
@@ -155,15 +203,19 @@ func (m *OrderedMap[V]) All() iter.Seq2[string, V] {
 
 // UnmarshalYAML decodes a YAML mapping node into the OrderedMap, preserving
 // the order of keys as they appear in the source. Returns an error if the
-// same key appears more than once.
+// same key appears more than once within the source document.
+//
+// Re-unmarshal semantics: each call replaces the receiver's contents with
+// the decoded document. Re-unmarshalling into a populated OrderedMap
+// produces a map containing only the keys from the new document; prior
+// content is discarded. The duplicate-key check applies within a single
+// source document, not across the receiver's lifetime.
 func (m *OrderedMap[V]) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("OrderedMap: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
 	}
-	if m.values == nil {
-		m.values = make(map[string]V, len(node.Content)/2)
-	}
-	m.keys = m.keys[:0]
+	m.keys = make([]string, 0, len(node.Content)/2)
+	m.values = make(map[string]V, len(node.Content)/2)
 
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
@@ -254,12 +306,16 @@ func (m OrderedMap[V]) MarshalJSON() ([]byte, error) {
 // default json.Unmarshal into a map collapses order, so we parse the object
 // manually one key-value pair at a time.
 //
-// Rejects duplicate keys with the duplicate key name in the error.
+// Rejects duplicate keys with the duplicate key name in the error. The
+// duplicate-key check applies within a single source document.
+//
+// Re-unmarshal semantics: each call replaces the receiver's contents with
+// the decoded document. Re-unmarshalling into a populated OrderedMap
+// produces a map containing only the keys from the new document; prior
+// content is discarded.
 func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
-	if m.values == nil {
-		m.values = make(map[string]V)
-	}
-	m.keys = m.keys[:0]
+	m.keys = make([]string, 0)
+	m.values = make(map[string]V)
 
 	// Handle the literal null — JSON null decodes into a nil-equivalent state,
 	// i.e. an empty OrderedMap, without error.
@@ -268,7 +324,6 @@ func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
 
 	tok, err := dec.Token()
 	if err != nil {

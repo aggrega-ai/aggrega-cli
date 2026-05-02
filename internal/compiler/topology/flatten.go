@@ -166,7 +166,8 @@ func flattenAggregate(
 // they are part of the authoring root of the same Aggregate, so the
 // only bound is the YAML schema's structural validity. Pathologically
 // deep subsystem nesting in a single Aggregate would still reach the
-// recursion stack limit, but no LDR enshrines a depth bound here.
+// recursion stack limit, but no architectural anchor enshrines a depth
+// bound for subsystem nesting today.
 func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) {
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
