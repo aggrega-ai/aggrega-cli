@@ -13,9 +13,28 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// validateAppliesTo checks every Feature attachment against the target node's labels,
-// using the Feature's appliesTo / appliesToExpressions / appliesToAnyOf constraints.
-// Semantics: AND across the three forms (all constraints must pass); constraint omitted ⇒ vacuously true.
+// validateAppliesTo performs the second of the two label-matching
+// classes Step 4 runs: the Feature appliesTo check on every attached
+// Feature instance. For each (nodeID, featureInstance) pair in the
+// IR's FeatureValuesMapping the function looks up the Feature catalog
+// entity by type and evaluates the three appliesTo forms against the
+// target node's labels.
+//
+// Semantics. AND across appliesTo, appliesToExpressions, and
+// appliesToAnyOf — all three must hold for the attachment to be valid;
+// an omitted form is vacuously satisfied. Matching delegates to
+// pkg/selector (MatchLabels / MatchExpressions / MatchAnyOf).
+//
+// Skip cases. Target-node misses and catalog Feature misses silently
+// continue (defense-in-depth; Step 1's resolver guards prevent the
+// user-facing case — see [ErrCatalogLookup]).
+//
+// Output. One [AnalysisError] per violation. Source carries the
+// nodeID, Target carries the Feature instance name (a structural
+// reuse of AnalysisError's edge-shaped fields for the per-feature
+// case), Selector carries [formatAppliesTo]'s short summary of the
+// constraint. Errors emerge in (nodeID, instance) order via
+// pre-sorted iteration; no explicit post-sort.
 func validateAppliesTo(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) []AnalysisError {
 	if catalogLookup.Feature == nil {
 		return nil
@@ -62,7 +81,14 @@ func validateAppliesTo(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 	return errs
 }
 
-// formatAppliesTo produces a short, deterministic string for the error selector field.
+// formatAppliesTo produces a short, deterministic single-line summary
+// of a Feature's appliesTo constraint set for the [AnalysisError]
+// Selector field. Format: "appliesTo{k1=v1,k2=v2}" with full
+// key/value pairs alphabetical-by-key, optionally followed by
+// "appliesToExpressions[N]" and "appliesToAnyOf[N]" carrying counts
+// rather than content. The structured-form count-only treatment keeps
+// error messages compact when a Feature carries many match-expressions
+// or anyOf terms.
 func formatAppliesTo(spec types.FeatureSpec) string {
 	var parts []string
 	if spec.AppliesTo.Len() > 0 {

@@ -12,8 +12,29 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// validateSelectors checks every edge's usesSchema selector against the target node's labels.
-// Every edge is guaranteed to have a usesSchema entry (Step 1 ErrUnknownUsesSocket invariant).
+// validateSelectors performs the first of the two label-matching
+// classes Step 4 runs: the usesSchema-selector check. For each edge in
+// the IR graph the function picks a selector string from one of two
+// catalog surfaces and evaluates it against the target node's labels.
+//
+// Selector source. Edges whose IREdge.OriginFeature is non-empty read
+// the selector from the originating Feature catalog entity's
+// usesSchema entry for the socket; other edges read from the consuming
+// Component's usesSchema entry. The branch matches the edge-atomicity
+// contract IR carries forward — Feature-authored edges participate in
+// the originating Feature's usesSchema, not the consuming Component's.
+//
+// Skip cases. A usesSchema entry without a selector string is
+// vacuously satisfied. Catalog-lookup misses, target-node misses, and
+// missing-socket cases all silently continue: Step 1's resolver
+// guards reject unknown uses-sockets and validate every component and
+// feature reference, so analyzer-phase misses reflect internal
+// invariants rather than authoring errors (see [ErrCatalogLookup]).
+//
+// Output. One [AnalysisError] per violation. Parse errors carry
+// "selector parse error" framing; no-match errors carry target /
+// labels / selector / socket framing. Errors sort by
+// (source, target, socket).
 func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) []AnalysisError {
 	if catalogLookup.Component == nil {
 		return nil
