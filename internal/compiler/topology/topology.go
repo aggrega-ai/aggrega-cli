@@ -154,7 +154,7 @@ type SecretAttachment struct {
 // import dependency and lets tests construct in-memory sub-aggregate
 // fixtures without spinning up a filesystem catalog. The production
 // caller wires `cat.SubAggregateLoader()` from pkg/catalog (see
-// Session 4's catalog.go documentation for the adapter pattern).
+// pkg/catalog/catalog.go for the adapter pattern documentation).
 type SubAggregateLoader func(typeName string) (*types.Aggregate, error)
 
 // BuildConfig is the input bundle for Build. Three fields, all required:
