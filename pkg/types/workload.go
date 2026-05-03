@@ -33,7 +33,18 @@ type Workload struct {
 	ServiceAccount     string                    `json:"serviceAccount,omitempty" yaml:"serviceAccount,omitempty"`
 }
 
-// WorkloadMetadata carries optional labels / annotations on the Workload.
+// WorkloadMetadata carries optional labels and annotations on the
+// Workload. Both fields are typed map[string]string — the
+// synthesis-intermediate shape, parallel to the K8s-shaped
+// pass-through fields documented at
+// aggrega-docs/language-reference/entities/workload.md § Validation
+// surface. Workload values are programmatically constructed by Recipe
+// synthesis or parsed from yaml.v3 default unmarshal of templated
+// output; they do not originate as author-declared YAML, so
+// author-key-order preservation is not load-bearing at this layer
+// (which would otherwise call for OrderedMap[string], the typing
+// AggregateMetadata.Labels uses for author-declared module-level
+// labels).
 type WorkloadMetadata struct {
 	Name        string            `json:"name,omitempty" yaml:"name,omitempty"`
 	Version     string            `json:"version,omitempty" yaml:"version,omitempty"`
