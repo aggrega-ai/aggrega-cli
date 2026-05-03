@@ -43,6 +43,42 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 }
 
+// runBuild orchestrates the 5-step compiler pipeline against the catalog
+// at --catalog and the Release at --release, emitting rendered artifacts
+// under dist/. Each step's output is the next step's input; the
+// orchestration ordering is load-bearing for the pipeline's correctness:
+//
+//  1. Catalog load + extends resolution + deprecation surface — the
+//     catalog must be fully resolved (inherited labels, secretNames,
+//     usesSchema, unified cueSchema) before any pipeline step consumes
+//     catalog entities, because guards and renderer assume the
+//     fully-merged shape.
+//  2. Step 1 (Resolve) — loads the Release, derives Aggregate and
+//     Manifest paths, runs the resolver to produce a ResolveResult,
+//     then runs the resolver guards. Guard violations halt before
+//     any topology work.
+//  3. Step 2 (Topology) — flattens the Aggregate's component graph
+//     and computes the topology result.
+//  4. Step 3 (IR) — assembles the IR graph from the topology result
+//     plus the resolved Aggregate / Release / catalog.
+//  5. Step 4 (Analyze) — runs static-analysis checks against the IR
+//     graph (selector validation, appliesTo validation). Non-empty
+//     analysis errors halt before rendering.
+//  6. Step 5 (Render) — invokes the renderer with the IR graph, the
+//     feature execution order from Step 3, the resolve result, and
+//     the catalog lookup. The engineFactory closure (declared inline
+//     below) dispatches per-Recipe to the appropriate renderer.Engine.
+//
+// On error at any step, the function returns a wrapped error and cobra
+// displays it via the Execute error path. Per-step diagnostic output
+// (extends errors, deprecation warnings, guard violations, selector
+// violations, render warnings) writes to stderr inline; the returned
+// error is a count summary suitable for cobra display.
+//
+// On success, dist/boundaries/ is cleaned (stale files from prior
+// builds don't leak into this one, preserving GitOps byte-identity)
+// and the rendered files are written to dist/. A summary line writes
+// to stdout.
 func runBuild(cmd *cobra.Command, args []string) error {
 	// Load catalog from directory
 	cat, err := catalog.Load(catalogDir)
@@ -205,6 +241,20 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// writeArtifacts writes the rendered file map to disk under outRoot,
+// preserving relative path structure and creating intermediate
+// directories as needed. Each entry's relative path is cleaned and
+// validated:
+//
+//   - Empty paths are rejected (defensive guard against renderer
+//     producing a zero-key entry).
+//   - Path-traversal attempts ("..", or paths beginning with "../")
+//     are rejected. The check defends against a malicious or buggy
+//     renderer engine emitting a path that escapes outRoot.
+//
+// On any per-file error (mkdir, write), the function returns the
+// wrapped error and stops — partial writes to disk persist; the
+// caller is responsible for any cleanup in the partial-write case.
 func writeArtifacts(outRoot string, files map[string][]byte) error {
 	outRoot = filepath.Clean(outRoot)
 	for relPath, content := range files {
