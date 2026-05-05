@@ -51,8 +51,7 @@ func nodeCtxFor(nodeID string) renderer.NodeRenderContext {
 }
 
 // minimalWorkload constructs a single-container Workload exposing one
-// ClusterIP service. Category 1 of the WI05a acceptance enumeration —
-// the smoke-test smallest end-to-end case.
+// ClusterIP service — the smoke-test smallest end-to-end case.
 func minimalWorkload() *types.Workload {
 	w := &types.Workload{
 		APIVersion: "aggrega.ai/v1alpha1",
@@ -81,7 +80,7 @@ func TestSynthesizeWorkload_MinimalDeploymentClusterIP(t *testing.T) {
 		t.Fatalf("expected 2 files (Deployment + Service), got %d", len(files))
 	}
 
-	// File names follow the convention from WI05a §9.
+	// File names follow the helm provider's naming convention.
 	if files[0].Name != "api-server-deployment.yaml" {
 		t.Errorf("file[0] name: %q", files[0].Name)
 	}
@@ -223,9 +222,9 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	goldenCheck(t, "all-probe-shapes", concatBodies(files))
 }
 
-// TestSynthesizeWorkload_HTTPProbeNoNamedPort_TranslationError verifies the
-// WI05a §6 contract: http: probe on a container with no named ports fails
-// with TRANSLATION_ERROR.
+// TestSynthesizeWorkload_HTTPProbeNoNamedPort_TranslationError verifies that
+// an http: probe on a container with no named ports fails with
+// TRANSLATION_ERROR.
 func TestSynthesizeWorkload_HTTPProbeNoNamedPort_TranslationError(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}

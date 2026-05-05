@@ -20,10 +20,10 @@ import (
 // satisfies every constraint; otherwise returns a *WorkloadValidationError
 // with one finding per CUE rule violation.
 //
-// Path B (per WI03 design): pkg/types is a CUE-free leaf package; this
-// validator is the explicit load-time entry point invoked by Phase B.2 (and
-// any other consumer that constructs a Workload programmatically and wants
-// to verify its shape before handing it to a synthesizer).
+// pkg/types is a CUE-free leaf package; this validator is the explicit
+// load-time entry point invoked by Phase B.2 (and any other consumer that
+// constructs a Workload programmatically and wants to verify its shape
+// before handing it to a synthesizer).
 //
 // recipePath / recipeName / recipeVersion are threaded into the error for
 // operator-facing message context; pass "" when not available (e.g., tests

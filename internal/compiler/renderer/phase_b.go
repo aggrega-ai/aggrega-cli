@@ -9,8 +9,7 @@ import (
 
 // ExecutePhaseB is the legacy entry point for Phase B's valuesMapping
 // evaluation. Production renders no longer call it — the orchestrator
-// runs the sub-pass pipeline (phaseB0 → Phase A → phaseB1 → ...) directly
-// per WI04.
+// runs the sub-pass pipeline (phaseB0 → Phase A → phaseB1 → ...) directly.
 //
 // Retained for the dedicated phase B unit tests in phase_b_test.go and
 // number_shape_test.go that exercise yaml-decode edge cases (block

@@ -289,8 +289,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// No-op for Recipes that don't declare workload: / workloadFrom:.
 		// Slots lookup deferred to inside the function body (passes empty
 		// when no workload is declared); future enhancement: thread the
-		// Component's secretsSchema from input.CatalogLookup when Workload
-		// recipes ship.
+		// Component's secretsSchema from input.CatalogLookup so the
+		// workload-secret cross-check uses the real slot allowlist.
 		emptySlots := types.OrderedMap[types.SecretSlot]{}
 		if err := phaseB2(tmplCtx, state, emptySlots); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
@@ -306,16 +306,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Phase B.4 — workload synthesizer dispatch. No-op for sourced/
-		// sourceless paths (state.ParsedWorkload is nil); active when
-		// helm Workload synthesizer + Workload-bearing Recipes ship.
+		// sourceless paths (state.ParsedWorkload is nil); dispatches to the
+		// engine's WorkloadSynthesizer otherwise (engines that don't
+		// implement the interface produce a CATALOG_ERROR).
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
 
 		// Phase B.5 — filename collision detection across input-kind
-		// origins (rule 7). With current fixtures only EmitOriginSource
-		// contributes; collisions surface when code lands Workload
-		// synthesis or when artifacts evaluation lands.
+		// origins (rule 7). Collisions can surface across EmitOriginSource
+		// and EmitOriginWorkload contributions (when a Recipe declares both
+		// source: and workload:); EmitOriginArtifacts* contributions land
+		// when the artifacts render path ships.
 		if err := phaseB5(state); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}

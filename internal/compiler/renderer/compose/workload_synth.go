@@ -3,7 +3,7 @@
 
 // Workload → Docker Compose service synthesizer for the compose provider.
 // Implements the renderer.WorkloadSynthesizer interface (declared in
-// renderer/synthesis.go, dispatched from Phase B.4 per WI04).
+// renderer/synthesis.go, dispatched from Phase B.4).
 //
 // Per-node contract. SynthesizeWorkload returns ONE EmittedFile —
 // `<nodeID>.compose-fragment.yaml` — containing a partial ComposeFile with

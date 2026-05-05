@@ -3,9 +3,9 @@
 
 // Workload → K8s manifest synthesizer for the helm provider. Implements the
 // renderer.WorkloadSynthesizer interface (declared in renderer/synthesis.go,
-// dispatched from Phase B.4 per WI04).
+// dispatched from Phase B.4).
 //
-// Translation contract (chapter 16 §3 + WI05a acceptance):
+// Translation contract (chapter 16 §3):
 //
 //   - Workload.Volumes contains any persistentTemplate → emit StatefulSet;
 //     otherwise → Deployment.
@@ -389,7 +389,7 @@ func translateProbe(p *types.ProbeSpec, containerPorts []ContainerPort) (*Probe,
 
 // resolveHTTPProbePort returns the first container port name in alphabetical
 // order, suitable for use as a named-port reference in httpGet. Returns an
-// error if no container ports are declared (TRANSLATION_ERROR per WI05a §6).
+// error if no container ports are declared (TRANSLATION_ERROR).
 func resolveHTTPProbePort(containerPorts []ContainerPort) (string, error) {
 	if len(containerPorts) == 0 {
 		return "", fmt.Errorf("TRANSLATION_ERROR: probe http: requires at least one named container port; container declares none")

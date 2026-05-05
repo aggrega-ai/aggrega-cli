@@ -287,7 +287,7 @@ func TestValidateRecipe_Eval_RejectsArtifacts(t *testing.T) {
 
 func TestValidateRecipe_ErrorMessage_CATALOG_ERRORPrefixedAndStructured(t *testing.T) {
 	t.Parallel()
-	// Use rule 5 to trip the validator (rule 1 is gated until WI05).
+	// Use rule 5 to trip the validator (rule 1 isn't currently active on this path).
 	// Rule 5's CATALOG_ERROR shape is identical to rule 1's; this test
 	// asserts the format contract independent of which rule fires.
 	r := newRecipe("helm")

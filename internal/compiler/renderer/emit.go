@@ -22,13 +22,12 @@ const (
 	EmitOriginWorkload
 
 	// EmitOriginArtifactsInline — the file originated from an entry in the
-	// Recipe's artifacts: inline map. Reserved for artifacts-debug-proof
-	// WI01 (Phase B.3 stub today).
+	// Recipe's artifacts: inline map. Reserved for the artifacts render
+	// path (Phase B.3 is a stub today).
 	EmitOriginArtifactsInline
 
 	// EmitOriginArtifactsFromFile — the file originated from a path in the
-	// Recipe's artifactsFrom: list. Reserved for artifacts-debug-proof
-	// WI01.
+	// Recipe's artifactsFrom: list. Reserved for the artifacts render path.
 	EmitOriginArtifactsFromFile
 )
 

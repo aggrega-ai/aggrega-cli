@@ -16,8 +16,7 @@ import (
 // workload: or workloadFrom:; engines that don't implement it produce a
 // CATALOG_ERROR at B.4.
 //
-// Implemented by: helm engine (lands in WI05 of synthesis-foundations);
-// compose engine (lands in WI06). Other providers (terraform,
+// Implemented by: helm and compose engines. Other providers (terraform,
 // cloudformation, eval) do not implement WorkloadSynthesizer today.
 type WorkloadSynthesizer interface {
 	// SynthesizeWorkload produces provider-native manifests from a parsed

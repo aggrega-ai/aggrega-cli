@@ -6,10 +6,10 @@
 // reads from and writes to the state, mutates the TemplateContext where
 // the per-pass availability matrix specifies, and propagates errors.
 //
-// Phase 1 of WI04 authors these sub-pass functions but does NOT wire them
-// into the orchestrator yet. ExecutePhaseB at phase_b.go remains the
-// orchestrator's call site until Phase 2's orchestrator-rewire moves to
-// RunPhaseBPipeline.
+// The orchestrator calls these sub-passes directly during production
+// render runs. ExecutePhaseB at phase_b.go is a legacy entry point
+// retained for the dedicated phase B unit tests; production code paths
+// no longer use it.
 
 package renderer
 
@@ -127,8 +127,8 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 
 // phaseB2 evaluates Recipe.Spec.Workload (inline) or reads + evaluates
 // Recipe.Spec.WorkloadFrom (file), parses the rendered output via
-// yaml.Unmarshal into a *types.Workload, then runs the two validators
-// per Path B (operator-approved per WI03 closure):
+// yaml.Unmarshal into a *types.Workload, then runs the two validators in
+// order:
 //
 //  1. validator.ValidateWorkload — schema unification against the embedded
 //     #Workload CUE.
@@ -245,7 +245,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 
 // phaseB5 detects filename collisions across input-kind origins on
 // state.EmittedFiles. Cross-origin collisions produce a
-// RecipeValidationError{Rule: "7"} per WI02's reserved sentinel format.
+// RecipeValidationError{Rule: "7"} (the reserved rule-7 sentinel format).
 // Within-origin collisions are caught by other rules (rule 6 at load time
 // for artifacts vs artifactsFrom; engine-internal logic for duplicate
 // sourced output).
