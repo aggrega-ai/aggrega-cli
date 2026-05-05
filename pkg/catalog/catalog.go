@@ -373,26 +373,29 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 
 // RecipeLookup returns a renderer.RecipeLookup whose Recipe and FeatureRecipe
 // closures resolve a component or feature type URI to the matching catalog
-// entry. The closures key directly on spec.implements — passing the
-// caller's URI as the map key — and return a pointer-plus-bool so callers
-// can either use the returned Recipe (typically copying or borrowing) or
-// branch cleanly on miss.
+// entry. The closures key on spec.implements with the language's documented
+// three-form precedence and return a pointer-plus-bool so callers can either
+// use the returned Recipe (typically copying or borrowing) or branch cleanly
+// on miss.
 //
-// The lookup is exact-string by spec.implements today; three-form
-// version-pinned matching (exact > major-compatible range > unversioned)
-// is not yet implemented at this surface — callers must pass the same
-// implements string the Recipe declared.
+// The lookup walks three forms in order: exact-string match first, then
+// caret-range match (the caller's version satisfies a "<base>:^<version>"
+// constraint declared by some Recipe in the catalog), then unversioned
+// fallback ("<base>" alone). When multiple caret-form entries match the
+// caller's version, the one with the highest baseline version wins. See
+// matchImplements in version_match.go for the helper that walks the
+// precedence; the lookup closures here just dispatch through it.
 func (c *Catalog) RecipeLookup() renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe: func(componentType string) (*types.Recipe, bool) {
-			r, ok := c.Recipes[componentType]
+			r, ok := matchImplements(c.Recipes, componentType)
 			if !ok {
 				return nil, false
 			}
 			return &r, true
 		},
 		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
-			fr, ok := c.FeatureRecipes[featureType]
+			fr, ok := matchImplements(c.FeatureRecipes, featureType)
 			if !ok {
 				return nil, false
 			}
