@@ -9,6 +9,7 @@ type Aggregate struct {
 	APIVersion string            `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string            `json:"kind" yaml:"kind"`
 	Metadata   AggregateMetadata `json:"metadata" yaml:"metadata"`
+	Defs       []string          `json:"defs,omitempty" yaml:"defs,omitempty"` // YAML anchor definitions for DRY
 	Spec       AggregateSpec     `json:"spec" yaml:"spec"`
 }
 
