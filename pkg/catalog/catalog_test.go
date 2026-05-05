@@ -156,7 +156,7 @@ func TestLoad_RecipeLookup(t *testing.T) {
 	if !found {
 		t.Fatal("expected to find recipe for core/api-server")
 	}
-	if r.Metadata.Name != "ops/helm-api-server" {
+	if r.Metadata.Name != "helm-api-server" {
 		t.Errorf("recipe name: %q", r.Metadata.Name)
 	}
 
@@ -211,7 +211,7 @@ func TestLoadAll_MergesAcrossDirs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dirA, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/recipe-a
+  name: recipe-a
   version: 1.0.0
 spec:
   provider: helm
@@ -224,7 +224,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(dirB, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/recipe-b
+  name: recipe-b
   version: 1.0.0
 spec:
   provider: helm-chart
@@ -321,7 +321,7 @@ func TestLoad_RelativeRecipeSourceResolvedToAbsPath(t *testing.T) {
 	if err := os.WriteFile(recipePath, []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/rel
+  name: rel
   version: 1.0.0
 spec:
   provider: helm

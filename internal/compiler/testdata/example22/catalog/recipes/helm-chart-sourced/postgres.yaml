@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/helm-postgres-chart-sourced
+  name: helm-postgres-chart-sourced
   version: "1.0.0"
 spec:
   provider: helm-chart

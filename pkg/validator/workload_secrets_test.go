@@ -223,7 +223,7 @@ func TestValidateWorkloadSecrets_ErrorMessageFormat(t *testing.T) {
 	c.Secrets.Set("X", types.SecretRef{From: "absent", As: "env"})
 	w.Containers.Set("main", c)
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "recipe.yaml", "ops/test", "1.0.0")
+	err := validator.ValidateWorkloadSecrets(w, slots, "recipe.yaml", "test", "1.0.0")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -231,7 +231,7 @@ func TestValidateWorkloadSecrets_ErrorMessageFormat(t *testing.T) {
 	if !strings.HasPrefix(msg, "CATALOG_ERROR: Workload") {
 		t.Errorf("must start with CATALOG_ERROR prefix, got: %q", msg)
 	}
-	if !strings.Contains(msg, "ops/test:1.0.0") {
+	if !strings.Contains(msg, "test:1.0.0") {
 		t.Errorf("must contain recipe name:version, got: %q", msg)
 	}
 	if !strings.Contains(msg, "secretsSchema validation failed") {

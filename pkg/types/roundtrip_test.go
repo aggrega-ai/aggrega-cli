@@ -142,7 +142,7 @@ func TestFeature_RoundTripIdempotent(t *testing.T) {
 	src := []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Feature
 metadata:
-  name: ops/test-feature
+  name: core/test-feature
   version: "1.0.0"
 spec:
   appliesTo:
@@ -190,7 +190,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: helm
-  implements: ops/test-feature:1.0.0
+  implements: core/test-feature:1.0.0
   provides:
     z-output: "{{ .values.z }}"
     a-output: "{{ .values.a }}"

@@ -172,7 +172,7 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 		{
 			InstanceName: "mon",
 			FeatureRecipe: &types.FeatureRecipe{
-				Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
+				Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 				Spec: types.FeatureRecipeSpec{
 					Locals:        locals2,
 					InjectMapping: `{"env": {"SCRAPE_HOST": "{{ .locals.host }}", "SCRAPE_PATH": "{{ .locals.scrape_path }}"}}`,

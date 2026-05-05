@@ -24,7 +24,7 @@ func testCatalog() CatalogLookup {
 						Labels:  labels,
 					},
 					Spec: types.ComponentSpec{
-						RequiredFeatures: []string{"ops/logging:1.0.0"},
+						RequiredFeatures: []string{"core/logging:1.0.0"},
 					},
 				}, true
 			case "core/worker:1.0.0":
@@ -42,7 +42,7 @@ func testCatalog() CatalogLookup {
 		},
 		Feature: func(typeURI string) (types.Feature, bool) {
 			switch typeURI {
-			case "ops/logging:1.0.0":
+			case "core/logging:1.0.0":
 				return types.Feature{
 					Metadata: types.FeatureMetadata{Name: "logging", Version: "1.0.0"},
 				}, true
@@ -56,7 +56,7 @@ func testCatalog() CatalogLookup {
 						Labels:  labels,
 					},
 				}, true
-			case "ops/metrics:1.0.0":
+			case "core/metrics:1.0.0":
 				return types.Feature{
 					Metadata: types.FeatureMetadata{Name: "metrics", Version: "1.0.0"},
 				}, true
@@ -70,7 +70,7 @@ func testCatalog() CatalogLookup {
 
 func TestGuardCredentialPartition_CorrectPlacement(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("logging", types.FeatureInstance{Type: "ops/logging:1.0.0"})
+	features.Set("logging", types.FeatureInstance{Type: "core/logging:1.0.0"})
 	secrets := types.OrderedMap[types.SecretInstance]{}
 	secrets.Set("vault", types.SecretInstance{Type: "security/vault:1.0.0"})
 	components := types.OrderedMap[types.ComponentInstance]{}
@@ -111,7 +111,7 @@ func TestGuardCredentialPartition_CredentialInFeatures(t *testing.T) {
 
 func TestGuardCredentialPartition_NonCredentialInSecrets(t *testing.T) {
 	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("logging", types.SecretInstance{Type: "ops/logging:1.0.0"})
+	secrets.Set("logging", types.SecretInstance{Type: "core/logging:1.0.0"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Secrets: secrets})
 	agg := &types.Aggregate{
@@ -134,7 +134,7 @@ func TestGuardCredentialPartition_NonCredentialInSecrets(t *testing.T) {
 
 func TestGuardRequiredFeatures_AllSatisfied(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("logging", types.FeatureInstance{Type: "ops/logging:1.0.0"})
+	features.Set("logging", types.FeatureInstance{Type: "core/logging:1.0.0"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
 	agg := &types.Aggregate{
@@ -179,7 +179,7 @@ func TestGuardRequiredFeatures_SatisfiedByRelease(t *testing.T) {
 		},
 	}
 	features := types.OrderedMap[types.BoundaryFeature]{}
-	features.Set("logging", types.BoundaryFeature{Type: "ops/logging:1.0.0"})
+	features.Set("logging", types.BoundaryFeature{Type: "core/logging:1.0.0"})
 	components2 := types.OrderedMap[types.BoundaryComponent]{}
 	components2.Set("web", types.BoundaryComponent{Features: features})
 	boundaries := types.OrderedMap[types.Boundary]{}
@@ -216,7 +216,7 @@ func TestGuardRequiredFeatures_NoRequirements(t *testing.T) {
 
 func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("metrics", types.FeatureInstance{Type: "ops/metrics:1.0.0"})
+	features.Set("metrics", types.FeatureInstance{Type: "core/metrics:1.0.0"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
 	agg := &types.Aggregate{
@@ -228,7 +228,7 @@ func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
 	infra := types.OrderedMap[interface{}]{}
 	infra.Set("cpu", "500m")
 	features2 := types.OrderedMap[types.BoundaryFeature]{}
-	features2.Set("metrics", types.BoundaryFeature{Type: "ops/metrics:1.0.0", Infra: infra})
+	features2.Set("metrics", types.BoundaryFeature{Type: "core/metrics:1.0.0", Infra: infra})
 	components2 := types.OrderedMap[types.BoundaryComponent]{}
 	components2.Set("web", types.BoundaryComponent{Features: features2})
 	boundaries := types.OrderedMap[types.Boundary]{}
@@ -247,7 +247,7 @@ func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
 
 func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("metrics", types.FeatureInstance{Type: "ops/metrics:1.0.0"})
+	features.Set("metrics", types.FeatureInstance{Type: "core/metrics:1.0.0"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
 	agg := &types.Aggregate{
@@ -257,7 +257,7 @@ func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
 		},
 	}
 	features2 := types.OrderedMap[types.BoundaryFeature]{}
-	features2.Set("metrics", types.BoundaryFeature{Type: "ops/logging:1.0.0"})
+	features2.Set("metrics", types.BoundaryFeature{Type: "core/logging:1.0.0"})
 	components2 := types.OrderedMap[types.BoundaryComponent]{}
 	components2.Set("web", types.BoundaryComponent{Features: features2})
 	boundaries := types.OrderedMap[types.Boundary]{}

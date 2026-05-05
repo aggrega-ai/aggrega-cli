@@ -281,7 +281,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 				locals := types.OrderedMap[string]{}
 				locals.Set("scrape_target", `{{ .values.tier }}-{{ .values.scrape_port }}`)
 				return &types.FeatureRecipe{
-					Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
+					Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 					Spec: types.FeatureRecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/monitoring",
@@ -366,7 +366,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 			if featureType == "core/dns-resolver" {
 				// Inject-only FR (only injectMapping, no source/valuesMapping) — must NOT generate resources.
 				return &types.FeatureRecipe{
-					Metadata: types.FeatureRecipeMetadata{Name: "ops/dns"},
+					Metadata: types.FeatureRecipeMetadata{Name: "dns"},
 					Spec: types.FeatureRecipeSpec{
 						Provider:      "helm-chart",
 						InjectMapping: `{"env": {"RESOLVER": "corefile"}}`,
@@ -430,7 +430,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 				// Credential FR: its valuesMapping references .secret_name AND
 				// the top-level .inject map populated by buildSecretInject.
 				return &types.FeatureRecipe{
-					Metadata: types.FeatureRecipeMetadata{Name: "ops/db-password"},
+					Metadata: types.FeatureRecipeMetadata{Name: "db-password"},
 					Spec: types.FeatureRecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/db-password",

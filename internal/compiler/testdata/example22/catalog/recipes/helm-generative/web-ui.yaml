@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/helm-web-ui-generative
+  name: helm-web-ui-generative
   version: "1.0.0"
 spec:
   provider: helm

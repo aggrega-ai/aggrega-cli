@@ -150,7 +150,7 @@ func TestRecipe_AuthorOrderPreserved(t *testing.T) {
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/helm-server
+  name: helm-server
   version: "1.0.0"
 spec:
   provider: helm
@@ -189,7 +189,7 @@ func TestFeatureRecipe_AuthorOrderPreserved(t *testing.T) {
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
-  name: ops/mon-prometheus
+  name: mon-prometheus
   version: "1.0.0"
 spec:
   provider: helm-chart

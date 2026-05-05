@@ -17,7 +17,7 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	locals.Set("tier", `{{ .values.tier }}`)
 
 	fr := &types.FeatureRecipe{
-		Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
+		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec: types.FeatureRecipeSpec{
 			Locals: locals,
 		},
@@ -59,7 +59,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 	locals := types.OrderedMap[string]{}
 	locals.Set("leak", `{{ .context.inject.env.DB_URL }}`)
 	fr := &types.FeatureRecipe{
-		Metadata: types.FeatureRecipeMetadata{Name: "ops/bad"},
+		Metadata: types.FeatureRecipeMetadata{Name: "bad"},
 		Spec: types.FeatureRecipeSpec{
 			Locals: locals,
 		},
@@ -77,7 +77,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 	t.Parallel()
 
 	fr := &types.FeatureRecipe{
-		Metadata: types.FeatureRecipeMetadata{Name: "ops/mon"},
+		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec: types.FeatureRecipeSpec{
 			ValuesMapping: `{"image": "prom/mon:{{ .values.tag }}", "port": {{ .values.port }}}`,
 		},
@@ -115,7 +115,7 @@ func TestExecutePhaseBForFeature_NilFR(t *testing.T) {
 
 func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) {
 	t.Parallel()
-	fr := &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "ops/x"}}
+	fr := &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "x"}}
 	values := types.OrderedMap[interface{}]{}
 	values.Set("a", float64(1))
 	ctx := &types.TemplateContext{Values: values}
@@ -131,7 +131,7 @@ func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) 
 func TestExecutePhaseBForFeature_RejectsJsonnet(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
-		Metadata: types.FeatureRecipeMetadata{Name: "ops/js"},
+		Metadata: types.FeatureRecipeMetadata{Name: "js"},
 		Spec:     types.FeatureRecipeSpec{ValuesMappingJsonnet: "// jsonnet code"},
 	}
 	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
@@ -143,7 +143,7 @@ func TestExecutePhaseBForFeature_RejectsJsonnet(t *testing.T) {
 func TestExecutePhaseBForFeature_InvalidYAML(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
-		Metadata: types.FeatureRecipeMetadata{Name: "ops/bad"},
+		Metadata: types.FeatureRecipeMetadata{Name: "bad"},
 		Spec:     types.FeatureRecipeSpec{ValuesMapping: `not a mapping`},
 	}
 	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)

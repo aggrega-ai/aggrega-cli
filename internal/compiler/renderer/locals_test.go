@@ -30,7 +30,7 @@ func TestEvaluateRecipeLocals_Basic(t *testing.T) {
 	t.Parallel()
 
 	recipe := &types.Recipe{
-		Metadata: types.RecipeMetadata{Name: "ops/db"},
+		Metadata: types.RecipeMetadata{Name: "db"},
 		Spec: types.RecipeSpec{
 			Locals: omLocals("fqdn", `{{ .provides.host }}.svc`, "port", `{{ .values.port }}`),
 		},
@@ -63,7 +63,7 @@ func TestEvaluateRecipeLocals_NilRecipe(t *testing.T) {
 
 func TestEvaluateRecipeLocals_EmptyLocals(t *testing.T) {
 	t.Parallel()
-	recipe := &types.Recipe{Metadata: types.RecipeMetadata{Name: "ops/x"}}
+	recipe := &types.Recipe{Metadata: types.RecipeMetadata{Name: "x"}}
 	got, err := EvaluateRecipeLocals(recipe, "n", types.OrderedMap[interface{}]{}, types.OrderedMap[interface{}]{}, types.OrderedMap[string]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -76,7 +76,7 @@ func TestEvaluateRecipeLocals_EmptyLocals(t *testing.T) {
 func TestEvaluateRecipeLocals_RejectsInjectRef(t *testing.T) {
 	t.Parallel()
 	recipe := &types.Recipe{
-		Metadata: types.RecipeMetadata{Name: "ops/bad"},
+		Metadata: types.RecipeMetadata{Name: "bad"},
 		Spec: types.RecipeSpec{
 			Locals: omLocals("leak", `{{ .context.inject.env.DB_URL }}`),
 		},
@@ -93,7 +93,7 @@ func TestEvaluateRecipeLocals_RejectsInjectRef(t *testing.T) {
 func TestEvaluateRecipeLocals_RejectsUsesRef(t *testing.T) {
 	t.Parallel()
 	recipe := &types.Recipe{
-		Metadata: types.RecipeMetadata{Name: "ops/bad"},
+		Metadata: types.RecipeMetadata{Name: "bad"},
 		Spec: types.RecipeSpec{
 			Locals: omLocals("leak", `{{ (index .context.uses "db").provides.host }}`),
 		},
@@ -107,7 +107,7 @@ func TestEvaluateRecipeLocals_RejectsUsesRef(t *testing.T) {
 func TestEvaluateRecipeLocals_Deterministic(t *testing.T) {
 	t.Parallel()
 	recipe := &types.Recipe{
-		Metadata: types.RecipeMetadata{Name: "ops/d"},
+		Metadata: types.RecipeMetadata{Name: "d"},
 		Spec: types.RecipeSpec{
 			Locals: omLocals("z_key", "zed", "a_key", "alpha", "m_key", "mid"),
 		},

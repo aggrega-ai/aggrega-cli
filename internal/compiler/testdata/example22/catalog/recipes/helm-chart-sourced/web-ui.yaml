@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: ops/helm-web-ui-chart-sourced
+  name: helm-web-ui-chart-sourced
   version: "1.0.0"
 spec:
   provider: helm-chart

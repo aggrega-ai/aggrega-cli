@@ -8,4 +8,4 @@ spec:
     helm:
       components:
         type:
-          core/server: ops/server-recipe:1.0.0
+          core/server: server-recipe:1.0.0

@@ -41,7 +41,7 @@ func TestPhaseB_ContextAvailabilityMatrix(t *testing.T) {
 	t.Parallel()
 
 	ctx := minimalCtx()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.Source = "./chart"
 	r.Spec.ValuesMapping = `{"image": "demo:1"}`
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
@@ -104,7 +104,7 @@ func TestPhaseB_ContextAvailabilityMatrix_WorkloadPopulates(t *testing.T) {
 	t.Parallel()
 
 	ctx := minimalCtx()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -151,7 +151,7 @@ containers:
 func TestPhaseB2_WorkloadValidationFlow_ValidPasses(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -188,7 +188,7 @@ containers:
 func TestPhaseB2_WorkloadValidationFlow_BadServiceTypeFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -216,7 +216,7 @@ services:
 func TestPhaseB2_WorkloadValidationFlow_SecretsSchemaFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -247,7 +247,7 @@ containers:
 
 func TestPhaseB3_ArtifactsStubLoudError_InlineDeclared(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.Artifacts = types.OrderedMap[string]{}
 	r.Spec.Artifacts.Set("foo.yaml", `kind: ConfigMap`)
 
@@ -267,7 +267,7 @@ func TestPhaseB3_ArtifactsStubLoudError_InlineDeclared(t *testing.T) {
 
 func TestPhaseB3_ArtifactsStubLoudError_FromDeclared(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	r.Spec.ArtifactsFrom = []string{"./manifests/deploy.yaml"}
 
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
@@ -280,7 +280,7 @@ func TestPhaseB3_ArtifactsStubLoudError_FromDeclared(t *testing.T) {
 
 func TestPhaseB3_NoArtifacts_NoError(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 
 	if err := phaseB3(state); err != nil {
@@ -305,7 +305,7 @@ func TestPhaseB3_NoArtifacts_NoError(t *testing.T) {
 // and rule 7 correctly does NOT fire.
 func TestPhaseB5_NoCollision_FeaturesUnderSubPath(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	state.EmittedFiles = []EmittedFile{
 		{Name: "features/mon/deployment.yaml", Origin: EmitOriginSource, Body: []byte("a")},
@@ -321,7 +321,7 @@ func TestPhaseB5_NoCollision_FeaturesUnderSubPath(t *testing.T) {
 // rule 7 CATALOG_ERROR.
 func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	state.EmittedFiles = []EmittedFile{
 		{Name: "deployment.yaml", Origin: EmitOriginSource, Body: []byte("a")},
@@ -346,7 +346,7 @@ func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 // time. B.5 only fires on cross-origin collisions.
 func TestPhaseB5_WithinOriginDuplication_NoRule7(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	state.EmittedFiles = []EmittedFile{
 		{Name: "config.yaml", Origin: EmitOriginArtifactsInline, Body: []byte("a")},
@@ -364,7 +364,7 @@ func TestPhaseB5_WithinOriginDuplication_NoRule7(t *testing.T) {
 func TestPhaseB4_NoWorkload_NoOp(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	// state.ParsedWorkload remains nil.
 
@@ -383,7 +383,7 @@ func TestPhaseB4_NoWorkload_NoOp(t *testing.T) {
 
 func TestNewPhaseBState_FieldsPopulated(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("ops/test")
+	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "node-id", "boundary-x", "/tmp/recipe.yaml")
 
 	if state.Recipe != r {
@@ -398,7 +398,7 @@ func TestNewPhaseBState_FieldsPopulated(t *testing.T) {
 	if state.RecipePath != "/tmp/recipe.yaml" {
 		t.Errorf("RecipePath: %q", state.RecipePath)
 	}
-	if state.RecipeName != "ops/test" {
+	if state.RecipeName != "test" {
 		t.Errorf("RecipeName: %q", state.RecipeName)
 	}
 	if state.RecipeVersion != "1.0.0" {

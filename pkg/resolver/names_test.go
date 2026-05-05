@@ -102,7 +102,7 @@ func TestValidateInstanceNames_NestedSubsystem(t *testing.T) {
 
 func TestValidateInstanceNames_FeatureNames(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("bad.feature", types.FeatureInstance{Type: "ops/logging:1.0.0"})
+	features.Set("bad.feature", types.FeatureInstance{Type: "core/logging:1.0.0"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
 	agg := &types.Aggregate{
