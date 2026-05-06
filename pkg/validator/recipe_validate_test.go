@@ -184,12 +184,26 @@ func TestValidateRecipe_Rule6_BasenameCollision_Fails(t *testing.T) {
 
 func TestValidateRecipe_Rule6_OnlyOneSide_NoCheck(t *testing.T) {
 	t.Parallel()
-	// Inline artifacts with no artifactsFrom: rule 6 doesn't apply.
+	// Inline artifacts with no artifactsFrom: inline×from class doesn't
+	// apply. The Recipe still needs to be otherwise valid.
 	r := newRecipe("helm")
 	r.Spec.Artifacts = types.OrderedMap[string]{}
 	r.Spec.Artifacts.Set("config.yaml", `data: {}`)
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
+	}
+}
+
+func TestValidateRecipe_Rule6_ArtifactsFromInternalCollision_Fails(t *testing.T) {
+	t.Parallel()
+	r := newRecipe("helm")
+	r.Spec.ArtifactsFrom = []string{"./a/foo.yaml", "./b/foo.yaml"}
+	err := validator.ValidateRecipe(r, tFile)
+	if !errors.Is(err, validator.ErrRecipeRule6) {
+		t.Fatalf("expected ErrRecipeRule6 for within-artifactsFrom basename collision, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "foo.yaml") {
+		t.Errorf("error detail should name the colliding basename: %v", err)
 	}
 }
 

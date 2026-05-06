@@ -174,6 +174,20 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			}
 			e.Spec.Source = abs
 		}
+		// Resolve relative artifactsFrom paths against the Recipe file's
+		// directory so co-located artifact files stay bundled with their
+		// Recipe. The chapter's "paths are relative to the Recipe directory"
+		// contract anchors here. Mirrors the source-resolution pattern above.
+		for i, p := range e.Spec.ArtifactsFrom {
+			if p == "" || filepath.IsAbs(p) {
+				continue
+			}
+			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), p))
+			if err != nil {
+				return fmt.Errorf("resolve Recipe %q artifactsFrom %q: %w", path, p, err)
+			}
+			e.Spec.ArtifactsFrom[i] = abs
+		}
 		c.Recipes[e.Spec.Implements] = e
 	case "FeatureRecipe":
 		var e types.FeatureRecipe

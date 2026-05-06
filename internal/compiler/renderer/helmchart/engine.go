@@ -19,7 +19,21 @@ import (
 // to helm.
 type HelmEngine struct{}
 
-var _ renderer.Engine = (*HelmEngine)(nil)
+var (
+	_ renderer.Engine                   = (*HelmEngine)(nil)
+	_ renderer.ExternalArtifactsHandler = (*HelmEngine)(nil)
+)
+
+// HandlesArtifactsExternally satisfies renderer.ExternalArtifactsHandler.
+// The helm-chart engine merges Recipe artifactsFrom: files into the
+// chart's templates/ directory before Helm rendering rather than emitting
+// standalone files; Phase B.3 short-circuits when this marker is
+// satisfied. Inline artifacts: is rejected at the same point — Helm's
+// chart structure requires templates as physical files.
+//
+// The pre-template injection path (the actual merge) is the engine's own
+// concern and is not implemented at Render-time on this engine yet.
+func (e *HelmEngine) HandlesArtifactsExternally() {}
 
 // Render produces the sub-chart contents for one node.
 //

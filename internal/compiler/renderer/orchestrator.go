@@ -274,9 +274,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
 
-		// Phase B.3 — artifacts STUB. Errors loud if Recipe declares
-		// artifacts: / artifactsFrom:; no-op otherwise.
-		if err := phaseB3(state); err != nil {
+		// Phase B.3 — artifacts evaluation. Inline artifacts: and
+		// artifactsFrom: render through Go templates against the full
+		// TemplateContext, get provenance labels merged into K8s metadata
+		// when present, and accumulate on state.EmittedFiles for Phase
+		// B.5 collision detection.
+		if err := phaseB3(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
 

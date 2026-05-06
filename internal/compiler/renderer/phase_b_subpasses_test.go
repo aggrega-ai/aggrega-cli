@@ -243,47 +243,17 @@ containers:
 	}
 }
 
-// ----- TestPhaseB3_ArtifactsStubLoudError -----
-
-func TestPhaseB3_ArtifactsStubLoudError_InlineDeclared(t *testing.T) {
-	t.Parallel()
-	r := minimalRecipe("test")
-	r.Spec.Artifacts = types.OrderedMap[string]{}
-	r.Spec.Artifacts.Set("foo.yaml", `kind: ConfigMap`)
-
-	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-
-	err := phaseB3(state)
-	if err == nil {
-		t.Fatal("expected loud error when artifacts declared")
-	}
-	if !strings.Contains(err.Error(), "CATALOG_ERROR") {
-		t.Errorf("expected CATALOG_ERROR prefix, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "artifacts-debug-proof") {
-		t.Errorf("error should point at the next intent, got: %v", err)
-	}
-}
-
-func TestPhaseB3_ArtifactsStubLoudError_FromDeclared(t *testing.T) {
-	t.Parallel()
-	r := minimalRecipe("test")
-	r.Spec.ArtifactsFrom = []string{"./manifests/deploy.yaml"}
-
-	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-
-	err := phaseB3(state)
-	if err == nil {
-		t.Fatal("expected loud error when artifactsFrom declared")
-	}
-}
+// ----- TestPhaseB3_NoArtifactsNoOp -----
+//
+// Positive cases for the artifacts evaluator live in artifacts_test.go.
+// This guard verifies the no-artifacts fast path remains a clean no-op.
 
 func TestPhaseB3_NoArtifacts_NoError(t *testing.T) {
 	t.Parallel()
 	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 
-	if err := phaseB3(state); err != nil {
+	if err := phaseB3(context.Background(), minimalCtx(), state, stubEngine{}, NodeRenderContext{}); err != nil {
 		t.Errorf("expected no error when no artifacts declared, got %v", err)
 	}
 	if state.PhaseReached != 3 {

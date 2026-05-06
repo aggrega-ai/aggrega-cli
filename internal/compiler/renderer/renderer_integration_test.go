@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -275,4 +277,127 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 		}
 	}
 	t.Error("no api deployment found")
+}
+
+// captureComposerEngine implements both renderer.Engine and
+// renderer.ReleaseComposer; ComposeRelease records the IntermediateFiles
+// it receives so the test can assert which EmittedFile entries the
+// orchestrator routed via the per-boundary intermediates pipe.
+type captureComposerEngine struct {
+	captured []renderer.EmittedFile
+}
+
+func (c *captureComposerEngine) Render(_ context.Context, _ map[string]interface{}, _ renderer.NodeRenderContext) (map[string][]byte, error) {
+	return nil, nil
+}
+
+func (c *captureComposerEngine) ComposeRelease(_ context.Context, info renderer.ReleaseInfo) (map[string][]byte, error) {
+	for _, b := range info.Boundaries {
+		for _, n := range b.Nodes {
+			c.captured = append(c.captured, n.IntermediateFiles...)
+		}
+	}
+	return map[string][]byte{}, nil
+}
+
+// TestPhaseB3_ArtifactsIntermediate_RoutesViaReleaseComposer asserts that
+// artifacts from a ReleaseComposer-engine Recipe — whether inline or
+// file-loaded — are routed by the orchestrator's post-Phase-B grouping
+// into the per-boundary intermediates pipe and arrive at ComposeRelease
+// through ReleaseInfo. The grouping is exercised end-to-end (RenderAll
+// entry through ComposeRelease's input); the assertion verifies that the
+// routing is Origin-agnostic — both EmitOriginArtifactsInline and
+// EmitOriginArtifactsFromFile EmittedFiles reach ComposeRelease just like
+// engine.Render's EmitOriginSource output does.
+func TestPhaseB3_ArtifactsIntermediate_RoutesViaReleaseComposer(t *testing.T) {
+	t.Parallel()
+
+	fragmentBody := `services:
+  sidecar:
+    image: busybox:1.36
+`
+
+	type variant struct {
+		name       string
+		filename   string
+		buildSpec  func(t *testing.T) types.RecipeSpec
+		wantOrigin renderer.EmitOrigin
+	}
+	variants := []variant{
+		{
+			name:     "inline",
+			filename: "extra-services.yaml",
+			buildSpec: func(*testing.T) types.RecipeSpec {
+				artifacts := types.OrderedMap[string]{}
+				artifacts.Set("extra-services.yaml", fragmentBody)
+				return types.RecipeSpec{Provider: "compose", Artifacts: artifacts}
+			},
+			wantOrigin: renderer.EmitOriginArtifactsInline,
+		},
+		{
+			name:     "from-file",
+			filename: "from-file-services.yaml",
+			buildSpec: func(t *testing.T) types.RecipeSpec {
+				dir := t.TempDir()
+				p := filepath.Join(dir, "from-file-services.yaml")
+				if err := os.WriteFile(p, []byte(fragmentBody), 0o644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return types.RecipeSpec{Provider: "compose", ArtifactsFrom: []string{p}}
+			},
+			wantOrigin: renderer.EmitOriginArtifactsFromFile,
+		},
+	}
+
+	for _, v := range variants {
+		v := v
+		t.Run(v.name, func(t *testing.T) {
+			t.Parallel()
+
+			nodes := types.OrderedMap[types.IRNode]{}
+			nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "default"})
+
+			spec := v.buildSpec(t)
+			input := renderer.RendererInput{
+				Graph: &types.IRGraph{
+					Metadata: types.IRMetadata{AggregateName: "compose-app"},
+					Spec: types.IRSpec{
+						Nodes:      nodes,
+						Provenance: types.IRProvenance{CompilerVersion: "test"},
+					},
+				},
+				FeatureOrder:  ir.FeatureOrder{},
+				ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}},
+			}
+
+			lookup := renderer.RecipeLookup{
+				Recipe: func(string) (*types.Recipe, bool) {
+					return &types.Recipe{
+						Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
+						Spec:     spec,
+					}, true
+				},
+				FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+			}
+
+			capture := &captureComposerEngine{}
+			factory := func(string) (renderer.Engine, error) { return capture, nil }
+
+			if _, err := renderer.RenderAll(context.Background(), input, lookup, factory); err != nil {
+				t.Fatalf("RenderAll: %v", err)
+			}
+
+			var found bool
+			for _, f := range capture.captured {
+				if f.Origin == v.wantOrigin && f.Name == v.filename {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected a %v EmittedFile named %q to reach ComposeRelease via the per-boundary intermediates pipe; captured = %+v",
+					v.wantOrigin, v.filename, capture.captured)
+			}
+		})
+	}
 }

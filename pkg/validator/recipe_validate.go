@@ -191,46 +191,66 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 	}
 }
 
-// validateRecipeRule6: artifacts inline keys and artifactsFrom basenames must
-// not collide.
+// validateRecipeRule6: artifacts output filenames must not collide. Two
+// sub-classes are caught at load time:
 //
-// `artifacts:` keys are literal output filenames. `artifactsFrom:` entries
-// are file paths whose basename becomes the output filename. A Recipe that
-// declares both must not produce two emissions targeting the same output
-// filename — that's a load-time error here, before Phase B.5 runs.
+//  1. Inline `artifacts:` keys clashing with `artifactsFrom:` basenames.
+//  2. Two or more `artifactsFrom:` entries whose basenames collide
+//     (e.g., `./a/foo.yaml` and `./b/foo.yaml`).
+//
+// Both classes produce the same sentinel (ErrRecipeRule6); the Detail line
+// names every colliding output filename.
 func validateRecipeRule6(r *types.Recipe, sourcePath string) error {
-	if r.Spec.Artifacts.Len() == 0 || len(r.Spec.ArtifactsFrom) == 0 {
+	hasInline := r.Spec.Artifacts.Len() > 0
+	hasFromFile := len(r.Spec.ArtifactsFrom) > 0
+	if !hasInline && !hasFromFile {
 		return nil
 	}
 
-	// Inline filenames (already literals; map keys carry author author-order
-	// from the OrderedMap, but for collision detection alphabetical is
-	// sufficient and stable).
-	inlineKeys := r.Spec.Artifacts.Keys()
-	inlineSet := make(map[string]struct{}, len(inlineKeys))
-	for _, k := range inlineKeys {
-		inlineSet[k] = struct{}{}
-	}
+	collisionSet := map[string]struct{}{}
 
-	// Collect collisions: artifactsFrom basenames matching inline keys.
-	var collisions []string
-	for _, p := range r.Spec.ArtifactsFrom {
-		base := filepath.Base(p)
-		if _, hit := inlineSet[base]; hit {
-			collisions = append(collisions, base)
+	if hasInline && hasFromFile {
+		inlineKeys := r.Spec.Artifacts.Keys()
+		inlineSet := make(map[string]struct{}, len(inlineKeys))
+		for _, k := range inlineKeys {
+			inlineSet[k] = struct{}{}
+		}
+		for _, p := range r.Spec.ArtifactsFrom {
+			base := filepath.Base(p)
+			if _, hit := inlineSet[base]; hit {
+				collisionSet[base] = struct{}{}
+			}
 		}
 	}
-	if len(collisions) == 0 {
+
+	if hasFromFile {
+		baseCounts := map[string]int{}
+		for _, p := range r.Spec.ArtifactsFrom {
+			baseCounts[filepath.Base(p)]++
+		}
+		for base, n := range baseCounts {
+			if n > 1 {
+				collisionSet[base] = struct{}{}
+			}
+		}
+	}
+
+	if len(collisionSet) == 0 {
 		return nil
 	}
 
+	collisions := make([]string, 0, len(collisionSet))
+	for c := range collisionSet {
+		collisions = append(collisions, c)
+	}
 	sort.Strings(collisions)
+
 	return &RecipeValidationError{
 		Path:        sourcePath,
 		Name:        r.Metadata.Name,
 		Version:     r.Metadata.Version,
 		Rule:        "6",
-		Description: "artifacts inline keys collide with artifactsFrom basenames",
+		Description: "artifacts output filename collision: inline keys vs artifactsFrom basenames, or within artifactsFrom",
 		Detail:      fmt.Sprintf("colliding output filenames: %s", strings.Join(collisions, ", ")),
 		Err:         ErrRecipeRule6,
 	}

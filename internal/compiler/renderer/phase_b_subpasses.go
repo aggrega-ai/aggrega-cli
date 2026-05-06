@@ -189,15 +189,19 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	return nil
 }
 
-// phaseB3 — STUB. Artifacts evaluation lands in artifacts-debug-proof
-// WI01. Today, if the Recipe declares artifacts: or artifactsFrom:, B.3
-// returns a CATALOG_ERROR pointing at the future implementation; otherwise
-// it is a no-op.
+// phaseB3 evaluates Recipe.Spec.Artifacts (inline) and
+// Recipe.Spec.ArtifactsFrom (file-loaded), the third input kind per
+// chapter 16. Each emitted artifact carries its own EmitOrigin tag
+// (artifacts-inline / artifacts-from-file) so the Phase B.5 cross-origin
+// collision detector can name every contributor on a clash.
 //
-// The function signature, position in the orchestrator pipeline, and
-// EmittedFile contributions to PhaseBState are established here so the
-// next intent's WI01 replaces only the body.
-func phaseB3(state *PhaseBState) error {
+// The provider's engine governs file routing: ReleaseComposer engines
+// (compose) receive intermediates that ComposeRelease merges at Release
+// end; flat engines (helm, terraform, cloudformation) receive standalone
+// files under boundaries/<bp>/. helm-chart inline artifacts: is rejected
+// with a CATALOG_ERROR; helm-chart artifactsFrom: is a B.3 no-op
+// (provider-specific pre-template injection lives outside Phase B).
+func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Engine, nodeCtx NodeRenderContext) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 3
 		return nil
@@ -206,10 +210,13 @@ func phaseB3(state *PhaseBState) error {
 		state.PhaseReached = 3
 		return nil
 	}
-	return fmt.Errorf(
-		"CATALOG_ERROR: Recipe %s (%s:%s) declares artifacts: but artifacts evaluation is not yet implemented; pending artifacts-debug-proof WI01",
-		state.RecipePath, state.RecipeName, state.RecipeVersion,
-	)
+	files, err := evaluateArtifacts(ctx, tmplCtx, state, engine, nodeCtx)
+	if err != nil {
+		return err
+	}
+	state.EmittedFiles = append(state.EmittedFiles, files...)
+	state.PhaseReached = 3
+	return nil
 }
 
 // phaseB4 dispatches to the provider's WorkloadSynthesizer when

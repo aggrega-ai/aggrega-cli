@@ -35,9 +35,11 @@ var (
 	// ErrRecipeRule5: at least one input kind must be present.
 	ErrRecipeRule5 = errors.New("recipe rule 5: at least one input kind required")
 
-	// ErrRecipeRule6: artifacts inline keys and artifactsFrom basenames must
-	// not collide.
-	ErrRecipeRule6 = errors.New("recipe rule 6: artifacts and artifactsFrom basename collision")
+	// ErrRecipeRule6: artifacts output filenames must not collide. Two
+	// sub-classes: inline `artifacts:` keys clashing with `artifactsFrom:`
+	// basenames; and two or more `artifactsFrom:` entries whose basenames
+	// collide. Both classes share this sentinel.
+	ErrRecipeRule6 = errors.New("recipe rule 6: artifacts output filename collision")
 
 	// ErrRecipeRule7: emission-time filename collision across input-kind
 	// origins (source output, workload synthesis, artifacts). RESERVED
