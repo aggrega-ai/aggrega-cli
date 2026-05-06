@@ -12,20 +12,40 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// CollectTemplateFieldAccesses parses a Go template source and returns the set
-// of dot-qualified paths it references (e.g., ".values.port", ".infra.replicas",
-// ".context.inject.env.X"). Used by ghost-infrastructure tracking to discover
-// which .values / .infra keys a valuesMapping template actually reads.
+// CollectTemplateFieldAccesses parses a Go template source with the
+// default `{{ }}` delimiters and returns the set of dot-qualified paths
+// it references (e.g., ".values.port", ".infra.replicas",
+// ".context.inject.env.X"). Thin wrapper over
+// CollectTemplateFieldAccessesWithDelims preserving the default-delimiter
+// call shape for ghost-infrastructure tracking and other callers that
+// don't carry custom delimiters.
 //
-// Empty template text returns (nil, nil). Parse errors are returned so callers
-// can decide whether to surface them (normal rendering already reports parse
-// errors — tracker callers typically swallow them and skip warning emission).
+// Empty template text returns (nil, nil). Parse errors are returned so
+// callers can decide whether to surface them (normal rendering already
+// reports parse errors — tracker callers typically swallow them and skip
+// warning emission).
 func CollectTemplateFieldAccesses(tmplText string) ([]string, error) {
+	return CollectTemplateFieldAccessesWithDelims(tmplText, "{{", "}}")
+}
+
+// CollectTemplateFieldAccessesWithDelims parses a Go template with
+// caller-controlled delimiters and returns the dot-qualified field-access
+// set. Used by Phase B.3's pre-check when an external-handler engine
+// (today: helm-chart) declares non-default delimiters via
+// ArtifactsTemplateDelims — the pre-check must parse with the same
+// delimiters Aggrega's pre-templating uses, so downstream-template syntax
+// inside the file (e.g., Helm's `{{ ... }}` blocks when the engine's
+// Aggrega-side delimiters are `[[ ]]`) is treated as opaque text rather
+// than as parse-error-inducing template directives.
+func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim string) ([]string, error) {
 	if tmplText == "" {
 		return nil, nil
 	}
 	// Minimal FuncMap; we only need the parse tree, not execution.
-	tmpl, err := template.New("tracker").Option("missingkey=zero").Parse(tmplText)
+	tmpl, err := template.New("tracker").
+		Option("missingkey=zero").
+		Delims(leftDelim, rightDelim).
+		Parse(tmplText)
 	if err != nil {
 		return nil, err
 	}

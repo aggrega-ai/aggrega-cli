@@ -52,7 +52,33 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeRule6(r, sourcePath); err != nil {
 		return err
 	}
+	if err := validateRecipeHelmChartProvider(r, sourcePath); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateRecipeHelmChartProvider enforces the helm-chart-specific load-time
+// constraint: inline artifacts: is forbidden. Helm-chart emits an umbrella
+// chart structure rather than flat manifests; artifacts must be physical
+// files that the engine can inject into the chart's templates/ directory
+// before Helm rendering, so inline artifact maps have no place in this
+// authoring path. The fix the message recommends is to declare the same
+// content under artifactsFrom:.
+func validateRecipeHelmChartProvider(r *types.Recipe, sourcePath string) error {
+	if r.Spec.Provider != "helm-chart" || r.Spec.Artifacts.Len() == 0 {
+		return nil
+	}
+	keys := r.Spec.Artifacts.Keys()
+	return &RecipeValidationError{
+		Path:        sourcePath,
+		Name:        r.Metadata.Name,
+		Version:     r.Metadata.Version,
+		Rule:        "helm-chart-inline-artifacts",
+		Description: "provider helm-chart does not support inline artifacts:",
+		Detail:      fmt.Sprintf("inline artifacts: %s; declare artifactsFrom: instead so the files can be injected into the chart's templates/ directory", strings.Join(keys, ", ")),
+		Err:         ErrRecipeHelmChartInlineArtifacts,
+	}
 }
 
 // validateRecipeEvalProvider enforces the eval-provider constraint: input-kind

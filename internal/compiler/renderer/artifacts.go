@@ -27,19 +27,58 @@ import (
 // ExternalArtifactsHandler is the marker interface implemented by Engines
 // whose provider model handles artifacts outside Phase B's standard
 // emission path. Today: the helm-chart engine, whose `artifactsFrom:`
-// files are merged into the chart's `templates/` directory pre-Helm-
-// rendering rather than emitted as standalone files. Engines satisfying
-// this marker reject inline `artifacts:` at Phase B.3 (the chart
-// structure cannot accept inline declarations) and treat
-// `artifactsFrom:` as a no-op at Phase B.3 (the pre-template injection
-// runs outside Phase B).
+// files are merged into the chart's `templates/` directory rather than
+// emitted as standalone files. Engines satisfying this marker reject
+// inline `artifacts:` at Phase B.3 (the chart structure cannot accept
+// inline declarations).
+//
+// Optional companion capabilities. Engines that opt into external
+// dispatch tune the per-artifact placement and the template delimiter
+// pair through two independent capability interfaces:
+//
+//   - ArtifactsPathProvider — engine declares the per-node-relative path
+//     each artifact lands at (e.g., helm-chart's "templates/<basename>").
+//     Engines that don't implement this interface emit at the bare
+//     basename, matching the standard non-external emission shape.
+//
+//   - ArtifactsTemplateDelims — engine declares the Go-template delimiter
+//     pair Aggrega's pre-templating uses on each artifactsFrom file
+//     (e.g., helm-chart's "[[", "]]" so Helm's "{{ ... }}" survives into
+//     the downstream render). Engines that don't implement this
+//     interface use the default "{{", "}}" delimiters.
 //
 // Dispatch parity. Phase B.3 dispatches by marker assertion in the same
-// shape as the ReleaseComposer dispatch. Engines that opt into the
-// behaviour declare it with a no-op method; the artifacts evaluator does
-// not branch on provider-name strings.
+// shape as the ReleaseComposer dispatch. The two companion capabilities
+// follow the same pattern (independent type assertions with default
+// fallbacks) used by WorkloadSynthesizer / ReleaseComposer / BoundaryComposer
+// elsewhere in the package.
 type ExternalArtifactsHandler interface {
 	HandlesArtifactsExternally()
+}
+
+// ArtifactsPathProvider declares per-artifact path placement for engines
+// satisfying ExternalArtifactsHandler. The path the method returns is
+// per-node-relative; the orchestrator's per-boundary nesting layers
+// boundaries/<bp>/charts/<nodeID>/ on top for BoundaryComposer engines.
+// Engines that don't implement this interface fall back to the bare
+// basename — matching the standard non-external emission shape — when the
+// artifacts evaluator dispatches an artifactsFrom file.
+type ArtifactsPathProvider interface {
+	PathForArtifact(nodeCtx NodeRenderContext, basename string) string
+}
+
+// ArtifactsTemplateDelims declares the Go-template delimiter pair used
+// when Aggrega's pre-templating evaluates artifactsFrom files for an
+// ExternalArtifactsHandler engine. Engines whose provider model runs a
+// downstream templating pass with the same default `{{ }}` delimiters
+// return alternates here so Aggrega's pass leaves the downstream syntax
+// untouched. helm-chart returns "[[", "]]" so Helm's `{{ ... }}` blocks
+// survive into the chart's render pipeline.
+//
+// Engines that don't implement this interface fall back to the default
+// "{{", "}}" pair (text/template default).
+type ArtifactsTemplateDelims interface {
+	ArtifactDelimiters() (left, right string)
 }
 
 // evaluateArtifacts walks Recipe.Spec.Artifacts (inline) followed by
@@ -92,12 +131,44 @@ func evaluateArtifacts(
 				state.RecipeName, state.RecipePath, state.Recipe.Spec.Provider,
 			)
 		}
-		// External-handler engines (today: helm-chart) consume
-		// artifactsFrom: outside Phase B.3 — they merge files into the
-		// chart structure before Helm rendering rather than emitting
-		// standalone manifests. B.3 is a no-op for this branch; the
-		// engine's pre-template injection path handles the actual merge.
-		return nil, nil
+		// External-handler engines: evaluate each artifactsFrom file with
+		// the engine's chosen template-delimiter pair, place each emission
+		// at the engine-provided path, and feed every emission into
+		// state.EmittedFiles for downstream collision detection (Phase B.5)
+		// and per-node grouping. The two capability interfaces
+		// (ArtifactsPathProvider, ArtifactsTemplateDelims) drive per-engine
+		// behaviour; defaults apply when an engine does not implement them.
+		leftDelim, rightDelim := "{{", "}}"
+		if d, ok := engine.(ArtifactsTemplateDelims); ok {
+			leftDelim, rightDelim = d.ArtifactDelimiters()
+		}
+		pathFn := func(_ NodeRenderContext, basename string) string { return basename }
+		if p, ok := engine.(ArtifactsPathProvider); ok {
+			pathFn = p.PathForArtifact
+		}
+		var out []EmittedFile
+		for _, path := range state.Recipe.Spec.ArtifactsFrom {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("CATALOG_ERROR: recipe %q artifactsFrom %q: %w", state.RecipeName, path, err)
+			}
+			basename := filepath.Base(path)
+			body, err := evaluateOneArtifactWithDelims(
+				tmplCtx, state, nodeCtx, basename, string(data),
+				fmt.Sprintf("artifactsFrom[%s/%s]", state.RecipeName, basename),
+				leftDelim, rightDelim,
+			)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, EmittedFile{
+				Name:         pathFn(nodeCtx, basename),
+				Origin:       EmitOriginArtifactsFromFile,
+				Body:         body,
+				Intermediate: false,
+			})
+		}
+		return out, nil
 	}
 
 	// Intermediate-tagged artifacts are consumed by the orchestrator's
@@ -147,12 +218,24 @@ func evaluateArtifacts(
 	return out, nil
 }
 
-// evaluateOneArtifact handles the common per-entry pipeline: nil-pillar
-// pre-check, Go-template evaluation, YAML parse, provenance-label merge,
-// YAML re-marshal. Returns the marshalled bytes ready to attach to an
-// EmittedFile. tmplName is the template-engine identifier surfaced in
-// parse / execute error messages; filename is the user-facing artifact name
-// surfaced in CATALOG_ERROR.
+// provenanceSkipWarning is the single user-facing message emitted from
+// either of the two skip-paths inside evaluateOneArtifactWithDelims (the
+// pre-emptive `{{` substring detection and the post-parse-failure
+// fallback). One message regardless of trigger: the user-facing
+// remediation is identical (`_helpers.tpl`-side provenance injection),
+// so the warning text reads the same and the operator's mental model
+// stays clean.
+func provenanceSkipWarning(filename string) string {
+	return fmt.Sprintf(
+		"artifactsFrom %q: skipped provenance label injection (file contains downstream template syntax incompatible with Aggrega's pre-render YAML round-trip); use chart _helpers.tpl for provenance on this file",
+		filename,
+	)
+}
+
+// evaluateOneArtifact is the default-delimiters wrapper used by the
+// standard (non-external-handler) emission path. Thin call into
+// evaluateOneArtifactWithDelims with the literal "{{", "}}" pair — no
+// empty-string sentinel logic.
 func evaluateOneArtifact(
 	tmplCtx *types.TemplateContext,
 	state *PhaseBState,
@@ -161,11 +244,45 @@ func evaluateOneArtifact(
 	tmplText string,
 	tmplName string,
 ) ([]byte, error) {
-	if err := preCheckArtifactPillars(state, filename, tmplText); err != nil {
+	return evaluateOneArtifactWithDelims(tmplCtx, state, nodeCtx, filename, tmplText, tmplName, "{{", "}}")
+}
+
+// evaluateOneArtifactWithDelims handles the per-entry pipeline: nil-pillar
+// pre-check, Go-template evaluation with the supplied delimiter pair, YAML
+// parse, provenance-label merge, YAML re-marshal. Returns the marshalled
+// bytes ready to attach to an EmittedFile. tmplName is the template-engine
+// identifier surfaced in parse / execute error messages; filename is the
+// user-facing artifact name surfaced in CATALOG_ERROR.
+//
+// YAML parse handling differs by call path:
+//
+//   - Standard (default delimiters, non-external-handler engines): a parse
+//     failure is a CATALOG_ERROR — Aggrega's pre-templating output is
+//     authoritative, and a non-YAML result is an authoring bug.
+//   - External-handler engines using non-default delimiters (helm-chart's
+//     `[[ ]]`): a parse failure is the common case for files mixing Helm
+//     `{{ }}` template structure with YAML, and is NOT an error. The
+//     evaluator emits the rendered bytes unchanged, skips provenance
+//     injection, and appends a state.Warnings entry naming the artifact
+//     so the build surfaces the gap.
+//
+// The delimiter pair drives the dispatch — when leftDelim+rightDelim
+// differ from the default `{{ }}`, the parse-failure path takes the
+// warn-and-emit branch.
+func evaluateOneArtifactWithDelims(
+	tmplCtx *types.TemplateContext,
+	state *PhaseBState,
+	nodeCtx NodeRenderContext,
+	filename string,
+	tmplText string,
+	tmplName string,
+	leftDelim, rightDelim string,
+) ([]byte, error) {
+	if err := preCheckArtifactPillars(state, filename, tmplText, leftDelim, rightDelim); err != nil {
 		return nil, err
 	}
 
-	rendered, err := EvalTemplate(tmplName, tmplText, tmplCtx)
+	rendered, err := EvalTemplateWithDelims(tmplName, tmplText, tmplCtx, leftDelim, rightDelim)
 	if err != nil {
 		return nil, fmt.Errorf("CATALOG_ERROR: artifact %q template eval: %w", filename, err)
 	}
@@ -174,9 +291,41 @@ func evaluateOneArtifact(
 		return []byte(rendered), nil
 	}
 
+	usingDefaultDelims := leftDelim == "{{" && rightDelim == "}}"
+
+	// External-handler path (non-default delimiters): the output may carry
+	// downstream template syntax — `{{ ... }}` in unquoted positions —
+	// that yaml.v3 would either fail to parse OR re-shape destructively
+	// during the round-trip (interpreting `{{` as the start of a flow
+	// mapping at scalar leaves; quoted-scalar positions like
+	// `name: {{ .Values.x }}` re-emerge as `name: '{{ .Values.x }}'` with
+	// shifted spacing). Two triggers route to the same outcome — skip
+	// provenance injection, emit the rendered bytes unchanged, append
+	// state.Warnings via the shared warning shape:
+	//
+	//   1. Pre-emptive: any `{{` present in the rendered output. Catches
+	//      both YAML-parseable-but-round-trip-destructive and
+	//      YAML-unparseable cases without first attempting a round-trip
+	//      that may corrupt the file's bytes.
+	//   2. Post-parse: yaml.Unmarshal fails on a non-default-delimiter
+	//      file even after the `{{` substring check (e.g., structural
+	//      template syntax that uses other characters). Defense-in-depth.
+	//
+	// Default-delimiter (non-external-handler) callers continue to treat
+	// parse failure as a CATALOG_ERROR — Aggrega's pre-templating output
+	// is authoritative for that path.
+	if !usingDefaultDelims && strings.Contains(rendered, "{{") {
+		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
+		return []byte(rendered), nil
+	}
+
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(rendered), &node); err != nil {
-		return nil, fmt.Errorf("CATALOG_ERROR: artifact %q template output is not valid YAML: %w", filename, err)
+		if usingDefaultDelims {
+			return nil, fmt.Errorf("CATALOG_ERROR: artifact %q template output is not valid YAML: %w", filename, err)
+		}
+		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
+		return []byte(rendered), nil
 	}
 	if node.Kind == 0 {
 		// Empty document (e.g., `---` only) — emit the rendered bytes as-is.
@@ -196,18 +345,24 @@ func evaluateOneArtifact(
 }
 
 // preCheckArtifactPillars walks the template's parsed field-access set
-// (via CollectTemplateFieldAccesses) and short-circuits with a CATALOG_ERROR
-// when the template references a pillar slot that the current Recipe has
-// not declared:
+// (via CollectTemplateFieldAccessesWithDelims) and short-circuits with a
+// CATALOG_ERROR when the template references a pillar slot that the
+// current Recipe has not declared:
 //   - any `.workload.*` reference when state.ParsedWorkload == nil.
 //   - any `.source.*` reference when state.Recipe.Spec.Source == nil.
 //
 // The pre-check names the failing expression authoritatively (the literal
 // dot-path captured by the parser) and avoids depending on text/template's
-// runtime nil-pointer error formatting. CollectTemplateFieldAccesses is the
-// in-house helper already used by orchestrator's unused-key warning path.
-func preCheckArtifactPillars(state *PhaseBState, filename, tmplText string) error {
-	refs, err := CollectTemplateFieldAccesses(tmplText)
+// runtime nil-pointer error formatting.
+//
+// leftDelim/rightDelim are the same delimiter pair the eventual
+// EvalTemplateWithDelims call will use, so the parser sees Aggrega's
+// templating exactly as the renderer will execute it. For external-handler
+// engines using non-default delimiters (helm-chart's `[[ ]]`), Helm's
+// `{{ ... }}` blocks become opaque text and don't surface as parse errors
+// or as field-access entries.
+func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, rightDelim string) error {
+	refs, err := CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim)
 	if err != nil {
 		return fmt.Errorf("CATALOG_ERROR: artifact %q template parse: %w", filename, err)
 	}

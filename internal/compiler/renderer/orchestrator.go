@@ -268,7 +268,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Slots lookup deferred to inside the function body (passes empty
 		// when no workload is declared); future enhancement: thread the
 		// Component's secretsSchema from input.CatalogLookup when Workload
-		// recipes ship in WI05.
+		// recipes ship.
 		emptySlots := types.OrderedMap[types.SecretSlot]{}
 		if err := phaseB2(tmplCtx, state, emptySlots); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
@@ -284,7 +284,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Phase B.4 — workload synthesizer dispatch. No-op for sourced/
-		// sourceless paths (state.ParsedWorkload is nil); active when WI05
+		// sourceless paths (state.ParsedWorkload is nil); active when
 		// helm Workload synthesizer + Workload-bearing Recipes ship.
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
@@ -292,7 +292,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Phase B.5 — filename collision detection across input-kind
 		// origins (rule 7). With current fixtures only EmitOriginSource
-		// contributes; collisions surface when WI05 lands Workload
+		// contributes; collisions surface when code lands Workload
 		// synthesis or when artifacts evaluation lands.
 		if err := phaseB5(state); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
@@ -350,6 +350,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		for path, content := range frFiles {
 			boundaries[bp].files[nodeID][path] = content
 		}
+
+		// Drain Phase B's per-node warnings into the build-level result.
+		// Drain position is the end of the per-node Phase B sequence
+		// (after phaseB6 — the LAST sub-pass) so any sub-pass appending
+		// to state.Warnings reaches result.Warnings, not just B.3's
+		// helm-chart provenance-skip notice today.
+		result.Warnings = append(result.Warnings, state.Warnings...)
 	}
 
 	// Finalize per-boundary output

@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
 
 // stubEngine is a no-op Engine used for tests that do not need real
@@ -31,14 +33,21 @@ func (stubComposeEngine) ComposeRelease(_ context.Context, _ ReleaseInfo) (map[s
 	return nil, nil
 }
 
-// stubExternalArtifactsEngine implements ExternalArtifactsHandler so the
-// evaluator dispatches the artifacts surface to the external-handler
-// branch. The compile-time assertion that the real helm-chart engine
-// satisfies the marker lives in the helmchart package's test file —
-// keeping it there avoids a circular import (helmchart imports renderer).
+// stubExternalArtifactsEngine implements the ExternalArtifactsHandler
+// marker plus the two companion capability interfaces (ArtifactsPathProvider,
+// ArtifactsTemplateDelims) the artifacts evaluator's external-handler
+// branch dispatches against. Same shape as the production helm-chart
+// engine — `templates/<basename>` placement and `[[ ]]` delimiters —
+// so renderer-package tests exercise the production dispatch path
+// without crossing into the helmchart package (which would create a
+// circular import).
 type stubExternalArtifactsEngine struct{ stubEngine }
 
 func (stubExternalArtifactsEngine) HandlesArtifactsExternally() {}
+func (stubExternalArtifactsEngine) PathForArtifact(_ NodeRenderContext, basename string) string {
+	return "templates/" + basename
+}
+func (stubExternalArtifactsEngine) ArtifactDelimiters() (string, string) { return "[[", "]]" }
 
 func newArtifactsCtx() (*types.TemplateContext, *PhaseBState, NodeRenderContext) {
 	tmplCtx := &types.TemplateContext{
@@ -529,19 +538,183 @@ metadata:
 	}
 }
 
-// ----- Test 11: ExternalArtifactsHandler artifactsFrom is a no-op (acceptance 11b) -----
+// ----- Test 11b (rewrite): ExternalArtifactsHandler artifactsFrom emits at templates/<basename> -----
 
-func TestEvaluateArtifacts_HelmChartProviderArtifactsFromIsNoOp(t *testing.T) {
+func TestEvaluateArtifacts_HelmChartProviderArtifactsFromInjects(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	state.Recipe.Spec.Provider = "helm-chart"
-	state.Recipe.Spec.ArtifactsFrom = []string{"/should/not/read/anything.yaml"}
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "api-config.yaml")
+	if err := os.WriteFile(p, []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+data:
+  greeting: hello
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	state.Recipe.Spec.ArtifactsFrom = []string{p}
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
 	if err != nil {
-		t.Fatalf("expected no error for ExternalArtifactsHandler artifactsFrom no-op, got %v", err)
+		t.Fatalf("evaluateArtifacts: %v", err)
 	}
-	if len(files) != 0 {
-		t.Errorf("expected no emissions for ExternalArtifactsHandler artifactsFrom, got %d", len(files))
+	if len(files) != 1 {
+		t.Fatalf("expected 1 emitted file, got %d", len(files))
+	}
+	got := files[0]
+	if got.Name != "templates/api-config.yaml" {
+		t.Errorf("Name = %q, want templates/api-config.yaml (engine PathForArtifact placement)", got.Name)
+	}
+	if got.Origin != EmitOriginArtifactsFromFile {
+		t.Errorf("Origin = %v, want EmitOriginArtifactsFromFile", got.Origin)
+	}
+	labels := readDocLabels(t, got.Body)
+	if labels["aggrega.ai/component-id"] != "api" {
+		t.Errorf("provenance labels missing or wrong; got %v", labels)
+	}
+}
+
+// ----- Test 12: helm-chart [[ ]] delimiters preserve Helm's {{ }} syntax -----
+
+func TestEvaluateArtifacts_HelmChartDelimitersPreserveHelmSyntax(t *testing.T) {
+	t.Parallel()
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	state.Recipe.Spec.Provider = "helm-chart"
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "mixed.yaml")
+	// Aggrega-side `[[ ]]` references resolve at the pre-pass; Helm's
+	// `{{ }}` syntax must survive untouched into Helm's downstream render.
+	if err := os.WriteFile(p, []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: [[ .context.instance_id ]]-cfg
+data:
+  fullname: {{ .Values.fullname }}
+  release: {{ .Release.Name }}
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	state.Recipe.Spec.ArtifactsFrom = []string{p}
+
+	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
+	if err != nil {
+		t.Fatalf("evaluateArtifacts: %v", err)
+	}
+	body := string(findEmitted(t, files, "templates/mixed.yaml").Body)
+	if !strings.Contains(body, "name: api-cfg") {
+		t.Errorf("Aggrega-side [[ .context.instance_id ]] should resolve to api-cfg, got body:\n%s", body)
+	}
+	if !strings.Contains(body, "{{ .Values.fullname }}") {
+		t.Errorf("Helm-side {{ .Values.fullname }} should survive untouched, got body:\n%s", body)
+	}
+	if !strings.Contains(body, "{{ .Release.Name }}") {
+		t.Errorf("Helm-side {{ .Release.Name }} should survive untouched, got body:\n%s", body)
+	}
+}
+
+// ----- Test 13: helm-chart file containing downstream template syntax skips provenance and warns -----
+//
+// Post-unification both skip-paths (pre-emptive `{{` substring detection
+// and post-parse-failure fallback) emit the same warning message. This
+// test exercises the substring-detection path — the fixture's
+// `{{- include "common.labels" . | nindent 4 }}` line trips the `{{`
+// detector before yaml.Unmarshal runs. The unified warning shape means
+// a single test verifies the user-facing behaviour regardless of which
+// path actually fired.
+
+func TestEvaluateArtifacts_HelmChartFileWithHelmSyntaxSkipsProvenanceAndWarns(t *testing.T) {
+	t.Parallel()
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	state.Recipe.Spec.Provider = "helm-chart"
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "with-include.yaml")
+	// Structural Helm syntax — `{{- include ... }}` at a position that
+	// emits YAML at Helm-render-time but isn't valid YAML pre-render.
+	if err := os.WriteFile(p, []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	state.Recipe.Spec.ArtifactsFrom = []string{p}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("evaluateArtifacts panicked on unparseable file: %v", r)
+		}
+	}()
+	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
+	if err != nil {
+		t.Fatalf("expected no error for unparseable helm-chart artifactsFrom, got %v", err)
+	}
+	got := findEmitted(t, files, "templates/with-include.yaml")
+	if !strings.Contains(string(got.Body), `{{- include "common.labels" . | nindent 4 }}`) {
+		t.Errorf("structural Helm syntax should pass through unchanged, got body:\n%s", string(got.Body))
+	}
+	// Warning emission via state.Warnings.
+	if len(state.Warnings) == 0 {
+		t.Fatalf("expected state.Warnings to carry the provenance-skip notice, got none")
+	}
+	var found bool
+	for _, w := range state.Warnings {
+		if strings.Contains(w, "with-include.yaml") && strings.Contains(w, "skipped provenance label injection") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a 'skipped provenance label injection' warning naming with-include.yaml; got %v", state.Warnings)
+	}
+}
+
+// ----- Test 14: helm-chart artifactsFrom collision at Phase B.5 -----
+
+func TestEvaluateArtifacts_HelmChartCollisionAtPhaseB5(t *testing.T) {
+	t.Parallel()
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	state.Recipe.Spec.Provider = "helm-chart"
+
+	// Pre-seed state.EmittedFiles with a templates/<basename>-tagged source
+	// emission to simulate the helm-chart engine's Render output containing
+	// the same filename. Phase B.3's artifactsFrom emission below uses
+	// the same templates/<basename> path, so B.5's rule-7 collision detector
+	// should fire.
+	state.EmittedFiles = append(state.EmittedFiles, EmittedFile{
+		Name:   "templates/conflicting.yaml",
+		Origin: EmitOriginSource,
+		Body:   []byte("apiVersion: v1\nkind: ConfigMap\n"),
+	})
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "conflicting.yaml")
+	if err := os.WriteFile(p, []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: clash\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	state.Recipe.Spec.ArtifactsFrom = []string{p}
+
+	out, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
+	if err != nil {
+		t.Fatalf("evaluateArtifacts: %v", err)
+	}
+	state.EmittedFiles = append(state.EmittedFiles, out...)
+
+	err = phaseB5(state)
+	if err == nil {
+		t.Fatal("expected rule 7 cross-origin collision at templates/conflicting.yaml")
+	}
+	if !errors.Is(err, validator.ErrRecipeRule7) {
+		t.Errorf("expected ErrRecipeRule7, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "templates/conflicting.yaml") {
+		t.Errorf("error should name the colliding path, got %v", err)
 	}
 }

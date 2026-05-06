@@ -22,18 +22,37 @@ type HelmEngine struct{}
 var (
 	_ renderer.Engine                   = (*HelmEngine)(nil)
 	_ renderer.ExternalArtifactsHandler = (*HelmEngine)(nil)
+	_ renderer.ArtifactsPathProvider    = (*HelmEngine)(nil)
+	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
 )
 
 // HandlesArtifactsExternally satisfies renderer.ExternalArtifactsHandler.
 // The helm-chart engine merges Recipe artifactsFrom: files into the
-// chart's templates/ directory before Helm rendering rather than emitting
-// standalone files; Phase B.3 short-circuits when this marker is
-// satisfied. Inline artifacts: is rejected at the same point — Helm's
+// chart's templates/ directory rather than emitting standalone files;
+// Phase B.3 dispatches to the external-handler branch when this marker
+// is satisfied. Inline artifacts: is rejected at the same point — Helm's
 // chart structure requires templates as physical files.
-//
-// The pre-template injection path (the actual merge) is the engine's own
-// concern and is not implemented at Render-time on this engine yet.
 func (e *HelmEngine) HandlesArtifactsExternally() {}
+
+// PathForArtifact satisfies renderer.ArtifactsPathProvider. Each
+// artifactsFrom file lands at templates/<basename> within the per-node
+// output; the orchestrator's per-boundary nesting layers
+// boundaries/<bp>/charts/<nodeID>/ on top, so the artifact is positioned
+// alongside the sourced chart's templates and participates in Helm's
+// downstream render pass.
+func (e *HelmEngine) PathForArtifact(_ renderer.NodeRenderContext, basename string) string {
+	return "templates/" + basename
+}
+
+// ArtifactDelimiters satisfies renderer.ArtifactsTemplateDelims. helm-chart
+// artifactsFrom files use "[[", "]]" for Aggrega's pre-templating pass so
+// Helm's "{{ ... }}" template syntax inside the file survives untouched
+// into Helm's downstream render. Authors writing artifactsFrom files for
+// helm-chart use [[ .pillar ]] for Aggrega context and {{ .Values.x }}
+// for Helm context.
+func (e *HelmEngine) ArtifactDelimiters() (string, string) {
+	return "[[", "]]"
+}
 
 // Render produces the sub-chart contents for one node.
 //

@@ -13,10 +13,15 @@ import (
 	sprig "github.com/Masterminds/sprig/v3"
 )
 
-// EvalTemplate evaluates a Go template string with Sprig functions and
-// missingkey=zero. The input struct is walked reflectively and converted to
-// a tree of plain Go values (maps / slices / scalars) with lowercase JSON-
-// tag keys, so template authors write `.context.values.foo` matching the
+// EvalTemplate evaluates a Go template string with the default `{{ }}`
+// delimiters, Sprig functions, and missingkey=zero. Thin wrapper over
+// EvalTemplateWithDelims hard-coding the default delimiter pair so callers
+// outside the artifacts-engine-dispatch path don't carry the delimiter
+// noise.
+//
+// The input struct is walked reflectively and converted to a tree of plain
+// Go values (maps / slices / scalars) with lowercase JSON-tag keys, so
+// template authors write `.context.values.foo` matching the
 // template-context-v1alpha1.schema.json contract.
 //
 // OrderedMap values are unwrapped during the walk into plain map[string]any
@@ -26,10 +31,24 @@ import (
 // OrderedMap.MarshalJSON; the template-iteration layer is intentionally
 // alphabetical to match Helm-community authoring expectations.
 func EvalTemplate(name, tmplText string, data interface{}) (string, error) {
+	return EvalTemplateWithDelims(name, tmplText, data, "{{", "}}")
+}
+
+// EvalTemplateWithDelims evaluates a Go template with caller-controlled
+// delimiters. Used by Phase B.3 when the engine satisfies
+// ArtifactsTemplateDelims and returns alternates (e.g., helm-chart's
+// "[[", "]]") so Aggrega's pre-templating pass leaves a downstream
+// templating pass's `{{ }}` syntax untouched.
+//
+// Caller passes the explicit delimiter pair every time — there is no
+// empty-string sentinel. The default-delimiter path is the EvalTemplate
+// thin wrapper above.
+func EvalTemplateWithDelims(name, tmplText string, data interface{}, leftDelim, rightDelim string) (string, error) {
 	templateData := toLowercaseMap(data)
 
 	t, err := template.New(name).
 		Option("missingkey=zero").
+		Delims(leftDelim, rightDelim).
 		Funcs(sprig.FuncMap()).
 		Parse(tmplText)
 	if err != nil {

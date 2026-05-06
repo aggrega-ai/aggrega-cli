@@ -63,6 +63,15 @@ type PhaseBState struct {
 	// routing, model it as a separate field with explicit pipeline
 	// semantics.
 	PhaseReached int
+
+	// Warnings is a per-node accumulator for non-fatal advisories any
+	// Phase B sub-pass wants to surface to the build's RenderResult.Warnings
+	// stream. The orchestrator drains state.Warnings into result.Warnings
+	// at the END of the per-node Phase B sequence (after phaseB6 returns)
+	// so any sub-pass appending here — present today: phaseB3's helm-chart
+	// provenance-skip notice — and any future sub-pass appending later in
+	// the pipeline both reach the result. Drain position is load-bearing.
+	Warnings []string
 }
 
 // NewPhaseBState constructs a fresh accumulator for one node's Phase B run.

@@ -207,6 +207,40 @@ func TestValidateRecipe_Rule6_ArtifactsFromInternalCollision_Fails(t *testing.T)
 	}
 }
 
+// ----- Helm-chart provider: inline artifacts forbidden -----
+
+func TestValidateRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
+	t.Parallel()
+	r := newRecipe("helm-chart")
+	r.Spec.Source = "./chart"
+	r.Spec.ValuesMapping = `{"image": "app:1"}`
+	r.Spec.Artifacts = types.OrderedMap[string]{}
+	r.Spec.Artifacts.Set("inline-cm.yaml", `kind: ConfigMap`)
+
+	err := validator.ValidateRecipe(r, tFile)
+	if !errors.Is(err, validator.ErrRecipeHelmChartInlineArtifacts) {
+		t.Fatalf("expected ErrRecipeHelmChartInlineArtifacts, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "inline-cm.yaml") {
+		t.Errorf("error detail should name the offending inline filename, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "artifactsFrom") {
+		t.Errorf("error should recommend artifactsFrom, got %v", err)
+	}
+}
+
+func TestValidateRecipe_HelmChartArtifactsFromOnly_Passes(t *testing.T) {
+	t.Parallel()
+	r := newRecipe("helm-chart")
+	r.Spec.Source = "./chart"
+	r.Spec.ValuesMapping = `{"image": "app:1"}`
+	r.Spec.ArtifactsFrom = []string{"./manifests/crd.yaml"}
+
+	if err := validator.ValidateRecipe(r, tFile); err != nil {
+		t.Fatalf("expected helm-chart + artifactsFrom-only to pass, got %v", err)
+	}
+}
+
 // ----- Eval-provider constraint -----
 
 func TestValidateRecipe_Eval_BareProvides_Passes(t *testing.T) {
