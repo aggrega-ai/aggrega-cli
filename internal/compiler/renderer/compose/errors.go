@@ -22,11 +22,12 @@ var ErrTranslationProbeNoPort = errors.New("TRANSLATION_ERROR: probe http: requi
 var ErrTranslationProbeShape = errors.New("TRANSLATION_ERROR: probe declares no shape (http/tcp/exec)")
 
 // ErrTranslationConfigMapMissingArtifact is emitted when a configmap volume
-// is declared but no artifact emits the underlying file. Compose has no
-// ConfigMap primitive — a configmap volume becomes a bind-mount from a
-// generated file path; the file MUST exist.
+// is declared but the Recipe's artifacts input emits no underlying file.
+// Compose has no ConfigMap primitive — a configmap volume becomes a
+// bind-mount from a generated file path; the file MUST exist.
 //
-// Track 1 cannot detect this (artifact emission is a separate sub-pass); the
-// sentinel is declared here so the synthesizer can wire it once artifact
-// awareness lands. See the configmap-volume comment in workload_synth.go.
-var ErrTranslationConfigMapMissingArtifact = errors.New("TRANSLATION_ERROR: configmap volume requires an emitted artifact file; none found")
+// Track 1 cannot detect this (the artifacts input kind's emission runs in a
+// separate sub-pass); the sentinel is declared here so the synthesizer can
+// wire it once artifacts-input awareness lands. See the configmap-volume
+// comment in workload_synth.go.
+var ErrTranslationConfigMapMissingArtifact = errors.New("TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found")

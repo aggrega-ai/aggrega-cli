@@ -35,20 +35,22 @@ var (
 	// ErrRecipeRule5: at least one input kind must be present.
 	ErrRecipeRule5 = errors.New("recipe rule 5: at least one input kind required")
 
-	// ErrRecipeRule6: artifacts output filenames must not collide. Two
-	// sub-classes: inline `artifacts:` keys clashing with `artifactsFrom:`
-	// basenames; and two or more `artifactsFrom:` entries whose basenames
-	// collide. Both classes share this sentinel.
-	ErrRecipeRule6 = errors.New("recipe rule 6: artifacts output filename collision")
+	// ErrRecipeRule6: filenames emitted by the artifacts input kind must
+	// not collide. Two sub-classes: inline `artifacts:` keys clashing with
+	// `artifactsFrom:` basenames; and two or more `artifactsFrom:` entries
+	// whose basenames collide. Both classes share this sentinel.
+	ErrRecipeRule6 = errors.New("recipe rule 6: artifact-emitted output filename collision")
 
 	// ErrRecipeHelmChartInlineArtifacts: provider helm-chart with inline
 	// artifacts: declared. Helm-chart emits an umbrella chart structure;
-	// artifacts must be physical files that the engine can inject into the
-	// chart's templates/ directory pre-render. Authors declare
-	// artifactsFrom: instead. The descriptive sentinel name (rather than
-	// continuing the ErrRecipeRule<N> sequence used for the cross-provider
-	// shape rules 1-7) reflects that this is a provider-specific
-	// constraint, not a member of chapter 16's numbered rule list.
+	// the artifacts input kind contributes via physical files (declared
+	// under artifactsFrom:) that the engine injects into the chart's
+	// templates/ directory pre-render. Authors declare artifactsFrom:
+	// instead of inline artifacts:. The descriptive sentinel name (rather
+	// than continuing the ErrRecipeRule<N> sequence used for the
+	// cross-provider shape rules 1-7) reflects that this is a
+	// provider-specific constraint, not a member of chapter 16's numbered
+	// rule list.
 	ErrRecipeHelmChartInlineArtifacts = errors.New("recipe helm-chart provider does not support inline artifacts:")
 
 	// ErrRecipeRule7: emission-time filename collision across input-kind

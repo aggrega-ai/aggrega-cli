@@ -276,7 +276,7 @@ func validateRecipeRule6(r *types.Recipe, sourcePath string) error {
 		Name:        r.Metadata.Name,
 		Version:     r.Metadata.Version,
 		Rule:        "6",
-		Description: "artifacts output filename collision: inline keys vs artifactsFrom basenames, or within artifactsFrom",
+		Description: "artifact-emitted output filename collision: inline artifacts: keys vs artifactsFrom: basenames, or within artifactsFrom:",
 		Detail:      fmt.Sprintf("colliding output filenames: %s", strings.Join(collisions, ", ")),
 		Err:         ErrRecipeRule6,
 	}

@@ -37,9 +37,9 @@ func (e *HelmEngine) HandlesArtifactsExternally() {}
 // PathForArtifact satisfies renderer.ArtifactsPathProvider. Each
 // artifactsFrom file lands at templates/<basename> within the per-node
 // output; the orchestrator's per-boundary nesting layers
-// boundaries/<bp>/charts/<nodeID>/ on top, so the artifact is positioned
-// alongside the sourced chart's templates and participates in Helm's
-// downstream render pass.
+// boundaries/<bp>/charts/<nodeID>/ on top, so the emitted file is
+// positioned alongside the sourced chart's templates and participates in
+// Helm's downstream render pass.
 func (e *HelmEngine) PathForArtifact(_ renderer.NodeRenderContext, basename string) string {
 	return "templates/" + basename
 }

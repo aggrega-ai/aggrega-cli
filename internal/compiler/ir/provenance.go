@@ -24,7 +24,7 @@ import (
 //     This lets partial pipelines (a build with no Manifest, an inspect
 //     against an Aggregate alone) emit valid provenance without
 //     fabricating absent fields, and the IR JSON tags carry omitempty so
-//     missing fields collapse out of the emitted artifact entirely.
+//     missing fields collapse out of the emitted IR entirely.
 //
 // The function never returns an error; provenance generation is a flat
 // metadata copy with no failure modes.

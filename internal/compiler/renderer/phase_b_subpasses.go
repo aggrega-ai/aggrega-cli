@@ -191,7 +191,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 
 // phaseB3 evaluates Recipe.Spec.Artifacts (inline) and
 // Recipe.Spec.ArtifactsFrom (file-loaded), the third input kind per
-// chapter 16. Each emitted artifact carries its own EmitOrigin tag
+// chapter 16. Each emitted file carries its own EmitOrigin tag
 // (artifacts-inline / artifacts-from-file) so the Phase B.5 cross-origin
 // collision detector can name every contributor on a clash.
 //

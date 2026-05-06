@@ -24,9 +24,10 @@
 //     short-form list for v3 broad compatibility, with a future expansion
 //     point).
 //   - configmap          → bind-mount from <source>:<target>:ro. The source
-//     filename is the configmap name; the file MUST be emitted by the
-//     artifacts sub-pass. Track 1 emits the bind-mount; integrity-checking
-//     against artifact emission lands when artifacts evaluation does.
+//     filename is the configmap name; the file MUST be emitted via the
+//     Recipe's artifacts input. Track 1 emits the bind-mount;
+//     integrity-checking against the artifacts input kind's emissions
+//     lands when artifacts evaluation does.
 //   - secret             → bind-mount from <source>:<target>:ro for `as: file`;
 //     env_file: list entry for `as: env`. Mirrors helm secret handling.
 //   - persistent         → named-volume bind: `<nodeID>-<name>:<target>`.
@@ -313,7 +314,8 @@ func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string
 		return ServiceVolume{Type: "tmpfs", Target: vm.Path}
 	case spec.ConfigMap != nil:
 		// Compose has no ConfigMap primitive. Bind-mount from the configmap's
-		// source name (the artifact-emitted file path); read-only.
+		// source name (the file emitted via the Recipe's artifacts: input);
+		// read-only.
 		return ServiceVolume{
 			Type:     "bind",
 			Source:   spec.ConfigMap.Source,

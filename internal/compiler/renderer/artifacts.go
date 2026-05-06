@@ -37,9 +37,10 @@ import (
 // pair through two independent capability interfaces:
 //
 //   - ArtifactsPathProvider — engine declares the per-node-relative path
-//     each artifact lands at (e.g., helm-chart's "templates/<basename>").
-//     Engines that don't implement this interface emit at the bare
-//     basename, matching the standard non-external emission shape.
+//     each emitted artifactsFrom file lands at (e.g., helm-chart's
+//     "templates/<basename>"). Engines that don't implement this interface
+//     emit at the bare basename, matching the standard non-external
+//     emission shape.
 //
 //   - ArtifactsTemplateDelims — engine declares the Go-template delimiter
 //     pair Aggrega's pre-templating uses on each artifactsFrom file
@@ -171,7 +172,7 @@ func evaluateArtifacts(
 		return out, nil
 	}
 
-	// Intermediate-tagged artifacts are consumed by the orchestrator's
+	// Intermediate-tagged emitted files are consumed by the orchestrator's
 	// per-boundary grouping in RenderAll — the `if f.Intermediate { ... }`
 	// branch routes solely on the flag. The grouping is Origin-agnostic:
 	// every Intermediate=true EmittedFile flows to ComposeRelease via
@@ -263,8 +264,8 @@ func evaluateOneArtifact(
 //     `[[ ]]`): a parse failure is the common case for files mixing Helm
 //     `{{ }}` template structure with YAML, and is NOT an error. The
 //     evaluator emits the rendered bytes unchanged, skips provenance
-//     injection, and appends a state.Warnings entry naming the artifact
-//     so the build surfaces the gap.
+//     injection, and appends a state.Warnings entry naming the
+//     artifactsFrom file so the build surfaces the gap.
 //
 // The delimiter pair drives the dispatch — when leftDelim+rightDelim
 // differ from the default `{{ }}`, the parse-failure path takes the
