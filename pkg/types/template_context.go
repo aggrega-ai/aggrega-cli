@@ -29,6 +29,7 @@ type TemplateContext struct {
 	Steps      OrderedMap[StepOutput]      `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
 	Source     interface{}                 `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
 	Workload   *Workload                   `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
+	Boundary   *BoundaryContext            `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
 }
 
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.
@@ -103,4 +104,23 @@ type TemplateSecret struct {
 // Schema: template-context-v1alpha1.schema.json#/properties/steps
 type StepOutput struct {
 	Outputs OrderedMap[string] `json:"outputs" yaml:"outputs"`
+}
+
+// BoundaryContext is the boundary-scope view assembled by the compiler when
+// evaluating a FeatureRecipe with spec.executionScope: boundary. It replaces
+// the per-component .context block: an FR with executionScope: boundary
+// receives .boundary.* in templates instead of .context.*. Population happens
+// at Phase B.6's boundary-scope dispatch branch; component-scope FRs leave the
+// pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
+type BoundaryContext struct {
+	Path                           string                  `json:"path" yaml:"path"`
+	BoundaryName                   string                  `json:"boundary_name" yaml:"boundary_name"`
+	Components                     OrderedMap[interface{}] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
+	InternalUsesEdges              []EnrichedEdge          `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty"`
+	OutgoingCrossBoundaryUsesEdges []EnrichedEdge          `json:"outgoing_cross_boundary_uses_edges,omitempty" yaml:"outgoing_cross_boundary_uses_edges,omitempty"`
+	IncomingCrossBoundaryUsesEdges []EnrichedEdge          `json:"incoming_cross_boundary_uses_edges,omitempty" yaml:"incoming_cross_boundary_uses_edges,omitempty"`
+	CrossBoundaryUsesEdges         []EnrichedEdge          `json:"cross_boundary_uses_edges,omitempty" yaml:"cross_boundary_uses_edges,omitempty"`
+	Labels                         OrderedMap[string]      `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
+	Annotations                    OrderedMap[string]      `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	FeatureAttachments             []TemplateFeature       `json:"feature_attachments,omitempty" yaml:"feature_attachments,omitempty"`
 }

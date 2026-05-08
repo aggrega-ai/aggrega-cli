@@ -62,7 +62,7 @@ type IRNode struct {
 	Labels               OrderedMap[string] `json:"labels"`
 	Component            string             `json:"component"`
 	ResolvedVersion      string             `json:"resolved_version"`
-	SyncWave             string             `json:"sync_wave,omitempty"`
+	SyncWave             int                `json:"sync_wave,omitempty"`
 	BoundaryPath         string             `json:"boundary_path,omitempty"`
 	SubsystemPath        string             `json:"subsystem_path,omitempty"`
 	CatalogMetadata      *CatalogMetadata   `json:"catalog_metadata,omitempty"`

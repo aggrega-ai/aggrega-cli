@@ -47,4 +47,5 @@ type FeatureRecipeSpec struct {
 	ValuesMappingJsonnet string             `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`
 	InjectMapping        string             `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
 	Pipeline             []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
+	ExecutionScope       string             `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
 }

@@ -27,9 +27,9 @@ type ReleaseMetadata struct {
 }
 
 // ReleaseSpec defines the aggregate reference, manifest, parameters, and
-// boundary routing. SyncWaves carries the wave-keyed deployment-ordering
-// map (wave name → list of node IDs); the IR builder reads this map and
-// projects a per-node sync_wave field via reverse lookup. Boundaries is
+// boundary routing. Boundaries' SyncWave fields carry per-boundary
+// deployment-ordering integers; the IR builder reads each boundary's
+// SyncWave and propagates it to every contained node. Boundaries is
 // the only required field — every Release must declare at least one
 // boundary, since a Release with no boundaries has nothing to route into.
 type ReleaseSpec struct {
@@ -38,7 +38,6 @@ type ReleaseSpec struct {
 	Extends        string                    `json:"extends,omitempty" yaml:"extends,omitempty"`
 	Parameters     OrderedMap[interface{}]   `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 	ParametersFrom []string                  `json:"parametersFrom,omitempty" yaml:"parametersFrom,omitempty"`
-	SyncWaves      OrderedMap[[]string]      `json:"syncWaves,omitempty,omitzero" yaml:"syncWaves,omitempty"`
 	Boundaries     OrderedMap[Boundary]      `json:"boundaries" yaml:"boundaries"`
 }
 
@@ -58,6 +57,7 @@ type Boundary struct {
 	Description  string                         `json:"description,omitempty" yaml:"description,omitempty"`
 	Directory    string                         `json:"directory,omitempty" yaml:"directory,omitempty"`
 	SubDirectory string                         `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
+	SyncWave     int                            `json:"syncWave,omitempty" yaml:"syncWave,omitempty"`
 	Annotations  OrderedMap[string]             `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 	Features     OrderedMap[interface{}]        `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets      OrderedMap[interface{}]        `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
