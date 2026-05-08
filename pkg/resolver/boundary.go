@@ -27,24 +27,44 @@ import (
 // boundary that contained the component; they do not inherit from parent
 // boundaries. SubDirectory follows component-overrides-boundary precedence:
 // a non-empty BoundaryComponent.subDirectory wins over the boundary's value.
+//
+// SyncWave is the deployment wave inherited from the IMMEDIATE containing
+// boundary's syncWave field. Default 0 (signed integer; negative permitted).
+// Nested boundaries do NOT inherit from outer boundaries — each boundary
+// declares its own SyncWave. Operators wanting "all of outer is wave 1,
+// including its inner sub-boundary" declare syncWave: 1 on both. The IR
+// builder reads bi.SyncWave to populate IRNode.SyncWave per-component.
 type BoundaryInfra struct {
 	Infra        types.OrderedMap[interface{}] // physical sizing from boundary_component.infra
 	Annotations  types.OrderedMap[string]      // cascaded from boundary.annotations
 	BoundaryPath string                        // e.g. "aws-prod/eks-main/payments"
 	Directory    string                        // resolved output directory
 	SubDirectory string                        // resolved sub-directory
+	SyncWave     int                           // deployment wave from the containing boundary's syncWave (default 0)
 }
 
 // WireBoundaryInfra walks the recursive Release boundary tree and produces
-// a per-component context map keyed by component instance name.
+// two outputs:
+//
+//   - perComponent: a map keyed by component instance name, each entry a
+//     full BoundaryInfra struct including the cascaded annotations with
+//     BoundaryComponent.Annotations layered on top.
+//   - perBoundary: a map keyed by slash-separated boundary path
+//     (e.g. "aws-prod/eks-main/payments"), each entry the cascaded
+//     annotation set effective at that boundary level — parent boundaries'
+//     annotations merged with the boundary's own annotations, but WITHOUT
+//     the per-component overrides. Used by orchestrator-time chart-name
+//     match checks (a single chart-name applies per assembly path; the
+//     check operates at boundary granularity, not per-component).
 //
 // The walk is depth-first over Release.spec.boundaries. At each boundary:
 //
 //   - The current boundary's annotations are merged onto the inherited
-//     parent annotations (per-key last-write-wins).
-//   - Every component declared at the boundary is recorded into the result
-//     map. Per-component annotations are merged onto the cascaded boundary
-//     annotations as a third layer (per-key last-write-wins).
+//     parent annotations (per-key last-write-wins). The merged set is
+//     recorded into perBoundary at the current path.
+//   - Every component declared at the boundary is recorded into
+//     perComponent. Per-component annotations are merged onto the cascaded
+//     boundary annotations as a third layer (per-key last-write-wins).
 //   - Nested boundaries are recursed with the cascaded annotations as the
 //     inherited input.
 //
@@ -53,19 +73,20 @@ type BoundaryInfra struct {
 // the OrderedMap iteration order of the parent boundary's components map and
 // the recursive descent order.
 //
-// Returns nil when release is nil.
-func WireBoundaryInfra(release *types.Release) map[string]*BoundaryInfra {
+// Returns (nil, nil) when release is nil.
+func WireBoundaryInfra(release *types.Release) (map[string]*BoundaryInfra, map[string]types.OrderedMap[string]) {
 	if release == nil {
-		return nil
+		return nil, nil
 	}
-	result := map[string]*BoundaryInfra{}
+	perComponent := map[string]*BoundaryInfra{}
+	perBoundary := map[string]types.OrderedMap[string]{}
 	for bName, boundary := range release.Spec.Boundaries.All() {
-		walkBoundary(bName, "", boundary, types.OrderedMap[string]{}, result)
+		walkBoundary(bName, "", boundary, types.OrderedMap[string]{}, perComponent, perBoundary)
 	}
-	return result
+	return perComponent, perBoundary
 }
 
-func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations types.OrderedMap[string], result map[string]*BoundaryInfra) {
+func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations types.OrderedMap[string], perComponent map[string]*BoundaryInfra, perBoundary map[string]types.OrderedMap[string]) {
 	currentPath := name
 	if parentPath != "" {
 		currentPath = parentPath + "/" + name
@@ -73,6 +94,11 @@ func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations t
 
 	// Merge annotations: parent cascades down, boundary's own annotations override
 	mergedAnnotations := mergeStringMaps(parentAnnotations, b.Annotations)
+
+	// Record the boundary-level cascade BEFORE per-component overrides.
+	// Used by orchestrator-time chart-name match checks (effective
+	// aggrega.ai/chart-name resolves at boundary granularity).
+	perBoundary[currentPath] = mergedAnnotations
 
 	// Collect components in this boundary
 	for compName, comp := range b.Components.All() {
@@ -84,13 +110,14 @@ func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations t
 			BoundaryPath: currentPath,
 			Directory:    b.Directory,
 			SubDirectory: resolveSubDirectory(b.SubDirectory, comp.SubDirectory),
+			SyncWave:     b.SyncWave,
 		}
-		result[compName] = bi
+		perComponent[compName] = bi
 	}
 
 	// Recurse into nested boundaries
 	for childName, childBoundary := range b.Boundaries.All() {
-		walkBoundary(childName, currentPath, childBoundary, mergedAnnotations, result)
+		walkBoundary(childName, currentPath, childBoundary, mergedAnnotations, perComponent, perBoundary)
 	}
 }
 

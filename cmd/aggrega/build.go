@@ -126,6 +126,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("Step 1 (resolve): %w", err)
 	}
+	// Parameter map flows through Steps 2-5 so orchestrator-time path-template
+	// evaluation can consume .parameters.<key> references in directory: and
+	// subDirectory: templates. Active-purge runs as runBuild exits (any return
+	// path), bounding the in-memory parameter window to one build invocation.
+	defer resolver.PurgeParameters(&resolveResult.Parameters)
 
 	// Run guards
 	catalogLookup := cat.CatalogLookup()

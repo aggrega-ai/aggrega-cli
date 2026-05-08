@@ -22,8 +22,10 @@ import (
 //   - ResolveResult supplies the original Aggregate / Manifest / Release
 //     plus per-node BoundaryInfra. The IR builder reads Aggregate for
 //     subsystem traversal (Tier 3), Release for boundary traversal (Tiers
-//     4 + 5) and sync-wave lookup, and BoundaryInfra for the IRSpec
-//     InfraMapping plus the release-annotations bucket.
+//     4 + 5), and BoundaryInfra for the IRSpec InfraMapping, the
+//     release-annotations bucket, and per-node sync-wave assignment
+//     (BoundaryInfra.SyncWave is populated by the resolver from each
+//     boundary's syncWave field; default 0).
 //   - CatalogLookup is the same callback shape produced by pkg/catalog. The
 //     IR builder uses it to resolve component `metadata.version` (for
 //     IRNode.ResolvedVersion), to extract catalog annotations and the
@@ -60,8 +62,8 @@ type FeatureOrder map[string][]string
 // Steps performed (numbered to match the body's section comments):
 //
 //  1. Build IR nodes from topology nodes — including labels, paths,
-//     annotation buckets, catalog metadata, ResolvedVersion, SyncWave,
-//     and the SelfInject pipe.
+//     annotation buckets, catalog metadata, ResolvedVersion, SyncWave
+//     (per-boundary from the resolver), and the SelfInject pipe.
 //  2. Convert topology edges to IR edges — preserving Source / Target /
 //     Socket / Alias / OriginFeature (the per-edge origin marker that
 //     keeps Feature-authored edges separable from Component-authored
@@ -132,9 +134,11 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 			}
 		}
 
-		// Sync wave from Release
-		if res.Release != nil {
-			irNode.SyncWave = findSyncWave(res.Release.Spec.SyncWaves, nodeID)
+		// Sync wave from the node's containing boundary's per-boundary SyncWave field.
+		// Resolver pre-populates BoundaryInfra.SyncWave during walkBoundary; default 0
+		// for boundaries that omit syncWave or for nodes without BoundaryInfra context.
+		if bi, ok := res.BoundaryInfra[nodeID]; ok && bi != nil {
+			irNode.SyncWave = bi.SyncWave
 		}
 
 		irNodes.Set(nodeID, irNode)
@@ -279,27 +283,3 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 	return result
 }
 
-// findSyncWave returns the sync-wave name (the OrderedMap key) that
-// contains nodeID in its membership list, or "" if nodeID does not appear
-// in any wave. The Release authoring shape pairs each wave name with a
-// flat slice of node IDs (Release.Spec.SyncWaves is OrderedMap[[]string]),
-// so the lookup is a linear walk — acceptable because sync-wave lists
-// are small and the function runs once per node during IR construction.
-//
-// The "" return is the no-wave-assigned sentinel; IRNode.SyncWave's JSON
-// tag is `omitempty`, so an empty value disappears from emitted IR rather
-// than rendering as `"sync_wave": ""`. Sync-wave semantics themselves
-// (what waves mean for downstream sequencing, how they interact with
-// edges) carry no architectural anchor today; the field plumbs the
-// authoring surface through to the IR without prescribing the runtime
-// interpretation.
-func findSyncWave(syncWaves types.OrderedMap[[]string], nodeID string) string {
-	for wave, nodes := range syncWaves.All() {
-		for _, n := range nodes {
-			if n == nodeID {
-				return wave
-			}
-		}
-	}
-	return ""
-}

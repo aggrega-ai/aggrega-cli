@@ -25,15 +25,23 @@ type ResolveConfig struct {
 // passed by pointer through topology, IR, and renderer; mutations after
 // Resolve returns are not expected.
 //
-// Once Resolve returns, the parameter map used during interpolation has
-// been actively zeroed and nilled (see PurgeParameters). Parameter values
-// do not appear in any field of ResolveResult — they survive only in the
-// already-interpolated YAML bytes that produced Aggregate.
+// Parameters carries the merged parameter map alive past Step 1 so that
+// orchestrator-time path-template evaluation can consume `.parameters.<key>`
+// references in Release.spec.boundaries[].directory and subDirectory
+// templates. The active-purge mechanic now runs at end-of-pipeline in
+// cmd/aggrega/build.go (deferred after the resolver call) rather than at
+// Resolve return; the purge mechanism (zero values, delete keys, nil
+// pointer) is unchanged. See PurgeParameters for the active-purge
+// implementation. Value-template surfaces (Recipe valuesMapping, FR
+// valuesMapping) do NOT receive `.parameters` — that pillar is reserved
+// for path templates per the documented carve-out.
 type ResolveResult struct {
-	Aggregate     *types.Aggregate
-	Release       *types.Release
-	Manifest      *types.Manifest
-	BoundaryInfra map[string]*BoundaryInfra // per-component boundary context
+	Aggregate           *types.Aggregate
+	Release             *types.Release
+	Manifest            *types.Manifest
+	BoundaryInfra       map[string]*BoundaryInfra            // per-component boundary context
+	BoundaryAnnotations map[string]types.OrderedMap[string]  // per-boundary cascaded annotations keyed by boundary path; effective set without per-component overrides
+	Parameters          map[string]interface{}               // merged parameter map (alive through end-of-pipeline)
 }
 
 // Resolve executes the Step 1 pipeline against the configured paths and
@@ -51,7 +59,12 @@ type ResolveResult struct {
 //  7. Unmarshal the interpolated bytes into a typed Aggregate.
 //  8. Validate user-authored instance names against the dot-free pattern.
 //  9. Wire per-component boundary infra from the Release boundary tree.
-//  10. Actively zero-and-nil the parameter map before returning.
+//  10. Carry the merged parameter map through ResolveResult.Parameters
+//      for downstream consumption (orchestrator-time path-template
+//      evaluation). The active-purge runs at end-of-pipeline in
+//      cmd/aggrega/build.go rather than at Resolve return, so that
+//      orchestrator-time path-template evaluation can read parameters
+//      via the live map.
 //
 // Error semantics:
 //
@@ -128,16 +141,20 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 		return nil, nameErrs[0] // return first violation
 	}
 
-	// 7. Wire boundary infra
-	boundaryInfra := WireBoundaryInfra(release)
+	// 7. Wire boundary infra (per-component) plus per-boundary annotations cascade
+	boundaryInfra, boundaryAnnotations := WireBoundaryInfra(release)
 
-	// 8. Purge parameters
-	PurgeParameters(&params)
+	// 8. Parameter map flows through to the renderer via ResolveResult.Parameters.
+	//    Active-purge runs at end-of-pipeline in cmd/aggrega/build.go (deferred
+	//    after this call) so that orchestrator-time path-template evaluation
+	//    can read .parameters.<key> from the live map.
 
 	return &ResolveResult{
-		Aggregate:     &agg,
-		Release:       release,
-		Manifest:      manifest,
-		BoundaryInfra: boundaryInfra,
+		Aggregate:           &agg,
+		Release:             release,
+		Manifest:            manifest,
+		BoundaryInfra:       boundaryInfra,
+		BoundaryAnnotations: boundaryAnnotations,
+		Parameters:          params,
 	}, nil
 }

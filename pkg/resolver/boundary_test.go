@@ -29,7 +29,7 @@ func TestWireBoundaryInfra_BoundaryComponentAnnotationsOverride(t *testing.T) {
 		},
 	}
 
-	bi := resolver.WireBoundaryInfra(rel)
+	bi, _ := resolver.WireBoundaryInfra(rel)
 
 	api := bi["api"]
 	if api == nil {
