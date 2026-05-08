@@ -268,6 +268,12 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 func TestBuildIR_SyncWave(t *testing.T) {
 	t.Parallel()
 
+	// Each node lives in its own boundary; the boundaries declare different
+	// syncWave values. The IR builder copies each boundary's SyncWave to
+	// every contained IRNode via the resolver's perComponent BoundaryInfra
+	// map (which carries the containing-boundary SyncWave). Per-component
+	// SyncWave overrides do not exist; the boundary IS the wave-authoring
+	// unit.
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/database/postgres"})
 	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"})
@@ -277,18 +283,17 @@ func TestBuildIR_SyncWave(t *testing.T) {
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
 		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
-	syncWaves := types.OrderedMap[[]string]{}
-	syncWaves.Set("1-infra", []string{"db"})
-	syncWaves.Set("2-services", []string{"api"})
 	resolveResult := &resolver.ResolveResult{
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		Release: &types.Release{
 			Spec: types.ReleaseSpec{
-				SyncWaves:  syncWaves,
 				Boundaries: types.OrderedMap[types.Boundary]{},
 			},
 		},
-		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{
+			"db":  {BoundaryPath: "infra", SyncWave: 1},
+			"api": {BoundaryPath: "services", SyncWave: 2},
+		},
 	}
 
 	graph, _, err := BuildIR(BuildIRConfig{
@@ -300,12 +305,50 @@ func TestBuildIR_SyncWave(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	dbNode, _ := graph.Spec.Nodes.Get("db")
-	if dbNode.SyncWave != "1-infra" {
-		t.Errorf("db sync wave: %q", dbNode.SyncWave)
+	if dbNode.SyncWave != 1 {
+		t.Errorf("db sync wave: got %d, want 1", dbNode.SyncWave)
 	}
 	apiNode, _ := graph.Spec.Nodes.Get("api")
-	if apiNode.SyncWave != "2-services" {
-		t.Errorf("api sync wave: %q", apiNode.SyncWave)
+	if apiNode.SyncWave != 2 {
+		t.Errorf("api sync wave: got %d, want 2", apiNode.SyncWave)
+	}
+}
+
+func TestBuildIR_SyncWave_DefaultZero(t *testing.T) {
+	t.Parallel()
+	// A node whose boundary omits syncWave (or has none assigned) gets
+	// IRNode.SyncWave == 0, matching every comparable tool's default.
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("svc", &topology.TopologyNode{InstanceID: "svc", ComponentType: "core/server/api-server"})
+	topoResult := &topology.TopologyResult{
+		Nodes:              nodes,
+		Edges:              nil,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{},
+		SecretAttachments:  map[string][]topology.SecretAttachment{},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		Release: &types.Release{
+			Spec: types.ReleaseSpec{
+				Boundaries: types.OrderedMap[types.Boundary]{},
+			},
+		},
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{
+			"svc": {BoundaryPath: "default"}, // SyncWave zero-value
+		},
+	}
+
+	graph, _, err := BuildIR(BuildIRConfig{
+		Topology:      topoResult,
+		ResolveResult: resolveResult,
+		CatalogLookup: testCatalog(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	svcNode, _ := graph.Spec.Nodes.Get("svc")
+	if svcNode.SyncWave != 0 {
+		t.Errorf("svc sync wave: got %d, want 0 (default)", svcNode.SyncWave)
 	}
 }
 

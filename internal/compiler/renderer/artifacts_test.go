@@ -25,12 +25,12 @@ func (stubEngine) Render(_ context.Context, _ map[string]interface{}, _ NodeRend
 	return nil, nil
 }
 
-// stubComposeEngine implements both Engine and ReleaseComposer so the
+// stubComposeEngine implements both Engine and BoundaryAssembler so the
 // evaluator routes its emissions to Intermediate=true.
 type stubComposeEngine struct{ stubEngine }
 
-func (stubComposeEngine) ComposeRelease(_ context.Context, _ ReleaseInfo) (map[string][]byte, error) {
-	return nil, nil
+func (stubComposeEngine) AssembleBoundary(_ context.Context, _ BoundaryInfo) (map[string][]byte, bool, error) {
+	return nil, false, nil
 }
 
 // stubExternalArtifactsEngine implements the ExternalArtifactsHandler

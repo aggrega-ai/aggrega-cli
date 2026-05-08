@@ -547,6 +547,37 @@ func isInSubtree(candidate, boundaryPath string) bool {
 	return strings.HasPrefix(candidate, boundaryPath+"/")
 }
 
+// findFRAttachmentBoundary walks from componentBoundaryPath up the boundary
+// tree (toward the root) and returns the path of the FIRST ancestor (or
+// componentBoundaryPath itself) whose `Features` map includes frInstance.
+// Used by Phase B.6 to compute the dedup key for boundary-scope FRs whose
+// attachment lives on an ancestor of the component's containing boundary
+// (Tier-4 propagation in the IR builder cascades the feature down to every
+// component in the subtree, but the orchestrator-side dedup key is the
+// owning boundary, not the component's containing boundary).
+//
+// Falls back to componentBoundaryPath when no ancestor carries the
+// attachment — the boundary-scope dispatch then surfaces a precise
+// "no BoundaryFeature attachment" error rather than silently misattributing.
+func findFRAttachmentBoundary(release *types.Release, componentBoundaryPath, frInstance string) string {
+	if release == nil || componentBoundaryPath == "" {
+		return componentBoundaryPath
+	}
+	parts := strings.Split(componentBoundaryPath, "/")
+	for i := len(parts); i >= 1; i-- {
+		candidatePath := strings.Join(parts[:i], "/")
+		segments := strings.Split(candidatePath, "/")
+		boundary, ok := findBoundaryAtPath(release.Spec.Boundaries, segments)
+		if !ok {
+			continue
+		}
+		if _, hasFeat := boundary.Features.Get(frInstance); hasFeat {
+			return candidatePath
+		}
+	}
+	return componentBoundaryPath
+}
+
 // lookupBoundaryFeatureAttachment finds the BoundaryFeature with the given
 // instance name on the boundary at boundaryPath. Returns (zero, false)
 // when the boundary or feature instance is absent. The boundary's

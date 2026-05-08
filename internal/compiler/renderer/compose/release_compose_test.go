@@ -15,9 +15,9 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// goldenCheckRelease compares actual against testdata/release/<name>.golden.yaml.
-// Set UPDATE_GOLDEN=1 to overwrite.
-func goldenCheckRelease(t *testing.T, name string, actual []byte) {
+// goldenCheckAssembled compares actual against
+// testdata/release/<name>.golden.yaml. Set UPDATE_GOLDEN=1 to overwrite.
+func goldenCheckAssembled(t *testing.T, name string, actual []byte) {
 	t.Helper()
 	path := filepath.Join("testdata", "release", name+".golden.yaml")
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
@@ -37,10 +37,9 @@ func goldenCheckRelease(t *testing.T, name string, actual []byte) {
 	}
 }
 
-// makeFragment builds a one-node ReleaseNodeInfo by running SynthesizeWorkload.
-// Used by Release-level tests to compose a realistic ReleaseInfo without
-// hand-rolling fragment YAML.
-func makeFragment(t *testing.T, nodeID string, w *types.Workload, annotations map[string]string) renderer.ReleaseNodeInfo {
+// makeFragment runs SynthesizeWorkload for a single node and returns the
+// emitted Intermediate=true fragments.
+func makeFragment(t *testing.T, nodeID string, w *types.Workload, annotations map[string]string) []renderer.EmittedFile {
 	t.Helper()
 	nodeCtx := nodeCtxFor(nodeID)
 	nodeCtx.Annotations = annotations
@@ -48,14 +47,10 @@ func makeFragment(t *testing.T, nodeID string, w *types.Workload, annotations ma
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload(%s): %v", nodeID, err)
 	}
-	return renderer.ReleaseNodeInfo{
-		NodeID:            nodeID,
-		ResolvedComponent: "test/component",
-		IntermediateFiles: files,
-	}
+	return files
 }
 
-func TestComposeRelease_SingleBoundarySingleNode(t *testing.T) {
+func TestComposeAssemble_SingleBoundary(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
@@ -65,31 +60,37 @@ func TestComposeRelease_SingleBoundarySingleNode(t *testing.T) {
 	pub.Ports.Set("web", 8080)
 	w.Services.Set("api", pub)
 
-	node := makeFragment(t, "api", w, map[string]string{AnnotationNamespace: "production"})
+	frag := makeFragment(t, "api", w, map[string]string{AnnotationNamespace: "production"})
 
-	info := renderer.ReleaseInfo{
+	info := renderer.BoundaryInfo{
+		BoundaryPath:  "default",
 		AggregateName: "my-app",
-		Boundaries: []renderer.ReleaseBoundaryInfo{
-			{
-				BoundaryPath: "default",
-				Annotations:  map[string]map[string]string{"api": {AnnotationNamespace: "production"}},
-				Nodes:        []renderer.ReleaseNodeInfo{node},
-			},
+		IntermediatesByNode: map[string][]renderer.EmittedFile{
+			"api": frag,
 		},
+		NodeAnnotations:        map[string]map[string]string{"api": {AnnotationNamespace: "production"}},
+		NodeComponent:          map[string]string{"api": "test/component"},
+		ContributingBoundaries: []string{"default"},
 	}
 
-	files, err := (&ComposeEngine{}).ComposeRelease(context.Background(), info)
+	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
 	if err != nil {
-		t.Fatalf("ComposeRelease: %v", err)
+		t.Fatalf("AssembleBoundary: %v", err)
 	}
-	body, ok := files[ReleaseOutputFile]
+	body, ok := files[AssembledOutputFile]
 	if !ok {
-		t.Fatalf("expected %s key, got %v", ReleaseOutputFile, mapKeys(files))
+		t.Fatalf("expected %s key, got %v", AssembledOutputFile, mapKeys(files))
 	}
-	goldenCheckRelease(t, "single-boundary-single-node", body)
+	goldenCheckAssembled(t, "single-boundary-single-node", body)
 }
 
-func TestComposeRelease_MultiBoundaryServicesMerged(t *testing.T) {
+// TestComposeAssemble_MergedPath verifies that contributors from multiple
+// boundaries that route to the SAME dispatch path produce one merged
+// docker-compose.yaml — the canonical compose-bridge / shared-directory
+// pattern. The assembler is invoked once per (path, provider) tuple; both
+// boundaries' nodes appear in IntermediatesByNode and ContributingBoundaries
+// lists every contributor.
+func TestComposeAssemble_MergedPath(t *testing.T) {
 	t.Parallel()
 
 	frontW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
@@ -108,30 +109,29 @@ func TestComposeRelease_MultiBoundaryServicesMerged(t *testing.T) {
 	bSvc.Ports.Set("rpc", 50051)
 	backW.Services.Set("internal", bSvc)
 
-	info := renderer.ReleaseInfo{
+	info := renderer.BoundaryInfo{
+		BoundaryPath:  "merged",
 		AggregateName: "two-boundary-app",
-		Boundaries: []renderer.ReleaseBoundaryInfo{
-			{
-				BoundaryPath: "edge",
-				Annotations:  map[string]map[string]string{"frontend": {AnnotationNamespace: "edge-net"}},
-				Nodes:        []renderer.ReleaseNodeInfo{makeFragment(t, "frontend", frontW, nil)},
-			},
-			{
-				BoundaryPath: "core",
-				Annotations:  map[string]map[string]string{"backend": {AnnotationNamespace: "core-net"}},
-				Nodes:        []renderer.ReleaseNodeInfo{makeFragment(t, "backend", backW, nil)},
-			},
+		IntermediatesByNode: map[string][]renderer.EmittedFile{
+			"frontend": makeFragment(t, "frontend", frontW, map[string]string{AnnotationNamespace: "edge-net"}),
+			"backend":  makeFragment(t, "backend", backW, map[string]string{AnnotationNamespace: "core-net"}),
 		},
+		NodeAnnotations: map[string]map[string]string{
+			"frontend": {AnnotationNamespace: "edge-net"},
+			"backend":  {AnnotationNamespace: "core-net"},
+		},
+		NodeComponent:          map[string]string{"frontend": "test/frontend", "backend": "test/backend"},
+		ContributingBoundaries: []string{"core", "edge"},
 	}
 
-	files, err := (&ComposeEngine{}).ComposeRelease(context.Background(), info)
+	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
 	if err != nil {
-		t.Fatalf("ComposeRelease: %v", err)
+		t.Fatalf("AssembleBoundary: %v", err)
 	}
-	goldenCheckRelease(t, "multi-boundary-services-merged", files[ReleaseOutputFile])
+	goldenCheckAssembled(t, "multi-boundary-services-merged", files[AssembledOutputFile])
 }
 
-func TestComposeRelease_DependsOnFromUsesEdges(t *testing.T) {
+func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 	t.Parallel()
 
 	apiW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
@@ -150,78 +150,71 @@ func TestComposeRelease_DependsOnFromUsesEdges(t *testing.T) {
 	dbSvc.Ports.Set("pg", 5432)
 	dbW.Services.Set("db", dbSvc)
 
-	info := renderer.ReleaseInfo{
+	info := renderer.BoundaryInfo{
+		BoundaryPath:  "default",
 		AggregateName: "depends-app",
-		Boundaries: []renderer.ReleaseBoundaryInfo{
-			{
-				BoundaryPath: "default",
-				Annotations:  map[string]map[string]string{},
-				Nodes: []renderer.ReleaseNodeInfo{
-					makeFragment(t, "api", apiW, nil),
-					makeFragment(t, "db", dbW, nil),
-				},
-			},
+		IntermediatesByNode: map[string][]renderer.EmittedFile{
+			"api": makeFragment(t, "api", apiW, nil),
+			"db":  makeFragment(t, "db", dbW, nil),
 		},
-		Edges: []types.IREdge{
+		NodeAnnotations:        map[string]map[string]string{},
+		NodeComponent:          map[string]string{"api": "test/api", "db": "test/db"},
+		ContributingBoundaries: []string{"default"},
+		Edges: []renderer.IREdgeInfo{
 			{Source: "api", Target: "db"},
 		},
 	}
 
-	files, err := (&ComposeEngine{}).ComposeRelease(context.Background(), info)
+	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
 	if err != nil {
-		t.Fatalf("ComposeRelease: %v", err)
+		t.Fatalf("AssembleBoundary: %v", err)
 	}
-	goldenCheckRelease(t, "depends-on-from-uses-edges", files[ReleaseOutputFile])
+	goldenCheckAssembled(t, "depends-on-from-uses-edges", files[AssembledOutputFile])
 }
 
-func TestComposeRelease_ServiceCollisionAcrossBoundaries_Errors(t *testing.T) {
+func TestComposeAssemble_ServiceCollision_Errors(t *testing.T) {
 	t.Parallel()
 
-	// Two boundaries each contributing a node whose container synthesises
-	// a service named "auth" — collision via shared sidecar name.
-	mkConflictWorkload := func(image string) *types.Workload {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
-		c := types.ContainerSpec{Image: image}
-		c.Ports.Set("p", 8080)
-		w.Containers.Set("main", c)
-		s := types.ServiceSpec{Type: "ClusterIP"}
-		s.Ports.Set("p", 8080)
-		w.Services.Set("svc", s)
-		return w
+	// Two contributing nodes hand-roll fragments declaring a shared service
+	// name "shared". The merger surfaces TRANSLATION_ERROR naming every
+	// contributing (boundary, nodeID) tuple. (Workload-synthesised fragments
+	// can't collide naturally because the synthesiser keys services by
+	// nodeID; this test uses hand-authored fragment bodies to construct the
+	// collision case directly.)
+	fragBody := func(image string) []byte {
+		return []byte("services:\n  shared:\n    image: " + image + "\n")
 	}
-
-	info := renderer.ReleaseInfo{
+	info := renderer.BoundaryInfo{
+		BoundaryPath:  "merged",
 		AggregateName: "collision-app",
-		Boundaries: []renderer.ReleaseBoundaryInfo{
-			{
-				BoundaryPath: "a",
-				Annotations:  map[string]map[string]string{},
-				Nodes:        []renderer.ReleaseNodeInfo{makeFragment(t, "auth", mkConflictWorkload("auth-a:1.0"), nil)},
-			},
-			{
-				BoundaryPath: "b",
-				Annotations:  map[string]map[string]string{},
-				Nodes:        []renderer.ReleaseNodeInfo{makeFragment(t, "auth", mkConflictWorkload("auth-b:1.0"), nil)},
-			},
+		IntermediatesByNode: map[string][]renderer.EmittedFile{
+			"auth-a": {{Name: "auth-a.compose-fragment.yaml", Body: fragBody("auth-a:1.0"), Origin: renderer.EmitOriginWorkload, Intermediate: true}},
+			"auth-b": {{Name: "auth-b.compose-fragment.yaml", Body: fragBody("auth-b:1.0"), Origin: renderer.EmitOriginWorkload, Intermediate: true}},
 		},
+		NodeAnnotations: map[string]map[string]string{
+			"auth-a": {AnnotationNamespace: "a"},
+			"auth-b": {AnnotationNamespace: "b"},
+		},
+		NodeComponent:          map[string]string{},
+		ContributingBoundaries: []string{"a", "b"},
 	}
 
-	_, err := (&ComposeEngine{}).ComposeRelease(context.Background(), info)
+	_, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
 	if err == nil {
-		t.Fatal("expected TRANSLATION_ERROR for cross-boundary service collision")
+		t.Fatal("expected TRANSLATION_ERROR for service collision across contributors")
 	}
 	if !strings.Contains(err.Error(), "TRANSLATION_ERROR") {
 		t.Errorf("expected TRANSLATION_ERROR prefix, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), `service "auth"`) {
+	if !strings.Contains(err.Error(), `service "shared"`) {
 		t.Errorf("error must name colliding service, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), `boundary="a"`) || !strings.Contains(err.Error(), `boundary="b"`) {
-		t.Errorf("error must name every contributing boundary, got: %v", err)
+	if !strings.Contains(err.Error(), `node="auth-a"`) || !strings.Contains(err.Error(), `node="auth-b"`) {
+		t.Errorf("error must name every contributing node, got: %v", err)
 	}
 }
 
-func TestComposeRelease_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testing.T) {
+func TestComposeAssemble_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "x:1.0"}
@@ -231,22 +224,22 @@ func TestComposeRelease_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testing
 	s.Ports.Set("p", 80)
 	w.Services.Set("api", s)
 
-	info := renderer.ReleaseInfo{
+	info := renderer.BoundaryInfo{
+		BoundaryPath:  "STAGE-01",
 		AggregateName: "fallback-app",
-		Boundaries: []renderer.ReleaseBoundaryInfo{
-			{
-				BoundaryPath: "STAGE-01",
-				Annotations:  map[string]map[string]string{"x": {}}, // no namespace annotation
-				Nodes:        []renderer.ReleaseNodeInfo{makeFragment(t, "x", w, nil)},
-			},
+		IntermediatesByNode: map[string][]renderer.EmittedFile{
+			"x": makeFragment(t, "x", w, nil),
 		},
+		NodeAnnotations:        map[string]map[string]string{"x": {}},
+		NodeComponent:          map[string]string{"x": "test/x"},
+		ContributingBoundaries: []string{"STAGE-01"},
 	}
 
-	files, err := (&ComposeEngine{}).ComposeRelease(context.Background(), info)
+	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
 	if err != nil {
-		t.Fatalf("ComposeRelease: %v", err)
+		t.Fatalf("AssembleBoundary: %v", err)
 	}
-	body := string(files[ReleaseOutputFile])
+	body := string(files[AssembledOutputFile])
 	// Expect the boundary path lowercased + sanitised: "stage-01".
 	if !strings.Contains(body, "stage-01:") {
 		t.Errorf("expected sanitised network name 'stage-01' in output:\n%s", body)
@@ -326,18 +319,18 @@ func TestRenderSourced_MissingFile_Errors(t *testing.T) {
 	}
 }
 
-func TestComposeRelease_Engine_RegistersAsReleaseComposer(t *testing.T) {
+func TestCompose_Engine_RegistersAsBoundaryAssembler(t *testing.T) {
 	t.Parallel()
 	var e renderer.Engine = &ComposeEngine{}
-	if _, ok := e.(renderer.ReleaseComposer); !ok {
-		t.Fatal("ComposeEngine must implement renderer.ReleaseComposer")
+	if _, ok := e.(renderer.BoundaryAssembler); !ok {
+		t.Fatal("ComposeEngine must implement renderer.BoundaryAssembler")
 	}
 	if _, ok := e.(renderer.WorkloadSynthesizer); !ok {
 		t.Fatal("ComposeEngine must implement renderer.WorkloadSynthesizer")
 	}
 }
 
-func TestComposeRelease_BareValuesMode_RejectsAtRender(t *testing.T) {
+func TestCompose_BareValuesMode_RejectsAtRender(t *testing.T) {
 	t.Parallel()
 	// nil source + no Workload (Render reaches this path only when no
 	// Workload is present, since orchestrator Phase B.4 dispatches Workload
@@ -351,7 +344,7 @@ func TestComposeRelease_BareValuesMode_RejectsAtRender(t *testing.T) {
 	}
 }
 
-func TestComposeRelease_EmptyStringSource_ErrEmptySource(t *testing.T) {
+func TestCompose_EmptyStringSource_ErrEmptySource(t *testing.T) {
 	t.Parallel()
 	nodeCtx := renderer.NodeRenderContext{NodeID: "x", Source: ""}
 	_, err := (&ComposeEngine{}).Render(context.Background(), nil, nodeCtx)

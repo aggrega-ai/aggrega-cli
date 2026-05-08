@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
@@ -106,6 +107,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 	dispatch := map[dispatchKey]*pendingDispatch{}
 	orderedDispatch := []dispatchKey{}
+
+	// Pre-compute the per-boundary evaluated `directory:` map for the
+	// .parent_boundary.directory cascade. Path-template eval at any
+	// boundary depth can read its IMMEDIATE parent's evaluated directory
+	// from this map; root-level boundaries have no parent and surface
+	// missingkey=error if their templates reference .parent_boundary.*.
+	var boundaryDirEvals map[string]string
+	var perBoundaryAnnotations map[string]types.OrderedMap[string]
+	var releaseParameters map[string]interface{}
+	if input.ResolveResult != nil {
+		releaseParameters = input.ResolveResult.Parameters
+		_, perBoundaryAnnotations = resolver.WireBoundaryInfra(input.ResolveResult.Release)
+		var err error
+		boundaryDirEvals, err = evaluateAllBoundaryDirectories(input.ResolveResult.Release, releaseParameters, perBoundaryAnnotations)
+		if err != nil {
+			return nil, fmt.Errorf("Step 5 boundary directory pre-eval: %w", err)
+		}
+	}
 
 	// Boundary-scope FR cross-node accumulator (dedup, provides, files,
 	// validator cache). One instance lives per RenderAll invocation;
@@ -269,15 +288,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// by sorted filename; state.EmittedFiles order stays stable).
 		//
 		// Intermediate marking. When the engine implements BoundaryAssembler
-		// (compose, helm-chart), Render's output is intermediate input to the
-		// per-(path, provider) BoundaryAssembler at the contributor's
-		// evaluated path and must NOT be written to disk directly alongside
-		// per-node files. The orchestrator marks every Render output as
-		// Intermediate=true for BoundaryAssembler engines; the assembler
-		// reads the fragments and emits the canonical per-dispatch-path
-		// file. Engines that are not BoundaryAssemblers keep
-		// Intermediate=false — their Render outputs ship as-is.
+		// AND consumes per-node Render output as fragment input (today:
+		// compose), Render's output is intermediate to the per-(path,
+		// provider) BoundaryAssembler at the contributor's evaluated path.
+		// Engines that implement BoundaryAssembler but place per-node
+		// content at engine-controlled positions (today: helm-chart,
+		// signalled by ExternalArtifactsHandler — its sub-charts land at
+		// charts/<nodeID>/ via the umbrella's nestPerNode contract) keep
+		// Render output Intermediate=false so the orchestrator nests their
+		// files under the per-node prefix rather than routing them to
+		// AssembleBoundary's IntermediatesByNode. Engines that are not
+		// BoundaryAssemblers also keep Intermediate=false.
 		_, isAssembler := engine.(BoundaryAssembler)
+		_, isExternal := engine.(ExternalArtifactsHandler)
+		renderIsIntermediate := isAssembler && !isExternal
 		sourceNames := make([]string, 0, len(files))
 		for p := range files {
 			sourceNames = append(sourceNames, p)
@@ -288,7 +312,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				Name:         p,
 				Origin:       EmitOriginSource,
 				Body:         files[p],
-				Intermediate: isAssembler,
+				Intermediate: renderIsIntermediate,
 			})
 		}
 
@@ -355,7 +379,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 			parameters = input.ResolveResult.Parameters
 		}
-		finalPath, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters)
+		finalPath, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, fmt.Errorf("Step 5 path eval node %q: %w", nodeID, err)
 		}
@@ -474,22 +498,32 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			continue
 		}
 		frProvider := fr.Spec.Provider
-		// Compute the dispatch path for this boundary-scope FR. Default
-		// behavior matches per-component: boundaries/<bp>/<provider>/.
-		// Operator-authored directory:/subDirectory: would alter this;
-		// for the FR's perspective, we use the boundary's BoundaryInfra
-		// as the source of authored values.
-		// Boundary-scope FRs have no per-component BoundaryInfra entry —
-		// the FR is attached at the boundary, not at a component. Pass nil
-		// to use computeFinalPath's defaults (empty directory + empty
-		// subDirectory → boundaries/<bp>/<frProvider>/).
+		// Compute the dispatch path for this boundary-scope FR. The FR is
+		// attached at the boundary level (no per-component BoundaryInfra
+		// entry), so look up the boundary's authored directory/subDirectory
+		// directly from the Release tree and synthesise a BoundaryInfra
+		// for computeFinalPath. Operator-authored templates on the boundary
+		// thus drive the FR's dispatch path the same way they drive
+		// per-component dispatch paths.
 		var parameters map[string]interface{}
 		if input.ResolveResult != nil {
 			parameters = input.ResolveResult.Parameters
 		}
+		var bi *resolver.BoundaryInfra
+		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
+			parts := strings.Split(key.BoundaryPath, "/")
+			if b, ok := findBoundaryAtPath(input.ResolveResult.Release.Spec.Boundaries, parts); ok {
+				bi = &resolver.BoundaryInfra{
+					BoundaryPath: key.BoundaryPath,
+					Directory:    b.Directory,
+					SubDirectory: b.SubDirectory,
+					SyncWave:     b.SyncWave,
+				}
+			}
+		}
 		// Use the FR's provider for the {{ .provider }} substitution
 		// instead of any per-component provider.
-		finalPath, err := computeFinalPath("<boundary-fr>:"+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, nil, parameters)
+		finalPath, err := computeFinalPath("<boundary-fr>:"+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, fmt.Errorf("Step 5 boundary-scope FR %q path eval: %w", key.FRInstance, err)
 		}
@@ -771,9 +805,7 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 //
 // bi is the resolver-side per-component BoundaryInfra (the same struct
 // already threaded through the orchestrator from input.ResolveResult.
-// BoundaryInfra). Pass nil to use defaults across the board (e.g., when
-// computing a path for a boundary-scope contributor that has no
-// per-component BoundaryInfra entry).
+// BoundaryInfra). Pass nil to use defaults across the board.
 //
 // Defaults:
 //   - bi nil OR bi.Directory empty → "boundaries/<bp>" (today's per-boundary segregation).
@@ -781,20 +813,30 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 //     provider name.
 //
 // Available template variables: .provider, .boundary_name, .parameters.<key>,
-// .component_id (subDirectory: only), .manifest.recipe_name. .parent_boundary.*
-// is intentionally not populated in this revision; references will trigger
-// missingkey=error per the path-template strictness policy.
+// .component_id (subDirectory: only), .manifest.recipe_name, .parent_boundary.*.
+//
+// boundaryDirEvals is the precomputed per-boundary evaluated `directory:`
+// map produced by evaluateAllBoundaryDirectories; it sources
+// .parent_boundary.directory for the IMMEDIATE parent boundary of bp.
+// perBoundaryAnnotations sources .parent_boundary.annotations from the
+// resolver's cascaded annotation map. Both default to no .parent_boundary.*
+// when the parent path is empty (root-level boundary) or absent from the
+// maps. .parent_boundary.parameters mirrors .parameters since parameters
+// are Release-global.
 func computeFinalPath(
 	nodeID, bp, providerName, recipeName string,
 	bi *resolver.BoundaryInfra,
 	parameters map[string]interface{},
+	boundaryDirEvals map[string]string,
+	perBoundaryAnnotations map[string]types.OrderedMap[string],
 ) (string, error) {
 	data := map[string]interface{}{
-		"provider":      providerName,
-		"boundary_name": bp,
-		"parameters":    parameters,
-		"component_id":  nodeID,
-		"manifest":      map[string]interface{}{"recipe_name": recipeName},
+		"provider":        providerName,
+		"boundary_name":   bp,
+		"parameters":      parameters,
+		"component_id":    nodeID,
+		"manifest":        map[string]interface{}{"recipe_name": recipeName},
+		"parent_boundary": parentBoundaryData(bp, parameters, boundaryDirEvals, perBoundaryAnnotations),
 	}
 
 	// Evaluate directory:
@@ -827,4 +869,122 @@ func computeFinalPath(
 		return evalDir, nil
 	}
 	return filepath.Join(evalDir, evalSub), nil
+}
+
+// parentBoundaryData returns the .parent_boundary.* data map for path-template
+// evaluation at boundary path bp. The parent path is the prefix of bp before
+// the last `/`; root-level boundaries return an empty map (no parent). Fields:
+//
+//   - directory: parent's evaluated directory string from boundaryDirEvals,
+//     or the default "boundaries/<parentPath>" when the parent was not
+//     evaluated explicitly (parent has no `directory:` declared and the
+//     pre-compute walk skipped it).
+//   - boundary_name: the parent's authored name (last segment of parent path).
+//   - parameters: the same Release-global parameters map.
+//   - annotations: parent's cascaded annotations from perBoundaryAnnotations.
+//
+// Returns an empty map for root-level boundaries; references like
+// `.parent_boundary.directory` then resolve to nil and trigger missingkey=error
+// per the path-template strictness policy.
+func parentBoundaryData(
+	bp string,
+	parameters map[string]interface{},
+	boundaryDirEvals map[string]string,
+	perBoundaryAnnotations map[string]types.OrderedMap[string],
+) map[string]interface{} {
+	parentPath, parentName, ok := splitParentPath(bp)
+	if !ok {
+		return map[string]interface{}{}
+	}
+	parentDir, hasEval := boundaryDirEvals[parentPath]
+	if !hasEval {
+		parentDir = "boundaries/" + parentPath
+	}
+	annotations := map[string]string{}
+	if pa, ok := perBoundaryAnnotations[parentPath]; ok {
+		for k, v := range pa.All() {
+			annotations[k] = v
+		}
+	}
+	return map[string]interface{}{
+		"directory":     parentDir,
+		"boundary_name": parentName,
+		"parameters":    parameters,
+		"annotations":   annotations,
+	}
+}
+
+// splitParentPath returns the parent boundary path and parent boundary name
+// for a slash-separated boundary path bp. For "cluster/services-net":
+// ("cluster", "cluster", true). For "a/b/c": ("a/b", "b", true). For a
+// root-level boundary "cluster" (no slash): ("", "", false).
+func splitParentPath(bp string) (parentPath, parentName string, ok bool) {
+	idx := strings.LastIndex(bp, "/")
+	if idx < 0 {
+		return "", "", false
+	}
+	parentPath = bp[:idx]
+	if pIdx := strings.LastIndex(parentPath, "/"); pIdx >= 0 {
+		parentName = parentPath[pIdx+1:]
+	} else {
+		parentName = parentPath
+	}
+	return parentPath, parentName, true
+}
+
+// evaluateAllBoundaryDirectories walks the Release boundary tree top-down and
+// returns a map keyed by boundary path of evaluated `directory:` strings.
+// The eval at each boundary uses the parent's already-evaluated directory as
+// `.parent_boundary.directory` (cascade). `.provider` is set to empty during
+// the walk because boundary-level `directory:` cannot meaningfully reference
+// per-component provider — per-provider segregation is the `subDirectory:`
+// concern (default `{{ .provider }}`). Boundaries without an explicit
+// `directory:` declaration are skipped (consumers fall back to the default
+// "boundaries/<bp>" string in parentBoundaryData).
+//
+// perBoundaryAnnotations sources `.parent_boundary.annotations` for nested
+// boundaries — read by the parent_boundary cascade walk before the parent's
+// own eval finalises.
+func evaluateAllBoundaryDirectories(
+	release *types.Release,
+	parameters map[string]interface{},
+	perBoundaryAnnotations map[string]types.OrderedMap[string],
+) (map[string]string, error) {
+	out := map[string]string{}
+	if release == nil {
+		return out, nil
+	}
+	var walk func(name, parentPath string, b types.Boundary) error
+	walk = func(name, parentPath string, b types.Boundary) error {
+		currentPath := name
+		if parentPath != "" {
+			currentPath = parentPath + "/" + name
+		}
+		if b.Directory != "" {
+			data := map[string]interface{}{
+				"provider":        "",
+				"boundary_name":   currentPath,
+				"parameters":      parameters,
+				"manifest":        map[string]interface{}{"recipe_name": ""},
+				"parent_boundary": parentBoundaryData(currentPath, parameters, out, perBoundaryAnnotations),
+			}
+			eval, err := EvalPathTemplate("directory:"+currentPath, "directory", currentPath, b.Directory, data)
+			if err != nil {
+				return fmt.Errorf("boundary %q directory eval: %w", currentPath, err)
+			}
+			out[currentPath] = eval
+		}
+		for childName, childBoundary := range b.Boundaries.All() {
+			if err := walk(childName, currentPath, childBoundary); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for bName, boundary := range release.Spec.Boundaries.All() {
+		if err := walk(bName, "", boundary); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }

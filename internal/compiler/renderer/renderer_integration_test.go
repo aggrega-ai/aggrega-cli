@@ -282,7 +282,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 // captureComposerEngine implements both renderer.Engine and
 // renderer.ReleaseComposer; ComposeRelease records the IntermediateFiles
 // it receives so the test can assert which EmittedFile entries the
-// orchestrator routed via the per-boundary intermediates pipe.
+// orchestrator routed via the per-(path, provider) intermediates pipe.
 type captureComposerEngine struct {
 	captured []renderer.EmittedFile
 }
@@ -291,25 +291,23 @@ func (c *captureComposerEngine) Render(_ context.Context, _ map[string]interface
 	return nil, nil
 }
 
-func (c *captureComposerEngine) ComposeRelease(_ context.Context, info renderer.ReleaseInfo) (map[string][]byte, error) {
-	for _, b := range info.Boundaries {
-		for _, n := range b.Nodes {
-			c.captured = append(c.captured, n.IntermediateFiles...)
-		}
+func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
+	for _, files := range info.IntermediatesByNode {
+		c.captured = append(c.captured, files...)
 	}
-	return map[string][]byte{}, nil
+	return map[string][]byte{}, false, nil
 }
 
-// TestPhaseB3_ArtifactsIntermediate_RoutesViaReleaseComposer asserts that
-// artifacts from a ReleaseComposer-engine Recipe — whether inline or
-// file-loaded — are routed by the orchestrator's post-Phase-B grouping
-// into the per-boundary intermediates pipe and arrive at ComposeRelease
-// through ReleaseInfo. The grouping is exercised end-to-end (RenderAll
-// entry through ComposeRelease's input); the assertion verifies that the
-// routing is Origin-agnostic — both EmitOriginArtifactsInline and
-// EmitOriginArtifactsFromFile EmittedFiles reach ComposeRelease just like
+// TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler asserts that
+// artifacts from a BoundaryAssembler-engine Recipe — whether inline or
+// file-loaded — are routed by the orchestrator's post-Phase-B grouping into
+// the per-(path, provider) intermediates pipe and arrive at AssembleBoundary
+// through BoundaryInfo. The grouping is exercised end-to-end (RenderAll entry
+// through AssembleBoundary's input); the assertion verifies that the routing
+// is Origin-agnostic — both EmitOriginArtifactsInline and
+// EmitOriginArtifactsFromFile EmittedFiles reach AssembleBoundary just like
 // engine.Render's EmitOriginSource output does.
-func TestPhaseB3_ArtifactsIntermediate_RoutesViaReleaseComposer(t *testing.T) {
+func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) {
 	t.Parallel()
 
 	fragmentBody := `services:

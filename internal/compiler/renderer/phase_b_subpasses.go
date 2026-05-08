@@ -313,7 +313,13 @@ func phaseB6(
 		}
 
 		if fr.Spec.ExecutionScope == "boundary" && boundaryFRState != nil {
-			key := boundaryFRKey{BoundaryPath: state.BoundaryPath, FRInstance: ref.InstanceName}
+			// Walk up from the component's boundary path to find the
+			// ANCESTOR boundary that holds this FR-instance attachment
+			// (the IR builder's Tier-4 propagation may have inherited
+			// the feature from a parent boundary; the dedup key is the
+			// owning boundary, not the component's containing boundary).
+			owningBP := findFRAttachmentBoundary(release, state.BoundaryPath, ref.InstanceName)
+			key := boundaryFRKey{BoundaryPath: owningBP, FRInstance: ref.InstanceName}
 			if boundaryFRState.Dedup[key] {
 				continue // FR already ran for this boundary
 			}

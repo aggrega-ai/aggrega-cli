@@ -154,8 +154,11 @@ func runExample22(t *testing.T, variant string) *example22Result {
 func assertCommonProof(t *testing.T, res *example22Result, mode variantMode) {
 	t.Helper()
 
-	frontendDep, frontendDepPath := findFile(res.Files, "frontend-ns", "frontend", "deployment")
-	backendDep, backendDepPath := findFile(res.Files, "backend-ns", "backend", "deployment")
+	// example22's release.yaml authors `directory: ./dist/<name>` per
+	// boundary, so paths are `dist/<name>/<provider>/...`. Search by the
+	// authored directory segment plus the deployment basename.
+	frontendDep, frontendDepPath := findFile(res.Files, "dist/frontend/", "frontend", "deployment")
+	backendDep, backendDepPath := findFile(res.Files, "dist/backend/", "backend", "deployment")
 
 	if frontendDep == "" {
 		t.Fatalf("frontend deployment not found; files: %v", sortedKeys(res.Files))
@@ -188,8 +191,8 @@ func assertCommonProof(t *testing.T, res *example22Result, mode variantMode) {
 	}
 
 	// 6. Output shape per provider mode
-	hasBoundaryChart := containsAny(res.Files, "boundaries/frontend-ns/Chart.yaml")
-	hasSubChart := containsAny(res.Files, "boundaries/frontend-ns/charts/")
+	hasBoundaryChart := containsAny(res.Files, "dist/frontend/helm/Chart.yaml")
+	hasSubChart := containsAny(res.Files, "dist/frontend/helm/charts/")
 	switch mode {
 	case modeHelmFlat:
 		if hasBoundaryChart {
@@ -279,15 +282,15 @@ func assertSourcedUmbrellaProof(t *testing.T, res *example22Result) {
 	t.Helper()
 
 	// Umbrella shape exists
-	if !containsAny(res.Files, "boundaries/frontend-ns/Chart.yaml") {
+	if !containsAny(res.Files, "dist/frontend/helm-chart/Chart.yaml") {
 		t.Fatalf("frontend umbrella Chart.yaml missing; files: %v", sortedKeys(res.Files))
 	}
-	if !containsAny(res.Files, "boundaries/frontend-ns/charts/") {
+	if !containsAny(res.Files, "dist/frontend/helm-chart/charts/") {
 		t.Fatalf("frontend sub-chart nesting missing; files: %v", sortedKeys(res.Files))
 	}
 
 	// Sub-chart preserves user's original chart name
-	subChart, subPath := findFile(res.Files, "boundaries/frontend-ns/charts/frontend/Chart.yaml")
+	subChart, subPath := findFile(res.Files, "dist/frontend/helm-chart/charts/frontend/Chart.yaml")
 	if subChart == "" {
 		t.Fatalf("frontend sub-chart Chart.yaml not found; files: %v", sortedKeys(res.Files))
 	}
@@ -296,7 +299,7 @@ func assertSourcedUmbrellaProof(t *testing.T, res *example22Result) {
 	}
 
 	// Umbrella dep uses original chart name with alias = instance_id
-	umbrella, umbrellaPath := findFile(res.Files, "boundaries/frontend-ns/Chart.yaml")
+	umbrella, umbrellaPath := findFile(res.Files, "dist/frontend/helm-chart/Chart.yaml")
 	if !strings.Contains(umbrella, "- name: web-ui") {
 		t.Errorf("umbrella dep missing original chart name `web-ui` (%s):\n%s", umbrellaPath, umbrella)
 	}
@@ -305,7 +308,7 @@ func assertSourcedUmbrellaProof(t *testing.T, res *example22Result) {
 	}
 
 	// Umbrella values.yaml scopes per-instance values
-	frontendValues, fvPath := findFile(res.Files, "boundaries/frontend-ns/values.yaml")
+	frontendValues, fvPath := findFile(res.Files, "dist/frontend/helm-chart/values.yaml")
 	if frontendValues == "" {
 		t.Fatalf("frontend umbrella values.yaml missing; files: %v", sortedKeys(res.Files))
 	}
@@ -322,7 +325,7 @@ func assertSourcedUmbrellaProof(t *testing.T, res *example22Result) {
 	}
 
 	// Backend boundary: Release .infra.replicas=3 → backend.replicas
-	backendValues, bvPath := findFile(res.Files, "boundaries/backend-ns/values.yaml")
+	backendValues, bvPath := findFile(res.Files, "dist/backend/helm-chart/values.yaml")
 	if backendValues == "" {
 		t.Fatalf("backend umbrella values.yaml missing; files: %v", sortedKeys(res.Files))
 	}

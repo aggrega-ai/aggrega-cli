@@ -308,11 +308,11 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 	foundFRDep := false
 	frFiles := []string{}
 	for _, k := range keys {
-		if strings.Contains(k, "boundaries/local/default/api-deployment.yaml") &&
+		if strings.Contains(k, "boundaries/local/default/helm-chart/api-deployment.yaml") &&
 			!strings.Contains(k, "features/") {
 			foundBaseDep = true
 		}
-		if strings.Contains(k, "boundaries/local/default/features/mon/") {
+		if strings.Contains(k, "boundaries/local/default/helm-chart/features/mon/") {
 			frFiles = append(frFiles, k)
 			if strings.Contains(k, "deployment.yaml") {
 				foundFRDep = true
@@ -450,7 +450,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 	// Credential FR files live under secrets/<secretName>/ off the boundary root
 	var secretDep string
 	for k := range result.Files {
-		if strings.Contains(k, "boundaries/local/default/secrets/root_password/") &&
+		if strings.Contains(k, "boundaries/local/default/helm-chart/secrets/root_password/") &&
 			strings.Contains(k, "deployment.yaml") {
 			secretDep = k
 			break

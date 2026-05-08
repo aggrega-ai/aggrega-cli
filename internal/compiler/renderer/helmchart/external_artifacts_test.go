@@ -135,7 +135,7 @@ spec:
 		t.Fatalf("RenderAll: %v", err)
 	}
 
-	const target = "boundaries/production/charts/api/templates/crd.yaml"
+	const target = "boundaries/production/helm-chart/charts/api/templates/crd.yaml"
 	body, ok := result.Files[target]
 	if !ok {
 		gotPaths := make([]string, 0, len(result.Files))
@@ -171,10 +171,18 @@ spec:
 
 	// Sanity: the chart-root Chart.yaml and the placeholder template the
 	// fixture authored should also have landed under the per-node tree.
-	if _, ok := result.Files["boundaries/production/charts/api/Chart.yaml"]; !ok {
-		t.Errorf("expected the sourced Chart.yaml to land under boundaries/production/charts/api/; got %v keys", len(result.Files))
+	if _, ok := result.Files["boundaries/production/helm-chart/charts/api/Chart.yaml"]; !ok {
+		paths := make([]string, 0, len(result.Files))
+		for p := range result.Files {
+			paths = append(paths, p)
+		}
+		t.Errorf("expected the sourced Chart.yaml to land under boundaries/production/helm-chart/charts/api/; got paths %v", paths)
 	}
-	if _, ok := result.Files["boundaries/production/charts/api/templates/_app.yaml"]; !ok {
-		t.Errorf("expected the placeholder template to land alongside the injected CRD")
+	if _, ok := result.Files["boundaries/production/helm-chart/charts/api/templates/_app.yaml"]; !ok {
+		paths := make([]string, 0, len(result.Files))
+		for p := range result.Files {
+			paths = append(paths, p)
+		}
+		t.Errorf("expected the placeholder template to land alongside the injected CRD; got paths %v", paths)
 	}
 }
