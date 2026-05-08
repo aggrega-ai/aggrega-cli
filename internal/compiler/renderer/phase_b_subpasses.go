@@ -286,6 +286,10 @@ func phaseB6(
 	secretsForNode types.OrderedMap[types.IRSecretEntry],
 	recipeLookup RecipeLookup,
 	nodeCtx NodeRenderContext,
+	boundaryFRState *BoundaryFRState,
+	graph *types.IRGraph,
+	release *types.Release,
+	boundaryAnnotations map[string]types.OrderedMap[string],
 ) (map[string][]byte, error) {
 	out := map[string][]byte{}
 	nodeID := state.NodeID
@@ -296,9 +300,30 @@ func phaseB6(
 	// build feature-scoped context, evaluate FR valuesMapping, dispatch to
 	// the engine named by the FR's own provider, emit under
 	// features/<instance>/.
+	//
+	// Boundary-scope FRs (spec.executionScope: boundary) take a different
+	// dispatch path: dedup by (boundary_path, fr_instance), evaluate against
+	// the boundary-scope TemplateContext (.boundary.* pillars instead of
+	// per-component .context.*), and route output via boundaryFRState for
+	// post-loop assembly. See boundary_fr.go for the full lifecycle.
 	for _, ref := range featureRefs {
 		fr := ref.FeatureRecipe
 		if !isResourceGeneratingFR(fr) {
+			continue
+		}
+
+		if fr.Spec.ExecutionScope == "boundary" && boundaryFRState != nil {
+			key := boundaryFRKey{BoundaryPath: state.BoundaryPath, FRInstance: ref.InstanceName}
+			if boundaryFRState.Dedup[key] {
+				continue // FR already ran for this boundary
+			}
+			boundaryFRState.Dedup[key] = true
+			if err := dispatchBoundaryScopeFR(
+				ctx, fr, ref.InstanceName, key, state, boundaryFRState,
+				nodeCtx, engineFactory, graph, release, boundaryAnnotations,
+			); err != nil {
+				return nil, fmt.Errorf("Step 5 node %q boundary-scope feature %q: %w", nodeID, ref.InstanceName, err)
+			}
 			continue
 		}
 

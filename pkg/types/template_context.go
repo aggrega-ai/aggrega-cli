@@ -113,14 +113,32 @@ type StepOutput struct {
 // at Phase B.6's boundary-scope dispatch branch; component-scope FRs leave the
 // pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
 type BoundaryContext struct {
-	Path                           string                  `json:"path" yaml:"path"`
-	BoundaryName                   string                  `json:"boundary_name" yaml:"boundary_name"`
-	Components                     OrderedMap[interface{}] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
-	InternalUsesEdges              []EnrichedEdge          `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty"`
-	OutgoingCrossBoundaryUsesEdges []EnrichedEdge          `json:"outgoing_cross_boundary_uses_edges,omitempty" yaml:"outgoing_cross_boundary_uses_edges,omitempty"`
-	IncomingCrossBoundaryUsesEdges []EnrichedEdge          `json:"incoming_cross_boundary_uses_edges,omitempty" yaml:"incoming_cross_boundary_uses_edges,omitempty"`
-	CrossBoundaryUsesEdges         []EnrichedEdge          `json:"cross_boundary_uses_edges,omitempty" yaml:"cross_boundary_uses_edges,omitempty"`
-	Labels                         OrderedMap[string]      `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
-	Annotations                    OrderedMap[string]      `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-	FeatureAttachments             []TemplateFeature       `json:"feature_attachments,omitempty" yaml:"feature_attachments,omitempty"`
+	Path                           string                    `json:"path" yaml:"path"`
+	BoundaryName                   string                    `json:"boundary_name" yaml:"boundary_name"`
+	Components                     OrderedMap[ComponentInfo] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
+	InternalUsesEdges              []EnrichedEdge            `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty"`
+	OutgoingCrossBoundaryUsesEdges []EnrichedEdge            `json:"outgoing_cross_boundary_uses_edges,omitempty" yaml:"outgoing_cross_boundary_uses_edges,omitempty"`
+	IncomingCrossBoundaryUsesEdges []EnrichedEdge            `json:"incoming_cross_boundary_uses_edges,omitempty" yaml:"incoming_cross_boundary_uses_edges,omitempty"`
+	CrossBoundaryUsesEdges         []EnrichedEdge            `json:"cross_boundary_uses_edges,omitempty" yaml:"cross_boundary_uses_edges,omitempty"`
+	Labels                         OrderedMap[string]        `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
+	Annotations                    OrderedMap[string]        `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	FeatureAttachments             []TemplateFeature         `json:"feature_attachments,omitempty" yaml:"feature_attachments,omitempty"`
+}
+
+// ComponentInfo is the per-component view exposed via .boundary.components
+// in boundary-scope FeatureRecipe templates. One entry per component in
+// the boundary's subtree, keyed by instance ID.
+//
+// The Go type fixes the field set to a contract; the JSON schema for
+// .boundary.components stays open (additionalProperties: true) so future
+// pillars can be added without a schema-version bump. When new fields
+// surface, they extend ComponentInfo and the schema description picks
+// them up via documentation rather than schema constraint.
+//
+// Schema: template-context-v1alpha1.schema.json#/properties/boundary/properties/components
+type ComponentInfo struct {
+	InstanceID      string `json:"instance_id" yaml:"instance_id"`
+	Component       string `json:"component" yaml:"component"`
+	ResolvedVersion string `json:"resolved_version,omitempty" yaml:"resolved_version,omitempty"`
+	BoundaryPath    string `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty"`
 }

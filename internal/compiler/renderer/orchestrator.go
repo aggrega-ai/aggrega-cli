@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
+	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -105,6 +106,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 	dispatch := map[dispatchKey]*pendingDispatch{}
 	orderedDispatch := []dispatchKey{}
+
+	// Boundary-scope FR cross-node accumulator (dedup, provides, files,
+	// validator cache). One instance lives per RenderAll invocation;
+	// phaseB6 threads it into the executionScope: boundary dispatch path.
+	// See boundary_fr.go.
+	boundaryFRState := NewBoundaryFRState()
 
 	// Per-node rendering
 	for _, nodeID := range nodeIDs {
@@ -340,20 +347,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if recipe != nil {
 			recipeName = recipe.Metadata.Name
 		}
-		var bi *struct {
-			Directory    string
-			SubDirectory string
-		}
-		if input.ResolveResult != nil {
-			if rbi, ok := input.ResolveResult.BoundaryInfra[nodeID]; ok && rbi != nil {
-				bi = &struct {
-					Directory    string
-					SubDirectory string
-				}{Directory: rbi.Directory, SubDirectory: rbi.SubDirectory}
-			}
-		}
+		var bi *resolver.BoundaryInfra
 		var parameters map[string]interface{}
 		if input.ResolveResult != nil {
+			if rbi, ok := input.ResolveResult.BoundaryInfra[nodeID]; ok && rbi != nil {
+				bi = rbi
+			}
 			parameters = input.ResolveResult.Parameters
 		}
 		finalPath, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters)
@@ -423,7 +422,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// ("features/<instance>/<file>", "secrets/<name>/<file>") merged
 		// into the per-node files map alongside source/workload outputs.
 		secretsForNode, _ := graph.Spec.Secrets.Get(nodeID)
-		frFiles, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx)
+		var releaseForFR *types.Release
+		var boundaryAnnotationsForFR map[string]types.OrderedMap[string]
+		if input.ResolveResult != nil {
+			releaseForFR = input.ResolveResult.Release
+			boundaryAnnotationsForFR = input.ResolveResult.BoundaryAnnotations
+		}
+		frFiles, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR)
 		if err != nil {
 			return nil, err
 		}
@@ -437,6 +442,97 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// to state.Warnings reaches result.Warnings, not just B.3's
 		// helm-chart provenance-skip notice today.
 		result.Warnings = append(result.Warnings, state.Warnings...)
+	}
+
+	// Boundary-scope FR output routing. After the per-node loop, any
+	// boundary-scope FR that ran (deduped to one execution per
+	// (boundary_path, fr_instance)) has produced files captured in
+	// boundaryFRState.Files. Classify each by Intermediate flag:
+	//
+	//   - Intermediate=true: route to the per-(path, provider) dispatch
+	//     group at the FR's evaluated path, using the FR's spec.provider
+	//     for the {{ .provider }} substitution. The compose-bridge case
+	//     drives this — the bridge service fragment lands alongside per-
+	//     component compose contributors at the same dispatch path so the
+	//     compose engine's AssembleBoundary merges them.
+	//   - Intermediate=false: write directly under
+	//     <boundary_directory>/<provider>/features/<fr_instance>/<file>.
+	//
+	// Synthetic node-IDs ("<boundary-fr>:<instance>") distinguish boundary-
+	// scope contributions from per-component contributions in the dispatch
+	// group's per-node maps.
+	for key, files := range boundaryFRState.Files {
+		// Look up the FR by walking the release; the FR's provider is
+		// what determines the dispatch path's provider component.
+		feat, found := lookupBoundaryFeatureAttachment(input.ResolveResult.Release, key.BoundaryPath, key.FRInstance)
+		if !found {
+			continue
+		}
+		// Resolve FR by type to get its provider.
+		fr, ok := recipeLookup.FeatureRecipe(feat.Type)
+		if !ok {
+			continue
+		}
+		frProvider := fr.Spec.Provider
+		// Compute the dispatch path for this boundary-scope FR. Default
+		// behavior matches per-component: boundaries/<bp>/<provider>/.
+		// Operator-authored directory:/subDirectory: would alter this;
+		// for the FR's perspective, we use the boundary's BoundaryInfra
+		// as the source of authored values.
+		// Boundary-scope FRs have no per-component BoundaryInfra entry —
+		// the FR is attached at the boundary, not at a component. Pass nil
+		// to use computeFinalPath's defaults (empty directory + empty
+		// subDirectory → boundaries/<bp>/<frProvider>/).
+		var parameters map[string]interface{}
+		if input.ResolveResult != nil {
+			parameters = input.ResolveResult.Parameters
+		}
+		// Use the FR's provider for the {{ .provider }} substitution
+		// instead of any per-component provider.
+		finalPath, err := computeFinalPath("<boundary-fr>:"+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, nil, parameters)
+		if err != nil {
+			return nil, fmt.Errorf("Step 5 boundary-scope FR %q path eval: %w", key.FRInstance, err)
+		}
+		dKey := dispatchKey{Path: finalPath, Provider: frProvider}
+		syntheticNodeID := "<boundary-fr>:" + key.FRInstance
+		if _, ok := dispatch[dKey]; !ok {
+			dispatch[dKey] = &pendingDispatch{
+				files:           map[string]map[string][]byte{},
+				intermediates:   map[string][]EmittedFile{},
+				nodeAnnotations: map[string]map[string]string{},
+				nodeComponent:   map[string]string{},
+				engineByNode:    map[string]Engine{},
+			}
+			orderedDispatch = append(orderedDispatch, dKey)
+		}
+		intermediates := []EmittedFile{}
+		nodeFiles := map[string][]byte{}
+		for _, f := range files {
+			if f.Intermediate {
+				intermediates = append(intermediates, f)
+				continue
+			}
+			// Intermediate=false: emit directly under features/<instance>/.
+			nodeFiles["features/"+key.FRInstance+"/"+f.Name] = f.Body
+		}
+		if len(intermediates) > 0 {
+			dispatch[dKey].intermediates[syntheticNodeID] = append(dispatch[dKey].intermediates[syntheticNodeID], intermediates...)
+		}
+		if len(nodeFiles) > 0 {
+			dispatch[dKey].files[syntheticNodeID] = nodeFiles
+		}
+		// Record the boundary as a contributor for the dispatch group's
+		// diagnostic context.
+		alreadyContributing := false
+		for _, existing := range dispatch[dKey].contributingBoundaries {
+			if existing == key.BoundaryPath {
+				alreadyContributing = true
+				break
+			}
+		}
+		if !alreadyContributing {
+			dispatch[dKey].contributingBoundaries = append(dispatch[dKey].contributingBoundaries, key.BoundaryPath)
+		}
 	}
 
 	// Finalize per-(path, provider) output. Sort dispatch keys for
@@ -673,9 +769,15 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 // path-template variable allowlist and returns the dispatch path used for
 // per-(path, provider) grouping.
 //
+// bi is the resolver-side per-component BoundaryInfra (the same struct
+// already threaded through the orchestrator from input.ResolveResult.
+// BoundaryInfra). Pass nil to use defaults across the board (e.g., when
+// computing a path for a boundary-scope contributor that has no
+// per-component BoundaryInfra entry).
+//
 // Defaults:
-//   - bi.Directory empty → "boundaries/<bp>" (today's per-boundary segregation).
-//   - bi.SubDirectory empty → render `{{ .provider }}` against the per-component
+//   - bi nil OR bi.Directory empty → "boundaries/<bp>" (today's per-boundary segregation).
+//   - bi nil OR bi.SubDirectory empty → render `{{ .provider }}` against the per-component
 //     provider name.
 //
 // Available template variables: .provider, .boundary_name, .parameters.<key>,
@@ -684,10 +786,7 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 // missingkey=error per the path-template strictness policy.
 func computeFinalPath(
 	nodeID, bp, providerName, recipeName string,
-	bi *struct {
-		Directory    string
-		SubDirectory string
-	},
+	bi *resolver.BoundaryInfra,
 	parameters map[string]interface{},
 ) (string, error) {
 	data := map[string]interface{}{
