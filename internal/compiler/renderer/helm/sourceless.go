@@ -32,6 +32,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 	replicas := intFromValues(values, "replicas", 1)
 
 	aggreraLabels := buildAggreraLabels(nodeCtx)
+	aggreraAnnotations := buildAggreraAnnotations(nodeCtx)
 	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
 	resourceLabels := map[string]string{}
 	for k, v := range selectorLabels {
@@ -39,6 +40,14 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 	}
 	for k, v := range aggreraLabels {
 		resourceLabels[k] = v
+	}
+	// Sourceless mode produces synthesized resources (Deployment, Service)
+	// — never Helm hooks — so hook-weight emission is N/A here. The Deployment
+	// and Service get the always-emit annotations (currently
+	// argocd.argoproj.io/sync-wave when SyncWave != 0).
+	resourceAnnotations := map[string]string{}
+	for k, v := range aggreraAnnotations {
+		resourceAnnotations[k] = v
 	}
 
 	containerPorts, svcPorts := parsePorts(ports)
@@ -50,7 +59,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 	deploy := Deployment{
 		APIVersion: k8sDeploymentAPIVersion,
 		Kind:       "Deployment",
-		Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels},
+		Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels, Annotations: nilIfEmpty(resourceAnnotations)},
 		Spec: DeploymentSpec{
 			Replicas: &replicasInt32,
 			Selector: &LabelSelector{MatchLabels: selectorLabels},
@@ -78,7 +87,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 		svc := Service{
 			APIVersion: k8sServiceAPIVersion,
 			Kind:       "Service",
-			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels},
+			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels, Annotations: nilIfEmpty(resourceAnnotations)},
 			Spec: ServiceSpec{
 				Type:     "ClusterIP",
 				Selector: selectorLabels,
@@ -261,4 +270,14 @@ func splitPort(p string) (host, container int) {
 func sanitizeContainerName(id string) string {
 	r := strings.NewReplacer(".", "-", "_", "-")
 	return r.Replace(id)
+}
+
+// nilIfEmpty returns nil when m is empty so yaml `omitempty` elides the
+// metadata.annotations key entirely (preserves byte-identity for the
+// default-0 sync-wave case across rendered fixtures).
+func nilIfEmpty(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }

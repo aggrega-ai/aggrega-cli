@@ -20,16 +20,17 @@ import (
 //   - renderer.WorkloadSynthesizer — per-node Workload → compose-fragment
 //     translation; emitted as Intermediate=true so the orchestrator never
 //     ships fragments to disk.
-//   - renderer.ReleaseComposer — Release-level merge of every node's
-//     fragment into a single docker-compose.yaml at the Release output
-//     root, with per-boundary networks, depends_on inference from IR uses
-//     edges, and cross-boundary collision detection.
+//   - renderer.BoundaryAssembler — per-(evaluated_path, provider) merge
+//     of every contributor's fragment into a single docker-compose.yaml
+//     at the dispatch path, with per-boundary networks, depends_on
+//     inference from IR uses edges, and cross-boundary service-name
+//     collision detection.
 type ComposeEngine struct{}
 
 var (
 	_ renderer.Engine              = (*ComposeEngine)(nil)
 	_ renderer.WorkloadSynthesizer = (*ComposeEngine)(nil)
-	_ renderer.ReleaseComposer     = (*ComposeEngine)(nil)
+	_ renderer.BoundaryAssembler   = (*ComposeEngine)(nil)
 )
 
 // Render produces a map of relative file paths → YAML bytes for the compose

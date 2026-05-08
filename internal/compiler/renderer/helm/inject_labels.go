@@ -142,3 +142,137 @@ func chooseScalarStyle(v string) yaml.Style {
 	}
 	return 0
 }
+
+// injectAggreraAnnotations post-processes rendered YAML (possibly multi-
+// document) and merges aggrega-managed annotations into each document's
+// metadata.annotations map. Chart-author annotations are preserved;
+// aggrega keys overwrite on collision.
+//
+// Documents without a metadata map are left untouched (they aren't K8s-
+// shaped). Multi-doc boundaries ("---") are preserved via yaml.Encoder
+// per document.
+//
+// hookWeight, when non-empty, is emitted as helm.sh/hook-weight ONLY on
+// resources that already carry a helm.sh/hook annotation (chart-author
+// hook markers). Non-hook resources receive only the always-emit
+// annotations set.
+func injectAggreraAnnotations(yamlBytes []byte, annotations map[string]string, hookWeight string) ([]byte, error) {
+	if len(annotations) == 0 && hookWeight == "" {
+		return yamlBytes, nil
+	}
+
+	keys := make([]string, 0, len(annotations))
+	for k := range annotations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	dec := yaml.NewDecoder(bytes.NewReader(yamlBytes))
+	var docs []*yaml.Node
+	for {
+		var doc yaml.Node
+		if err := dec.Decode(&doc); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("parse rendered YAML: %w", err)
+		}
+		docs = append(docs, &doc)
+	}
+
+	for _, doc := range docs {
+		if doc == nil || doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+			continue
+		}
+		root := doc.Content[0]
+		if root == nil || root.Kind != yaml.MappingNode {
+			continue
+		}
+		mergeAnnotationsIntoMetadata(root, keys, annotations, hookWeight)
+	}
+
+	var buf bytes.Buffer
+	for i, doc := range docs {
+		if i > 0 {
+			buf.WriteString("---\n")
+		}
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(2)
+		if err := enc.Encode(doc); err != nil {
+			return nil, fmt.Errorf("encode rendered YAML: %w", err)
+		}
+		_ = enc.Close()
+	}
+
+	return buf.Bytes(), nil
+}
+
+// mergeAnnotationsIntoMetadata walks a root mapping node for a K8s
+// manifest, finds or creates `metadata.annotations`, and merges the
+// aggrega annotations into it (aggrega wins on key collision; chart-
+// author entries preserved otherwise).
+//
+// hookWeight, when non-empty, is injected as helm.sh/hook-weight ONLY
+// when the manifest already carries a helm.sh/hook annotation.
+func mergeAnnotationsIntoMetadata(root *yaml.Node, keys []string, annotations map[string]string, hookWeight string) {
+	metadata := findMapChild(root, "metadata")
+	if metadata == nil {
+		metadata = appendMapChild(root, "metadata")
+	}
+	annotationsNode := findMapChild(metadata, "annotations")
+	if annotationsNode == nil {
+		annotationsNode = appendMapChild(metadata, "annotations")
+	}
+
+	// Detect helm.sh/hook before mutating annotations: scan existing
+	// keys for the marker. The chart author sets this via templates;
+	// Aggrega never adds it.
+	isHook := false
+	for i := 0; i < len(annotationsNode.Content); i += 2 {
+		if i+1 >= len(annotationsNode.Content) {
+			break
+		}
+		if annotationsNode.Content[i].Value == "helm.sh/hook" {
+			isHook = true
+			break
+		}
+	}
+
+	existing := map[string]int{}
+	for i := 0; i < len(annotationsNode.Content); i += 2 {
+		if i+1 >= len(annotationsNode.Content) {
+			break
+		}
+		existing[annotationsNode.Content[i].Value] = i + 1
+	}
+
+	for _, k := range keys {
+		v := annotations[k]
+		if idx, ok := existing[k]; ok {
+			annotationsNode.Content[idx].Kind = yaml.ScalarNode
+			annotationsNode.Content[idx].Tag = "!!str"
+			annotationsNode.Content[idx].Value = v
+			annotationsNode.Content[idx].Style = chooseScalarStyle(v)
+			continue
+		}
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+		valNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v}
+		valNode.Style = chooseScalarStyle(v)
+		annotationsNode.Content = append(annotationsNode.Content, keyNode, valNode)
+	}
+
+	if isHook && hookWeight != "" {
+		const hookWeightKey = "helm.sh/hook-weight"
+		if idx, ok := existing[hookWeightKey]; ok {
+			annotationsNode.Content[idx].Kind = yaml.ScalarNode
+			annotationsNode.Content[idx].Tag = "!!str"
+			annotationsNode.Content[idx].Value = hookWeight
+			annotationsNode.Content[idx].Style = chooseScalarStyle(hookWeight)
+		} else {
+			keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: hookWeightKey}
+			valNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: hookWeight}
+			valNode.Style = chooseScalarStyle(hookWeight)
+			annotationsNode.Content = append(annotationsNode.Content, keyNode, valNode)
+		}
+	}
+}

@@ -36,6 +36,23 @@ func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	return labels
 }
 
+// buildAggreraAnnotations produces the aggrega-managed annotation set for
+// downstream K8s manifests rendered from this helm-chart sub-chart. API
+// parity with the helm provider's same-named function: the helm-chart
+// engine itself does not render manifests at compile time (manifest
+// rendering happens at downstream `helm install`), so this function is
+// available for chart-author-side templates that consume the annotations
+// or for fixture-based tests asserting parity. Currently emits
+// argocd.argoproj.io/sync-wave when nodeCtx.SyncWave != 0; default-0
+// elide preserved.
+func buildAggreraAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
+	annotations := map[string]string{}
+	if nodeCtx.SyncWave != 0 {
+		annotations["argocd.argoproj.io/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
+	}
+	return annotations
+}
+
 // sortedLabelKeys returns map keys sorted for deterministic YAML output.
 func sortedLabelKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))

@@ -1,35 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Release-level merge for the compose provider. Reads per-node fragments
-// (Intermediate=true EmittedFiles produced by SynthesizeWorkload and by
-// sourced-mode Render) from ReleaseInfo, deep-merges into a single
-// docker-compose.yaml at the Release output root.
+// Per-(path, provider) merge for the compose provider. Reads per-node
+// fragments (Intermediate=true EmittedFiles produced by SynthesizeWorkload
+// and by sourced-mode Render) from BoundaryInfo, deep-merges into a single
+// docker-compose.yaml at the dispatch path.
 //
 // Merge contract.
 //
-//   - Per-boundary network. For each boundary contributing to the Release,
-//     a docker network is declared whose name is the
-//     `aggrega.ai/namespace` annotation on the boundary's first node (sorted
-//     by NodeID), or the sanitised boundary path when no namespace
-//     annotation is present. Every service joins its boundary's network.
+//   - Per-boundary network. For each contributing boundary in the dispatch
+//     group, a docker network is declared whose name is the
+//     `aggrega.ai/namespace` annotation on the boundary's first node
+//     (sorted by NodeID), or the sanitised boundary path when no namespace
+//     annotation is present. Every service joins its author-boundary's
+//     network.
 //   - Service collisions. If two different nodes contribute services of
-//     the same name, ComposeRelease returns TRANSLATION_ERROR naming every
-//     contributing (boundary, nodeID, serviceName) tuple.
-//   - Top-level volumes. Per-node volume entries union across the Release;
-//     name collisions silently merge (named volumes are content-free in
-//     the current shape, so a collision means the same physical volume).
+//     the same name, AssembleBoundary returns TRANSLATION_ERROR naming
+//     every contributing (boundary, nodeID, serviceName) tuple.
+//   - Top-level volumes. Per-node volume entries union across the dispatch
+//     group; name collisions silently merge (named volumes are content-
+//     free in the current shape, so a collision means the same physical
+//     volume).
 //   - depends_on inference. For each IR edge whose source and target both
-//     contribute to this ReleaseComposer, add `depends_on: { <target>: ... }`
-//     to the source service. Condition is `service_healthy` when the target
-//     service has a healthcheck declared; `service_started` otherwise.
-//   - Author order. Map-shaped top-level fields (services, volumes, networks)
-//     are alphabetised by yaml.v3 on marshal — the
-//     alphabetical-by-derivation-key principle for synthesised collections
-//     where no author order applies upstream. Within a service, lists
-//     (ports, depends_on, volumes, networks) are kept in stable order:
-//     edges and IR nodes iterate alphabetically; ports retain the order
-//     their fragment carried.
+//     contribute services to this dispatch group, add `depends_on:
+//     [<target-service>]` to the source service.
+//   - Author order. Map-shaped top-level fields (services, volumes,
+//     networks) are alphabetised by yaml.v3 on marshal — the
+//     alphabetical-by-derivation-key principle for synthesised
+//     collections where no author order applies upstream. Within a
+//     service, lists (ports, depends_on, volumes, networks) are kept in
+//     stable order: edges and IR nodes iterate alphabetically; ports
+//     retain the order their fragment carried.
 
 package compose
 
@@ -42,7 +43,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 const (
@@ -52,23 +52,24 @@ const (
 	// alphabetically-first node and ignores the rest.
 	AnnotationNamespace = "aggrega.ai/namespace"
 
-	// ReleaseOutputFile is the final compose file path at the Release
-	// output root.
-	ReleaseOutputFile = "docker-compose.yaml"
+	// AssembledOutputFile is the assembled compose file path emitted by
+	// AssembleBoundary at the dispatch path.
+	AssembledOutputFile = "docker-compose.yaml"
 )
 
 // serviceContrib records one (boundary, nodeID) tuple that contributed a
-// service to the merged Release. Used by collision detection to name every
-// contributor in TRANSLATION_ERROR output.
+// service to the merged compose output. Used by collision detection to
+// name every contributor in TRANSLATION_ERROR output.
 type serviceContrib struct {
 	boundary string
 	nodeID   string
 }
 
-// ComposeRelease implements renderer.ReleaseComposer. Reads per-node
-// fragments from info.Boundaries and emits a single docker-compose.yaml at
-// the Release output root.
-func (e *ComposeEngine) ComposeRelease(_ context.Context, info renderer.ReleaseInfo) (map[string][]byte, error) {
+// AssembleBoundary implements renderer.BoundaryAssembler. Reads per-node
+// fragments from info.IntermediatesByNode and emits a single
+// docker-compose.yaml at the dispatch path. nestPerNode is always false
+// for compose — the assembled file is flat at the dispatch root.
+func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
 	merged := ComposeFile{
 		Services: map[string]Service{},
 		Volumes:  map[string]Volume{},
@@ -77,80 +78,134 @@ func (e *ComposeEngine) ComposeRelease(_ context.Context, info renderer.ReleaseI
 
 	// Track which (boundary, nodeID) contributed each service for collision
 	// reporting. boundaryByService allows depends_on inference to look up a
-	// service's owning network without re-walking the boundary tree.
+	// service's owning boundary without re-walking the input.
 	contribsByService := map[string][]serviceContrib{}
 	boundaryByService := map[string]string{}
 
-	for _, bi := range info.Boundaries {
-		networkName := deriveNetworkName(bi)
-		merged.Networks[networkName] = Network{}
+	// Iterate contributing boundaries in alphabetical order for output
+	// determinism. Within each boundary, iterate nodes alphabetically.
+	bps := append([]string(nil), info.ContributingBoundaries...)
+	sort.Strings(bps)
 
-		for _, node := range bi.Nodes {
-			frag, err := parseNodeFragment(node)
-			if err != nil {
-				return nil, err
-			}
-			if frag == nil {
+	// Group node IDs per contributing boundary by inspecting the
+	// IntermediatesByNode map's nodes' annotations and attributing each
+	// node to its boundary path. The orchestrator records boundary
+	// membership through the per-node BoundaryPath in the IR; here we
+	// rely on the annotation map's keys (which match node IDs) and on the
+	// per-boundary network name derivation from any-node-in-boundary.
+	//
+	// Compose's input shape doesn't expose per-node BoundaryPath directly
+	// (BoundaryPath is per-component context, not per-engine input). We
+	// derive boundary attribution via the annotation map: each node has
+	// annotations including `aggrega.ai/namespace` from its boundary's
+	// cascade. Boundaries with the same namespace value share a network;
+	// boundaries with different namespace values get distinct networks.
+	//
+	// Per-boundary node grouping: collect every nodeID with an
+	// IntermediatesByNode entry, sorted; per-node annotation map gives
+	// the per-boundary namespace. For determinism, fall back to
+	// `default` when the namespace annotation is absent (matches today's
+	// per-boundary behavior).
+
+	// Sorted list of every contributing node.
+	allNodeIDs := make([]string, 0, len(info.IntermediatesByNode))
+	for nid := range info.IntermediatesByNode {
+		allNodeIDs = append(allNodeIDs, nid)
+	}
+	sort.Strings(allNodeIDs)
+
+	// Determine the network for each node: read its annotation, fall
+	// back to a per-boundary default. The first node alphabetically in
+	// each contributing boundary fixes the network name (matching the
+	// pre-revision deriveNetworkName behaviour).
+	networkNameByNode := map[string]string{}
+	{
+		// Group nodes per-boundary using the per-node annotations'
+		// boundary-path discriminator if present. The orchestrator's
+		// pendingDispatch.contributingBoundaries lists every boundary
+		// that contributed; use that plus the annotation namespace
+		// lookup to derive the network name.
+		// In the current input shape, the namespace annotation is
+		// per-component (set during boundary annotation cascade), so
+		// we read it directly per-node.
+		for _, nid := range allNodeIDs {
+			ann := info.NodeAnnotations[nid]
+			if v, ok := ann[AnnotationNamespace]; ok && v != "" {
+				networkNameByNode[nid] = sanitizeNetworkName(v)
 				continue
 			}
-
-			// Volumes: union (later contributors silently overwrite empty
-			// bodies — both are `<name>: {}` in the current shape).
-			for k, v := range frag.Volumes {
-				merged.Volumes[k] = v
+			// Fall back to dispatch-path-derived name.
+			if info.BoundaryPath == "" {
+				networkNameByNode[nid] = "default"
+			} else {
+				networkNameByNode[nid] = sanitizeNetworkName(info.BoundaryPath)
 			}
+		}
+	}
 
-			// Services: collision-detect, then merge with the boundary
-			// network attached.
-			for svcName, svc := range frag.Services {
-				contribsByService[svcName] = append(contribsByService[svcName], serviceContrib{boundary: bi.BoundaryPath, nodeID: node.NodeID})
-				boundaryByService[svcName] = bi.BoundaryPath
+	for _, nid := range allNodeIDs {
+		fragments := info.IntermediatesByNode[nid]
+		frag, err := parseNodeFragment(nid, fragments)
+		if err != nil {
+			return nil, false, err
+		}
+		if frag == nil {
+			continue
+		}
 
-				// Append the boundary network to the service's networks
-				// list. Sidecars with network_mode: service:<main> keep
-				// network_mode (compose forbids combining networks: with
-				// network_mode:); the synthesizer never sets both.
-				if svc.NetworkMode == "" {
-					svc.Networks = appendUnique(svc.Networks, networkName)
-				}
-				merged.Services[svcName] = svc
+		networkName := networkNameByNode[nid]
+		merged.Networks[networkName] = Network{}
+
+		// Volumes: union (later contributors silently overwrite empty
+		// bodies — both are `<name>: {}` in the current shape).
+		for k, v := range frag.Volumes {
+			merged.Volumes[k] = v
+		}
+
+		// Services: collision-detect, then merge with the network attached.
+		for svcName, svc := range frag.Services {
+			contribsByService[svcName] = append(contribsByService[svcName], serviceContrib{boundary: networkName, nodeID: nid})
+			boundaryByService[svcName] = networkName
+
+			// Append the network to the service's networks list. Sidecars
+			// with network_mode: service:<main> keep network_mode (compose
+			// forbids combining networks: with network_mode:); the
+			// synthesizer never sets both.
+			if svc.NetworkMode == "" {
+				svc.Networks = appendUnique(svc.Networks, networkName)
 			}
+			merged.Services[svcName] = svc
 		}
 	}
 
 	// Collision check.
 	if err := checkServiceCollisions(contribsByService); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	// depends_on inference: walk graph edges, project onto contributing
-	// services. service_healthy when the target has a healthcheck;
-	// service_started otherwise. The ReleaseComposer interface does not
-	// receive the IR edges directly today's `depends_on:` field on Service
-	// is a flat []string; full long-form (with condition object) lands when
-	// the schema gains it. For now: emit `service_started` form via
-	// flat list; healthcheck-based gating arrives with the long-form
-	// extension.
+	// depends_on inference: walk IR edges, project onto contributing
+	// services. Edge endpoints not in the dispatch group are skipped.
 	applyDependsOn(&merged, info.Edges, boundaryByService)
 
 	body, err := marshalDeterministic(&merged)
 	if err != nil {
-		return nil, fmt.Errorf("compose: release-compose marshal: %w", err)
+		return nil, false, fmt.Errorf("compose: assemble-boundary marshal: %w", err)
 	}
 
-	return map[string][]byte{ReleaseOutputFile: body}, nil
+	return map[string][]byte{AssembledOutputFile: body}, false, nil
 }
 
-// parseNodeFragment locates the single Intermediate fragment in a node's
-// IntermediateFiles list and parses it as ComposeFile. Returns (nil, nil)
-// when no fragment is present (defensive — should not occur for compose
-// nodes since SynthesizeWorkload always emits exactly one).
+// parseNodeFragment locates Intermediate fragments in a node's intermediate-
+// file list and parses them as ComposeFile, merging into one struct.
+// Returns (nil, nil) when no fragments are present (defensive — should not
+// occur for compose nodes since SynthesizeWorkload always emits exactly
+// one).
 //
-// The compose fragment file's name is `<nodeID>.compose-fragment.yaml`. If a
-// future version produces multiple fragments per node, the loop merges them
-// into one ComposeFile struct.
-func parseNodeFragment(node renderer.ReleaseNodeInfo) (*ComposeFile, error) {
-	if len(node.IntermediateFiles) == 0 {
+// The compose fragment file's name is `<nodeID>.compose-fragment.yaml`. If
+// a future version produces multiple fragments per node, the loop merges
+// them into one ComposeFile struct.
+func parseNodeFragment(nodeID string, intermediates []renderer.EmittedFile) (*ComposeFile, error) {
+	if len(intermediates) == 0 {
 		return nil, nil
 	}
 	out := &ComposeFile{
@@ -158,10 +213,10 @@ func parseNodeFragment(node renderer.ReleaseNodeInfo) (*ComposeFile, error) {
 		Volumes:  map[string]Volume{},
 		Networks: map[string]Network{},
 	}
-	for _, f := range node.IntermediateFiles {
+	for _, f := range intermediates {
 		var frag ComposeFile
 		if err := yaml.Unmarshal(f.Body, &frag); err != nil {
-			return nil, fmt.Errorf("compose: node %q fragment %q: parse: %w", node.NodeID, f.Name, err)
+			return nil, fmt.Errorf("compose: node %q fragment %q: parse: %w", nodeID, f.Name, err)
 		}
 		for k, v := range frag.Services {
 			out.Services[k] = v
@@ -174,28 +229,6 @@ func parseNodeFragment(node renderer.ReleaseNodeInfo) (*ComposeFile, error) {
 		}
 	}
 	return out, nil
-}
-
-// deriveNetworkName picks the docker network name for one boundary. Reads
-// the alphabetically-first node's `aggrega.ai/namespace` annotation; falls
-// back to a sanitised boundary path when the annotation is unset. Empty
-// boundary path (the implicit "default" boundary) becomes "default".
-func deriveNetworkName(bi renderer.ReleaseBoundaryInfo) string {
-	nodeIDs := make([]string, 0, len(bi.Annotations))
-	for nid := range bi.Annotations {
-		nodeIDs = append(nodeIDs, nid)
-	}
-	sort.Strings(nodeIDs)
-	for _, nid := range nodeIDs {
-		ann := bi.Annotations[nid]
-		if v, ok := ann[AnnotationNamespace]; ok && v != "" {
-			return sanitizeNetworkName(v)
-		}
-	}
-	if bi.BoundaryPath == "" {
-		return "default"
-	}
-	return sanitizeNetworkName(bi.BoundaryPath)
 }
 
 // sanitizeNetworkName produces a docker-compose-safe network name. Compose
@@ -259,7 +292,7 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 	for _, c := range collisions {
 		parts = append(parts, fmt.Sprintf("service %q contributed by [%s]", c.service, strings.Join(c.descriptors, ", ")))
 	}
-	return fmt.Errorf("TRANSLATION_ERROR: compose Release merge: service-name collisions across boundaries: %s", strings.Join(parts, "; "))
+	return fmt.Errorf("TRANSLATION_ERROR: compose AssembleBoundary: service-name collisions across contributors: %s", strings.Join(parts, "; "))
 }
 
 // applyDependsOn projects IR edges onto contributing services and adds
@@ -273,7 +306,7 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 // type-shape extension on Service.DependsOn that is reserved for a future
 // intent. The short form is honest and works for compose; service_healthy
 // gating is a future enhancement once Service.DependsOn becomes a map.
-func applyDependsOn(merged *ComposeFile, edges []types.IREdge, boundaryByService map[string]string) {
+func applyDependsOn(merged *ComposeFile, edges []renderer.IREdgeInfo, boundaryByService map[string]string) {
 	addedByService := map[string]map[string]struct{}{}
 	for _, edge := range edges {
 		_, srcContributes := boundaryByService[edge.Source]

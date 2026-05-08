@@ -335,7 +335,8 @@ func evaluateOneArtifactWithDelims(
 	}
 
 	labels := buildProvenanceLabels(state, nodeCtx)
-	if err := injectProvenanceNode(filename, &node, labels); err != nil {
+	annotations := buildProvenanceAnnotations(state, nodeCtx)
+	if err := injectProvenanceNode(filename, &node, labels, annotations); err != nil {
 		return nil, err
 	}
 
@@ -423,7 +424,7 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 // CATALOG_ERROR rather than silently discarding the user-authored content.
 // Aligns with Invariant 4 — the compiler never silently mutates user
 // content into compliance.
-func injectProvenanceNode(filename string, root *yaml.Node, labels map[string]string) error {
+func injectProvenanceNode(filename string, root *yaml.Node, labels, annotations map[string]string) error {
 	mapping := documentMapping(root)
 	if mapping == nil {
 		return nil
@@ -437,26 +438,41 @@ func injectProvenanceNode(filename string, root *yaml.Node, labels map[string]st
 		return nil
 	}
 
-	labelsKey, labelsNode := findKeyValueNode(metadata, "labels")
-	if labelsKey != nil && labelsNode != nil {
-		labelsNode = unwrapAlias(labelsNode)
-		if labelsNode.Kind != yaml.MappingNode {
-			return fmt.Errorf(
-				"CATALOG_ERROR: artifact %q metadata.labels has unexpected shape (expected mapping, got %s); cannot merge provenance labels",
-				filename, nodeKindName(labelsNode.Kind),
-			)
-		}
-		mergeProvenanceIntoLabels(labelsNode, labels)
+	if err := mergeOrAppendProvenanceMapping(filename, metadata, "labels", labels); err != nil {
+		return err
+	}
+	if err := mergeOrAppendProvenanceMapping(filename, metadata, "annotations", annotations); err != nil {
+		return err
+	}
+	return nil
+}
+
+// mergeOrAppendProvenanceMapping merges entries into the named mapping
+// child of metadata, creating the child if absent. Same Q1a guardrail as
+// the original labels-only path: if the child exists but its kind is not
+// a YAML mapping, return CATALOG_ERROR rather than silently discarding
+// user content. No-op when entries is empty.
+func mergeOrAppendProvenanceMapping(filename string, metadata *yaml.Node, key string, entries map[string]string) error {
+	if len(entries) == 0 {
 		return nil
 	}
-
-	// No labels: key under metadata; append a new mapping node carrying the
-	// provenance set.
-	newLabels := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	mergeProvenanceIntoLabels(newLabels, labels)
+	keyNode, valNode := findKeyValueNode(metadata, key)
+	if keyNode != nil && valNode != nil {
+		valNode = unwrapAlias(valNode)
+		if valNode.Kind != yaml.MappingNode {
+			return fmt.Errorf(
+				"CATALOG_ERROR: artifact %q metadata.%s has unexpected shape (expected mapping, got %s); cannot merge provenance entries",
+				filename, key, nodeKindName(valNode.Kind),
+			)
+		}
+		mergeProvenanceIntoLabels(valNode, entries)
+		return nil
+	}
+	newMapping := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	mergeProvenanceIntoLabels(newMapping, entries)
 	metadata.Content = append(metadata.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "labels"},
-		newLabels,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		newMapping,
 	)
 	return nil
 }

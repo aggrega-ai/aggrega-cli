@@ -15,8 +15,16 @@ import (
 // AssembleBoundary implements renderer.BoundaryAssembler: it emits the umbrella
 // Chart.yaml + values.yaml for the dispatch path. Per-node files are nested
 // under `charts/<nodeID>/` by the orchestrator (nestPerNode = true).
+//
+// Merged-path case: when info.ContributingBoundaries lists more than one
+// boundary, the umbrella aggregates contributors from every boundary into
+// one Chart.yaml. The orchestrator's CHART_NAME_MISMATCH guardrail
+// enforces consistent `aggrega.ai/chart-name` values across contributors
+// before AssembleBoundary runs; when info.ChartName is set, the umbrella
+// uses it as the chart's name. Otherwise the umbrella derives the name
+// from the dispatch path (today's behavior).
 func (e *HelmEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
-	files, err := BuildUmbrella(info.BoundaryPath, info.AggregateName, info.SubCharts)
+	files, err := BuildUmbrella(info.BoundaryPath, info.AggregateName, info.SubCharts, info.ChartName)
 	if err != nil {
 		return nil, false, err
 	}
@@ -40,10 +48,18 @@ type umbrellaChart struct {
 	Dependencies []umbrellaChartDependency `yaml:"dependencies,omitempty"`
 }
 
-// BuildUmbrella produces the umbrella Chart.yaml + values.yaml for a boundary.
-// Returns a map of relative paths (e.g. "Chart.yaml", "values.yaml") → contents.
-// The caller prefixes these with `boundaries/<boundary>/` when placing them.
-func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo) (map[string][]byte, error) {
+// BuildUmbrella produces the umbrella Chart.yaml + values.yaml for a
+// dispatch path. Returns a map of relative paths (e.g. "Chart.yaml",
+// "values.yaml") → contents. The caller prefixes these with the dispatch
+// path when placing them.
+//
+// chartNameOverride is the cascaded `aggrega.ai/chart-name` annotation
+// value when present (set by the orchestrator from the resolver's
+// per-boundary annotation cascade). When non-empty, BuildUmbrella uses
+// it verbatim as the chart's name — the cascade-driven matching is the
+// merged-path scenario's name source. When empty, BuildUmbrella falls
+// back to the path-derived name (today's behavior).
+func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string) (map[string][]byte, error) {
 	if boundaryName == "" {
 		return nil, fmt.Errorf("helmchart umbrella: empty boundary name")
 	}
@@ -53,9 +69,14 @@ func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 		return subCharts[i].InstanceID < subCharts[j].InstanceID
 	})
 
-	name := sanitizeChartName(boundaryName)
-	if aggregateName != "" {
-		name = sanitizeChartName(aggregateName) + "-" + name
+	var name string
+	if chartNameOverride != "" {
+		name = sanitizeChartName(chartNameOverride)
+	} else {
+		name = sanitizeChartName(boundaryName)
+		if aggregateName != "" {
+			name = sanitizeChartName(aggregateName) + "-" + name
+		}
 	}
 
 	deps := make([]umbrellaChartDependency, 0, len(subCharts))

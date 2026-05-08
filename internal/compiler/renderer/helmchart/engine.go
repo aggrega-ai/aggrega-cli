@@ -21,6 +21,7 @@ type HelmEngine struct{}
 
 var (
 	_ renderer.Engine                   = (*HelmEngine)(nil)
+	_ renderer.BoundaryAssembler        = (*HelmEngine)(nil)
 	_ renderer.ExternalArtifactsHandler = (*HelmEngine)(nil)
 	_ renderer.ArtifactsPathProvider    = (*HelmEngine)(nil)
 	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)

@@ -75,8 +75,10 @@ func (e *HelmEngine) SynthesizeWorkload(
 	useStatefulSet := workloadHasPersistentTemplate(w)
 
 	labels := buildAggreraLabels(nodeCtx)
+	annotations := buildAggreraAnnotations(nodeCtx)
 	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
 	resourceLabels := mergeLabels(selectorLabels, labels)
+	resourceAnnotations := nilIfEmpty(annotations)
 	namespace := renderer.NamespaceFromAnnotations(nodeCtx.Annotations)
 
 	var out []renderer.EmittedFile
@@ -117,7 +119,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 		ss := StatefulSet{
 			APIVersion: k8sStatefulSetAPIVersion,
 			Kind:       "StatefulSet",
-			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels},
+			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: StatefulSetSpec{
 				Replicas:             &replicas,
 				Selector:             &LabelSelector{MatchLabels: selectorLabels},
@@ -137,7 +139,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 		dep := Deployment{
 			APIVersion: k8sDeploymentAPIVersion,
 			Kind:       "Deployment",
-			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels},
+			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: DeploymentSpec{
 				Replicas: &replicas,
 				Selector: &LabelSelector{MatchLabels: selectorLabels},
@@ -156,7 +158,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 
 	// PVCs: one per persistent volume (NOT persistentTemplate; those
 	// become volumeClaimTemplates inside the StatefulSet spec).
-	pvcs := translatePersistentPVCs(w, nodeCtx.NodeID, namespace, resourceLabels)
+	pvcs := translatePersistentPVCs(w, nodeCtx.NodeID, namespace, resourceLabels, resourceAnnotations)
 	for _, pvc := range pvcs {
 		body, err := marshalDeterministic(&pvc)
 		if err != nil {
@@ -169,7 +171,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 	}
 
 	// Services: one per Workload.Services entry, in author-order.
-	services, err := translateServices(w, nodeCtx.NodeID, namespace, selectorLabels, resourceLabels)
+	services, err := translateServices(w, nodeCtx.NodeID, namespace, selectorLabels, resourceLabels, resourceAnnotations)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +564,7 @@ func translateVolumeClaimTemplates(w *types.Workload, nodeID string) []Persisten
 
 // translatePersistentPVCs produces standalone PVC resources (one per
 // persistent volume; not persistentTemplate). Author order preserved.
-func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels map[string]string) []PersistentVolumeClaim {
+func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels map[string]string, annotations map[string]string) []PersistentVolumeClaim {
 	var out []PersistentVolumeClaim
 	for name, v := range w.Volumes.All() {
 		if v.Persistent == nil {
@@ -572,9 +574,10 @@ func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels
 			APIVersion: k8sPVCAPIVersion,
 			Kind:       "PersistentVolumeClaim",
 			Metadata: ObjectMeta{
-				Name:      nodeID + "-" + name,
-				Namespace: namespace,
-				Labels:    labels,
+				Name:        nodeID + "-" + name,
+				Namespace:   namespace,
+				Labels:      labels,
+				Annotations: annotations,
 			},
 			Spec: buildPVCSpec(v.Persistent.Size, v.Persistent.Class),
 		}
@@ -602,7 +605,7 @@ func buildPVCSpec(size, class string) PersistentVolumeClaimSpec {
 // translateServices walks Workload.Services in author order and produces K8s
 // Service resources. targetPort resolution: look up the port name across
 // all containers; error if not found.
-func translateServices(w *types.Workload, nodeID, namespace string, selectorLabels, resourceLabels map[string]string) ([]Service, error) {
+func translateServices(w *types.Workload, nodeID, namespace string, selectorLabels, resourceLabels map[string]string, resourceAnnotations map[string]string) ([]Service, error) {
 	var out []Service
 
 	containerPortMap := buildContainerPortNameMap(w)
@@ -628,9 +631,10 @@ func translateServices(w *types.Workload, nodeID, namespace string, selectorLabe
 			APIVersion: k8sServiceAPIVersion,
 			Kind:       "Service",
 			Metadata: ObjectMeta{
-				Name:      nodeID + "-" + svcName,
-				Namespace: namespace,
-				Labels:    resourceLabels,
+				Name:        nodeID + "-" + svcName,
+				Namespace:   namespace,
+				Labels:      resourceLabels,
+				Annotations: resourceAnnotations,
 			},
 			Spec: ServiceSpec{
 				Type:     translateServiceType(svcSpec.Type),

@@ -527,10 +527,34 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
 		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
 		if pd.assembler != nil && key.Path != "" {
+			edges := make([]IREdgeInfo, 0, len(graph.Spec.Edges))
+			for _, e := range graph.Spec.Edges {
+				edges = append(edges, IREdgeInfo{Source: e.Source, Target: e.Target})
+			}
+			// Cascaded chart-name lookup for the helm-chart provider's
+			// merged-path scenario; empty when no cascade value resolves
+			// (engine falls back to path-derived naming).
+			chartName := ""
+			if key.Provider == "helm-chart" && input.ResolveResult != nil {
+				for _, bp := range pd.contributingBoundaries {
+					if ann, ok := input.ResolveResult.BoundaryAnnotations[bp]; ok {
+						if v, ok := ann.Get("aggrega.ai/chart-name"); ok && v != "" {
+							chartName = v
+							break
+						}
+					}
+				}
+			}
 			info := BoundaryInfo{
-				BoundaryPath:  key.Path,
-				AggregateName: graph.Metadata.AggregateName,
-				SubCharts:     pd.subCharts,
+				BoundaryPath:           key.Path,
+				AggregateName:          graph.Metadata.AggregateName,
+				SubCharts:              pd.subCharts,
+				IntermediatesByNode:    pd.intermediates,
+				NodeAnnotations:        pd.nodeAnnotations,
+				NodeComponent:          pd.nodeComponent,
+				ContributingBoundaries: pd.contributingBoundaries,
+				Edges:                  edges,
+				ChartName:              chartName,
 			}
 			boundaryFiles, nestPerNode, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {

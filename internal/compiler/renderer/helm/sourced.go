@@ -68,6 +68,8 @@ func renderSourced(
 	// is post-processed to merge aggrega.ai/* provenance labels into
 	// metadata.labels so sourced mode matches sourceless-mode's labeling.
 	aggreraLabels := buildAggreraLabels(nodeCtx)
+	aggreraAnnotations := buildAggreraAnnotations(nodeCtx)
+	hookWeight := helmHookWeight(nodeCtx)
 	out := make(map[string][]byte, len(rendered))
 	keys := make([]string, 0, len(rendered))
 	for k := range rendered {
@@ -90,8 +92,12 @@ func renderSourced(
 		if err != nil {
 			return nil, fmt.Errorf("helm: node %q: inject labels into %q: %w", nodeCtx.NodeID, base, err)
 		}
+		annotated, err := injectAggreraAnnotations(labeled, aggreraAnnotations, hookWeight)
+		if err != nil {
+			return nil, fmt.Errorf("helm: node %q: inject annotations into %q: %w", nodeCtx.NodeID, base, err)
+		}
 		outKey := nodeCtx.NodeID + "-" + base
-		out[outKey] = labeled
+		out[outKey] = annotated
 	}
 
 	return out, nil

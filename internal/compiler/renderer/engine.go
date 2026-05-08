@@ -42,10 +42,55 @@ type BoundaryAssembler interface {
 }
 
 // BoundaryInfo carries everything the BoundaryAssembler needs.
+//
+// BoundaryPath is the dispatch path the assembler writes into.
+// AggregateName is the top-level Aggregate's name (for output identity).
+// SubCharts is the per-sub-chart payload list (helm-chart umbrellas
+// consume this to emit dependencies + sub-chart values; compose ignores).
+//
+// IntermediatesByNode carries the per-contributor Intermediate=true
+// EmittedFiles produced by per-node Render. Compose reads these as
+// fragments and merges into the assembled docker-compose.yaml; helmchart
+// ignores (umbrella content comes from SubCharts).
+//
+// NodeAnnotations is per-node annotation map (NodeID → annotation map).
+// Compose reads `aggrega.ai/namespace` from these to derive a docker
+// network name per contributing boundary.
+//
+// NodeComponent maps NodeID → resolved component-type URI. Used by
+// assemblers that need per-node component identity for output metadata.
+//
+// ContributingBoundaries lists every boundary path whose components fed
+// into this dispatch group. Used for diagnostic context in error messages
+// and for chart-name cascade lookups.
+//
+// Edges carries the IR's directed `uses` edges across the entire graph.
+// Compose uses this to infer `depends_on` between services. Assemblers
+// filter to edges where both endpoints are contributing-service names.
+//
+// ChartName is the cascaded `aggrega.ai/chart-name` annotation value
+// when present (set by the orchestrator from the resolver's per-boundary
+// annotation cascade for the helm-chart provider's merged-path case).
+// Empty when no cascade value resolves; helmchart umbrella falls back to
+// path-derived naming.
 type BoundaryInfo struct {
-	BoundaryPath  string
-	AggregateName string
-	SubCharts     []SubChartInfo
+	BoundaryPath           string
+	AggregateName          string
+	SubCharts              []SubChartInfo
+	IntermediatesByNode    map[string][]EmittedFile
+	NodeAnnotations        map[string]map[string]string
+	NodeComponent          map[string]string
+	ContributingBoundaries []string
+	Edges                  []IREdgeInfo
+	ChartName              string
+}
+
+// IREdgeInfo is the per-edge view passed to a BoundaryAssembler. Decoupled
+// from types.IREdge so the renderer package's BoundaryAssembler input does
+// not depend on pkg/types directly.
+type IREdgeInfo struct {
+	Source string
+	Target string
 }
 
 // SubChartInfo describes one sub-chart contributing to an umbrella chart.

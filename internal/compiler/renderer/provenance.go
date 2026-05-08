@@ -42,6 +42,27 @@ func buildProvenanceLabels(state *PhaseBState, nodeCtx NodeRenderContext) map[st
 	return labels
 }
 
+// buildProvenanceAnnotations produces the canonical aggrega-managed
+// annotation set merged into the metadata.annotations of every emitted
+// artifact whose document carries a metadata block. Distinct from
+// buildProvenanceLabels: annotations carry data downstream tooling reads
+// but doesn't filter on (ArgoCD wave order primarily). Currently emits
+// argocd.argoproj.io/sync-wave when nodeCtx.SyncWave != 0; default-0
+// elide preserved.
+//
+// state is currently unused but accepted for symmetric parameter shape
+// with buildProvenanceLabels, so future provenance annotations sourced
+// from PhaseBState (e.g., recipe-uri-as-annotation) can be added without
+// disturbing call sites.
+func buildProvenanceAnnotations(state *PhaseBState, nodeCtx NodeRenderContext) map[string]string {
+	_ = state
+	annotations := map[string]string{}
+	if nodeCtx.SyncWave != 0 {
+		annotations["argocd.argoproj.io/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
+	}
+	return annotations
+}
+
 // recipeURI assembles the canonical recipe-uri label value from the per-
 // node Recipe identity carried on PhaseBState. Returns "" when either name
 // or version is missing — partial identity is not labelled.
