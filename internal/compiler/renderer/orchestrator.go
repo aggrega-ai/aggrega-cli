@@ -6,6 +6,7 @@ package renderer
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
@@ -18,24 +19,44 @@ type RenderResult struct {
 	Warnings []string
 }
 
-// pendingBoundary holds per-boundary state across the per-node loop and the
-// per-boundary BoundaryComposer / Release-end ReleaseComposer passes.
+// dispatchKey identifies a per-(evaluated_path, provider) dispatch group.
+// Two boundaries with the same evaluated path and provider produce ONE
+// dispatch group receiving contributors from both; mixed-provider boundaries
+// produce one dispatch group per provider at the boundary's evaluated path.
+//
+// Replaces the previous boundary-keyed dispatch model. Per-(path, provider)
+// dispatch grouping enables operator-controlled cross-boundary aggregation
+// via shared `directory:` declarations and naturally accommodates mixed-
+// provider boundaries.
+type dispatchKey struct {
+	Path     string // evaluated final_path (post-template-evaluation)
+	Provider string // resolved per-component recipe.Spec.Provider
+}
+
+// pendingDispatch holds per-(path, provider) state across the per-node loop
+// and the per-(path, provider) BoundaryAssembler assembly pass.
 //
 // intermediates carries Intermediate=true EmittedFiles separately from files
-// so the orchestrator never writes them under boundaries/<bp>/; they flow
-// only to ReleaseComposer at Release-end. nodeAnnotations and nodeComponent
-// are the per-node metadata ReleaseComposer needs to assemble its input
-// (annotations for per-boundary network derivation, component for
-// ReleaseNodeInfo). engineByNode lets the Release-end pass group nodes by
-// the ReleaseComposer-implementing engine instance that rendered each node.
-type pendingBoundary struct {
-	files           map[string]map[string][]byte
-	intermediates   map[string][]EmittedFile
-	nodeAnnotations map[string]map[string]string
-	nodeComponent   map[string]string
-	subCharts       []SubChartInfo
-	composer        BoundaryComposer
-	engineByNode    map[string]Engine
+// so the orchestrator never writes them at the dispatch path directly; they
+// flow only to the BoundaryAssembler at finalization. nodeAnnotations and
+// nodeComponent are the per-node metadata the assembler needs to assemble
+// its input (annotations for per-boundary network derivation, component for
+// per-node info). engineByNode lets the assembly pass map node-IDs to their
+// engine instances for any provider-specific lookups.
+//
+// contributingBoundaries records every boundary path whose components fed
+// into this dispatch group — used for diagnostic messages on collision /
+// chart-name-mismatch errors and for chart-name cascade lookups against
+// the resolver-side BoundaryAnnotations map.
+type pendingDispatch struct {
+	files                  map[string]map[string][]byte
+	intermediates          map[string][]EmittedFile
+	nodeAnnotations        map[string]map[string]string
+	nodeComponent          map[string]string
+	subCharts              []SubChartInfo
+	assembler              BoundaryAssembler
+	engineByNode           map[string]Engine
+	contributingBoundaries []string
 }
 
 // RecipeLookup resolves a component type to its Recipe and FeatureRecipes.
@@ -82,8 +103,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, fmt.Errorf("Step 5 Pass 1: %w", err)
 	}
 
-	boundaries := map[string]*pendingBoundary{}
-	orderedBoundaries := []string{}
+	dispatch := map[dispatchKey]*pendingDispatch{}
+	orderedDispatch := []dispatchKey{}
 
 	// Per-node rendering
 	for _, nodeID := range nodeIDs {
@@ -240,15 +261,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// runs of identical input by iterating the engine.Render output
 		// by sorted filename; state.EmittedFiles order stays stable).
 		//
-		// Intermediate marking. When the engine implements ReleaseComposer
-		// (today: compose), Render's output is intermediate input to the
-		// Release-level merger and must NOT be written to dist alongside
+		// Intermediate marking. When the engine implements BoundaryAssembler
+		// (compose, helm-chart), Render's output is intermediate input to the
+		// per-(path, provider) BoundaryAssembler at the contributor's
+		// evaluated path and must NOT be written to disk directly alongside
 		// per-node files. The orchestrator marks every Render output as
-		// Intermediate=true for ReleaseComposer engines; the merger reads
-		// fragments and emits the canonical Release-root file. Engines
-		// that are not ReleaseComposers (helm / helm-chart) keep
+		// Intermediate=true for BoundaryAssembler engines; the assembler
+		// reads the fragments and emits the canonical per-dispatch-path
+		// file. Engines that are not BoundaryAssemblers keep
 		// Intermediate=false — their Render outputs ship as-is.
-		_, isReleaseComposer := engine.(ReleaseComposer)
+		_, isAssembler := engine.(BoundaryAssembler)
 		sourceNames := make([]string, 0, len(files))
 		for p := range files {
 			sourceNames = append(sourceNames, p)
@@ -259,7 +281,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				Name:         p,
 				Origin:       EmitOriginSource,
 				Body:         files[p],
-				Intermediate: isReleaseComposer,
+				Intermediate: isAssembler,
 			})
 		}
 
@@ -298,43 +320,99 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
 
-		// Group per boundary. Per-node file map is built from
-		// state.EmittedFiles (carries every input-kind contribution).
+		// Group per (evaluated_path, provider). Per-node file map is built
+		// from state.EmittedFiles (carries every input-kind contribution).
 		// Intermediate=true entries are split off into intermediates so
-		// the orchestrator never writes them under boundaries/<bp>/;
-		// they flow only to ReleaseComposer at Release-end.
+		// the orchestrator never writes them at the dispatch path directly;
+		// they flow only to the BoundaryAssembler at finalization.
+		//
+		// Path-template evaluation runs per-component at orchestrator-time
+		// using BoundaryInfra.{Directory, SubDirectory} (raw template
+		// strings populated by the resolver) plus the live parameter map
+		// from ResolveResult.Parameters. The evaluated final_path becomes
+		// the dispatch Path; the per-(path, provider) tuple is the dispatch
+		// key. Two boundaries with same evaluated path + same provider
+		// merge into one dispatch group.
 		bp := node.BoundaryPath
-		if _, ok := boundaries[bp]; !ok {
-			boundaries[bp] = &pendingBoundary{
+		recipeName := ""
+		if recipe != nil {
+			recipeName = recipe.Metadata.Name
+		}
+		var bi *struct {
+			Directory    string
+			SubDirectory string
+		}
+		if input.ResolveResult != nil {
+			if rbi, ok := input.ResolveResult.BoundaryInfra[nodeID]; ok && rbi != nil {
+				bi = &struct {
+					Directory    string
+					SubDirectory string
+				}{Directory: rbi.Directory, SubDirectory: rbi.SubDirectory}
+			}
+		}
+		var parameters map[string]interface{}
+		if input.ResolveResult != nil {
+			parameters = input.ResolveResult.Parameters
+		}
+		finalPath, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters)
+		if err != nil {
+			return nil, fmt.Errorf("Step 5 path eval node %q: %w", nodeID, err)
+		}
+		key := dispatchKey{Path: finalPath, Provider: providerName}
+		if _, ok := dispatch[key]; !ok {
+			dispatch[key] = &pendingDispatch{
 				files:           map[string]map[string][]byte{},
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
 				engineByNode:    map[string]Engine{},
 			}
-			orderedBoundaries = append(orderedBoundaries, bp)
+			orderedDispatch = append(orderedDispatch, key)
+		}
+		// INSTANCE_ID_COLLISION check: when two contributors land in the
+		// same dispatch group with the same node-ID, the assembler input
+		// would be ambiguous. Defensive guardrail — topology flattening's
+		// prefix discipline should make collisions impossible — but the
+		// check surfaces structural violations immediately rather than
+		// letting them propagate to broken assembled output.
+		if _, alreadyHere := dispatch[key].files[nodeID]; alreadyHere {
+			return nil, fmt.Errorf("%w: dispatch path %q provider %q already contains node %q (contributing boundaries: %v); component instance IDs must be unique within an assembly group",
+				ErrInstanceIDCollision, key.Path, key.Provider, nodeID, dispatch[key].contributingBoundaries)
+		}
+		// Track contributing boundaries (deduplicated). Used for diagnostic
+		// messages on collision/chart-name-mismatch errors and for chart-name
+		// cascade lookups against ResolveResult.BoundaryAnnotations.
+		alreadyContributing := false
+		for _, existing := range dispatch[key].contributingBoundaries {
+			if existing == bp {
+				alreadyContributing = true
+				break
+			}
+		}
+		if !alreadyContributing {
+			dispatch[key].contributingBoundaries = append(dispatch[key].contributingBoundaries, bp)
 		}
 		nodeFileMap := make(map[string][]byte, len(state.EmittedFiles))
 		for _, f := range state.EmittedFiles {
 			if f.Intermediate {
-				boundaries[bp].intermediates[nodeID] = append(boundaries[bp].intermediates[nodeID], f)
+				dispatch[key].intermediates[nodeID] = append(dispatch[key].intermediates[nodeID], f)
 				continue
 			}
 			nodeFileMap[f.Name] = f.Body
 		}
-		boundaries[bp].files[nodeID] = nodeFileMap
-		boundaries[bp].nodeAnnotations[nodeID] = nodeCtx.Annotations
-		boundaries[bp].nodeComponent[nodeID] = node.Component
-		boundaries[bp].engineByNode[nodeID] = engine
-		boundaries[bp].subCharts = append(boundaries[bp].subCharts, SubChartInfo{
+		dispatch[key].files[nodeID] = nodeFileMap
+		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
+		dispatch[key].nodeComponent[nodeID] = node.Component
+		dispatch[key].engineByNode[nodeID] = engine
+		dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
 			InstanceID: nodeID,
 			Version:    node.ResolvedVersion,
 			Values:     values,
 			Source:     nodeCtx.Source,
 		})
-		if boundaries[bp].composer == nil {
-			if c, ok := engine.(BoundaryComposer); ok {
-				boundaries[bp].composer = c
+		if dispatch[key].assembler == nil {
+			if a, ok := engine.(BoundaryAssembler); ok {
+				dispatch[key].assembler = a
 			}
 		}
 
@@ -348,7 +426,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 		for path, content := range frFiles {
-			boundaries[bp].files[nodeID][path] = content
+			dispatch[key].files[nodeID][path] = content
 		}
 
 		// Drain Phase B's per-node warnings into the build-level result.
@@ -359,33 +437,109 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		result.Warnings = append(result.Warnings, state.Warnings...)
 	}
 
-	// Finalize per-boundary output
-	sort.Strings(orderedBoundaries)
-	for _, bp := range orderedBoundaries {
-		pb := boundaries[bp]
-		boundaryPrefix := ""
-		if bp != "" {
-			boundaryPrefix = "boundaries/" + bp + "/"
+	// Finalize per-(path, provider) output. Sort dispatch keys for
+	// deterministic output ordering: by Path, then by Provider.
+	sort.Slice(orderedDispatch, func(i, j int) bool {
+		if orderedDispatch[i].Path != orderedDispatch[j].Path {
+			return orderedDispatch[i].Path < orderedDispatch[j].Path
+		}
+		return orderedDispatch[i].Provider < orderedDispatch[j].Provider
+	})
+
+	// PATH_COLLISION check: scan dispatch keys for the same Path across
+	// distinct Provider values. This case arises only when the operator
+	// overrode subDirectory: in a way that defeats the per-provider
+	// segregation default ({{ .provider }}); under default rules each
+	// provider gets its own sub-path so paths never collide across
+	// providers naturally. Per CLAUDE.md Loud Guardrails: surface the
+	// collision rather than silently overwriting one provider's output
+	// with another's.
+	pathToProviders := map[string][]dispatchKey{}
+	for _, key := range orderedDispatch {
+		pathToProviders[key.Path] = append(pathToProviders[key.Path], key)
+	}
+	for path, keys := range pathToProviders {
+		if len(keys) <= 1 {
+			continue
+		}
+		providers := make([]string, 0, len(keys))
+		var contributingBoundaries []string
+		for _, k := range keys {
+			providers = append(providers, k.Provider)
+			contributingBoundaries = append(contributingBoundaries, dispatch[k].contributingBoundaries...)
+		}
+		return nil, fmt.Errorf("%w: dispatch path %q produced multiple provider outputs (%v); contributing boundaries %v resolve to the same path under their current directory: / subDirectory: settings; set distinct subDirectory values per provider or change one boundary's directory",
+			ErrPathCollision, path, providers, contributingBoundaries)
+	}
+
+	// CHART_NAME_MISMATCH check: when a helm-chart dispatch group has more
+	// than one contributing boundary, every contributing boundary's
+	// effective aggrega.ai/chart-name annotation (computed via the
+	// resolver's per-boundary annotation cascade) must resolve to the
+	// same value. Mismatches indicate the operator has merged paths
+	// that conceptually belong to different umbrella charts.
+	for _, key := range orderedDispatch {
+		if key.Provider != "helm-chart" {
+			continue
+		}
+		pd := dispatch[key]
+		if len(pd.contributingBoundaries) <= 1 {
+			continue
+		}
+		var firstName string
+		var firstBoundary string
+		mismatch := false
+		mismatchValues := map[string]string{}
+		for _, bp := range pd.contributingBoundaries {
+			name := ""
+			if input.ResolveResult != nil {
+				if ann, ok := input.ResolveResult.BoundaryAnnotations[bp]; ok {
+					name, _ = ann.Get("aggrega.ai/chart-name")
+				}
+			}
+			mismatchValues[bp] = name
+			if firstBoundary == "" {
+				firstName = name
+				firstBoundary = bp
+			} else if name != firstName {
+				mismatch = true
+			}
+		}
+		if mismatch {
+			return nil, fmt.Errorf("%w: boundaries %v merge to assembly path %q under helm-chart provider but their effective aggrega.ai/chart-name annotations resolve to different values: %v; the merged umbrella chart has exactly one name; cascade or declare matching values explicitly",
+				ErrChartNameMismatch, pd.contributingBoundaries, key.Path, mismatchValues)
+		}
+	}
+
+	for _, key := range orderedDispatch {
+		pd := dispatch[key]
+		// Disk-write prefix is the evaluated final_path verbatim. Default
+		// boundaries/<bp>/<provider>/ shape produced by computeFinalPath
+		// when boundaries omit directory: / subDirectory: preserves
+		// today's per-boundary, per-provider segregation.
+		dispatchPrefix := ""
+		if key.Path != "" {
+			dispatchPrefix = key.Path + "/"
 		}
 
-		// If engine is a BoundaryComposer (helm-chart) AND the boundary is non-empty:
-		// nest per-node under charts/<nodeID>/ and emit boundary-level umbrella files.
-		if pb.composer != nil && bp != "" {
+		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
+		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
+		if pd.assembler != nil && key.Path != "" {
 			info := BoundaryInfo{
-				BoundaryPath:  bp,
+				BoundaryPath:  key.Path,
 				AggregateName: graph.Metadata.AggregateName,
-				SubCharts:     pb.subCharts,
+				SubCharts:     pd.subCharts,
 			}
-			boundaryFiles, nestPerNode, err := pb.composer.ComposeBoundary(ctx, info)
+			boundaryFiles, nestPerNode, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 boundary %q compose: %w", bp, err)
+				return nil, fmt.Errorf("Step 5 dispatch %q assemble: %w", key.Path, err)
 			}
 			for p, c := range boundaryFiles {
-				result.Files[boundaryPrefix+p] = c
+				result.Files[dispatchPrefix+p] = c
 			}
-			// Node files go under charts/<nodeID>/ (or flat if composer says no nesting)
-			for nodeID, nodeFiles := range pb.files {
-				nodePrefix := boundaryPrefix
+			// Node files go under charts/<nodeID>/ (or flat if assembler says no nesting)
+			for nodeID, nodeFiles := range pd.files {
+				nodePrefix := dispatchPrefix
 				if nestPerNode {
 					nodePrefix += "charts/" + nodeID + "/"
 				}
@@ -394,130 +548,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				}
 			}
 		} else {
-			// Flat: per-node files directly under boundary
-			for _, nodeFiles := range pb.files {
+			// Flat: per-node files directly under the dispatch path
+			for _, nodeFiles := range pd.files {
 				for p, c := range nodeFiles {
-					result.Files[boundaryPrefix+p] = c
+					result.Files[dispatchPrefix+p] = c
 				}
 			}
 		}
 	}
 
-	// Release-end pass — invoke each distinct ReleaseComposer at most once
-	// with a ReleaseInfo scoped to its own nodes. Used by the compose
-	// engine to merge per-node fragments into a single docker-compose.yaml
-	// at the Release output root. ReleaseComposers run AFTER per-boundary
-	// composition so they can rely on per-boundary state being final.
-	if err := dispatchReleaseComposers(ctx, graph, boundaries, orderedBoundaries, result); err != nil {
-		return nil, err
-	}
-
 	return result, nil
-}
-
-// dispatchReleaseComposers detects every distinct ReleaseComposer instance
-// across the Release's engines and invokes ComposeRelease once per instance,
-// passing a ReleaseInfo scoped to that engine's contributing nodes. Files
-// returned by ComposeRelease are merged into result.Files under the Release
-// output root (no boundary prefix).
-//
-// Determinism note. ReleaseComposer instances are walked in
-// (boundary-path, node-ID) ascending order; the FIRST node bound to each
-// distinct *engine instance* fixes that engine's ReleaseComposer position
-// in the dispatch list. This makes the order in which ComposeRelease
-// implementations run a deterministic function of the IR graph + the
-// engineFactory closure's returned-instance choices.
-func dispatchReleaseComposers(
-	ctx context.Context,
-	graph *types.IRGraph,
-	boundaries map[string]*pendingBoundary,
-	orderedBoundaries []string,
-	result *RenderResult,
-) error {
-	type composerEntry struct {
-		composer ReleaseComposer
-		// nodeBoundaries: per-boundary contributing-node info for this
-		// composer. Map key is boundary path; value is the list of nodes
-		// in that boundary whose engine equals composer.
-		nodeBoundaries map[string][]string
-	}
-
-	var ordered []*composerEntry
-	indexByComposer := map[ReleaseComposer]*composerEntry{}
-
-	for _, bp := range orderedBoundaries {
-		pb := boundaries[bp]
-		nodeIDs := make([]string, 0, len(pb.engineByNode))
-		for nid := range pb.engineByNode {
-			nodeIDs = append(nodeIDs, nid)
-		}
-		sort.Strings(nodeIDs)
-		for _, nid := range nodeIDs {
-			engine := pb.engineByNode[nid]
-			rc, ok := engine.(ReleaseComposer)
-			if !ok {
-				continue
-			}
-			entry, found := indexByComposer[rc]
-			if !found {
-				entry = &composerEntry{composer: rc, nodeBoundaries: map[string][]string{}}
-				indexByComposer[rc] = entry
-				ordered = append(ordered, entry)
-			}
-			entry.nodeBoundaries[bp] = append(entry.nodeBoundaries[bp], nid)
-		}
-	}
-
-	for _, entry := range ordered {
-		info := buildReleaseInfo(graph, boundaries, entry.nodeBoundaries)
-		files, err := entry.composer.ComposeRelease(ctx, info)
-		if err != nil {
-			return fmt.Errorf("Step 5 release-compose: %w", err)
-		}
-		for path, body := range files {
-			result.Files[path] = body
-		}
-	}
-	return nil
-}
-
-// buildReleaseInfo assembles the ReleaseInfo passed to one ReleaseComposer.
-// nodeBoundaries scopes the info to that composer's contributing nodes only.
-func buildReleaseInfo(
-	graph *types.IRGraph,
-	boundaries map[string]*pendingBoundary,
-	nodeBoundaries map[string][]string,
-) ReleaseInfo {
-	info := ReleaseInfo{
-		AggregateName: graph.Metadata.AggregateName,
-		Edges:         append([]types.IREdge(nil), graph.Spec.Edges...),
-	}
-
-	bps := make([]string, 0, len(nodeBoundaries))
-	for bp := range nodeBoundaries {
-		bps = append(bps, bp)
-	}
-	sort.Strings(bps)
-
-	for _, bp := range bps {
-		pb := boundaries[bp]
-		bi := ReleaseBoundaryInfo{
-			BoundaryPath: bp,
-			Annotations:  map[string]map[string]string{},
-		}
-		nids := append([]string(nil), nodeBoundaries[bp]...)
-		sort.Strings(nids)
-		for _, nid := range nids {
-			bi.Annotations[nid] = pb.nodeAnnotations[nid]
-			bi.Nodes = append(bi.Nodes, ReleaseNodeInfo{
-				NodeID:            nid,
-				ResolvedComponent: pb.nodeComponent[nid],
-				IntermediateFiles: pb.intermediates[nid],
-			})
-		}
-		info.Boundaries = append(info.Boundaries, bi)
-	}
-	return info
 }
 
 func resolveFeatureRecipes(
@@ -601,4 +641,65 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 	}
 	_ = parse.IRPayload(raw, &out)
 	return out
+}
+
+// computeFinalPath evaluates the per-component path templates against the
+// path-template variable allowlist and returns the dispatch path used for
+// per-(path, provider) grouping.
+//
+// Defaults:
+//   - bi.Directory empty → "boundaries/<bp>" (today's per-boundary segregation).
+//   - bi.SubDirectory empty → render `{{ .provider }}` against the per-component
+//     provider name.
+//
+// Available template variables: .provider, .boundary_name, .parameters.<key>,
+// .component_id (subDirectory: only), .manifest.recipe_name. .parent_boundary.*
+// is intentionally not populated in this revision; references will trigger
+// missingkey=error per the path-template strictness policy.
+func computeFinalPath(
+	nodeID, bp, providerName, recipeName string,
+	bi *struct {
+		Directory    string
+		SubDirectory string
+	},
+	parameters map[string]interface{},
+) (string, error) {
+	data := map[string]interface{}{
+		"provider":      providerName,
+		"boundary_name": bp,
+		"parameters":    parameters,
+		"component_id":  nodeID,
+		"manifest":      map[string]interface{}{"recipe_name": recipeName},
+	}
+
+	// Evaluate directory:
+	var evalDir string
+	if bi == nil || bi.Directory == "" {
+		// Default: today's per-boundary segregation. No template eval needed.
+		evalDir = "boundaries/" + bp
+	} else {
+		var err error
+		evalDir, err = EvalPathTemplate("directory:"+bp, "directory", bp, bi.Directory, data)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Evaluate subDirectory:
+	subTmpl := ""
+	if bi != nil {
+		subTmpl = bi.SubDirectory
+	}
+	if subTmpl == "" {
+		subTmpl = "{{ .provider }}"
+	}
+	evalSub, err := EvalPathTemplate("subDirectory:"+bp+":"+nodeID, "subDirectory", bp, subTmpl, data)
+	if err != nil {
+		return "", err
+	}
+
+	if evalSub == "" || evalSub == "." {
+		return evalDir, nil
+	}
+	return filepath.Join(evalDir, evalSub), nil
 }

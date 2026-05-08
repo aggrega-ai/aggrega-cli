@@ -195,12 +195,13 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // (artifacts-inline / artifacts-from-file) so the Phase B.5 cross-origin
 // collision detector can name every contributor on a clash.
 //
-// The provider's engine governs file routing: ReleaseComposer engines
-// (compose) receive intermediates that ComposeRelease merges at Release
-// end; flat engines (helm, terraform, cloudformation) receive standalone
-// files under boundaries/<bp>/. helm-chart inline artifacts: is rejected
-// with a CATALOG_ERROR; helm-chart artifactsFrom: is a B.3 no-op
-// (provider-specific pre-template injection lives outside Phase B).
+// The provider's engine governs file routing: BoundaryAssembler engines
+// (compose, helm-chart) receive intermediates that AssembleBoundary merges
+// per-(path, provider); flat engines (helm, terraform, cloudformation)
+// receive standalone files at the dispatch path. helm-chart inline
+// artifacts: is rejected with a CATALOG_ERROR; helm-chart artifactsFrom:
+// is a B.3 no-op (provider-specific pre-template injection lives outside
+// Phase B).
 func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Engine, nodeCtx NodeRenderContext) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 3

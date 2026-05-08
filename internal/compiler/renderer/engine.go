@@ -20,20 +20,28 @@ type Engine interface {
 // assumption about instance identity.
 type EngineFactory func(providerName string) (Engine, error)
 
-// BoundaryComposer is an optional interface for engines that produce
-// boundary-level artifacts after all per-node Render calls for that boundary.
-// The helm-chart provider uses this to emit an umbrella Chart.yaml + values.yaml
-// listing each component as a sub-chart dependency. Engines that only produce
-// flat per-node output (e.g. a future helm provider producing rendered K8s YAML)
-// do not implement this.
-type BoundaryComposer interface {
-	// ComposeBoundary returns files relative to the boundary root.
-	// The orchestrator prefixes them with `boundaries/<boundaryPath>/`.
-	// Also signals whether per-node files should be nested under `charts/<nodeID>/`.
-	ComposeBoundary(ctx context.Context, info BoundaryInfo) (files map[string][]byte, nestPerNode bool, err error)
+// BoundaryAssembler is the optional interface a provider engine implements to
+// assemble per-(evaluated_path, provider) artifacts from the per-node Render
+// outputs at that dispatch path. The helm-chart provider uses this to emit an
+// umbrella Chart.yaml + values.yaml listing each component as a sub-chart
+// dependency; the compose provider uses it to merge per-node fragments into
+// one docker-compose.yaml per dispatch path. Engines that only produce flat
+// per-node output do not implement this.
+//
+// Replaces the previous two-tier (BoundaryComposer + ReleaseComposer) split.
+// Per-(evaluated_path, provider) dispatch is the single assembly tier; the
+// orchestrator groups contributors by dispatch key and invokes
+// AssembleBoundary once per group.
+type BoundaryAssembler interface {
+	// AssembleBoundary returns files relative to the dispatch path.
+	// The orchestrator prefixes them with `boundaries/<evaluated_path>/`
+	// (or, post path-template-evaluation, the operator-authored path).
+	// Also signals whether per-node files should be nested under
+	// `charts/<nodeID>/`.
+	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string][]byte, nestPerNode bool, err error)
 }
 
-// BoundaryInfo carries everything the BoundaryComposer needs.
+// BoundaryInfo carries everything the BoundaryAssembler needs.
 type BoundaryInfo struct {
 	BoundaryPath  string
 	AggregateName string
@@ -54,7 +62,7 @@ type NodeRenderContext struct {
 	Labels          map[string]string
 	Annotations     map[string]string // merged release annotations
 	BoundaryPath    string
-	SyncWave        string
+	SyncWave        int               // deployment wave from the containing boundary's syncWave (signed integer; default 0)
 	ResolvedVersion string
 	Component       string
 	Source          interface{} // forwarded from recipe.spec.source (nil / string path / structured)

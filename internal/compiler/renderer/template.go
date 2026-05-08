@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"text/template"
+	"text/template/parse"
 
 	sprig "github.com/Masterminds/sprig/v3"
 )
@@ -59,6 +60,197 @@ func EvalTemplateWithDelims(name, tmplText string, data interface{}, leftDelim, 
 		return "", fmt.Errorf("template %q execute: %w", name, err)
 	}
 	return buf.String(), nil
+}
+
+// pathTemplateAllowlistDirectory is the set of top-level field names a
+// `directory:` path-template may reference. Per-context allowlists differ
+// between `directory:` and `subDirectory:` — `.component_id` is permitted
+// only in subDirectory: templates because component identity is meaningless
+// at the boundary level.
+var pathTemplateAllowlistDirectory = map[string]bool{
+	"provider":        true,
+	"boundary_name":   true,
+	"parameters":      true,
+	"parent_boundary": true,
+	"manifest":        true,
+}
+
+// pathTemplateAllowlistSubDirectory is the set of top-level field names a
+// `subDirectory:` path-template may reference. Identical to the directory:
+// allowlist plus `.component_id`.
+var pathTemplateAllowlistSubDirectory = map[string]bool{
+	"provider":        true,
+	"boundary_name":   true,
+	"parameters":      true,
+	"component_id":    true,
+	"parent_boundary": true,
+	"manifest":        true,
+}
+
+// EvalPathTemplate evaluates a Release.spec.boundaries[].directory or
+// subDirectory template against the path-template variable allowlist.
+// Differs from EvalTemplate in two load-bearing ways:
+//
+//   - missingkey=error policy. An in-allowlist field with no value at eval
+//     time produces an explicit error (rather than rendering empty as
+//     EvalTemplate's missingkey=zero would). Path templates use stricter
+//     missing-key handling than value templates because silent path
+//     failures produce broken filesystem layout that operators only
+//     discover post-build.
+//   - Parse-time allowlist validation. Every top-level field reference in
+//     the template AST is verified against the per-context allowlist
+//     (directory: vs subDirectory:); unknown field references produce
+//     ErrPathTemplateInvalidField wrapping the offending field name and
+//     boundary name.
+//
+// contextKind selects between the two allowlists: "directory" or
+// "subDirectory". An unknown contextKind value defaults to the directory:
+// allowlist (more restrictive).
+//
+// boundaryName is included in the error wrapping when an invalid field is
+// detected, so the operator can locate the offending template without
+// re-grepping the Release file.
+func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data interface{}) (string, error) {
+	allowlist := pathTemplateAllowlistDirectory
+	if contextKind == "subDirectory" {
+		allowlist = pathTemplateAllowlistSubDirectory
+	}
+
+	if err := validatePathTemplateFields(boundaryName, tmplText, allowlist); err != nil {
+		return "", err
+	}
+
+	templateData := toLowercaseMap(data)
+
+	t, err := template.New(name).
+		Option("missingkey=error").
+		Funcs(sprig.FuncMap()).
+		Parse(tmplText)
+	if err != nil {
+		return "", fmt.Errorf("path template %q parse: %w", name, err)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, templateData); err != nil {
+		return "", fmt.Errorf("path template %q execute: %w", name, err)
+	}
+	return buf.String(), nil
+}
+
+// validatePathTemplateFields walks the template AST, extracts every
+// top-level field reference (e.g., `.parameters.region` → top-level
+// `parameters`), and rejects unknown fields against the allowlist. The
+// walk uses Go's text/template parser to obtain a parse tree without
+// triggering execution.
+func validatePathTemplateFields(boundaryName, tmplText string, allowlist map[string]bool) error {
+	// Parse with no missingkey constraint to get the AST; ignore execute-
+	// time issues — this pass is purely structural.
+	t, err := template.New("path-template-validate").
+		Funcs(sprig.FuncMap()).
+		Parse(tmplText)
+	if err != nil {
+		return fmt.Errorf("path template at boundary %q parse: %w", boundaryName, err)
+	}
+
+	for _, refField := range collectTopLevelFields(t) {
+		if !allowlist[refField] {
+			return fmt.Errorf("%w: boundary %q references unknown field .%s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
+				ErrPathTemplateInvalidField, boundaryName, refField)
+		}
+	}
+	return nil
+}
+
+// collectTopLevelFields walks every action in the parsed template tree and
+// collects the FIRST identifier of every field-chain reference (e.g.,
+// `.parameters.region` → "parameters", `.parent_boundary.directory` →
+// "parent_boundary"). Returns the deduplicated list.
+func collectTopLevelFields(t *template.Template) []string {
+	seen := map[string]bool{}
+	var collected []string
+	for _, ttree := range t.Templates() {
+		if ttree.Tree == nil || ttree.Tree.Root == nil {
+			continue
+		}
+		walkNodeForFields(ttree.Tree.Root, seen, &collected)
+	}
+	return collected
+}
+
+// walkNodeForFields recurses into template AST nodes, recording the first
+// identifier of every FieldNode and ChainNode encountered.
+func walkNodeForFields(node parse.Node, seen map[string]bool, collected *[]string) {
+	switch n := node.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, child := range n.Nodes {
+			walkNodeForFields(child, seen, collected)
+		}
+	case *parse.ActionNode:
+		if n.Pipe != nil {
+			for _, cmd := range n.Pipe.Cmds {
+				for _, arg := range cmd.Args {
+					walkNodeForFields(arg, seen, collected)
+				}
+			}
+		}
+	case *parse.PipeNode:
+		for _, cmd := range n.Cmds {
+			for _, arg := range cmd.Args {
+				walkNodeForFields(arg, seen, collected)
+			}
+		}
+	case *parse.IfNode:
+		if n.Pipe != nil {
+			walkNodeForFields(n.Pipe, seen, collected)
+		}
+		if n.List != nil {
+			walkNodeForFields(n.List, seen, collected)
+		}
+		if n.ElseList != nil {
+			walkNodeForFields(n.ElseList, seen, collected)
+		}
+	case *parse.RangeNode:
+		if n.Pipe != nil {
+			walkNodeForFields(n.Pipe, seen, collected)
+		}
+		if n.List != nil {
+			walkNodeForFields(n.List, seen, collected)
+		}
+		if n.ElseList != nil {
+			walkNodeForFields(n.ElseList, seen, collected)
+		}
+	case *parse.WithNode:
+		if n.Pipe != nil {
+			walkNodeForFields(n.Pipe, seen, collected)
+		}
+		if n.List != nil {
+			walkNodeForFields(n.List, seen, collected)
+		}
+		if n.ElseList != nil {
+			walkNodeForFields(n.ElseList, seen, collected)
+		}
+	case *parse.FieldNode:
+		// `.parameters.region` parses as a single FieldNode with Ident = ["parameters", "region"].
+		if len(n.Ident) > 0 {
+			top := n.Ident[0]
+			if !seen[top] {
+				seen[top] = true
+				*collected = append(*collected, top)
+			}
+		}
+	case *parse.ChainNode:
+		// `(...).foo.bar` — recurse into the receiver, then record top of the chain.
+		walkNodeForFields(n.Node, seen, collected)
+		if len(n.Field) > 0 {
+			top := n.Field[0]
+			if !seen[top] {
+				seen[top] = true
+				*collected = append(*collected, top)
+			}
+		}
+	}
 }
 
 // orderedMapForTemplate is satisfied by types.OrderedMap[V] for every V via

@@ -3,6 +3,8 @@
 
 package renderer
 
+import "strconv"
+
 // buildProvenanceLabels produces the canonical aggrega.ai/* + standard
 // recommended-label set merged into the metadata.labels of every emitted
 // artifact whose document carries a metadata block. The label set is the
@@ -34,8 +36,8 @@ func buildProvenanceLabels(state *PhaseBState, nodeCtx NodeRenderContext) map[st
 	if nodeCtx.Provenance.Environment != "" {
 		labels["aggrega.ai/environment"] = nodeCtx.Provenance.Environment
 	}
-	if nodeCtx.SyncWave != "" {
-		labels["aggrega.ai/sync-wave"] = nodeCtx.SyncWave
+	if nodeCtx.SyncWave != 0 {
+		labels["aggrega.ai/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
 	}
 	return labels
 }

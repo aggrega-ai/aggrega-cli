@@ -12,10 +12,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ComposeBoundary implements renderer.BoundaryComposer: it emits the umbrella
-// Chart.yaml + values.yaml for the boundary. Per-node files are nested under
-// `charts/<nodeID>/` by the orchestrator (nestPerNode = true).
-func (e *HelmEngine) ComposeBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
+// AssembleBoundary implements renderer.BoundaryAssembler: it emits the umbrella
+// Chart.yaml + values.yaml for the dispatch path. Per-node files are nested
+// under `charts/<nodeID>/` by the orchestrator (nestPerNode = true).
+func (e *HelmEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
 	files, err := BuildUmbrella(info.BoundaryPath, info.AggregateName, info.SubCharts)
 	if err != nil {
 		return nil, false, err

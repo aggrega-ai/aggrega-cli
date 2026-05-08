@@ -49,21 +49,22 @@ import (
 //     interface use the default "{{", "}}" delimiters.
 //
 // Dispatch parity. Phase B.3 dispatches by marker assertion in the same
-// shape as the ReleaseComposer dispatch. The two companion capabilities
+// shape as the BoundaryAssembler dispatch. The two companion capabilities
 // follow the same pattern (independent type assertions with default
-// fallbacks) used by WorkloadSynthesizer / ReleaseComposer / BoundaryComposer
-// elsewhere in the package.
+// fallbacks) used by WorkloadSynthesizer / BoundaryAssembler elsewhere
+// in the package.
 type ExternalArtifactsHandler interface {
 	HandlesArtifactsExternally()
 }
 
 // ArtifactsPathProvider declares per-artifact path placement for engines
 // satisfying ExternalArtifactsHandler. The path the method returns is
-// per-node-relative; the orchestrator's per-boundary nesting layers
-// boundaries/<bp>/charts/<nodeID>/ on top for BoundaryComposer engines.
-// Engines that don't implement this interface fall back to the bare
-// basename — matching the standard non-external emission shape — when the
-// artifacts evaluator dispatches an artifactsFrom file.
+// per-node-relative; the orchestrator's per-(path, provider) nesting layers
+// the dispatch path's prefix and `charts/<nodeID>/` on top for
+// BoundaryAssembler engines. Engines that don't implement this interface
+// fall back to the bare basename — matching the standard non-external
+// emission shape — when the artifacts evaluator dispatches an artifactsFrom
+// file.
 type ArtifactsPathProvider interface {
 	PathForArtifact(nodeCtx NodeRenderContext, basename string) string
 }
@@ -173,14 +174,14 @@ func evaluateArtifacts(
 	}
 
 	// Intermediate-tagged emitted files are consumed by the orchestrator's
-	// per-boundary grouping in RenderAll — the `if f.Intermediate { ... }`
+	// per-(path, provider) grouping in RenderAll — the `if f.Intermediate`
 	// branch routes solely on the flag. The grouping is Origin-agnostic:
-	// every Intermediate=true EmittedFile flows to ComposeRelease via
-	// ReleaseInfo regardless of EmitOrigin. End-to-end exercise:
+	// every Intermediate=true EmittedFile flows to AssembleBoundary
+	// regardless of EmitOrigin. End-to-end exercise:
 	// TestPhaseB3_ArtifactsIntermediate_RoutesViaReleaseComposer in
 	// renderer_integration_test.go is the live anchor — a regression that
 	// breaks the routing changes the test outcome.
-	_, isReleaseComposer := engine.(ReleaseComposer)
+	_, isAssembler := engine.(BoundaryAssembler)
 
 	var out []EmittedFile
 
@@ -194,7 +195,7 @@ func evaluateArtifacts(
 			Name:         filename,
 			Origin:       EmitOriginArtifactsInline,
 			Body:         body,
-			Intermediate: isReleaseComposer,
+			Intermediate: isAssembler,
 		})
 	}
 
@@ -212,7 +213,7 @@ func evaluateArtifacts(
 			Name:         basename,
 			Origin:       EmitOriginArtifactsFromFile,
 			Body:         body,
-			Intermediate: isReleaseComposer,
+			Intermediate: isAssembler,
 		})
 	}
 

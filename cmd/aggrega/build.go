@@ -181,30 +181,20 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		CatalogLookup: catalogLookup,
 	}
 
-	// composeEngine is memoised so every "compose" dispatch in this Release
-	// returns the SAME instance — the orchestrator's Release-end pass groups
-	// nodes by ReleaseComposer instance identity, so a fresh instance per
-	// node would split fragments across multiple ComposeRelease calls and
-	// produce one docker-compose.yaml per node instead of one per Release.
-	composeEngine := &renderCompose.ComposeEngine{}
-
 	// engineFactory dispatches the providerName each Recipe carries
-	// (recipe.spec.provider) to the renderer.Engine that will render
-	// it. Three provider names ship:
+	// (recipe.spec.provider) to the renderer.Engine that will render it.
+	// All provider engines construct fresh-per-call: cross-call shared
+	// state belongs at the per-(path, provider) BoundaryAssembler level,
+	// not at the engineFactory closure level. Three provider names ship:
 	//
 	//   - "helm" — fresh HelmEngine per call. The empty-string branch
 	//     also routes here, preserved as a defensive default; current
 	//     Recipe schema requires spec.provider, so empty values do
 	//     not reach this dispatch in normal flow.
 	//   - "helm-chart" — fresh helmchart.HelmEngine per call.
-	//   - "compose" — the memoised composeEngine declared above (see
-	//     that comment for why instance identity matters here).
-	//
-	// The fresh-vs-memoised asymmetry tracks engine statefulness:
-	// helm and helm-chart hold no per-Release state, so per-dispatch
-	// construction is correct and avoids cross-Release leakage;
-	// compose holds Release-level fragment state that must be shared
-	// across every node-level dispatch in the same Release.
+	//   - "compose" — fresh ComposeEngine per call. Per-(path, provider)
+	//     dispatch grouping in the orchestrator (BoundaryAssembler tier)
+	//     handles cross-call aggregation; the engine itself is stateless.
 	//
 	// Unknown providerName wraps renderer.ErrUnknownProvider with the
 	// offending name so the upstream RenderAll error surfaces with
@@ -216,7 +206,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		case "helm-chart":
 			return &renderHelmChart.HelmEngine{}, nil
 		case "compose":
-			return composeEngine, nil
+			return &renderCompose.ComposeEngine{}, nil
 		default:
 			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerName)
 		}

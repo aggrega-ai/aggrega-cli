@@ -59,16 +59,18 @@ func (o EmitOrigin) String() string {
 // but the emitted-files list itself preserves the order they were
 // produced.
 //
-// Intermediate=true marks a file as transient input to a ReleaseComposer
+// Intermediate=true marks a file as transient input to a BoundaryAssembler
 // (see synthesis.go). The orchestrator collects intermediates into the
-// per-boundary state for ReleaseComposer to consume but does NOT write them
-// under boundaries/<bp>/ in the final output. Used by the compose provider:
-// per-node Workload synthesis emits one fragment file per node; the compose
-// ReleaseComposer reads the fragments and emits a single docker-compose.yaml
-// at the Release output root, replacing every fragment.
+// per-(path, provider) dispatch state for the assembler to consume but does
+// NOT write them at the dispatch path directly. Used by the compose and
+// helm-chart providers: per-node Workload synthesis (or Render) emits one
+// fragment file per node; the per-(path, provider) BoundaryAssembler at
+// the contributor's evaluated path reads the fragments and emits the
+// canonical assembled file (one docker-compose.yaml or one umbrella
+// Chart.yaml + values.yaml) at the dispatch path, replacing every fragment.
 type EmittedFile struct {
-	Name         string     // boundary-relative path (e.g., "deployment.yaml")
+	Name         string     // dispatch-path-relative path (e.g., "deployment.yaml")
 	Origin       EmitOrigin // input kind that produced this file
 	Body         []byte     // file contents
-	Intermediate bool       // true → consumed by ReleaseComposer; not written to dist
+	Intermediate bool       // true → consumed by BoundaryAssembler; not written to disk directly
 }

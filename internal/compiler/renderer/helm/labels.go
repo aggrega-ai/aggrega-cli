@@ -5,6 +5,7 @@ package helm
 
 import (
 	"sort"
+	"strconv"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
 )
@@ -29,8 +30,8 @@ func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	if nodeCtx.Provenance.Environment != "" {
 		labels["aggrega.ai/environment"] = nodeCtx.Provenance.Environment
 	}
-	if nodeCtx.SyncWave != "" {
-		labels["aggrega.ai/sync-wave"] = nodeCtx.SyncWave
+	if nodeCtx.SyncWave != 0 {
+		labels["aggrega.ai/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
 	}
 	return labels
 }
