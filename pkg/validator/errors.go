@@ -6,6 +6,8 @@ package validator
 import (
 	"errors"
 	"fmt"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // Sentinel errors for errors.Is matching.
@@ -46,4 +48,35 @@ func (e *ValidationError) Error() string {
 // Unwrap returns the sentinel error for errors.Is matching.
 func (e *ValidationError) Unwrap() error {
 	return e.Err
+}
+
+// ToCompilerError converts the structured ValidationError into a
+// *cerrors.CompilerError. The Category is classified by the Entity prefix
+// per cerrors.ClassifyEntityCategory: "Component" / "Recipe" / "Feature" /
+// "FeatureRecipe" / "Provider" / "Manifest" → CatalogError; "Aggregate" →
+// DeveloperError; "Release" → OpsError; unknown → DeveloperError
+// (conservative).
+//
+// The Source location maps the JSON-path FieldPath into the CompilerError's
+// SourceLocation.File. FieldPath is a JSON-path-style locator (e.g.,
+// ".values.port"), not a real file path; the dual semantics is the same
+// as ResolverError.Field. The Message combines Constraint, Actual, and
+// Suggestion preserving the structure that Error() carries.
+//
+// Inner error chain preserved via cerrors.Wrap so errors.Is against the
+// validator's sentinel errors continues to match.
+func (e *ValidationError) ToCompilerError() *cerrors.CompilerError {
+	cat := cerrors.ClassifyEntityCategory(e.Entity)
+	source := cerrors.SourceLocation{File: e.FieldPath}
+	msg := fmt.Sprintf("%s: validation error at %s", e.Entity, e.FieldPath)
+	if e.Constraint != "" {
+		msg += " — " + e.Constraint
+	}
+	if e.Actual != "" {
+		msg += fmt.Sprintf(" (got %s)", e.Actual)
+	}
+	if e.Suggestion != "" {
+		msg += ". " + e.Suggestion
+	}
+	return cerrors.Wrap(e, cat, source, msg)
 }

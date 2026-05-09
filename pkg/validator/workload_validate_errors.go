@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // Workload-validation sentinels. Two are surfaced today: the CUE-unification
@@ -96,4 +98,18 @@ func (e *WorkloadValidationError) Error() string {
 // Unwrap returns the sentinel for errors.Is matching.
 func (e *WorkloadValidationError) Unwrap() error {
 	return e.Err
+}
+
+// ToCompilerError converts the structured WorkloadValidationError into a
+// *cerrors.CompilerError carrying CategoryCatalogError. Workload spec
+// validation failures are catalog-domain — the Recipe author wrote the
+// workload block; the Aggregate / Release didn't author it. The Source
+// location maps Path (the Recipe file) into SourceLocation.File. The
+// Message preserves the multi-finding shape from Error() so operator-
+// facing presentation is consistent regardless of conversion path.
+//
+// Inner error chain preserved via cerrors.Wrap so errors.Is against
+// ErrWorkloadValidation / ErrWorkloadSecretsSchema continues to match.
+func (e *WorkloadValidationError) ToCompilerError() *cerrors.CompilerError {
+	return cerrors.Wrap(e, cerrors.CatalogError, cerrors.SourceLocation{File: e.Path}, e.Error())
 }

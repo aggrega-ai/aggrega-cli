@@ -6,6 +6,8 @@ package validator
 import (
 	"errors"
 	"fmt"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // Recipe-validation sentinels. The seven rules are general Recipe shape rules
@@ -110,4 +112,24 @@ func (e *RecipeValidationError) Error() string {
 // Unwrap returns the sentinel for errors.Is matching.
 func (e *RecipeValidationError) Unwrap() error {
 	return e.Err
+}
+
+// ToCompilerError converts the structured RecipeValidationError into a
+// *cerrors.CompilerError carrying CategoryCatalogError. Recipe rule
+// violations are always catalog-domain — the Recipe is catalog content
+// authored by Ops/Catalog Architects, never by the developer (Aggregate)
+// or operator (Release).
+//
+// The Source location maps Path (the Recipe file path) into
+// SourceLocation.File. The Message combines Description and Detail so the
+// CompilerError-rendered output retains the structured detail the
+// CATALOG_ERROR-prefixed Error() shape carries. Inner error chain
+// preserved via cerrors.Wrap so errors.Is against the recipe-rule sentinels
+// continues to match through the converted CompilerError.
+func (e *RecipeValidationError) ToCompilerError() *cerrors.CompilerError {
+	msg := e.Description
+	if e.Detail != "" {
+		msg = msg + " — " + e.Detail
+	}
+	return cerrors.Wrap(e, cerrors.CatalogError, cerrors.SourceLocation{File: e.Path}, msg)
 }

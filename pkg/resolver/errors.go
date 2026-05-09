@@ -6,6 +6,8 @@ package resolver
 import (
 	"errors"
 	"fmt"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // Sentinel errors for errors.Is matching. Every ResolverError wraps one of
@@ -96,4 +98,26 @@ func (e *ResolverError) Error() string {
 
 func (e *ResolverError) Unwrap() error {
 	return e.Err
+}
+
+// ToCompilerError converts the structured ResolverError into a
+// *cerrors.CompilerError carrying the appropriate Category. The category
+// is classified by the Entity prefix per cerrors.ClassifyEntityCategory:
+// Aggregate → DeveloperError, Release → OpsError, catalog entities →
+// CatalogError, unknown → DeveloperError (conservative).
+//
+// The Source location maps the JSON-path Field into the CompilerError's
+// SourceLocation.File. Field is a JSON-path-style locator (e.g.,
+// ".spec.components[\"web\"]"), not a real file path; the dual semantics
+// is documented in pkg/errors's SourceLocation godoc as "the most
+// specific authoring locator available, file path or JSON path."
+//
+// The inner error chain is preserved via cerrors.Wrap, so errors.Is
+// against the resolver's sentinel errors (ErrYAMLLoad, ErrSchemaValidation,
+// etc.) continues to match through the converted CompilerError.
+func (e *ResolverError) ToCompilerError() *cerrors.CompilerError {
+	cat := cerrors.ClassifyEntityCategory(e.Entity)
+	source := cerrors.SourceLocation{File: e.Field}
+	msg := fmt.Sprintf("%s: %s", e.Entity, e.Message)
+	return cerrors.Wrap(e, cat, source, msg)
 }
