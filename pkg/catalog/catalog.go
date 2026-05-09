@@ -194,6 +194,17 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return fmt.Errorf("unmarshal FeatureRecipe %q: %w", path, err)
 		}
+		// Resolve relative string sources against the FR file's directory so
+		// co-located fragments (compose-bridge's bridge-fragment.yaml,
+		// secret-FR's chart dir, etc.) stay bundled with their FR. Mirrors the
+		// Recipe-source rewrite above.
+		if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
+			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
+			if err != nil {
+				return fmt.Errorf("resolve FeatureRecipe %q source %q: %w", path, s, err)
+			}
+			e.Spec.Source = abs
+		}
 		c.FeatureRecipes[e.Spec.Implements] = e
 	case "Aggregate":
 		var e types.Aggregate

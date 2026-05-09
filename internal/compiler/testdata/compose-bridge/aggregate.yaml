@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: compose-bridge-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      values:
+        port: 8080
+      uses:
+        backend:
+          primary:
+            target: db
+            inject:
+              env:
+                DB_HOST: host
+    db:
+      type: core/db

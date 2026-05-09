@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-recipe
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/db
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 5432
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: postgres:15
+        ports:
+          p: 5432
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          p: 5432

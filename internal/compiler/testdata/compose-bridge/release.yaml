@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: compose-bridge-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: compose-bridge-app
+  manifest: compose-bridge-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      features:
+        bridge:
+          type: core/compose-bridge:1.0.0
+          infra:
+            mappedPort: 15432
+            targetVar: "DB_HOST"
+      boundaries:
+        services-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "services"
+          components:
+            api: {}
+        data-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "data"
+          components:
+            db: {}

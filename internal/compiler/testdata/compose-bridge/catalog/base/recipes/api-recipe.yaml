@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-recipe
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/api
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 8080
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: api:1.0
+        variables:
+          DB_HOST: "{{ .context.inject.env.DB_HOST }}"
+        ports:
+          p: 8080
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          p: 8080
