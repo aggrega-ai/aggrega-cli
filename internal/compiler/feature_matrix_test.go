@@ -16,6 +16,7 @@ import (
 	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 )
@@ -33,6 +34,10 @@ type featureMatrixVariant struct {
 	// the demo Aggregate's bridge attachment resolves against the standard
 	// FR.
 	extraCatalogPaths []string
+	// traceRoot, when non-empty, enables trace capture into the given directory.
+	// Used by the cross-cutting TraceLayout criterion; the per-Release smoke
+	// tests leave it empty.
+	traceRoot string
 }
 
 // runFeatureMatrixVariant executes the full 5-step pipeline for one Release variant
@@ -96,6 +101,98 @@ func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *exampl
 		t.FailNow()
 	}
 
+	var traceWriter trace.Writer
+	if variant.traceRoot != "" {
+		traceWriter = trace.New(variant.traceRoot)
+		defer func() { _ = traceWriter.Close() }()
+	}
+	rendererInput := renderer.RendererInput{
+		Graph:          graph,
+		FeatureOrder:   featureOrder,
+		ResolveResult:  resolveResult,
+		CatalogLookup:  catalogLookup,
+		ProviderLookup: cat.ProviderLookup,
+		Trace:          traceWriter,
+	}
+	engineFactory := func(providerName string) (renderer.Engine, error) {
+		switch providerName {
+		case "helm", "":
+			return &renderHelm.HelmEngine{}, nil
+		case "helm-chart":
+			return &renderHelmChart.HelmEngine{}, nil
+		case "compose":
+			return &renderCompose.ComposeEngine{}, nil
+		default:
+			return nil, nil
+		}
+	}
+
+	renderResult, err := renderer.RenderAll(
+		context.Background(),
+		rendererInput,
+		cat.RecipeLookup(),
+		engineFactory,
+	)
+	if err != nil {
+		t.Fatalf("Step 5 (render): %v", err)
+	}
+	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}
+}
+
+// tryRunFeatureMatrixVariant mirrors runFeatureMatrixVariant but returns the
+// first pipeline error encountered instead of calling t.Fatalf. Used by
+// negative-path cross-cutting sub-tests that want to assert on the
+// compile-time error instead of treating any failure as a test fault.
+func tryRunFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) (*example22Result, error) {
+	t.Helper()
+
+	base := "testdata/feature-matrix/catalog/base"
+	recipesDir := filepath.Join("testdata/feature-matrix/catalog/recipes", variant.name)
+	dirs := append([]string{base, recipesDir}, variant.extraCatalogPaths...)
+
+	cat, err := catalog.LoadAll(dirs...)
+	if err != nil {
+		return nil, err
+	}
+
+	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
+		AggregatePath: "testdata/feature-matrix/aggregate.yaml",
+		ReleasePath:   filepath.Join("testdata/feature-matrix/releases", variant.releaseFile),
+		ManifestPath:  "testdata/feature-matrix/manifest.yaml",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	catalogLookup := cat.CatalogLookup()
+	if guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra); len(guardErrs) > 0 {
+		return nil, guardErrs[0]
+	}
+
+	topoResult, err := topology.Build(topology.BuildConfig{
+		ResolveResult:    resolveResult,
+		CatalogLookup:    catalogLookup,
+		LoadSubAggregate: cat.SubAggregateLoader(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
+		Topology:        topoResult,
+		ResolveResult:   resolveResult,
+		CatalogLookup:   catalogLookup,
+		CompilerVersion: "0.1.0",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	analysis := analyzer.Analyze(graph, catalogLookup)
+	if len(analysis.Errors) > 0 {
+		return nil, analysis.Errors[0]
+	}
+
 	rendererInput := renderer.RendererInput{
 		Graph:          graph,
 		FeatureOrder:   featureOrder,
@@ -123,9 +220,9 @@ func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *exampl
 		engineFactory,
 	)
 	if err != nil {
-		t.Fatalf("Step 5 (render): %v", err)
+		return nil, err
 	}
-	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}
+	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}, nil
 }
 
 // assertFeatureMatrixFilePresent checks at least one file in res whose path contains

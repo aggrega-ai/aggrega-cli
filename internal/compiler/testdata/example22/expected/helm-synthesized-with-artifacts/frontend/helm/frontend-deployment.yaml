@@ -9,6 +9,7 @@ metadata:
         aggrega.ai/compiler-version: 0.1.0
         aggrega.ai/component-id: frontend
         aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-web-ui-synthesized-with-artifacts:1.0.0
         app: frontend
         app.kubernetes.io/name: frontend
 spec:
@@ -25,6 +26,7 @@ spec:
                 aggrega.ai/compiler-version: 0.1.0
                 aggrega.ai/component-id: frontend
                 aggrega.ai/environment: production
+                aggrega.ai/recipe-uri: helm-web-ui-synthesized-with-artifacts:1.0.0
                 app: frontend
                 app.kubernetes.io/name: frontend
         spec:

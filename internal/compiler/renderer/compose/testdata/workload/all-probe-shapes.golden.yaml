@@ -1,6 +1,12 @@
 services:
     multi:
         image: http-probe:1.0
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: multi
+            aggrega.ai/environment: test-env
         healthcheck:
             test:
                 - CMD-SHELL
@@ -11,6 +17,12 @@ services:
             start_period: 30s
     multi-exec-side:
         image: exec-probe:1.0
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: multi
+            aggrega.ai/environment: test-env
         network_mode: service:multi
         healthcheck:
             test:
@@ -19,6 +31,12 @@ services:
                 - --ready
     multi-tcp-side:
         image: tcp-probe:1.0
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: multi
+            aggrega.ai/environment: test-env
         network_mode: service:multi
         healthcheck:
             test:

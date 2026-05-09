@@ -291,6 +291,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		if recipe != nil {
 			nodeCtx.Source = recipe.Spec.Source
+			nodeCtx.RecipeName = recipe.Metadata.Name
+			nodeCtx.RecipeVersion = recipe.Metadata.Version
 		}
 		sourceEmpty := nodeCtx.Source == nil
 		if s, ok := nodeCtx.Source.(string); ok && s == "" {

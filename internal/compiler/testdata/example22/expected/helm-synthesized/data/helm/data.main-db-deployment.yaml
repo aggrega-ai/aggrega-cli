@@ -9,6 +9,7 @@ metadata:
         aggrega.ai/compiler-version: 0.1.0
         aggrega.ai/component-id: data.main-db
         aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-postgres-synthesized:1.0.0
         app: data.main-db
         app.kubernetes.io/name: data.main-db
 spec:
@@ -25,6 +26,7 @@ spec:
                 aggrega.ai/compiler-version: 0.1.0
                 aggrega.ai/component-id: data.main-db
                 aggrega.ai/environment: production
+                aggrega.ai/recipe-uri: helm-postgres-synthesized:1.0.0
                 app: data.main-db
                 app.kubernetes.io/name: data.main-db
         spec:

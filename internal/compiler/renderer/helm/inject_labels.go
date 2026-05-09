@@ -13,13 +13,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// injectAggreraLabels post-processes rendered YAML (possibly multi-document) and
+// injectAggregaLabels post-processes rendered YAML (possibly multi-document) and
 // merges aggrega.ai provenance labels into each document's metadata.labels map.
 // Chart-author labels are preserved; aggrega keys overwrite on collision.
 //
 // Documents without a metadata map are left untouched (they aren't K8s-shaped).
 // Multi-doc boundaries ("---") are preserved via yaml.Encoder per document.
-func injectAggreraLabels(yamlBytes []byte, labels map[string]string) ([]byte, error) {
+func injectAggregaLabels(yamlBytes []byte, labels map[string]string) ([]byte, error) {
 	if len(labels) == 0 {
 		return yamlBytes, nil
 	}
@@ -143,7 +143,7 @@ func chooseScalarStyle(v string) yaml.Style {
 	return 0
 }
 
-// injectAggreraAnnotations post-processes rendered YAML (possibly multi-
+// injectAggregaAnnotations post-processes rendered YAML (possibly multi-
 // document) and merges aggrega-managed annotations into each document's
 // metadata.annotations map. Chart-author annotations are preserved;
 // aggrega keys overwrite on collision.
@@ -156,7 +156,7 @@ func chooseScalarStyle(v string) yaml.Style {
 // resources that already carry a helm.sh/hook annotation (chart-author
 // hook markers). Non-hook resources receive only the always-emit
 // annotations set.
-func injectAggreraAnnotations(yamlBytes []byte, annotations map[string]string, hookWeight string) ([]byte, error) {
+func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, hookWeight string) ([]byte, error) {
 	if len(annotations) == 0 && hookWeight == "" {
 		return yamlBytes, nil
 	}

@@ -10,16 +10,19 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
 )
 
-// buildAggreraLabels produces the aggrega.ai/* resource labels for K8s manifests.
+// buildAggregaLabels produces the aggrega.ai/* resource labels for K8s manifests.
 // These are static metadata tags — the compiler has no knowledge of OpenTelemetry;
 // downstream tooling (Prometheus, cost allocation, OTel correlation) consumes them.
-func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
+func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":      nodeCtx.NodeID,
 		"aggrega.ai/component-id":     nodeCtx.NodeID,
 	}
 	if nodeCtx.BoundaryPath != "" {
 		labels["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath
+	}
+	if nodeCtx.RecipeName != "" && nodeCtx.RecipeVersion != "" {
+		labels["aggrega.ai/recipe-uri"] = nodeCtx.RecipeName + ":" + nodeCtx.RecipeVersion
 	}
 	if nodeCtx.Provenance.CompilerVersion != "" {
 		labels["aggrega.ai/compiler-version"] = nodeCtx.Provenance.CompilerVersion
@@ -36,7 +39,7 @@ func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	return labels
 }
 
-// buildAggreraAnnotations produces the aggrega-managed annotation set for
+// buildAggregaAnnotations produces the aggrega-managed annotation set for
 // downstream K8s manifests rendered from this helm-chart sub-chart. API
 // parity with the helm provider's same-named function: the helm-chart
 // engine itself does not render manifests at compile time (manifest
@@ -45,7 +48,7 @@ func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 // or for fixture-based tests asserting parity. Currently emits
 // argocd.argoproj.io/sync-wave when nodeCtx.SyncWave != 0; default-0
 // elide preserved.
-func buildAggreraAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
+func buildAggregaAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
 	annotations := map[string]string{}
 	if nodeCtx.SyncWave != 0 {
 		annotations["argocd.argoproj.io/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)

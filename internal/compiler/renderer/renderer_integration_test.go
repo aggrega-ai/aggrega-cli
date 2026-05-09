@@ -152,7 +152,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 	t.Error("no api deployment found")
 }
 
-func TestIntegration_AggreraLabelsPresent(t *testing.T) {
+func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 	t.Parallel()
 	labels := types.OrderedMap[string]{}
 	labels.Set("component.aggrega.ai/type", "server")

@@ -10,16 +10,19 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
 )
 
-// buildAggreraLabels produces the aggrega.ai/* resource labels for K8s manifests.
+// buildAggregaLabels produces the aggrega.ai/* resource labels for K8s manifests.
 // These are static metadata tags — the compiler has no knowledge of OpenTelemetry;
 // downstream tooling (Prometheus, cost allocation, OTel correlation) consumes them.
-func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
+func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":      nodeCtx.NodeID,
 		"aggrega.ai/component-id":     nodeCtx.NodeID,
 	}
 	if nodeCtx.BoundaryPath != "" {
 		labels["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath
+	}
+	if nodeCtx.RecipeName != "" && nodeCtx.RecipeVersion != "" {
+		labels["aggrega.ai/recipe-uri"] = nodeCtx.RecipeName + ":" + nodeCtx.RecipeVersion
 	}
 	if nodeCtx.Provenance.CompilerVersion != "" {
 		labels["aggrega.ai/compiler-version"] = nodeCtx.Provenance.CompilerVersion
@@ -36,13 +39,13 @@ func buildAggreraLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	return labels
 }
 
-// buildAggreraAnnotations produces the aggrega.ai/* annotation set for K8s
-// manifests. Distinct from buildAggreraLabels: annotations carry data that
+// buildAggregaAnnotations produces the aggrega.ai/* annotation set for K8s
+// manifests. Distinct from buildAggregaLabels: annotations carry data that
 // downstream tooling reads but doesn't filter on (ArgoCD wave order, Helm
 // hook ordering, etc.). Currently emits argocd.argoproj.io/sync-wave when
 // nodeCtx.SyncWave != 0 (default-0 elide); future expansions add more
 // annotations as provider-native sequencing primitives surface.
-func buildAggreraAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
+func buildAggregaAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
 	annotations := map[string]string{}
 	if nodeCtx.SyncWave != 0 {
 		annotations["argocd.argoproj.io/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)

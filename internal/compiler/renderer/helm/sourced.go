@@ -68,8 +68,8 @@ func renderSourced(
 	// Flatten with nodeID prefix for output determinism. Each rendered document
 	// is post-processed to merge aggrega.ai/* provenance labels into
 	// metadata.labels so sourced mode matches sourceless-mode's labeling.
-	aggreraLabels := buildAggreraLabels(nodeCtx)
-	aggreraAnnotations := buildAggreraAnnotations(nodeCtx)
+	aggregaLabels := buildAggregaLabels(nodeCtx)
+	aggregaAnnotations := buildAggregaAnnotations(nodeCtx)
 	hookWeight := helmHookWeight(nodeCtx)
 	out := make(map[string][]byte, len(rendered))
 	keys := make([]string, 0, len(rendered))
@@ -89,11 +89,11 @@ func renderSourced(
 		if strings.HasPrefix(base, "_") {
 			continue
 		}
-		labeled, err := injectAggreraLabels([]byte(content+"\n"), aggreraLabels)
+		labeled, err := injectAggregaLabels([]byte(content+"\n"), aggregaLabels)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, base))
 		}
-		annotated, err := injectAggreraAnnotations(labeled, aggreraAnnotations, hookWeight)
+		annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
 		}

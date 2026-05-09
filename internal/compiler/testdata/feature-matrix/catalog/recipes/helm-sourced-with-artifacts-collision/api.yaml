@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-api-helm-sourced-art-collision
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server
+  source: ../helm-sourced-with-artifacts/charts/api
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .values.port }}"
+  valuesMapping: |
+    {
+      "image": "api-server:1.0.0",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .values.port }}:{{ .values.port }}"]
+    }
+  artifacts:
+    api-deployment.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: collision-target
+      data:
+        note: "this artifact's filename collides with the chart-rendered deployment"

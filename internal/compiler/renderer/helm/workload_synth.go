@@ -75,8 +75,8 @@ func (e *HelmEngine) SynthesizeWorkload(
 	// persistentTemplate; else Deployment.
 	useStatefulSet := workloadHasPersistentTemplate(w)
 
-	labels := buildAggreraLabels(nodeCtx)
-	annotations := buildAggreraAnnotations(nodeCtx)
+	labels := buildAggregaLabels(nodeCtx)
+	annotations := buildAggregaAnnotations(nodeCtx)
 	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
 	resourceLabels := mergeLabels(selectorLabels, labels)
 	resourceAnnotations := nilIfEmpty(annotations)

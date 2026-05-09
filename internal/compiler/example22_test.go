@@ -554,7 +554,7 @@ func assertDistMatches(t *testing.T, actual map[string][]byte, expectedDir, stri
 
 // assertProvenanceLabels verifies the canonical aggrega.ai/* label set is
 // present on K8s-shaped manifests in actual. The helm engine's
-// buildAggreraLabels emits component-id + boundary-path on every K8s
+// buildAggregaLabels emits component-id + boundary-path on every K8s
 // manifest; aggrega.ai/recipe-uri is emitted by the artifacts evaluator
 // path only — the helm and helm-chart engines do not yet thread Recipe
 // identity onto NodeRenderContext, so recipe-uri is asserted only when

@@ -1,6 +1,12 @@
 services:
     store:
         image: store:1.0
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: store
+            aggrega.ai/environment: test-env
         volumes:
             - type: bind
               source: app-config

@@ -1,12 +1,24 @@
 services:
     backend:
         image: backend:1.0
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: backend
+            aggrega.ai/environment: test-env
         networks:
             - core-net
     frontend:
         image: frontend:1.0
         ports:
             - 80:80
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: frontend
+            aggrega.ai/environment: test-env
         networks:
             - edge-net
 networks:

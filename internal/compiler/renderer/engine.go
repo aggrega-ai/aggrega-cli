@@ -111,6 +111,8 @@ type NodeRenderContext struct {
 	ResolvedVersion string
 	Component       string
 	Source          interface{} // forwarded from recipe.spec.source (nil / string path / structured)
+	RecipeName      string      // recipe metadata.name; empty when no Recipe selected for this node
+	RecipeVersion   string      // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
 	Provenance      ProvenanceContext
 }
 

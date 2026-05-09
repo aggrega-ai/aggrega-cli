@@ -14,7 +14,7 @@ import "strconv"
 // app.kubernetes.io/name recommended label.
 //
 // The artifacts evaluator is the only current consumer; the helm and
-// helmchart engines retain their own buildAggreraLabels helper until a
+// helmchart engines retain their own buildAggregaLabels helper until a
 // follow-up unifies the two helpers and regenerates affected goldens.
 func buildProvenanceLabels(state *PhaseBState, nodeCtx NodeRenderContext) map[string]string {
 	labels := map[string]string{

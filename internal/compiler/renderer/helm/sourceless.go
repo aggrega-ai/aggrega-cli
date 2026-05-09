@@ -32,14 +32,14 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 	ports := stringSliceFromValues(values, "ports")
 	replicas := intFromValues(values, "replicas", 1)
 
-	aggreraLabels := buildAggreraLabels(nodeCtx)
-	aggreraAnnotations := buildAggreraAnnotations(nodeCtx)
+	aggregaLabels := buildAggregaLabels(nodeCtx)
+	aggregaAnnotations := buildAggregaAnnotations(nodeCtx)
 	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
 	resourceLabels := map[string]string{}
 	for k, v := range selectorLabels {
 		resourceLabels[k] = v
 	}
-	for k, v := range aggreraLabels {
+	for k, v := range aggregaLabels {
 		resourceLabels[k] = v
 	}
 	// Sourceless mode produces synthesized resources (Deployment, Service)
@@ -47,7 +47,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 	// and Service get the always-emit annotations (currently
 	// argocd.argoproj.io/sync-wave when SyncWave != 0).
 	resourceAnnotations := map[string]string{}
-	for k, v := range aggreraAnnotations {
+	for k, v := range aggregaAnnotations {
 		resourceAnnotations[k] = v
 	}
 

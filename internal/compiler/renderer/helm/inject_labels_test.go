@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestInjectAggreraLabels_AddsLabelsToExistingMetadata(t *testing.T) {
+func TestInjectAggregaLabels_AddsLabelsToExistingMetadata(t *testing.T) {
 	t.Parallel()
 	in := []byte(`apiVersion: v1
 kind: Deployment
@@ -23,7 +23,7 @@ spec:
 		"aggrega.ai/aggregate-name": "test-app",
 		"aggrega.ai/component-id":   "api",
 	}
-	out, err := injectAggreraLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -40,7 +40,7 @@ spec:
 	}
 }
 
-func TestInjectAggreraLabels_CreatesMetadataLabelsWhenAbsent(t *testing.T) {
+func TestInjectAggregaLabels_CreatesMetadataLabelsWhenAbsent(t *testing.T) {
 	t.Parallel()
 	in := []byte(`apiVersion: v1
 kind: Service
@@ -50,7 +50,7 @@ spec:
   type: ClusterIP
 `)
 	labels := map[string]string{"aggrega.ai/component-id": "api"}
-	out, err := injectAggreraLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -63,7 +63,7 @@ spec:
 	}
 }
 
-func TestInjectAggreraLabels_MultiDocumentBoundariesPreserved(t *testing.T) {
+func TestInjectAggregaLabels_MultiDocumentBoundariesPreserved(t *testing.T) {
 	t.Parallel()
 	in := []byte(`apiVersion: v1
 kind: Deployment
@@ -76,7 +76,7 @@ metadata:
   name: api
 `)
 	labels := map[string]string{"aggrega.ai/component-id": "api"}
-	out, err := injectAggreraLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -89,7 +89,7 @@ metadata:
 	}
 }
 
-func TestInjectAggreraLabels_CollisionAggreraWins(t *testing.T) {
+func TestInjectAggregaLabels_CollisionAggregaWins(t *testing.T) {
 	t.Parallel()
 	in := []byte(`apiVersion: v1
 kind: Deployment
@@ -99,7 +99,7 @@ metadata:
     aggrega.ai/component-id: stale
 `)
 	labels := map[string]string{"aggrega.ai/component-id": "fresh"}
-	out, err := injectAggreraLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -112,10 +112,10 @@ metadata:
 	}
 }
 
-func TestInjectAggreraLabels_EmptyLabelsIsNoOp(t *testing.T) {
+func TestInjectAggregaLabels_EmptyLabelsIsNoOp(t *testing.T) {
 	t.Parallel()
 	in := []byte("apiVersion: v1\nkind: Deployment\n")
-	out, err := injectAggreraLabels(in, nil)
+	out, err := injectAggregaLabels(in, nil)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}

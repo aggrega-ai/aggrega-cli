@@ -189,7 +189,8 @@ func translateContainer(
 	mainServiceName string,
 ) (Service, error) {
 	svc := Service{
-		Image: c.Image,
+		Image:  c.Image,
+		Labels: buildAggregaLabels(nodeCtx),
 	}
 
 	if len(c.Command) > 0 {

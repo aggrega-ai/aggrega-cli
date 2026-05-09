@@ -3,6 +3,18 @@ services:
         image: api:2.0
         ports:
             - 8080:8080
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: api
+            aggrega.ai/environment: test-env
     api-logger:
         image: logger:1.0
+        labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/boundary-path: default
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: api
+            aggrega.ai/environment: test-env
         network_mode: service:api

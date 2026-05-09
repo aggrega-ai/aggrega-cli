@@ -133,7 +133,7 @@ func TestHelmEngine_Sourced_RendersChart(t *testing.T) {
 	}
 }
 
-func TestHelmEngine_Sourced_CarriesAggreraLabels(t *testing.T) {
+func TestHelmEngine_Sourced_CarriesAggregaLabels(t *testing.T) {
 	t.Parallel()
 	// Sourced-mode chart output must carry aggrega.ai/* provenance labels —
 	// sourceless mode injects them during generation; sourced mode post-processes.

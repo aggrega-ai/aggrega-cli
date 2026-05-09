@@ -26,6 +26,7 @@ type Service struct {
 	Environment map[string]string `yaml:"environment,omitempty"`
 	EnvFile     []string          `yaml:"env_file,omitempty"`
 	Ports       []string          `yaml:"ports,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
 	Volumes     []ServiceVolume   `yaml:"volumes,omitempty"`
 	Tmpfs       []string          `yaml:"tmpfs,omitempty"`
 	Networks    []string          `yaml:"networks,omitempty"`
