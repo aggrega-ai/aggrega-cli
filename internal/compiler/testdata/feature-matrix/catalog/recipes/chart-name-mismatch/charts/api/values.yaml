@@ -1,0 +1,2 @@
+image: api-server:1.0.0
+replicas: 1

@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-db-path-collision
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/database/mariadb
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: "{{ .values.port }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: mariadb:11
+        ports:
+          db: {{ .values.port }}
+        variables:
+          MARIADB_DATABASE: "{{ .values.database }}"
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: {{ .values.port }}

@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feature-matrix-chart-name-mismatch
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      annotations:
+        aggrega.ai/chart-name: parent-umbrella
+      boundaries:
+        services-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/chart-name: child-alpha
+          components:
+            api:
+              infra:
+                replicas: 1
+        data-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/chart-name: child-beta
+          components:
+            db:
+              infra:
+                replicas: 1

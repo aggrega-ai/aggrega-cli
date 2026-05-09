@@ -1,0 +1,4 @@
+apiVersion: v2
+name: api
+version: 0.1.0
+description: feature-matrix chart-name-mismatch fixture chart for core/server.

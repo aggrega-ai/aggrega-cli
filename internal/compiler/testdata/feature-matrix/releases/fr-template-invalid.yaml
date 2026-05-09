@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feature-matrix-fr-invalid
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      features:
+        bad-fr:
+          type: core/invalid-boundary-fr:1.0.0
+      components:
+        api:
+          infra:
+            replicas: 1
+        db:
+          infra:
+            replicas: 1

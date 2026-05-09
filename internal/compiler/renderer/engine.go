@@ -113,7 +113,14 @@ type NodeRenderContext struct {
 	Source          interface{} // forwarded from recipe.spec.source (nil / string path / structured)
 	RecipeName      string      // recipe metadata.name; empty when no Recipe selected for this node
 	RecipeVersion   string      // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
-	Provenance      ProvenanceContext
+	// LabelComponentID, when non-empty, overrides NodeID as the value of the
+	// app.kubernetes.io/name and aggrega.ai/component-id labels. Used by FR-
+	// emitted resources whose internal NodeID carries marker syntax
+	// (e.g. <boundary-fr>:bridge@cluster) that needs sanitization for K8s
+	// label-value rules. Empty means "use NodeID directly" — the default for
+	// regular component nodes whose NodeIDs are already alphanumeric.
+	LabelComponentID string
+	Provenance       ProvenanceContext
 }
 
 // ProvenanceContext carries build identity for resource labels.

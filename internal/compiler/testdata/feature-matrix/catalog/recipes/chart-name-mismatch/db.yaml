@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-db-chart-name-mismatch
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/database/mariadb
+  source: ./charts/db
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    port: "{{ .values.port }}"
+  valuesMapping: |
+    {
+      "image": "mariadb:11",
+      "replicas": {{ .infra.replicas | default 1 }}
+    }

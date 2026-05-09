@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feature-matrix-path-collision
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest
+  boundaries:
+    api-net:
+      directory: ./dist/shared
+      subDirectory: merged
+      components:
+        api:
+          infra:
+            replicas: 1
+    db-net:
+      directory: ./dist/shared
+      subDirectory: merged
+      components:
+        db:
+          infra:
+            replicas: 1

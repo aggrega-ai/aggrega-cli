@@ -48,6 +48,7 @@ import (
 	sprig "github.com/Masterminds/sprig/v3"
 
 	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	"github.com/cognitio/aggrega-cli/pkg/labels"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -283,10 +284,18 @@ func dispatchBoundaryScopeFR(
 
 	// Build the per-FR NodeRenderContext. Use the boundary's path as the
 	// pseudo-NodeID for the engine — the engine's per-node identity is
-	// the boundary-FR tuple, not a per-component instance.
+	// the boundary-FR tuple, not a per-component instance. The synthetic
+	// NodeID marker syntax stays for dispatch + trace + error-message
+	// uniqueness; LabelComponentID carries the K8s-safe sanitized form
+	// for label values. RecipeName/Version carry the FR's identity so the
+	// aggrega.ai/recipe-uri label resolves to the FR (not the consumer
+	// node's Recipe whose nodeCtx this struct was copied from).
 	frNodeCtx := nodeCtx
 	frNodeCtx.NodeID = "<boundary-fr>:" + frInstance + "@" + key.BoundaryPath
 	frNodeCtx.BoundaryPath = key.BoundaryPath
+	frNodeCtx.RecipeName = fr.Metadata.Name
+	frNodeCtx.RecipeVersion = fr.Metadata.Version
+	frNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(frNodeCtx.NodeID)
 	if src, ok := fr.Spec.Source.(string); ok && src != "" {
 		frNodeCtx.Source = src
 	} else if fr.Spec.Source != nil {

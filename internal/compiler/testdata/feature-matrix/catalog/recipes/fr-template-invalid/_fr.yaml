@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: invalid-boundary-fr
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/invalid-boundary-fr:1.0.0
+  executionScope: boundary
+
+  # Invalid: an executionScope:boundary FR template MUST NOT reference
+  # per-component-only fields (.context.*, .workload.*, .secret_name,
+  # .inject, .inject_raw). The reference below to .context.instance_id
+  # should trigger ErrFRTemplateInvalidField at FR validation time.
+  valuesMapping: |
+    services:
+      placeholder:
+        environment:
+          INSTANCE: "{{ .context.instance_id }}"

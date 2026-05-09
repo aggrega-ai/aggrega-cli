@@ -6,12 +6,14 @@ package compiler_test
 import (
 	"bytes"
 	stderrors "errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
@@ -135,6 +137,61 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 		})
 	}
 
+	// --- BridgeProvenance: FR-emitted bridge service carries FR identity ---
+	t.Run("BridgeProvenance/compose-sourced-with-bridge", func(t *testing.T) {
+		t.Parallel()
+		res := runFeatureMatrixVariant(t, variants[3])
+		var mergedCompose string
+		for path, content := range res.Files {
+			if strings.HasSuffix(path, "docker-compose.yaml") {
+				mergedCompose = string(content)
+				break
+			}
+		}
+		if mergedCompose == "" {
+			t.Fatalf("merged docker-compose.yaml not found in %d files", len(res.Files))
+		}
+		// Locate the aggrega-gw service block + its labels block. The
+		// service appears as the first key alphabetically in the compose
+		// services map; find its labels via a substring window starting
+		// at the service header and bounded by the next service.
+		bridgeStart := strings.Index(mergedCompose, "aggrega-gw:")
+		if bridgeStart < 0 {
+			t.Fatalf("aggrega-gw service block missing from merged compose:\n%s", mergedCompose)
+		}
+		// Take a bounded window — services in the compose document end
+		// where the next service (alphabetically: api) begins.
+		nextService := strings.Index(mergedCompose[bridgeStart:], "\n    api:")
+		bridgeEnd := bridgeStart + len(mergedCompose[bridgeStart:])
+		if nextService > 0 {
+			bridgeEnd = bridgeStart + nextService
+		}
+		bridgeBlock := mergedCompose[bridgeStart:bridgeEnd]
+
+		// Discovery A — recipe-uri must reflect FR identity, not consumer Recipe.
+		const wantRecipeURI = "aggrega.ai/recipe-uri: compose-bridge-fr:1.0.0"
+		if !strings.Contains(bridgeBlock, wantRecipeURI) {
+			t.Errorf("bridge service: expected %q\nbridge block was:\n%s", wantRecipeURI, bridgeBlock)
+		}
+
+		// Discovery B — component-id must be the sanitized synthetic, not raw marker.
+		const wantComponentID = "aggrega.ai/component-id: boundary-fr-bridge-cluster"
+		if !strings.Contains(bridgeBlock, wantComponentID) {
+			t.Errorf("bridge service: expected %q\nbridge block was:\n%s", wantComponentID, bridgeBlock)
+		}
+
+		// Defensive: the bridge service should NOT carry the consumer
+		// Recipe's identity nor the raw marker syntax.
+		const stale1 = "feature-matrix-api-compose-bridge:1.0.0"
+		const stale2 = "<boundary-fr>"
+		if strings.Contains(bridgeBlock, stale1) {
+			t.Errorf("bridge service: stale consumer Recipe identity %q leaked into labels:\n%s", stale1, bridgeBlock)
+		}
+		if strings.Contains(bridgeBlock, stale2) {
+			t.Errorf("bridge service: raw marker syntax %q leaked into labels:\n%s", stale2, bridgeBlock)
+		}
+	})
+
 	// --- Criterion 5: PathDispatch (compose-bridge merged-path collapse) ---
 	t.Run("PathDispatch/compose-sourced-with-bridge", func(t *testing.T) {
 		t.Parallel()
@@ -196,6 +253,133 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 
 	// --- Criterion 8: WorkloadSecrets reject (blackbox slot reference) ---
 	t.Run("WorkloadSecrets/Reject", testWorkloadSecretsReject)
+
+	// --- Path-driven sentinel coverage ---
+	t.Run("Sentinel/PathCollision", testSentinelPathCollision)
+	t.Run("Sentinel/InstanceIDCollision", testSentinelInstanceIDCollision)
+	t.Run("Sentinel/ChartNameMismatch", testSentinelChartNameMismatch)
+	t.Run("Sentinel/FRTemplateInvalidField", testSentinelFRTemplateInvalidField)
+
+	// --- HelmHookWeight: helm.sh/hook-weight emission on chart-templated hooks ---
+	//
+	// Triggers via the helm-sourced-with-artifacts variant whose chart
+	// contains a templates/pre-install-job.yaml carrying
+	// `helm.sh/hook: pre-install`. The chart-rendering path (helm/sourced.go)
+	// detects the hook annotation and injects helm.sh/hook-weight matching
+	// the boundary's syncWave (`syncWave: 2` on this variant).
+	//
+	// Note: the artifacts-evaluator path (renderer/artifacts.go) does not
+	// inject hook-weight today — only the sourced-chart path does. The
+	// distinction is intentional: artifacts are typed as "extra resources"
+	// declared by the Recipe author; chart-templated hooks live in the
+	// chart-author-managed surface where Helm hook ordering applies. If a
+	// future scope extends hook-weight to the artifacts path, this test
+	// can be expanded with a second sub-test or variant.
+	t.Run("HelmHookWeight/helm-sourced-with-artifacts", func(t *testing.T) {
+		t.Parallel()
+		res := runFeatureMatrixVariant(t, variants[1])
+		var hookManifest string
+		var hookPath string
+		for path, content := range res.Files {
+			s := string(content)
+			if strings.Contains(s, "helm.sh/hook: pre-install") {
+				hookManifest = s
+				hookPath = path
+				break
+			}
+		}
+		if hookManifest == "" {
+			t.Fatalf("no rendered manifest carries `helm.sh/hook: pre-install`; looked across %d files", len(res.Files))
+		}
+		// helm-sourced-with-artifacts boundary declares syncWave: 2.
+		const wantHookWeight = `helm.sh/hook-weight: "2"`
+		if !strings.Contains(hookManifest, wantHookWeight) {
+			t.Errorf("hook manifest at %s missing %q\nrendered:\n%s", hookPath, wantHookWeight, hookManifest)
+		}
+		// Defensive: hook + sync-wave coexist on the same manifest. Hook-
+		// weight is hook-phase-scoped; sync-wave is globally-scoped.
+		const wantSyncWave = `argocd.argoproj.io/sync-wave: "2"`
+		if !strings.Contains(hookManifest, wantSyncWave) {
+			t.Errorf("hook manifest at %s missing %q\nrendered:\n%s", hookPath, wantSyncWave, hookManifest)
+		}
+	})
+}
+
+// testSentinelPathCollision exercises the dispatch-path uniqueness check
+// at orchestrator.go: two boundaries with distinct providers (helm +
+// compose) both override `subDirectory: merged` so their evaluated
+// dispatch paths converge on `dist/shared/merged`. The assembler refuses
+// to silently overwrite one provider's output with another's.
+func testSentinelPathCollision(t *testing.T) {
+	t.Parallel()
+	res, err := tryRunFeatureMatrixVariant(t, featureMatrixVariant{
+		name:        "path-collision",
+		releaseFile: "path-collision.yaml",
+	})
+	if err == nil {
+		t.Fatalf("expected ErrPathCollision; got %d files rendered", len(res.Files))
+	}
+	if !stderrors.Is(err, renderer.ErrPathCollision) {
+		t.Errorf("expected errors.Is(err, ErrPathCollision); got: %s", joinErrorChain(err))
+	}
+}
+
+// testSentinelInstanceIDCollision verifies the sentinel itself rather
+// than a fixture-driven trigger condition. The sentinel is a defensive
+// guardrail: topology flattening's prefix discipline (every node's
+// instance ID is prefixed with its boundary path) makes the same-ID
+// collision unreachable from valid input. Triggering via fixture would
+// require malformed IR. This test constructs the wrapped error directly
+// to verify the sentinel's identity and confirm errors.Is matches the
+// shape the orchestrator emits.
+func testSentinelInstanceIDCollision(t *testing.T) {
+	t.Parallel()
+	inner := fmt.Errorf("%w: dispatch path %q provider %q already contains node %q",
+		renderer.ErrInstanceIDCollision, "dist/shared", "helm", "api")
+	wrapped := cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
+	if !stderrors.Is(wrapped, renderer.ErrInstanceIDCollision) {
+		t.Errorf("expected errors.Is(wrapped, ErrInstanceIDCollision); got chain: %s", joinErrorChain(wrapped))
+	}
+}
+
+// testSentinelChartNameMismatch exercises the helm-chart umbrella
+// uniqueness check at orchestrator.go: a parent + 2 child boundaries
+// with `directory: "{{ .parent_boundary.directory }}"` cascade — all
+// three contribute to the same evaluated path under helm-chart provider
+// — but each declares a different `aggrega.ai/chart-name` annotation.
+// The merged umbrella has exactly one name; conflicting cascades
+// surface as the documented sentinel.
+func testSentinelChartNameMismatch(t *testing.T) {
+	t.Parallel()
+	res, err := tryRunFeatureMatrixVariant(t, featureMatrixVariant{
+		name:        "chart-name-mismatch",
+		releaseFile: "chart-name-mismatch.yaml",
+	})
+	if err == nil {
+		t.Fatalf("expected ErrChartNameMismatch; got %d files rendered", len(res.Files))
+	}
+	if !stderrors.Is(err, renderer.ErrChartNameMismatch) {
+		t.Errorf("expected errors.Is(err, ErrChartNameMismatch); got: %s", joinErrorChain(err))
+	}
+}
+
+// testSentinelFRTemplateInvalidField exercises the boundary-scope FR
+// template validator: an `executionScope: boundary` FR whose template
+// references a per-component-only field (`.context.instance_id`) is
+// rejected at FR validation time. The fixture's local FR triggers the
+// check via its `valuesMapping` referencing the disallowed field.
+func testSentinelFRTemplateInvalidField(t *testing.T) {
+	t.Parallel()
+	res, err := tryRunFeatureMatrixVariant(t, featureMatrixVariant{
+		name:        "fr-template-invalid",
+		releaseFile: "fr-template-invalid.yaml",
+	})
+	if err == nil {
+		t.Fatalf("expected ErrFRTemplateInvalidField; got %d files rendered", len(res.Files))
+	}
+	if !stderrors.Is(err, renderer.ErrFRTemplateInvalidField) {
+		t.Errorf("expected errors.Is(err, ErrFRTemplateInvalidField); got: %s", joinErrorChain(err))
+	}
 }
 
 // assertAlwaysPresentTraceSlots discovers each node-leaf directory under

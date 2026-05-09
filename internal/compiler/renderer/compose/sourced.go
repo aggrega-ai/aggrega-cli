@@ -49,7 +49,8 @@ func renderSourced(chartPath string, values map[string]interface{}, nodeCtx rend
 	}
 
 	merged := deepMergeOverlay(base, values)
-	injectAggregaLabelsIntoServices(merged, nodeCtx)
+	origins := buildSingleOriginMap(merged, nodeCtx)
+	injectAggregaLabelsIntoServices(merged, origins)
 
 	body, err := yaml.Marshal(merged)
 	if err != nil {

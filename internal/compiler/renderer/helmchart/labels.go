@@ -14,9 +14,13 @@ import (
 // These are static metadata tags — the compiler has no knowledge of OpenTelemetry;
 // downstream tooling (Prometheus, cost allocation, OTel correlation) consumes them.
 func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
+	componentID := nodeCtx.LabelComponentID
+	if componentID == "" {
+		componentID = nodeCtx.NodeID
+	}
 	labels := map[string]string{
-		"app.kubernetes.io/name":      nodeCtx.NodeID,
-		"aggrega.ai/component-id":     nodeCtx.NodeID,
+		"app.kubernetes.io/name":      componentID,
+		"aggrega.ai/component-id":     componentID,
 	}
 	if nodeCtx.BoundaryPath != "" {
 		labels["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath

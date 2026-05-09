@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-api-chart-name-mismatch
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/server
+  source: ./charts/api
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .values.port }}"
+  valuesMapping: |
+    {
+      "image": "api-server:1.0.0",
+      "replicas": {{ .infra.replicas | default 1 }}
+    }
