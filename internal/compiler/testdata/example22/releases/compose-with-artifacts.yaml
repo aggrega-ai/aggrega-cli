@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
-  name: compose-artifacts-release
+  name: compose-with-artifacts-release
   environment: production
   version: "1.0.0"
 spec:

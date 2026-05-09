@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
@@ -61,6 +62,17 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode typ
 		local.Spec.Source = resolvedSource
 		state.Recipe = &local
 		ctx.Source = resolvedSource
+	}
+
+	// Trace points: B.0 source eval (slot 05) and B.0 locals eval (slot 06).
+	// Slot 05 fires only when Recipe.Spec.Source is non-nil (a sourceless
+	// Recipe has no source-eval to capture); slot 06 fires unconditionally —
+	// phaseB0 always evaluates locals, even into an empty map.
+	if state.Trace != nil {
+		if state.Recipe.Spec.Source != nil {
+			_ = state.Trace.Write(trace.PassPhaseB0, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0))
+		}
+		_ = state.Trace.Write(trace.PassPhaseB0Locals, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0Locals))
 	}
 
 	state.PhaseReached = 0
@@ -121,6 +133,10 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 			state.Recipe.Metadata.Name, err)
 	}
 	state.ResolvedValues = values
+	// Trace point: B.1 valuesMapping output (slot 07).
+	if state.Trace != nil {
+		_ = state.Trace.Write(trace.PassPhaseB1, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB1))
+	}
 	state.PhaseReached = 1
 	return nil
 }
@@ -185,6 +201,10 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 
 	state.ParsedWorkload = &w
 	ctx.Workload = &w
+	// Trace point: B.2 parsed workload (slot 08).
+	if state.Trace != nil {
+		_ = state.Trace.Write(trace.PassPhaseB2, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB2))
+	}
 	state.PhaseReached = 2
 	return nil
 }
@@ -216,6 +236,18 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 		return err
 	}
 	state.EmittedFiles = append(state.EmittedFiles, files...)
+	// Trace point: per-emitted-artifact (slot 09). One trace event per file
+	// emitted by phaseB3, named by the original filename. Only files tagged
+	// with an artifacts origin are captured here; phaseB4 (synthesis) is the
+	// site of slot 10's per-file trace.
+	if state.Trace != nil {
+		for _, f := range files {
+			if f.Origin != EmitOriginArtifactsInline && f.Origin != EmitOriginArtifactsFromFile {
+				continue
+			}
+			_ = state.Trace.Write(trace.PassPhaseB3, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB3))
+		}
+	}
 	state.PhaseReached = 3
 	return nil
 }
@@ -239,6 +271,18 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 		return fmt.Errorf("Phase B.4 node %q: %w", state.NodeID, err)
 	}
 	state.EmittedFiles = append(state.EmittedFiles, files...)
+	// Trace point: per-synthesised-file (slot 10). One trace event per file
+	// emitted by phaseB4, named by the original filename. Filter by origin:
+	// EmitOriginWorkload (workload-mode synthesis) and EmitOriginSource
+	// (rare; sourced-and-workload coexistence) are the slot's contributors.
+	if state.Trace != nil {
+		for _, f := range files {
+			if f.Origin != EmitOriginWorkload && f.Origin != EmitOriginSource {
+				continue
+			}
+			_ = state.Trace.Write(trace.PassPhaseB4, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB4))
+		}
+	}
 	state.PhaseReached = 4
 	return nil
 }

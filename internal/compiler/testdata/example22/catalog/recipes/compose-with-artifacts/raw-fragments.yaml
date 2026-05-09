@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: compose-raw-fragments-artifacts
+  name: compose-raw-fragments-with-artifacts
   version: "1.0.0"
 spec:
   provider: compose

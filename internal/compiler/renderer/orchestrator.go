@@ -180,6 +180,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}
 
+		// Trace points: per-node pre-loop captures.
+		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial))
+		_ = traceWriter.Write(trace.PassProvides, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassProvides))
+		_ = traceWriter.Write(trace.PassInject, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassInject))
+
 		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
 		// sub-pass accumulators (resolved values, parsed workload, emitted
 		// files). Recipe path is empty here today — the catalog loader does
@@ -187,6 +192,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// surfacing through the sub-passes show "" for the path. Future
 		// improvement: thread the path through the catalog resolver.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
+		state.Trace = traceWriter
 
 		// Phase B.0 — locals + source-as-template eval; populates
 		// ctx.Locals + ctx.Source. May replace state.Recipe with a local
@@ -359,10 +365,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
-		// Trace point: Phase B.4 — node-scoped Workload synthesis output
-		// captured against the post-synthesis TemplateContext (workload
-		// pillar visible).
-		_ = traceWriter.Write(trace.PassPhaseB4, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseB4))
+		// Slot 10 (PassPhaseB4) is now wired per-emitted-file inside phaseB4
+		// itself; the orchestrator-level single-event-per-node wire that
+		// previously lived here was superseded by the per-file granularity.
 
 		// Phase B.5 — filename collision detection across input-kind
 		// origins (rule 7). Collisions can surface across EmitOriginSource
@@ -492,6 +497,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// to state.Warnings reaches result.Warnings, not just B.3's
 		// helm-chart provenance-skip notice today.
 		result.Warnings = append(result.Warnings, state.Warnings...)
+
+		// Trace point: per-node emission log (slot 11). Captures the
+		// post-Phase-B node summary — the warnings accumulated during the
+		// per-node sub-pass run plus the final emitted-files inventory.
+		emittedNames := make([]string, 0, len(state.EmittedFiles))
+		for _, f := range state.EmittedFiles {
+			emittedNames = append(emittedNames, f.Name)
+		}
+		emissionLog := map[string]any{
+			"node_id":        nodeID,
+			"boundary_path":  node.BoundaryPath,
+			"warnings":       state.Warnings,
+			"emitted_files":  emittedNames,
+		}
+		_ = traceWriter.Write(trace.PassEmission, nodeID, node.BoundaryPath, "", emissionLog)
 
 		// Trace point: per-emission provenance routing summary. Captures
 		// the per-node label and annotation set applied to emitted files

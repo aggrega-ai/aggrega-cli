@@ -18,6 +18,7 @@ import (
 	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 )
@@ -57,11 +58,16 @@ type example22Result struct {
 // Empty path fields default to the example22 root files; variants requiring
 // distinct authoring shapes (compose-only Aggregates, artifacts-only topology)
 // supply their own paths under testdata/example22/aggregates/ etc.
+//
+// traceRoot, when non-empty, enables --trace and writes per-pass intermediate
+// state under traceRoot/boundaries/<boundary>/<instance_id>/. Tests pass
+// t.TempDir() to confine the trace surface to the test process.
 type variantFixture struct {
 	name          string
 	aggregatePath string
 	releasePath   string
 	manifestPath  string
+	traceRoot     string
 }
 
 // runExample22 executes the full 5-step pipeline for one variant and returns
@@ -148,12 +154,18 @@ func runExample22Variant(t *testing.T, fx variantFixture) *example22Result {
 
 	// Step 5: Render — provider per-node via factory.
 	providerLookup := cat.ProviderLookup
+	var traceWriter trace.Writer
+	if fx.traceRoot != "" {
+		traceWriter = trace.New(fx.traceRoot)
+		defer func() { _ = traceWriter.Close() }()
+	}
 	rendererInput := renderer.RendererInput{
 		Graph:          graph,
 		FeatureOrder:   featureOrder,
 		ResolveResult:  resolveResult,
 		CatalogLookup:  catalogLookup,
 		ProviderLookup: providerLookup,
+		Trace:          traceWriter,
 	}
 	engineFactory := func(providerName string) (renderer.Engine, error) {
 		switch providerName {
@@ -363,16 +375,16 @@ func TestExample22_HelmChartWithArtifacts(t *testing.T) {
 	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-chart-with-artifacts", "dist/")
 }
 
-func TestExample22_ComposeArtifacts(t *testing.T) {
+func TestExample22_ComposeWithArtifacts(t *testing.T) {
 	t.Parallel()
 	res := runExample22Variant(t, variantFixture{
-		name:          "compose-artifacts",
-		aggregatePath: "testdata/example22/aggregates/compose-artifacts.yaml",
-		releasePath:   "testdata/example22/releases/compose-artifacts.yaml",
-		manifestPath:  "testdata/example22/manifests/compose-artifacts.yaml",
+		name:          "compose-with-artifacts",
+		aggregatePath: "testdata/example22/aggregates/compose-with-artifacts.yaml",
+		releasePath:   "testdata/example22/releases/compose-with-artifacts.yaml",
+		manifestPath:  "testdata/example22/manifests/compose-with-artifacts.yaml",
 	})
 	assertProvenanceLabels(t, res.Files, nil)
-	assertDistMatches(t, res.Files, "testdata/example22/expected/compose-artifacts", "dist/")
+	assertDistMatches(t, res.Files, "testdata/example22/expected/compose-with-artifacts", "dist/")
 }
 
 // assertSourcedUmbrellaProof covers the helm-chart sourced variant. The user's

@@ -3,7 +3,10 @@
 
 package renderer
 
-import "github.com/cognitio/aggrega-cli/pkg/types"
+import (
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
+	"github.com/cognitio/aggrega-cli/pkg/types"
+)
 
 // PhaseBState is the accumulator threaded through Phase B sub-passes B.0
 // through B.6. It carries the parsed Recipe (read by every sub-pass), the
@@ -72,6 +75,13 @@ type PhaseBState struct {
 	// provenance-skip notice — and any future sub-pass appending later in
 	// the pipeline both reach the result. Drain position is load-bearing.
 	Warnings []string
+
+	// Trace is the per-node trace.Writer threaded from the orchestrator.
+	// nil-safe: a no-op writer when --trace is off, an async fs writer
+	// when --trace is on. Sub-passes call state.Trace.Write directly to
+	// emit per-pass snapshots; the trace package handles serialization
+	// and async file I/O. The orchestrator owns Close().
+	Trace trace.Writer
 }
 
 // NewPhaseBState constructs a fresh accumulator for one node's Phase B run.
