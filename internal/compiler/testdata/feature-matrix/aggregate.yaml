@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: feature-matrix
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server
+      values:
+        port: 8080
+      uses:
+        databases:
+          db:
+            target: db
+            inject:
+              env:
+                DB_HOST: host
+                DB_PORT: port
+      features:
+        metrics:
+          type: core/prometheus-exporter
+    db:
+      type: core/database/mariadb
+      values:
+        database: app
+        port: 3306

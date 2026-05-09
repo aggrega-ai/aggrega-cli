@@ -1,0 +1,41 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-api-helm-sourced-art
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server
+  source: ./charts/api
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .values.port }}"
+  valuesMapping: |
+    {
+      "image": "api-server:1.0.0",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .values.port }}:{{ .values.port }}"],
+      "environment": {
+        "PORT": "{{ .values.port }}"
+        {{- if .context.inject.env.DB_HOST }},
+        "DB_HOST": "{{ .context.inject.env.DB_HOST }}"
+        {{- end }}
+        {{- if .context.inject.env.DB_PORT }},
+        "DB_PORT": "{{ .context.inject.env.DB_PORT }}"
+        {{- end }}
+      }
+    }
+  artifacts:
+    servicemonitor.yaml: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: {{ .context.instance_id }}-metrics
+      spec:
+        selector:
+          matchLabels:
+            app: {{ .context.instance_id }}
+        endpoints:
+          - port: web
+            path: /metrics
+            interval: 30s

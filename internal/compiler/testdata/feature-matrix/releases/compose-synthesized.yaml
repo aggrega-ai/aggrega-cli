@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feature-matrix-compose-synth
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        api:
+          infra:
+            replicas: 1
+        db:
+          infra:
+            replicas: 1

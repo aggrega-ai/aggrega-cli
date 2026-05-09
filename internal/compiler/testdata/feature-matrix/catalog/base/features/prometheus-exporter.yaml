@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/prometheus-exporter
+  version: "1.0.0"
+spec:
+  appliesTo:
+    component.aggrega.ai/type: "server"
+  cueSchema: |
+    parameter: { scrapePath?: string | *"/metrics" }

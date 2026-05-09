@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-db-compose-bridge
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/database/mariadb
+  source: ./sources/db.yaml
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: "{{ .values.port }}"
+  valuesMapping: |
+    {
+      "services": {
+        "db": {
+          "environment": {
+            "MARIADB_DATABASE": "{{ .values.database }}"
+          }
+        }
+      }
+    }

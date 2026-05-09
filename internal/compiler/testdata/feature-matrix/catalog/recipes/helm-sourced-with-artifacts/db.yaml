@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-db-helm-sourced-art
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/database/mariadb
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    port: "{{ .values.port }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      main:
+        image: mariadb:11
+        ports:
+          db: {{ .values.port }}
+        variables:
+          MARIADB_DATABASE: "{{ .values.database }}"
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: {{ .values.port }}

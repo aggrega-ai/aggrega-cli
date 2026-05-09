@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: feature-matrix-api-compose-bridge
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/server
+  source: ./sources/api.yaml
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "{{ .values.port }}"
+  valuesMapping: |
+    {
+      "services": {
+        "api": {
+          "environment": {
+            "PORT": "{{ .values.port }}"
+            {{- if .context.inject.env.DB_HOST }},
+            "DB_HOST": "{{ .context.inject.env.DB_HOST }}"
+            {{- end }}
+            {{- if .context.inject.env.DB_PORT }},
+            "DB_PORT": "{{ .context.inject.env.DB_PORT }}"
+            {{- end }}
+          }
+        }
+      }
+    }

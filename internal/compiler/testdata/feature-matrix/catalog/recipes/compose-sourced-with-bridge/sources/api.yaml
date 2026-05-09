@@ -1,0 +1,4 @@
+services:
+  api:
+    image: api-server:1.0.0
+    restart: unless-stopped

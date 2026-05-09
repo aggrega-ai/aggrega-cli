@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  baseSchema: |
+    {
+      image: string
+      replicas?: int | *1
+      ports?: [...string]
+      environment?: {[string]: string | int}
+    }
+  workloadSchema: |
+    #WorkloadSupported: true
