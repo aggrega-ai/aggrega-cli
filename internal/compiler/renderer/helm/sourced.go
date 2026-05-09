@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
@@ -28,13 +29,13 @@ func renderSourced(
 	// Load chart directory
 	ch, err := loader.Load(chartPath)
 	if err != nil {
-		return nil, fmt.Errorf("helm: node %q: load chart %q: %w", nodeCtx.NodeID, chartPath, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helm: node %q: load chart %q", nodeCtx.NodeID, chartPath))
 	}
 
 	// Coalesce the Phase B dict with the chart's default values
 	cvals, err := chartutil.CoalesceValues(ch, chartutil.Values(values))
 	if err != nil {
-		return nil, fmt.Errorf("helm: node %q: coalesce values: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helm: node %q: coalesce values", nodeCtx.NodeID))
 	}
 
 	// Build release options. We are not installing — just rendering templates.
@@ -54,13 +55,13 @@ func renderSourced(
 
 	renderVals, err := chartutil.ToRenderValues(ch, cvals, relOpts, caps)
 	if err != nil {
-		return nil, fmt.Errorf("helm: node %q: render values: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helm: node %q: render values", nodeCtx.NodeID))
 	}
 
 	// Render
 	rendered, err := engine.Engine{}.Render(ch, renderVals)
 	if err != nil {
-		return nil, fmt.Errorf("helm: node %q: render: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helm: node %q: render", nodeCtx.NodeID))
 	}
 
 	// rendered is map[path]string. Path format: "<chart>/templates/<file>.yaml".
@@ -90,11 +91,11 @@ func renderSourced(
 		}
 		labeled, err := injectAggreraLabels([]byte(content+"\n"), aggreraLabels)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q: inject labels into %q: %w", nodeCtx.NodeID, base, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, base))
 		}
 		annotated, err := injectAggreraAnnotations(labeled, aggreraAnnotations, hookWeight)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q: inject annotations into %q: %w", nodeCtx.NodeID, base, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
 		}
 		outKey := nodeCtx.NodeID + "-" + base
 		out[outKey] = annotated

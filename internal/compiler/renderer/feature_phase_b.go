@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -41,7 +42,7 @@ func EvaluateFeatureRecipeLocals(
 		}
 		val, err := EvalTemplate(fmt.Sprintf("fr-locals[%q]", key), tmplText, lCtx)
 		if err != nil {
-			return types.OrderedMap[string]{}, fmt.Errorf("FeatureRecipe %q locals[%q]: %w", fr.Metadata.Name, key, err)
+			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q locals[%q]", fr.Metadata.Name, key))
 		}
 		resolved.Set(key, strings.TrimSpace(val))
 	}
@@ -57,15 +58,14 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 	}
 
 	if fr.Spec.ValuesMappingJsonnet != "" {
-		return nil, fmt.Errorf("%w: FeatureRecipe %q uses valuesMappingJsonnet", ErrJsonnetNotSupported, fr.Metadata.Name)
+		return nil, cerrors.Wrap(ErrJsonnetNotSupported, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q uses valuesMappingJsonnet", fr.Metadata.Name))
 	}
 
 	tmplText := fr.Spec.ValuesMapping
 	if tmplText == "" && fr.Spec.ValuesMappingFile != "" {
 		data, err := os.ReadFile(fr.Spec.ValuesMappingFile)
 		if err != nil {
-			return nil, fmt.Errorf("Phase B (feature): FeatureRecipe %q valuesMappingFile %q: %w",
-				fr.Metadata.Name, fr.Spec.ValuesMappingFile, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Spec.ValuesMappingFile}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMappingFile", fr.Metadata.Name))
 		}
 		tmplText = string(data)
 	}
@@ -85,13 +85,12 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		ctx,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("Phase B (feature): FeatureRecipe %q valuesMapping: %w", fr.Metadata.Name, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMapping", fr.Metadata.Name))
 	}
 
 	var values map[string]interface{}
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return nil, fmt.Errorf("Phase B (feature): FeatureRecipe %q valuesMapping output is not valid YAML: %w",
-			fr.Metadata.Name, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
 	return values, nil

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -73,11 +74,15 @@ func renderSourceString(tmplText string, ctx LocalsContext, label string) (strin
 		return tmplText, nil
 	}
 	if err := CheckLocalsSelfContainment(tmplText, label, label); err != nil {
+		// Inner err is already a *CompilerError from CheckLocalsSelfContainment's
+		// rewrap; preserve chain via fmt.Errorf %w so formatter's errors.As
+		// finds the inner categorisation. Double-wrap via cerrors.Wrap would
+		// hide the inner message text from .Error() output.
 		return "", fmt.Errorf("Recipe source %q: %w", label, err)
 	}
 	out, err := EvalTemplate(fmt.Sprintf("recipe-source[%s]", label), tmplText, ctx)
 	if err != nil {
-		return "", fmt.Errorf("Recipe source %q: %w", label, err)
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("Recipe source %q", label))
 	}
 	return strings.TrimSpace(out), nil
 }

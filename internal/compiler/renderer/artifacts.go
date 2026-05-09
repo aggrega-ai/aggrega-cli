@@ -21,6 +21,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -128,10 +129,10 @@ func evaluateArtifacts(
 
 	if _, external := engine.(ExternalArtifactsHandler); external {
 		if hasInline {
-			return nil, fmt.Errorf(
-				"CATALOG_ERROR: recipe %q (%q): provider %q does not support inline artifacts:; declare artifactsFrom: instead so the files can be injected into the chart's templates/ directory",
-				state.RecipeName, state.RecipePath, state.Recipe.Spec.Provider,
-			)
+			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
+				fmt.Sprintf("recipe %q (%q): provider %q does not support inline artifacts:; declare artifactsFrom: instead so the files can be injected into the chart's templates/ directory",
+					state.RecipeName, state.RecipePath, state.Recipe.Spec.Provider),
+				nil, nil)
 		}
 		// External-handler engines: evaluate each artifactsFrom file with
 		// the engine's chosen template-delimiter pair, place each emission
@@ -152,7 +153,7 @@ func evaluateArtifacts(
 		for _, path := range state.Recipe.Spec.ArtifactsFrom {
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return nil, fmt.Errorf("CATALOG_ERROR: recipe %q artifactsFrom %q: %w", state.RecipeName, path, err)
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe %q artifactsFrom %q", state.RecipeName, path))
 			}
 			basename := filepath.Base(path)
 			body, err := evaluateOneArtifactWithDelims(
@@ -202,7 +203,7 @@ func evaluateArtifacts(
 	for _, path := range state.Recipe.Spec.ArtifactsFrom {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("CATALOG_ERROR: recipe %q artifactsFrom %q: %w", state.RecipeName, path, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe %q artifactsFrom %q", state.RecipeName, path))
 		}
 		basename := filepath.Base(path)
 		body, err := evaluateOneArtifact(tmplCtx, state, nodeCtx, basename, string(data), fmt.Sprintf("artifactsFrom[%s/%s]", state.RecipeName, basename))
@@ -286,7 +287,7 @@ func evaluateOneArtifactWithDelims(
 
 	rendered, err := EvalTemplateWithDelims(tmplName, tmplText, tmplCtx, leftDelim, rightDelim)
 	if err != nil {
-		return nil, fmt.Errorf("CATALOG_ERROR: artifact %q template eval: %w", filename, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template eval", filename))
 	}
 
 	if strings.TrimSpace(rendered) == "" {
@@ -324,7 +325,7 @@ func evaluateOneArtifactWithDelims(
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(rendered), &node); err != nil {
 		if usingDefaultDelims {
-			return nil, fmt.Errorf("CATALOG_ERROR: artifact %q template output is not valid YAML: %w", filename, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template output is not valid YAML", filename))
 		}
 		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
 		return []byte(rendered), nil
@@ -342,7 +343,7 @@ func evaluateOneArtifactWithDelims(
 
 	body, err := yaml.Marshal(&node)
 	if err != nil {
-		return nil, fmt.Errorf("CATALOG_ERROR: artifact %q yaml marshal: %w", filename, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q yaml marshal", filename))
 	}
 	return body, nil
 }
@@ -367,7 +368,7 @@ func evaluateOneArtifactWithDelims(
 func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, rightDelim string) error {
 	refs, err := CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim)
 	if err != nil {
-		return fmt.Errorf("CATALOG_ERROR: artifact %q template parse: %w", filename, err)
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template parse", filename))
 	}
 	workloadDeclared := state.ParsedWorkload != nil
 	sourceDeclared := false
@@ -384,16 +385,14 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 
 	for _, ref := range refs {
 		if !workloadDeclared && (ref == ".workload" || strings.HasPrefix(ref, ".workload.")) {
-			return fmt.Errorf(
-				"CATALOG_ERROR: artifact %q template references %q but Recipe declares no workload:/workloadFrom:",
-				filename, ref,
-			)
+			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
+				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:/workloadFrom:", filename, ref),
+				nil, nil)
 		}
 		if !sourceDeclared && (ref == ".source" || strings.HasPrefix(ref, ".source.")) {
-			return fmt.Errorf(
-				"CATALOG_ERROR: artifact %q template references %q but Recipe declares no source:",
-				filename, ref,
-			)
+			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
+				fmt.Sprintf("artifact %q template references %q but Recipe declares no source:", filename, ref),
+				nil, nil)
 		}
 	}
 	return nil
@@ -460,10 +459,10 @@ func mergeOrAppendProvenanceMapping(filename string, metadata *yaml.Node, key st
 	if keyNode != nil && valNode != nil {
 		valNode = unwrapAlias(valNode)
 		if valNode.Kind != yaml.MappingNode {
-			return fmt.Errorf(
-				"CATALOG_ERROR: artifact %q metadata.%s has unexpected shape (expected mapping, got %s); cannot merge provenance entries",
-				filename, key, nodeKindName(valNode.Kind),
-			)
+			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
+				fmt.Sprintf("artifact %q metadata.%s has unexpected shape (expected mapping, got %s); cannot merge provenance entries",
+					filename, key, nodeKindName(valNode.Kind)),
+				nil, nil)
 		}
 		mergeProvenanceIntoLabels(valNode, entries)
 		return nil

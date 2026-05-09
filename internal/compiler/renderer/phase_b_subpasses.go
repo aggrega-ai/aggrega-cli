@@ -21,6 +21,7 @@ import (
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
 	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
@@ -44,7 +45,7 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode typ
 		state.Recipe, state.NodeID, ctx.Values, ctx.Infra, providesForNode,
 	)
 	if err != nil {
-		return fmt.Errorf("Phase B.0 node %q locals: %w", state.NodeID, err)
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.0 node %q locals", state.NodeID))
 	}
 	ctx.Locals = resolvedLocals
 
@@ -53,7 +54,7 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode typ
 			state.Recipe.Spec.Source, state.NodeID, ctx.Values, ctx.Infra, providesForNode,
 		)
 		if err != nil {
-			return fmt.Errorf("Phase B.0 node %q source: %w", state.NodeID, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.0 node %q source", state.NodeID))
 		}
 		// Replace state.Recipe with a local copy carrying the resolved
 		// source; engines later read state.Recipe.Spec.Source for the
@@ -97,15 +98,14 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		return nil
 	}
 	if state.Recipe.Spec.ValuesMappingJsonnet != "" {
-		return fmt.Errorf("%w: recipe %q uses valuesMappingJsonnet", ErrJsonnetNotSupported, state.Recipe.Metadata.Name)
+		return cerrors.Wrap(ErrJsonnetNotSupported, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q uses valuesMappingJsonnet", state.Recipe.Metadata.Name))
 	}
 
 	tmplText := state.Recipe.Spec.ValuesMapping
 	if tmplText == "" && state.Recipe.Spec.ValuesMappingFile != "" {
 		data, err := os.ReadFile(state.Recipe.Spec.ValuesMappingFile)
 		if err != nil {
-			return fmt.Errorf("Phase B.1: recipe %q valuesMappingFile %q: %w",
-				state.Recipe.Metadata.Name, state.Recipe.Spec.ValuesMappingFile, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.Recipe.Spec.ValuesMappingFile}, fmt.Sprintf("Phase B.1: recipe %q valuesMappingFile", state.Recipe.Metadata.Name))
 		}
 		tmplText = string(data)
 	}
@@ -124,13 +124,12 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		ctx,
 	)
 	if err != nil {
-		return fmt.Errorf("Phase B.1: recipe %q valuesMapping: %w", state.Recipe.Metadata.Name, err)
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.1: recipe %q valuesMapping", state.Recipe.Metadata.Name))
 	}
 
 	var values map[string]interface{}
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return fmt.Errorf("Phase B.1: recipe %q valuesMapping output is not valid YAML: %w",
-			state.Recipe.Metadata.Name, err)
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.1: recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 	state.ResolvedValues = values
 	// Trace point: B.1 valuesMapping output (slot 07).
@@ -168,8 +167,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	if workloadText == "" && state.Recipe.Spec.WorkloadFrom != "" {
 		data, err := os.ReadFile(state.Recipe.Spec.WorkloadFrom)
 		if err != nil {
-			return fmt.Errorf("Phase B.2: recipe %q workloadFrom %q: %w",
-				state.Recipe.Metadata.Name, state.Recipe.Spec.WorkloadFrom, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.Recipe.Spec.WorkloadFrom}, fmt.Sprintf("Phase B.2: recipe %q workloadFrom", state.Recipe.Metadata.Name))
 		}
 		workloadText = string(data)
 	}
@@ -184,12 +182,12 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		ctx,
 	)
 	if err != nil {
-		return fmt.Errorf("Phase B.2: recipe %q workload template: %w", state.Recipe.Metadata.Name, err)
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.2: recipe %q workload template", state.Recipe.Metadata.Name))
 	}
 
 	var w types.Workload
 	if err := parse.TemplateOutput([]byte(output), &w); err != nil {
-		return fmt.Errorf("Phase B.2: recipe %q workload yaml.Unmarshal: %w", state.Recipe.Metadata.Name, err)
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.2: recipe %q workload yaml.Unmarshal", state.Recipe.Metadata.Name))
 	}
 
 	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
@@ -268,7 +266,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	}
 	files, err := dispatchWorkloadSynthesis(ctx, engine, tmplCtx, state.ParsedWorkload, nodeCtx, providerName)
 	if err != nil {
-		return fmt.Errorf("Phase B.4 node %q: %w", state.NodeID, err)
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.4 node %q", state.NodeID))
 	}
 	state.EmittedFiles = append(state.EmittedFiles, files...)
 	// Trace point: per-synthesised-file (slot 10). One trace event per file
@@ -372,7 +370,7 @@ func phaseB6(
 				ctx, fr, ref.InstanceName, key, state, boundaryFRState,
 				nodeCtx, engineFactory, graph, release, boundaryAnnotations,
 			); err != nil {
-				return nil, fmt.Errorf("Step 5 node %q boundary-scope feature %q: %w", nodeID, ref.InstanceName, err)
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope feature %q", nodeID, ref.InstanceName))
 			}
 			continue
 		}
@@ -388,18 +386,18 @@ func phaseB6(
 			fr, ref.InstanceName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
 		)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 node %q feature %q: %w", nodeID, ref.InstanceName, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q locals", nodeID, ref.InstanceName))
 		}
 		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 
 		frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 node %q feature %q: %w", nodeID, ref.InstanceName, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q", nodeID, ref.InstanceName))
 		}
 
 		frEngine, err := engineFactory(fr.Spec.Provider)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 node %q feature %q engine factory: %w", nodeID, ref.InstanceName, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q engine factory", nodeID, ref.InstanceName))
 		}
 
 		frNodeCtx := nodeCtx
@@ -411,7 +409,7 @@ func phaseB6(
 
 		frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 node %q feature %q render: %w", nodeID, ref.InstanceName, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q render", nodeID, ref.InstanceName))
 		}
 
 		prefix := "features/" + ref.InstanceName + "/"
@@ -443,7 +441,7 @@ func phaseB6(
 				fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
 			)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q secret %q: %w", nodeID, secretName, err)
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q locals", nodeID, secretName))
 			}
 			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 			frCtx.SecretName = secretName
@@ -451,12 +449,12 @@ func phaseB6(
 
 			frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q secret %q: %w", nodeID, secretName, err)
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q", nodeID, secretName))
 			}
 
 			frEngine, err := engineFactory(fr.Spec.Provider)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q secret %q engine factory: %w", nodeID, secretName, err)
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q engine factory", nodeID, secretName))
 			}
 
 			frNodeCtx := nodeCtx
@@ -468,7 +466,7 @@ func phaseB6(
 
 			frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q secret %q render: %w", nodeID, secretName, err)
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q render", nodeID, secretName))
 			}
 
 			prefix := "secrets/" + secretName + "/"

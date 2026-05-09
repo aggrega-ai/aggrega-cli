@@ -104,7 +104,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Pass 1: Evaluate all provides
 	allProvides, err := EvaluateAllProvides(graph, nodeRecipes)
 	if err != nil {
-		return nil, fmt.Errorf("Step 5 Pass 1: %w", err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5 Pass 1: provides evaluation")
 	}
 
 	dispatch := map[dispatchKey]*pendingDispatch{}
@@ -124,7 +124,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		var err error
 		boundaryDirEvals, err = evaluateAllBoundaryDirectories(input.ResolveResult.Release, releaseParameters, perBoundaryAnnotations)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 boundary directory pre-eval: %w", err)
+			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, "Step 5 boundary directory pre-eval")
 		}
 	}
 
@@ -167,7 +167,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				},
 			}
 			if _, err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx); err != nil {
-				return nil, fmt.Errorf("Step 5 node %q Pass 2a: %w", nodeID, err)
+				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q Pass 2a", nodeID))
 			}
 		}
 
@@ -198,7 +198,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// ctx.Locals + ctx.Source. May replace state.Recipe with a local
 		// copy whose Spec.Source carries the resolved value.
 		if err := phaseB0(tmplCtx, state, allProvides[nodeID]); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		recipe = state.Recipe // pick up the local copy with resolved source
 
@@ -208,7 +208,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// orchestrator level.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
 		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
 		// after FR injectMapping rewrites.
@@ -216,7 +216,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Phase B.1 — valuesMapping → state.ResolvedValues.
 		if err := phaseB1(tmplCtx, state); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		values := state.ResolvedValues
 
@@ -255,7 +255,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				values,
 				fmt.Sprintf("node %q recipe %q", nodeID, recipe.Metadata.Name),
 			); err != nil {
-				return nil, fmt.Errorf("Step 5 node %q baseSchema: %w", nodeID, err)
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q baseSchema", nodeID))
 			}
 		}
 
@@ -273,7 +273,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		engine, err := engineFactory(providerName)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 node %q engine factory: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q engine factory", nodeID))
 		}
 
 		// Per-node engine render — sourced/sourceless rendering. Output
@@ -302,7 +302,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			var err error
 			files, err = engine.Render(ctx, values, nodeCtx)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 node %q render: %w", nodeID, err)
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q render", nodeID))
 			}
 		}
 		// Tag with EmitOriginSource and accumulate (deterministic across
@@ -346,7 +346,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// workload-secret cross-check uses the real slot allowlist.
 		emptySlots := types.OrderedMap[types.SecretSlot]{}
 		if err := phaseB2(tmplCtx, state, emptySlots); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 
 		// Phase B.3 — artifacts evaluation. Inline artifacts: and
@@ -355,7 +355,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// when present, and accumulate on state.EmittedFiles for Phase
 		// B.5 collision detection.
 		if err := phaseB3(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 
 		// Phase B.4 — workload synthesizer dispatch. No-op for sourced/
@@ -363,7 +363,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// engine's WorkloadSynthesizer otherwise (engines that don't
 		// implement the interface produce a CATALOG_ERROR).
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		// Slot 10 (PassPhaseB4) is now wired per-emitted-file inside phaseB4
 		// itself; the orchestrator-level single-event-per-node wire that
@@ -375,7 +375,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// source: and workload:); EmitOriginArtifacts* contributions land
 		// when the artifacts render path ships.
 		if err := phaseB5(state); err != nil {
-			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 
 		// Group per (evaluated_path, provider). Per-node file map is built
@@ -406,7 +406,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		finalPath, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 path eval node %q: %w", nodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 path eval node %q", nodeID))
 		}
 		key := dispatchKey{Path: finalPath, Provider: providerName}
 		if _, ok := dispatch[key]; !ok {
@@ -585,7 +585,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// instead of any per-component provider.
 		finalPath, err := computeFinalPath("<boundary-fr>:"+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
-			return nil, fmt.Errorf("Step 5 boundary-scope FR %q path eval: %w", key.FRInstance, err)
+			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("Step 5 boundary-scope FR %q path eval", key.FRInstance))
 		}
 		dKey := dispatchKey{Path: finalPath, Provider: frProvider}
 		syntheticNodeID := "<boundary-fr>:" + key.FRInstance
@@ -750,7 +750,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 			boundaryFiles, nestPerNode, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
-				return nil, fmt.Errorf("Step 5 dispatch %q assemble: %w", key.Path, err)
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, fmt.Sprintf("Step 5 dispatch %q assemble", key.Path))
 			}
 			for p, c := range boundaryFiles {
 				result.Files[dispatchPrefix+p] = c
@@ -1032,7 +1032,7 @@ func evaluateAllBoundaryDirectories(
 			}
 			eval, err := EvalPathTemplate("directory:"+currentPath, "directory", currentPath, b.Directory, data)
 			if err != nil {
-				return fmt.Errorf("boundary %q directory eval: %w", currentPath, err)
+				return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: currentPath}, fmt.Sprintf("boundary %q directory eval", currentPath))
 			}
 			out[currentPath] = eval
 		}

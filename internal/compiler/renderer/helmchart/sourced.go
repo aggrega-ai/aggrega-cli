@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,10 +25,10 @@ import (
 func copySourcedChart(chartPath string) (map[string][]byte, error) {
 	info, err := os.Stat(chartPath)
 	if err != nil {
-		return nil, fmt.Errorf("helmchart sourced: stat %q: %w", chartPath, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: stat %q", chartPath))
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("helmchart sourced: source %q is not a directory", chartPath)
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: source %q is not a directory", chartPath), nil, nil)
 	}
 
 	out := map[string][]byte{}
@@ -44,16 +45,16 @@ func copySourcedChart(chartPath string) (map[string][]byte, error) {
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("read %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("read %q", path))
 		}
 		out[filepath.ToSlash(rel)] = data
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("helmchart sourced: walk %q: %w", chartPath, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: walk %q", chartPath))
 	}
 	if _, ok := out["Chart.yaml"]; !ok {
-		return nil, fmt.Errorf("helmchart sourced: %q has no Chart.yaml", chartPath)
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: %q has no Chart.yaml", chartPath), nil, nil)
 	}
 	return out, nil
 }
@@ -64,16 +65,16 @@ func copySourcedChart(chartPath string) (map[string][]byte, error) {
 func readChartName(chartPath string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(chartPath, "Chart.yaml"))
 	if err != nil {
-		return "", fmt.Errorf("helmchart sourced: read Chart.yaml in %q: %w", chartPath, err)
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: read Chart.yaml in %q", chartPath))
 	}
 	var header struct {
 		Name string `yaml:"name"`
 	}
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return "", fmt.Errorf("helmchart sourced: parse Chart.yaml in %q: %w", chartPath, err)
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q", chartPath))
 	}
 	if header.Name == "" {
-		return "", fmt.Errorf("helmchart sourced: Chart.yaml in %q has empty name", chartPath)
+		return "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty name", chartPath), nil, nil)
 	}
 	return header.Name, nil
 }

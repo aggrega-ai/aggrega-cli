@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // WriteOutput writes rendered files to disk under the given base directory.
@@ -23,10 +25,10 @@ func WriteOutput(baseDir string, files map[string][]byte) error {
 		absPath := filepath.Join(baseDir, relPath)
 		dir := filepath.Dir(absPath)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("create directory %q: %w", dir, err)
+			return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: dir}, fmt.Sprintf("create directory %q", dir))
 		}
 		if err := os.WriteFile(absPath, files[relPath], 0o644); err != nil {
-			return fmt.Errorf("write %q: %w", absPath, err)
+			return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: absPath}, fmt.Sprintf("write %q", absPath))
 		}
 	}
 	return nil

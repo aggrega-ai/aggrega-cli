@@ -231,7 +231,7 @@ func dispatchBoundaryScopeFR(
 	// 2. Build boundary-scope TemplateContext.
 	boundaryCtx, err := buildBoundaryContext(key.BoundaryPath, graph, release, boundaryAnnotations)
 	if err != nil {
-		return fmt.Errorf("boundary-scope FR %q: build context for boundary %q: %w", frInstance, key.BoundaryPath, err)
+		return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: build context for boundary %q", frInstance, key.BoundaryPath))
 	}
 
 	// 3. Read the boundary's BoundaryFeature for this FR instance.
@@ -241,7 +241,9 @@ func dispatchBoundaryScopeFR(
 		// cascade pointed at this FR-instance, but the boundary itself
 		// doesn't carry the attachment directly. The cascade resolution
 		// is upstream of phaseB6; this branch is defensive.
-		return fmt.Errorf("boundary-scope FR %q: no BoundaryFeature attachment found at boundary %q", frInstance, key.BoundaryPath)
+		return cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath},
+			fmt.Sprintf("boundary-scope FR %q: no BoundaryFeature attachment found at boundary %q", frInstance, key.BoundaryPath),
+			nil, nil)
 	}
 
 	// 4. Build the FR-scoped TemplateContext with .boundary populated and
@@ -276,7 +278,7 @@ func dispatchBoundaryScopeFR(
 	// 6. Dispatch to FR's engine.
 	frEngine, err := engineFactory(fr.Spec.Provider)
 	if err != nil {
-		return fmt.Errorf("boundary-scope FR %q engine factory: %w", frInstance, err)
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", frInstance))
 	}
 
 	// Build the per-FR NodeRenderContext. Use the boundary's path as the
@@ -294,7 +296,7 @@ func dispatchBoundaryScopeFR(
 	frValues := flattenOrderedMap(frCtx.Values)
 	frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 	if err != nil {
-		return fmt.Errorf("boundary-scope FR %q render: %w", frInstance, err)
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q render", frInstance))
 	}
 
 	// 7. Classify emitted files by Intermediate flag and record.
@@ -343,7 +345,7 @@ func evaluateBoundaryFRTemplates(
 	for k, tmplText := range fr.Spec.Locals.All() {
 		out, err := EvalTemplate("fr-local["+frInstance+"."+k+"]", tmplText, frCtx)
 		if err != nil {
-			return fmt.Errorf("boundary-scope FR %q locals[%q]: %w", frInstance, k, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q locals[%q]", frInstance, k))
 		}
 		resolvedLocals.Set(k, out)
 	}
@@ -356,7 +358,7 @@ func evaluateBoundaryFRTemplates(
 	for k, tmplText := range fr.Spec.Provides.All() {
 		out, err := EvalTemplate("fr-provides["+frInstance+"."+k+"]", tmplText, frCtx)
 		if err != nil {
-			return fmt.Errorf("boundary-scope FR %q provides[%q]: %w", frInstance, k, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q provides[%q]", frInstance, k))
 		}
 		provided[k] = out
 	}
@@ -395,12 +397,12 @@ func buildBoundaryContext(
 	boundaryAnnotations map[string]types.OrderedMap[string],
 ) (*types.BoundaryContext, error) {
 	if release == nil {
-		return nil, fmt.Errorf("buildBoundaryContext: release is nil")
+		return nil, cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "buildBoundaryContext: release is nil", nil, nil)
 	}
 	parts := strings.Split(boundaryPath, "/")
 	boundary, ok := findBoundaryAtPath(release.Spec.Boundaries, parts)
 	if !ok {
-		return nil, fmt.Errorf("buildBoundaryContext: boundary %q not found in release", boundaryPath)
+		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryPath}, fmt.Sprintf("buildBoundaryContext: boundary %q not found in release", boundaryPath), nil, nil)
 	}
 
 	bc := &types.BoundaryContext{

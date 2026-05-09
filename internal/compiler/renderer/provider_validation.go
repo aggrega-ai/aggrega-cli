@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
@@ -61,5 +62,5 @@ func ValidateValuesAgainstBaseSchema(
 	for _, e := range errs {
 		msg += "\n  - " + e.Error()
 	}
-	return fmt.Errorf("%s", msg)
+	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: entityForErrors}, msg, nil, nil)
 }

@@ -65,6 +65,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -108,7 +109,7 @@ func (e *ComposeEngine) SynthesizeWorkload(
 
 		svc, err := translateContainer(c, w, nodeCtx, isMain, mainServiceName)
 		if err != nil {
-			return nil, fmt.Errorf("compose: node %q container %q: %w", nodeCtx.NodeID, containerName, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
 		}
 
 		// Apply pod-level fields onto the main service only — sidecars share
@@ -139,12 +140,12 @@ func (e *ComposeEngine) SynthesizeWorkload(
 	// publishing is a service-level field. Aggregate ports across all
 	// Workload.Services entries; the Type field decides whether to publish.
 	if err := applyWorkloadServicePorts(&frag, w, mainServiceName); err != nil {
-		return nil, fmt.Errorf("compose: node %q: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q apply service ports", nodeCtx.NodeID))
 	}
 
 	body, err := marshalDeterministic(&frag)
 	if err != nil {
-		return nil, fmt.Errorf("compose: node %q fragment marshal: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
 	}
 
 	return []renderer.EmittedFile{

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // HelmEngine produces sub-chart contents for one node by copying the user's
@@ -69,7 +70,7 @@ func (e *HelmEngine) ArtifactDelimiters() (string, string) {
 func (e *HelmEngine) Render(_ context.Context, _ map[string]interface{}, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	s, ok := nodeCtx.Source.(string)
 	if !ok || s == "" {
-		return nil, fmt.Errorf("helmchart: node %q: source is required (helm-chart provider supports sourced mode only; for synthesised K8s manifests use the helm provider with workload:)", nodeCtx.NodeID)
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helmchart: node %q: source is required (helm-chart provider supports sourced mode only; for synthesised K8s manifests use the helm provider with workload:)", nodeCtx.NodeID), nil, nil)
 	}
 	return copySourcedChart(s)
 }

@@ -55,11 +55,11 @@ func EvalTemplateWithDelims(name, tmplText string, data interface{}, leftDelim, 
 		Funcs(sprig.FuncMap()).
 		Parse(tmplText)
 	if err != nil {
-		return "", fmt.Errorf("template %q parse: %w", name, err)
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q parse", name))
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, templateData); err != nil {
-		return "", fmt.Errorf("template %q execute: %w", name, err)
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q execute", name))
 	}
 	return buf.String(), nil
 }
@@ -129,11 +129,11 @@ func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data int
 		Funcs(sprig.FuncMap()).
 		Parse(tmplText)
 	if err != nil {
-		return "", fmt.Errorf("path template %q parse: %w", name, err)
+		return "", cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: name}, fmt.Sprintf("path template %q parse", name))
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, templateData); err != nil {
-		return "", fmt.Errorf("path template %q execute: %w", name, err)
+		return "", cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: name}, fmt.Sprintf("path template %q execute", name))
 	}
 	return buf.String(), nil
 }
@@ -150,7 +150,7 @@ func validatePathTemplateFields(boundaryName, tmplText string, allowlist map[str
 		Funcs(sprig.FuncMap()).
 		Parse(tmplText)
 	if err != nil {
-		return fmt.Errorf("path template at boundary %q parse: %w", boundaryName, err)
+		return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: boundaryName}, fmt.Sprintf("path template at boundary %q parse", boundaryName))
 	}
 
 	for _, refField := range collectTopLevelFields(t) {

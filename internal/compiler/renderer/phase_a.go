@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -47,15 +48,17 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			&featureCtx,
 		)
 		if err != nil {
-			return fmt.Errorf("Phase A: feature %q (recipe %q) injectMapping: %w",
-				ref.InstanceName, ref.FeatureRecipe.Metadata.Name, err)
+			return cerrors.Wrap(err, cerrors.CatalogError,
+				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
+				fmt.Sprintf("Phase A: feature %q (recipe %q) injectMapping", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 
 		// Parse the output and deep-merge over the inject pipe
 		overlay, err := ParseInjectMappingOutput(output)
 		if err != nil {
-			return fmt.Errorf("Phase A: feature %q (recipe %q) injectMapping output parse: %w",
-				ref.InstanceName, ref.FeatureRecipe.Metadata.Name, err)
+			return cerrors.Wrap(err, cerrors.CatalogError,
+				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
+				fmt.Sprintf("Phase A: feature %q (recipe %q) injectMapping output parse", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 
 		if overlay != nil {

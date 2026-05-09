@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // renderSourced loads the base compose file at chartPath, deep-merges the
@@ -36,12 +37,12 @@ import (
 func renderSourced(chartPath string, values map[string]interface{}, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	raw, err := os.ReadFile(chartPath)
 	if err != nil {
-		return nil, fmt.Errorf("compose: node %q: read source %q: %w", nodeCtx.NodeID, chartPath, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: read source %q", nodeCtx.NodeID, chartPath))
 	}
 
 	var base map[string]interface{}
 	if err := yaml.Unmarshal(raw, &base); err != nil {
-		return nil, fmt.Errorf("compose: node %q: parse source %q: %w", nodeCtx.NodeID, chartPath, err)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, chartPath))
 	}
 	if base == nil {
 		base = map[string]interface{}{}
@@ -51,7 +52,7 @@ func renderSourced(chartPath string, values map[string]interface{}, nodeCtx rend
 
 	body, err := yaml.Marshal(merged)
 	if err != nil {
-		return nil, fmt.Errorf("compose: node %q: marshal merged source: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
 	}
 
 	// Output path mirrors synthesised-mode: <nodeID>.compose-fragment.yaml.

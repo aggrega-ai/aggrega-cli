@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -52,13 +53,13 @@ func ExecutePass2a(
 
 	// Process each mechanism
 	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx, selfKeys); err != nil {
-		return nil, fmt.Errorf("node %q self-inject: %w", nodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx, selfKeys); err != nil {
-		return nil, fmt.Errorf("node %q self-inject: %w", nodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, selfKeys); err != nil {
-		return nil, fmt.Errorf("node %q self-inject: %w", nodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 
 	// Rebuild .all
@@ -97,7 +98,7 @@ func processSelfInjectMechanism(
 
 	entries, err := normalizeSelfInjectEntries(raw)
 	if err != nil {
-		return fmt.Errorf("%s: %w", mechName, err)
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, mechName)
 	}
 
 	keys := make([]string, 0, len(entries))
@@ -183,7 +184,7 @@ func resolveSelfInjectEntry(
 	if entry.from != "" {
 		val, ok := ownProvides.Get(entry.from)
 		if !ok {
-			return "", fmt.Errorf("%s[%q]: from key %q not found in component provides", mechName, key, entry.from)
+			return "", cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q]: from key %q not found in component provides", mechName, key, entry.from), nil, nil)
 		}
 		return val, nil
 	}
@@ -195,8 +196,8 @@ func resolveSelfInjectEntry(
 			// Check the actual template text
 		}
 		if forbiddenSelfInjectRefs.MatchString(entry.value) {
-			return "", fmt.Errorf("%w: %s[%q] value: template references .context.inject or .context.uses",
-				ErrSelfInjectForbiddenReference, mechName, key)
+			return "", cerrors.Wrap(ErrSelfInjectForbiddenReference, cerrors.DeveloperError, cerrors.SourceLocation{},
+				fmt.Sprintf("%s[%q] value: template references .context.inject or .context.uses", mechName, key))
 		}
 
 		resolved, err := EvalTemplate(
@@ -205,7 +206,7 @@ func resolveSelfInjectEntry(
 			siCtx,
 		)
 		if err != nil {
-			return "", fmt.Errorf("%s[%q] value: template: %w", mechName, key, err)
+			return "", cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q] value: template", mechName, key))
 		}
 		return resolved, nil
 	}

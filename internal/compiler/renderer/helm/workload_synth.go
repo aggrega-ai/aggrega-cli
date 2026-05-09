@@ -46,6 +46,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -129,7 +130,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 		}
 		body, err := marshalDeterministic(&ss)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q statefulset marshal: %w", nodeCtx.NodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
 			Name: nodeCtx.NodeID + "-statefulset.yaml",
@@ -148,7 +149,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 		}
 		body, err := marshalDeterministic(&dep)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q deployment marshal: %w", nodeCtx.NodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
 			Name: nodeCtx.NodeID + "-deployment.yaml",
@@ -162,7 +163,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 	for _, pvc := range pvcs {
 		body, err := marshalDeterministic(&pvc)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q pvc marshal: %w", nodeCtx.NodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q pvc marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
 			Name: pvc.Metadata.Name + "-pvc.yaml",
@@ -178,7 +179,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 	for _, svc := range services {
 		body, err := marshalDeterministic(&svc)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q service marshal: %w", nodeCtx.NodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
 			Name: svc.Metadata.Name + "-service.yaml",
@@ -301,19 +302,19 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string) (Cont
 	if c.Health != nil {
 		ready, err := translateProbe(c.Health.Ready, out.Ports)
 		if err != nil {
-			return Container{}, fmt.Errorf("container %q readiness probe: %w", name, err)
+			return Container{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: name}, fmt.Sprintf("container %q readiness probe", name))
 		}
 		out.ReadinessProbe = ready
 
 		live, err := translateProbe(c.Health.Live, out.Ports)
 		if err != nil {
-			return Container{}, fmt.Errorf("container %q liveness probe: %w", name, err)
+			return Container{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: name}, fmt.Sprintf("container %q liveness probe", name))
 		}
 		out.LivenessProbe = live
 
 		startup, err := translateProbe(c.Health.Startup, out.Ports)
 		if err != nil {
-			return Container{}, fmt.Errorf("container %q startup probe: %w", name, err)
+			return Container{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: name}, fmt.Sprintf("container %q startup probe", name))
 		}
 		out.StartupProbe = startup
 	}
@@ -383,7 +384,7 @@ func translateProbe(p *types.ProbeSpec, containerPorts []ContainerPort) (*Probe,
 	case len(p.Exec) > 0:
 		out.Exec = &ExecAction{Command: p.Exec}
 	default:
-		return nil, fmt.Errorf("probe declares no shape (http/tcp/exec)")
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "probe declares no shape (http/tcp/exec)", nil, nil)
 	}
 
 	return out, nil
@@ -394,7 +395,7 @@ func translateProbe(p *types.ProbeSpec, containerPorts []ContainerPort) (*Probe,
 // error if no container ports are declared (TRANSLATION_ERROR).
 func resolveHTTPProbePort(containerPorts []ContainerPort) (string, error) {
 	if len(containerPorts) == 0 {
-		return "", fmt.Errorf("TRANSLATION_ERROR: probe http: requires at least one named container port; container declares none")
+		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "probe http: requires at least one named container port; container declares none", nil, nil)
 	}
 	names := make([]string, 0, len(containerPorts))
 	for _, p := range containerPorts {
@@ -403,7 +404,7 @@ func resolveHTTPProbePort(containerPorts []ContainerPort) (string, error) {
 		}
 	}
 	if len(names) == 0 {
-		return "", fmt.Errorf("TRANSLATION_ERROR: probe http: requires at least one NAMED container port; container ports lack name fields")
+		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "probe http: requires at least one NAMED container port; container ports lack name fields", nil, nil)
 	}
 	sort.Strings(names)
 	return names[0], nil
@@ -615,7 +616,7 @@ func translateServices(w *types.Workload, nodeID, namespace string, selectorLabe
 		for portName, portNum := range svcSpec.Ports.All() {
 			targetPort, ok := containerPortMap[portName]
 			if !ok {
-				return nil, fmt.Errorf("TRANSLATION_ERROR: service %q port %q has no matching container port name", svcName, portName)
+				return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("service %q port %q has no matching container port name", svcName, portName), nil, nil)
 			}
 			_ = targetPort // present for forward compatibility (numeric backref);
 			// today targetPort uses the named-port string, which K8s

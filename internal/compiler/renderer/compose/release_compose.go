@@ -43,6 +43,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 const (
@@ -189,7 +190,7 @@ func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.Bounda
 
 	body, err := marshalDeterministic(&merged)
 	if err != nil {
-		return nil, false, fmt.Errorf("compose: assemble-boundary marshal: %w", err)
+		return nil, false, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{}, "compose: assemble-boundary marshal")
 	}
 
 	return map[string][]byte{AssembledOutputFile: body}, false, nil
@@ -216,7 +217,7 @@ func parseNodeFragment(nodeID string, intermediates []renderer.EmittedFile) (*Co
 	for _, f := range intermediates {
 		var frag ComposeFile
 		if err := yaml.Unmarshal(f.Body, &frag); err != nil {
-			return nil, fmt.Errorf("compose: node %q fragment %q: parse: %w", nodeID, f.Name, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q fragment %q: parse", nodeID, f.Name))
 		}
 		for k, v := range frag.Services {
 			out.Services[k] = v
@@ -292,7 +293,7 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 	for _, c := range collisions {
 		parts = append(parts, fmt.Sprintf("service %q contributed by [%s]", c.service, strings.Join(c.descriptors, ", ")))
 	}
-	return fmt.Errorf("TRANSLATION_ERROR: compose AssembleBoundary: service-name collisions across contributors: %s", strings.Join(parts, "; "))
+	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("compose AssembleBoundary: service-name collisions across contributors: %s", strings.Join(parts, "; ")), nil, nil)
 }
 
 // applyDependsOn projects IR edges onto contributing services and adds

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -79,7 +80,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 
 	depYAML, err := yaml.Marshal(&deploy)
 	if err != nil {
-		return nil, fmt.Errorf("helm: node %q deployment marshal: %w", nodeCtx.NodeID, err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 	}
 	out[nodeCtx.NodeID+"-deployment.yaml"] = depYAML
 
@@ -96,7 +97,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 		}
 		svcYAML, err := yaml.Marshal(&svc)
 		if err != nil {
-			return nil, fmt.Errorf("helm: node %q service marshal: %w", nodeCtx.NodeID, err)
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}
 		out[nodeCtx.NodeID+"-service.yaml"] = svcYAML
 	}

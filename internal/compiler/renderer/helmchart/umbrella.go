@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -61,7 +62,7 @@ type umbrellaChart struct {
 // back to the path-derived name (today's behavior).
 func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string) (map[string][]byte, error) {
 	if boundaryName == "" {
-		return nil, fmt.Errorf("helmchart umbrella: empty boundary name")
+		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
 	}
 
 	// Sorted iteration for determinism
@@ -122,12 +123,12 @@ func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 
 	chartYAML, err := yaml.Marshal(&umbrella)
 	if err != nil {
-		return nil, fmt.Errorf("helmchart umbrella: marshal Chart.yaml: %w", err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal Chart.yaml")
 	}
 
 	valuesYAML, err := yaml.Marshal(values)
 	if err != nil {
-		return nil, fmt.Errorf("helmchart umbrella: marshal values.yaml: %w", err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal values.yaml")
 	}
 
 	return map[string][]byte{

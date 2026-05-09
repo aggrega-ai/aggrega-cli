@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // HelmEngine produces flat rendered Kubernetes YAML.
@@ -44,13 +45,13 @@ func (e *HelmEngine) Render(
 		return renderSourceless(values, nodeCtx)
 	case string:
 		if s == "" {
-			return nil, fmt.Errorf("%w: node %q", ErrEmptySource, nodeCtx.NodeID)
+			return nil, cerrors.Wrap(ErrEmptySource, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("node %q", nodeCtx.NodeID))
 		}
 		return renderSourced(ctx, s, values, nodeCtx)
 	default:
 		// Structured source objects (e.g. {repo: ..., chart: ..., version: ...}) are
 		// reserved for future registry integration; the helm provider supports
 		// only filesystem paths today.
-		return nil, fmt.Errorf("helm: node %q: structured source not supported", nodeCtx.NodeID)
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: structured source not supported", nodeCtx.NodeID), nil, nil)
 	}
 }

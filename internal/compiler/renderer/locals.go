@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -28,10 +29,9 @@ var forbiddenLocalsRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|uses)[
 // to .context.inject or .context.uses. Returns an error if found.
 func CheckLocalsSelfContainment(templateText, recipeID, key string) error {
 	if forbiddenLocalsRefs.MatchString(templateText) {
-		return fmt.Errorf(
-			"Recipe %q locals[%q] references .context.inject or .context.uses — locals must be self-contained",
-			recipeID, key,
-		)
+		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
+			fmt.Sprintf("Recipe %q locals[%q] references .context.inject or .context.uses — locals must be self-contained", recipeID, key),
+			nil, nil)
 	}
 	return nil
 }
@@ -65,7 +65,7 @@ func EvaluateRecipeLocals(
 		}
 		val, err := EvalTemplate(fmt.Sprintf("locals[%q]", key), tmplText, lCtx)
 		if err != nil {
-			return types.OrderedMap[string]{}, fmt.Errorf("Recipe %q locals[%q]: %w", recipe.Metadata.Name, key, err)
+			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: recipe.Metadata.Name}, fmt.Sprintf("Recipe %q locals[%q]", recipe.Metadata.Name, key))
 		}
 		resolved.Set(key, strings.TrimSpace(val))
 	}

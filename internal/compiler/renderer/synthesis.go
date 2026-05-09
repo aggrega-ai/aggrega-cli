@@ -60,7 +60,7 @@ func dispatchWorkloadSynthesis(
 	}
 	files, err := synth.SynthesizeWorkload(ctx, tmplCtx, w, nodeCtx)
 	if err != nil {
-		return nil, fmt.Errorf("workload synthesis: %w", err)
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, "workload synthesis")
 	}
 	// Tag every emitted file with the workload origin; synthesizers don't
 	// set Origin themselves so this stays a single load-bearing call site.

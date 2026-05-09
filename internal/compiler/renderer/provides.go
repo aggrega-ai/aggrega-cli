@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -20,10 +21,8 @@ var forbiddenProvidesRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|uses
 // to .context.inject or .context.uses. Returns an error if found.
 func CheckProvidesSelfContainment(templateText, recipeID string) error {
 	if forbiddenProvidesRefs.MatchString(templateText) {
-		return fmt.Errorf(
-			"%w: Recipe %q provides block references .context.inject or .context.uses — the provides contract must be self-contained",
-			ErrProvidesSelfContainment, recipeID,
-		)
+		return cerrors.Wrap(ErrProvidesSelfContainment, cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
+			fmt.Sprintf("Recipe %q provides block references .context.inject or .context.uses — the provides contract must be self-contained", recipeID))
 	}
 	return nil
 }
@@ -52,7 +51,7 @@ func EvaluateAllProvides(
 		// Check self-containment for each provides template
 		for key, tmplText := range recipe.Spec.Provides.All() {
 			if err := CheckProvidesSelfContainment(tmplText, recipe.Metadata.Name); err != nil {
-				return nil, fmt.Errorf("node %q provides[%q]: %w", nodeID, key, err)
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides[%q]", nodeID, key))
 			}
 		}
 
@@ -78,7 +77,8 @@ func EvaluateAllProvides(
 		for key, tmplText := range recipe.Spec.Provides.All() {
 			val, err := evalTemplateString(tmplText, pCtx, fmt.Sprintf("provides[%q]", key))
 			if err != nil {
-				return nil, fmt.Errorf("%w: node %q provides[%q]: %v", ErrProvidesEvaluation, nodeID, key, err)
+				return nil, cerrors.Wrap(ErrProvidesEvaluation, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+					fmt.Sprintf("node %q provides[%q]: %v", nodeID, key, err))
 			}
 			resolved.Set(key, strings.TrimSpace(val))
 		}

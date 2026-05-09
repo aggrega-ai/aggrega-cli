@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // ComposeEngine is the compose provider rendering engine. It implements:
@@ -62,13 +63,13 @@ func (e *ComposeEngine) Render(
 		// `workload:` (synthesised-mode, dispatched via SynthesizeWorkload) or
 		// `source:` pointing at a compose file (sourced-mode, lands in
 		// Track 2).
-		return nil, fmt.Errorf("compose: node %q: Recipe must declare workload: or source: for the compose provider; bare values-only mode is not supported", nodeCtx.NodeID)
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: Recipe must declare workload: or source: for the compose provider; bare values-only mode is not supported", nodeCtx.NodeID), nil, nil)
 	case string:
 		if s == "" {
-			return nil, fmt.Errorf("%w: node %q", ErrEmptySource, nodeCtx.NodeID)
+			return nil, cerrors.Wrap(ErrEmptySource, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("node %q", nodeCtx.NodeID))
 		}
 		return renderSourced(s, values, nodeCtx)
 	default:
-		return nil, fmt.Errorf("compose: node %q: structured source not supported", nodeCtx.NodeID)
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: structured source not supported", nodeCtx.NodeID), nil, nil)
 	}
 }
