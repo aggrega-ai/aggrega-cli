@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -67,9 +69,83 @@ type fsWriter struct {
 	closeMu  sync.Mutex
 	firstErr error
 	errMu    sync.Mutex
+
+	// Test-only instrumentation. The renderer hot path increments these
+	// atomically; readers via Stats(Writer) observe race-free snapshots.
+	// Production code does NOT branch on these counters; they exist so
+	// design-contract tests can assert non-blocking semantics structurally
+	// rather than via wall-clock proxies.
+	maxWriteLatencyNanos atomic.Int64 // peak observed Write() call duration
+	totalWrites          atomic.Int64 // total Write() calls (success + drop)
+	droppedWrites        atomic.Int64 // Write() calls hitting the channel-full default branch
+}
+
+// WriterStats is a snapshot of the trace writer's instrumentation counters.
+// Returned by Stats(Writer) for design-contract test assertions. Counters
+// are race-free — atomic loads — but a concurrent Write() between any two
+// field reads can observe a slightly inconsistent snapshot (e.g., TotalWrites
+// could increment before MaxWriteLatency for the same Write() call). For the
+// design-contract tests' purposes this is acceptable: tests inspect Stats
+// after RenderAll + Close return, when no further Writes occur.
+//
+// Zero-valued for noopWriter (no instrumentation; the no-op Writer never
+// touches disk so non-blocking semantics are trivially satisfied).
+type WriterStats struct {
+	// MaxWriteLatency is the largest observed wall-clock duration of any
+	// single Write() call. The Write() body is a struct copy plus a
+	// non-blocking channel send; values in the microsecond range are
+	// expected. Values in the millisecond range indicate a Write() blocked
+	// on disk I/O — design contract violation.
+	MaxWriteLatency time.Duration
+
+	// TotalWrites is the total number of Write() calls received, including
+	// calls that were dropped at channel saturation.
+	TotalWrites int64
+
+	// DroppedWrites is the number of Write() calls where the channel was
+	// full at send time and the default branch fired. At sanity-gate loads
+	// (50 nodes × ~9 events) this should be zero — the 1024-event channel
+	// buffer absorbs the workload comfortably. Non-zero indicates either
+	// a stalled consumer goroutine or a buffer sized below actual demand.
+	DroppedWrites int64
+}
+
+// Stats returns a snapshot of the writer's instrumentation counters.
+// For noopWriter, returns the zero value (no-op writers never block on
+// disk and don't drop events; the counters carry no information). For
+// fsWriter, returns the live counter values.
+//
+// Free-function form (rather than a Stats() method on the Writer interface)
+// keeps noopWriter's API surface clean — noopWriter has no meaningful
+// instrumentation to expose, and forcing it to implement Stats() would
+// pollute the production interface with a test-only concern.
+func Stats(w Writer) WriterStats {
+	fs, ok := w.(*fsWriter)
+	if !ok {
+		return WriterStats{}
+	}
+	return WriterStats{
+		MaxWriteLatency: time.Duration(fs.maxWriteLatencyNanos.Load()),
+		TotalWrites:     fs.totalWrites.Load(),
+		DroppedWrites:   fs.droppedWrites.Load(),
+	}
 }
 
 func (w *fsWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data interface{}) error {
+	t0 := time.Now()
+	w.totalWrites.Add(1)
+	defer func() {
+		// Record peak observed latency via atomic-max (CAS loop). The send
+		// path is dominated by a struct copy + channel-send; expected
+		// latencies are sub-microsecond on warm caches, microseconds under
+		// contention. A value in the millisecond range indicates the
+		// renderer goroutine blocked on disk I/O — non-blocking-contract
+		// violation. The recordMaxLatency wrap covers all return paths
+		// (success, drop, marshal error, closed) so the contract test sees
+		// every Write()'s latency.
+		w.recordMaxLatency(time.Since(t0).Nanoseconds())
+	}()
+
 	body, err := yaml.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("trace: marshal %s/%s: %w", boundaryPath, nodeID, err)
@@ -87,7 +163,25 @@ func (w *fsWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, dat
 		// Channel full — drop with an error rather than block. The bound
 		// (1024) is large enough for typical node counts; saturation
 		// indicates a perf-bound issue worth surfacing.
+		w.droppedWrites.Add(1)
 		return fmt.Errorf("trace: write buffer saturated; pass=%s node=%s", pass, nodeID)
+	}
+}
+
+// recordMaxLatency atomically updates maxWriteLatencyNanos to the larger of
+// the current value and elapsed. CAS loop is the standard atomic-max pattern;
+// it handles concurrent Writes correctly without a lock. Termination is
+// practically guaranteed because the time-between-Write-calls is many orders
+// of magnitude greater than the time-to-execute-one-CAS-iteration.
+func (w *fsWriter) recordMaxLatency(elapsed int64) {
+	for {
+		prev := w.maxWriteLatencyNanos.Load()
+		if elapsed <= prev {
+			return
+		}
+		if w.maxWriteLatencyNanos.CompareAndSwap(prev, elapsed) {
+			return
+		}
 	}
 }
 

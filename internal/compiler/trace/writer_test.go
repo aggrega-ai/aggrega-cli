@@ -9,6 +9,82 @@ import (
 	"testing"
 )
 
+// TestWriter_Stats_RecordsTotalWrites verifies the totalWrites counter
+// tracks every Write() call. Writes 100 events; asserts the Stats snapshot
+// reports TotalWrites == 100. Close() drains the channel; the consumer
+// goroutine persists every successful event before Close returns.
+func TestWriter_Stats_RecordsTotalWrites(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	w := New(root)
+	const numWrites = 100
+	for i := 0; i < numWrites; i++ {
+		if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"i": i}); err != nil {
+			t.Fatalf("Write %d: %v", i, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	stats := Stats(w)
+	if stats.TotalWrites != numWrites {
+		t.Errorf("TotalWrites = %d, want %d", stats.TotalWrites, numWrites)
+	}
+}
+
+// TestWriter_Stats_MaxLatencyIsNonZero verifies the maxWriteLatencyNanos
+// counter actually fires — at least one Write() records a non-zero elapsed.
+// This is a verification check that the instrumentation is wired, not a perf
+// claim; sub-microsecond latencies still register a non-zero nanosecond
+// count.
+func TestWriter_Stats_MaxLatencyIsNonZero(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	w := New(root)
+	if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	stats := Stats(w)
+	if stats.MaxWriteLatency <= 0 {
+		t.Errorf("MaxWriteLatency = %v, want > 0 (instrumentation should record at least one elapsed)", stats.MaxWriteLatency)
+	}
+}
+
+// TestWriter_Stats_DroppedCount verifies the droppedWrites counter fires
+// when channel saturation hits. Constructs an fsWriter directly with a
+// 1-event buffer and a closed done channel (no consumer goroutine — the
+// channel never drains). Writes 11 events: the first one queues; the
+// next 10 hit the default branch and increment droppedWrites.
+func TestWriter_Stats_DroppedCount(t *testing.T) {
+	t.Parallel()
+	w := &fsWriter{
+		root: t.TempDir(),
+		ch:   make(chan event, 1),
+		done: make(chan struct{}),
+	}
+	// Pre-close done so the test doesn't hang if it accidentally calls
+	// Close. The consumer goroutine is intentionally never started — the
+	// channel never drains, forcing every Write() after the first to hit
+	// the default branch.
+	close(w.done)
+
+	const total = 11
+	for i := 0; i < total; i++ {
+		_ = w.Write(PassPhaseA, "api", "default", "", map[string]any{"i": i})
+	}
+	stats := Stats(w)
+	if stats.TotalWrites != total {
+		t.Errorf("TotalWrites = %d, want %d", stats.TotalWrites, total)
+	}
+	// The first Write succeeds (channel has 1 slot); next 10 drop.
+	if stats.DroppedWrites != total-1 {
+		t.Errorf("DroppedWrites = %d, want %d (one Write should succeed, the rest drop)", stats.DroppedWrites, total-1)
+	}
+}
+
 // TestWriter_NoOp_FlagOff verifies that New("") returns a writer whose
 // Write is a no-op and produces no filesystem output. This is the
 // `--trace` off path: no `.trace/` directory should appear.
