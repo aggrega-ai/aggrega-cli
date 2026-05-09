@@ -1,0 +1,4 @@
+image: postgres:15
+replicas: 1
+ports: []
+environment: {}

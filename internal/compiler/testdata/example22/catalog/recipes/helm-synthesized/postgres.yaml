@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: helm-postgres-generative
+  name: helm-postgres-synthesized
   version: "1.0.0"
 spec:
   provider: helm
@@ -9,17 +9,17 @@ spec:
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "5432"
-  locals:
-    primary_compute: postgres
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
-      postgres:
+      main:
         image: postgres:15
         ports:
           db: 5432
+        variables:
+          POSTGRES_DB: "{{ .values.database_name }}"
     services:
       db:
         type: ClusterIP

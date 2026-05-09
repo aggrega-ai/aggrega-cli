@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-web-ui-sourced-with-artifacts
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server/web-ui
+  source: ./charts/web-ui
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .values.port }}"
+  locals:
+    primary_compute: web
+  valuesMapping: |
+    {
+      "image": "web-ui:latest",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .values.port }}:{{ .values.port }}"],
+      "environment": {
+        "PORT": "{{ .values.port }}"
+        {{- if .context.inject.env.API_HOST }},
+        "API_HOST": "{{ .context.inject.env.API_HOST }}"
+        {{- end }}
+        {{- if .context.inject.env.API_PORT }},
+        "API_PORT": "{{ .context.inject.env.API_PORT }}"
+        {{- end }}
+      }
+    }
+  artifacts:
+    web-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-web-config
+      data:
+        BACKEND: {{ if .context.inject.env.API_HOST }}{{ .context.inject.env.API_HOST }}{{ else }}unset{{ end }}

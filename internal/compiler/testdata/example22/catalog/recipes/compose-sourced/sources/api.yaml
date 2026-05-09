@@ -1,0 +1,4 @@
+services:
+  api:
+    image: api-server:latest
+    restart: unless-stopped

@@ -1,35 +1,36 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: helm-web-ui-generative
+  name: helm-api-server-synthesized-with-artifacts
   version: "1.0.0"
 spec:
   provider: helm
-  implements: core/server/web-ui
+  implements: core/server/api-server
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "{{ .values.port }}"
-  locals:
-    primary_compute: web
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
-      web-ui:
-        image: web-ui:latest
-        variables:
-          PORT: "{{ .values.port }}"
-          {{- if .context.inject.env.API_HOST }}
-          API_HOST: "{{ .context.inject.env.API_HOST }}"
-          {{- end }}
-          {{- if .context.inject.env.API_PORT }}
-          API_PORT: "{{ .context.inject.env.API_PORT }}"
-          {{- end }}
+      main:
+        image: api-server:latest
         ports:
           web: {{ .values.port }}
+        variables:
+          PORT: "{{ .values.port }}"
     services:
-      ui:
+      api:
         type: ClusterIP
         ports:
           web: {{ .values.port }}
+  artifacts:
+    app-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-app-config
+      data:
+        SERVICE: {{ .context.instance_id }}
+        PORT: "{{ .values.port }}"

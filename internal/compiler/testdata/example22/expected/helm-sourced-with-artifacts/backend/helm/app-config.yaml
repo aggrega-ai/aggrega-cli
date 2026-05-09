@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: backend-app-config
+    labels:
+        aggrega.ai/aggregate-name: example22-app
+        aggrega.ai/boundary-path: backend-ns
+        aggrega.ai/compiler-version: 0.1.0
+        aggrega.ai/component-id: backend
+        aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-api-server-sourced-with-artifacts:1.0.0
+        app.kubernetes.io/name: backend
+data:
+    SERVICE: backend
+    ENV: production

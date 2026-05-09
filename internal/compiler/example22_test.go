@@ -5,13 +5,16 @@ package compiler_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	renderCompose "github.com/cognitio/aggrega-cli/internal/compiler/renderer/compose"
 	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
@@ -49,14 +52,44 @@ type example22Result struct {
 	Warnings []string
 }
 
+// variantFixture identifies the catalog sub-directory plus optional
+// per-variant overrides for the Aggregate / Release / Manifest paths.
+// Empty path fields default to the example22 root files; variants requiring
+// distinct authoring shapes (compose-only Aggregates, artifacts-only topology)
+// supply their own paths under testdata/example22/aggregates/ etc.
+type variantFixture struct {
+	name          string
+	aggregatePath string
+	releasePath   string
+	manifestPath  string
+}
+
 // runExample22 executes the full 5-step pipeline for one variant and returns
-// the rendered file set. The `variant` sub-directory under catalog/recipes/
-// drives the provider + source choice.
+// the rendered file set, sharing the root Aggregate / Release / Manifest.
+// Thin wrapper over runExample22Variant for variants that don't override.
 func runExample22(t *testing.T, variant string) *example22Result {
+	t.Helper()
+	return runExample22Variant(t, variantFixture{name: variant})
+}
+
+// runExample22Variant executes the full 5-step pipeline for a per-variant
+// fixture. Path fields on fx default to the example22 root files when empty;
+// variants whose authoring shape diverges from the shared Aggregate / Release
+// / Manifest pass explicit paths.
+func runExample22Variant(t *testing.T, fx variantFixture) *example22Result {
 	t.Helper()
 
 	base := "testdata/example22/catalog/base"
-	recipesDir := filepath.Join("testdata/example22/catalog/recipes", variant)
+	recipesDir := filepath.Join("testdata/example22/catalog/recipes", fx.name)
+	if fx.aggregatePath == "" {
+		fx.aggregatePath = "testdata/example22/aggregate.yaml"
+	}
+	if fx.releasePath == "" {
+		fx.releasePath = "testdata/example22/release.yaml"
+	}
+	if fx.manifestPath == "" {
+		fx.manifestPath = "testdata/example22/manifest.yaml"
+	}
 
 	cat, err := catalog.LoadAll(base, recipesDir)
 	if err != nil {
@@ -64,9 +97,9 @@ func runExample22(t *testing.T, variant string) *example22Result {
 	}
 
 	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: "testdata/example22/aggregate.yaml",
-		ReleasePath:   "testdata/example22/release.yaml",
-		ManifestPath:  "testdata/example22/manifest.yaml",
+		AggregatePath: fx.aggregatePath,
+		ReleasePath:   fx.releasePath,
+		ManifestPath:  fx.manifestPath,
 	})
 	if err != nil {
 		t.Fatalf("Step 1 (resolve): %v", err)
@@ -124,10 +157,12 @@ func runExample22(t *testing.T, variant string) *example22Result {
 	}
 	engineFactory := func(providerName string) (renderer.Engine, error) {
 		switch providerName {
-		case "helm", "":
+		case "helm", "helm-raw", "":
 			return &renderHelm.HelmEngine{}, nil
 		case "helm-chart":
 			return &renderHelmChart.HelmEngine{}, nil
+		case "compose":
+			return &renderCompose.ComposeEngine{}, nil
 		default:
 			return nil, nil
 		}
@@ -247,16 +282,68 @@ func tagFor(m variantMode) string {
 
 // --- Variant tests ---------------------------------------------------------
 
-func TestExample22_HelmGenerative(t *testing.T) {
-	t.Parallel()
-	res := runExample22(t, "helm-generative")
-	assertCommonProof(t, res, modeHelmFlat)
-}
-
 func TestExample22_HelmSourced(t *testing.T) {
 	t.Parallel()
 	res := runExample22(t, "helm-sourced")
 	assertCommonProof(t, res, modeHelmFlat)
+}
+
+func TestExample22_HelmSynthesized(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-synthesized")
+	assertCommonProof(t, res, modeHelmFlat)
+	assertProvenanceLabels(t, res.Files, nil)
+	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-synthesized", "dist/")
+}
+
+func TestExample22_HelmArtifacts(t *testing.T) {
+	t.Parallel()
+	res := runExample22Variant(t, variantFixture{
+		name:          "helm-artifacts",
+		aggregatePath: "testdata/example22/aggregates/helm-artifacts.yaml",
+		releasePath:   "testdata/example22/releases/helm-artifacts.yaml",
+		manifestPath:  "testdata/example22/manifests/helm-artifacts.yaml",
+	})
+	assertProvenanceLabels(t, res.Files, nil)
+	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-artifacts", "dist/")
+}
+
+func TestExample22_ComposeSynthesized(t *testing.T) {
+	t.Parallel()
+	res := runExample22Variant(t, variantFixture{
+		name:          "compose-synthesized",
+		aggregatePath: "testdata/example22/aggregates/compose-synthesized.yaml",
+		releasePath:   "testdata/example22/releases/compose-synthesized.yaml",
+		manifestPath:  "testdata/example22/manifests/compose-synthesized.yaml",
+	})
+	assertDistMatches(t, res.Files, "testdata/example22/expected/compose-synthesized", "dist/")
+}
+
+func TestExample22_ComposeSourced(t *testing.T) {
+	t.Parallel()
+	res := runExample22Variant(t, variantFixture{
+		name:          "compose-sourced",
+		aggregatePath: "testdata/example22/aggregates/compose-synthesized.yaml",
+		releasePath:   "testdata/example22/releases/compose-synthesized.yaml",
+		manifestPath:  "testdata/example22/manifests/compose-synthesized.yaml",
+	})
+	assertDistMatches(t, res.Files, "testdata/example22/expected/compose-sourced", "dist/")
+}
+
+func TestExample22_HelmSourcedWithArtifacts(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-sourced-with-artifacts")
+	assertCommonProof(t, res, modeHelmFlat)
+	assertProvenanceLabels(t, res.Files, nil)
+	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-sourced-with-artifacts", "dist/")
+}
+
+func TestExample22_HelmSynthesizedWithArtifacts(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-synthesized-with-artifacts")
+	assertCommonProof(t, res, modeHelmFlat)
+	assertProvenanceLabels(t, res.Files, nil)
+	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-synthesized-with-artifacts", "dist/")
 }
 
 func TestExample22_HelmChartSourced(t *testing.T) {
@@ -331,5 +418,158 @@ func assertSourcedUmbrellaProof(t *testing.T, res *example22Result) {
 	}
 	if !strings.Contains(backendValues, "replicas: 3") {
 		t.Errorf("backend.replicas did not pick up .infra.replicas=3 (%s):\n%s", bvPath, backendValues)
+	}
+}
+
+// assertDistMatches walks expectedDir and byte-compares every file there
+// against the corresponding entry in actual. The deterministic-output
+// invariant requires byte-identical output across runs of the same input,
+// so byte-compare (not structural compare) is the right level — any whitespace
+// or key-ordering shift surfaces as a test failure for investigation.
+//
+// stripPrefix is removed from actual file keys before lookup against
+// expectedDir's relative paths. The repo-level .gitignore excludes `dist/`,
+// so goldens land under expectedDir without the leading `dist/` segment;
+// pass "dist/" as stripPrefix to map between the actual files map's
+// `dist/<boundary>/...` keys and the goldens' `<boundary>/...` paths.
+// Pass "" to compare unmapped (the helper is general).
+//
+// Comparison rules:
+//   - Every file under expectedDir MUST appear in actual at
+//     stripPrefix+<rel-path>. Missing-from-actual is a fatal failure.
+//   - Every file in actual whose key starts with stripPrefix MUST appear
+//     under expectedDir at the post-strip path. Present-in-actual-but-
+//     missing-from-expected is a fatal failure (the variant grew an
+//     unexpected emission).
+//   - Files outside the variant's stripPrefix are ignored (other variants'
+//     output, not this variant's surface).
+//
+// Set AGGREGA_UPDATE_GOLDENS=1 to (re)write the goldens under expectedDir
+// from the actual file set; the assertions then pass trivially. Use only
+// when intentionally regenerating goldens after inspection.
+func assertDistMatches(t *testing.T, actual map[string][]byte, expectedDir, stripPrefix string) {
+	t.Helper()
+
+	if os.Getenv("AGGREGA_UPDATE_GOLDENS") == "1" {
+		if err := os.RemoveAll(expectedDir); err != nil {
+			t.Fatalf("remove %s: %v", expectedDir, err)
+		}
+		for path, body := range actual {
+			if stripPrefix != "" && !strings.HasPrefix(path, stripPrefix) {
+				continue
+			}
+			rel := strings.TrimPrefix(path, stripPrefix)
+			full := filepath.Join(expectedDir, rel)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
+			}
+			if err := os.WriteFile(full, body, 0o644); err != nil {
+				t.Fatalf("write %s: %v", full, err)
+			}
+		}
+		t.Logf("AGGREGA_UPDATE_GOLDENS=1 — wrote goldens under %s", expectedDir)
+		return
+	}
+
+	expected := map[string][]byte{}
+	err := filepath.Walk(expectedDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(expectedDir, path)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		expected[filepath.ToSlash(rel)] = body
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", expectedDir, err)
+	}
+
+	for rel, want := range expected {
+		actualKey := stripPrefix + rel
+		got, ok := actual[actualKey]
+		if !ok {
+			t.Errorf("missing from actual: %s (expected %d bytes)", actualKey, len(want))
+			continue
+		}
+		if string(got) != string(want) {
+			t.Errorf("byte mismatch at %s\n--- want ---\n%s\n--- got ---\n%s", actualKey, string(want), string(got))
+		}
+	}
+
+	for path := range actual {
+		if stripPrefix != "" && !strings.HasPrefix(path, stripPrefix) {
+			continue
+		}
+		rel := strings.TrimPrefix(path, stripPrefix)
+		if _, ok := expected[rel]; !ok {
+			t.Errorf("present in actual but missing from expected: %s", path)
+		}
+	}
+}
+
+// assertProvenanceLabels verifies the canonical aggrega.ai/* label set is
+// present on K8s-shaped manifests in actual. The helm engine's
+// buildAggreraLabels emits component-id + boundary-path on every K8s
+// manifest; aggrega.ai/recipe-uri is emitted by the artifacts evaluator
+// path only — the helm and helm-chart engines do not yet thread Recipe
+// identity onto NodeRenderContext, so recipe-uri is asserted only when
+// requested explicitly via requiredLabels.
+//
+// Files without metadata.labels structure (compose docker-compose.yaml,
+// chart Chart.yaml, values.yaml, sub-chart Chart.yaml, the helm-chart
+// umbrella's own non-templated files) are skipped — the label contract
+// applies to K8s manifests, not chart packaging or compose service files.
+//
+// requiredLabels is the exact set of label keys that must appear; pass nil
+// for the helm-engine-shipped default (component-id, boundary-path).
+func assertProvenanceLabels(t *testing.T, actual map[string][]byte, requiredLabels []string) {
+	t.Helper()
+
+	if requiredLabels == nil {
+		requiredLabels = []string{
+			"aggrega.ai/component-id",
+			"aggrega.ai/boundary-path",
+		}
+	}
+
+	paths := make([]string, 0, len(actual))
+	for p := range actual {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		body := string(actual[path])
+		base := filepath.Base(path)
+		// Skip files that don't carry K8s metadata.labels structure.
+		switch base {
+		case "Chart.yaml", "values.yaml", "docker-compose.yaml":
+			continue
+		}
+		// Skip helm-chart sub-chart templates: they remain `{{ .Values.* }}`
+		// templated and do not carry rendered labels.
+		if strings.Contains(path, "/charts/") && strings.Contains(path, "/templates/") {
+			continue
+		}
+		// Skip files without a metadata block at all (raw artifacts may be
+		// non-K8s shapes — apply the contract only when metadata: appears).
+		if !strings.Contains(body, "metadata:") {
+			continue
+		}
+		for _, lbl := range requiredLabels {
+			if !strings.Contains(body, lbl+":") {
+				t.Errorf("provenance label %s missing from %s:\n%s", lbl, path, body)
+			}
+		}
 	}
 }

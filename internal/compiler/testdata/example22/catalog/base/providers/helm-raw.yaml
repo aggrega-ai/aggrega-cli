@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm-raw
+  version: "1.0.0"
+spec:
+  # No baseSchema — artifacts-only Recipes don't go through valuesMapping,
+  # so there is nothing to validate against. The helm-raw provider exists
+  # for fixtures whose Recipes emit only artifacts:/artifactsFrom: content.
+  workloadSchema: |
+    #WorkloadSupported: false

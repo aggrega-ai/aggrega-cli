@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: frontend-web-config
+    labels:
+        aggrega.ai/aggregate-name: example22-app
+        aggrega.ai/boundary-path: frontend-ns
+        aggrega.ai/compiler-version: 0.1.0
+        aggrega.ai/component-id: frontend
+        aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-web-ui-sourced-with-artifacts:1.0.0
+        app.kubernetes.io/name: frontend
+data:
+    BACKEND: backend.backend-zone.svc

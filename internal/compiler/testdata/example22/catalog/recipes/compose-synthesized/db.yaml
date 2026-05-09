@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-db-synthesized
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/database/postgres
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "5432"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      main:
+        image: postgres:15
+        ports:
+          db: 5432
+        variables:
+          POSTGRES_DB: "{{ .values.database_name }}"
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: 5432

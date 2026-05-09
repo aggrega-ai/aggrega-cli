@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: example22-compose-synthesized
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server/api-server
+      values:
+        port: 8080
+      uses:
+        databases:
+          - db
+    db:
+      type: core/database/postgres
+      values:
+        database_name: app

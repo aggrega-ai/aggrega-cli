@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-db-sourced
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/database/postgres
+  source: ./sources/db.yaml
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "5432"
+  valuesMapping: |
+    {
+      "services": {
+        "db": {
+          "environment": {
+            "POSTGRES_DB": "{{ .values.database_name }}"
+          }
+        }
+      }
+    }

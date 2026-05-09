@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: compose-synthesized-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        api:
+          infra:
+            replicas: 2
+        db:
+          infra:
+            replicas: 1

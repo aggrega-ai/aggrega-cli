@@ -1,0 +1,19 @@
+services:
+    api:
+        image: api-server:latest
+        environment:
+            PORT: "8080"
+        networks:
+            - dist_app_compose
+        depends_on:
+            - db
+        restart: unless-stopped
+    db:
+        image: postgres:15
+        environment:
+            POSTGRES_DB: app
+        networks:
+            - dist_app_compose
+        restart: unless-stopped
+networks:
+    dist_app_compose: {}
