@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -169,10 +170,17 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// Step 4: Analyze
 	analysis := analyzer.Analyze(graph, catalogLookup)
 	if len(analysis.Errors) > 0 {
-		for _, e := range analysis.Errors {
-			fmt.Fprintf(os.Stderr, "  selector: %s -> %s (%s): %s\n", e.Source, e.Target, e.Socket, e.Message)
+		// Bubble each violation as a CompilerError via errors.Join. The
+		// formatter walks the join'd chain and renders each violation
+		// rich-formatted; the stderr side-effect printing the previous
+		// shape used has been removed in favor of the structured chain.
+		// errors.Join'd nil entries are dropped, but every analyzer error
+		// here is non-nil by construction (len > 0 gate).
+		errs := make([]error, len(analysis.Errors))
+		for i := range analysis.Errors {
+			errs[i] = analysis.Errors[i].ToCompilerError()
 		}
-		return fmt.Errorf("Step 4: %d selector violation(s)", len(analysis.Errors))
+		return stderrors.Join(errs...)
 	}
 
 	// Step 5: Render

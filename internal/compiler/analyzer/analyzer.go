@@ -4,6 +4,9 @@
 package analyzer
 
 import (
+	"fmt"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -52,6 +55,45 @@ type AnalysisError struct {
 	Socket   string
 	Selector string
 	Message  string
+}
+
+// Error formats the violation as a single human-readable string. Selector
+// violations (Socket non-empty) read as
+// "<source> -> <target> (<socket>): <message>"; appliesTo violations
+// (Socket empty) read as "<source> attaches Feature <target>: <message>"
+// since the appliesTo check's Source-and-Target reuse semantics carry
+// different meaning. The two shapes are distinguished by Socket presence
+// per the package's documented convention.
+func (e AnalysisError) Error() string {
+	if e.Socket != "" {
+		return fmt.Sprintf("%s -> %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
+	}
+	return fmt.Sprintf("%s attaches Feature %s: %s", e.Source, e.Target, e.Message)
+}
+
+// ToCompilerError converts the analyzer violation into a *cerrors.CompilerError
+// carrying CategoryDeveloperError. Selector and appliesTo violations are
+// authoring-time problems on the developer's Aggregate (the developer
+// authored the uses-edge or Feature attachment that fails the selector or
+// appliesTo constraint); both classes route to DeveloperError.
+//
+// Source location maps the violating-node ID into SourceLocation.File. The
+// node ID is the most-specific authoring-locator available at the analyzer
+// stage — finer-grained source positions (file/line/column) require the
+// resolver to thread file-path metadata onto IRNode, which is a separate
+// future improvement.
+//
+// The CompilerError carries no inner-error chain (AnalysisError doesn't
+// wrap a domain sentinel today); errors.Is matching against AnalysisError
+// continues to work via type assertion at the formatter dispatch.
+func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
+	return cerrors.New(
+		cerrors.DeveloperError,
+		cerrors.SourceLocation{File: e.Source},
+		e.Error(),
+		nil,
+		nil,
+	)
 }
 
 // PrecalculatedPath is one acyclic path through the IR graph,

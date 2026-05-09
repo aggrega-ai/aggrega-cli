@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -217,9 +218,11 @@ func mergeFeature(
 
 	// Merge: type must match
 	if existing.Type != "" && feat.Type != "" && existing.Type != feat.Type {
-		return fmt.Errorf(
-			"%w: node %q feature %q: existing type %q conflicts with %q",
-			ErrFeatureTypeMismatch, nodeID, instanceName, existing.Type, feat.Type,
+		return cerrors.Wrap(
+			ErrFeatureTypeMismatch,
+			cerrors.OpsError,
+			cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("node %q feature %q: existing type %q conflicts with %q", nodeID, instanceName, existing.Type, feat.Type),
 		)
 	}
 

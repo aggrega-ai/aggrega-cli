@@ -6,6 +6,7 @@ package topology
 import (
 	"fmt"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -77,7 +78,7 @@ func flattenAggregate(
 	depth int,
 ) (*flattenResult, error) {
 	if depth > maxSubAggregateDepth {
-		return nil, fmt.Errorf("%w: depth %d at prefix %q", ErrMaxDepth, depth, prefix)
+		return nil, cerrors.Wrap(ErrMaxDepth, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("depth %d at prefix %q", depth, prefix))
 	}
 
 	result := &flattenResult{
@@ -113,12 +114,12 @@ func flattenAggregate(
 			childPrefix := qualifiedID(prefix, aggName)
 
 			if visited[subAgg.Type] {
-				return nil, fmt.Errorf("%w: circular sub-aggregate reference %q at %q", ErrSubAggregateLoad, subAgg.Type, childPrefix)
+				return nil, cerrors.Wrap(ErrSubAggregateLoad, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("circular sub-aggregate reference %q at %q", subAgg.Type, childPrefix))
 			}
 
 			childAgg, err := loader(subAgg.Type)
 			if err != nil {
-				return nil, fmt.Errorf("%w: %v", ErrSubAggregateLoad, err)
+				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad))
 			}
 
 			childVisited := copyVisited(visited)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -70,7 +71,7 @@ func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeatu
 			for _, item := range v {
 				target, ok := item.(string)
 				if !ok {
-					return nil, fmt.Errorf("%w: socket %q: array element must be a string, got %T", ErrInvalidUsesFormat, socket, item)
+					return nil, cerrors.Wrap(ErrInvalidUsesFormat, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("socket %q: array element must be a string, got %T", socket, item))
 				}
 				edges = append(edges, NormalizedEdge{
 					Source:        sourceNodeID,
@@ -99,7 +100,7 @@ func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeatu
 			}
 
 		default:
-			return nil, fmt.Errorf("%w: socket %q: expected array or map, got %T", ErrInvalidUsesFormat, socket, raw)
+			return nil, cerrors.Wrap(ErrInvalidUsesFormat, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("socket %q: expected array or map, got %T", socket, raw))
 		}
 	}
 
@@ -135,7 +136,7 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 				OriginFeature: originFeature,
 			}, nil
 		}
-		return NormalizedEdge{}, fmt.Errorf("%w: socket %q alias %q: expected map or string, got %T", ErrInvalidUsesFormat, socket, alias, raw)
+		return NormalizedEdge{}, cerrors.Wrap(ErrInvalidUsesFormat, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("socket %q alias %q: expected map or string, got %T", socket, alias, raw))
 	}
 
 	target := alias // default target = alias name
@@ -156,7 +157,7 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 	if injectRaw, ok := m["inject"]; ok {
 		inject, err := parseInjectBlock(injectRaw)
 		if err != nil {
-			return NormalizedEdge{}, fmt.Errorf("socket %q alias %q: %w", socket, alias, err)
+			return NormalizedEdge{}, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("socket %q alias %q", socket, alias))
 		}
 		edge.Inject = inject
 	}
@@ -188,7 +189,7 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 func parseInjectBlock(raw interface{}) (*types.InjectBlock, error) {
 	m, ok := raw.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("%w: inject must be a map, got %T", ErrInvalidUsesFormat, raw)
+		return nil, cerrors.Wrap(ErrInvalidUsesFormat, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("inject must be a map, got %T", raw))
 	}
 
 	inject := &types.InjectBlock{}

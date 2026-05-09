@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/validator"
@@ -146,5 +147,94 @@ func TestFormatCompilerError_TranslationCategory_RendersViaCompilerError(t *test
 	got := formatCompilerError(ce)
 	if !strings.Contains(got, "[TRANSLATION_ERROR]") {
 		t.Errorf("output missing [TRANSLATION_ERROR] tag\n--- got ---\n%s", got)
+	}
+}
+
+// TestFormatCompilerError_AnalysisError_RendersAsDeveloper verifies that
+// an AnalysisError bubbled through the error chain renders correctly via
+// the new detection branch (the analyzer-violation refactor's CLI render
+// path).
+func TestFormatCompilerError_AnalysisError_RendersAsDeveloper(t *testing.T) {
+	t.Parallel()
+	ae := &analyzer.AnalysisError{
+		Source:  "frontend",
+		Target:  "backend",
+		Socket:  "apis",
+		Message: "no matching component",
+	}
+	got := formatCompilerError(ae)
+	for _, want := range []string{"[DEVELOPER_ERROR]", "frontend", "no matching component"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+}
+
+// TestFormatCompilerError_ErrorsJoin_RendersAll verifies that an
+// errors.Join'd chain of three CompilerErrors renders all three with the
+// `\n---\n` separator. Without the multi-error branch, errors.As walks
+// the chain and matches only the first; the others would silently drop.
+// The build.go Step 4 refactor's "bubble each AnalysisError as a
+// CompilerError via errors.Join" depends on this rendering correctness.
+func TestFormatCompilerError_ErrorsJoin_RendersAll(t *testing.T) {
+	t.Parallel()
+	ce1 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-a"}, "violation a", nil, nil)
+	ce2 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-b"}, "violation b", nil, nil)
+	ce3 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-c"}, "violation c", nil, nil)
+	joined := stderrors.Join(ce1, ce2, ce3)
+
+	got := formatCompilerError(joined)
+	for _, want := range []string{"violation a", "violation b", "violation c", "\n---\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Join'd render missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// Each violation rendered exactly once.
+	for _, msg := range []string{"violation a", "violation b", "violation c"} {
+		if strings.Count(got, msg) != 1 {
+			t.Errorf("expected exactly 1 occurrence of %q, got %d\n--- got ---\n%s",
+				msg, strings.Count(got, msg), got)
+		}
+	}
+}
+
+// TestFormatCompilerError_ErrorsJoin_MixedTypes verifies the multi-error
+// branch handles a Join'd chain of mixed structured types (CompilerError +
+// ResolverError + RecipeValidationError). Each sub-error converts via its
+// own ToCompilerError path; all three render.
+func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
+	t.Parallel()
+	ce := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
+	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrInvalidInstanceName}
+	rve := &validator.RecipeValidationError{Path: "/r.yaml", Description: "recipe rule msg", Err: validator.ErrRecipeRule1}
+	joined := stderrors.Join(ce, re, rve)
+
+	got := formatCompilerError(joined)
+	for _, want := range []string{"[TRANSLATION_ERROR]", "[DEVELOPER_ERROR]", "[CATALOG_ERROR]", "translation msg", "resolver msg", "recipe rule msg"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Mixed-type Join missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+}
+
+// TestFormatCompilerError_ErrorsJoin_RecursionSafe verifies nested
+// errors.Join chains render fully without stack overflow. The recursive
+// call flow: outer Join → multi-error branch → render each → inner
+// Join hits multi-error branch → render each leaf. Termination is
+// guaranteed because each leaf is non-multi-error and reaches a
+// terminal rendering branch.
+func TestFormatCompilerError_ErrorsJoin_RecursionSafe(t *testing.T) {
+	t.Parallel()
+	ce1 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 1", nil, nil)
+	ce2 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 2", nil, nil)
+	ce3 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 3", nil, nil)
+	inner := stderrors.Join(ce1, ce2)
+	outer := stderrors.Join(inner, ce3)
+
+	got := formatCompilerError(outer)
+	for _, want := range []string{"leaf 1", "leaf 2", "leaf 3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("nested Join missing %q\n--- got ---\n%s", want, got)
+		}
 	}
 }

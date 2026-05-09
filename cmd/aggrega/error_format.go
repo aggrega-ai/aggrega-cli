@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
 	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/validator"
@@ -22,6 +23,33 @@ import (
 func formatCompilerError(err error) string {
 	if err == nil {
 		return ""
+	}
+	// Multi-error chains FIRST. The standard library's errors.Join (Go 1.20+)
+	// produces an error whose Unwrap returns a slice of underlying errors.
+	// errors.As walks the chain and matches the FIRST matching descendant,
+	// so a Join'd chain of N CompilerErrors would render only the first
+	// without this branch. Iterating Unwrap() []error and rendering each
+	// independently surfaces every joined error to the user. Recursion is
+	// safe — each sub-error is rendered via formatCompilerError(sub) which
+	// hits the terminal CompilerError-rendering branch (or one of the
+	// structured-type-conversion branches that ultimately renders a
+	// CompilerError) and returns without re-entering this multi-error arm
+	// (the per-sub error is not a multi-error itself unless explicitly
+	// nested, which is also handled correctly via the recursive call).
+	type multiErr interface{ Unwrap() []error }
+	if me, ok := err.(multiErr); ok {
+		parts := me.Unwrap()
+		if len(parts) > 0 {
+			rendered := make([]string, 0, len(parts))
+			for _, sub := range parts {
+				if s := formatCompilerError(sub); s != "" {
+					rendered = append(rendered, s)
+				}
+			}
+			if len(rendered) > 0 {
+				return strings.Join(rendered, "\n---\n")
+			}
+		}
 	}
 	// Detection order: CompilerError FIRST. errors.As walks the chain via
 	// Unwrap; a CompilerError that wraps a structured-error type (the result
@@ -54,6 +82,10 @@ func formatCompilerError(err error) string {
 	var ve *validator.ValidationError
 	if stderrors.As(err, &ve) && ve != nil {
 		return formatCompilerError(ve.ToCompilerError())
+	}
+	var ae *analyzer.AnalysisError
+	if stderrors.As(err, &ae) && ae != nil {
+		return formatCompilerError(ae.ToCompilerError())
 	}
 	return err.Error()
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"github.com/cognitio/aggrega-cli/pkg/validator"
@@ -107,11 +108,11 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return fmt.Errorf("read %q: %w", path, err)
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "read catalog file")
 			}
 			return c.indexFile(data, path)
 		}); err != nil {
-			return nil, fmt.Errorf("catalog load %q: %w", dir, err)
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 		}
 	}
 	return c, nil
@@ -143,19 +144,19 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 	case "Component":
 		var e types.Component
 		if err := yaml.Unmarshal(data, &e); err != nil {
-			return fmt.Errorf("unmarshal Component %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
 		c.Components[e.Metadata.Name] = e
 	case "Feature":
 		var e types.Feature
 		if err := yaml.Unmarshal(data, &e); err != nil {
-			return fmt.Errorf("unmarshal Feature %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Feature")
 		}
 		c.Features[e.Metadata.Name] = e
 	case "Recipe":
 		var e types.Recipe
 		if err := yaml.Unmarshal(data, &e); err != nil {
-			return fmt.Errorf("unmarshal Recipe %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
 		}
 		// Load-time shape rules (chapter 16): valuesMapping ⇔ source pairing,
 		// workload/workloadFrom mutex, at-least-one-input-kind, artifacts
@@ -170,7 +171,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
 			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
 			if err != nil {
-				return fmt.Errorf("resolve Recipe %q source %q: %w", path, s, err)
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe source %q", s))
 			}
 			e.Spec.Source = abs
 		}
@@ -184,7 +185,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			}
 			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), p))
 			if err != nil {
-				return fmt.Errorf("resolve Recipe %q artifactsFrom %q: %w", path, p, err)
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifactsFrom %q", p))
 			}
 			e.Spec.ArtifactsFrom[i] = abs
 		}
@@ -192,7 +193,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 	case "FeatureRecipe":
 		var e types.FeatureRecipe
 		if err := yaml.Unmarshal(data, &e); err != nil {
-			return fmt.Errorf("unmarshal FeatureRecipe %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
 		}
 		// Resolve relative string sources against the FR file's directory so
 		// co-located fragments (compose-bridge's bridge-fragment.yaml,
@@ -201,7 +202,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
 			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
 			if err != nil {
-				return fmt.Errorf("resolve FeatureRecipe %q source %q: %w", path, s, err)
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
 			}
 			e.Spec.Source = abs
 		}
@@ -209,13 +210,13 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 	case "Aggregate":
 		var e types.Aggregate
 		if err := yaml.Unmarshal(data, &e); err != nil {
-			return fmt.Errorf("unmarshal Aggregate %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
 		c.Aggregates[e.Metadata.Name] = e
 	case "Provider":
 		var e types.Provider
 		if err := yaml.Unmarshal(data, &e); err != nil {
-			return fmt.Errorf("unmarshal Provider %q: %w", path, err)
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
 		}
 		c.Providers[e.Metadata.Name] = e
 	}
@@ -445,7 +446,7 @@ func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 	return func(typeName string) (*types.Aggregate, error) {
 		agg, ok := c.Aggregates[typeName]
 		if !ok {
-			return nil, fmt.Errorf("sub-aggregate %q not found in catalog", typeName)
+			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
 		}
 		return &agg, nil
 	}
