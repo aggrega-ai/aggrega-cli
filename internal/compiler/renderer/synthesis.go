@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -51,10 +52,11 @@ func dispatchWorkloadSynthesis(
 	}
 	synth, ok := engine.(WorkloadSynthesizer)
 	if !ok {
-		return nil, fmt.Errorf(
+		inner := fmt.Errorf(
 			"CATALOG_ERROR: provider %q does not implement WorkloadSynthesizer; the Recipe declares workload: or workloadFrom: but the bound provider has no synthesised-mode implementation",
 			providerName,
 		)
+		return nil, cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
 	}
 	files, err := synth.SynthesizeWorkload(ctx, tmplCtx, w, nodeCtx)
 	if err != nil {

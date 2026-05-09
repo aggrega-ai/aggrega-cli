@@ -17,6 +17,7 @@ import (
 	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 
@@ -24,8 +25,9 @@ import (
 )
 
 var (
-	releasePath string
-	catalogDir  string
+	releasePath  string
+	catalogDir   string
+	traceEnabled bool
 )
 
 var buildCmd = &cobra.Command{
@@ -37,6 +39,7 @@ var buildCmd = &cobra.Command{
 func init() {
 	buildCmd.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
 	buildCmd.Flags().StringVar(&catalogDir, "catalog", ".", "Directory containing catalog entities")
+	buildCmd.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	if err := buildCmd.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -174,11 +177,35 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Step 5: Render
 	recipeLookup := cat.RecipeLookup()
+
+	// Construct the trace writer. When --trace is off, New("") returns a
+	// no-op writer; on, it returns an async filesystem writer rooted at
+	// `.trace/` (sibling to `dist/`, never under). The sibling layout
+	// keeps `dist/` purely deployable: no flag-conditional contents, no
+	// apply-tool walking surprises, no operator-authored boundary
+	// `directory:` collision risk against an Aggrega-managed dot-dir.
+	// Close drains in-flight async writes; deferred so any return path
+	// (including error) flushes the trace surface.
+	traceRoot := ""
+	if traceEnabled {
+		traceRoot = ".trace"
+		if err := os.RemoveAll(traceRoot); err != nil {
+			return fmt.Errorf("clean %s: %w", traceRoot, err)
+		}
+	}
+	traceWriter := trace.New(traceRoot)
+	defer func() {
+		if cerr := traceWriter.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "  trace: close: %s\n", cerr)
+		}
+	}()
+
 	rendererInput := renderer.RendererInput{
 		Graph:         graph,
 		FeatureOrder:  featureOrder,
 		ResolveResult: resolveResult,
 		CatalogLookup: catalogLookup,
+		Trace:         traceWriter,
 	}
 
 	// engineFactory dispatches the providerName each Recipe carries

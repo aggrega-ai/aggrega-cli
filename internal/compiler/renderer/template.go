@@ -12,6 +12,8 @@ import (
 	"text/template/parse"
 
 	sprig "github.com/Masterminds/sprig/v3"
+
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 )
 
 // EvalTemplate evaluates a Go template string with the default `{{ }}`
@@ -153,8 +155,9 @@ func validatePathTemplateFields(boundaryName, tmplText string, allowlist map[str
 
 	for _, refField := range collectTopLevelFields(t) {
 		if !allowlist[refField] {
-			return fmt.Errorf("%w: boundary %q references unknown field .%s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
+			inner := fmt.Errorf("%w: boundary %q references unknown field .%s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
 				ErrPathTemplateInvalidField, boundaryName, refField)
+			return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 		}
 	}
 	return nil

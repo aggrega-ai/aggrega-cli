@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -132,6 +134,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// See boundary_fr.go.
 	boundaryFRState := NewBoundaryFRState()
 
+	// Trace writer (no-op when --trace is off; async filesystem writer
+	// when on). Per-pass capture surfaces happen at four representative
+	// sites in this revision: Phase A injectMapping output, Phase B.4
+	// Workload synthesis output, Phase B.6 boundary-scope FR dispatch,
+	// and per-emission provenance-label routing. Other sub-passes wire
+	// in a follow-up.
+	traceWriter := input.Trace
+	if traceWriter == nil {
+		traceWriter = trace.New("")
+	}
+
 	// Per-node rendering
 	for _, nodeID := range nodeIDs {
 		node, _ := graph.Spec.Nodes.Get(nodeID)
@@ -191,6 +204,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
+		// Trace point: Phase A — feature-scoped per-consumer inject pipe
+		// after FR injectMapping rewrites.
+		_ = traceWriter.Write(trace.PassPhaseA, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseA))
 
 		// Phase B.1 — valuesMapping → state.ResolvedValues.
 		if err := phaseB1(tmplCtx, state); err != nil {
@@ -343,6 +359,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, fmt.Errorf("Step 5 node %q: %w", nodeID, err)
 		}
+		// Trace point: Phase B.4 — node-scoped Workload synthesis output
+		// captured against the post-synthesis TemplateContext (workload
+		// pillar visible).
+		_ = traceWriter.Write(trace.PassPhaseB4, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseB4))
 
 		// Phase B.5 — filename collision detection across input-kind
 		// origins (rule 7). Collisions can surface across EmitOriginSource
@@ -401,8 +421,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// check surfaces structural violations immediately rather than
 		// letting them propagate to broken assembled output.
 		if _, alreadyHere := dispatch[key].files[nodeID]; alreadyHere {
-			return nil, fmt.Errorf("%w: dispatch path %q provider %q already contains node %q (contributing boundaries: %v); component instance IDs must be unique within an assembly group",
+			inner := fmt.Errorf("%w: dispatch path %q provider %q already contains node %q (contributing boundaries: %v); component instance IDs must be unique within an assembly group",
 				ErrInstanceIDCollision, key.Path, key.Provider, nodeID, dispatch[key].contributingBoundaries)
+			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
 		}
 		// Track contributing boundaries (deduplicated). Used for diagnostic
 		// messages on collision/chart-name-mismatch errors and for chart-name
@@ -459,6 +480,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		for path, content := range frFiles {
 			dispatch[key].files[nodeID][path] = content
 		}
+		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The
+		// snapshot captures the post-B.6 TemplateContext for this node;
+		// boundary-scope FR contributions deduplicated by Phase B.6 surface
+		// in boundaryFRState.Files (post-loop, not per-node here).
+		_ = traceWriter.Write(trace.PassPhaseB6, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseB6))
 
 		// Drain Phase B's per-node warnings into the build-level result.
 		// Drain position is the end of the per-node Phase B sequence
@@ -466,6 +492,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// to state.Warnings reaches result.Warnings, not just B.3's
 		// helm-chart provenance-skip notice today.
 		result.Warnings = append(result.Warnings, state.Warnings...)
+
+		// Trace point: per-emission provenance routing summary. Captures
+		// the per-node label and annotation set applied to emitted files
+		// at the post-render handoff. Surfaces the canonical aggrega.ai/*
+		// labels and the argocd.argoproj.io/sync-wave annotation each
+		// node's emission carries.
+		labelsSummary := map[string]any{
+			"node_id":             nodeID,
+			"boundary_path":       node.BoundaryPath,
+			"provenance_labels":   buildProvenanceLabels(state, nodeCtx),
+			"provenance_annots":   buildProvenanceAnnotations(state, nodeCtx),
+			"emitted_files_count": len(state.EmittedFiles),
+		}
+		_ = traceWriter.Write(trace.PassLabels, nodeID, node.BoundaryPath, "", labelsSummary)
 	}
 
 	// Boundary-scope FR output routing. After the per-node loop, any
@@ -600,8 +640,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			providers = append(providers, k.Provider)
 			contributingBoundaries = append(contributingBoundaries, dispatch[k].contributingBoundaries...)
 		}
-		return nil, fmt.Errorf("%w: dispatch path %q produced multiple provider outputs (%v); contributing boundaries %v resolve to the same path under their current directory: / subDirectory: settings; set distinct subDirectory values per provider or change one boundary's directory",
+		inner := fmt.Errorf("%w: dispatch path %q produced multiple provider outputs (%v); contributing boundaries %v resolve to the same path under their current directory: / subDirectory: settings; set distinct subDirectory values per provider or change one boundary's directory",
 			ErrPathCollision, path, providers, contributingBoundaries)
+		return nil, cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 	}
 
 	// CHART_NAME_MISMATCH check: when a helm-chart dispatch group has more
@@ -638,8 +679,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 		if mismatch {
-			return nil, fmt.Errorf("%w: boundaries %v merge to assembly path %q under helm-chart provider but their effective aggrega.ai/chart-name annotations resolve to different values: %v; the merged umbrella chart has exactly one name; cascade or declare matching values explicitly",
+			inner := fmt.Errorf("%w: boundaries %v merge to assembly path %q under helm-chart provider but their effective aggrega.ai/chart-name annotations resolve to different values: %v; the merged umbrella chart has exactly one name; cascade or declare matching values explicitly",
 				ErrChartNameMismatch, pd.contributingBoundaries, key.Path, mismatchValues)
+			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
 		}
 	}
 

@@ -47,6 +47,7 @@ import (
 
 	sprig "github.com/Masterminds/sprig/v3"
 
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -173,8 +174,9 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 		fields := collectTopLevelFields(t2)
 		for _, f := range fields {
 			if boundaryScopeFRRejectedFields[f] {
-				return fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field .%s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .secret_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
+				inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field .%s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .secret_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
 					ErrFRTemplateInvalidField, frName, f, t.label)
+				return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
 			}
 		}
 	}

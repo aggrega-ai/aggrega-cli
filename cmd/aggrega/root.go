@@ -25,7 +25,7 @@ var rootCmd = &cobra.Command{
 // the caller, so main remains a thin shim.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, formatCompilerError(err))
 		os.Exit(1)
 	}
 }

@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
+	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -16,6 +17,12 @@ type RendererInput struct {
 	ResolveResult  *resolver.ResolveResult
 	CatalogLookup  resolver.CatalogLookup
 	ProviderLookup ProviderLookup // Optional: enables baseSchema validation in sourceless mode
+
+	// Trace, when non-nil, captures per-pass intermediate state under
+	// .trace/ (sibling to dist/) for the --trace debug surface. nil
+	// disables tracing (the orchestrator passes a no-op writer when this
+	// field is unset).
+	Trace trace.Writer
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).
