@@ -1,0 +1,4 @@
+image: api-server:latest
+replicas: 1
+ports: []
+environment: {}

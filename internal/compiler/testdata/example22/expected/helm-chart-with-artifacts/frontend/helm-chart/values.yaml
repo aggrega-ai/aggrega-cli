@@ -1,0 +1,9 @@
+frontend:
+    environment:
+        API_HOST: backend.backend-zone.svc
+        API_PORT: "8082"
+        PORT: "3003"
+    image: web-ui:latest
+    ports:
+        - 3003:3003
+    replicas: 2

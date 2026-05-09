@@ -1,0 +1,4 @@
+image: web-ui:latest
+replicas: 1
+ports: []
+environment: {}

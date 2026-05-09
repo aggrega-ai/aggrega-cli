@@ -131,7 +131,7 @@ func runExample22Variant(t *testing.T, fx variantFixture) *example22Result {
 		Topology:        topoResult,
 		ResolveResult:   resolveResult,
 		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0-m1",
+		CompilerVersion: "0.1.0",
 	})
 	if err != nil {
 		t.Fatalf("Step 3 (IR): %v", err)
@@ -350,6 +350,29 @@ func TestExample22_HelmChartSourced(t *testing.T) {
 	t.Parallel()
 	res := runExample22(t, "helm-chart-sourced")
 	assertSourcedUmbrellaProof(t, res)
+}
+
+func TestExample22_HelmChartWithArtifacts(t *testing.T) {
+	t.Parallel()
+	res := runExample22(t, "helm-chart-with-artifacts")
+	assertSourcedUmbrellaProof(t, res)
+	// HelmChart sub-chart templates stay {{ .Values.* }}-templated and
+	// do not carry rendered labels; assertProvenanceLabels is skipped.
+	// Byte-compare on goldens validates labels in the artifactsFrom output
+	// via the artifacts evaluator's buildProvenanceLabels.
+	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-chart-with-artifacts", "dist/")
+}
+
+func TestExample22_ComposeArtifacts(t *testing.T) {
+	t.Parallel()
+	res := runExample22Variant(t, variantFixture{
+		name:          "compose-artifacts",
+		aggregatePath: "testdata/example22/aggregates/compose-artifacts.yaml",
+		releasePath:   "testdata/example22/releases/compose-artifacts.yaml",
+		manifestPath:  "testdata/example22/manifests/compose-artifacts.yaml",
+	})
+	assertProvenanceLabels(t, res.Files, nil)
+	assertDistMatches(t, res.Files, "testdata/example22/expected/compose-artifacts", "dist/")
 }
 
 // assertSourcedUmbrellaProof covers the helm-chart sourced variant. The user's

@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-raw-fragments-artifacts
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/raw/manifest
+  # The compose engine's Render() rejects bare values-only Recipes
+  # (engine.go: "must declare workload: or source:"). The minimal
+  # workload below satisfies the engine; the artifacts: block runs
+  # alongside it, emitting raw compose fragments for declarative
+  # network and volume topology.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      placeholder:
+        image: busybox:latest
+  artifacts:
+    network-overlay.yaml: |
+      networks:
+        {{ .values.name }}-front:
+          driver: bridge
+        {{ .values.name }}-back:
+          driver: bridge
+    volume-overlay.yaml: |
+      volumes:
+        {{ .values.name }}-data:
+          driver: local
+        {{ .values.name }}-cache:
+          driver: local

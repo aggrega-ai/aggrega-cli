@@ -1,0 +1,12 @@
+services:
+    overlays:
+        image: busybox:latest
+        networks:
+            - dist_compose-app_compose
+volumes:
+    app-overlays-cache:
+        driver: local
+    app-overlays-data:
+        driver: local
+networks:
+    dist_compose-app_compose: {}
