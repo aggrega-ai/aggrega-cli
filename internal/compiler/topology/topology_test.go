@@ -20,11 +20,11 @@
 //     Feature-authored edges separable from Component-authored edges.
 //   - TestBuild_BoundaryPath — pins phase 3: BoundaryInfra-supplied
 //     boundary path lands on the per-node TopologyNode.
-//   - TestBuild_DeterministicEdgeOrder — pins the synthesized-derived-
-//     data ordering discipline at the edges slice: ten consecutive
-//     Builds against the same input produce byte-identical edge
-//     ordering, and the order is alphabetical-by-source-node
-//     regardless of the OrderedMap's author insertion order.
+//   - TestBuild_DeterministicEdgeOrder — pins the compositional-author-
+//     order discipline at the edges slice: ten consecutive Builds against
+//     the same input produce byte-identical edge ordering, and the order
+//     follows the Aggregate's component declaration sequence rather than
+//     alphabetical-by-source-node.
 
 package topology
 
@@ -302,8 +302,9 @@ func TestBuild_DeterministicEdgeOrder(t *testing.T) {
 			}
 		}
 	}
-	// Verify sorted: a-svc < m-svc < z-svc
-	if firstSources[0] != "a-svc" || firstSources[1] != "m-svc" || firstSources[2] != "z-svc" {
-		t.Errorf("edges not sorted by source: %v", firstSources)
+	// Verify compositional author order: components declared in sequence
+	// z-svc, a-svc, m-svc — edge slice mirrors the declaration order.
+	if firstSources[0] != "z-svc" || firstSources[1] != "a-svc" || firstSources[2] != "m-svc" {
+		t.Errorf("edges not in author order: %v (want [z-svc a-svc m-svc])", firstSources)
 	}
 }

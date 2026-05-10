@@ -508,8 +508,10 @@ func TestPipeline_DeterministicOutput(t *testing.T) {
 		}
 	}
 
-	// Verify sorted edge sources
-	if first.edgeSources[0] != "a-svc" || first.edgeSources[1] != "m-svc" || first.edgeSources[2] != "z-svc" {
-		t.Errorf("edges not sorted: %v", first.edgeSources)
+	// Verify compositional author order: components declared in sequence
+	// z-svc, a-svc, m-svc, db — edge slice (filtered to the three svc
+	// sources) mirrors the declaration order.
+	if first.edgeSources[0] != "z-svc" || first.edgeSources[1] != "a-svc" || first.edgeSources[2] != "m-svc" {
+		t.Errorf("edges not in author order: %v (want [z-svc a-svc m-svc])", first.edgeSources)
 	}
 }

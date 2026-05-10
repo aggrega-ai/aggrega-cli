@@ -43,8 +43,8 @@
 //   - Determinism. Author-declared collections (Nodes from OrderedMap
 //     iteration) preserve YAML order; synthesized derived collections
 //     (Edges) sort alphabetically by source-node. The distinction is
-//     documented at the sortedNodeIDs call site in topology.go and
-//     consumed by Step 3 / IR as a cross-package contract.
+//     documented at the Step 4 call site in topology.go and consumed
+//     by Step 3 / IR as a cross-package contract.
 //   - Upstream guarantees. The resolver validates `uses` socket names
 //     against usesSchema before this package runs; normalizeUses
 //     therefore trusts that every socket name it parses is
@@ -61,10 +61,10 @@
 //     phases all preserve author order; the OrderedMap shape is
 //     load-bearing for IR JSON emission downstream.
 //   - TopologyResult.Edges sorts alphabetical-by-source-node. Build's
-//     step 4 drives the outer iteration through sortedNodeIDs; no single
-//     author declared the order of edges as a whole, so alphabetical-by-
-//     source is the deterministic ordering convention for synthesized
-//     derived data.
+//     step 4 drives the outer iteration in alphabetical-by-source order;
+//     no single author declared the order of edges as a whole, so
+//     alphabetical-by-source is the deterministic ordering convention
+//     for synthesized derived data.
 //   - The IR builder reads both as gospel. There is no in-package guard on
 //     the consumer side that would catch a topology-side ordering
 //     regression — a change here that flipped Edges back to author-order,

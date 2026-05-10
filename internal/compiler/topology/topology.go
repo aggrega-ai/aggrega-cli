@@ -4,30 +4,30 @@
 package topology
 
 import (
-	"sort"
-
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 // TopologyResult is the output of Build — the upstream input to the IR
-// builder (Step 3). Five fields, two distinct ordering disciplines:
+// builder (Step 3). Five fields, all carrying author-declared ordering
+// disciplines that flow from the Aggregate's authoring sequence:
 //
-//   - Author-declared collections preserve YAML order. Nodes carries the
-//     Aggregate's component order (and recursively the order of components
-//     in any sub-aggregate it imports) through subsystem flattening. The
-//     OrderedMap[*TopologyNode] shape is load-bearing for IR JSON emission,
-//     where downstream consumers (policy engines, GitOps repos, --trace
-//     output) rely on author-order preservation.
-//   - Synthesized derived collections sort alphabetically by source-node.
-//     Edges is the slice the builder constructs from the per-node `uses`
-//     declarations — no single author declared the order of edges as a
-//     whole, so the package commits to alphabetical-by-source as the
-//     deterministic ordering convention. The discipline is documented at
-//     the sortedNodeIDs call site in Build below; the IR builder's
-//     BuildIR step 2 (topology→IR edge conversion loop) reads this slice
-//     in order without re-sorting. The full producer-and-consumer contract
-//     is documented in this package's doc.go (Cross-package determinism
+//   - Nodes carries the Aggregate's component order (and recursively the
+//     order of components in any sub-aggregate it imports) through
+//     subsystem flattening. The OrderedMap[*TopologyNode] shape is load-
+//     bearing for IR JSON emission, where downstream consumers (policy
+//     engines, GitOps repos, --trace output) rely on author-order
+//     preservation.
+//   - Edges flow in compositional author order: the cross-product of
+//     (component sequence × within-component `uses:` socket order ×
+//     within-socket alias order), augmented per node by feature and
+//     secret attachment order. Each layer is author-declared; the
+//     resulting slice carries the cross-product into the IR builder
+//     without re-sorting. The discipline is documented at the Step 4
+//     call site in Build below; the IR builder's BuildIR step 2
+//     (topology→IR edge conversion loop) reads this slice in order
+//     without re-sorting. The full producer-and-consumer contract is
+//     documented in this package's doc.go (Cross-package determinism
 //     contract).
 //
 // FeatureAttachments and SecretAttachments are per-node slices; the
@@ -192,10 +192,10 @@ type BuildConfig struct {
 //     instances), so the resolved label map is fetched here.
 //  3. Populate BoundaryPath from the resolver. Boundaries are a Release-
 //     side concern; the resolver computed each node's path during Step 1.
-//  4. Normalise uses → directed edges. The outer iteration uses
-//     sortedNodeIDs (alphabetical-by-source) to drive deterministic
-//     edge emission; the inline comment at the call site names the
-//     synthesized-derived-data discipline directly.
+//  4. Normalise uses → directed edges. The outer iteration walks
+//     flat.Nodes via OrderedMap.All() to drive compositional author-
+//     order edge emission; the inline comment at the call site names
+//     the cross-product discipline directly.
 //  5. Collect Feature and Secret uses edges. Feature/Secret `uses`
 //     blocks declare their own edges; each edge carries OriginFeature
 //     so Feature-authored edges remain separable from Component-authored
@@ -243,17 +243,18 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 		}
 	}
 
-	// 4. Normalize uses → edges. Edges are a synthesized collection (one
-	// node may originate many edges, derived from its `uses` declarations);
-	// no single author declared the *order* of edges. Alphabetical-by-
-	// source-node is the deterministic ordering convention for synthesized
-	// derived data, distinct from the author-order contract that applies to
-	// author-declared collections (Aggregate.Components, Workload
-	// containers, etc.). The sortedNodeIDs call below intentionally drives
-	// alphabetical edge emission.
+	// 4. Normalize uses → edges. Edges flow in compositional author order:
+	// the cross-product of (component sequence × within-component `uses:`
+	// socket order × within-socket alias order), augmented per node by
+	// feature and secret attachment order. The outer iteration walks
+	// flat.Nodes via OrderedMap.All() to preserve Aggregate authoring
+	// sequence; per-node socket and alias loops preserve their existing
+	// author-order semantics. The IR builder consumes the resulting edge
+	// slice in slice order without re-sorting (cross-package contract
+	// documented in this package's doc.go and the consumer-side commitment
+	// in internal/compiler/ir/doc.go).
 	var edges []NormalizedEdge
-	nodeIDs := sortedNodeIDs(flat.Nodes)
-	for _, nodeID := range nodeIDs {
+	for nodeID := range flat.Nodes.All() {
 		// Component uses
 		comp := findComponent(agg, nodeID)
 		if comp != nil && comp.Uses.Len() > 0 {
@@ -336,19 +337,3 @@ func findComponentInSubsystem(sub types.Subsystem, name string) *types.Component
 	return nil
 }
 
-// sortedNodeIDs returns the node IDs in alphabetical order. It backs the
-// edge-emission discipline documented at the call site in Build (Edges
-// are synthesized derived data; alphabetical-by-source-node is the
-// deterministic ordering convention). The IR builder's BuildIR step 2
-// reads TopologyResult.Edges in slice order without re-sorting;
-// reversing this discipline here would silently break the cross-package
-// contract documented in this package's doc.go and the corresponding
-// consumer-side commitment in internal/compiler/ir/doc.go.
-func sortedNodeIDs(nodes types.OrderedMap[*TopologyNode]) []string {
-	ids := make([]string, 0, nodes.Len())
-	for id := range nodes.All() {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}

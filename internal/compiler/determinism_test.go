@@ -170,10 +170,11 @@ func TestDeterministicCompilation_FullPipeline(t *testing.T) {
 // JSON emission via OrderedMap.MarshalJSON.
 //
 // Author order applies to author-declared collections (Aggregate
-// components, Workload containers, env vars, etc.). Synthesized derived
-// collections (edges, sentinel lists) intentionally use alphabetical
-// ordering; see the rationale comment at
-// internal/compiler/topology/topology.go around the sortedNodeIDs call.
+// components, Workload containers, env vars, edges via the compositional
+// cross-product). Synthesized derived collections that lack a single
+// authoring surface (e.g., feature_markers accumulated into a set) sort
+// alphabetically; see the rationale comment at
+// internal/compiler/topology/topology.go in the Build orchestrator.
 func TestDeterministicCompilation_IRAuthorOrder(t *testing.T) {
 	t.Parallel()
 
@@ -342,6 +343,124 @@ func tokenAsString(tok any) string {
 			return "<unknown>"
 		}
 		return string(b)
+	}
+}
+
+// TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder
+// pins the IR JSONL `spec.edges` array's source-field ordering against
+// the Aggregate's component declaration sequence. Aggregate authors
+// declare components in a specific order; the edge slice flows through
+// topology Step 4 in compositional author order (component sequence ×
+// per-component `uses:` socket order × per-socket alias order); the IR
+// builder reads the slice in order without re-sorting; the JSON marshal
+// preserves slice order. End-to-end, the user-visible JSON edges array's
+// source-field sequence matches the Aggregate's component declaration
+// order rather than alphabetical-by-source.
+func TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder(t *testing.T) {
+	t.Parallel()
+
+	// Build a self-contained Aggregate in non-alphabetical declaration
+	// order, each component declaring a uses entry pointing at "db".
+	// Author order is z-svc, a-svc, m-svc, db; the edge slice should
+	// emit z-svc → db, a-svc → db, m-svc → db in that order.
+	usesZ := types.OrderedMap[types.UsesSocketValue]{}
+	usesZ.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	usesA := types.OrderedMap[types.UsesSocketValue]{}
+	usesA.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	usesM := types.OrderedMap[types.UsesSocketValue]{}
+	usesM.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("z-svc", types.ComponentInstance{Type: "core/server", Uses: usesZ})
+	components.Set("a-svc", types.ComponentInstance{Type: "core/server", Uses: usesA})
+	components.Set("m-svc", types.ComponentInstance{Type: "core/server", Uses: usesM})
+	components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "edge-author-order-test", Version: "1.0.0"},
+		Spec: types.AggregateSpec{
+			Components: components,
+		},
+	}
+
+	cat := edgeAuthorOrderCatalog()
+	res := &resolver.ResolveResult{
+		Aggregate:     agg,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+	}
+
+	topoResult, err := topology.Build(topology.BuildConfig{
+		ResolveResult: res,
+		CatalogLookup: cat,
+	})
+	if err != nil {
+		t.Fatalf("topology.Build: %v", err)
+	}
+
+	graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+		Topology:        topoResult,
+		ResolveResult:   res,
+		CatalogLookup:   cat,
+		CompilerVersion: "test",
+	})
+	if err != nil {
+		t.Fatalf("ir.BuildIR: %v", err)
+	}
+
+	jsonBytes, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatalf("Marshal IRGraph: %v", err)
+	}
+
+	var partial struct {
+		Spec struct {
+			Edges []struct {
+				Source string `json:"source"`
+			} `json:"edges"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(jsonBytes, &partial); err != nil {
+		t.Fatalf("partial unmarshal: %v", err)
+	}
+
+	wantSources := []string{"z-svc", "a-svc", "m-svc"}
+	if len(partial.Spec.Edges) != len(wantSources) {
+		t.Fatalf("edge count = %d, want %d\nfull JSON:\n%s",
+			len(partial.Spec.Edges), len(wantSources), jsonBytes)
+	}
+	for i, want := range wantSources {
+		if partial.Spec.Edges[i].Source != want {
+			t.Errorf("edges[%d].source = %q, want %q (Aggregate author order, not alphabetical)\nfull JSON:\n%s",
+				i, partial.Spec.Edges[i].Source, want, jsonBytes)
+		}
+	}
+}
+
+// edgeAuthorOrderCatalog stubs the minimum CatalogLookup needed by the
+// edge-author-order test. core/server declares a usesSchema with a
+// "databases" socket; core/database/postgres has the matching label.
+func edgeAuthorOrderCatalog() resolver.CatalogLookup {
+	return resolver.CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			switch typeURI {
+			case "core/server":
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "server")
+				return types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/server", Version: "1.0.0", Labels: labels},
+					Spec:     types.ComponentSpec{UsesSchema: usesSchema},
+				}, true
+			case "core/database/postgres":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "stateful-server")
+				return types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/database/postgres", Version: "1.0.0", Labels: labels},
+				}, true
+			default:
+				return types.Component{}, false
+			}
+		},
+		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
 	}
 }
 
