@@ -1,0 +1,1 @@
+version: { type: string, enum: [v1, v4, v7], default: v4 }

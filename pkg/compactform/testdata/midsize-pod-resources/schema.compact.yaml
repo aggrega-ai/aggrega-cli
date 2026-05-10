@@ -1,0 +1,11 @@
+architecture: { type: string, enum: [standalone, replication], default: standalone }
+labels: { type: object, valuesType: string }
+primary:
+  replicaCount: { type: integer, min: 1, max: 9, default: 1 }
+  resources:
+    requests:
+      cpu: { type: string, pattern: "^[0-9]+(m|\\.[0-9]+)?$", default: "250m" }
+      memory: { type: string, pattern: "^[1-9][0-9]*(Mi|Gi)$", default: "512Mi" }
+auth:
+  username: { type: string, default: app_user }
+  password: { type: string, format: password, required: true }

@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "architecture": {
+      "default": "standalone",
+      "enum": ["standalone", "replication"],
+      "type": "string"
+    },
+    "auth": {
+      "additionalProperties": false,
+      "properties": {
+        "password": {
+          "format": "password",
+          "type": "string"
+        },
+        "username": {
+          "default": "app_user",
+          "type": "string"
+        }
+      },
+      "required": ["password"],
+      "type": "object"
+    },
+    "labels": {
+      "additionalProperties": {"type": "string"},
+      "type": "object"
+    },
+    "primary": {
+      "additionalProperties": false,
+      "properties": {
+        "replicaCount": {
+          "default": 1,
+          "maximum": 9,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resources": {
+          "additionalProperties": false,
+          "properties": {
+            "requests": {
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "default": "250m",
+                  "pattern": "^[0-9]+(m|\\.[0-9]+)?$",
+                  "type": "string"
+                },
+                "memory": {
+                  "default": "512Mi",
+                  "pattern": "^[1-9][0-9]*(Mi|Gi)$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "type": "object"
+}

@@ -1,0 +1,11 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "default": "v4",
+      "enum": ["v1", "v4", "v7"],
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
