@@ -84,10 +84,12 @@ type FeatureOrder map[string][]string
 // The feature_markers slice is accumulated into a set then sort-extracted
 // for stability across runs; secrets and features within a node iterate
 // in the topology attachment order; the edges slice is inherited from
-// topology already sorted alphabetical-by-source (topology.Build step 4
-// drives the ordering). Both inheritance commitments are the consumer
-// side of the cross-package determinism contract — see this package's
-// doc.go for the full statement.
+// topology in compositional author order (component sequence ×
+// within-component `uses:` socket order × within-socket alias order ×
+// per-node feature/secret attachments — topology.Build step 4 drives
+// the cross-product via OrderedMap.All()). Both inheritance commitments
+// are the consumer side of the cross-package determinism contract — see
+// this package's doc.go for the full statement.
 //
 // Error model. The function only returns an error if collectNodeFeatures
 // fails — which today happens exclusively on ErrFeatureTypeMismatch.

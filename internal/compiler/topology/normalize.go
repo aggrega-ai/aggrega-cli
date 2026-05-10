@@ -31,13 +31,13 @@ import (
 // time via the typed wrapper's UnmarshalYAML / UnmarshalJSON hooks; this
 // function only sees structurally valid input.
 //
-// Iteration order:
-//
-//   - Outer socket loop iterates uses.All() in author order — the
-//     OrderedMap preserves YAML authoring order.
-//   - Inner verbose-map alias loop iterates val.Verbose.All() in author
-//     order. The TestNormalizeUses_VerboseFormPreservesAuthorOrder
-//     regression test pins this discipline at the inner alias layer.
+// Iteration order: both layers iterate author order via OrderedMap.All().
+// The outer socket loop walks the typed UsesSocketValue entries in YAML
+// authoring sequence; the inner verbose-map alias loop walks the typed
+// VerboseUsesEntry map in author sequence too. The
+// TestNormalizeUses_VerboseFormPreservesAuthorOrder regression test pins
+// the inner alias layer; the outer socket layer is pinned by
+// TestNormalizeUses_DeterministicOrder.
 //
 // The originFeature parameter is non-empty when the `uses` block being
 // normalised lives on a Feature (or Secret) rather than directly on a

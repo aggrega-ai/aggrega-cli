@@ -40,11 +40,14 @@
 //     Aggregates are all OrderedMap[V]; flattenAggregate iterates them
 //     via .All() to preserve author order from the Aggregate's YAML
 //     through to the flattened Nodes map.
-//   - Determinism. Author-declared collections (Nodes from OrderedMap
-//     iteration) preserve YAML order; synthesized derived collections
-//     (Edges) sort alphabetically by source-node. The distinction is
-//     documented at the Step 4 call site in topology.go and consumed
-//     by Step 3 / IR as a cross-package contract.
+//   - Determinism. Author-declared collections preserve Aggregate
+//     author order through Build's pipeline. Nodes carry the
+//     component / subsystem / sub-aggregate-import declaration sequence
+//     via OrderedMap iteration; Edges carry the compositional cross-
+//     product (component sequence × within-component `uses:` socket
+//     order × within-socket alias order) augmented per node by feature
+//     and secret attachment order. The cross-package determinism
+//     contract subsection below names the producer-and-consumer pair.
 //   - Upstream guarantees. The resolver validates `uses` socket names
 //     against usesSchema before this package runs; normalizeUses
 //     therefore trusts that every socket name it parses is
@@ -60,18 +63,31 @@
 //     sub-aggregate import merges, and the Build labels / boundary-path
 //     phases all preserve author order; the OrderedMap shape is
 //     load-bearing for IR JSON emission downstream.
-//   - TopologyResult.Edges sorts alphabetical-by-source-node. Build's
-//     step 4 drives the outer iteration in alphabetical-by-source order;
-//     no single author declared the order of edges as a whole, so
-//     alphabetical-by-source is the deterministic ordering convention
-//     for synthesized derived data.
+//   - TopologyResult.Edges follows the compositional cross-product
+//     (component sequence × within-component `uses:` socket order ×
+//     within-socket alias order), augmented per node by feature and
+//     secret attachment order. Each layer is author-declared via an
+//     OrderedMap surface; Build's step 4 walks flat.Nodes via
+//     OrderedMap.All() to drive the outer cross-product, and per-node
+//     socket / alias / attachment iteration preserves authoring sequence
+//     at every nested layer.
 //   - The IR builder reads both as gospel. There is no in-package guard on
 //     the consumer side that would catch a topology-side ordering
-//     regression — a change here that flipped Edges back to author-order,
-//     or flipped Nodes to alphabetical, would silently break the IR
-//     builder's edges-from-topology pass and the IRGraph node-emission
+//     regression — a change here that flipped Edges back to alphabetical
+//     order, or flipped Nodes to alphabetical, would silently break the
+//     IR builder's edges-from-topology pass and the IRGraph node-emission
 //     order. The corresponding consumer-side commitment lives in the IR
 //     package's doc.go.
+//
+// A defensive sentinel ErrSubAggregateNameCollision halts flattenAggregate
+// if a flattened ID would overwrite an existing entry in the flat node
+// map — the condition is impossible by current schema (root-level
+// instance names cannot contain dots, so dotted sub-aggregate IDs cannot
+// collide with root-level names) but the guard defends against future
+// schema loosening or validation bypass that lets two flattened IDs
+// collide. The wrapped error carries the colliding ID, the dotted prefix
+// path that produced it, and the existing entry's source aggregate so
+// the diagnostic points the author at the precise authoring position.
 //
 // Mutator-plugin contract status. The MutatorInput / MutatorOutput /
 // CompilationContext / MutatorGraph / MutatorNode types in wasm_types.go

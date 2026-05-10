@@ -21,14 +21,21 @@ import (
 //   - Edges flow in compositional author order: the cross-product of
 //     (component sequence × within-component `uses:` socket order ×
 //     within-socket alias order), augmented per node by feature and
-//     secret attachment order. Each layer is author-declared; the
-//     resulting slice carries the cross-product into the IR builder
-//     without re-sorting. The discipline is documented at the Step 4
-//     call site in Build below; the IR builder's BuildIR step 2
-//     (topology→IR edge conversion loop) reads this slice in order
-//     without re-sorting. The full producer-and-consumer contract is
-//     documented in this package's doc.go (Cross-package determinism
-//     contract).
+//     secret attachment order. Each layer is author-declared via an
+//     OrderedMap surface; the resulting slice carries the cross-product
+//     into the IR builder without re-sorting. Build's step 4 walks
+//     flat.Nodes via OrderedMap.All() to drive the outer iteration; the
+//     IR builder's BuildIR step 2 (topology→IR edge conversion loop)
+//     reads this slice in slice order. The full producer-and-consumer
+//     contract is documented in this package's doc.go (Cross-package
+//     determinism contract).
+//
+// IRSpec.FeatureMarkers (in the downstream IR) is the canonical example
+// of a synthesized-derived collection that lacks a single authoring
+// surface — markers are accumulated into a Go set across the per-node
+// feature-cascade walk and sort-extracted alphabetically for stability.
+// TopologyResult's own fields are all author-declared; the synthesised-
+// derived discipline applies elsewhere.
 //
 // FeatureAttachments and SecretAttachments are per-node slices; the
 // per-node iteration order is the YAML attachment order from

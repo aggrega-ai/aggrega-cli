@@ -53,16 +53,29 @@
 //   - Nodes are trusted in author order. BuildIR iterates topo.Nodes.All()
 //     and builds IRSpec.Nodes in that order, propagating Aggregate
 //     authoring order into the emitted IRGraph.
-//   - Edges are trusted as alphabetical-by-source. BuildIR's step 2
-//     (the topology→IR edge conversion loop) walks topo.Edges in slice
-//     order and emits IRSpec.Edges in the same order without re-sorting.
+//   - Edges are trusted as the compositional cross-product (component
+//     sequence × within-component `uses:` socket order × within-socket
+//     alias order × per-node feature/secret attachments). BuildIR's
+//     step 2 (the topology→IR edge conversion loop) walks topo.Edges
+//     in slice order and emits IRSpec.Edges in the same order without
+//     re-sorting; the user-visible IR JSONL output preserves the
+//     cross-product across runs of identical input.
 //   - Neither dimension is re-validated here. There is no in-package
 //     guard on this side that would catch a topology-side regression —
-//     a topology change that flipped Edges back to author-order, or
-//     flipped Nodes to alphabetical, would silently break IR emission
+//     a topology change that flipped Edges back to alphabetical order,
+//     or flipped Nodes to alphabetical, would silently break IR emission
 //     ordering and any downstream consumer that reads IRGraph as a
 //     stable snapshot. The corresponding producer-side commitment lives
 //     in the topology package's doc.go.
+//
+// The producer side defends against a sub-aggregate flattening collision
+// (the topology builder halts with ErrSubAggregateNameCollision if a
+// flattened node ID would overwrite an existing entry in the flat node
+// map). The collision case is impossible by current schema; the guard
+// is defensive against future schema loosening or validation bypass.
+// The IR builder relies on the producer's halt: by the time BuildIR
+// reads topo.Nodes and topo.Edges, the producer has guaranteed no
+// silent overwrite happened upstream.
 //
 // The package depends on `pkg/types`, `pkg/resolver`, and
 // `internal/compiler/topology`; downstream consumers are
