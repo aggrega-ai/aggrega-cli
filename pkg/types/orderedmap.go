@@ -6,12 +6,42 @@ package types
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
+	"reflect"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrOrderedMapDecodeDepthExceeded fires when nested object recursion in
+// UnmarshalJSON or UnmarshalYAML exceeds orderedMapDecodeMaxDepth, guarding
+// against pathological input that would otherwise blow the call stack.
+// Wrapped via fmt.Errorf at the emission site with the offending depth.
+var ErrOrderedMapDecodeDepthExceeded = errors.New("OrderedMap: decode depth exceeded")
+
+// orderedMapDecodeMaxDepth bounds nested-OrderedMap recursion in unmarshal
+// paths. Catalog payloads observed in practice nest at most a handful of
+// levels; the bound leaves substantial headroom while ruling out unbounded
+// recursion on adversarial input.
+const orderedMapDecodeMaxDepth = 100
+
+// jsonUnmarshalerCache memoizes per-V whether V (or *V) satisfies
+// json.Unmarshaler. The first call per V type pays a reflection cost;
+// subsequent calls hit the sync.Map cache. sync.Map.LoadOrStore is the
+// primitive — atomic and goroutine-safe per stdlib documentation, so
+// concurrent first-call attempts converge to a single cache entry.
+var jsonUnmarshalerCache sync.Map // map[reflect.Type]bool
+
+// yamlUnmarshalerCache mirrors jsonUnmarshalerCache for yaml.Unmarshaler.
+var yamlUnmarshalerCache sync.Map // map[reflect.Type]bool
+
+// vIsInterfaceCache memoizes per-V whether V is an interface kind. Used
+// by the decode helpers to dispatch between the recursive interface{}
+// path and the typed-V plain-decode path.
+var vIsInterfaceCache sync.Map // map[reflect.Type]bool
 
 // OrderedMap is a generic string-keyed map that preserves author insertion
 // order across YAML and JSON marshal/unmarshal round-trips. Iteration via
@@ -205,12 +235,37 @@ func (m *OrderedMap[V]) All() iter.Seq2[string, V] {
 // the order of keys as they appear in the source. Returns an error if the
 // same key appears more than once within the source document.
 //
+// When V is interface{}, value-side decoding produces shapes that round-trip
+// without losing structure: nested YAML mappings decode into nested
+// *OrderedMap[interface{}] (preserving author key order at every depth),
+// sequences walk element-wise with the same recursion for mapping-kind
+// elements, and scalars surface via yaml.v3's default type detection. Numeric
+// precision relies on yaml.v3's int64 default, so high-precision integers
+// preserve through round-trip without parallel json.Number machinery.
+//
+// When V is concrete and implements yaml.Unmarshaler (value or pointer
+// receiver), the recursive path defers to V's UnmarshalYAML method. When V
+// is concrete without UnmarshalYAML, the typed-decode path runs unchanged.
+//
 // Re-unmarshal semantics: each call replaces the receiver's contents with
 // the decoded document. Re-unmarshalling into a populated OrderedMap
 // produces a map containing only the keys from the new document; prior
 // content is discarded. The duplicate-key check applies within a single
 // source document, not across the receiver's lifetime.
+//
+// Pathological deeply-nested input that exceeds the internal depth bound
+// returns an error wrapping ErrOrderedMapDecodeDepthExceeded rather than
+// panicking with a stack overflow.
 func (m *OrderedMap[V]) UnmarshalYAML(node *yaml.Node) error {
+	return m.unmarshalYAMLWithDepth(node, 0)
+}
+
+// unmarshalYAMLWithDepth is the depth-tracked implementation of UnmarshalYAML.
+// Mirrors unmarshalJSONWithDepth's structure on the YAML path.
+func (m *OrderedMap[V]) unmarshalYAMLWithDepth(node *yaml.Node, depth int) error {
+	if depth > orderedMapDecodeMaxDepth {
+		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+	}
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("OrderedMap: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
 	}
@@ -230,8 +285,8 @@ func (m *OrderedMap[V]) UnmarshalYAML(node *yaml.Node) error {
 			return fmt.Errorf("OrderedMap: duplicate key %q at line %d", k, keyNode.Line)
 		}
 
-		var v V
-		if err := valueNode.Decode(&v); err != nil {
+		v, err := decodeYAMLValue[V](valueNode, depth+1)
+		if err != nil {
 			return fmt.Errorf("OrderedMap: decoding value for key %q at line %d: %w", k, valueNode.Line, err)
 		}
 
@@ -306,6 +361,15 @@ func (m OrderedMap[V]) MarshalJSON() ([]byte, error) {
 // default json.Unmarshal into a map collapses order, so we parse the object
 // manually one key-value pair at a time.
 //
+// When V is interface{}, value-side decoding produces shapes that round-trip
+// without losing structure: nested JSON objects decode into nested
+// *OrderedMap[interface{}] (preserving author key order at every depth),
+// numeric values decode as json.Number (preserving exact integer precision
+// regardless of magnitude), and arrays of objects recurse element-wise. When
+// V is concrete and implements json.Unmarshaler (value or pointer receiver),
+// the recursive path defers to V's UnmarshalJSON method. When V is concrete
+// without UnmarshalJSON, the typed-decode path runs unchanged.
+//
 // Rejects duplicate keys with the duplicate key name in the error. The
 // duplicate-key check applies within a single source document.
 //
@@ -313,7 +377,23 @@ func (m OrderedMap[V]) MarshalJSON() ([]byte, error) {
 // the decoded document. Re-unmarshalling into a populated OrderedMap
 // produces a map containing only the keys from the new document; prior
 // content is discarded.
+//
+// Pathological deeply-nested input that exceeds the internal depth bound
+// returns an error wrapping ErrOrderedMapDecodeDepthExceeded rather than
+// panicking with a stack overflow.
 func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
+	return m.unmarshalJSONWithDepth(data, 0)
+}
+
+// unmarshalJSONWithDepth is the depth-tracked implementation of UnmarshalJSON.
+// The public entry point calls it with depth=0; the recursive path through
+// decodeJSONValue increments depth at each level of nested OrderedMap
+// construction.
+func (m *OrderedMap[V]) unmarshalJSONWithDepth(data []byte, depth int) error {
+	if depth > orderedMapDecodeMaxDepth {
+		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+	}
+
 	m.keys = make([]string, 0)
 	m.values = make(map[string]V)
 
@@ -353,8 +433,8 @@ func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("OrderedMap: reading JSON value for key %q: %w", key, err)
 		}
 
-		var v V
-		if err := json.Unmarshal(raw, &v); err != nil {
+		v, err := decodeJSONValue[V](raw, depth+1)
+		if err != nil {
 			return fmt.Errorf("OrderedMap: decoding JSON value for key %q: %w", key, err)
 		}
 
@@ -368,4 +448,199 @@ func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// vImplementsJSONUnmarshaler reports whether V or *V satisfies
+// json.Unmarshaler. The detection caches via jsonUnmarshalerCache so the
+// reflection cost is paid at most once per V type.
+func vImplementsJSONUnmarshaler[V any]() bool {
+	var zero V
+	t := reflect.TypeOf(&zero).Elem()
+	if cached, ok := jsonUnmarshalerCache.Load(t); ok {
+		return cached.(bool)
+	}
+	iface := reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
+	impl := t.Implements(iface) || reflect.PointerTo(t).Implements(iface)
+	actual, _ := jsonUnmarshalerCache.LoadOrStore(t, impl)
+	return actual.(bool)
+}
+
+// vImplementsYAMLUnmarshaler reports whether V or *V satisfies
+// yaml.Unmarshaler. Mirror of vImplementsJSONUnmarshaler for the YAML
+// decode path.
+func vImplementsYAMLUnmarshaler[V any]() bool {
+	var zero V
+	t := reflect.TypeOf(&zero).Elem()
+	if cached, ok := yamlUnmarshalerCache.Load(t); ok {
+		return cached.(bool)
+	}
+	iface := reflect.TypeOf((*yaml.Unmarshaler)(nil)).Elem()
+	impl := t.Implements(iface) || reflect.PointerTo(t).Implements(iface)
+	actual, _ := yamlUnmarshalerCache.LoadOrStore(t, impl)
+	return actual.(bool)
+}
+
+// vIsInterface reports whether V is an interface kind. Used by the decode
+// helpers to dispatch between the recursive interface{} path (which
+// produces nested *OrderedMap[interface{}] for nested objects and
+// json.Number for numerics) and the typed-V plain-decode path.
+func vIsInterface[V any]() bool {
+	var zero V
+	t := reflect.TypeOf(&zero).Elem()
+	if cached, ok := vIsInterfaceCache.Load(t); ok {
+		return cached.(bool)
+	}
+	impl := t.Kind() == reflect.Interface
+	actual, _ := vIsInterfaceCache.LoadOrStore(t, impl)
+	return actual.(bool)
+}
+
+// decodeJSONValue is the per-value JSON decoder used by
+// unmarshalJSONWithDepth. Dispatch order:
+//
+//  1. Depth-bound check.
+//  2. If V or *V implements json.Unmarshaler, plain json.Unmarshal — V's
+//     UnmarshalJSON method runs.
+//  3. If V is concrete (kind != Interface), plain json.Unmarshal — typed
+//     decode unchanged from pre-gamma behavior.
+//  4. If V is interface{}: peek the first non-whitespace byte and dispatch:
+//     '{' recurses into a fresh *OrderedMap[interface{}], '[' walks the
+//     array element-wise with recursive decode for each element, numeric
+//     values decode via a per-value json.Decoder with UseNumber producing
+//     json.Number, scalars (string, bool, null) plain-decode.
+//
+// The per-value UseNumber decoder is the load-bearing change for high-
+// precision integer preservation: encoding/json's outer-decoder UseNumber
+// flag does not propagate into per-value json.Unmarshal calls, so closing
+// the precision gap at the per-value layer is mandatory.
+func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
+	var zero V
+
+	if depth > orderedMapDecodeMaxDepth {
+		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+	}
+
+	if vImplementsJSONUnmarshaler[V]() {
+		var v V
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return zero, err
+		}
+		return v, nil
+	}
+
+	if !vIsInterface[V]() {
+		var v V
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return zero, err
+		}
+		return v, nil
+	}
+
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return zero, fmt.Errorf("OrderedMap: empty JSON value")
+	}
+
+	switch trimmed[0] {
+	case '{':
+		nested := NewOrderedMap[interface{}]()
+		if err := nested.unmarshalJSONWithDepth(raw, depth); err != nil {
+			return zero, err
+		}
+		return any(nested).(V), nil
+
+	case '[':
+		var rawArr []json.RawMessage
+		if err := json.Unmarshal(raw, &rawArr); err != nil {
+			return zero, err
+		}
+		result := make([]interface{}, 0, len(rawArr))
+		for _, elem := range rawArr {
+			ev, err := decodeJSONValue[interface{}](elem, depth+1)
+			if err != nil {
+				return zero, err
+			}
+			result = append(result, ev)
+		}
+		return any(result).(V), nil
+
+	case '"', 't', 'f', 'n':
+		var v V
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return zero, err
+		}
+		return v, nil
+
+	default:
+		valDec := json.NewDecoder(bytes.NewReader(raw))
+		valDec.UseNumber()
+		var num json.Number
+		if err := valDec.Decode(&num); err != nil {
+			return zero, fmt.Errorf("OrderedMap: decoding JSON number: %w", err)
+		}
+		return any(num).(V), nil
+	}
+}
+
+// decodeYAMLValue is the per-value YAML decoder used by
+// unmarshalYAMLWithDepth. Dispatch order mirrors decodeJSONValue:
+//
+//  1. Depth-bound check.
+//  2. If V or *V implements yaml.Unmarshaler, valueNode.Decode delegates to
+//     V's UnmarshalYAML method.
+//  3. If V is concrete (kind != Interface), valueNode.Decode runs unchanged.
+//  4. If V is interface{}: branch on valueNode.Kind. Mapping nodes recurse
+//     into a fresh *OrderedMap[interface{}]; sequence nodes walk element-
+//     wise with recursive decode for each element; scalar / alias / document
+//     nodes use yaml.v3's default Decode (which preserves int64 precision
+//     for numerics, so no parallel UseNumber-style layer is needed).
+func decodeYAMLValue[V any](valueNode *yaml.Node, depth int) (V, error) {
+	var zero V
+
+	if depth > orderedMapDecodeMaxDepth {
+		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+	}
+
+	if vImplementsYAMLUnmarshaler[V]() {
+		var v V
+		if err := valueNode.Decode(&v); err != nil {
+			return zero, err
+		}
+		return v, nil
+	}
+
+	if !vIsInterface[V]() {
+		var v V
+		if err := valueNode.Decode(&v); err != nil {
+			return zero, err
+		}
+		return v, nil
+	}
+
+	switch valueNode.Kind {
+	case yaml.MappingNode:
+		nested := NewOrderedMap[interface{}]()
+		if err := nested.unmarshalYAMLWithDepth(valueNode, depth); err != nil {
+			return zero, err
+		}
+		return any(nested).(V), nil
+
+	case yaml.SequenceNode:
+		result := make([]interface{}, 0, len(valueNode.Content))
+		for _, elem := range valueNode.Content {
+			ev, err := decodeYAMLValue[interface{}](elem, depth+1)
+			if err != nil {
+				return zero, err
+			}
+			result = append(result, ev)
+		}
+		return any(result).(V), nil
+
+	default:
+		var v V
+		if err := valueNode.Decode(&v); err != nil {
+			return zero, err
+		}
+		return v, nil
+	}
 }

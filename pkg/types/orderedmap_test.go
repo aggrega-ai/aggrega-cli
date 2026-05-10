@@ -6,6 +6,8 @@ package types
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -737,4 +739,460 @@ func TestOrderedMap_ReUnmarshalIntoPopulatedReplacesContent(t *testing.T) {
 			t.Error("after re-Unmarshal Get(charlie) reported ok=true, want absent (key from prior document)")
 		}
 	})
+}
+
+// --- JSON-side gamma round-trip fidelity ---
+
+func TestOrderedMapInterface_RoundTripFidelity_HighPrecisionInt(t *testing.T) {
+	t.Parallel()
+	const big int64 = 9007199254740993 // 2^53 + 1, smallest int losing precision via float64
+	input := []byte(`{"big":9007199254740993}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("first Unmarshal: %v", err)
+	}
+
+	first, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("first Marshal: %v", err)
+	}
+	if !bytes.Equal(first, input) {
+		t.Errorf("first round-trip diverged:\ninput:  %s\nfirst:  %s", input, first)
+	}
+
+	var m2 OrderedMap[interface{}]
+	if err := json.Unmarshal(first, &m2); err != nil {
+		t.Fatalf("second Unmarshal: %v", err)
+	}
+	second, err := json.Marshal(&m2)
+	if err != nil {
+		t.Fatalf("second Marshal: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("Marshal->Unmarshal->Marshal not idempotent:\nfirst:  %s\nsecond: %s", first, second)
+	}
+
+	raw, ok := m.Get("big")
+	if !ok {
+		t.Fatal("Get(big) returned ok=false")
+	}
+	num, ok := raw.(json.Number)
+	if !ok {
+		t.Fatalf("Get(big) Go-side type = %T, want json.Number", raw)
+	}
+	got, err := num.Int64()
+	if err != nil {
+		t.Fatalf("json.Number.Int64: %v", err)
+	}
+	if got != big {
+		t.Errorf("Int64 = %d, want %d", got, big)
+	}
+}
+
+func TestOrderedMapInterface_RoundTripFidelity_NestedObjectAuthorOrder(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"outer":{"zebra":1,"apple":2,"middle":3}}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	first, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(first, input) {
+		t.Errorf("nested order not preserved:\ninput: %s\nfirst: %s", input, first)
+	}
+
+	raw, ok := m.Get("outer")
+	if !ok {
+		t.Fatal("Get(outer) ok=false")
+	}
+	nested, ok := raw.(*OrderedMap[interface{}])
+	if !ok {
+		t.Fatalf("Get(outer) Go-side type = %T, want *OrderedMap[interface{}]", raw)
+	}
+	want := []string{"zebra", "apple", "middle"}
+	if got := nested.Keys(); !slices.Equal(got, want) {
+		t.Errorf("nested Keys = %v, want %v", got, want)
+	}
+}
+
+func TestOrderedMapInterface_RoundTripFidelity_DeeplyNestedAuthorOrder(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"L1":{"k1":1,"L2":{"k2":2,"L3":{"k3":3,"L4":{"k4":4}}}}}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	out, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, input) {
+		t.Errorf("deeply nested round-trip diverged:\ninput:  %s\noutput: %s", input, out)
+	}
+}
+
+func TestOrderedMapInterface_RoundTripFidelity_ArrayOfObjects(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"items":[{"z":1,"a":2},{"y":3,"b":4}]}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	out, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(out, input) {
+		t.Errorf("array of objects round-trip diverged:\ninput:  %s\noutput: %s", input, out)
+	}
+
+	raw, _ := m.Get("items")
+	arr, ok := raw.([]interface{})
+	if !ok {
+		t.Fatalf("items: got %T, want []interface{}", raw)
+	}
+	if len(arr) != 2 {
+		t.Fatalf("array length = %d, want 2", len(arr))
+	}
+	first, ok := arr[0].(*OrderedMap[interface{}])
+	if !ok {
+		t.Fatalf("arr[0]: got %T, want *OrderedMap[interface{}]", arr[0])
+	}
+	if got := first.Keys(); !slices.Equal(got, []string{"z", "a"}) {
+		t.Errorf("arr[0] Keys = %v, want [z a]", got)
+	}
+}
+
+func TestOrderedMapInterface_RoundTripFidelity_MixedTypes(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"i":1,"s":"text","f":1.5,"b":true,"n":null}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if v, _ := m.Get("i"); reflect.TypeOf(v) != reflect.TypeOf(json.Number("")) {
+		t.Errorf("i: type = %T, want json.Number", v)
+	}
+	if v, _ := m.Get("s"); v != "text" {
+		t.Errorf("s: got %v, want \"text\"", v)
+	}
+	if v, _ := m.Get("f"); reflect.TypeOf(v) != reflect.TypeOf(json.Number("")) {
+		t.Errorf("f: type = %T, want json.Number", v)
+	}
+	if v, _ := m.Get("b"); v != true {
+		t.Errorf("b: got %v, want true", v)
+	}
+	if v, ok := m.Get("n"); !ok || v != nil {
+		t.Errorf("n: got %v ok=%v, want nil ok=true", v, ok)
+	}
+}
+
+func TestOrderedMapInterface_RoundTripFidelity_NullValueDistinctFromAbsent(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"present":null,"absent":1}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if v, ok := m.Get("present"); !ok || v != nil {
+		t.Errorf("Get(present) = %v ok=%v, want nil ok=true", v, ok)
+	}
+	if _, ok := m.Get("missing"); ok {
+		t.Error("Get(missing) ok=true, want false")
+	}
+}
+
+func TestOrderedMapInterface_RoundTripFidelity_DepthBoundExhaustion(t *testing.T) {
+	t.Parallel()
+	// Generate a 200-level deeply-nested object: {"a":{"a":{...}}}
+	const depth = 200
+	var b bytes.Buffer
+	for i := 0; i < depth; i++ {
+		b.WriteString(`{"a":`)
+	}
+	b.WriteString(`null`)
+	for i := 0; i < depth; i++ {
+		b.WriteString(`}`)
+	}
+
+	var m OrderedMap[interface{}]
+	err := json.Unmarshal(b.Bytes(), &m)
+	if err == nil {
+		t.Fatal("expected ErrOrderedMapDecodeDepthExceeded, got nil")
+	}
+	if !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+		t.Errorf("error chain does not wrap ErrOrderedMapDecodeDepthExceeded: %v", err)
+	}
+}
+
+// --- JSON V-method-set delegation ---
+
+type customJSONV struct {
+	Sentinel string
+}
+
+// UnmarshalJSON intentionally ignores input and writes a sentinel value;
+// the test verifies gamma's recursive path defers to this method.
+func (c *customJSONV) UnmarshalJSON(_ []byte) error {
+	c.Sentinel = "from-custom-unmarshal"
+	return nil
+}
+
+func TestOrderedMap_VImplementsUnmarshalJSON_DelegatesToVUnmarshaler(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"k":"would-be-ignored-by-custom-unmarshal"}`)
+
+	var m OrderedMap[*customJSONV]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	v, ok := m.Get("k")
+	if !ok {
+		t.Fatal("Get(k) ok=false")
+	}
+	if v == nil || v.Sentinel != "from-custom-unmarshal" {
+		t.Errorf("Sentinel = %q, want \"from-custom-unmarshal\"", func() string {
+			if v == nil {
+				return "<nil>"
+			}
+			return v.Sentinel
+		}())
+	}
+}
+
+type customJSONVValue struct {
+	Sentinel string
+}
+
+// UnmarshalJSON on the value receiver. encoding/json finds it via &v.
+func (c *customJSONVValue) UnmarshalJSON(_ []byte) error {
+	c.Sentinel = "from-pointer-unmarshal"
+	return nil
+}
+
+func TestOrderedMap_VPointerImplementsUnmarshalJSON_DelegatesToVUnmarshaler(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"k":"would-be-ignored"}`)
+
+	var m OrderedMap[customJSONVValue]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	v, ok := m.Get("k")
+	if !ok {
+		t.Fatal("Get(k) ok=false")
+	}
+	if v.Sentinel != "from-pointer-unmarshal" {
+		t.Errorf("Sentinel = %q, want \"from-pointer-unmarshal\"", v.Sentinel)
+	}
+}
+
+func TestOrderedMap_VInterfaceWithoutUnmarshalJSON_UsesRecursivePath(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"k":{"nested":1}}`)
+
+	var m OrderedMap[interface{}]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	raw, _ := m.Get("k")
+	nested, ok := raw.(*OrderedMap[interface{}])
+	if !ok {
+		t.Fatalf("Get(k) Go-side type = %T, want *OrderedMap[interface{}]", raw)
+	}
+	if got := nested.Keys(); !slices.Equal(got, []string{"nested"}) {
+		t.Errorf("nested Keys = %v, want [nested]", got)
+	}
+}
+
+func TestOrderedMap_VConcreteWithoutUnmarshalJSON_UsesTypedDecodePath(t *testing.T) {
+	t.Parallel()
+	input := []byte(`{"k":"value"}`)
+
+	var m OrderedMap[string]
+	if err := json.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	v, ok := m.Get("k")
+	if !ok {
+		t.Fatal("Get(k) ok=false")
+	}
+	if v != "value" {
+		t.Errorf("Get(k) = %q, want \"value\"", v)
+	}
+}
+
+// --- YAML-side gamma round-trip fidelity ---
+
+func TestOrderedMapInterface_YAMLRoundTripFidelity_HighPrecisionInt(t *testing.T) {
+	t.Parallel()
+	const big int64 = 9007199254740993 // 2^53 + 1
+	input := []byte("big: 9007199254740993\n")
+
+	var m OrderedMap[interface{}]
+	if err := yaml.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	raw, ok := m.Get("big")
+	if !ok {
+		t.Fatal("Get(big) ok=false")
+	}
+	switch v := raw.(type) {
+	case int:
+		if int64(v) != big {
+			t.Errorf("int value = %d, want %d", v, big)
+		}
+	case int64:
+		if v != big {
+			t.Errorf("int64 value = %d, want %d", v, big)
+		}
+	default:
+		t.Fatalf("Get(big) Go-side type = %T, want int or int64", raw)
+	}
+
+	assertMarshalRoundTripIdempotent(t, &m)
+}
+
+func TestOrderedMapInterface_YAMLRoundTripFidelity_NestedObjectAuthorOrder(t *testing.T) {
+	t.Parallel()
+	input := []byte("outer:\n  zebra: 1\n  apple: 2\n  middle: 3\n")
+
+	var m OrderedMap[interface{}]
+	if err := yaml.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	raw, ok := m.Get("outer")
+	if !ok {
+		t.Fatal("Get(outer) ok=false")
+	}
+	nested, ok := raw.(*OrderedMap[interface{}])
+	if !ok {
+		t.Fatalf("Get(outer) Go-side type = %T, want *OrderedMap[interface{}]", raw)
+	}
+	want := []string{"zebra", "apple", "middle"}
+	if got := nested.Keys(); !slices.Equal(got, want) {
+		t.Errorf("nested Keys = %v, want %v", got, want)
+	}
+
+	assertMarshalRoundTripIdempotent(t, &m)
+}
+
+func TestOrderedMapInterface_YAMLRoundTripFidelity_DeeplyNestedAuthorOrder(t *testing.T) {
+	t.Parallel()
+	input := []byte("L1:\n  k1: 1\n  L2:\n    k2: 2\n    L3:\n      k3: 3\n      L4:\n        k4: 4\n")
+
+	var m OrderedMap[interface{}]
+	if err := yaml.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	assertMarshalRoundTripIdempotent(t, &m)
+
+	// Walk to L4 and verify the leaf key order at the deepest level.
+	cur := &m
+	for _, key := range []string{"L1", "L2", "L3", "L4"} {
+		raw, ok := cur.Get(key)
+		if !ok {
+			t.Fatalf("Get(%q) ok=false at level walk", key)
+		}
+		nested, ok := raw.(*OrderedMap[interface{}])
+		if !ok {
+			break // L4 is the leaf; the inner k4 entry is a scalar
+		}
+		cur = nested
+	}
+}
+
+func TestOrderedMapInterface_YAMLRoundTripFidelity_ArrayOfMappings(t *testing.T) {
+	t.Parallel()
+	input := []byte("items:\n  - z: 1\n    a: 2\n  - y: 3\n    b: 4\n")
+
+	var m OrderedMap[interface{}]
+	if err := yaml.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	raw, _ := m.Get("items")
+	arr, ok := raw.([]interface{})
+	if !ok {
+		t.Fatalf("items: got %T, want []interface{}", raw)
+	}
+	if len(arr) != 2 {
+		t.Fatalf("array length = %d, want 2", len(arr))
+	}
+	first, ok := arr[0].(*OrderedMap[interface{}])
+	if !ok {
+		t.Fatalf("arr[0]: got %T, want *OrderedMap[interface{}]", arr[0])
+	}
+	if got := first.Keys(); !slices.Equal(got, []string{"z", "a"}) {
+		t.Errorf("arr[0] Keys = %v, want [z a]", got)
+	}
+
+	assertMarshalRoundTripIdempotent(t, &m)
+}
+
+func TestOrderedMapInterface_YAMLRoundTripFidelity_DepthBoundExhaustion(t *testing.T) {
+	t.Parallel()
+	const depth = 200
+	var b bytes.Buffer
+	for i := 0; i < depth; i++ {
+		for j := 0; j < i; j++ {
+			b.WriteString("  ")
+		}
+		b.WriteString("a:\n")
+	}
+	for j := 0; j < depth; j++ {
+		b.WriteString("  ")
+	}
+	b.WriteString("null\n")
+
+	var m OrderedMap[interface{}]
+	err := yaml.Unmarshal(b.Bytes(), &m)
+	if err == nil {
+		t.Fatal("expected ErrOrderedMapDecodeDepthExceeded, got nil")
+	}
+	if !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+		t.Errorf("error chain does not wrap ErrOrderedMapDecodeDepthExceeded: %v", err)
+	}
+}
+
+// --- YAML V-method-set delegation ---
+
+type customYAMLV struct {
+	Sentinel string
+}
+
+// UnmarshalYAML intentionally ignores the input node and writes a sentinel;
+// the test verifies gamma's recursive path defers to this method.
+func (c *customYAMLV) UnmarshalYAML(_ *yaml.Node) error {
+	c.Sentinel = "from-custom-yaml-unmarshal"
+	return nil
+}
+
+func TestOrderedMap_VImplementsYAMLUnmarshaler_DelegatesToYAMLUnmarshaler(t *testing.T) {
+	t.Parallel()
+	input := []byte("k: would-be-ignored\n")
+
+	var m OrderedMap[*customYAMLV]
+	if err := yaml.Unmarshal(input, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	v, ok := m.Get("k")
+	if !ok {
+		t.Fatal("Get(k) ok=false")
+	}
+	if v == nil || v.Sentinel != "from-custom-yaml-unmarshal" {
+		t.Errorf("Sentinel mismatch: %+v", v)
+	}
 }
