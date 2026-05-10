@@ -1,71 +1,68 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Unit tests for normalizeUses, parseVerboseEntry, and parseInjectBlock
-// — the polymorphic uses-form normalisation that converges both
-// authoring shapes (string-array and verbose-map) onto NormalizedEdge.
-// mkUses is a small helper that assembles an OrderedMap[any]
-// preserving the call-site key insertion order, mirroring how YAML
-// unmarshal would build the same map from authored YAML.
+// Unit tests for normalizeUses and buildVerboseEdge — the typed
+// uses-form normalisation that converges both authoring shapes
+// (string-array and verbose alias-map) onto NormalizedEdge. mkCompactUses
+// and mkVerboseUses build the typed input shapes; mkInject builds typed
+// inject blocks for verbose entries.
 //
 // Behaviour clusters:
 //
-//   - TestNormalizeUses_StringArray — pins string-array form; one edge
+//   - TestNormalizeUses_StringArray — pins the compact form: one edge
 //     per array entry; OriginFeature is empty for component-authored
 //     edges.
-//   - TestNormalizeUses_VerboseMap — pins verbose-map form: alias
-//     becomes Alias, inner `target:` overrides the alias as Target,
-//     inner `inject:` populates the edge's Inject block.
+//   - TestNormalizeUses_VerboseMap — pins the verbose form: alias
+//     becomes Alias, the entry's Target overrides the alias as Target,
+//     the entry's Inject populates the edge's Inject block.
 //   - TestNormalizeUses_OriginFeature — pins the per-edge origin-marker
-//     carry-through: a non-empty originFeature parameter lands on
-//     every emitted edge.
-//   - TestNormalizeUses_Empty — pins the empty-input contract:
-//     zero-length uses returns no edges and no error.
-//   - TestNormalizeUses_InvalidArrayElement /
-//     TestNormalizeUses_InvalidType — pin the two ErrInvalidUsesFormat
-//     paths (non-string array element; non-array-non-map socket value).
+//     carry-through: a non-empty originFeature parameter lands on every
+//     emitted edge.
+//   - TestNormalizeUses_Empty — pins the empty-input contract: zero-
+//     length uses returns no edges and no error.
 //   - TestNormalizeUses_DeterministicOrder — pins the OUTER socket-
-//     iteration discipline as AUTHOR ORDER (OrderedMap.All preserves
-//     insertion order). The inner verbose-map alias loop sorts
-//     alphabetically as a separate concern; this test exercises only
-//     the outer iteration via string-array entries.
-//   - TestNormalizeUses_VerboseSimpleString — pins the bare-string
-//     verbose-entry shorthand: `{"my-db": "target-name"}` is
-//     equivalent to `{"my-db": {"target": "target-name"}}`.
+//     iteration discipline as AUTHOR ORDER.
+//   - TestNormalizeUses_VerboseDefaultsTargetToAlias — pins the
+//     omitted-target default behaviour: when Target is empty, the
+//     emitted edge's Target equals the alias.
+//   - TestNormalizeUses_VerboseFormPreservesAuthorOrder — pins the
+//     INNER verbose-form alias loop's author-order traversal.
 
 package topology
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// mkUses builds a types.OrderedMap[any] in the order given.
-func mkUses(pairs ...any) types.OrderedMap[any] {
-	m := types.OrderedMap[any]{}
-	for i := 0; i+1 < len(pairs); i += 2 {
-		m.Set(pairs[i].(string), pairs[i+1])
-	}
+// mkCompactUses builds a types.OrderedMap[UsesSocketValue] with one
+// socket in compact form, preserving the call-site argument order.
+func mkCompactUses(socket string, targets ...string) types.OrderedMap[types.UsesSocketValue] {
+	m := types.OrderedMap[types.UsesSocketValue]{}
+	m.Set(socket, types.UsesSocketValue{Compact: targets})
 	return m
 }
 
-// mkOM builds a *types.OrderedMap[any] in the order given. Used in tests
-// to construct nested OrderedMap shapes that mirror what the recursive
-// V=any JSON/YAML decode path produces in production.
-func mkOM(pairs ...any) *types.OrderedMap[any] {
-	m := types.NewOrderedMap[any]()
-	for i := 0; i+1 < len(pairs); i += 2 {
-		m.Set(pairs[i].(string), pairs[i+1])
+// mkVerboseUses builds a types.OrderedMap[UsesSocketValue] with one
+// socket in verbose form. Alias/entry pairs preserve the call-site
+// argument order; alternation is (alias, entry, alias, entry, ...).
+func mkVerboseUses(socket string, aliasEntryPairs ...any) types.OrderedMap[types.UsesSocketValue] {
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	for i := 0; i+1 < len(aliasEntryPairs); i += 2 {
+		alias, _ := aliasEntryPairs[i].(string)
+		entry, _ := aliasEntryPairs[i+1].(types.VerboseUsesEntry)
+		verbose.Set(alias, entry)
 	}
+	m := types.OrderedMap[types.UsesSocketValue]{}
+	m.Set(socket, types.UsesSocketValue{Verbose: verbose})
 	return m
 }
 
 func TestNormalizeUses_StringArray(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", []any{"db1", "db2"})
+	uses := mkCompactUses("databases", "db1", "db2")
 	edges, err := normalizeUses(uses, "api-server", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -87,14 +84,9 @@ func TestNormalizeUses_StringArray(t *testing.T) {
 func TestNormalizeUses_VerboseMap(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", mkOM(
-		"hr-db", mkOM(
-			"target", "corporate-hr",
-			"inject", mkOM(
-				"env", mkOM("DB_URL", "host"),
-			),
-		),
-	))
+	inject := &types.InjectBlock{Env: map[string]any{"DB_URL": "host"}}
+	uses := mkVerboseUses("databases", "hr-db", types.VerboseUsesEntry{Target: "corporate-hr", Inject: inject})
+
 	edges, err := normalizeUses(uses, "agent", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,7 +106,7 @@ func TestNormalizeUses_VerboseMap(t *testing.T) {
 func TestNormalizeUses_OriginFeature(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("targets", []any{"api"})
+	uses := mkCompactUses("targets", "api")
 	edges, err := normalizeUses(uses, "node-a", "core/monitoring")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -130,7 +122,7 @@ func TestNormalizeUses_OriginFeature(t *testing.T) {
 func TestNormalizeUses_Empty(t *testing.T) {
 	t.Parallel()
 
-	edges, err := normalizeUses(types.OrderedMap[any]{}, "node", "")
+	edges, err := normalizeUses(types.OrderedMap[types.UsesSocketValue]{}, "node", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,41 +131,13 @@ func TestNormalizeUses_Empty(t *testing.T) {
 	}
 }
 
-func TestNormalizeUses_InvalidArrayElement(t *testing.T) {
-	t.Parallel()
-
-	uses := mkUses("databases", []any{42})
-	_, err := normalizeUses(uses, "node", "")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !errors.Is(err, ErrInvalidUsesFormat) {
-		t.Errorf("expected ErrInvalidUsesFormat, got %v", err)
-	}
-}
-
-func TestNormalizeUses_InvalidType(t *testing.T) {
-	t.Parallel()
-
-	uses := mkUses("databases", 42)
-	_, err := normalizeUses(uses, "node", "")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !errors.Is(err, ErrInvalidUsesFormat) {
-		t.Errorf("expected ErrInvalidUsesFormat, got %v", err)
-	}
-}
-
 func TestNormalizeUses_DeterministicOrder(t *testing.T) {
 	t.Parallel()
 
-	// assertion refreshed for OrderedMap author-order iteration; was alphabetical under map[string]X
-	uses := mkUses(
-		"zebra", []any{"z1"},
-		"alpha", []any{"a1"},
-		"mid", []any{"m1"},
-	)
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("zebra", types.UsesSocketValue{Compact: []string{"z1"}})
+	uses.Set("alpha", types.UsesSocketValue{Compact: []string{"a1"}})
+	uses.Set("mid", types.UsesSocketValue{Compact: []string{"m1"}})
 
 	var firstOrder []string
 	for i := 0; i < 10; i++ {
@@ -201,12 +165,11 @@ func TestNormalizeUses_DeterministicOrder(t *testing.T) {
 	}
 }
 
-func TestNormalizeUses_VerboseSimpleString(t *testing.T) {
+func TestNormalizeUses_VerboseDefaultsTargetToAlias(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", mkOM(
-		"my-db", "target-db-name",
-	))
+	uses := mkVerboseUses("databases", "my-db", types.VerboseUsesEntry{})
+
 	edges, err := normalizeUses(uses, "src", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -214,25 +177,26 @@ func TestNormalizeUses_VerboseSimpleString(t *testing.T) {
 	if len(edges) != 1 {
 		t.Fatalf("expected 1 edge, got %d", len(edges))
 	}
-	if edges[0].Target != "target-db-name" || edges[0].Alias != "my-db" {
-		t.Errorf("edge: %+v", edges[0])
+	if edges[0].Target != "my-db" || edges[0].Alias != "my-db" {
+		t.Errorf("edge: %+v (target should default to alias when empty)", edges[0])
 	}
 }
 
 // TestNormalizeUses_VerboseFormPreservesAuthorOrder exercises the
-// verbose-form alias loop with multiple aliases authored in non-alphabetical
-// order. Pins the author-order traversal contract: the inner loop iterates
-// the OrderedMap via .All() rather than sort.Strings(aliases), so the emitted
-// edge order matches the author's authoring sequence (z, a, m), not
+// verbose-form alias loop with multiple aliases authored in non-
+// alphabetical order. Pins the author-order traversal contract: the
+// inner loop iterates the OrderedMap via .All(), so the emitted edge
+// order matches the author's authoring sequence (z, a, m), not
 // alphabetical.
 func TestNormalizeUses_VerboseFormPreservesAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", mkOM(
-		"z-alias", mkOM("target", "z-target"),
-		"a-alias", mkOM("target", "a-target"),
-		"m-alias", mkOM("target", "m-target"),
-	))
+	uses := mkVerboseUses("databases",
+		"z-alias", types.VerboseUsesEntry{Target: "z-target"},
+		"a-alias", types.VerboseUsesEntry{Target: "a-target"},
+		"m-alias", types.VerboseUsesEntry{Target: "m-target"},
+	)
+
 	edges, err := normalizeUses(uses, "src", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

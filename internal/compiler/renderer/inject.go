@@ -134,15 +134,27 @@ func mergeSortedPlain(dest *types.OrderedMap[string], src map[string]string) {
 }
 
 // normalizeInjectMechanism converts the polymorphic inject mechanism value
-// (either map[string]string or map[string]any) to OrderedMap[string].
-// Unsorted plain-map input loses author order; callers should prefer the
-// verbose-form path where OrderedMap semantics survive.
+// (map[string]string, map[string]any, or *types.OrderedMap[any]) to
+// OrderedMap[string]. The *types.OrderedMap[any] shape arrives from
+// round-trip-fidelity decoding when the inject block is reached via an
+// OrderedMap[any]-routed authoring path; iteration via .All() preserves
+// author order. Unsorted plain-map shapes lose authoring order at decode
+// and are sorted alphabetically here for stability.
 func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
 	if raw == nil {
 		return out
 	}
 	switch v := raw.(type) {
+	case *types.OrderedMap[any]:
+		if v == nil {
+			return out
+		}
+		for k, val := range v.All() {
+			if s, ok := val.(string); ok {
+				out.Set(k, s)
+			}
+		}
 	case map[string]string:
 		keys := make([]string, 0, len(v))
 		for k := range v {

@@ -209,8 +209,10 @@ func cueSchemaCatalogWithUsesSchema() CatalogLookup {
 
 func TestGuardCueSchema_UsesPillarValidSocket(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("databases", map[string]any{"main": map[string]any{"target": "db"}})
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("main", types.VerboseUsesEntry{Target: "db"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -349,10 +351,11 @@ func TestGuardCueSchema_SecretsPillarTable(t *testing.T) {
 
 func TestGuardCueSchema_UsesPillarUnknownSocketRejected(t *testing.T) {
 	t.Parallel()
-	uses :=
-		// usesSchema declares only "databases"; aggregate references an undeclared "caches" socket.
-		types.OrderedMap[any]{}
-	uses.Set("caches", map[string]any{"ephemeral": map[string]any{"target": "redis"}})
+	// usesSchema declares only "databases"; aggregate references an undeclared "caches" socket.
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("ephemeral", types.VerboseUsesEntry{Target: "redis"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("caches", types.UsesSocketValue{Verbose: verbose})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -369,5 +372,62 @@ func TestGuardCueSchema_UsesPillarUnknownSocketRejected(t *testing.T) {
 	}
 	if !strings.HasPrefix(errs[0].Field, ".components.api.uses") {
 		t.Errorf("expected .components.api.uses prefix, got %q", errs[0].Field)
+	}
+}
+
+// TestGuardCueSchema_VerboseFormUsesSentToCUEPillar pins the regression-
+// fix path on normalizeUsesForCUE. Pre-WI, normalizeUsesForCUE attempted
+// raw.(map[string]any) on the socket value; after the round-trip-fidelity migration the value is
+// types.UsesSocketValue with the typed Verbose field, and the assertion
+// would have failed pre-WI, silently dropping the verbose-form socket
+// from CUE pillar input. This test exercises the typed-wrapper path
+// directly with an unknown socket name in verbose form; the generated
+// base CUE schema must reject it through the typed-wrapper conversion.
+func TestGuardCueSchema_VerboseFormUsesSentToCUEPillar(t *testing.T) {
+	t.Parallel()
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("ephemeral", types.VerboseUsesEntry{Target: "redis"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("caches", types.UsesSocketValue{Verbose: verbose})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
+	agg := &types.Aggregate{
+		Spec: types.AggregateSpec{
+			Components: components,
+		},
+	}
+	errs := guardCueSchema(agg, cueSchemaCatalogWithUsesSchema(), nil)
+	if len(errs) == 0 {
+		t.Fatal("expected unknown verbose socket to reach CUE pillar and be rejected")
+	}
+	if !errors.Is(errs[0], ErrSchemaValidation) {
+		t.Errorf("expected ErrSchemaValidation, got %v", errs[0].Err)
+	}
+}
+
+// TestNormalizeInjectMechanism_CUE_OrderedMapShape_DecodesEntries pins
+// the typed-arm fix at the CUE-pillar normalisation helper. When the
+// InjectBlock field arrives as *types.OrderedMap[any] (the round-trip-
+// fidelity decode shape produced when the inject block flows through an
+// OrderedMap[any]-routed authoring path), normalizeInjectMechanism
+// produces a populated map[string]string for CUE unification rather
+// than silently returning nil. Pre-fix, the assertion failed silently
+// and inject directives in secret CUE pillars were dropped from
+// validation.
+func TestNormalizeInjectMechanism_CUE_OrderedMapShape_DecodesEntries(t *testing.T) {
+	t.Parallel()
+	raw := types.NewOrderedMap[any]()
+	raw.Set("DB_URL", "host")
+	raw.Set("DB_PORT", "port")
+
+	out := normalizeInjectMechanism(raw)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %+v", len(out), out)
+	}
+	if out["DB_URL"] != "host" {
+		t.Errorf("DB_URL = %q, want host", out["DB_URL"])
+	}
+	if out["DB_PORT"] != "port" {
+		t.Errorf("DB_PORT = %q, want port", out["DB_PORT"])
 	}
 }

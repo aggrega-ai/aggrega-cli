@@ -135,12 +135,79 @@ func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 	result := map[string]selfInjectEntry{}
 
 	switch v := raw.(type) {
+	case *types.OrderedMap[any]:
+		// Post-round-trip-fidelity shape: nested mappings inside an
+		// any-typed InjectBlock field decode as *types.OrderedMap[any]
+		// when reached via an OrderedMap[any]-routed authoring path.
+		// Iteration via .All() preserves author order so emitted
+		// self-inject entries follow YAML authoring sequence.
+		if v == nil {
+			return result, nil
+		}
+		for key, val := range v.All() {
+			switch vv := val.(type) {
+			case string:
+				result[key] = selfInjectEntry{isLiteral: true, value: vv}
+			case *types.OrderedMap[any]:
+				// Verbose form post-migration: {value: ...} or {from: ...}.
+				if vv == nil {
+					continue
+				}
+				entry := selfInjectEntry{}
+				if valStr, ok := vv.Get("value"); ok {
+					if s, ok := valStr.(string); ok {
+						entry.value = s
+					}
+				}
+				if fromStr, ok := vv.Get("from"); ok {
+					if s, ok := fromStr.(string); ok {
+						entry.from = s
+					}
+				}
+				result[key] = entry
+			case map[string]any:
+				// Defensive — accepts the legacy map shape from in-memory
+				// fixtures or pre-migration call paths.
+				entry := selfInjectEntry{}
+				if valStr, ok := vv["value"]; ok {
+					if s, ok := valStr.(string); ok {
+						entry.value = s
+					}
+				}
+				if fromStr, ok := vv["from"]; ok {
+					if s, ok := fromStr.(string); ok {
+						entry.from = s
+					}
+				}
+				result[key] = entry
+			default:
+				result[key] = selfInjectEntry{isLiteral: true, value: fmt.Sprintf("%v", val)}
+			}
+		}
 	case map[string]any:
 		for key, val := range v {
 			switch vv := val.(type) {
 			case string:
 				// Compact form in component.inject = literal
 				result[key] = selfInjectEntry{isLiteral: true, value: vv}
+			case *types.OrderedMap[any]:
+				// Mixed shape: outer is plain Go map, inner is *OrderedMap[any]
+				// (e.g., test fixture authored as map[string]any{"key": orderedMap}).
+				if vv == nil {
+					continue
+				}
+				entry := selfInjectEntry{}
+				if valStr, ok := vv.Get("value"); ok {
+					if s, ok := valStr.(string); ok {
+						entry.value = s
+					}
+				}
+				if fromStr, ok := vv.Get("from"); ok {
+					if s, ok := fromStr.(string); ok {
+						entry.from = s
+					}
+				}
+				result[key] = entry
 			case map[string]any:
 				// Verbose form: {value: ...} or {from: ...}
 				entry := selfInjectEntry{}

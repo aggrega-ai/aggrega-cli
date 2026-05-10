@@ -91,6 +91,9 @@ func flattenAggregate(
 	// Walk top-level components in author order
 	for name, comp := range agg.Spec.Components.All() {
 		nodeID := qualifiedID(prefix, name)
+		if existing, exists := result.Nodes.Get(nodeID); exists {
+			return nil, cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
+		}
 		result.Nodes.Set(nodeID, &TopologyNode{
 			InstanceID:      nodeID,
 			ComponentType:   comp.Type,
@@ -105,7 +108,9 @@ func flattenAggregate(
 	// Walk subsystems in author order (recursive)
 	for subName, sub := range agg.Spec.Subsystems.All() {
 		subPath := qualifiedID(subsystemPath, subName)
-		flattenSubsystem(result, prefix, subPath, sub)
+		if err := flattenSubsystem(result, prefix, subPath, sub); err != nil {
+			return nil, err
+		}
 	}
 
 	// Walk sub-aggregates in author order
@@ -132,6 +137,9 @@ func flattenAggregate(
 
 			// Merge child results — preserve child's author-order during merge.
 			for id, node := range childResult.Nodes.All() {
+				if existing, exists := result.Nodes.Get(id); exists {
+					return nil, cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", id, childPrefix, existing.SourceAggregate))
+				}
 				result.Nodes.Set(id, node)
 			}
 			for id, feats := range childResult.FeatureAttachments {
@@ -169,9 +177,17 @@ func flattenAggregate(
 // deep subsystem nesting in a single Aggregate would still reach the
 // recursion stack limit, but no architectural anchor enshrines a depth
 // bound for subsystem nesting today.
-func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) {
+//
+// Returns ErrSubAggregateNameCollision (wrapped) if a Set on the flat
+// node map would overwrite an existing entry. The collision is impossible
+// by current schema (root-level instance names cannot contain dots) but
+// the guard defends against future schema loosening or validation bypass.
+func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) error {
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
+		if existing, exists := result.Nodes.Get(nodeID); exists {
+			return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
+		}
 		result.Nodes.Set(nodeID, &TopologyNode{
 			InstanceID:      nodeID,
 			ComponentType:   comp.Type,
@@ -186,8 +202,11 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub t
 	// Recurse into nested subsystems
 	for subName, nested := range sub.Subsystems.All() {
 		nestedPath := subsystemPath + "." + subName
-		flattenSubsystem(result, prefix, nestedPath, nested)
+		if err := flattenSubsystem(result, prefix, nestedPath, nested); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // collectAttachments records a node's feature and secret attachments

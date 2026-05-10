@@ -57,10 +57,11 @@ func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 	t.Parallel()
-	uses :=
-		// "caches" is optional — its absence is fine, only "databases" (required) triggers.
-		types.OrderedMap[any]{}
-	uses.Set("databases", map[string]any{"main": map[string]any{"target": "db"}})
+	// "caches" is optional — its absence is fine, only "databases" (required) triggers.
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("main", types.VerboseUsesEntry{Target: "db"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -76,10 +77,9 @@ func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 	t.Parallel()
-	uses :=
-		// Compact list form: `databases: [db]` should count as populated.
-		types.OrderedMap[any]{}
-	uses.Set("databases", []any{"db"})
+	// Compact list form: `databases: [db]` should count as populated.
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -95,8 +95,8 @@ func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("databases", map[string]any{})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: types.OrderedMap[types.VerboseUsesEntry]{}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -106,7 +106,7 @@ func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 	}
 	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
 	if len(errs) != 1 {
-		t.Fatalf("empty map should count as not-populated, got %+v", errs)
+		t.Fatalf("empty verbose map should count as not-populated, got %+v", errs)
 	}
 	if !errors.Is(errs[0], ErrMissingRequiredSocket) {
 		t.Errorf("expected ErrMissingRequiredSocket")
@@ -133,46 +133,40 @@ func TestGuardRequiredUsesSockets_SubsystemRecursion(t *testing.T) {
 	}
 }
 
-// TestSocketIsPopulated_NestedOrderedMapShape_RecognizesPopulated pins the
-// OrderedMap-aware arms of socketIsPopulated. Under round-trip-fidelity
-// decoding, the verbose `uses` form decodes into *types.OrderedMap[any]
-// (rather than map[string]any); the guard's switch must recognize the
-// OrderedMap shape as populated when it has entries and unpopulated when
-// it is empty.
-func TestSocketIsPopulated_NestedOrderedMapShape_RecognizesPopulated(t *testing.T) {
+// TestSocketIsPopulated_VerboseFormRecognizesPopulated pins the
+// typed-wrapper Verbose-field arm of socketIsPopulated. The verbose
+// form's emptiness is determined by the inner OrderedMap's length;
+// empty Verbose with no Compact entries returns false; populated
+// Verbose returns true.
+func TestSocketIsPopulated_VerboseFormRecognizesPopulated(t *testing.T) {
 	t.Parallel()
 
-	t.Run("populated_OrderedMap", func(t *testing.T) {
+	t.Run("populated_verbose", func(t *testing.T) {
 		t.Parallel()
-		entry := types.NewOrderedMap[any]()
-		entry.Set("target", "main-db")
-		uses := types.OrderedMap[any]{}
-		uses.Set("databases", entry)
+		verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+		verbose.Set("alias", types.VerboseUsesEntry{Target: "main-db"})
+		uses := types.OrderedMap[types.UsesSocketValue]{}
+		uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 		if !socketIsPopulated(uses, "databases") {
-			t.Error("populated *OrderedMap[any] should count as populated, got false")
+			t.Error("populated Verbose should count as populated, got false")
 		}
 	})
 
-	t.Run("empty_OrderedMap", func(t *testing.T) {
+	t.Run("empty_verbose_no_compact", func(t *testing.T) {
 		t.Parallel()
-		empty := types.NewOrderedMap[any]()
-		uses := types.OrderedMap[any]{}
-		uses.Set("databases", empty)
+		uses := types.OrderedMap[types.UsesSocketValue]{}
+		uses.Set("databases", types.UsesSocketValue{})
 		if socketIsPopulated(uses, "databases") {
-			t.Error("empty *OrderedMap[any] should count as unpopulated, got true")
+			t.Error("empty UsesSocketValue should count as unpopulated, got true")
 		}
 	})
 
-	t.Run("nested_OrderedMap_OrderedMap_populated", func(t *testing.T) {
+	t.Run("compact_with_empty_string_only_unpopulated", func(t *testing.T) {
 		t.Parallel()
-		inner := types.NewOrderedMap[any]()
-		inner.Set("alias", "main-db")
-		outer := types.NewOrderedMap[*types.OrderedMap[any]]()
-		outer.Set("entry", inner)
-		uses := types.OrderedMap[any]{}
-		uses.Set("databases", outer)
-		if !socketIsPopulated(uses, "databases") {
-			t.Error("populated *OrderedMap[*OrderedMap[any]] should count as populated, got false")
+		uses := types.OrderedMap[types.UsesSocketValue]{}
+		uses.Set("databases", types.UsesSocketValue{Compact: []string{""}})
+		if socketIsPopulated(uses, "databases") {
+			t.Error("compact with only empty strings should count as unpopulated, got true")
 		}
 	})
 }

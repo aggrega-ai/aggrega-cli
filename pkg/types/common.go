@@ -63,12 +63,12 @@ type InjectBlock struct {
 // FeatureInstance is a feature attachment on a component or subsystem.
 // Used in Aggregate component.features, subsystem.features, and Release boundary features.
 type FeatureInstance struct {
-	Type        string                     `json:"type" yaml:"type"`
-	Description string                     `json:"description,omitempty" yaml:"description,omitempty"`
-	Values      OrderedMap[any]            `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Uses        OrderedMap[any]            `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
-	Inject      *InjectBlock               `json:"inject,omitempty" yaml:"inject,omitempty"`
-	Secrets     OrderedMap[SecretInstance] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Type        string                      `json:"type" yaml:"type"`
+	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
+	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`
+	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }
 
 // SecretInstance is a credential feature attachment (labeled
@@ -77,11 +77,11 @@ type FeatureInstance struct {
 // [FeatureInstance] except for nested Secrets: credentials are leaf
 // attachments and a SecretInstance cannot itself carry nested secrets.
 type SecretInstance struct {
-	Type        string          `json:"type" yaml:"type"`
-	Description string          `json:"description,omitempty" yaml:"description,omitempty"`
-	Values      OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Uses        OrderedMap[any] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
-	Inject      *InjectBlock    `json:"inject,omitempty" yaml:"inject,omitempty"`
+	Type        string                      `json:"type" yaml:"type"`
+	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
+	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
+	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`
 }
 
 // PipelineStep is one Wasm plugin invocation in a Recipe or FeatureRecipe pipeline.

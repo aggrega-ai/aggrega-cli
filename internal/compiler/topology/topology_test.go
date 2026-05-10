@@ -29,6 +29,8 @@
 package topology
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
@@ -37,8 +39,8 @@ import (
 
 func TestBuild_SimpleTopology(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("databases", []any{"main-db"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"main-db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
@@ -112,10 +114,10 @@ func TestBuild_SimpleTopology(t *testing.T) {
 
 func TestBuild_CyclicEdges(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("delegates", []any{"agent-b"})
-	uses2 := types.OrderedMap[any]{}
-	uses2.Set("delegates", []any{"agent-a"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("delegates", types.UsesSocketValue{Compact: []string{"agent-b"}})
+	uses2 := types.OrderedMap[types.UsesSocketValue]{}
+	uses2.Set("delegates", types.UsesSocketValue{Compact: []string{"agent-a"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("agent-a", types.ComponentInstance{Type: "core/agent", Uses: uses})
 	components.Set("agent-b", types.ComponentInstance{Type: "core/agent", Uses: uses2})
@@ -142,8 +144,8 @@ func TestBuild_CyclicEdges(t *testing.T) {
 
 func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("targets", []any{"metrics-db"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("targets", types.UsesSocketValue{Compact: []string{"metrics-db"}})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("monitoring", types.FeatureInstance{Type: "core/monitoring", Uses: uses})
 	components := types.OrderedMap[types.ComponentInstance]{}
@@ -202,14 +204,68 @@ func TestBuild_BoundaryPath(t *testing.T) {
 	}
 }
 
+// TestErrSubAggregateNameCollision_HaltsOnOverwrite pins the defensive
+// guard that fires when sub-aggregate flattening produces a node ID
+// already present in the flat node map. The collision is impossible by
+// current schema (root-level instance names cannot contain dots) but
+// the guard defends against future schema loosening or validation
+// bypass. The test constructs the colliding scenario by directly
+// authoring a root-level instance name containing a dot — schema-
+// invalid but useful to exercise the guard.
+func TestErrSubAggregateNameCollision_HaltsOnOverwrite(t *testing.T) {
+	t.Parallel()
+	childComps := types.OrderedMap[types.ComponentInstance]{}
+	childComps.Set("child", types.ComponentInstance{Type: "core/db"})
+	childAgg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "data-mod"},
+		Spec:     types.AggregateSpec{Components: childComps},
+	}
+
+	rootComps := types.OrderedMap[types.ComponentInstance]{}
+	// "data-mod.child" is invalid as a root name (schema bans dots), but
+	// we construct it directly to exercise the defensive guard against
+	// schema loosening.
+	rootComps.Set("data-mod.child", types.ComponentInstance{Type: "core/db"})
+	aggregates := types.OrderedMap[types.SubAggregate]{}
+	aggregates.Set("data-mod", types.SubAggregate{Type: "modules/data-layer"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "root"},
+		Spec: types.AggregateSpec{
+			Components: rootComps,
+			Aggregates: aggregates,
+		},
+	}
+
+	loader := func(typeName string) (*types.Aggregate, error) {
+		if typeName == "modules/data-layer" {
+			return childAgg, nil
+		}
+		return nil, fmt.Errorf("unknown: %s", typeName)
+	}
+
+	_, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+		LoadSubAggregate: loader,
+	})
+	if err == nil {
+		t.Fatal("expected ErrSubAggregateNameCollision, got nil")
+	}
+	if !errors.Is(err, ErrSubAggregateNameCollision) {
+		t.Errorf("expected ErrSubAggregateNameCollision, got %v", err)
+	}
+}
+
 func TestBuild_DeterministicEdgeOrder(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("s", []any{"target"})
-	uses2 := types.OrderedMap[any]{}
-	uses2.Set("s", []any{"target"})
-	uses3 := types.OrderedMap[any]{}
-	uses3.Set("s", []any{"target"})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("s", types.UsesSocketValue{Compact: []string{"target"}})
+	uses2 := types.OrderedMap[types.UsesSocketValue]{}
+	uses2.Set("s", types.UsesSocketValue{Compact: []string{"target"}})
+	uses3 := types.OrderedMap[types.UsesSocketValue]{}
+	uses3.Set("s", types.UsesSocketValue{Compact: []string{"target"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("z-svc", types.ComponentInstance{Type: "t", Uses: uses})
 	components.Set("a-svc", types.ComponentInstance{Type: "t", Uses: uses2})

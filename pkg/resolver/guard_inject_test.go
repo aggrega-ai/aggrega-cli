@@ -194,3 +194,30 @@ func TestGuardInjectKeys_SecretInjectAlsoValidated(t *testing.T) {
 		t.Errorf("expected field path to mention secrets, got %s", errs[0].Field)
 	}
 }
+
+// TestExtractInjectFromKeys_OrderedMapShape_DetectsFromReferences pins
+// the typed-arm fix at extractInjectFromKeys. When the InjectBlock field
+// arrives as *types.OrderedMap[any] (the round-trip-fidelity decode
+// shape), the function walks via .All() and detects both the literal
+// shorthand (string value) and the verbose `{from: "..."}` shape. Pre-fix,
+// the type assertion failed silently and from-key validation was bypassed
+// for the entire mechanism.
+func TestExtractInjectFromKeys_OrderedMapShape_DetectsFromReferences(t *testing.T) {
+	t.Parallel()
+	raw := types.NewOrderedMap[any]()
+	raw.Set("DB_URL", "host")
+	inner := types.NewOrderedMap[any]()
+	inner.Set("from", "port")
+	raw.Set("DB_PORT", inner)
+
+	out := extractInjectFromKeys(raw)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 entries (compact + verbose), got %d: %+v", len(out), out)
+	}
+	if out["DB_URL"] != "host" {
+		t.Errorf("DB_URL = %q, want host", out["DB_URL"])
+	}
+	if out["DB_PORT"] != "port" {
+		t.Errorf("DB_PORT = %q, want port", out["DB_PORT"])
+	}
+}

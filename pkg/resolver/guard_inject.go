@@ -177,11 +177,39 @@ func validateMechanismFromKeys(entity, fieldPath, mech string, raw any, validSet
 
 // extractInjectFromKeys normalizes compact ({DB_URL: "host"}) and verbose
 // ({DB_URL: {from: "host"}}) inject forms into {localKey: fromKey}. Empty
-// fromKey means the entry is a literal value (verbose with "value:" only) and
-// is skipped by the validator above.
+// fromKey means the entry is a literal value (verbose with "value:" only)
+// and is skipped by the validator above. The *types.OrderedMap[any] shape
+// arrives from round-trip-fidelity decoding when the inject block is
+// reached via an OrderedMap[any]-routed authoring path; both outer and
+// inner OrderedMap shapes are handled.
 func extractInjectFromKeys(raw any) map[string]string {
 	out := map[string]string{}
 	switch v := raw.(type) {
+	case *types.OrderedMap[any]:
+		if v == nil {
+			return out
+		}
+		for k, val := range v.All() {
+			switch vv := val.(type) {
+			case string:
+				out[k] = vv
+			case *types.OrderedMap[any]:
+				if vv == nil {
+					continue
+				}
+				if fromStr, ok := vv.Get("from"); ok {
+					if s, sok := fromStr.(string); sok {
+						out[k] = s
+					}
+				}
+			case map[string]any:
+				if fromStr, ok := vv["from"]; ok {
+					if s, sok := fromStr.(string); sok {
+						out[k] = s
+					}
+				}
+			}
+		}
 	case map[string]string:
 		for k, val := range v {
 			out[k] = val
@@ -191,6 +219,15 @@ func extractInjectFromKeys(raw any) map[string]string {
 			switch vv := val.(type) {
 			case string:
 				out[k] = vv
+			case *types.OrderedMap[any]:
+				if vv == nil {
+					continue
+				}
+				if fromStr, ok := vv.Get("from"); ok {
+					if s, sok := fromStr.(string); sok {
+						out[k] = s
+					}
+				}
 			case map[string]any:
 				if fromStr, ok := vv["from"]; ok {
 					if s, sok := fromStr.(string); sok {

@@ -122,7 +122,7 @@ func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[
 			entry["values"] = orderedMapToMap(sec.Values)
 		}
 		if sec.Uses.Len() > 0 {
-			entry["uses"] = orderedMapToMap(sec.Uses)
+			entry["uses"] = normalizeUsesForCUE(sec.Uses)
 		}
 		if sec.Inject != nil {
 			inj := map[string]any{}
@@ -149,13 +149,26 @@ func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[
 	return out
 }
 
-// normalizeInjectMechanism coerces the polymorphic InjectBlock mechanism field
-// (map[string]any from YAML) into map[string]string for CUE unification.
-// Returns nil on unrecognized shapes so the caller can skip the mechanism entirely.
+// normalizeInjectMechanism coerces the polymorphic InjectBlock mechanism
+// field (map[string]any from plain YAML, *types.OrderedMap[any] from a
+// round-trip-fidelity decode path) into map[string]string for CUE
+// unification. Returns nil on unrecognized shapes so the caller can skip
+// the mechanism entirely.
 func normalizeInjectMechanism(raw any) map[string]string {
 	switch v := raw.(type) {
 	case nil:
 		return nil
+	case *types.OrderedMap[any]:
+		if v == nil || v.Len() == 0 {
+			return nil
+		}
+		out := make(map[string]string, v.Len())
+		for k, val := range v.All() {
+			if s, ok := val.(string); ok {
+				out[k] = s
+			}
+		}
+		return out
 	case map[string]string:
 		if len(v) == 0 {
 			return nil
@@ -177,24 +190,58 @@ func normalizeInjectMechanism(raw any) map[string]string {
 	}
 }
 
-// normalizeUsesForCUE converts the polymorphic `uses` block (map[string]any)
-// into a form acceptable to CUE unification via JSON. The Aggregate uses block can
-// carry both the compact list form (`socket: [target1, target2]`) and the verbose
-// form (`socket: {alias: {target: ..., inject: {...}}}`). The generated base schema
-// expects the verbose form, so compact-style lists are skipped at this layer (an
-// unknown socket would still fire in the data shape; list normalization is a
-// separate concern handled by Step 2).
-func normalizeUsesForCUE(uses types.OrderedMap[any]) map[string]any {
+// normalizeUsesForCUE converts the typed `uses` block into a form
+// acceptable to CUE unification via JSON. The Aggregate uses block can
+// carry both the compact list form (`socket: [target1, target2]`) and
+// the verbose alias-keyed form (`socket: {alias: {target: ..., inject:
+// {...}}}`). The generated base CUE schema expects the verbose form, so
+// compact-style lists are skipped at this layer; list normalization is
+// a separate concern handled by Step 2.
+//
+// Verbose-form entries flatten to a `map[string]any` shape matching the
+// generated base CUE pillar's `{ [string]: { target: string, inject?:
+// ... } }` declaration. Target defaults to the alias when the typed
+// entry's Target field is empty.
+func normalizeUsesForCUE(uses types.OrderedMap[types.UsesSocketValue]) map[string]any {
 	if uses.Len() == 0 {
 		return map[string]any{}
 	}
 	out := make(map[string]any, uses.Len())
-	for socket, raw := range uses.All() {
-		// Only forward the verbose form — compact arrays don't match the
-		// generated `{ [string]: { target: string } }` shape.
-		if m, ok := raw.(map[string]any); ok {
-			out[socket] = m
+	for socket, val := range uses.All() {
+		if val.Verbose.Len() == 0 {
+			continue
 		}
+		socketMap := make(map[string]any, val.Verbose.Len())
+		for alias, entry := range val.Verbose.All() {
+			entryMap := map[string]any{}
+			target := entry.Target
+			if target == "" {
+				target = alias
+			}
+			entryMap["target"] = target
+			if entry.Inject != nil {
+				injMap := map[string]any{}
+				if env := normalizeInjectMechanism(entry.Inject.Env); env != nil {
+					injMap["env"] = env
+				}
+				if file := normalizeInjectMechanism(entry.Inject.File); file != nil {
+					injMap["file"] = file
+				}
+				if arg := normalizeInjectMechanism(entry.Inject.Arg); arg != nil {
+					injMap["arg"] = arg
+				}
+				for mech, raw := range entry.Inject.Additional {
+					if m := normalizeInjectMechanism(raw); m != nil {
+						injMap[mech] = m
+					}
+				}
+				if len(injMap) > 0 {
+					entryMap["inject"] = injMap
+				}
+			}
+			socketMap[alias] = entryMap
+		}
+		out[socket] = socketMap
 	}
 	return out
 }

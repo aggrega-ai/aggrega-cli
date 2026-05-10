@@ -68,7 +68,7 @@ type ComponentInstance struct {
 	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
 	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`      // Component-level self-inject
-	Uses        OrderedMap[any]             `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose map
+	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose alias-map
 	Features    OrderedMap[FeatureInstance] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }

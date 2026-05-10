@@ -10,6 +10,15 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+// compactUses constructs an OrderedMap[UsesSocketValue] with one socket
+// in compact form. Convenience helper for tests; production code reaches
+// the typed shape via YAML or JSON unmarshal.
+func compactUses(socket string, targets ...string) types.OrderedMap[types.UsesSocketValue] {
+	out := types.OrderedMap[types.UsesSocketValue]{}
+	out.Set(socket, types.UsesSocketValue{Compact: targets})
+	return out
+}
+
 func TestGuardUsesSocket(t *testing.T) {
 	t.Parallel()
 	labels := types.OrderedMap[string]{}
@@ -79,30 +88,18 @@ func TestGuardUsesSocket(t *testing.T) {
 			}
 		},
 	}
-	uses4 := types.OrderedMap[any]{}
-	uses4.Set("targets", []any{"api"})
-	uses5 := types.OrderedMap[any]{}
-	uses5.Set("unknown-socket", []any{"x"})
-	uses6 := types.OrderedMap[any]{}
-	uses6.Set("something", []any{"x"})
-	uses := types.OrderedMap[any]{}
-	uses.Set("databases", []any{"my-db"})
-	uses2 := types.OrderedMap[any]{}
-	uses2.Set("caches", []any{"my-cache"})
-	uses3 := types.OrderedMap[any]{}
-	uses3.Set("anything", []any{"target"})
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses4})
+	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: compactUses("targets", "api")})
 	features2 := types.OrderedMap[types.FeatureInstance]{}
-	features2.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses5})
+	features2.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: compactUses("unknown-socket", "x")})
 	features3 := types.OrderedMap[types.FeatureInstance]{}
-	features3.Set("log", types.FeatureInstance{Type: "core/logging", Uses: uses6})
+	features3.Set("log", types.FeatureInstance{Type: "core/logging", Uses: compactUses("something", "x")})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/web-server", Uses: uses})
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Uses: compactUses("databases", "my-db")})
 	components2 := types.OrderedMap[types.ComponentInstance]{}
-	components2.Set("api", types.ComponentInstance{Type: "core/web-server", Uses: uses2})
+	components2.Set("api", types.ComponentInstance{Type: "core/web-server", Uses: compactUses("caches", "my-cache")})
 	components3 := types.OrderedMap[types.ComponentInstance]{}
-	components3.Set("db", types.ComponentInstance{Type: "core/postgres-db", Uses: uses3})
+	components3.Set("db", types.ComponentInstance{Type: "core/postgres-db", Uses: compactUses("anything", "target")})
 	components4 := types.OrderedMap[types.ComponentInstance]{}
 	components4.Set("db", types.ComponentInstance{Type: "core/postgres-db"})
 	components5 := types.OrderedMap[types.ComponentInstance]{}
@@ -233,19 +230,16 @@ func TestGuardUsesSocket_DeterministicOrder(t *testing.T) {
 			return types.Feature{}, false
 		},
 	}
-	uses := types.OrderedMap[any]{}
-	uses.Set("a", nil)
-	uses2 := types.OrderedMap[any]{}
-	uses2.Set("b", nil)
-	uses3 := types.OrderedMap[any]{}
-	uses3.Set("c", nil)
-	components := types.OrderedMap[types.ComponentInstance]{
-
-		// Run multiple times to verify determinism
-	}
-	components.Set("zebra", types.ComponentInstance{Type: "core/db", Uses: uses})
-	components.Set("alpha", types.ComponentInstance{Type: "core/db", Uses: uses2})
-	components.Set("mid", types.ComponentInstance{Type: "core/db", Uses: uses3})
+	usesA := types.OrderedMap[types.UsesSocketValue]{}
+	usesA.Set("a", types.UsesSocketValue{Compact: []string{"x"}})
+	usesB := types.OrderedMap[types.UsesSocketValue]{}
+	usesB.Set("b", types.UsesSocketValue{Compact: []string{"x"}})
+	usesC := types.OrderedMap[types.UsesSocketValue]{}
+	usesC.Set("c", types.UsesSocketValue{Compact: []string{"x"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("zebra", types.ComponentInstance{Type: "core/db", Uses: usesA})
+	components.Set("alpha", types.ComponentInstance{Type: "core/db", Uses: usesB})
+	components.Set("mid", types.ComponentInstance{Type: "core/db", Uses: usesC})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{

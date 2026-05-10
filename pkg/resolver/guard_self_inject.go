@@ -164,39 +164,52 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 // collectUsesInjectDeliveryKeys returns delivery-key names indexed by
 // mechanism name across every uses-level inject block on a component. Each
 // per-mechanism slice is sorted alphabetically for deterministic
-// iteration. Returns an empty map when uses is empty or carries no
-// recognized shape. Does not mutate the input.
-func collectUsesInjectDeliveryKeys(uses types.OrderedMap[any]) map[string][]string {
+// iteration. Returns an empty map when uses is empty or no verbose-form
+// socket carries inject directives. Does not mutate the input.
+//
+// Compact-form sockets (string arrays) carry no inject directives and are
+// skipped. Verbose-form sockets walk the typed VerboseUsesEntry slice and
+// extract delivery keys from each entry's optional Inject block.
+func collectUsesInjectDeliveryKeys(uses types.OrderedMap[types.UsesSocketValue]) map[string][]string {
 	result := map[string][]string{}
 	if uses.Len() == 0 {
 		return result
 	}
-	for _, socketRaw := range uses.All() {
-		m, ok := socketRaw.(map[string]any)
-		if !ok {
+	extractKeys := func(mech string, raw any) {
+		if raw == nil {
+			return
+		}
+		switch v := raw.(type) {
+		case *types.OrderedMap[any]:
+			if v == nil {
+				return
+			}
+			for k := range v.All() {
+				result[mech] = append(result[mech], k)
+			}
+		case map[string]any:
+			for k := range v {
+				result[mech] = append(result[mech], k)
+			}
+		case map[string]string:
+			for k := range v {
+				result[mech] = append(result[mech], k)
+			}
+		}
+	}
+	for _, val := range uses.All() {
+		if val.Verbose.Len() == 0 {
 			continue
 		}
-		for _, entryRaw := range m {
-			entry, ok := entryRaw.(map[string]any)
-			if !ok {
+		for _, entry := range val.Verbose.All() {
+			if entry.Inject == nil {
 				continue
 			}
-			injectRaw, ok := entry["inject"]
-			if !ok {
-				continue
-			}
-			injectMap, ok := injectRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			for mech, mechRaw := range injectMap {
-				mechMap, ok := mechRaw.(map[string]any)
-				if !ok {
-					continue
-				}
-				for key := range mechMap {
-					result[mech] = append(result[mech], key)
-				}
+			extractKeys("env", entry.Inject.Env)
+			extractKeys("file", entry.Inject.File)
+			extractKeys("arg", entry.Inject.Arg)
+			for mech, mechRaw := range entry.Inject.Additional {
+				extractKeys(mech, mechRaw)
 			}
 		}
 	}

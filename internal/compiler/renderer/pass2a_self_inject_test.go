@@ -143,3 +143,37 @@ func TestExecutePass2a_FromMissingProvides(t *testing.T) {
 		t.Fatal("expected error for missing provides key")
 	}
 }
+
+// TestNormalizeSelfInjectEntries_OrderedMapShape_DecodesEntries pins the
+// typed-arm fix at normalizeSelfInjectEntries. When the InjectBlock field
+// arrives as *types.OrderedMap[any] (the round-trip-fidelity decode shape
+// produced when the inject block flows through an OrderedMap[any]-routed
+// authoring path), the function decodes via .All() rather than silently
+// returning an empty map. Both the literal-string shorthand and the
+// verbose {value, from} shape are exercised.
+func TestNormalizeSelfInjectEntries_OrderedMapShape_DecodesEntries(t *testing.T) {
+	t.Parallel()
+	raw := types.NewOrderedMap[any]()
+	raw.Set("zulu", "literal-1")
+	inner := types.NewOrderedMap[any]()
+	inner.Set("from", "alpha-key")
+	raw.Set("alpha", inner)
+	raw.Set("middle", "literal-2")
+
+	entries, err := normalizeSelfInjectEntries(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	if e, ok := entries["zulu"]; !ok || !e.isLiteral || e.value != "literal-1" {
+		t.Errorf("zulu: %+v want isLiteral=true value=literal-1", e)
+	}
+	if e, ok := entries["alpha"]; !ok || e.from != "alpha-key" {
+		t.Errorf("alpha: %+v want from=alpha-key", e)
+	}
+	if e, ok := entries["middle"]; !ok || !e.isLiteral || e.value != "literal-2" {
+		t.Errorf("middle: %+v want isLiteral=true value=literal-2", e)
+	}
+}

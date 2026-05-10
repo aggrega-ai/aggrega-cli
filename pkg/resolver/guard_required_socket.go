@@ -48,45 +48,20 @@ func guardRequiredUsesSockets(agg *types.Aggregate, catalog CatalogLookup) []*Re
 	return errs
 }
 
-// socketIsPopulated returns true when the Aggregate's uses block has at least
-// one entry for the given socket. Accepts both the compact list form
-// (`socket: [target1, target2]`) and the verbose map form
-// (`socket: {alias: {target: ..., ...}}`). Empty strings in a list and empty
-// maps count as not-populated.
-func socketIsPopulated(uses types.OrderedMap[any], socket string) bool {
-	raw, ok := uses.Get(socket)
-	if !ok || raw == nil {
+// socketIsPopulated returns true when the Aggregate's uses block has at
+// least one entry for the given socket. Accepts both the compact list
+// form (`socket: [target1, target2]`) and the verbose alias-keyed map
+// form (`socket: {alias: {target: ..., ...}}`). Empty strings in the
+// compact list and empty maps in the verbose form count as not-populated.
+func socketIsPopulated(uses types.OrderedMap[types.UsesSocketValue], socket string) bool {
+	val, ok := uses.Get(socket)
+	if !ok {
 		return false
 	}
-	switch v := raw.(type) {
-	case []any:
-		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				return true
-			}
+	for _, s := range val.Compact {
+		if s != "" {
+			return true
 		}
-		return false
-	case []string:
-		for _, s := range v {
-			if s != "" {
-				return true
-			}
-		}
-		return false
-	case *types.OrderedMap[any]:
-		return v.Len() > 0
-	case *types.OrderedMap[*types.OrderedMap[any]]:
-		return v.Len() > 0
-	case map[string]any:
-		// Defensive: in-memory test fixtures may construct map shapes
-		// that bypass the OrderedMap unmarshal path.
-		return len(v) > 0
-	case map[string]map[string]any:
-		// Defensive: same rationale.
-		return len(v) > 0
-	default:
-		// Unknown shapes aren't counted as populated — guard defers to the
-		// schema-validation guard for shape errors.
-		return false
 	}
+	return val.Verbose.Len() > 0
 }

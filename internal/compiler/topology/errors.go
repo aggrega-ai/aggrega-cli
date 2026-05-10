@@ -35,4 +35,16 @@ var (
 	// error carries the depth reached and the prefix path of the offending
 	// chain.
 	ErrMaxDepth = errors.New("max sub-aggregate nesting depth exceeded")
+
+	// ErrSubAggregateNameCollision fires from flattenAggregate when a Set
+	// operation on the flat node map would overwrite an existing entry —
+	// a condition impossible by the current Aggregate schema (root-level
+	// instance names cannot contain dots, so dotted sub-aggregate IDs
+	// cannot collide with root-level names) but defended-against in case
+	// a future schema loosening or a code path bypassing validation lets
+	// two flattened IDs collide. The wrapped error carries the colliding
+	// ID, the dotted prefix path that produced it, and the existing
+	// entry's source aggregate so the diagnostic points the author at the
+	// precise authoring position.
+	ErrSubAggregateNameCollision = errors.New("flattened node ID collision")
 )

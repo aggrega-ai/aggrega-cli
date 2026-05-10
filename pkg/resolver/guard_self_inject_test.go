@@ -91,8 +91,11 @@ func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 
 func TestGuardSelfInject_KeyCollision(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[any]{}
-	uses.Set("databases", map[string]any{"db": map[string]any{"target": "my-db", "inject": map[string]any{"env": map[string]any{"DB_URL": "host"}}}})
+	inject := &types.InjectBlock{Env: map[string]any{"DB_URL": "host"}}
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("db", types.VerboseUsesEntry{Target: "my-db", Inject: inject})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]any{"DB_URL": "localhost"}}, Uses: uses})
 	agg := &types.Aggregate{
@@ -111,6 +114,52 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected ErrInjectKeyCollision, got %d errors: %v", len(errs), errs)
+	}
+}
+
+// TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape pins
+// the regression-fix path. Pre-WI, the verbose-form `uses:` socket value
+// post-YAML-unmarshal is *types.OrderedMap[any] (per the OrderedMap[any]
+// round-trip migration); the InjectBlock's Env / File / Arg payloads
+// nested inside that verbose entry are also *types.OrderedMap[any]. The
+// pre-WI collectUsesInjectDeliveryKeys did socketRaw.(map[string]any)
+// which failed on the OrderedMap shape and silently skipped the socket,
+// missing inject-key collisions in verbose-form uses. This test
+// constructs the post-migration shape directly and asserts that collision
+// detection fires through the typed-wrapper migration.
+func TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape(t *testing.T) {
+	t.Parallel()
+	envMap := types.NewOrderedMap[any]()
+	envMap.Set("DB_URL", "host")
+	inject := &types.InjectBlock{Env: envMap}
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("db", types.VerboseUsesEntry{Target: "my-db", Inject: inject})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
+
+	selfInject := &types.InjectBlock{Env: map[string]any{"DB_URL": "localhost"}}
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Type:   "core/web-server",
+		Inject: selfInject,
+		Uses:   uses,
+	})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "test"},
+		Spec: types.AggregateSpec{
+			Components: components,
+		},
+	}
+
+	errs := guardSelfInject(agg, selfInjectCatalog())
+	found := false
+	for _, e := range errs {
+		if errors.Is(e, ErrInjectKeyCollision) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrInjectKeyCollision for verbose-form uses with OrderedMap-shaped inject, got %d errors: %v", len(errs), errs)
 	}
 }
 

@@ -157,3 +157,33 @@ func TestBuildInjectAll_CustomMechanisms(t *testing.T) {
 		}
 	}
 }
+
+// TestNormalizeInjectMechanism_OrderedMapShape_PreservesAuthorOrder pins
+// the typed-arm fix at normalizeInjectMechanism. When the InjectBlock
+// field arrives as *types.OrderedMap[any] (the round-trip-fidelity decode
+// shape), the function walks via .All() and the resulting OrderedMap[string]
+// preserves the input's authoring sequence rather than the alphabetical-
+// sort fallback applied to the plain map[string]X arms (where author
+// order is already lost at decode).
+func TestNormalizeInjectMechanism_OrderedMapShape_PreservesAuthorOrder(t *testing.T) {
+	t.Parallel()
+	raw := types.NewOrderedMap[any]()
+	raw.Set("zulu", "z-value")
+	raw.Set("alpha", "a-value")
+	raw.Set("middle", "m-value")
+
+	out := normalizeInjectMechanism(raw)
+	if out.Len() != 3 {
+		t.Fatalf("expected 3 entries, got %d", out.Len())
+	}
+	keys := out.Keys()
+	if keys[0] != "zulu" || keys[1] != "alpha" || keys[2] != "middle" {
+		t.Errorf("output key order = %v, want [zulu alpha middle] (author order)", keys)
+	}
+	for k, want := range map[string]string{"zulu": "z-value", "alpha": "a-value", "middle": "m-value"} {
+		got, _ := out.Get(k)
+		if got != want {
+			t.Errorf("out[%q] = %q, want %q", k, got, want)
+		}
+	}
+}
