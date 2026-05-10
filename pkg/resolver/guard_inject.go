@@ -124,22 +124,19 @@ type mechanismRaw struct {
 
 // injectMechanisms returns the inject block's mechanisms paired with their
 // raw payloads. The three standard mechanisms (arg, env, file) are emitted
-// first in alphabetical order; any catalog-declared additional mechanisms
-// follow, also alphabetically sorted. The ordering is for deterministic
-// error output, not a semantic preference among mechanisms.
+// first in their hardcoded alphabetical order; custom mechanisms from
+// Additional follow in author order via OrderedMap.All(). User-facing error
+// emission is canonicalised by sortResolverErrors at the resolver boundary,
+// so the internal slice ordering is semantic-only — callers walk the slice
+// per mechanism and the per-mechanism diagnostics surface in the resolver's
+// final (Entity, Field) sort.
 func injectMechanisms(inject types.InjectBlock) []mechanismRaw {
 	out := []mechanismRaw{
 		{"arg", inject.Arg}, // sorted alphabetically
 		{"env", inject.Env},
 		{"file", inject.File},
 	}
-	additionalNames := make([]string, 0, inject.Additional.Len())
-	for k := range inject.Additional.All() {
-		additionalNames = append(additionalNames, k)
-	}
-	sort.Strings(additionalNames)
-	for _, k := range additionalNames {
-		v, _ := inject.Additional.Get(k)
+	for k, v := range inject.Additional.All() {
 		out = append(out, mechanismRaw{k, v})
 	}
 	return out

@@ -229,26 +229,34 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 }
 
 // convertInjectBlock translates the topology layer's typed *types.InjectBlock
-// (with separate Env / File / Arg fields) into the IR edge's per-mechanism
-// shape — an outer OrderedMap keyed by mechanism name ("env", "file",
-// "arg") whose values are inner OrderedMaps of delivery-key → resolved
-// string. The shape mirrors the three standard inject mechanisms (env,
-// file, arg); custom mechanisms beyond those three would not surface
-// here today.
+// into the IR edge's per-mechanism shape — an outer OrderedMap keyed by
+// mechanism name whose values are inner OrderedMaps of delivery-key → resolved
+// string. The three standard mechanisms (env, file, arg) populate first in
+// that hardcoded struct-field order; custom mechanisms from InjectBlock.Additional
+// follow in author order via OrderedMap.All(), so the IR-edge per-mechanism
+// map carries env/file/arg first and any custom mechanisms (e.g., ssm_param,
+// vault_secret) the Developer authored after.
 //
-// Mechanism enumeration is fixed at the three call sites (Env / File /
-// Arg) because the topology's InjectBlock is itself a closed three-field
-// struct — adding a fourth mechanism is a coordinated change spanning the
-// topology types and this conversion.
+// Mechanism enumeration draws from four sources: the three typed fields and
+// the Additional OrderedMap. The Developer's authoring shape — compact
+// map-of-strings or verbose array-of-objects per the Aggregate schema's
+// inject_delivery definition — flows through the InjectBlock unmarshal hooks
+// at pkg/types/common.go, so by the time this function runs every value has
+// been decoded into the polymorphic Go shapes the type-switch below handles.
 //
-// Type-coercion contract. The inner anonymous function accepts the typed
-// raw value and copies only string-valued entries: map[string]string is
-// copied verbatim; map[string]any is copied entry-by-entry,
-// keeping only the entries whose values type-assert to string. Non-string
-// values are silently dropped. The string-only restriction matches the
-// IR's IREdge.Inject schema (string values per delivery key); the silent
-// drop is the function's current behaviour and may need revisiting if
-// upstream coercion bugs surface as missing inject entries downstream.
+// Type-coercion contract. The inner anonymous function copies only
+// string-valued entries: map[string]string is copied verbatim;
+// *types.OrderedMap[any] (the post-round-trip-fidelity decode shape for
+// nested objects) and map[string]any (legacy in-memory test-fixture shape)
+// are copied entry-by-entry, keeping only the entries whose values
+// type-assert to string. Non-string values are silently dropped. The
+// string-only restriction matches the IR's IREdge.Inject schema (string
+// values per delivery key); the silent drop is the function's current
+// behaviour and may need revisiting if upstream coercion bugs surface as
+// missing inject entries downstream. The verbose-array form (encoded as
+// []any) is not currently handled at this layer; if a custom mechanism
+// authored with the verbose form reaches here, the type-switch falls through
+// silently.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
@@ -295,5 +303,8 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 	convert("env", inject.Env)
 	convert("file", inject.File)
 	convert("arg", inject.Arg)
+	for mech, payload := range inject.Additional.All() {
+		convert(mech, payload)
+	}
 	return result
 }

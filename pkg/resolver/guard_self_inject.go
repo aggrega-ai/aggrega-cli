@@ -96,6 +96,44 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				}
 			}
 		}
+
+		// Check for cross-mechanism collisions within the self-inject block:
+		// the same delivery key declared on more than one mechanism (e.g.,
+		// inject.ssm_param.DB_URL and inject.env.DB_URL) is a contradiction
+		// because the runtime cannot deliver the same key from two different
+		// sources simultaneously. Symmetric to the rule-3 self-vs-uses check
+		// above; same emission shape (ErrInjectKeyCollision).
+		mechsByKey := map[string][]string{}
+		for mech, keys := range selfKeys {
+			for _, key := range keys {
+				mechsByKey[key] = append(mechsByKey[key], mech)
+			}
+		}
+		collisionKeys := make([]string, 0, len(mechsByKey))
+		for key, mechs := range mechsByKey {
+			if len(mechs) > 1 {
+				collisionKeys = append(collisionKeys, key)
+			}
+		}
+		sort.Strings(collisionKeys)
+		for _, key := range collisionKeys {
+			mechs := mechsByKey[key]
+			sort.Strings(mechs)
+			for _, mech := range mechs {
+				others := make([]string, 0, len(mechs)-1)
+				for _, other := range mechs {
+					if other != mech {
+						others = append(others, other)
+					}
+				}
+				errs = append(errs, &ResolverError{
+					Entity:  entity,
+					Field:   fmt.Sprintf(".spec.components[%q].inject.%s[%q]", compName, mech, key),
+					Message: fmt.Sprintf("delivery key %q in mechanism %q collides with declaration in mechanism(s) %v", key, mech, others),
+					Err:     ErrInjectKeyCollision,
+				})
+			}
+		}
 	}
 
 	sortResolverErrors(errs)
@@ -103,9 +141,12 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 }
 
 // collectInjectMechanisms returns the mechanism names present in an
-// InjectBlock, sorted alphabetically for deterministic iteration. Treats
-// nil sub-fields (Env, File, Arg) as absence; additional mechanisms are
-// included by key. Does not mutate the input.
+// InjectBlock. Core mechanisms (env, file, arg) populate first in their
+// struct-field order when their sub-field is non-nil; custom mechanisms
+// from Additional follow in author order via OrderedMap.All(). User-facing
+// error emission is canonicalised by sortResolverErrors at the resolver
+// boundary; this helper's slice ordering is semantic-only. Does not mutate
+// the input.
 func collectInjectMechanisms(inject *types.InjectBlock) []string {
 	var mechs []string
 	if inject.Env != nil {
@@ -120,14 +161,16 @@ func collectInjectMechanisms(inject *types.InjectBlock) []string {
 	for k := range inject.Additional.All() {
 		mechs = append(mechs, k)
 	}
-	sort.Strings(mechs)
 	return mechs
 }
 
-// collectInjectDeliveryKeys returns delivery-key names indexed by
-// mechanism name. Each per-mechanism slice is sorted alphabetically
-// for deterministic iteration. Returns an empty map when inject is nil
-// or carries no recognized shape. Does not mutate the input.
+// collectInjectDeliveryKeys returns delivery-key names indexed by mechanism
+// name. The outer iteration walks core mechanisms (env, file, arg) followed
+// by custom mechanisms from Additional in author order via OrderedMap.All();
+// the per-mechanism inner delivery-key slice is sorted alphabetically for
+// deterministic iteration of the keys downstream callers walk. Returns an
+// empty map when inject is nil or carries no recognized shape. Does not
+// mutate the input.
 func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 	result := map[string][]string{}
 	if inject == nil {
@@ -162,10 +205,12 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 }
 
 // collectUsesInjectDeliveryKeys returns delivery-key names indexed by
-// mechanism name across every uses-level inject block on a component. Each
-// per-mechanism slice is sorted alphabetically for deterministic
-// iteration. Returns an empty map when uses is empty or no verbose-form
-// socket carries inject directives. Does not mutate the input.
+// mechanism name across every uses-level inject block on a component. The
+// outer iteration walks core mechanisms (env, file, arg) followed by custom
+// mechanisms from Additional in author order via OrderedMap.All(); the
+// per-mechanism inner delivery-key slice is sorted alphabetically for
+// deterministic iteration. Returns an empty map when uses is empty or no
+// verbose-form socket carries inject directives. Does not mutate the input.
 //
 // Compact-form sockets (string arrays) carry no inject directives and are
 // skipped. Verbose-form sockets walk the typed VerboseUsesEntry slice and

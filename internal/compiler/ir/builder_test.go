@@ -385,3 +385,84 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 		t.Fatal("expected infra mapping for api")
 	}
 }
+
+// TestConvertInjectBlock_AdditionalIteration pins the IR-edge per-mechanism
+// shape when the source InjectBlock carries custom mechanisms in Additional.
+// The three core mechanisms surface first in struct-field order (env, file,
+// arg); custom mechanisms follow in author order via OrderedMap.All().
+func TestConvertInjectBlock_AdditionalIteration(t *testing.T) {
+	t.Parallel()
+
+	inject := &types.InjectBlock{
+		Env: map[string]any{"DB_URL": "host"},
+	}
+	ssm := types.NewOrderedMap[any]()
+	ssm.Set("DB_PASSWORD", "connection.password")
+	ssm.Set("API_KEY", "connection.token")
+	inject.Additional.Set("ssm_param", ssm)
+
+	vault := types.NewOrderedMap[any]()
+	vault.Set("VAULT_TOKEN", "vault.token")
+	inject.Additional.Set("vault_secret", vault)
+
+	result := convertInjectBlock(inject)
+
+	wantOuter := []string{"env", "ssm_param", "vault_secret"}
+	gotOuter := result.Keys()
+	if len(gotOuter) != len(wantOuter) {
+		t.Fatalf("outer Keys len = %d, want %d (got %v)", len(gotOuter), len(wantOuter), gotOuter)
+	}
+	for i, want := range wantOuter {
+		if gotOuter[i] != want {
+			t.Errorf("outer Keys[%d] = %q, want %q (full=%v)", i, gotOuter[i], want, gotOuter)
+		}
+	}
+
+	// Inner ssm_param map carries DB_PASSWORD then API_KEY in author order.
+	ssmInner, ok := result.Get("ssm_param")
+	if !ok {
+		t.Fatalf("result missing ssm_param")
+	}
+	wantSsm := []string{"DB_PASSWORD", "API_KEY"}
+	gotSsm := ssmInner.Keys()
+	for i, want := range wantSsm {
+		if i >= len(gotSsm) || gotSsm[i] != want {
+			t.Errorf("ssm_param inner Keys[%d] = %v, want %q", i, gotSsm, want)
+		}
+	}
+	if v, _ := ssmInner.Get("DB_PASSWORD"); v != "connection.password" {
+		t.Errorf("ssm_param.DB_PASSWORD = %q, want %q", v, "connection.password")
+	}
+
+	// Vault inner is a single-key map.
+	vaultInner, ok := result.Get("vault_secret")
+	if !ok {
+		t.Fatalf("result missing vault_secret")
+	}
+	if v, _ := vaultInner.Get("VAULT_TOKEN"); v != "vault.token" {
+		t.Errorf("vault_secret.VAULT_TOKEN = %q, want %q", v, "vault.token")
+	}
+}
+
+// TestConvertInjectBlock_CoreOnlyUnchanged pins the bare-three-mechanism
+// behaviour. The new Additional iteration is a no-op when Additional is
+// empty; the result shape matches the pre-WI behaviour.
+func TestConvertInjectBlock_CoreOnlyUnchanged(t *testing.T) {
+	t.Parallel()
+
+	inject := &types.InjectBlock{
+		Env:  map[string]any{"PORT": "8080"},
+		File: map[string]any{"config": "config.path"},
+	}
+
+	result := convertInjectBlock(inject)
+	if result.Len() != 2 {
+		t.Fatalf("result.Len = %d, want 2 (env+file); got %v", result.Len(), result.Keys())
+	}
+	if _, ok := result.Get("env"); !ok {
+		t.Errorf("result missing env")
+	}
+	if _, ok := result.Get("file"); !ok {
+		t.Errorf("result missing file")
+	}
+}
