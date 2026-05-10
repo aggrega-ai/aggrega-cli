@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
@@ -161,5 +162,55 @@ func TestPurgeParameters(t *testing.T) {
 	PurgeParameters(&params)
 	if params != nil {
 		t.Errorf("expected nil after purge, got %v", params)
+	}
+}
+
+// TestOrderedMapToPlain_NestedOrderedMapShapes_RecursivelyUnwraps pins
+// orderedMapToPlain's delegation to TemplateAlphabeticalMapDeep. The fixture
+// shape mirrors what round-trip-fidelity JSON/YAML unmarshal produces for a
+// nested Release.spec.parameters block: an outer OrderedMap[any] whose
+// values include nested *OrderedMap[any] entries. After conversion the
+// result must be a fully-unwrapped map[string]any walkable by Go templates
+// via dotted field-access syntax (.parameters.db.host).
+func TestOrderedMapToPlain_NestedOrderedMapShapes_RecursivelyUnwraps(t *testing.T) {
+	t.Parallel()
+
+	dbInfra := types.NewOrderedMap[any]()
+	dbInfra.Set("host", "db.svc.cluster.local")
+	dbInfra.Set("port", "5432")
+
+	release := types.OrderedMap[any]{}
+	release.Set("db", dbInfra)
+	release.Set("app_name", "billing-api")
+
+	result := orderedMapToPlain(release)
+	if result == nil {
+		t.Fatal("orderedMapToPlain returned nil for non-empty input")
+	}
+
+	dbAny, ok := result["db"]
+	if !ok {
+		t.Fatal("result missing key 'db'")
+	}
+	dbMap, ok := dbAny.(map[string]any)
+	if !ok {
+		t.Fatalf("result[db] type = %T, want map[string]any (recursive unwrap should have flattened the nested OrderedMap)", dbAny)
+	}
+	if got, _ := dbMap["host"].(string); got != "db.svc.cluster.local" {
+		t.Errorf("result[db][host] = %v, want db.svc.cluster.local", dbMap["host"])
+	}
+
+	tmpl, err := template.New("test").Parse(`{{ .parameters.db.host }}:{{ .parameters.db.port }}`)
+	if err != nil {
+		t.Fatalf("template parse: %v", err)
+	}
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, map[string]any{"parameters": result}); err != nil {
+		t.Fatalf("template execute: %v", err)
+	}
+	got := buf.String()
+	want := "db.svc.cluster.local:5432"
+	if got != want {
+		t.Errorf("template output = %q, want %q", got, want)
 	}
 }

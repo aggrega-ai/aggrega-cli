@@ -132,3 +132,47 @@ func TestGuardRequiredUsesSockets_SubsystemRecursion(t *testing.T) {
 		t.Errorf("expected nested-api in field path, got %q", errs[0].Field)
 	}
 }
+
+// TestSocketIsPopulated_NestedOrderedMapShape_RecognizesPopulated pins the
+// OrderedMap-aware arms of socketIsPopulated. Under round-trip-fidelity
+// decoding, the verbose `uses` form decodes into *types.OrderedMap[any]
+// (rather than map[string]any); the guard's switch must recognize the
+// OrderedMap shape as populated when it has entries and unpopulated when
+// it is empty.
+func TestSocketIsPopulated_NestedOrderedMapShape_RecognizesPopulated(t *testing.T) {
+	t.Parallel()
+
+	t.Run("populated_OrderedMap", func(t *testing.T) {
+		t.Parallel()
+		entry := types.NewOrderedMap[any]()
+		entry.Set("target", "main-db")
+		uses := types.OrderedMap[any]{}
+		uses.Set("databases", entry)
+		if !socketIsPopulated(uses, "databases") {
+			t.Error("populated *OrderedMap[any] should count as populated, got false")
+		}
+	})
+
+	t.Run("empty_OrderedMap", func(t *testing.T) {
+		t.Parallel()
+		empty := types.NewOrderedMap[any]()
+		uses := types.OrderedMap[any]{}
+		uses.Set("databases", empty)
+		if socketIsPopulated(uses, "databases") {
+			t.Error("empty *OrderedMap[any] should count as unpopulated, got true")
+		}
+	})
+
+	t.Run("nested_OrderedMap_OrderedMap_populated", func(t *testing.T) {
+		t.Parallel()
+		inner := types.NewOrderedMap[any]()
+		inner.Set("alias", "main-db")
+		outer := types.NewOrderedMap[*types.OrderedMap[any]]()
+		outer.Set("entry", inner)
+		uses := types.OrderedMap[any]{}
+		uses.Set("databases", outer)
+		if !socketIsPopulated(uses, "databases") {
+			t.Error("populated *OrderedMap[*OrderedMap[any]] should count as populated, got false")
+		}
+	})
+}

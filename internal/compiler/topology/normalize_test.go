@@ -52,8 +52,8 @@ func mkUses(pairs ...any) types.OrderedMap[any] {
 }
 
 // mkOM builds a *types.OrderedMap[any] in the order given. Used in tests
-// to construct nested OrderedMap shapes that mirror what the gamma-aware
-// JSON/YAML decode path produces in production.
+// to construct nested OrderedMap shapes that mirror what the recursive
+// V=any JSON/YAML decode path produces in production.
 func mkOM(pairs ...any) *types.OrderedMap[any] {
 	m := types.NewOrderedMap[any]()
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -216,5 +216,40 @@ func TestNormalizeUses_VerboseSimpleString(t *testing.T) {
 	}
 	if edges[0].Target != "target-db-name" || edges[0].Alias != "my-db" {
 		t.Errorf("edge: %+v", edges[0])
+	}
+}
+
+// TestNormalizeUses_VerboseFormPreservesAuthorOrder exercises the
+// verbose-form alias loop with multiple aliases authored in non-alphabetical
+// order. Pins the author-order traversal contract: the inner loop iterates
+// the OrderedMap via .All() rather than sort.Strings(aliases), so the emitted
+// edge order matches the author's authoring sequence (z, a, m), not
+// alphabetical.
+func TestNormalizeUses_VerboseFormPreservesAuthorOrder(t *testing.T) {
+	t.Parallel()
+
+	uses := mkUses("databases", mkOM(
+		"z-alias", mkOM("target", "z-target"),
+		"a-alias", mkOM("target", "a-target"),
+		"m-alias", mkOM("target", "m-target"),
+	))
+	edges, err := normalizeUses(uses, "src", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(edges) != 3 {
+		t.Fatalf("expected 3 edges, got %d", len(edges))
+	}
+	wantAliases := []string{"z-alias", "a-alias", "m-alias"}
+	for i, want := range wantAliases {
+		if edges[i].Alias != want {
+			t.Errorf("edge[%d].Alias = %q, want %q (author order, not alphabetical)", i, edges[i].Alias, want)
+		}
+	}
+	wantTargets := []string{"z-target", "a-target", "m-target"}
+	for i, want := range wantTargets {
+		if edges[i].Target != want {
+			t.Errorf("edge[%d].Target = %q, want %q", i, edges[i].Target, want)
+		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -741,7 +742,7 @@ func TestOrderedMap_ReUnmarshalIntoPopulatedReplacesContent(t *testing.T) {
 	})
 }
 
-// --- JSON-side gamma round-trip fidelity ---
+// --- JSON-side round-trip fidelity ---
 
 func TestOrderedMapInterface_RoundTripFidelity_HighPrecisionInt(t *testing.T) {
 	t.Parallel()
@@ -943,7 +944,8 @@ type customJSONV struct {
 }
 
 // UnmarshalJSON intentionally ignores input and writes a sentinel value;
-// the test verifies gamma's recursive path defers to this method.
+// the test verifies the recursive V=any decode path defers to this method
+// when V (or *V) implements json.Unmarshaler.
 func (c *customJSONV) UnmarshalJSON(_ []byte) error {
 	c.Sentinel = "from-custom-unmarshal"
 	return nil
@@ -1033,7 +1035,7 @@ func TestOrderedMap_VConcreteWithoutUnmarshalJSON_UsesTypedDecodePath(t *testing
 	}
 }
 
-// --- YAML-side gamma round-trip fidelity ---
+// --- YAML-side round-trip fidelity ---
 
 func TestOrderedMapInterface_YAMLRoundTripFidelity_HighPrecisionInt(t *testing.T) {
 	t.Parallel()
@@ -1174,7 +1176,8 @@ type customYAMLV struct {
 }
 
 // UnmarshalYAML intentionally ignores the input node and writes a sentinel;
-// the test verifies gamma's recursive path defers to this method.
+// the test verifies the recursive V=any decode path defers to this method
+// when V (or *V) implements yaml.Unmarshaler.
 func (c *customYAMLV) UnmarshalYAML(_ *yaml.Node) error {
 	c.Sentinel = "from-custom-yaml-unmarshal"
 	return nil
@@ -1195,4 +1198,261 @@ func TestOrderedMap_VImplementsYAMLUnmarshaler_DelegatesToYAMLUnmarshaler(t *tes
 	if v == nil || v.Sentinel != "from-custom-yaml-unmarshal" {
 		t.Errorf("Sentinel mismatch: %+v", v)
 	}
+}
+
+// --- TemplateAlphabeticalMapDeep ---
+
+func TestOrderedMap_TemplateAlphabeticalMapDeep_FlatValues(t *testing.T) {
+	t.Parallel()
+	m := NewOrderedMap[any]()
+	m.Set("alpha", 1)
+	m.Set("beta", "two")
+	m.Set("gamma", true)
+
+	got := m.TemplateAlphabeticalMapDeep()
+	if len(got) != 3 {
+		t.Fatalf("length = %d, want 3", len(got))
+	}
+	if got["alpha"] != 1 || got["beta"] != "two" || got["gamma"] != true {
+		t.Errorf("flat values mismatch: %v", got)
+	}
+}
+
+func TestOrderedMap_TemplateAlphabeticalMapDeep_NestedOrderedMap(t *testing.T) {
+	t.Parallel()
+	inner := NewOrderedMap[any]()
+	inner.Set("host", "db.local")
+	inner.Set("port", 5432)
+
+	outer := NewOrderedMap[any]()
+	outer.Set("db", inner)
+
+	got := outer.TemplateAlphabeticalMapDeep()
+	dbMap, ok := got["db"].(map[string]any)
+	if !ok {
+		t.Fatalf("got[db] type = %T, want map[string]any (nested OrderedMap should unwrap)", got["db"])
+	}
+	if dbMap["host"] != "db.local" || dbMap["port"] != 5432 {
+		t.Errorf("inner values mismatch: %v", dbMap)
+	}
+}
+
+func TestOrderedMap_TemplateAlphabeticalMapDeep_NestedArray(t *testing.T) {
+	t.Parallel()
+	first := NewOrderedMap[any]()
+	first.Set("name", "alpha")
+	second := NewOrderedMap[any]()
+	second.Set("name", "beta")
+
+	m := NewOrderedMap[any]()
+	m.Set("items", []any{first, second})
+
+	got := m.TemplateAlphabeticalMapDeep()
+	arr, ok := got["items"].([]any)
+	if !ok {
+		t.Fatalf("got[items] type = %T, want []any", got["items"])
+	}
+	if len(arr) != 2 {
+		t.Fatalf("array length = %d, want 2", len(arr))
+	}
+	firstMap, ok := arr[0].(map[string]any)
+	if !ok {
+		t.Fatalf("arr[0] type = %T, want map[string]any (nested OrderedMap inside slice should unwrap)", arr[0])
+	}
+	if firstMap["name"] != "alpha" {
+		t.Errorf("arr[0][name] = %v, want alpha", firstMap["name"])
+	}
+}
+
+func TestOrderedMap_TemplateAlphabeticalMapDeep_DeepNesting(t *testing.T) {
+	t.Parallel()
+	level3 := NewOrderedMap[any]()
+	level3.Set("leaf", "value")
+	level2 := NewOrderedMap[any]()
+	level2.Set("L3", level3)
+	level1 := NewOrderedMap[any]()
+	level1.Set("L2", level2)
+	root := NewOrderedMap[any]()
+	root.Set("L1", level1)
+
+	got := root.TemplateAlphabeticalMapDeep()
+	cur := got
+	for i, key := range []string{"L1", "L2", "L3"} {
+		nested, ok := cur[key].(map[string]any)
+		if !ok {
+			t.Fatalf("level %d key %q type = %T, want map[string]any", i+1, key, cur[key])
+		}
+		cur = nested
+	}
+	if cur["leaf"] != "value" {
+		t.Errorf("leaf value = %v, want value", cur["leaf"])
+	}
+}
+
+func TestOrderedMap_TemplateAlphabeticalMapDeep_TemplateExecutability(t *testing.T) {
+	t.Parallel()
+	dbInfra := NewOrderedMap[any]()
+	dbInfra.Set("host", "db.svc")
+	dbInfra.Set("port", 5432)
+	root := NewOrderedMap[any]()
+	root.Set("db", dbInfra)
+
+	flat := root.TemplateAlphabeticalMapDeep()
+
+	tmpl, err := template.New("t").Parse(`{{ .db.host }}:{{ .db.port }}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, flat); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	got := buf.String()
+	want := "db.svc:5432"
+	if got != want {
+		t.Errorf("output = %q, want %q", got, want)
+	}
+}
+
+func TestOrderedMap_TemplateAlphabeticalMapDeep_PreservesScalars(t *testing.T) {
+	t.Parallel()
+	m := NewOrderedMap[any]()
+	m.Set("num", json.Number("42"))
+	m.Set("str", "text")
+	m.Set("flag", true)
+	m.Set("nothing", nil)
+
+	got := m.TemplateAlphabeticalMapDeep()
+	if got["num"] != json.Number("42") {
+		t.Errorf("num: got %T %v, want json.Number 42", got["num"], got["num"])
+	}
+	if got["str"] != "text" {
+		t.Errorf("str: got %v", got["str"])
+	}
+	if got["flag"] != true {
+		t.Errorf("flag: got %v", got["flag"])
+	}
+	if v, ok := got["nothing"]; !ok || v != nil {
+		t.Errorf("nothing: got %v ok=%v, want nil ok=true", v, ok)
+	}
+}
+
+// --- Typed-V backward compatibility ---
+
+// TestOrderedMap_TypedV_DoesNotRecurse pins the design choice that the
+// recursive decode path runs only when V is any. Typed V (string, int,
+// custom struct) takes the typed-decode path; vIsInterface[V]() returns
+// false; the V-method-set reflection dispatch invokes V's UnmarshalJSON
+// when present and falls through to plain json.Unmarshal otherwise. Typed-V
+// round-trip behavior is identical to the pre-recursive-decode shape at
+// every typed-V site.
+func TestOrderedMap_TypedV_DoesNotRecurse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("string", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`{"alpha":"one","beta":"two"}`)
+		var m OrderedMap[string]
+		if err := json.Unmarshal(input, &m); err != nil {
+			t.Fatalf("json unmarshal: %v", err)
+		}
+		out, err := json.Marshal(&m)
+		if err != nil {
+			t.Fatalf("json marshal: %v", err)
+		}
+		if !bytes.Equal(out, input) {
+			t.Errorf("round-trip diverged:\ninput:  %s\noutput: %s", input, out)
+		}
+		if v, _ := m.Get("alpha"); v != "one" {
+			t.Errorf("Get(alpha) = %q, want one", v)
+		}
+	})
+
+	t.Run("int", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`{"a":1,"b":2,"c":3}`)
+		var m OrderedMap[int]
+		if err := json.Unmarshal(input, &m); err != nil {
+			t.Fatalf("json unmarshal: %v", err)
+		}
+		out, err := json.Marshal(&m)
+		if err != nil {
+			t.Fatalf("json marshal: %v", err)
+		}
+		if !bytes.Equal(out, input) {
+			t.Errorf("round-trip diverged:\ninput:  %s\noutput: %s", input, out)
+		}
+		if v, _ := m.Get("b"); v != 2 {
+			t.Errorf("Get(b) = %d, want 2", v)
+		}
+	})
+
+	t.Run("nested_typed", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`{"outer":{"inner":42}}`)
+		var m OrderedMap[OrderedMap[int]]
+		if err := json.Unmarshal(input, &m); err != nil {
+			t.Fatalf("json unmarshal: %v", err)
+		}
+		inner, ok := m.Get("outer")
+		if !ok {
+			t.Fatal("Get(outer) ok=false")
+		}
+		if v, _ := inner.Get("inner"); v != 42 {
+			t.Errorf("inner Get(inner) = %d, want 42", v)
+		}
+	})
+
+	t.Run("custom_struct", func(t *testing.T) {
+		type leaf struct {
+			Name  string `json:"name" yaml:"name"`
+			Count int    `json:"count" yaml:"count"`
+		}
+		t.Parallel()
+		input := []byte(`{"first":{"name":"alpha","count":1},"second":{"name":"beta","count":2}}`)
+		var m OrderedMap[leaf]
+		if err := json.Unmarshal(input, &m); err != nil {
+			t.Fatalf("json unmarshal: %v", err)
+		}
+		out, err := json.Marshal(&m)
+		if err != nil {
+			t.Fatalf("json marshal: %v", err)
+		}
+		if !bytes.Equal(out, input) {
+			t.Errorf("round-trip diverged:\ninput:  %s\noutput: %s", input, out)
+		}
+		v, _ := m.Get("second")
+		if v.Name != "beta" || v.Count != 2 {
+			t.Errorf("Get(second) = %+v, want {Name:beta Count:2}", v)
+		}
+	})
+
+	t.Run("yaml_typed", func(t *testing.T) {
+		t.Parallel()
+		input := []byte("a: 1\nb: 2\nc: 3\n")
+		var m OrderedMap[int]
+		if err := yaml.Unmarshal(input, &m); err != nil {
+			t.Fatalf("yaml unmarshal: %v", err)
+		}
+		out, err := yaml.Marshal(&m)
+		if err != nil {
+			t.Fatalf("yaml marshal: %v", err)
+		}
+		if !bytes.Equal(out, input) {
+			t.Errorf("yaml round-trip diverged:\ninput:  %s\noutput: %s", input, out)
+		}
+	})
+
+	t.Run("vIsInterface_typed_returns_false", func(t *testing.T) {
+		t.Parallel()
+		if vIsInterface[string]() {
+			t.Error("vIsInterface[string]() = true, want false")
+		}
+		if vIsInterface[int]() {
+			t.Error("vIsInterface[int]() = true, want false")
+		}
+		if !vIsInterface[any]() {
+			t.Error("vIsInterface[any]() = false, want true")
+		}
+	})
 }

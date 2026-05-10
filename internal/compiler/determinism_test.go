@@ -344,3 +344,49 @@ func tokenAsString(tok any) string {
 		return string(b)
 	}
 }
+
+// TestDeterministicCompilation_OrderedMapInterfaceRoundTripIsByteIdentical
+// pins the OrderedMap round-trip determinism contract at the OrderedMap[any]
+// type level. The fixture exercises the recursive decode path with mixed
+// shapes (nested objects, arrays of objects, high-precision integers, mixed
+// scalars) and asserts byte-identical JSON marshal output across 10
+// iterations. Guards against three potential non-determinism sources in the
+// recursive-decode machinery:
+//
+//   - depth-counter race (ruled out by per-call stack-allocated parameter,
+//     this iteration loop confirms in practice);
+//   - reflection-cache race (sync.Map.LoadOrStore is documented atomic, this
+//     loop confirms under concurrent test execution under -race);
+//   - json.Number formatting drift (impossible because json.Number stores
+//     the source string verbatim, this loop confirms).
+//
+// Companion to TestDeterministicCompilation_FullPipeline — that test pins
+// determinism at the rendered-artifact level; this one pins it at the
+// OrderedMap-decode level.
+func TestDeterministicCompilation_OrderedMapInterfaceRoundTripIsByteIdentical(t *testing.T) {
+	t.Parallel()
+
+	fixture := []byte(`{"meta":{"version":"1.2.3","tags":["alpha","beta"]},"big":9007199254740993,"items":[{"z":1,"a":2}],"flag":true,"flat":"value"}`)
+
+	var first []byte
+	for i := 0; i < 10; i++ {
+		var om types.OrderedMap[any]
+		if err := json.Unmarshal(fixture, &om); err != nil {
+			t.Fatalf("iteration %d unmarshal: %v", i, err)
+		}
+		out, err := json.Marshal(&om)
+		if err != nil {
+			t.Fatalf("iteration %d marshal: %v", i, err)
+		}
+		if i == 0 {
+			first = out
+			if !bytes.Equal(first, fixture) {
+				t.Errorf("iteration 0 round-trip diverged from input\ninput:  %s\noutput: %s", fixture, first)
+			}
+			continue
+		}
+		if !bytes.Equal(out, first) {
+			t.Fatalf("iteration %d byte-mismatch vs iteration 0\nfirst:  %s\nlater:  %s", i, first, out)
+		}
+	}
+}
