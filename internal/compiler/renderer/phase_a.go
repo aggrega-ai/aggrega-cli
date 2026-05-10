@@ -20,7 +20,44 @@ type FeatureRecipeRef struct {
 // It iterates FeatureRecipes in the provided order (5-Tier Onion Model from ir.FeatureOrder),
 // evaluates each injectMapping template, and deep-merges the output over ctx.Context.Inject.
 // For each FeatureRecipe, .values and .infra are swapped to the feature's own values/infra.
+//
+// The authored-mechanism set is collected once from ctx.InjectRaw — the
+// immutable Developer intent populated by BuildInjectPipe. The set is passed
+// into every ParseInjectMappingOutput call so the dangling-reference check
+// (every authored mechanism must surface in the parsed FR injectMapping
+// output) sees the full Component- or Feature-attachment authoring at every
+// FR iteration. ctx.InjectRaw must be either nil or a *types.InjectBlock per
+// the field's contract; any other concrete type indicates a contract
+// violation upstream and produces a loud halt rather than silently skipping
+// the dangling-reference check.
 func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef) error {
+	var authored []string
+	if ctx.InjectRaw != nil {
+		rawBlock, ok := ctx.InjectRaw.(*types.InjectBlock)
+		if !ok {
+			return cerrors.Wrap(
+				fmt.Errorf("phase A: unexpected InjectRaw type %T (expected *types.InjectBlock)", ctx.InjectRaw),
+				cerrors.TranslationError,
+				cerrors.SourceLocation{},
+				"phase A: authored-mechanism collection",
+			)
+		}
+		if rawBlock != nil {
+			if rawBlock.Env != nil {
+				authored = append(authored, "env")
+			}
+			if rawBlock.File != nil {
+				authored = append(authored, "file")
+			}
+			if rawBlock.Arg != nil {
+				authored = append(authored, "arg")
+			}
+			for k := range rawBlock.Additional.All() {
+				authored = append(authored, k)
+			}
+		}
+	}
+
 	for _, ref := range featureRecipes {
 		if ref.FeatureRecipe == nil {
 			continue
@@ -54,7 +91,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 
 		// Parse the output and deep-merge over the inject pipe
-		overlay, err := ParseInjectMappingOutput(output)
+		overlay, err := ParseInjectMappingOutput(output, authored)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},

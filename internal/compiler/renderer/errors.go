@@ -12,6 +12,7 @@ var (
 	ErrJsonnetNotSupported          = errors.New("valuesMappingJsonnet is not supported; use valuesMapping or valuesMappingFile")
 	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
+	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output")
 
 	// ErrUnknownProvider is the compiler-level fatal halt produced by the
 	// build-time engineFactory when a Recipe declares a provider name that
