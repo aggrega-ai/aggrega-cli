@@ -152,6 +152,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Pass 2a: Self-inject resolution (component-level inject)
 		inject, injectRaw := BuildInjectPipe(node.SelfInject)
+		var selfKeys map[string]map[string]string
 		if node.SelfInject != nil {
 			siCtx := SelfInjectContext{
 				Values: tmplCtxValues(graph, nodeID),
@@ -166,13 +167,23 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 					},
 				},
 			}
-			if _, err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx); err != nil {
+			var err error
+			selfKeys, err = ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx)
+			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q Pass 2a", nodeID))
 			}
 		}
 
 		// Pass 2b: Rehydrate inject from uses-edge provides
 		RehydrateInjectFromProvides(&inject, graph.Spec.Edges, nodeID, allProvides)
+
+		// Pass 2 collision check: self-inject vs uses-inject (post-2b, pre-Phase-A).
+		// Phase A's overlay merge runs downstream and is structurally invisible
+		// here per the FeatureRecipe-interception exemption documented in the
+		// inject-key-collision-guard rationale.
+		if err := CheckSelfInjectCollisions(selfKeys, graph.Spec.Edges, nodeID); err != nil {
+			return nil, err
+		}
 
 		// Build template context
 		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, inject, injectRaw)

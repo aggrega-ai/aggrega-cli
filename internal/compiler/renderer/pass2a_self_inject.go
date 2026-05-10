@@ -68,20 +68,100 @@ func ExecutePass2a(
 	return selfKeys, nil
 }
 
-// CheckSelfInjectCollisions checks that no key was written by both self-inject and uses-inject.
-func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, inject types.InjectPipe, nodeID string) error {
+// CheckSelfInjectCollisions detects self-inject vs uses-inject delivery key
+// collisions visible at the static authoring layer: selfKeys (component-level
+// inject author keys) compared against uses-inject keys derived from the
+// node's outgoing edges in the IR graph. Halt-always policy: presence in both
+// sources is sufficient signal regardless of value equality —
+// presence in both sources is sufficient signal regardless of value equality;
+// authors resolve by removing one source.
+//
+// The LDR anticipates a second detection layer for template-expanded keys
+// (delivery keys produced by self-inject value: template evaluation that may
+// collide with uses-inject hydrated keys at render time). That layer is not
+// yet wired; this function's scope is the static authoring layer only.
+//
+// FR-interception (FeatureRecipe injectMapping overwriting a developer-
+// declared key) is explicitly NOT a collision (interception by design,
+// governed by the 5-Tier Onion Model's last-wins semantics) — that path is
+// structurally below this function (Phase A overlay merge happens in
+// merge.go::DeepMergeInjectStructured, which this function does not touch).
+// The collision check is invoked by the renderer orchestrator after Pass 2b
+// (RehydrateInjectFromProvides) and before Phase A; Phase A's overwrites are
+// not observable from this function's inputs by construction.
+//
+// Returns the first collision wrapped via cerrors.Wrap with DeveloperError
+// category. Multiple collisions on the same node sort by (mechanism,
+// deliveryKey, usesSocket) for deterministic emission across runs of the
+// same input.
+func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, usesEdges []types.IREdge, nodeID string) error {
 	if len(selfKeys) == 0 {
 		return nil
 	}
 
-	// After Pass 2b, check if any self-inject key was overwritten by uses-inject
-	// This means both sources wrote the same key → collision
-	// We detect by checking if the current value differs from what self-inject wrote
-	// Actually simpler: we track self-inject keys and uses-inject keys separately
-	// Today we rely on the Step 1 resolver catching static collisions.
-	// Runtime collision detection for template-expanded keys is a future enhancement.
+	// Collect static uses-inject (mechanism, deliveryKey, socket) tuples
+	// from edges sourced at this node.
+	type usesEntry struct {
+		socket string
+	}
+	usesByKey := map[string]map[string][]usesEntry{} // mechanism → deliveryKey → []usesEntry
+	for _, edge := range usesEdges {
+		if edge.Source != nodeID || edge.Inject.Len() == 0 {
+			continue
+		}
+		for mech, mechMap := range edge.Inject.All() {
+			if _, ok := usesByKey[mech]; !ok {
+				usesByKey[mech] = map[string][]usesEntry{}
+			}
+			for key := range mechMap.All() {
+				usesByKey[mech][key] = append(usesByKey[mech][key], usesEntry{socket: edge.Socket})
+			}
+		}
+	}
 
-	return nil
+	type collision struct {
+		mechanism, deliveryKey, usesSocket string
+	}
+	var collisions []collision
+	for mech, keys := range selfKeys {
+		mechUses, ok := usesByKey[mech]
+		if !ok {
+			continue
+		}
+		for key := range keys {
+			entries, present := mechUses[key]
+			if !present {
+				continue
+			}
+			for _, entry := range entries {
+				collisions = append(collisions, collision{mechanism: mech, deliveryKey: key, usesSocket: entry.socket})
+			}
+		}
+	}
+	if len(collisions) == 0 {
+		return nil
+	}
+
+	// Multi-level sort for deterministic emission across runs:
+	// (mechanism, deliveryKey, usesSocket).
+	sort.Slice(collisions, func(i, j int) bool {
+		if collisions[i].mechanism != collisions[j].mechanism {
+			return collisions[i].mechanism < collisions[j].mechanism
+		}
+		if collisions[i].deliveryKey != collisions[j].deliveryKey {
+			return collisions[i].deliveryKey < collisions[j].deliveryKey
+		}
+		return collisions[i].usesSocket < collisions[j].usesSocket
+	})
+
+	first := collisions[0]
+	return cerrors.Wrap(
+		fmt.Errorf("%w: delivery key %q in mechanism %q declared by both component-level self-inject and uses-level cross-inject (uses socket %q)",
+			ErrSelfInjectKeyCollision, first.deliveryKey, first.mechanism, first.usesSocket),
+		cerrors.DeveloperError,
+		cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf("node %q Pass 2 self-inject vs uses-inject collision", nodeID),
+	)
 }
 
 func processSelfInjectMechanism(
