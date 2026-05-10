@@ -34,18 +34,18 @@ import (
 // renderSourced loads the base compose file at chartPath, deep-merges the
 // values dict on top, and emits an Intermediate=true compose-fragment for
 // the Release-level merger to consume.
-func renderSourced(chartPath string, values map[string]interface{}, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+func renderSourced(chartPath string, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	raw, err := os.ReadFile(chartPath)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: read source %q", nodeCtx.NodeID, chartPath))
 	}
 
-	var base map[string]interface{}
+	var base map[string]any
 	if err := yaml.Unmarshal(raw, &base); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, chartPath))
 	}
 	if base == nil {
-		base = map[string]interface{}{}
+		base = map[string]any{}
 	}
 
 	merged := deepMergeOverlay(base, values)
@@ -88,11 +88,11 @@ func renderSourced(chartPath string, values map[string]interface{}, nodeCtx rend
 //   - When overlay lacks k, base[k] is preserved.
 //
 // Returns the merged map. Inputs may be nil; nil base treated as empty.
-func deepMergeOverlay(base, overlay map[string]interface{}) map[string]interface{} {
+func deepMergeOverlay(base, overlay map[string]any) map[string]any {
 	if base == nil {
-		base = map[string]interface{}{}
+		base = map[string]any{}
 	}
-	out := make(map[string]interface{}, len(base)+len(overlay))
+	out := make(map[string]any, len(base)+len(overlay))
 	for k, v := range base {
 		out[k] = v
 	}
@@ -114,16 +114,16 @@ func deepMergeOverlay(base, overlay map[string]interface{}) map[string]interface
 	return out
 }
 
-// asStringMap normalises a YAML-decoded interface to map[string]interface{}.
-// yaml.v3 decodes maps as either map[string]interface{} (when keys are
-// always strings) or map[interface{}]interface{} (when keys are mixed). The
+// asStringMap normalises a YAML-decoded interface to map[string]any.
+// yaml.v3 decodes maps as either map[string]any (when keys are
+// always strings) or map[any]any (when keys are mixed). The
 // merger needs string-keyed maps; this helper coerces the latter.
-func asStringMap(v interface{}) (map[string]interface{}, bool) {
+func asStringMap(v any) (map[string]any, bool) {
 	switch m := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		return m, true
-	case map[interface{}]interface{}:
-		out := make(map[string]interface{}, len(m))
+	case map[any]any:
+		out := make(map[string]any, len(m))
 		for k, val := range m {
 			ks, ok := k.(string)
 			if !ok {

@@ -79,18 +79,18 @@ func TestGuardUsesSocket(t *testing.T) {
 			}
 		},
 	}
-	uses4 := types.OrderedMap[interface{}]{}
-	uses4.Set("targets", []interface{}{"api"})
-	uses5 := types.OrderedMap[interface{}]{}
-	uses5.Set("unknown-socket", []interface{}{"x"})
-	uses6 := types.OrderedMap[interface{}]{}
-	uses6.Set("something", []interface{}{"x"})
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"my-db"})
-	uses2 := types.OrderedMap[interface{}]{}
-	uses2.Set("caches", []interface{}{"my-cache"})
-	uses3 := types.OrderedMap[interface{}]{}
-	uses3.Set("anything", []interface{}{"target"})
+	uses4 := types.OrderedMap[any]{}
+	uses4.Set("targets", []any{"api"})
+	uses5 := types.OrderedMap[any]{}
+	uses5.Set("unknown-socket", []any{"x"})
+	uses6 := types.OrderedMap[any]{}
+	uses6.Set("something", []any{"x"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", []any{"my-db"})
+	uses2 := types.OrderedMap[any]{}
+	uses2.Set("caches", []any{"my-cache"})
+	uses3 := types.OrderedMap[any]{}
+	uses3.Set("anything", []any{"target"})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses4})
 	features2 := types.OrderedMap[types.FeatureInstance]{}
@@ -233,11 +233,11 @@ func TestGuardUsesSocket_DeterministicOrder(t *testing.T) {
 			return types.Feature{}, false
 		},
 	}
-	uses := types.OrderedMap[interface{}]{}
+	uses := types.OrderedMap[any]{}
 	uses.Set("a", nil)
-	uses2 := types.OrderedMap[interface{}]{}
+	uses2 := types.OrderedMap[any]{}
 	uses2.Set("b", nil)
-	uses3 := types.OrderedMap[interface{}]{}
+	uses3 := types.OrderedMap[any]{}
 	uses3.Set("c", nil)
 	components := types.OrderedMap[types.ComponentInstance]{
 

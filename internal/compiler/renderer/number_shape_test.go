@@ -110,13 +110,13 @@ func TestExecutePhaseB_YAMLBlockScalar(t *testing.T) {
 // asNumber.
 func TestExecutePhaseB_JSONShapedParity(t *testing.T) {
 	t.Parallel()
-	v := types.OrderedMap[interface{}]{}
+	v := types.OrderedMap[any]{}
 	v.Set("name", "demo")
 	v.Set("port", 8080)
 	ctx := &types.TemplateContext{Values: v}
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "json-shaped"},
-		Spec: types.RecipeSpec{ValuesMapping: `{"image": "demo:1.0", "name": "{{ .values.name }}", "port": {{ .values.port }}, "enabled": true, "tags": ["a", "b"]}`},
+		Spec:     types.RecipeSpec{ValuesMapping: `{"image": "demo:1.0", "name": "{{ .values.name }}", "port": {{ .values.port }}, "enabled": true, "tags": ["a", "b"]}`},
 	}
 	values, err := ExecutePhaseB(ctx, recipe)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestExecutePhaseB_JSONShapedParity(t *testing.T) {
 	if values["enabled"] != true {
 		t.Errorf("enabled: %v", values["enabled"])
 	}
-	tags, ok := values["tags"].([]interface{})
+	tags, ok := values["tags"].([]any)
 	if !ok || len(tags) != 2 || tags[0] != "a" || tags[1] != "b" {
 		t.Errorf("tags: %v", values["tags"])
 	}
@@ -148,10 +148,10 @@ func TestExecutePhaseB_JSONShapedParity(t *testing.T) {
 			t.Errorf("expected key %q missing from values map", k)
 		}
 	}
-	if _, isMap := interface{}(values).(map[string]interface{}); !isMap {
-		// The map IS map[string]interface{} by declaration — this just
+	if _, isMap := any(values).(map[string]any); !isMap {
+		// The map IS map[string]any by declaration — this just
 		// guards future signature drift.
-		t.Error("values is not map[string]interface{}")
+		t.Error("values is not map[string]any")
 	}
 	// strings.Contains check on a deterministic key — covers JSON-shape
 	// edge case where empty objects render differently.

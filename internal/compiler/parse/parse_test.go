@@ -51,7 +51,7 @@ func TestTemplateOutput_AcceptsBlockScalar(t *testing.T) {
 
 // TestIRPayload_BareIntegerDecodesAsFloat64 verifies the IR-payload decoder
 // is encoding/json-backed. encoding/json's documented behaviour when the
-// destination is interface{} is to decode every JSON number as float64,
+// destination is any is to decode every JSON number as float64,
 // which the IR consumers rely on. yaml.v3 would decode the same input as
 // int — exposing a name mismatch between the two helpers protects against
 // silent encoder swaps.

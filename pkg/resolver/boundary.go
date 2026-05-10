@@ -35,12 +35,12 @@ import (
 // including its inner sub-boundary" declare syncWave: 1 on both. The IR
 // builder reads bi.SyncWave to populate IRNode.SyncWave per-component.
 type BoundaryInfra struct {
-	Infra        types.OrderedMap[interface{}] // physical sizing from boundary_component.infra
-	Annotations  types.OrderedMap[string]      // cascaded from boundary.annotations
-	BoundaryPath string                        // e.g. "aws-prod/eks-main/payments"
-	Directory    string                        // resolved output directory
-	SubDirectory string                        // resolved sub-directory
-	SyncWave     int                           // deployment wave from the containing boundary's syncWave (default 0)
+	Infra        types.OrderedMap[any]    // physical sizing from boundary_component.infra
+	Annotations  types.OrderedMap[string] // cascaded from boundary.annotations
+	BoundaryPath string                   // e.g. "aws-prod/eks-main/payments"
+	Directory    string                   // resolved output directory
+	SubDirectory string                   // resolved sub-directory
+	SyncWave     int                      // deployment wave from the containing boundary's syncWave (default 0)
 }
 
 // WireBoundaryInfra walks the recursive Release boundary tree and produces

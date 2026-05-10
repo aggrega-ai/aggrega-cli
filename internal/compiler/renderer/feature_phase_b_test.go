@@ -23,13 +23,13 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 		},
 	}
 	// Feature-scoped values/infra (FR's own, not base Recipe's)
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("scrape_port", float64(9090))
 	values.Set("tier", "prod")
 	provides := types.OrderedMap[string]{}
 	provides.Set("host", "api.svc")
 
-	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, types.OrderedMap[interface{}]{}, provides)
+	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, types.OrderedMap[any]{}, provides)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 
 func TestEvaluateFeatureRecipeLocals_NilFR(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "n", types.OrderedMap[interface{}]{}, types.OrderedMap[interface{}]{}, types.OrderedMap[string]{})
+	got, err := EvaluateFeatureRecipeLocals(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 			Locals: locals,
 		},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[interface{}]{}, types.OrderedMap[interface{}]{}, types.OrderedMap[string]{})
+	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}
@@ -82,7 +82,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 			ValuesMapping: `{"image": "prom/mon:{{ .values.tag }}", "port": {{ .values.port }}}`,
 		},
 	}
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("tag", "v1")
 	values2.Set("port", float64(9090))
 	ctx := &types.TemplateContext{
@@ -116,7 +116,7 @@ func TestExecutePhaseBForFeature_NilFR(t *testing.T) {
 func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "x"}}
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("a", float64(1))
 	ctx := &types.TemplateContext{Values: values}
 	got, err := ExecutePhaseBForFeature(ctx, fr)
@@ -178,7 +178,7 @@ func TestIsResourceGeneratingFR(t *testing.T) {
 			Spec: types.FeatureRecipeSpec{Source: "./charts/x"},
 		}, true},
 		{"has source structured", &types.FeatureRecipe{
-			Spec: types.FeatureRecipeSpec{Source: map[string]interface{}{"registry": "oci://x"}},
+			Spec: types.FeatureRecipeSpec{Source: map[string]any{"registry": "oci://x"}},
 		}, true},
 		{"empty source string", &types.FeatureRecipe{
 			Spec: types.FeatureRecipeSpec{Source: ""},

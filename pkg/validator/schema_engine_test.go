@@ -10,7 +10,7 @@ import (
 
 func TestEvaluateSchema_ValidValues(t *testing.T) {
 	schema := `{ port: int & >=1024, name: string }`
-	values := map[string]interface{}{
+	values := map[string]any{
 		"port": 8080,
 		"name": "api",
 	}
@@ -22,7 +22,7 @@ func TestEvaluateSchema_ValidValues(t *testing.T) {
 
 func TestEvaluateSchema_InvalidType(t *testing.T) {
 	schema := `{ port: int }`
-	values := map[string]interface{}{
+	values := map[string]any{
 		"port": "not-a-number",
 	}
 	errs := evaluateSchema(schema, values, "Component test:1.0.0")
@@ -38,7 +38,7 @@ func TestEvaluateSchema_InvalidType(t *testing.T) {
 
 func TestEvaluateSchema_ConstraintViolation(t *testing.T) {
 	schema := `{ port: int & >=1024 }`
-	values := map[string]interface{}{
+	values := map[string]any{
 		"port": 80,
 	}
 	errs := evaluateSchema(schema, values, "Component test:1.0.0")
@@ -48,14 +48,14 @@ func TestEvaluateSchema_ConstraintViolation(t *testing.T) {
 }
 
 func TestEvaluateSchema_EmptySchema(t *testing.T) {
-	errs := evaluateSchema("", map[string]interface{}{"a": 1}, "Component test:1.0.0")
+	errs := evaluateSchema("", map[string]any{"a": 1}, "Component test:1.0.0")
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for empty schema, got %d", len(errs))
 	}
 }
 
 func TestEvaluateSchema_InvalidCUE(t *testing.T) {
-	errs := evaluateSchema("{ this is not valid CUE !!!", map[string]interface{}{}, "Component test:1.0.0")
+	errs := evaluateSchema("{ this is not valid CUE !!!", map[string]any{}, "Component test:1.0.0")
 	if len(errs) == 0 {
 		t.Fatal("expected error for invalid CUE schema")
 	}
@@ -63,7 +63,7 @@ func TestEvaluateSchema_InvalidCUE(t *testing.T) {
 
 func TestEvaluateSchema_NoRawCUE(t *testing.T) {
 	schema := `{ port: int }`
-	values := map[string]interface{}{
+	values := map[string]any{
 		"port": "bad",
 	}
 	errs := evaluateSchema(schema, values, "Component test:1.0.0")

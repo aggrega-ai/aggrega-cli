@@ -89,7 +89,7 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	t.Parallel()
 	labels := types.OrderedMap[string]{}
 	labels.Set(types.ComponentTypeLabel, "server")
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("port", 8080)
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "stateful-server")
@@ -195,9 +195,9 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 	t.Parallel()
 	labels := types.OrderedMap[string]{}
 	labels.Set(types.ComponentTypeLabel, "server")
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("level", "warn")
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("path", "/secret")
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels})
@@ -363,7 +363,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
 		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("replicas", 3)
 	infra.Set("cpu", "500m")
 	resolveResult := &resolver.ResolveResult{

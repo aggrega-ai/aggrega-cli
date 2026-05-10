@@ -59,8 +59,8 @@ func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 	t.Parallel()
 	uses :=
 		// "caches" is optional — its absence is fine, only "databases" (required) triggers.
-		types.OrderedMap[interface{}]{}
-	uses.Set("databases", map[string]interface{}{"main": map[string]interface{}{"target": "db"}})
+		types.OrderedMap[any]{}
+	uses.Set("databases", map[string]any{"main": map[string]any{"target": "db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -78,8 +78,8 @@ func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 	t.Parallel()
 	uses :=
 		// Compact list form: `databases: [db]` should count as populated.
-		types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"db"})
+		types.OrderedMap[any]{}
+	uses.Set("databases", []any{"db"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -95,8 +95,8 @@ func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 
 func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", map[string]interface{}{})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", map[string]any{})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{

@@ -11,74 +11,74 @@ import (
 func TestDeepMergeYAML(t *testing.T) {
 	tests := []struct {
 		name     string
-		base     map[string]interface{}
-		child    map[string]interface{}
-		expected map[string]interface{}
+		base     map[string]any
+		child    map[string]any
+		expected map[string]any
 	}{
 		{
 			name:     "nil base",
 			base:     nil,
-			child:    map[string]interface{}{"a": "1"},
-			expected: map[string]interface{}{"a": "1"},
+			child:    map[string]any{"a": "1"},
+			expected: map[string]any{"a": "1"},
 		},
 		{
 			name:     "nil child",
-			base:     map[string]interface{}{"a": "1"},
+			base:     map[string]any{"a": "1"},
 			child:    nil,
-			expected: map[string]interface{}{"a": "1"},
+			expected: map[string]any{"a": "1"},
 		},
 		{
 			name:     "both nil",
 			base:     nil,
 			child:    nil,
-			expected: map[string]interface{}{},
+			expected: map[string]any{},
 		},
 		{
 			name:     "child scalar overrides base",
-			base:     map[string]interface{}{"a": "old"},
-			child:    map[string]interface{}{"a": "new"},
-			expected: map[string]interface{}{"a": "new"},
+			base:     map[string]any{"a": "old"},
+			child:    map[string]any{"a": "new"},
+			expected: map[string]any{"a": "new"},
 		},
 		{
 			name: "child adds new key",
-			base: map[string]interface{}{"a": "1"},
-			child: map[string]interface{}{
+			base: map[string]any{"a": "1"},
+			child: map[string]any{
 				"a": "1",
 				"b": "2",
 			},
-			expected: map[string]interface{}{"a": "1", "b": "2"},
+			expected: map[string]any{"a": "1", "b": "2"},
 		},
 		{
 			name: "nested maps merge recursively",
-			base: map[string]interface{}{
-				"top": map[string]interface{}{"a": "1", "b": "2"},
+			base: map[string]any{
+				"top": map[string]any{"a": "1", "b": "2"},
 			},
-			child: map[string]interface{}{
-				"top": map[string]interface{}{"b": "override", "c": "3"},
+			child: map[string]any{
+				"top": map[string]any{"b": "override", "c": "3"},
 			},
-			expected: map[string]interface{}{
-				"top": map[string]interface{}{"a": "1", "b": "override", "c": "3"},
+			expected: map[string]any{
+				"top": map[string]any{"a": "1", "b": "override", "c": "3"},
 			},
 		},
 		{
 			name: "3-level nested merge",
-			base: map[string]interface{}{
-				"l1": map[string]interface{}{
-					"l2": map[string]interface{}{
+			base: map[string]any{
+				"l1": map[string]any{
+					"l2": map[string]any{
 						"a": "base",
 					},
 				},
 			},
-			child: map[string]interface{}{
-				"l1": map[string]interface{}{
-					"l2": map[string]interface{}{
+			child: map[string]any{
+				"l1": map[string]any{
+					"l2": map[string]any{
 						"b": "child",
 					},
 				},
 			},
-			expected: map[string]interface{}{
-				"l1": map[string]interface{}{
-					"l2": map[string]interface{}{
+			expected: map[string]any{
+				"l1": map[string]any{
+					"l2": map[string]any{
 						"a": "base",
 						"b": "child",
 					},
@@ -87,25 +87,25 @@ func TestDeepMergeYAML(t *testing.T) {
 		},
 		{
 			name: "array replaces not merges",
-			base: map[string]interface{}{
-				"items": []interface{}{"a", "b"},
+			base: map[string]any{
+				"items": []any{"a", "b"},
 			},
-			child: map[string]interface{}{
-				"items": []interface{}{"c"},
+			child: map[string]any{
+				"items": []any{"c"},
 			},
-			expected: map[string]interface{}{
-				"items": []interface{}{"c"},
+			expected: map[string]any{
+				"items": []any{"c"},
 			},
 		},
 		{
 			name: "type conflict child wins",
-			base: map[string]interface{}{
-				"x": map[string]interface{}{"nested": "val"},
+			base: map[string]any{
+				"x": map[string]any{"nested": "val"},
 			},
-			child: map[string]interface{}{
+			child: map[string]any{
 				"x": "scalar",
 			},
-			expected: map[string]interface{}{
+			expected: map[string]any{
 				"x": "scalar",
 			},
 		},

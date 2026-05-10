@@ -22,7 +22,7 @@ func mkMech(mech string, pairs ...string) types.OrderedMap[types.OrderedMap[stri
 }
 
 // mkMultiMech builds from a list of (mechanism, []kv) groups.
-func mkMultiMech(groups ...interface{}) types.OrderedMap[types.OrderedMap[string]] {
+func mkMultiMech(groups ...any) types.OrderedMap[types.OrderedMap[string]] {
 	out := types.OrderedMap[types.OrderedMap[string]]{}
 	for i := 0; i+1 < len(groups); i += 2 {
 		mech := groups[i].(string)

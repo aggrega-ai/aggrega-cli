@@ -225,7 +225,7 @@ func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
 			Components: components,
 		},
 	}
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("cpu", "500m")
 	features2 := types.OrderedMap[types.BoundaryFeature]{}
 	features2.Set("metrics", types.BoundaryFeature{Type: "core/metrics:1.0.0", Infra: infra})

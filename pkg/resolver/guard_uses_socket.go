@@ -140,7 +140,7 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 //
 // Silently returns nil when the component type is not in the catalog —
 // unknown-type reporting belongs to other guards.
-func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[interface{}], compType string, catalog CatalogLookup) []*ResolverError {
+func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[any], compType string, catalog CatalogLookup) []*ResolverError {
 	catComp, found := catalog.Component(compType)
 	if !found {
 		return nil // catalog not available, skip
@@ -181,7 +181,7 @@ func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[i
 // as a key) and same silent-skip on unknown catalog Feature type. Used
 // for both feature attachments (.features) and secret attachments
 // (.secrets), which share the Feature catalog kind.
-func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[interface{}], featType string, catalog CatalogLookup) []*ResolverError {
+func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[any], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {
 		return nil

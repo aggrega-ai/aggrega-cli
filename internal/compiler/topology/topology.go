@@ -68,7 +68,7 @@ type TopologyNode struct {
 	InstanceID      string
 	ComponentType   string
 	Labels          types.OrderedMap[string]
-	Values          types.OrderedMap[interface{}]
+	Values          types.OrderedMap[any]
 	SelfInject      *types.InjectBlock // Component-level self-inject (carried to IR for Pass 2a)
 	SubsystemPath   string
 	BoundaryPath    string

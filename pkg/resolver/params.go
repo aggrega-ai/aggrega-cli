@@ -25,7 +25,7 @@ import (
 //
 // Both template-parse and template-execute errors are wrapped as
 // ResolverError with ErrInvalidParameterRef.
-func InterpolateParameters(raw []byte, params map[string]interface{}) ([]byte, error) {
+func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 	tmpl, err := template.New("aggregate").
 		Option("missingkey=zero").
 		Funcs(sprig.FuncMap()).
@@ -39,7 +39,7 @@ func InterpolateParameters(raw []byte, params map[string]interface{}) ([]byte, e
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, map[string]interface{}{
+	if err := tmpl.Execute(&buf, map[string]any{
 		"parameters": params,
 	}); err != nil {
 		return nil, &ResolverError{
@@ -63,8 +63,8 @@ func InterpolateParameters(raw []byte, params map[string]interface{}) ([]byte, e
 //
 // Read or unmarshal errors are wrapped as ResolverError with
 // ErrParametersFromLoad and the offending path attached.
-func LoadParametersFrom(paths []string) (map[string]interface{}, error) {
-	merged := map[string]interface{}{}
+func LoadParametersFrom(paths []string) (map[string]any, error) {
+	merged := map[string]any{}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -75,7 +75,7 @@ func LoadParametersFrom(paths []string) (map[string]interface{}, error) {
 				Err:     ErrParametersFromLoad,
 			}
 		}
-		var params map[string]interface{}
+		var params map[string]any
 		if err := yaml.Unmarshal(data, &params); err != nil {
 			return nil, &ResolverError{
 				Entity:  "Release",
@@ -96,13 +96,13 @@ func LoadParametersFrom(paths []string) (map[string]interface{}, error) {
 // base, and Release.spec.parameters override on collision.
 //
 // Author order of Release.spec.parameters is lost at this boundary because
-// Go's text/template data is plain map[string]interface{}, which does not
+// Go's text/template data is plain map[string]any, which does not
 // preserve insertion order. The lost ordering does not affect the rendered
 // output — template references are by key, not by iteration order.
-func MergeParameters(release types.OrderedMap[interface{}], external map[string]interface{}) map[string]interface{} {
+func MergeParameters(release types.OrderedMap[any], external map[string]any) map[string]any {
 	releasePlain := orderedMapToPlain(release)
 	if releasePlain == nil && external == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	if external == nil {
 		return copyMap(releasePlain)
@@ -113,17 +113,15 @@ func MergeParameters(release types.OrderedMap[interface{}], external map[string]
 	return deepMerge(external, releasePlain)
 }
 
-// orderedMapToPlain flattens an OrderedMap[interface{}] into a plain map for
-// template evaluation. Returns nil when the input is empty.
-func orderedMapToPlain(m types.OrderedMap[interface{}]) map[string]interface{} {
+// orderedMapToPlain flattens an OrderedMap[any] into a plain map for
+// template evaluation, recursively unwrapping nested *OrderedMap[any]
+// values so Go templates can walk the tree via field-access syntax
+// (.foo.bar.baz). Returns nil when the input is empty.
+func orderedMapToPlain(m types.OrderedMap[any]) map[string]any {
 	if m.Len() == 0 {
 		return nil
 	}
-	out := make(map[string]interface{}, m.Len())
-	for k, v := range m.All() {
-		out[k] = v
-	}
-	return out
+	return m.TemplateAlphabeticalMapDeep()
 }
 
 // PurgeParameters actively zeroes every value, deletes every key, and nils
@@ -132,7 +130,7 @@ func orderedMapToPlain(m types.OrderedMap[interface{}]) map[string]interface{} {
 // values do not linger past the interpolation step.
 //
 // The function is a no-op on a nil pointer or nil map.
-func PurgeParameters(params *map[string]interface{}) {
+func PurgeParameters(params *map[string]any) {
 	if params == nil || *params == nil {
 		return
 	}
@@ -144,9 +142,9 @@ func PurgeParameters(params *map[string]interface{}) {
 }
 
 // deepMerge recursively merges child into base. Maps recurse; scalars/arrays replace.
-func deepMerge(base, child map[string]interface{}) map[string]interface{} {
+func deepMerge(base, child map[string]any) map[string]any {
 	if base == nil && child == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	if base == nil {
 		return copyMap(child)
@@ -161,8 +159,8 @@ func deepMerge(base, child map[string]interface{}) map[string]interface{} {
 			result[k] = cv
 			continue
 		}
-		bMap, bIsMap := bv.(map[string]interface{})
-		cMap, cIsMap := cv.(map[string]interface{})
+		bMap, bIsMap := bv.(map[string]any)
+		cMap, cIsMap := cv.(map[string]any)
 		if bIsMap && cIsMap {
 			result[k] = deepMerge(bMap, cMap)
 		} else {
@@ -172,8 +170,8 @@ func deepMerge(base, child map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-func copyMap(m map[string]interface{}) map[string]interface{} {
-	out := make(map[string]interface{}, len(m))
+func copyMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[k] = v
 	}

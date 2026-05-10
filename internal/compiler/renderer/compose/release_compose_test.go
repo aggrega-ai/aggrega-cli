@@ -264,15 +264,15 @@ services:
 		t.Fatalf("write base: %v", err)
 	}
 
-	overlay := map[string]interface{}{
-		"services": map[string]interface{}{
-			"app": map[string]interface{}{
+	overlay := map[string]any{
+		"services": map[string]any{
+			"app": map[string]any{
 				"image": "overlay:2.0",
-				"environment": map[string]interface{}{
+				"environment": map[string]any{
 					"OVERWRITTEN_KEY": "win",
 					"NEW_KEY":         "added",
 				},
-				"ports": []interface{}{"2222:2222", "3333:3333"},
+				"ports": []any{"2222:2222", "3333:3333"},
 			},
 		},
 	}

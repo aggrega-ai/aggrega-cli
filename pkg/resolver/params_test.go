@@ -16,7 +16,7 @@ import (
 func TestInterpolateParameters_ValidTemplate(t *testing.T) {
 	raw := []byte(`name: {{ .parameters.app_name }}
 port: {{ .parameters.port | default "8080" }}`)
-	params := map[string]interface{}{
+	params := map[string]any{
 		"app_name": "my-api",
 		"port":     "3000",
 	}
@@ -36,7 +36,7 @@ port: {{ .parameters.port | default "8080" }}`)
 
 func TestInterpolateParameters_SprigDefault(t *testing.T) {
 	raw := []byte(`port: {{ .parameters.port | default "8080" }}`)
-	params := map[string]interface{}{}
+	params := map[string]any{}
 
 	result, err := InterpolateParameters(raw, params)
 	if err != nil {
@@ -49,7 +49,7 @@ func TestInterpolateParameters_SprigDefault(t *testing.T) {
 
 func TestInterpolateParameters_SprigUpper(t *testing.T) {
 	raw := []byte(`env: {{ .parameters.env | upper }}`)
-	params := map[string]interface{}{"env": "production"}
+	params := map[string]any{"env": "production"}
 
 	result, err := InterpolateParameters(raw, params)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestInterpolateParameters_MissingParamProducesEmpty(t *testing.T) {
 	// With missingkey=zero, missing params produce empty strings (Helm/Sprig convention).
 	// Developers use Sprig's `required` function to mandate a parameter.
 	raw := []byte(`name: {{ .parameters.missing_key }}`)
-	params := map[string]interface{}{}
+	params := map[string]any{}
 
 	result, err := InterpolateParameters(raw, params)
 	if err != nil {
@@ -78,7 +78,7 @@ func TestInterpolateParameters_MissingParamProducesEmpty(t *testing.T) {
 func TestInterpolateParameters_SprigRequired(t *testing.T) {
 	// Sprig's `required` function enforces mandatory parameters
 	raw := []byte(`name: {{ .parameters.app_name | required "app_name is required" }}`)
-	params := map[string]interface{}{}
+	params := map[string]any{}
 
 	_, err := InterpolateParameters(raw, params)
 	if err == nil {
@@ -114,7 +114,7 @@ func TestLoadParametersFrom_DeepMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, ok := params["db"].(map[string]interface{})
+	db, ok := params["db"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected db to be map, got %T", params["db"])
 	}
@@ -140,9 +140,9 @@ func TestLoadParametersFrom_FileNotFound(t *testing.T) {
 }
 
 func TestMergeParameters_ReleaseOverridesExternal(t *testing.T) {
-	release := types.OrderedMap[interface{}]{}
+	release := types.OrderedMap[any]{}
 	release.Set("key", "release-val")
-	external := map[string]interface{}{"key": "external-val", "extra": "ext"}
+	external := map[string]any{"key": "external-val", "extra": "ext"}
 
 	merged := MergeParameters(release, external)
 	if merged["key"] != "release-val" {
@@ -154,7 +154,7 @@ func TestMergeParameters_ReleaseOverridesExternal(t *testing.T) {
 }
 
 func TestPurgeParameters(t *testing.T) {
-	params := map[string]interface{}{
+	params := map[string]any{
 		"secret_key":  "s3cr3t",
 		"db_password": "p@ss",
 	}

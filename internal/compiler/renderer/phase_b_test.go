@@ -14,9 +14,9 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 	t.Parallel()
 	env := types.OrderedMap[string]{}
 	env.Set("DB_URL", "db.svc.cluster.local:5432")
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("port", 8080)
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("replicas", 3)
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
@@ -57,7 +57,7 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 
 func TestExecutePhaseB_NoValuesMapping(t *testing.T) {
 	t.Parallel()
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("key", "value")
 	ctx := &types.TemplateContext{
 		Values: values2,
@@ -117,7 +117,7 @@ func TestExecutePhaseB_InvalidYAML(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "bad-output"},
 		Spec: types.RecipeSpec{
 			// A bare scalar is parseable YAML but cannot decode into a
-			// map[string]interface{}; the parse-into-map step fails.
+			// map[string]any; the parse-into-map step fails.
 			ValuesMapping: `not a mapping at all`,
 		},
 	}
@@ -139,7 +139,7 @@ func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 				Env: env,
 			},
 		},
-		Values: types.OrderedMap[interface{}]{},
+		Values: types.OrderedMap[any]{},
 	}
 
 	recipe := &types.Recipe{
@@ -153,11 +153,11 @@ func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	envArr, ok := values["env"].([]interface{})
+	envArr, ok := values["env"].([]any)
 	if !ok || len(envArr) != 1 {
 		t.Fatalf("expected env array with 1 entry, got %v", values["env"])
 	}
-	entry := envArr[0].(map[string]interface{})
+	entry := envArr[0].(map[string]any)
 	if entry["value"] != "db.svc:5432" {
 		t.Errorf("env value: %v", entry["value"])
 	}

@@ -46,7 +46,7 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 			InfraMapping:  infraMapping,
 			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
 				inner := types.OrderedMap[types.IRFeatureEntry]{}
-				vals := types.OrderedMap[interface{}]{}
+				vals := types.OrderedMap[any]{}
 				vals.Set("enabled", true)
 				inner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring", Values: vals})
 				outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
@@ -116,14 +116,22 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 		t.Errorf("resolved_version: %q", dbEdge.ResolvedVersion)
 	}
 
-	// Values + Infra
+	// Values + Infra. JSON unmarshal of OrderedMap[any] decodes numeric
+	// values as json.Number (string-backed) so caller-side type-switches
+	// preserve exact integer precision regardless of magnitude.
 	portVal, _ := ctx.Values.Get("port")
-	if portVal != float64(8080) { // JSON unmarshal makes numbers float64
-		t.Errorf("values.port: %v (%T)", portVal, portVal)
+	portNum, ok := portVal.(json.Number)
+	if !ok {
+		t.Errorf("values.port: type %T, want json.Number", portVal)
+	} else if got, _ := portNum.Int64(); got != 8080 {
+		t.Errorf("values.port: got %d, want 8080", got)
 	}
 	replicasVal, _ := ctx.Infra.Get("replicas")
-	if replicasVal != float64(3) {
-		t.Errorf("infra.replicas: %v", replicasVal)
+	replicasNum, ok := replicasVal.(json.Number)
+	if !ok {
+		t.Errorf("infra.replicas: type %T, want json.Number", replicasVal)
+	} else if got, _ := replicasNum.Int64(); got != 3 {
+		t.Errorf("infra.replicas: got %d, want 3", got)
 	}
 
 	// .Provides reflects Pass 1 output. .Locals is intentionally empty here
@@ -207,7 +215,7 @@ func TestAssembleNodeContext_EmptyNode(t *testing.T) {
 	if ctx.Context.InstanceID != "simple" {
 		t.Errorf("instance_id: %q", ctx.Context.InstanceID)
 	}
-	// Values/Infra are zero-value OrderedMap[interface{}] — always safe to use; no nil check needed.
+	// Values/Infra are zero-value OrderedMap[any] — always safe to use; no nil check needed.
 	_ = ctx.Values
 	_ = ctx.Infra
 	if ctx.Context.Uses.Len() != 0 {

@@ -24,7 +24,7 @@ func TestExecutePass2a_LiteralValue(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]interface{}{"PORT": "8080"},
+		Env: map[string]any{"PORT": "8080"},
 	}
 
 	_, err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{})
@@ -46,8 +46,8 @@ func TestExecutePass2a_FromOwnProvides(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]interface{}{
-			"MY_HOST": map[string]interface{}{"from": "host"},
+		Env: map[string]any{
+			"MY_HOST": map[string]any{"from": "host"},
 		},
 	}
 	ownProvides := types.OrderedMap[string]{}
@@ -68,8 +68,8 @@ func TestExecutePass2a_ValueTemplate(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]interface{}{
-			"APP_ID": map[string]interface{}{"value": "{{ .context.instance_id }}-app"},
+		Env: map[string]any{
+			"APP_ID": map[string]any{"value": "{{ .context.instance_id }}-app"},
 		},
 	}
 	siCtx := SelfInjectContext{
@@ -91,8 +91,8 @@ func TestExecutePass2a_ForbiddenReference(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]interface{}{
-			"BAD": map[string]interface{}{"value": "{{ .context.inject.env.SECRET }}"},
+		Env: map[string]any{
+			"BAD": map[string]any{"value": "{{ .context.inject.env.SECRET }}"},
 		},
 	}
 
@@ -133,8 +133,8 @@ func TestExecutePass2a_FromMissingProvides(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]interface{}{
-			"X": map[string]interface{}{"from": "nonexistent"},
+		Env: map[string]any{
+			"X": map[string]any{"from": "nonexistent"},
 		},
 	}
 

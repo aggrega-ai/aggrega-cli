@@ -4,7 +4,7 @@
 // Unit tests for normalizeUses, parseVerboseEntry, and parseInjectBlock
 // — the polymorphic uses-form normalisation that converges both
 // authoring shapes (string-array and verbose-map) onto NormalizedEdge.
-// mkUses is a small helper that assembles an OrderedMap[interface{}]
+// mkUses is a small helper that assembles an OrderedMap[any]
 // preserving the call-site key insertion order, mirroring how YAML
 // unmarshal would build the same map from authored YAML.
 //
@@ -42,9 +42,20 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// mkUses builds a types.OrderedMap[interface{}] in the order given.
-func mkUses(pairs ...interface{}) types.OrderedMap[interface{}] {
-	m := types.OrderedMap[interface{}]{}
+// mkUses builds a types.OrderedMap[any] in the order given.
+func mkUses(pairs ...any) types.OrderedMap[any] {
+	m := types.OrderedMap[any]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i].(string), pairs[i+1])
+	}
+	return m
+}
+
+// mkOM builds a *types.OrderedMap[any] in the order given. Used in tests
+// to construct nested OrderedMap shapes that mirror what the gamma-aware
+// JSON/YAML decode path produces in production.
+func mkOM(pairs ...any) *types.OrderedMap[any] {
+	m := types.NewOrderedMap[any]()
 	for i := 0; i+1 < len(pairs); i += 2 {
 		m.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -54,7 +65,7 @@ func mkUses(pairs ...interface{}) types.OrderedMap[interface{}] {
 func TestNormalizeUses_StringArray(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", []interface{}{"db1", "db2"})
+	uses := mkUses("databases", []any{"db1", "db2"})
 	edges, err := normalizeUses(uses, "api-server", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -76,14 +87,14 @@ func TestNormalizeUses_StringArray(t *testing.T) {
 func TestNormalizeUses_VerboseMap(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", map[string]interface{}{
-		"hr-db": map[string]interface{}{
-			"target": "corporate-hr",
-			"inject": map[string]interface{}{
-				"env": map[string]interface{}{"DB_URL": "host"},
-			},
-		},
-	})
+	uses := mkUses("databases", mkOM(
+		"hr-db", mkOM(
+			"target", "corporate-hr",
+			"inject", mkOM(
+				"env", mkOM("DB_URL", "host"),
+			),
+		),
+	))
 	edges, err := normalizeUses(uses, "agent", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -103,7 +114,7 @@ func TestNormalizeUses_VerboseMap(t *testing.T) {
 func TestNormalizeUses_OriginFeature(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("targets", []interface{}{"api"})
+	uses := mkUses("targets", []any{"api"})
 	edges, err := normalizeUses(uses, "node-a", "core/monitoring")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -119,7 +130,7 @@ func TestNormalizeUses_OriginFeature(t *testing.T) {
 func TestNormalizeUses_Empty(t *testing.T) {
 	t.Parallel()
 
-	edges, err := normalizeUses(types.OrderedMap[interface{}]{}, "node", "")
+	edges, err := normalizeUses(types.OrderedMap[any]{}, "node", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +142,7 @@ func TestNormalizeUses_Empty(t *testing.T) {
 func TestNormalizeUses_InvalidArrayElement(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", []interface{}{42})
+	uses := mkUses("databases", []any{42})
 	_, err := normalizeUses(uses, "node", "")
 	if err == nil {
 		t.Fatal("expected error")
@@ -159,9 +170,9 @@ func TestNormalizeUses_DeterministicOrder(t *testing.T) {
 
 	// assertion refreshed for OrderedMap author-order iteration; was alphabetical under map[string]X
 	uses := mkUses(
-		"zebra", []interface{}{"z1"},
-		"alpha", []interface{}{"a1"},
-		"mid", []interface{}{"m1"},
+		"zebra", []any{"z1"},
+		"alpha", []any{"a1"},
+		"mid", []any{"m1"},
 	)
 
 	var firstOrder []string
@@ -193,9 +204,9 @@ func TestNormalizeUses_DeterministicOrder(t *testing.T) {
 func TestNormalizeUses_VerboseSimpleString(t *testing.T) {
 	t.Parallel()
 
-	uses := mkUses("databases", map[string]interface{}{
-		"my-db": "target-db-name",
-	})
+	uses := mkUses("databases", mkOM(
+		"my-db", "target-db-name",
+	))
 	edges, err := normalizeUses(uses, "src", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

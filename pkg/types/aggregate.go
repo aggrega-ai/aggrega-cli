@@ -37,7 +37,7 @@ type AggregateMetadata struct {
 // buckets that derive from this entity are sourced from Subsystem.Annotations
 // alone.
 type AggregateSpec struct {
-	Parameters         OrderedMap[interface{}]       `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
+	Parameters         OrderedMap[any]               `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 	Aggregates         OrderedMap[SubAggregate]      `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 	ExportedComponents OrderedMap[string]            `json:"exportedComponents,omitempty,omitzero" yaml:"exportedComponents,omitempty"`
 	Subsystems         OrderedMap[Subsystem]         `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
@@ -47,8 +47,8 @@ type AggregateSpec struct {
 // SubAggregate is a nested aggregate acting as an imported module.
 // Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates
 type SubAggregate struct {
-	Type       string                  `json:"type" yaml:"type"`
-	Parameters OrderedMap[interface{}] `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
+	Type       string          `json:"type" yaml:"type"`
+	Parameters OrderedMap[any] `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 }
 
 // Subsystem is a logical grouping of developer intent. Recursive via nested Subsystems.
@@ -66,9 +66,9 @@ type Subsystem struct {
 type ComponentInstance struct {
 	Type        string                      `json:"type" yaml:"type"`
 	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
-	Values      OrderedMap[interface{}]     `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"` // Component-level self-inject
-	Uses        OrderedMap[interface{}]     `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose map
+	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`      // Component-level self-inject
+	Uses        OrderedMap[any]             `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose map
 	Features    OrderedMap[FeatureInstance] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }

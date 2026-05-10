@@ -121,10 +121,10 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster"})
 
 	// Boundary-attached compose-bridge feature.
-	boundaryFeatures := types.OrderedMap[interface{}]{}
-	boundaryFeatures.Set("bridge", map[string]interface{}{
+	boundaryFeatures := types.OrderedMap[any]{}
+	boundaryFeatures.Set("bridge", map[string]any{
 		"type": "core/compose-bridge:1.0.0",
-		"infra": map[string]interface{}{
+		"infra": map[string]any{
 			"mappedPort": 15432,
 		},
 	})
@@ -251,10 +251,10 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster/data-net"})
 
 	// Parent boundary holds the bridge FR (no direct components).
-	clusterFeatures := types.OrderedMap[interface{}]{}
-	clusterFeatures.Set("bridge", map[string]interface{}{
+	clusterFeatures := types.OrderedMap[any]{}
+	clusterFeatures.Set("bridge", map[string]any{
 		"type":  "core/compose-bridge:1.0.0",
-		"infra": map[string]interface{}{"mappedPort": 15432},
+		"infra": map[string]any{"mappedPort": 15432},
 	})
 
 	servicesNet := types.Boundary{

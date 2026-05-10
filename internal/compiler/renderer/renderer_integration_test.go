@@ -218,8 +218,8 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 	t.Parallel()
 
-	valuesRaw, _ := json.Marshal(map[string]interface{}{"port": 8080})
-	infraRaw, _ := json.Marshal(map[string]interface{}{"replicas": 3})
+	valuesRaw, _ := json.Marshal(map[string]any{"port": 8080})
+	infraRaw, _ := json.Marshal(map[string]any{"replicas": 3})
 	labels := types.OrderedMap[string]{}
 	labels.Set("component.aggrega.ai/type", "server")
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -287,7 +287,7 @@ type captureComposerEngine struct {
 	captured []renderer.EmittedFile
 }
 
-func (c *captureComposerEngine) Render(_ context.Context, _ map[string]interface{}, _ renderer.NodeRenderContext) (map[string][]byte, error) {
+func (c *captureComposerEngine) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) (map[string][]byte, error) {
 	return nil, nil
 }
 

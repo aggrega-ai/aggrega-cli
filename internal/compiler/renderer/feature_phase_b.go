@@ -20,8 +20,8 @@ import (
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
 	instanceName string,
-	values types.OrderedMap[interface{}],
-	infra types.OrderedMap[interface{}],
+	values types.OrderedMap[any],
+	infra types.OrderedMap[any],
 	provides types.OrderedMap[string],
 ) (types.OrderedMap[string], error) {
 	resolved := types.OrderedMap[string]{}
@@ -52,9 +52,9 @@ func EvaluateFeatureRecipeLocals(
 // ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping (or
 // valuesMappingFile) and returns the values dictionary for the provider engine.
 // Mirrors ExecutePhaseB for base Recipes but takes a *types.FeatureRecipe.
-func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe) (map[string]interface{}, error) {
+func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe) (map[string]any, error) {
 	if fr == nil {
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 
 	if fr.Spec.ValuesMappingJsonnet != "" {
@@ -72,7 +72,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 
 	if tmplText == "" {
 		// No valuesMapping — return feature-scoped .values as-is.
-		out := make(map[string]interface{}, ctx.Values.Len())
+		out := make(map[string]any, ctx.Values.Len())
 		for k, v := range ctx.Values.All() {
 			out[k] = v
 		}
@@ -88,7 +88,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMapping", fr.Metadata.Name))
 	}
 
-	var values map[string]interface{}
+	var values map[string]any
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}

@@ -117,7 +117,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// missingkey=error if their templates reference .parent_boundary.*.
 	var boundaryDirEvals map[string]string
 	var perBoundaryAnnotations map[string]types.OrderedMap[string]
-	var releaseParameters map[string]interface{}
+	var releaseParameters map[string]any
 	if input.ResolveResult != nil {
 		releaseParameters = input.ResolveResult.Parameters
 		_, perBoundaryAnnotations = resolver.WireBoundaryInfra(input.ResolveResult.Release)
@@ -399,7 +399,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			recipeName = recipe.Metadata.Name
 		}
 		var bi *resolver.BoundaryInfra
-		var parameters map[string]interface{}
+		var parameters map[string]any
 		if input.ResolveResult != nil {
 			if rbi, ok := input.ResolveResult.BoundaryInfra[nodeID]; ok && rbi != nil {
 				bi = rbi
@@ -508,10 +508,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			emittedNames = append(emittedNames, f.Name)
 		}
 		emissionLog := map[string]any{
-			"node_id":        nodeID,
-			"boundary_path":  node.BoundaryPath,
-			"warnings":       state.Warnings,
-			"emitted_files":  emittedNames,
+			"node_id":       nodeID,
+			"boundary_path": node.BoundaryPath,
+			"warnings":      state.Warnings,
+			"emitted_files": emittedNames,
 		}
 		_ = traceWriter.Write(trace.PassEmission, nodeID, node.BoundaryPath, "", emissionLog)
 
@@ -567,7 +567,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// for computeFinalPath. Operator-authored templates on the boundary
 		// thus drive the FR's dispatch path the same way they drive
 		// per-component dispatch paths.
-		var parameters map[string]interface{}
+		var parameters map[string]any
 		if input.ResolveResult != nil {
 			parameters = input.ResolveResult.Parameters
 		}
@@ -843,8 +843,8 @@ func buildNodeRenderContext(
 	return nrc
 }
 
-func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[interface{}] {
-	out := types.OrderedMap[interface{}]{}
+func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
+	out := types.OrderedMap[any]{}
 	raw, ok := graph.Spec.ValuesMapping.Get(nodeID)
 	if !ok {
 		return out
@@ -853,8 +853,8 @@ func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[interfa
 	return out
 }
 
-func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interface{}] {
-	out := types.OrderedMap[interface{}]{}
+func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
+	out := types.OrderedMap[any]{}
 	raw, ok := graph.Spec.InfraMapping.Get(nodeID)
 	if !ok {
 		return out
@@ -890,16 +890,16 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[interfac
 func computeFinalPath(
 	nodeID, bp, providerName, recipeName string,
 	bi *resolver.BoundaryInfra,
-	parameters map[string]interface{},
+	parameters map[string]any,
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
 ) (string, error) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"provider":        providerName,
 		"boundary_name":   bp,
 		"parameters":      parameters,
 		"component_id":    nodeID,
-		"manifest":        map[string]interface{}{"recipe_name": recipeName},
+		"manifest":        map[string]any{"recipe_name": recipeName},
 		"parent_boundary": parentBoundaryData(bp, parameters, boundaryDirEvals, perBoundaryAnnotations),
 	}
 
@@ -952,13 +952,13 @@ func computeFinalPath(
 // per the path-template strictness policy.
 func parentBoundaryData(
 	bp string,
-	parameters map[string]interface{},
+	parameters map[string]any,
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
-) map[string]interface{} {
+) map[string]any {
 	parentPath, parentName, ok := splitParentPath(bp)
 	if !ok {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	parentDir, hasEval := boundaryDirEvals[parentPath]
 	if !hasEval {
@@ -970,7 +970,7 @@ func parentBoundaryData(
 			annotations[k] = v
 		}
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"directory":     parentDir,
 		"boundary_name": parentName,
 		"parameters":    parameters,
@@ -1011,7 +1011,7 @@ func splitParentPath(bp string) (parentPath, parentName string, ok bool) {
 // own eval finalises.
 func evaluateAllBoundaryDirectories(
 	release *types.Release,
-	parameters map[string]interface{},
+	parameters map[string]any,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
 ) (map[string]string, error) {
 	out := map[string]string{}
@@ -1025,11 +1025,11 @@ func evaluateAllBoundaryDirectories(
 			currentPath = parentPath + "/" + name
 		}
 		if b.Directory != "" {
-			data := map[string]interface{}{
+			data := map[string]any{
 				"provider":        "",
 				"boundary_name":   currentPath,
 				"parameters":      parameters,
-				"manifest":        map[string]interface{}{"recipe_name": ""},
+				"manifest":        map[string]any{"recipe_name": ""},
 				"parent_boundary": parentBoundaryData(currentPath, parameters, out, perBoundaryAnnotations),
 			}
 			eval, err := EvalPathTemplate("directory:"+currentPath, "directory", currentPath, b.Directory, data)

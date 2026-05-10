@@ -119,7 +119,7 @@ func collectFromPipe(p *parse.PipeNode, seen map[string]bool) {
 // NOT referenced by any entry in `references`. Used to emit "unused key"
 // warnings for Ghost Infrastructure — catalog authors add infra/values entries
 // that the Recipe's valuesMapping never consumes.
-func UnreadKeys(references []string, root string, data types.OrderedMap[interface{}]) []string {
+func UnreadKeys(references []string, root string, data types.OrderedMap[any]) []string {
 	if data.Len() == 0 {
 		return nil
 	}

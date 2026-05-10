@@ -15,18 +15,18 @@ func AssembleNodeContext(
 	graph *types.IRGraph,
 	allProvides NodeProvides,
 	inject types.InjectPipe,
-	injectRaw interface{},
+	injectRaw any,
 ) *types.TemplateContext {
 	node, _ := graph.Spec.Nodes.Get(nodeID)
 
 	// Values from values_mapping
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
 		_ = parse.IRPayload(raw, &values)
 	}
 
 	// Infra from infra_mapping
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	if raw, ok := graph.Spec.InfraMapping.Get(nodeID); ok {
 		_ = parse.IRPayload(raw, &infra)
 	}

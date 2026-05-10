@@ -19,8 +19,8 @@ import "encoding/json"
 // Wasm-runtime work to land against; `aggrega-cli` does not ship a Wasm
 // runtime yet.
 type MutatorInput struct {
-	CompilationContext CompilationContext     `json:"compilation_context"`
-	Graph              MutatorGraph           `json:"graph"`
+	CompilationContext CompilationContext `json:"compilation_context"`
+	Graph              MutatorGraph       `json:"graph"`
 }
 
 // CompilationContext carries release-level metadata that the mutator

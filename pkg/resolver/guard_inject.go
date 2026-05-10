@@ -119,7 +119,7 @@ func validateInjectBlock(entity, fieldPath string, inject types.InjectBlock, tar
 
 type mechanismRaw struct {
 	mech string
-	raw  interface{}
+	raw  any
 }
 
 // injectMechanisms returns the inject block's mechanisms paired with their
@@ -147,7 +147,7 @@ func injectMechanisms(inject types.InjectBlock) []mechanismRaw {
 // validateMechanismFromKeys walks one mechanism's raw inject entries, extracts
 // each entry's from-key, and validates that the from-key exists in validSet.
 // Entries that look like literals (value, not from) are skipped.
-func validateMechanismFromKeys(entity, fieldPath, mech string, raw interface{}, validSet map[string]bool, validKeys []string) []*ResolverError {
+func validateMechanismFromKeys(entity, fieldPath, mech string, raw any, validSet map[string]bool, validKeys []string) []*ResolverError {
 	from := extractInjectFromKeys(raw)
 	if len(from) == 0 {
 		return nil
@@ -179,19 +179,19 @@ func validateMechanismFromKeys(entity, fieldPath, mech string, raw interface{}, 
 // ({DB_URL: {from: "host"}}) inject forms into {localKey: fromKey}. Empty
 // fromKey means the entry is a literal value (verbose with "value:" only) and
 // is skipped by the validator above.
-func extractInjectFromKeys(raw interface{}) map[string]string {
+func extractInjectFromKeys(raw any) map[string]string {
 	out := map[string]string{}
 	switch v := raw.(type) {
 	case map[string]string:
 		for k, val := range v {
 			out[k] = val
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		for k, val := range v {
 			switch vv := val.(type) {
 			case string:
 				out[k] = vv
-			case map[string]interface{}:
+			case map[string]any:
 				if fromStr, ok := vv["from"]; ok {
 					if s, sok := fromStr.(string); sok {
 						out[k] = s

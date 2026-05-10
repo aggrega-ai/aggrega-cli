@@ -46,7 +46,7 @@ type Service struct {
 // form" — the synthesizer always emits long-form for clarity and for fields
 // (read_only, type) that the short form `host:container:mode` cannot express.
 type ServiceVolume struct {
-	Type     string `yaml:"type"`     // "bind" or "volume" or "tmpfs"
+	Type     string `yaml:"type"` // "bind" or "volume" or "tmpfs"
 	Source   string `yaml:"source,omitempty"`
 	Target   string `yaml:"target"`
 	ReadOnly bool   `yaml:"read_only,omitempty"`

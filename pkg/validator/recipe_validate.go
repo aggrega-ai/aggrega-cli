@@ -283,9 +283,9 @@ func validateRecipeRule6(r *types.Recipe, sourcePath string) error {
 }
 
 // sourceIsEmpty reports whether the Recipe's Spec.Source field carries no
-// value. Source is interface{} and can be a string URI, a structured object,
+// value. Source is any and can be a string URI, a structured object,
 // or nil; any non-nil non-empty value counts as a declared source.
-func sourceIsEmpty(src interface{}) bool {
+func sourceIsEmpty(src any) bool {
 	if src == nil {
 		return true
 	}

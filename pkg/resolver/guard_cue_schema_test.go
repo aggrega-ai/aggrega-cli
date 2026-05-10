@@ -34,7 +34,7 @@ func cueSchemaCatalog(schema string) CatalogLookup {
 func TestGuardCueSchema_ValuesPillarValid(t *testing.T) {
 	t.Parallel()
 	schema := `values: { port?: int & >=1024 | *8080 }`
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("port", 8080)
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Values: values})
@@ -52,7 +52,7 @@ func TestGuardCueSchema_ValuesPillarValid(t *testing.T) {
 func TestGuardCueSchema_ValuesPillarInvalid(t *testing.T) {
 	t.Parallel()
 	schema := `values: { port: int & >=1024 }`
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("port", 80)
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Values: values})
@@ -87,7 +87,7 @@ func TestGuardCueSchema_InfraPillarFromBoundary(t *testing.T) {
 			Components: components,
 		},
 	}
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("replicas", 0)
 	bi := map[string]*BoundaryInfra{
 		"api": {Infra: infra}, // violates >0
@@ -105,7 +105,7 @@ func TestGuardCueSchema_MissingInfraPillarIsNoOp(t *testing.T) {
 	t.Parallel()
 	// Schema only declares values — arbitrary infra should be allowed.
 	schema := `values: { port: int }`
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("port", 8080)
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Values: values})
@@ -114,7 +114,7 @@ func TestGuardCueSchema_MissingInfraPillarIsNoOp(t *testing.T) {
 			Components: components,
 		},
 	}
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("anything", "goes")
 	bi := map[string]*BoundaryInfra{
 		"api": {Infra: infra},
@@ -128,9 +128,9 @@ func TestGuardCueSchema_MissingInfraPillarIsNoOp(t *testing.T) {
 func TestGuardCueSchema_SubsystemRecursion(t *testing.T) {
 	t.Parallel()
 	schema := `values: { port: int & >=1024 }`
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("port", 443)
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("port", 80)
 	components2 := types.OrderedMap[types.ComponentInstance]{}
 	components2.Set("deep", types.ComponentInstance{Type: "core/server/api", Values: values2})
@@ -209,8 +209,8 @@ func cueSchemaCatalogWithUsesSchema() CatalogLookup {
 
 func TestGuardCueSchema_UsesPillarValidSocket(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", map[string]interface{}{"main": map[string]interface{}{"target": "db"}})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", map[string]any{"main": map[string]any{"target": "db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{
@@ -264,11 +264,11 @@ func TestGuardCueSchema_SecretsPillarTable(t *testing.T) {
 
 	[]string{"env"}})
 	secrets3 := types.OrderedMap[types.SecretInstance]{}
-	secrets3.Set("root_password", types.SecretInstance{Type: "core/db-password", Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_PASSWORD": "v"}}})
+	secrets3.Set("root_password", types.SecretInstance{Type: "core/db-password", Inject: &types.InjectBlock{Env: map[string]any{"DB_PASSWORD": "v"}}})
 	schema5 := types.OrderedMap[types.SecretSlot]{}
 	schema5.Set("root_password", types.SecretSlot{Required: true})
 	secrets4 := types.OrderedMap[types.SecretInstance]{}
-	secrets4.Set("root_password", types.SecretInstance{Type: "core/db-password", Inject: &types.InjectBlock{Env: map[string]interface{}{"FORBIDDEN": "v"}}})
+	secrets4.Set("root_password", types.SecretInstance{Type: "core/db-password", Inject: &types.InjectBlock{Env: map[string]any{"FORBIDDEN": "v"}}})
 	schema6 := types.OrderedMap[types.SecretSlot]{}
 	schema6.Set("root_password", types.SecretSlot{Required: true})
 	secrets5 := types.OrderedMap[types.SecretInstance]{}
@@ -351,8 +351,8 @@ func TestGuardCueSchema_UsesPillarUnknownSocketRejected(t *testing.T) {
 	t.Parallel()
 	uses :=
 		// usesSchema declares only "databases"; aggregate references an undeclared "caches" socket.
-		types.OrderedMap[interface{}]{}
-	uses.Set("caches", map[string]interface{}{"ephemeral": map[string]interface{}{"target": "redis"}})
+		types.OrderedMap[any]{}
+	uses.Set("caches", map[string]any{"ephemeral": map[string]any{"target": "redis"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api", Uses: uses})
 	agg := &types.Aggregate{

@@ -241,7 +241,7 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 //
 // Type-coercion contract. The inner anonymous function accepts the typed
 // raw value and copies only string-valued entries: map[string]string is
-// copied verbatim; map[string]interface{} is copied entry-by-entry,
+// copied verbatim; map[string]any is copied entry-by-entry,
 // keeping only the entries whose values type-assert to string. Non-string
 // values are silently dropped. The string-only restriction matches the
 // IR's IREdge.Inject schema (string values per delivery key); the silent
@@ -252,12 +252,25 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 	if inject == nil {
 		return result
 	}
-	convert := func(mech string, raw interface{}) {
+	convert := func(mech string, raw any) {
 		if raw == nil {
 			return
 		}
 		switch v := raw.(type) {
-		case map[string]interface{}:
+		case *types.OrderedMap[any]:
+			if v == nil {
+				return
+			}
+			m := types.OrderedMap[string]{}
+			for k, val := range v.All() {
+				if s, ok := val.(string); ok {
+					m.Set(k, s)
+				}
+			}
+			if m.Len() > 0 {
+				result.Set(mech, m)
+			}
+		case map[string]any:
 			m := types.OrderedMap[string]{}
 			for k, val := range v {
 				if s, ok := val.(string); ok {
@@ -282,4 +295,3 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 	convert("arg", inject.Arg)
 	return result
 }
-

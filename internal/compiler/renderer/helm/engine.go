@@ -32,7 +32,7 @@ var (
 // The orchestrator prefixes them with `boundaries/<boundary>/`.
 func (e *HelmEngine) Render(
 	ctx context.Context,
-	values map[string]interface{},
+	values map[string]any,
 	nodeCtx renderer.NodeRenderContext,
 ) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {

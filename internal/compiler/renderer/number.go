@@ -7,7 +7,7 @@ import "encoding/json"
 
 // asNumber coerces template-output numeric values to float64. Accepts the
 // numeric kinds that yaml.v3 and encoding/json may produce when decoding into
-// interface{}: yaml.v3 yields int (and int64 for large literals); encoding/json
+// any: yaml.v3 yields int (and int64 for large literals); encoding/json
 // yields float64 (or json.Number when UseNumber is set). Returns (0, false) on
 // non-numeric input.
 //
@@ -16,7 +16,7 @@ import "encoding/json"
 // {"replicas": 3} now decodes the integer as int rather than float64.
 // Downstream consumers that previously type-asserted .(float64) on
 // template-output map values must coerce through this helper.
-func asNumber(v interface{}) (float64, bool) {
+func asNumber(v any) (float64, bool) {
 	switch n := v.(type) {
 	case int:
 		return float64(n), true

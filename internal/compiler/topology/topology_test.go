@@ -37,8 +37,8 @@ import (
 
 func TestBuild_SimpleTopology(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"main-db"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", []any{"main-db"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
@@ -112,10 +112,10 @@ func TestBuild_SimpleTopology(t *testing.T) {
 
 func TestBuild_CyclicEdges(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("delegates", []interface{}{"agent-b"})
-	uses2 := types.OrderedMap[interface{}]{}
-	uses2.Set("delegates", []interface{}{"agent-a"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("delegates", []any{"agent-b"})
+	uses2 := types.OrderedMap[any]{}
+	uses2.Set("delegates", []any{"agent-a"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("agent-a", types.ComponentInstance{Type: "core/agent", Uses: uses})
 	components.Set("agent-b", types.ComponentInstance{Type: "core/agent", Uses: uses2})
@@ -142,8 +142,8 @@ func TestBuild_CyclicEdges(t *testing.T) {
 
 func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("targets", []interface{}{"metrics-db"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("targets", []any{"metrics-db"})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("monitoring", types.FeatureInstance{Type: "core/monitoring", Uses: uses})
 	components := types.OrderedMap[types.ComponentInstance]{}
@@ -204,12 +204,12 @@ func TestBuild_BoundaryPath(t *testing.T) {
 
 func TestBuild_DeterministicEdgeOrder(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("s", []interface{}{"target"})
-	uses2 := types.OrderedMap[interface{}]{}
-	uses2.Set("s", []interface{}{"target"})
-	uses3 := types.OrderedMap[interface{}]{}
-	uses3.Set("s", []interface{}{"target"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("s", []any{"target"})
+	uses2 := types.OrderedMap[any]{}
+	uses2.Set("s", []any{"target"})
+	uses3 := types.OrderedMap[any]{}
+	uses3.Set("s", []any{"target"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("z-svc", types.ComponentInstance{Type: "t", Uses: uses})
 	components.Set("a-svc", types.ComponentInstance{Type: "t", Uses: uses2})

@@ -31,7 +31,7 @@ func New() *Validator {
 
 // ValidateComponentValues validates a component's values against its CUE schema,
 // resolving extends and usesSchema as needed.
-func (v *Validator) ValidateComponentValues(comp types.Component, values map[string]interface{}, opts ...ValidateOption) []*ValidationError {
+func (v *Validator) ValidateComponentValues(comp types.Component, values map[string]any, opts ...ValidateOption) []*ValidationError {
 	cfg := &validateConfig{}
 	for _, o := range opts {
 		o(cfg)
@@ -78,7 +78,7 @@ func (v *Validator) ValidateComponentValues(comp types.Component, values map[str
 }
 
 // ValidateFeatureValues validates a feature's values against its CUE schema.
-func (v *Validator) ValidateFeatureValues(feat types.Feature, values map[string]interface{}, opts ...ValidateOption) []*ValidationError {
+func (v *Validator) ValidateFeatureValues(feat types.Feature, values map[string]any, opts ...ValidateOption) []*ValidationError {
 	cfg := &validateConfig{}
 	for _, o := range opts {
 		o(cfg)

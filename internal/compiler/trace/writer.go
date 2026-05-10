@@ -22,7 +22,7 @@ type Writer interface {
 	// layout is per-file (PassPhaseB3 artifacts, PassPhaseB4 synthesis),
 	// pass the per-file name as fileSuffix (e.g., "deployment.yaml");
 	// otherwise pass empty string.
-	Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data interface{}) error
+	Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data any) error
 
 	// Close drains any in-flight async writes. Safe to call repeatedly;
 	// subsequent calls are no-ops. Returns the first error encountered
@@ -49,8 +49,8 @@ func New(root string) Writer {
 
 type noopWriter struct{}
 
-func (noopWriter) Write(_ Pass, _, _, _ string, _ interface{}) error { return nil }
-func (noopWriter) Close() error                                      { return nil }
+func (noopWriter) Write(_ Pass, _, _, _ string, _ any) error { return nil }
+func (noopWriter) Close() error                              { return nil }
 
 type event struct {
 	pass         Pass
@@ -131,7 +131,7 @@ func Stats(w Writer) WriterStats {
 	}
 }
 
-func (w *fsWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data interface{}) error {
+func (w *fsWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data any) error {
 	t0 := time.Now()
 	w.totalWrites.Add(1)
 	defer func() {

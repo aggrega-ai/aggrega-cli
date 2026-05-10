@@ -248,7 +248,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 
 	input := testInput()
 	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
-		vals := types.OrderedMap[interface{}]{}
+		vals := types.OrderedMap[any]{}
 		vals.Set("scrape_port", float64(9090))
 		vals.Set("tier", "prod")
 		inner := types.OrderedMap[types.IRFeatureEntry]{}
@@ -394,7 +394,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 	input := testInput()
 	// Attach a credential secret to the api node.
 	input.Graph.Spec.Secrets = func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
-		vals := types.OrderedMap[interface{}]{}
+		vals := types.OrderedMap[any]{}
 		vals.Set("length", float64(32))
 		envInj := types.OrderedMap[string]{}
 		envInj.Set("DB_PASSWORD", "ref:root_password")

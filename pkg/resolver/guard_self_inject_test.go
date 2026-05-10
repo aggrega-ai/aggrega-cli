@@ -35,7 +35,7 @@ func selfInjectCatalog() CatalogLookup {
 func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]interface{}{"PORT": "8080"}}})
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]any{"PORT": "8080"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
@@ -52,7 +52,7 @@ func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("db", types.ComponentInstance{Type: "core/database/postgres", Inject: &types.InjectBlock{Env: map[string]interface{}{"X": "1"}}})
+	components.Set("db", types.ComponentInstance{Type: "core/database/postgres", Inject: &types.InjectBlock{Env: map[string]any{"X": "1"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
@@ -72,7 +72,7 @@ func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Arg: map[string]interface{}{"--flag": "value"}}})
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Arg: map[string]any{"--flag": "value"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
@@ -91,10 +91,10 @@ func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 
 func TestGuardSelfInject_KeyCollision(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", map[string]interface{}{"db": map[string]interface{}{"target": "my-db", "inject": map[string]interface{}{"env": map[string]interface{}{"DB_URL": "host"}}}})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", map[string]any{"db": map[string]any{"target": "my-db", "inject": map[string]any{"env": map[string]any{"DB_URL": "host"}}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_URL": "localhost"}}, Uses: uses})
+	components.Set("api", types.ComponentInstance{Type: "core/web-server", Inject: &types.InjectBlock{Env: map[string]any{"DB_URL": "localhost"}}, Uses: uses})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{

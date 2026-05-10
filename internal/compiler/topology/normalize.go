@@ -5,7 +5,6 @@ package topology
 
 import (
 	"fmt"
-	"sort"
 
 	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
@@ -38,13 +37,14 @@ import (
 // Iteration order:
 //
 //   - Outer socket loop iterates uses.All() in author order — uses is
-//     an OrderedMap[interface{}] so YAML authoring order is preserved.
-//     The TestNormalizeUses_DeterministicOrder regression test pins
-//     this discipline.
-//   - Inner verbose-map alias loop sorts keys alphabetically because
-//     the map entry value (`v` in the switch arm) is a plain Go
-//     map[string]interface{} rather than an OrderedMap; the alphabetical
-//     sort restores determinism at this layer.
+//     an OrderedMap[any] so YAML authoring order is preserved. The
+//     TestNormalizeUses_DeterministicOrder regression test pins this
+//     discipline.
+//   - Inner verbose-map alias loop iterates the OrderedMap in author
+//     order via .All(). Aggregate-author authoring sequence for verbose-
+//     form aliases is preserved through the topology normalization
+//     because the map entry value (`v` in the switch arm) is itself an
+//     *OrderedMap[any] (gamma-decoded), not a plain Go map.
 //
 // The originFeature parameter is non-empty when the `uses` block being
 // normalised lives on a Feature (or Secret) rather than directly on a
@@ -52,7 +52,7 @@ import (
 // field — the per-edge origin marker that keeps Feature-authored edges
 // separable from Component-authored edges. IR's IREdge.OriginFeature is
 // the downstream surface that consumes it.
-func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeature string) ([]NormalizedEdge, error) {
+func normalizeUses(uses types.OrderedMap[any], sourceNodeID, originFeature string) ([]NormalizedEdge, error) {
 	if uses.Len() == 0 {
 		return nil, nil
 	}
@@ -66,7 +66,7 @@ func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeatu
 		}
 
 		switch v := raw.(type) {
-		case []interface{}:
+		case []any:
 			// String array form: ["db1", "db2"]
 			for _, item := range v {
 				target, ok := item.(string)
@@ -82,16 +82,9 @@ func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeatu
 				})
 			}
 
-		case map[string]interface{}:
-			// Verbose map form: {"alias": {"target": "...", "inject": {...}}}
-			aliases := make([]string, 0, len(v))
-			for a := range v {
-				aliases = append(aliases, a)
-			}
-			sort.Strings(aliases)
-
-			for _, alias := range aliases {
-				entry := v[alias]
+		case *types.OrderedMap[any]:
+			// Verbose map form (gamma-decoded): {"alias": {"target": "...", "inject": {...}}}
+			for alias, entry := range v.All() {
 				edge, err := parseVerboseEntry(sourceNodeID, socket, alias, entry, originFeature)
 				if err != nil {
 					return nil, err
@@ -123,8 +116,8 @@ func normalizeUses(uses types.OrderedMap[interface{}], sourceNodeID, originFeatu
 // Anything else (a number, a slice, a nil) returns ErrInvalidUsesFormat
 // wrapping the offending Go type and the (socket, alias) pair so the
 // diagnostic points the author at the precise authoring position.
-func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeature string) (NormalizedEdge, error) {
-	m, ok := raw.(map[string]interface{})
+func parseVerboseEntry(source, socket, alias string, raw any, originFeature string) (NormalizedEdge, error) {
+	om, ok := raw.(*types.OrderedMap[any])
 	if !ok {
 		// Simple string value treated as target
 		if s, ok := raw.(string); ok {
@@ -140,7 +133,7 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 	}
 
 	target := alias // default target = alias name
-	if t, ok := m["target"]; ok {
+	if t, ok := om.Get("target"); ok {
 		if ts, ok := t.(string); ok {
 			target = ts
 		}
@@ -154,7 +147,7 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 		OriginFeature: originFeature,
 	}
 
-	if injectRaw, ok := m["inject"]; ok {
+	if injectRaw, ok := om.Get("inject"); ok {
 		inject, err := parseInjectBlock(injectRaw)
 		if err != nil {
 			return NormalizedEdge{}, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("socket %q alias %q", socket, alias))
@@ -173,11 +166,11 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 // other entries).
 //
 // Typing-degradation contract. The function reads each mechanism's value
-// as `interface{}` and stores it directly into the matching field of
+// as `any` and stores it directly into the matching field of
 // *types.InjectBlock — which is itself typed as Env / File / Arg
-// `interface{}`. **No type-assertion happens here.** The downstream
-// IR builder's convertInjectBlock is the place where the interface{}
-// values are unpacked: it accepts both `map[string]interface{}` and
+// `any`. **No type-assertion happens here.** The downstream
+// IR builder's convertInjectBlock is the place where the any
+// values are unpacked: it accepts both `map[string]any` and
 // `map[string]string` shapes, copying only string-valued entries and
 // silently dropping non-string values.
 //
@@ -186,20 +179,20 @@ func parseVerboseEntry(source, socket, alias string, raw interface{}, originFeat
 // ErrInvalidUsesFormat otherwise) but does not introspect the inner
 // per-mechanism payloads. Any non-string-leaf coercion is the IR side's
 // concern.
-func parseInjectBlock(raw interface{}) (*types.InjectBlock, error) {
-	m, ok := raw.(map[string]interface{})
+func parseInjectBlock(raw any) (*types.InjectBlock, error) {
+	om, ok := raw.(*types.OrderedMap[any])
 	if !ok {
 		return nil, cerrors.Wrap(ErrInvalidUsesFormat, cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("inject must be a map, got %T", raw))
 	}
 
 	inject := &types.InjectBlock{}
-	if v, ok := m["env"]; ok {
+	if v, ok := om.Get("env"); ok {
 		inject.Env = v
 	}
-	if v, ok := m["file"]; ok {
+	if v, ok := om.Get("file"); ok {
 		inject.File = v
 	}
-	if v, ok := m["arg"]; ok {
+	if v, ok := om.Get("arg"); ok {
 		inject.Arg = v
 	}
 	return inject, nil

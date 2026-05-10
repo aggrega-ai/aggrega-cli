@@ -71,9 +71,9 @@ type StatefulSetSpec struct {
 
 // PersistentVolumeClaimSpec is a reduced PVC spec.
 type PersistentVolumeClaimSpec struct {
-	AccessModes      []string                  `yaml:"accessModes,omitempty"`
-	Resources        ResourceRequirements      `yaml:"resources"`
-	StorageClassName *string                   `yaml:"storageClassName,omitempty"`
+	AccessModes      []string             `yaml:"accessModes,omitempty"`
+	Resources        ResourceRequirements `yaml:"resources"`
+	StorageClassName *string              `yaml:"storageClassName,omitempty"`
 }
 
 // LabelSelector with matchLabels only.
@@ -94,16 +94,16 @@ type PodTemplateSpec struct {
 // from the YAML output. The Workload synthesizer populates the additional
 // fields per the parsed Workload's pod-level shape.
 type PodSpec struct {
-	Containers                    []Container         `yaml:"containers"`
-	InitContainers                []Container         `yaml:"initContainers,omitempty"`
-	Volumes                       []Volume            `yaml:"volumes,omitempty"`
-	NodeSelector                  map[string]string   `yaml:"nodeSelector,omitempty"`
-	Affinity                      any                 `yaml:"affinity,omitempty"`
-	Tolerations                   []any               `yaml:"tolerations,omitempty"`
-	TopologySpreadConstraints     []any               `yaml:"topologySpreadConstraints,omitempty"`
-	SecurityContext               *PodSecurityContext `yaml:"securityContext,omitempty"`
-	ServiceAccountName            string              `yaml:"serviceAccountName,omitempty"`
-	RestartPolicy                 string              `yaml:"restartPolicy,omitempty"`
+	Containers                []Container         `yaml:"containers"`
+	InitContainers            []Container         `yaml:"initContainers,omitempty"`
+	Volumes                   []Volume            `yaml:"volumes,omitempty"`
+	NodeSelector              map[string]string   `yaml:"nodeSelector,omitempty"`
+	Affinity                  any                 `yaml:"affinity,omitempty"`
+	Tolerations               []any               `yaml:"tolerations,omitempty"`
+	TopologySpreadConstraints []any               `yaml:"topologySpreadConstraints,omitempty"`
+	SecurityContext           *PodSecurityContext `yaml:"securityContext,omitempty"`
+	ServiceAccountName        string              `yaml:"serviceAccountName,omitempty"`
+	RestartPolicy             string              `yaml:"restartPolicy,omitempty"`
 }
 
 // Container is one workload container. Sourceless.go uses only
@@ -184,10 +184,10 @@ type VolumeMount struct {
 // PersistentVolumeClaim. The persistentTemplate variant becomes a
 // VolumeClaimTemplate on the StatefulSet, not a pod-spec Volume.
 type Volume struct {
-	Name                  string                            `yaml:"name"`
-	EmptyDir              *EmptyDirVolumeSource             `yaml:"emptyDir,omitempty"`
-	ConfigMap             *ConfigMapVolumeSource            `yaml:"configMap,omitempty"`
-	Secret                *SecretVolumeSource               `yaml:"secret,omitempty"`
+	Name                  string                             `yaml:"name"`
+	EmptyDir              *EmptyDirVolumeSource              `yaml:"emptyDir,omitempty"`
+	ConfigMap             *ConfigMapVolumeSource             `yaml:"configMap,omitempty"`
+	Secret                *SecretVolumeSource                `yaml:"secret,omitempty"`
 	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `yaml:"persistentVolumeClaim,omitempty"`
 }
 
@@ -220,14 +220,14 @@ type PersistentVolumeClaimVolumeSource struct {
 // Probe is a discriminated K8s probe. Exactly one of HTTPGet / TCPSocket /
 // Exec is set, mirroring Aggrega's Workload probe-intent disjunction.
 type Probe struct {
-	HTTPGet                  *HTTPGetAction   `yaml:"httpGet,omitempty"`
-	TCPSocket                *TCPSocketAction `yaml:"tcpSocket,omitempty"`
-	Exec                     *ExecAction      `yaml:"exec,omitempty"`
-	TimeoutSeconds           int32            `yaml:"timeoutSeconds,omitempty"`
-	InitialDelaySeconds      int32            `yaml:"initialDelaySeconds,omitempty"`
-	PeriodSeconds            int32            `yaml:"periodSeconds,omitempty"`
-	FailureThreshold         int32            `yaml:"failureThreshold,omitempty"`
-	SuccessThreshold         int32            `yaml:"successThreshold,omitempty"`
+	HTTPGet             *HTTPGetAction   `yaml:"httpGet,omitempty"`
+	TCPSocket           *TCPSocketAction `yaml:"tcpSocket,omitempty"`
+	Exec                *ExecAction      `yaml:"exec,omitempty"`
+	TimeoutSeconds      int32            `yaml:"timeoutSeconds,omitempty"`
+	InitialDelaySeconds int32            `yaml:"initialDelaySeconds,omitempty"`
+	PeriodSeconds       int32            `yaml:"periodSeconds,omitempty"`
+	FailureThreshold    int32            `yaml:"failureThreshold,omitempty"`
+	SuccessThreshold    int32            `yaml:"successThreshold,omitempty"`
 }
 
 // HTTPGetAction describes an HTTP-based probe.

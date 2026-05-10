@@ -40,7 +40,7 @@ func isSourceless(recipe *types.Recipe) bool {
 func ValidateValuesAgainstBaseSchema(
 	providerName string,
 	providerLookup ProviderLookup,
-	values map[string]interface{},
+	values map[string]any,
 	entityForErrors string,
 ) error {
 	if providerLookup == nil {

@@ -49,8 +49,8 @@ func TestClassifyEntityCategory_CatalogEntities(t *testing.T) {
 func TestClassifyEntityCategory_UnknownIsDeveloper(t *testing.T) {
 	cases := []string{
 		"WeirdKind something",
-		"sub-aggregate path",  // free-form Entity (no Kind prefix capitalised)
-		"",                    // empty Entity
+		"sub-aggregate path", // free-form Entity (no Kind prefix capitalised)
+		"",                   // empty Entity
 	}
 	for _, entity := range cases {
 		got := ClassifyEntityCategory(entity)

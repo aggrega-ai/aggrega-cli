@@ -17,10 +17,10 @@ var forbiddenSelfInjectRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|us
 
 // SelfInjectContext is the restricted template context for self-inject value: evaluation.
 type SelfInjectContext struct {
-	Values   types.OrderedMap[interface{}] `json:"values"`
-	Infra    types.OrderedMap[interface{}] `json:"infra"`
-	Context  SelfInjectContextBlock        `json:"context"`
-	Metadata *types.TemplateMetadata       `json:"metadata,omitempty"`
+	Values   types.OrderedMap[any]   `json:"values"`
+	Infra    types.OrderedMap[any]   `json:"infra"`
+	Context  SelfInjectContextBlock  `json:"context"`
+	Metadata *types.TemplateMetadata `json:"metadata,omitempty"`
 }
 
 // SelfInjectContextBlock holds the restricted context fields for self-inject templates.
@@ -87,7 +87,7 @@ func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, inject typ
 func processSelfInjectMechanism(
 	dest *types.OrderedMap[string],
 	mechName string,
-	raw interface{},
+	raw any,
 	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
 	selfKeys map[string]map[string]string,
@@ -131,17 +131,17 @@ type selfInjectEntry struct {
 	from      string // from: provides key reference
 }
 
-func normalizeSelfInjectEntries(raw interface{}) (map[string]selfInjectEntry, error) {
+func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 	result := map[string]selfInjectEntry{}
 
 	switch v := raw.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for key, val := range v {
 			switch vv := val.(type) {
 			case string:
 				// Compact form in component.inject = literal
 				result[key] = selfInjectEntry{isLiteral: true, value: vv}
-			case map[string]interface{}:
+			case map[string]any:
 				// Verbose form: {value: ...} or {from: ...}
 				entry := selfInjectEntry{}
 				if valStr, ok := vv["value"]; ok {

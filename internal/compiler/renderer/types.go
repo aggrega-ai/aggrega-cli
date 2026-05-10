@@ -32,10 +32,10 @@ type NodeProvides map[string]types.OrderedMap[string]
 // ProvidesContext is the restricted context available during provides evaluation.
 // Only self-contained data: instance_id, outputs, values, infra.
 type ProvidesContext struct {
-	Context ProvidesContextBlock    `json:"context"`
-	Values  types.OrderedMap[interface{}] `json:"values"`
-	Infra   types.OrderedMap[interface{}] `json:"infra"`
-	Locals  types.OrderedMap[string]      `json:"locals"`
+	Context ProvidesContextBlock     `json:"context"`
+	Values  types.OrderedMap[any]    `json:"values"`
+	Infra   types.OrderedMap[any]    `json:"infra"`
+	Locals  types.OrderedMap[string] `json:"locals"`
 }
 
 // ProvidesContextBlock holds only the instance_id for provides evaluation.

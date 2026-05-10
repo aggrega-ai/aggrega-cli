@@ -41,7 +41,7 @@ type FeatureRecipeSpec struct {
 	Implements           string             `json:"implements" yaml:"implements"`
 	Locals               OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
 	Provides             OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	Source               interface{}        `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
+	Source               any                `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
 	ValuesMapping        string             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
 	ValuesMappingFile    string             `json:"valuesMappingFile,omitempty" yaml:"valuesMappingFile,omitempty"`
 	ValuesMappingJsonnet string             `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`

@@ -12,7 +12,7 @@ func TestResolveInheritance_SingleLevel(t *testing.T) {
 	child := CatalogEntry{
 		URI:      "child:1.0.0",
 		Extends:  "parent:1.0.0",
-		Metadata: map[string]interface{}{"name": "child", "extra": "from-child"},
+		Metadata: map[string]any{"name": "child", "extra": "from-child"},
 		CUE:      `{ port: int }`,
 	}
 
@@ -20,7 +20,7 @@ func TestResolveInheritance_SingleLevel(t *testing.T) {
 		if uri == "parent:1.0.0" {
 			return CatalogEntry{
 				URI:      "parent:1.0.0",
-				Metadata: map[string]interface{}{"name": "parent", "base_key": "from-parent"},
+				Metadata: map[string]any{"name": "parent", "base_key": "from-parent"},
 				CUE:      `{ port: int, host: string }`,
 			}, true
 		}
@@ -43,7 +43,7 @@ func TestResolveInheritance_MultiLevelChain(t *testing.T) {
 	grandchild := CatalogEntry{
 		URI:      "grandchild:1.0.0",
 		Extends:  "child:1.0.0",
-		Metadata: map[string]interface{}{"level": "3"},
+		Metadata: map[string]any{"level": "3"},
 		CUE:      `{ port: int }`,
 	}
 
@@ -53,13 +53,13 @@ func TestResolveInheritance_MultiLevelChain(t *testing.T) {
 			return CatalogEntry{
 				URI:      "child:1.0.0",
 				Extends:  "parent:1.0.0",
-				Metadata: map[string]interface{}{"level": "2", "child_key": "c"},
+				Metadata: map[string]any{"level": "2", "child_key": "c"},
 				CUE:      `{ port: int, name: string }`,
 			}, true
 		case "parent:1.0.0":
 			return CatalogEntry{
 				URI:      "parent:1.0.0",
-				Metadata: map[string]interface{}{"level": "1", "parent_key": "p"},
+				Metadata: map[string]any{"level": "1", "parent_key": "p"},
 				CUE:      `{ port: int, name: string, host: string }`,
 			}, true
 		}
@@ -130,7 +130,7 @@ func TestResolveInheritance_ParentNotFound(t *testing.T) {
 func TestResolveInheritance_NoExtends(t *testing.T) {
 	entry := CatalogEntry{
 		URI:      "standalone:1.0.0",
-		Metadata: map[string]interface{}{"name": "standalone"},
+		Metadata: map[string]any{"name": "standalone"},
 		CUE:      `{ port: int }`,
 	}
 

@@ -18,8 +18,8 @@ import (
 func minimalCtx() *types.TemplateContext {
 	return &types.TemplateContext{
 		Context: types.ContextBlock{InstanceID: "test-node"},
-		Values:  types.OrderedMap[interface{}]{},
-		Infra:   types.OrderedMap[interface{}]{},
+		Values:  types.OrderedMap[any]{},
+		Infra:   types.OrderedMap[any]{},
 	}
 }
 

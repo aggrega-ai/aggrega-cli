@@ -70,7 +70,7 @@ func featureCatalog() resolver.CatalogLookup {
 
 func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 	t.Parallel()
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("enabled", true)
 	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
@@ -109,7 +109,7 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 
 func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	t.Parallel()
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("vault_path", "/secret/db")
 	apiNode := &topology.TopologyNode{InstanceID: "api"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
@@ -172,10 +172,10 @@ func TestCollectNodeFeatures_TypeMismatchError(t *testing.T) {
 
 func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 	t.Parallel()
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("level", "warn")
 	values.Set("port", 9090)
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("level", "info")
 	apiNode := &topology.TopologyNode{InstanceID: "api"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}

@@ -81,7 +81,7 @@ func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 	}
 
 	deps := make([]umbrellaChartDependency, 0, len(subCharts))
-	values := make(map[string]interface{}, len(subCharts))
+	values := make(map[string]any, len(subCharts))
 	for _, sc := range subCharts {
 		alias := sanitizeChartName(sc.InstanceID)
 		version := sc.Version
@@ -109,7 +109,7 @@ func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 		if sc.Values != nil {
 			values[alias] = sc.Values
 		} else {
-			values[alias] = map[string]interface{}{}
+			values[alias] = map[string]any{}
 		}
 	}
 

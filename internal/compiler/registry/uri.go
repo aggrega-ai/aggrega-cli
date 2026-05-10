@@ -52,19 +52,19 @@ const officialNamespace = "aggrega"
 // ontology label to the catalog requires adding the same key here, otherwise
 // shorthand inputs naming the new label fall through to third-party routing.
 var coreComponents = map[string]struct{}{
-	"ai-agent":         {},
-	"ai-datastore":     {},
-	"ai-gateway":       {},
-	"ai-model":         {},
-	"ai-pipeline":      {},
-	"ai-tool":          {},
-	"server":           {},
-	"worker":           {},
-	"task":             {},
-	"function":         {},
-	"stateful-server":  {},
-	"resource":         {},
-	"messaging":        {},
+	"ai-agent":        {},
+	"ai-datastore":    {},
+	"ai-gateway":      {},
+	"ai-model":        {},
+	"ai-pipeline":     {},
+	"ai-tool":         {},
+	"server":          {},
+	"worker":          {},
+	"task":            {},
+	"function":        {},
+	"stateful-server": {},
+	"resource":        {},
+	"messaging":       {},
 }
 
 // coreFeatures is the single source of truth for which Feature identifiers
@@ -105,10 +105,10 @@ var coreFeatures = map[string]struct{}{
 	"response-validation": {},
 	"traffic-shadowing":   {},
 	// Data-Plane Security
-	"data-masking":               {},
-	"prompt-injection-shield":    {},
-	"apply-untrusted-label":      {},
-	"block-untrusted-payloads":     {},
+	"data-masking":             {},
+	"prompt-injection-shield":  {},
+	"apply-untrusted-label":    {},
+	"block-untrusted-payloads": {},
 	// Trust & Isolation
 	"tls-pinning":             {},
 	"cryptographic-signature": {},
@@ -121,7 +121,7 @@ var coreFeatures = map[string]struct{}{
 	"audit-logging": {},
 	"llm-tracing":   {},
 	// Cloud-Native
-	"public-ingress":       {},
+	"public-ingress":      {},
 	"prometheus-exporter": {},
 }
 

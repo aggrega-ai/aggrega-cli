@@ -5,9 +5,9 @@ package validator
 
 // deepMergeYAML recursively merges child into base. Maps recurse; arrays and scalars
 // in child replace base values. Nil maps are treated as empty. Returns a new map.
-func deepMergeYAML(base, child map[string]interface{}) map[string]interface{} {
+func deepMergeYAML(base, child map[string]any) map[string]any {
 	if base == nil && child == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	if base == nil {
 		return copyMap(child)
@@ -24,8 +24,8 @@ func deepMergeYAML(base, child map[string]interface{}) map[string]interface{} {
 			continue
 		}
 
-		bMap, bIsMap := bv.(map[string]interface{})
-		cMap, cIsMap := cv.(map[string]interface{})
+		bMap, bIsMap := bv.(map[string]any)
+		cMap, cIsMap := cv.(map[string]any)
 		if bIsMap && cIsMap {
 			result[k] = deepMergeYAML(bMap, cMap)
 		} else {
@@ -35,8 +35,8 @@ func deepMergeYAML(base, child map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-func copyMap(m map[string]interface{}) map[string]interface{} {
-	out := make(map[string]interface{}, len(m))
+func copyMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[k] = v
 	}

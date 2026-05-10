@@ -39,9 +39,9 @@ type ResolveResult struct {
 	Aggregate           *types.Aggregate
 	Release             *types.Release
 	Manifest            *types.Manifest
-	BoundaryInfra       map[string]*BoundaryInfra            // per-component boundary context
-	BoundaryAnnotations map[string]types.OrderedMap[string]  // per-boundary cascaded annotations keyed by boundary path; effective set without per-component overrides
-	Parameters          map[string]interface{}               // merged parameter map (alive through end-of-pipeline)
+	BoundaryInfra       map[string]*BoundaryInfra           // per-component boundary context
+	BoundaryAnnotations map[string]types.OrderedMap[string] // per-boundary cascaded annotations keyed by boundary path; effective set without per-component overrides
+	Parameters          map[string]any                      // merged parameter map (alive through end-of-pipeline)
 }
 
 // Resolve executes the Step 1 pipeline against the configured paths and
@@ -60,11 +60,11 @@ type ResolveResult struct {
 //  8. Validate user-authored instance names against the dot-free pattern.
 //  9. Wire per-component boundary infra from the Release boundary tree.
 //  10. Carry the merged parameter map through ResolveResult.Parameters
-//      for downstream consumption (orchestrator-time path-template
-//      evaluation). The active-purge runs at end-of-pipeline in
-//      cmd/aggrega/build.go rather than at Resolve return, so that
-//      orchestrator-time path-template evaluation can read parameters
-//      via the live map.
+//     for downstream consumption (orchestrator-time path-template
+//     evaluation). The active-purge runs at end-of-pipeline in
+//     cmd/aggrega/build.go rather than at Resolve return, so that
+//     orchestrator-time path-template evaluation can read parameters
+//     via the live map.
 //
 // Error semantics:
 //
@@ -97,7 +97,7 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 	}
 
 	// 2. Load parametersFrom
-	var externalParams map[string]interface{}
+	var externalParams map[string]any
 	if len(release.Spec.ParametersFrom) > 0 {
 		externalParams, err = LoadParametersFrom(release.Spec.ParametersFrom)
 		if err != nil {

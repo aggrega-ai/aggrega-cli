@@ -42,7 +42,7 @@ type PhaseBState struct {
 	// sourceless Recipes today, the values context flattened into a plain
 	// map). Engines consume this via engine.Render. Populated at B.1; nil
 	// before then.
-	ResolvedValues map[string]interface{}
+	ResolvedValues map[string]any
 
 	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal
 	// + validator.ValidateWorkload + validator.ValidateWorkloadSecrets all

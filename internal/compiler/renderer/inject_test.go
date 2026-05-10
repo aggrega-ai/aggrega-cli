@@ -33,8 +33,8 @@ func TestBuildInjectPipe_NilRaw(t *testing.T) {
 func TestBuildInjectPipe_WithValues(t *testing.T) {
 	t.Parallel()
 	rawBlock := &types.InjectBlock{
-		Env:  map[string]interface{}{"DB_URL": "host"},
-		File: map[string]interface{}{"config": "/etc/app.yaml"},
+		Env:  map[string]any{"DB_URL": "host"},
+		File: map[string]any{"config": "/etc/app.yaml"},
 	}
 	inject, raw := BuildInjectPipe(rawBlock)
 	if raw == nil {
@@ -59,7 +59,7 @@ func TestBuildInjectPipe_GuaranteedKeys(t *testing.T) {
 	t.Parallel()
 	// Even with only env set, file and arg must be empty but usable
 	rawBlock := &types.InjectBlock{
-		Env: map[string]interface{}{"X": "1"},
+		Env: map[string]any{"X": "1"},
 	}
 	inject, _ := BuildInjectPipe(rawBlock)
 	if inject.File.Len() != 0 {

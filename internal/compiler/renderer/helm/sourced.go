@@ -23,7 +23,7 @@ import (
 func renderSourced(
 	_ context.Context,
 	chartPath string,
-	values map[string]interface{},
+	values map[string]any,
 	nodeCtx renderer.NodeRenderContext,
 ) (map[string][]byte, error) {
 	// Load chart directory

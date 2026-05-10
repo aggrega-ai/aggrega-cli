@@ -45,7 +45,7 @@ type RecipeMetadata struct {
 type RecipeSpec struct {
 	Provider             string             `json:"provider" yaml:"provider"`
 	Implements           string             `json:"implements" yaml:"implements"`
-	Source               interface{}        `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
+	Source               any                `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
 	Locals               OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
 	Provides             OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 	ValuesMapping        string             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`

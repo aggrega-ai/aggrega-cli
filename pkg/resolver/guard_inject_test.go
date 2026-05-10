@@ -35,7 +35,7 @@ func TestGuardInjectKeys_TypoFromKey(t *testing.T) {
 	features :=
 		// Feature attached to the db component has inject.env.DB_HOST from "hots" — typo for "host".
 		types.OrderedMap[types.FeatureInstance]{}
-	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_HOST": "hots"}}})
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]any{"DB_HOST": "hots"}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
@@ -67,7 +67,7 @@ func TestGuardInjectKeys_TypoFromKey(t *testing.T) {
 func TestGuardInjectKeys_ValidFromKey(t *testing.T) {
 	t.Parallel()
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_HOST": "host", "DB_PORT": "port"}}})
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]any{"DB_HOST": "host", "DB_PORT": "port"}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
@@ -86,7 +86,7 @@ func TestGuardInjectKeys_VerboseForm(t *testing.T) {
 	features :=
 		// Verbose form: DB_URL has {from: "hots"} — typo through the verbose path.
 		types.OrderedMap[types.FeatureInstance]{}
-	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_URL": map[string]interface{}{"from": "hots"}}}})
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]any{"DB_URL": map[string]any{"from": "hots"}}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
@@ -110,7 +110,7 @@ func TestGuardInjectKeys_VerboseLiteralSkipped(t *testing.T) {
 		// Verbose literal: only "value" set (no "from") — this is a literal inject,
 		// not a provides reference. Validator should skip it.
 		types.OrderedMap[types.FeatureInstance]{}
-	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"DB_TAG": map[string]interface{}{"value": "production"}}}})
+	features.Set("telemetry", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]any{"DB_TAG": map[string]any{"value": "production"}}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
@@ -134,7 +134,7 @@ func TestGuardInjectKeys_NoCueSchema(t *testing.T) {
 		Feature: func(typeURI string) (types.Feature, bool) { return types.Feature{}, false },
 	}
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"K": "anything"}}})
+	features.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]any{"K": "anything"}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
@@ -159,7 +159,7 @@ func TestGuardInjectKeys_NoProvidesPillar(t *testing.T) {
 		Feature: func(typeURI string) (types.Feature, bool) { return types.Feature{}, false },
 	}
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"K": "anything"}}})
+	features.Set("f", types.FeatureInstance{Inject: &types.InjectBlock{Env: map[string]any{"K": "anything"}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Features: features})
 	agg := &types.Aggregate{
@@ -177,7 +177,7 @@ func TestGuardInjectKeys_SecretInjectAlsoValidated(t *testing.T) {
 	secrets :=
 		// Same typo via a secret inject block instead of a feature.
 		types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("root_password", types.SecretInstance{Inject: &types.InjectBlock{Env: map[string]interface{}{"PW": "hots"}}})
+	secrets.Set("root_password", types.SecretInstance{Inject: &types.InjectBlock{Env: map[string]any{"PW": "hots"}}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{Type: "core/db", Secrets: secrets})
 	agg := &types.Aggregate{

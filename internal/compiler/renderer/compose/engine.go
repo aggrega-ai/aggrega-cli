@@ -48,7 +48,7 @@ var (
 // source-classification structure for symmetry).
 func (e *ComposeEngine) Render(
 	ctx context.Context,
-	values map[string]interface{},
+	values map[string]any,
 	nodeCtx renderer.NodeRenderContext,
 ) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {

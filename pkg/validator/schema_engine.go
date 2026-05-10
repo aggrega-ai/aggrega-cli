@@ -13,13 +13,13 @@ import (
 // ValidateValues is the public wrapper for validating a values dictionary
 // against a CUE schema (e.g. a Provider's baseSchema). Returns nil on success
 // or a slice of translated errors.
-func ValidateValues(cueSource string, values map[string]interface{}, entity string) []*ValidationError {
+func ValidateValues(cueSource string, values map[string]any, entity string) []*ValidationError {
 	return evaluateSchema(cueSource, values, entity)
 }
 
 // evaluateSchema validates values against a CUE schema string.
 // Returns nil if validation passes, or a slice of translated errors.
-func evaluateSchema(cueSource string, values map[string]interface{}, entity string) []*ValidationError {
+func evaluateSchema(cueSource string, values map[string]any, entity string) []*ValidationError {
 	if cueSource == "" {
 		return nil
 	}

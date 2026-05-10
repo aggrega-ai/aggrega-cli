@@ -53,13 +53,13 @@ func guardRequiredUsesSockets(agg *types.Aggregate, catalog CatalogLookup) []*Re
 // (`socket: [target1, target2]`) and the verbose map form
 // (`socket: {alias: {target: ..., ...}}`). Empty strings in a list and empty
 // maps count as not-populated.
-func socketIsPopulated(uses types.OrderedMap[interface{}], socket string) bool {
+func socketIsPopulated(uses types.OrderedMap[any], socket string) bool {
 	raw, ok := uses.Get(socket)
 	if !ok || raw == nil {
 		return false
 	}
 	switch v := raw.(type) {
-	case []interface{}:
+	case []any:
 		for _, item := range v {
 			if s, ok := item.(string); ok && s != "" {
 				return true
@@ -73,9 +73,16 @@ func socketIsPopulated(uses types.OrderedMap[interface{}], socket string) bool {
 			}
 		}
 		return false
-	case map[string]interface{}:
+	case *types.OrderedMap[any]:
+		return v.Len() > 0
+	case *types.OrderedMap[*types.OrderedMap[any]]:
+		return v.Len() > 0
+	case map[string]any:
+		// Defensive: in-memory test fixtures may construct map shapes
+		// that bypass the OrderedMap unmarshal path.
 		return len(v) > 0
-	case map[string]map[string]interface{}:
+	case map[string]map[string]any:
+		// Defensive: same rationale.
 		return len(v) > 0
 	default:
 		// Unknown shapes aren't counted as populated — guard defers to the

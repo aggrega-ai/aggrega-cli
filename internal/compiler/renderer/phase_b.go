@@ -16,7 +16,7 @@ import (
 // scalars, numeric-shape drift between yaml.v3 and encoding/json,
 // JSON-shape parity). The body delegates to phaseB1 so behaviour and
 // edge cases stay aligned with the production sub-pass.
-func ExecutePhaseB(ctx *types.TemplateContext, recipe *types.Recipe) (map[string]interface{}, error) {
+func ExecutePhaseB(ctx *types.TemplateContext, recipe *types.Recipe) (map[string]any, error) {
 	state := &PhaseBState{Recipe: recipe}
 	if err := phaseB1(ctx, state); err != nil {
 		return nil, err

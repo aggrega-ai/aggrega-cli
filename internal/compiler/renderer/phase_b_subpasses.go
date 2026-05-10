@@ -127,7 +127,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.1: recipe %q valuesMapping", state.Recipe.Metadata.Name))
 	}
 
-	var values map[string]interface{}
+	var values map[string]any
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.1: recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
@@ -435,7 +435,7 @@ func phaseB6(
 
 			frCtx := *tmplCtx // shallow copy
 			frCtx.Values = entry.Values
-			frCtx.Infra = types.OrderedMap[interface{}]{}
+			frCtx.Infra = types.OrderedMap[any]{}
 
 			frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 				fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],

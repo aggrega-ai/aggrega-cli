@@ -56,11 +56,11 @@ func EvaluateAllProvides(
 		}
 
 		// Build restricted context
-		values := types.OrderedMap[interface{}]{}
+		values := types.OrderedMap[any]{}
 		if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
 			_ = parse.IRPayload(raw, &values)
 		}
-		infra := types.OrderedMap[interface{}]{}
+		infra := types.OrderedMap[any]{}
 		if raw, ok := graph.Spec.InfraMapping.Get(nodeID); ok {
 			_ = parse.IRPayload(raw, &infra)
 		}
@@ -94,7 +94,7 @@ func EvaluateAllProvides(
 
 // evalTemplateString evaluates a Go template string with Sprig functions.
 // Uses toLowercaseMap for consistent lowercase field names in templates.
-func evalTemplateString(tmplText string, data interface{}, name string) (string, error) {
+func evalTemplateString(tmplText string, data any, name string) (string, error) {
 	return EvalTemplate(name, tmplText, data)
 }
 
@@ -112,13 +112,13 @@ func flattenOrderedStringMap(m types.OrderedMap[string]) map[string]string {
 	return out
 }
 
-// flattenOrderedMap copies an OrderedMap[interface{}] into a plain
-// map[string]interface{}. Used at the boundary with engines/provider types.
-func flattenOrderedMap(m types.OrderedMap[interface{}]) map[string]interface{} {
+// flattenOrderedMap copies an OrderedMap[any] into a plain
+// map[string]any. Used at the boundary with engines/provider types.
+func flattenOrderedMap(m types.OrderedMap[any]) map[string]any {
 	if m.Len() == 0 {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	out := make(map[string]interface{}, m.Len())
+	out := make(map[string]any, m.Len())
 	for k, v := range m.All() {
 		out[k] = v
 	}

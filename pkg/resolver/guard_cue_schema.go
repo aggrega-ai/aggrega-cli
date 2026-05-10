@@ -11,14 +11,14 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
 
-// orderedMapToMap flattens an OrderedMap[interface{}] into a plain map[string]interface{}
+// orderedMapToMap flattens an OrderedMap[any] into a plain map[string]any
 // for boundaries that accept map-shaped payloads (CUE pillar validation, JSON marshaling).
 // Ordering is lost at this boundary; CUE unification does not care about author order.
-func orderedMapToMap(m types.OrderedMap[interface{}]) map[string]interface{} {
+func orderedMapToMap(m types.OrderedMap[any]) map[string]any {
 	if m.Len() == 0 {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	out := make(map[string]interface{}, m.Len())
+	out := make(map[string]any, m.Len())
 	for k, v := range m.All() {
 		out[k] = v
 	}
@@ -66,7 +66,7 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 		}
 
 		// Infra pillar — data from the Release boundary for this instance.
-		var infra map[string]interface{}
+		var infra map[string]any
 		if bi, ok := boundaryInfra[pair.name]; ok && bi != nil {
 			infra = orderedMapToMap(bi.Infra)
 		}
@@ -78,7 +78,7 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 		// Uses pillar — data from the Aggregate component instance. Validates
 		// socket names exist in usesSchema and inject mechanisms are allowlisted.
 		// Short-circuit when both the schema and the data are empty to avoid
-		// spurious validation over unstructured map[string]interface{} conversion.
+		// spurious validation over unstructured map[string]any conversion.
 		if comp.Spec.UsesSchema.Len() > 0 || pair.inst.Uses.Len() > 0 {
 			usesData := normalizeUsesForCUE(pair.inst.Uses)
 			usesErrs := validator.ValidatePillar(schema, "uses", usesData, entity)
@@ -104,17 +104,17 @@ func guardCueSchema(agg *types.Aggregate, catalog CatalogLookup, boundaryInfra m
 }
 
 // normalizeSecretsForCUE converts Aggregate `secrets` entries (map[string]SecretInstance)
-// into a map[string]interface{} shape CUE can unify with the generated secrets
+// into a map[string]any shape CUE can unify with the generated secrets
 // pillar. Each SecretInstance's Inject (*InjectBlock) is normalized to a plain
 // map[string]map[string]string so CUE sees `inject.env.KEY = "value"`-style
 // entries matching the generated pillar's shape.
-func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[string]interface{} {
+func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[string]any {
 	if secrets.Len() == 0 {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	out := make(map[string]interface{}, secrets.Len())
+	out := make(map[string]any, secrets.Len())
 	for name, sec := range secrets.All() {
-		entry := map[string]interface{}{}
+		entry := map[string]any{}
 		if sec.Type != "" {
 			entry["type"] = sec.Type
 		}
@@ -125,7 +125,7 @@ func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[
 			entry["uses"] = orderedMapToMap(sec.Uses)
 		}
 		if sec.Inject != nil {
-			inj := map[string]interface{}{}
+			inj := map[string]any{}
 			if env := normalizeInjectMechanism(sec.Inject.Env); env != nil {
 				inj["env"] = env
 			}
@@ -150,9 +150,9 @@ func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[
 }
 
 // normalizeInjectMechanism coerces the polymorphic InjectBlock mechanism field
-// (map[string]interface{} from YAML) into map[string]string for CUE unification.
+// (map[string]any from YAML) into map[string]string for CUE unification.
 // Returns nil on unrecognized shapes so the caller can skip the mechanism entirely.
-func normalizeInjectMechanism(raw interface{}) map[string]string {
+func normalizeInjectMechanism(raw any) map[string]string {
 	switch v := raw.(type) {
 	case nil:
 		return nil
@@ -161,7 +161,7 @@ func normalizeInjectMechanism(raw interface{}) map[string]string {
 			return nil
 		}
 		return v
-	case map[string]interface{}:
+	case map[string]any:
 		if len(v) == 0 {
 			return nil
 		}
@@ -177,22 +177,22 @@ func normalizeInjectMechanism(raw interface{}) map[string]string {
 	}
 }
 
-// normalizeUsesForCUE converts the polymorphic `uses` block (map[string]interface{})
+// normalizeUsesForCUE converts the polymorphic `uses` block (map[string]any)
 // into a form acceptable to CUE unification via JSON. The Aggregate uses block can
 // carry both the compact list form (`socket: [target1, target2]`) and the verbose
 // form (`socket: {alias: {target: ..., inject: {...}}}`). The generated base schema
 // expects the verbose form, so compact-style lists are skipped at this layer (an
 // unknown socket would still fire in the data shape; list normalization is a
 // separate concern handled by Step 2).
-func normalizeUsesForCUE(uses types.OrderedMap[interface{}]) map[string]interface{} {
+func normalizeUsesForCUE(uses types.OrderedMap[any]) map[string]any {
 	if uses.Len() == 0 {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	out := make(map[string]interface{}, uses.Len())
+	out := make(map[string]any, uses.Len())
 	for socket, raw := range uses.All() {
 		// Only forward the verbose form — compact arrays don't match the
 		// generated `{ [string]: { target: string } }` shape.
-		if m, ok := raw.(map[string]interface{}); ok {
+		if m, ok := raw.(map[string]any); ok {
 			out[socket] = m
 		}
 	}

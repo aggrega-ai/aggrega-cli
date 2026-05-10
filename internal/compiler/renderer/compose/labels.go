@@ -53,7 +53,7 @@ import (
 // The function tolerates malformed compose documents silently — sourced-
 // mode treats the input as authored YAML, and label injection is a
 // metadata enhancement, not a validation gate.
-func injectAggregaLabelsIntoServices(doc map[string]interface{}, origins map[string]renderer.NodeRenderContext) {
+func injectAggregaLabelsIntoServices(doc map[string]any, origins map[string]renderer.NodeRenderContext) {
 	if doc == nil || len(origins) == 0 {
 		return
 	}
@@ -97,7 +97,7 @@ func injectAggregaLabelsIntoServices(doc map[string]interface{}, origins map[str
 // case where every service in a merged compose document shares one
 // nodeCtx — the single-origin scenario for sourced-mode rendering.
 // Future multi-origin call sites build the map directly per service.
-func buildSingleOriginMap(doc map[string]interface{}, nodeCtx renderer.NodeRenderContext) map[string]renderer.NodeRenderContext {
+func buildSingleOriginMap(doc map[string]any, nodeCtx renderer.NodeRenderContext) map[string]renderer.NodeRenderContext {
 	origins := map[string]renderer.NodeRenderContext{}
 	if doc == nil {
 		return origins

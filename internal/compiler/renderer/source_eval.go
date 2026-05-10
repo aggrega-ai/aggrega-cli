@@ -18,18 +18,18 @@ import (
 //   - nil: returned as-is (sourceless mode).
 //   - string: a single URI or version reference; the whole value is treated as a
 //     template.
-//   - map[string]interface{}: a structured source (OCI descriptor, etc.); each
+//   - map[string]any: a structured source (OCI descriptor, etc.); each
 //     string-valued field is template-evaluated, non-string fields pass through.
 //
 // Self-containment rules match EvaluateRecipeLocals: templates may not reference
 // .context.inject or .context.uses. Violations surface as a wrapped error.
 func EvaluateRecipeSource(
-	source interface{},
+	source any,
 	nodeID string,
-	values types.OrderedMap[interface{}],
-	infra types.OrderedMap[interface{}],
+	values types.OrderedMap[any],
+	infra types.OrderedMap[any],
 	provides types.OrderedMap[string],
-) (interface{}, error) {
+) (any, error) {
 	if source == nil {
 		return nil, nil
 	}
@@ -43,8 +43,8 @@ func EvaluateRecipeSource(
 	switch s := source.(type) {
 	case string:
 		return renderSourceString(s, ctx, "source")
-	case map[string]interface{}:
-		out := make(map[string]interface{}, len(s))
+	case map[string]any:
+		out := make(map[string]any, len(s))
 		for k, v := range s {
 			if str, ok := v.(string); ok {
 				rendered, err := renderSourceString(str, ctx, "source."+k)

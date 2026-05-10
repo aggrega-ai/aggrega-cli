@@ -83,7 +83,7 @@ type boundaryFRKey struct {
 // encountered (boundary, FR-instance) tuple.
 type BoundaryFRState struct {
 	Dedup        map[boundaryFRKey]bool
-	Provides     map[boundaryFRKey]map[string]interface{}
+	Provides     map[boundaryFRKey]map[string]any
 	Files        map[boundaryFRKey][]EmittedFile
 	ValidatedFRs map[string]error
 }
@@ -92,7 +92,7 @@ type BoundaryFRState struct {
 func NewBoundaryFRState() *BoundaryFRState {
 	return &BoundaryFRState{
 		Dedup:        map[boundaryFRKey]bool{},
-		Provides:     map[boundaryFRKey]map[string]interface{}{},
+		Provides:     map[boundaryFRKey]map[string]any{},
 		Files:        map[boundaryFRKey][]EmittedFile{},
 		ValidatedFRs: map[string]error{},
 	}
@@ -107,11 +107,11 @@ func NewBoundaryFRState() *BoundaryFRState {
 // or replaced by per-boundary equivalents:
 //
 //   - context  — replaced by .boundary.{path,boundary_name,components,...}.
-//                .context.instance_id, .context.inject, .context.uses are
-//                meaningless at boundary scope.
+//     .context.instance_id, .context.inject, .context.uses are
+//     meaningless at boundary scope.
 //   - workload — per-component Workload; absent at boundary scope.
 //   - secret_name, inject, inject_raw — secret-specific; absent at
-//                boundary scope.
+//     boundary scope.
 //
 // boundary-scope FRs reference .boundary.* pillars instead. The allowlist-
 // rejection at parse time prevents shape-mismatch errors at runtime.
@@ -254,7 +254,7 @@ func dispatchBoundaryScopeFR(
 	//    authors infra). Boundary-scope FR templates that reference .values
 	//    receive an empty OrderedMap.
 	frCtx := &types.TemplateContext{
-		Values:   types.OrderedMap[interface{}]{},
+		Values:   types.OrderedMap[any]{},
 		Infra:    feat.Infra,
 		Locals:   types.OrderedMap[string]{},
 		Boundary: boundaryCtx,
@@ -363,7 +363,7 @@ func evaluateBoundaryFRTemplates(
 	// Evaluate provides — store into state.Provides for cascade-aware
 	// consumer resolution. Uses the same EvalTemplate (Sprig-enabled,
 	// missingkey=zero) as per-component FR provides today.
-	provided := map[string]interface{}{}
+	provided := map[string]any{}
 	for k, tmplText := range fr.Spec.Provides.All() {
 		out, err := EvalTemplate("fr-provides["+frInstance+"."+k+"]", tmplText, frCtx)
 		if err != nil {
@@ -509,7 +509,7 @@ func buildBoundaryContext(
 		bf := parseBoundaryFeatureRaw(raw)
 		bc.FeatureAttachments = append(bc.FeatureAttachments, types.TemplateFeature{
 			Type:   bf.Type,
-			Values: types.OrderedMap[interface{}]{},
+			Values: types.OrderedMap[any]{},
 			Infra:  bf.Infra,
 		})
 		_ = fname
@@ -594,7 +594,7 @@ func findFRAttachmentBoundary(release *types.Release, componentBoundaryPath, frI
 // lookupBoundaryFeatureAttachment finds the BoundaryFeature with the given
 // instance name on the boundary at boundaryPath. Returns (zero, false)
 // when the boundary or feature instance is absent. The boundary's
-// Features map is OrderedMap[interface{}]; this function parses the raw
+// Features map is OrderedMap[any]; this function parses the raw
 // payload into a typed BoundaryFeature.
 func lookupBoundaryFeatureAttachment(release *types.Release, boundaryPath, frInstance string) (types.BoundaryFeature, bool) {
 	if release == nil {
@@ -616,26 +616,53 @@ func lookupBoundaryFeatureAttachment(release *types.Release, boundaryPath, frIns
 // builder's parseBoundaryFeature. Extracts type and infra from an opaque
 // map payload. Renderer-local copy avoids cross-package import of the IR
 // package's internal helper.
-func parseBoundaryFeatureRaw(raw interface{}) types.BoundaryFeature {
-	m, ok := raw.(map[string]interface{})
-	if !ok {
-		return types.BoundaryFeature{}
-	}
+func parseBoundaryFeatureRaw(raw any) types.BoundaryFeature {
 	bf := types.BoundaryFeature{}
-	if t, ok := m["type"].(string); ok {
-		bf.Type = t
-	}
-	if infra, ok := m["infra"].(map[string]interface{}); ok {
-		om := types.OrderedMap[interface{}]{}
-		keys := make([]string, 0, len(infra))
-		for k := range infra {
-			keys = append(keys, k)
+	switch m := raw.(type) {
+	case *types.OrderedMap[any]:
+		if m == nil {
+			return bf
 		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			om.Set(k, infra[k])
+		if t, ok := m.Get("type"); ok {
+			if s, ok := t.(string); ok {
+				bf.Type = s
+			}
 		}
-		bf.Infra = om
+		if infraRaw, ok := m.Get("infra"); ok {
+			switch infra := infraRaw.(type) {
+			case *types.OrderedMap[any]:
+				if infra != nil {
+					bf.Infra = *infra
+				}
+			case map[string]any:
+				om := types.OrderedMap[any]{}
+				keys := make([]string, 0, len(infra))
+				for k := range infra {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					om.Set(k, infra[k])
+				}
+				bf.Infra = om
+			}
+		}
+	case map[string]any:
+		if t, ok := m["type"].(string); ok {
+			bf.Type = t
+		}
+		if infra, ok := m["infra"].(map[string]any); ok {
+			om := types.OrderedMap[any]{}
+			keys := make([]string, 0, len(infra))
+			for k := range infra {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				om.Set(k, infra[k])
+			}
+			bf.Infra = om
+		}
 	}
 	// BoundaryFeature has no Values field — Release schema's pillar-split
 	// rule forbids values: on Release-level features. Boundary-scope FR
@@ -687,7 +714,7 @@ func parseBoundaryFeatureRaw(raw interface{}) types.BoundaryFeature {
 func resolveBoundaryScopeFRProvides(
 	state *BoundaryFRState,
 	consumerBoundaryPath, frInstance string,
-) (map[string]interface{}, bool) {
+) (map[string]any, bool) {
 	if state == nil {
 		return nil, false
 	}

@@ -33,7 +33,7 @@ import (
 // serialization boundary (IR, --trace, Wasm payloads) lives in
 // OrderedMap.MarshalJSON; the template-iteration layer is intentionally
 // alphabetical to match Helm-community authoring expectations.
-func EvalTemplate(name, tmplText string, data interface{}) (string, error) {
+func EvalTemplate(name, tmplText string, data any) (string, error) {
 	return EvalTemplateWithDelims(name, tmplText, data, "{{", "}}")
 }
 
@@ -46,7 +46,7 @@ func EvalTemplate(name, tmplText string, data interface{}) (string, error) {
 // Caller passes the explicit delimiter pair every time — there is no
 // empty-string sentinel. The default-delimiter path is the EvalTemplate
 // thin wrapper above.
-func EvalTemplateWithDelims(name, tmplText string, data interface{}, leftDelim, rightDelim string) (string, error) {
+func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDelim string) (string, error) {
 	templateData := toLowercaseMap(data)
 
 	t, err := template.New(name).
@@ -112,7 +112,7 @@ var pathTemplateAllowlistSubDirectory = map[string]bool{
 // boundaryName is included in the error wrapping when an invalid field is
 // detected, so the operator can locate the offending template without
 // re-grepping the Release file.
-func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data interface{}) (string, error) {
+func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data any) (string, error) {
 	allowlist := pathTemplateAllowlistDirectory
 	if contextKind == "subDirectory" {
 		allowlist = pathTemplateAllowlistSubDirectory
@@ -288,14 +288,14 @@ type orderedMapForTemplate interface {
 //   - Slices / arrays: walked element-wise, emitted as []any.
 //   - Pointers / interfaces: dereferenced, then walked.
 //   - Scalars (bool, numeric, string): passed through unchanged.
-func toLowercaseMap(data interface{}) interface{} {
+func toLowercaseMap(data any) any {
 	if data == nil {
 		return nil
 	}
 	return walkForTemplate(reflect.ValueOf(data))
 }
 
-func walkForTemplate(v reflect.Value) interface{} {
+func walkForTemplate(v reflect.Value) any {
 	if !v.IsValid() {
 		return nil
 	}

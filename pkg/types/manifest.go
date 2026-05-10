@@ -33,8 +33,8 @@ type ManifestMetadata struct {
 
 // ManifestSpec defines the provider-grouped mappings and optional base inheritance.
 type ManifestSpec struct {
-	Extends  string                         `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Mappings OrderedMap[ProviderMappings]   `json:"mappings" yaml:"mappings"` // keyed by provider name
+	Extends  string                       `json:"extends,omitempty" yaml:"extends,omitempty"`
+	Mappings OrderedMap[ProviderMappings] `json:"mappings" yaml:"mappings"` // keyed by provider name
 }
 
 // ProviderMappings holds the component and feature mapping tiers for one provider.
@@ -48,8 +48,8 @@ type ProviderMappings struct {
 // Resolution order: name wins over type. Versioned type keys win over unversioned.
 // Schema: manifest-v1alpha1.schema.json#/$defs/mapping_tier
 type MappingTier struct {
-	Type        OrderedMap[string]            `json:"type,omitempty,omitzero" yaml:"type,omitempty"`
-	Name        OrderedMap[string]            `json:"name,omitempty,omitzero" yaml:"name,omitempty"`
+	Type OrderedMap[string] `json:"type,omitempty,omitzero" yaml:"type,omitempty"`
+	Name OrderedMap[string] `json:"name,omitempty,omitzero" yaml:"name,omitempty"`
 	// *Pointer: nil vs empty matters for the annotation-expansion intent — a nil
 	// pointer means the author did not declare annotation bindings at all; an
 	// empty OrderedMap is currently authorable but may carry meaning later.

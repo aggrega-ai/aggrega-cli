@@ -25,7 +25,7 @@ func TestValidateValuesAgainstBaseSchema_Success(t *testing.T) {
 	err := renderer.ValidateValuesAgainstBaseSchema(
 		"test-provider",
 		lookup,
-		map[string]interface{}{"image": "app:latest", "replicas": 3},
+		map[string]any{"image": "app:latest", "replicas": 3},
 		"test-node",
 	)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestValidateValuesAgainstBaseSchema_Fail(t *testing.T) {
 	err := renderer.ValidateValuesAgainstBaseSchema(
 		"test-provider",
 		lookup,
-		map[string]interface{}{"image": "app:latest"}, // missing replicas
+		map[string]any{"image": "app:latest"}, // missing replicas
 		"test-node",
 	)
 	if err == nil {
@@ -68,7 +68,7 @@ func TestValidateValuesAgainstBaseSchema_NoSchemaNoValidation(t *testing.T) {
 	err := renderer.ValidateValuesAgainstBaseSchema(
 		"test-provider",
 		lookup,
-		map[string]interface{}{"anything": "goes"},
+		map[string]any{"anything": "goes"},
 		"test-node",
 	)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestValidateValuesAgainstBaseSchema_ProviderNotFound(t *testing.T) {
 	err := renderer.ValidateValuesAgainstBaseSchema(
 		"missing-provider",
 		lookup,
-		map[string]interface{}{},
+		map[string]any{},
 		"test-node",
 	)
 	if err != nil {

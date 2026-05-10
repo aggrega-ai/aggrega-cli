@@ -36,8 +36,8 @@ func TestEvalTemplate_Sprig(t *testing.T) {
 
 func TestEvalTemplate_MissingKeyZero(t *testing.T) {
 	t.Parallel()
-	// After JSON round-trip, map[string]string becomes map[string]interface{}.
-	// Missing keys return nil (zero of interface{}), which renders as "<no value>".
+	// After JSON round-trip, map[string]string becomes map[string]any.
+	// Missing keys return nil (zero of any), which renders as "<no value>".
 	// Templates should use Sprig default for optional values.
 	out, err := EvalTemplate("test", `value={{ default "" .Missing }}`, map[string]string{})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestEvalTemplate_ParseError(t *testing.T) {
 
 func TestEvalTemplate_JSON(t *testing.T) {
 	t.Parallel()
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Port": 8080,
 		"Host": "localhost",
 	}
@@ -280,12 +280,12 @@ func TestEvalTemplate_OrderedMapKeysPipeline(t *testing.T) {
 func TestTemplateContext_JSONBoundaryAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("zeta", "z-value")
 	values.Set("alpha", "a-value")
 	values.Set("mu", "m-value")
 
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("zulu-region", "us-west-2")
 	infra.Set("alpha-region", "us-east-1")
 

@@ -13,7 +13,7 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
 )
 
-func nodeCtx(id string, source interface{}) renderer.NodeRenderContext {
+func nodeCtx(id string, source any) renderer.NodeRenderContext {
 	return renderer.NodeRenderContext{
 		NodeID: id,
 		Source: source,
@@ -30,11 +30,11 @@ func nodeCtx(id string, source interface{}) renderer.NodeRenderContext {
 func TestHelmEngine_Sourceless_DeploymentAndService(t *testing.T) {
 	t.Parallel()
 	eng := &helm.HelmEngine{}
-	values := map[string]interface{}{
+	values := map[string]any{
 		"image":       "myapp:1.2.3",
 		"replicas":    float64(3),
-		"ports":       []interface{}{"8080:8080"},
-		"environment": map[string]interface{}{"PORT": "8080"},
+		"ports":       []any{"8080:8080"},
+		"environment": map[string]any{"PORT": "8080"},
 	}
 	files, err := eng.Render(context.Background(), values, nodeCtx("api", nil))
 	if err != nil {
@@ -58,9 +58,9 @@ func TestHelmEngine_Sourceless_DeploymentAndService(t *testing.T) {
 func TestHelmEngine_Sourceless_NamespaceFromAnnotation(t *testing.T) {
 	t.Parallel()
 	eng := &helm.HelmEngine{}
-	values := map[string]interface{}{
+	values := map[string]any{
 		"image": "myapp:1.0",
-		"ports": []interface{}{"8080:8080"},
+		"ports": []any{"8080:8080"},
 	}
 	nc := nodeCtx("api", nil)
 	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
@@ -81,7 +81,7 @@ func TestHelmEngine_Sourced_NamespaceFromAnnotation(t *testing.T) {
 	eng := &helm.HelmEngine{}
 	nc := nodeCtx("api", "testdata/ns-chart")
 	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
-	files, err := eng.Render(context.Background(), map[string]interface{}{}, nc)
+	files, err := eng.Render(context.Background(), map[string]any{}, nc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestHelmEngine_Sourced_NamespaceFromAnnotation(t *testing.T) {
 func TestHelmEngine_EmptySourceIsFatal(t *testing.T) {
 	t.Parallel()
 	eng := &helm.HelmEngine{}
-	_, err := eng.Render(context.Background(), map[string]interface{}{}, nodeCtx("api", ""))
+	_, err := eng.Render(context.Background(), map[string]any{}, nodeCtx("api", ""))
 	if !errors.Is(err, helm.ErrEmptySource) {
 		t.Fatalf("expected ErrEmptySource, got %v", err)
 	}
@@ -105,7 +105,7 @@ func TestHelmEngine_EmptySourceIsFatal(t *testing.T) {
 func TestHelmEngine_Sourced_RendersChart(t *testing.T) {
 	t.Parallel()
 	eng := &helm.HelmEngine{}
-	values := map[string]interface{}{
+	values := map[string]any{
 		"image":    "api:2.0.0",
 		"replicas": float64(5),
 	}
@@ -138,7 +138,7 @@ func TestHelmEngine_Sourced_CarriesAggregaLabels(t *testing.T) {
 	// Sourced-mode chart output must carry aggrega.ai/* provenance labels —
 	// sourceless mode injects them during generation; sourced mode post-processes.
 	eng := &helm.HelmEngine{}
-	values := map[string]interface{}{"image": "api:2.0.0"}
+	values := map[string]any{"image": "api:2.0.0"}
 	files, err := eng.Render(context.Background(), values, nodeCtx("api", "testdata/minimal-chart"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

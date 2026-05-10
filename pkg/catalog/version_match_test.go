@@ -206,10 +206,10 @@ func TestSplitVersionedURI(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		uri          string
-		wantBase     string
-		wantVersion  string
-		wantHasVer   bool
+		uri         string
+		wantBase    string
+		wantVersion string
+		wantHasVer  bool
 	}{
 		{"core/api-server:1.0.0", "core/api-server", "1.0.0", true},
 		{"core/api-server:^1.0.0", "core/api-server", "^1.0.0", true},

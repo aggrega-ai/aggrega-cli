@@ -205,8 +205,8 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	c.Ports.Set("web", 8080)
 	timeout := 5
 	c.Health = &types.HealthSpec{
-		Ready: &types.ProbeSpec{HTTP: "/healthz", TimeoutSeconds: &timeout},
-		Live:  &types.ProbeSpec{TCP: 8080},
+		Ready:   &types.ProbeSpec{HTTP: "/healthz", TimeoutSeconds: &timeout},
+		Live:    &types.ProbeSpec{TCP: 8080},
 		Startup: &types.ProbeSpec{Exec: []string{"/bin/check.sh"}},
 	}
 	w.Containers.Set("main", c)

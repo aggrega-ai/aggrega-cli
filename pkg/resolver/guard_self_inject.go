@@ -133,12 +133,12 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 	if inject == nil {
 		return result
 	}
-	extractKeys := func(mech string, raw interface{}) {
+	extractKeys := func(mech string, raw any) {
 		if raw == nil {
 			return
 		}
 		switch v := raw.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			for k := range v {
 				result[mech] = append(result[mech], k)
 			}
@@ -166,18 +166,18 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 // per-mechanism slice is sorted alphabetically for deterministic
 // iteration. Returns an empty map when uses is empty or carries no
 // recognized shape. Does not mutate the input.
-func collectUsesInjectDeliveryKeys(uses types.OrderedMap[interface{}]) map[string][]string {
+func collectUsesInjectDeliveryKeys(uses types.OrderedMap[any]) map[string][]string {
 	result := map[string][]string{}
 	if uses.Len() == 0 {
 		return result
 	}
 	for _, socketRaw := range uses.All() {
-		m, ok := socketRaw.(map[string]interface{})
+		m, ok := socketRaw.(map[string]any)
 		if !ok {
 			continue
 		}
 		for _, entryRaw := range m {
-			entry, ok := entryRaw.(map[string]interface{})
+			entry, ok := entryRaw.(map[string]any)
 			if !ok {
 				continue
 			}
@@ -185,12 +185,12 @@ func collectUsesInjectDeliveryKeys(uses types.OrderedMap[interface{}]) map[strin
 			if !ok {
 				continue
 			}
-			injectMap, ok := injectRaw.(map[string]interface{})
+			injectMap, ok := injectRaw.(map[string]any)
 			if !ok {
 				continue
 			}
 			for mech, mechRaw := range injectMap {
-				mechMap, ok := mechRaw.(map[string]interface{})
+				mechMap, ok := mechRaw.(map[string]any)
 				if !ok {
 					continue
 				}

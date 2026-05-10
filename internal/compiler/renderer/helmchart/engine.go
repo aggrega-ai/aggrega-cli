@@ -67,7 +67,7 @@ func (e *HelmEngine) ArtifactDelimiters() (string, string) {
 // templates/*.yaml from a values dict) was removed when chapter 16's
 // three-input-kinds model assigned workload synthesis to helm exclusively.
 // A nil/empty source is rejected with a clear error.
-func (e *HelmEngine) Render(_ context.Context, _ map[string]interface{}, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+func (e *HelmEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	s, ok := nodeCtx.Source.(string)
 	if !ok || s == "" {
 		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helmchart: node %q: source is required (helm-chart provider supports sourced mode only; for synthesised K8s manifests use the helm provider with workload:)", nodeCtx.NodeID), nil, nil)

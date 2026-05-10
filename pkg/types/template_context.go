@@ -16,8 +16,8 @@ package types
 //     nil before B.2; nil for Recipes that don't declare workload / workloadFrom.
 type TemplateContext struct {
 	Context    ContextBlock                `json:"context" yaml:"context"`
-	Values     OrderedMap[interface{}]     `json:"values" yaml:"values"`
-	Infra      OrderedMap[interface{}]     `json:"infra" yaml:"infra"`
+	Values     OrderedMap[any]             `json:"values" yaml:"values"`
+	Infra      OrderedMap[any]             `json:"infra" yaml:"infra"`
 	Locals     OrderedMap[string]          `json:"locals" yaml:"locals"`
 	Provides   OrderedMap[string]          `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 	Features   OrderedMap[TemplateFeature] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
@@ -25,9 +25,9 @@ type TemplateContext struct {
 	Metadata   *TemplateMetadata           `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 	SecretName string                      `json:"secret_name,omitempty" yaml:"secret_name,omitempty"`
 	Inject     *InjectPipe                 `json:"inject,omitempty" yaml:"inject,omitempty"`         // secret-specific inject
-	InjectRaw  interface{}                 `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
+	InjectRaw  any                         `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
 	Steps      OrderedMap[StepOutput]      `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
-	Source     interface{}                 `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
+	Source     any                         `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
 	Workload   *Workload                   `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
 	Boundary   *BoundaryContext            `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
 }
@@ -88,16 +88,16 @@ type TemplateMetadata struct {
 // TemplateFeature is a feature attachment available in the template context.
 // Schema: template-context-v1alpha1.schema.json#/properties/features
 type TemplateFeature struct {
-	Type   string                  `json:"type" yaml:"type"`
-	Values OrderedMap[interface{}] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Infra  OrderedMap[interface{}] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Type   string          `json:"type" yaml:"type"`
+	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Infra  OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 }
 
 // TemplateSecret is a credential feature attachment available in the template context.
 // Schema: template-context-v1alpha1.schema.json#/properties/secrets
 type TemplateSecret struct {
-	Type   string                  `json:"type" yaml:"type"`
-	Values OrderedMap[interface{}] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Type   string          `json:"type" yaml:"type"`
+	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 }
 
 // StepOutput holds the outputs exported by one pipeline step for inter-step communication.

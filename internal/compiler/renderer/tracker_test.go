@@ -89,8 +89,8 @@ func TestCollectTemplateFieldAccesses_ParseError(t *testing.T) {
 	}
 }
 
-func mkData(pairs ...interface{}) types.OrderedMap[interface{}] {
-	m := types.OrderedMap[interface{}]{}
+func mkData(pairs ...any) types.OrderedMap[any] {
+	m := types.OrderedMap[any]{}
 	for i := 0; i+1 < len(pairs); i += 2 {
 		m.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -132,7 +132,7 @@ func TestUnreadKeys_WholeObjectReadSkipsAll(t *testing.T) {
 func TestUnreadKeys_NestedAccessMarksTopLevelKey(t *testing.T) {
 	t.Parallel()
 	refs := []string{".values.db.host", ".values.db.port"}
-	data := mkData("db", map[string]interface{}{}, "other", "x")
+	data := mkData("db", map[string]any{}, "other", "x")
 	unread := UnreadKeys(refs, ".values", data)
 	want := []string{"other"}
 	if !reflect.DeepEqual(unread, want) {
@@ -152,7 +152,7 @@ func TestUnreadKeys_RootWithoutLeadingDot(t *testing.T) {
 
 func TestUnreadKeys_EmptyData(t *testing.T) {
 	t.Parallel()
-	unread := UnreadKeys([]string{".values.x"}, ".values", types.OrderedMap[interface{}]{})
+	unread := UnreadKeys([]string{".values.x"}, ".values", types.OrderedMap[any]{})
 	if unread != nil {
 		t.Errorf("expected nil for empty data, got %v", unread)
 	}

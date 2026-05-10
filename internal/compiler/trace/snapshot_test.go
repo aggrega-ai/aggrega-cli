@@ -10,9 +10,9 @@ import (
 )
 
 func makeCtx() *types.TemplateContext {
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("port", 8080)
-	infra := types.OrderedMap[interface{}]{}
+	infra := types.OrderedMap[any]{}
 	infra.Set("replicas", 2)
 	locals := types.OrderedMap[string]{}
 	locals.Set("primary", "main")

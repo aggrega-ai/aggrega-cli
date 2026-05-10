@@ -109,7 +109,7 @@ func collectNodeFeatures(
 			// Merge infra separately for Release features
 			if existing, ok := result.Features.Get(bf.name); ok && bf.feat.Infra.Len() > 0 {
 				if existing.Infra.Len() == 0 {
-					existing.Infra = types.OrderedMap[interface{}]{}
+					existing.Infra = types.OrderedMap[any]{}
 				}
 				for k, v := range bf.feat.Infra.All() {
 					existing.Infra.Set(k, v)
@@ -129,7 +129,7 @@ func collectNodeFeatures(
 			}
 			if existing, ok := result.Features.Get(cf.name); ok && cf.feat.Infra.Len() > 0 {
 				if existing.Infra.Len() == 0 {
-					existing.Infra = types.OrderedMap[interface{}]{}
+					existing.Infra = types.OrderedMap[any]{}
 				}
 				for k, v := range cf.feat.Infra.All() {
 					existing.Infra.Set(k, v)
@@ -229,7 +229,7 @@ func mergeFeature(
 	// "Last wins" on values
 	if feat.Values.Len() > 0 {
 		if existing.Values.Len() == 0 {
-			existing.Values = types.OrderedMap[interface{}]{}
+			existing.Values = types.OrderedMap[any]{}
 		}
 		for k, v := range feat.Values.All() {
 			existing.Values.Set(k, v)
@@ -310,8 +310,8 @@ func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []name
 // emitted before inner boundaries — same cascade discipline as the
 // per-subsystem level.
 //
-// Boundary feature payloads arrive as untyped interface{} (Boundary
-// .Features is OrderedMap[interface{}]) because Release boundary YAML
+// Boundary feature payloads arrive as untyped any (Boundary
+// .Features is OrderedMap[any]) because Release boundary YAML
 // authors features as opaque maps the renderer interprets per-feature;
 // parseBoundaryFeature below extracts the type and infra fields.
 // Mergeable values are NOT collected here — Release boundaries
@@ -373,30 +373,53 @@ func collectCompFeaturesRecursive(boundaries types.OrderedMap[types.Boundary], n
 	}
 }
 
-func parseBoundaryFeature(raw interface{}) types.BoundaryFeature {
-	m, ok := raw.(map[string]interface{})
-	if !ok {
-		return types.BoundaryFeature{}
-	}
+func parseBoundaryFeature(raw any) types.BoundaryFeature {
 	bf := types.BoundaryFeature{}
-	if t, ok := m["type"].(string); ok {
-		bf.Type = t
-	}
-	if infra, ok := m["infra"].(map[string]interface{}); ok {
-		om := types.OrderedMap[interface{}]{}
-		// parseBoundaryFeature can see infra as a map[string]interface{} coming
-		// from YAML unmarshal of `Boundary.Features` which is OrderedMap[interface{}]
-		// — the inner infra payload is not itself ordered at this layer. Sort
-		// keys for stability at this boundary.
-		keys := make([]string, 0, len(infra))
-		for k := range infra {
-			keys = append(keys, k)
+	switch m := raw.(type) {
+	case *types.OrderedMap[any]:
+		if m == nil {
+			return bf
 		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			om.Set(k, infra[k])
+		if t, ok := m.Get("type"); ok {
+			if s, ok := t.(string); ok {
+				bf.Type = s
+			}
 		}
-		bf.Infra = om
+		if infraRaw, ok := m.Get("infra"); ok {
+			switch infra := infraRaw.(type) {
+			case *types.OrderedMap[any]:
+				if infra != nil {
+					bf.Infra = *infra
+				}
+			case map[string]any:
+				om := types.OrderedMap[any]{}
+				keys := make([]string, 0, len(infra))
+				for k := range infra {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					om.Set(k, infra[k])
+				}
+				bf.Infra = om
+			}
+		}
+	case map[string]any:
+		if t, ok := m["type"].(string); ok {
+			bf.Type = t
+		}
+		if infra, ok := m["infra"].(map[string]any); ok {
+			om := types.OrderedMap[any]{}
+			keys := make([]string, 0, len(infra))
+			for k := range infra {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				om.Set(k, infra[k])
+			}
+			bf.Infra = om
+		}
 	}
 	return bf
 }
@@ -420,4 +443,3 @@ func splitPath(path string) []string {
 	}
 	return parts
 }
-

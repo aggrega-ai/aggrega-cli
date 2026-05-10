@@ -24,7 +24,7 @@ const (
 // renderSourceless generates a flat Deployment + optional Service from the
 // values dictionary (already baseSchema-validated at the orchestrator level).
 // Output keys: "<nodeID>-deployment.yaml", "<nodeID>-service.yaml".
-func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	out := map[string][]byte{}
 
 	image := stringFromValues(values, "image", defaultImage)
@@ -107,7 +107,7 @@ func renderSourceless(values map[string]interface{}, nodeCtx renderer.NodeRender
 
 // Values extraction helpers (duplicated from helmchart; kept local to avoid cross-provider coupling).
 
-func stringFromValues(values map[string]interface{}, key, fallback string) string {
+func stringFromValues(values map[string]any, key, fallback string) string {
 	if v, ok := values[key]; ok {
 		if s, ok := v.(string); ok {
 			return s
@@ -124,14 +124,14 @@ func stringFromValues(values map[string]interface{}, key, fallback string) strin
 //   - *types.OrderedMap[string] / types.OrderedMap[string]: returned as-is
 //     (author order preserved through the chain).
 //   - types.OrderedMap[any] / *types.OrderedMap[any]: unwrapped via Keys()
-//     + Get(), values coerced to string via fmt.Sprintf; author order
+//   - Get(), values coerced to string via fmt.Sprintf; author order
 //     preserved.
-//   - map[string]interface{} / map[string]string: input has no author order
+//   - map[string]any / map[string]string: input has no author order
 //     (Go map iteration is hash-random), so keys are inserted into the
 //     result alphabetically — the deterministic choice when no author
 //     order is available upstream.
 //   - Everything else: nil.
-func mapStringFromValues(values map[string]interface{}, key string) *types.OrderedMap[string] {
+func mapStringFromValues(values map[string]any, key string) *types.OrderedMap[string] {
 	v, ok := values[key]
 	if !ok || v == nil {
 		return nil
@@ -160,7 +160,7 @@ func mapStringFromValues(values map[string]interface{}, key string) *types.Order
 			out.Set(k, fmt.Sprintf("%v", val))
 		}
 		return out
-	case map[string]interface{}:
+	case map[string]any:
 		keys := make([]string, 0, len(m))
 		for k := range m {
 			keys = append(keys, k)
@@ -187,12 +187,12 @@ func mapStringFromValues(values map[string]interface{}, key string) *types.Order
 	}
 }
 
-func stringSliceFromValues(values map[string]interface{}, key string) []string {
+func stringSliceFromValues(values map[string]any, key string) []string {
 	v, ok := values[key]
 	if !ok || v == nil {
 		return nil
 	}
-	arr, ok := v.([]interface{})
+	arr, ok := v.([]any)
 	if !ok {
 		return nil
 	}
@@ -203,7 +203,7 @@ func stringSliceFromValues(values map[string]interface{}, key string) []string {
 	return out
 }
 
-func intFromValues(values map[string]interface{}, key string, fallback int) int {
+func intFromValues(values map[string]any, key string, fallback int) int {
 	v, ok := values[key]
 	if !ok {
 		return fallback

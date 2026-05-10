@@ -15,17 +15,17 @@ const maxInheritanceDepth = 10
 // CatalogEntry provides the metadata and CUE schema for an entity resolved by URI.
 // The caller (Step 1 resolver) populates these from the loaded catalog.
 type CatalogEntry struct {
-	URI      string                 // e.g. "core/api-server:1.0.0"
-	Extends  string                 // parent URI, empty if no inheritance
-	Metadata map[string]interface{} // raw YAML metadata for deep merge
-	CUE      string                 // cueSchema string
+	URI      string         // e.g. "core/api-server:1.0.0"
+	Extends  string         // parent URI, empty if no inheritance
+	Metadata map[string]any // raw YAML metadata for deep merge
+	CUE      string         // cueSchema string
 }
 
 // InheritanceResult holds the output of resolving an extends chain.
 type InheritanceResult struct {
-	MergedMetadata map[string]interface{} // Phase 1 result: deep-merged YAML metadata
-	UnifiedCUE     string                 // Phase 2 result: unified CUE schema string (for downstream use)
-	Errors         []*ValidationError     // any errors encountered
+	MergedMetadata map[string]any     // Phase 1 result: deep-merged YAML metadata
+	UnifiedCUE     string             // Phase 2 result: unified CUE schema string (for downstream use)
+	Errors         []*ValidationError // any errors encountered
 }
 
 // ResolveInheritance resolves the extends chain for an entity using the provided catalog lookup.
@@ -81,7 +81,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 	}
 
 	// Phase 1: deep-merge metadata from root ancestor → child (child wins)
-	mergedMeta := map[string]interface{}{}
+	mergedMeta := map[string]any{}
 	for i := len(chain) - 1; i >= 0; i-- {
 		if chain[i].Metadata != nil {
 			mergedMeta = deepMergeYAML(mergedMeta, chain[i].Metadata)

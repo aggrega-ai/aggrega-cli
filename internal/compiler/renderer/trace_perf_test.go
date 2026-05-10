@@ -154,7 +154,7 @@ containers:
 	// transient yaml.Marshal spikes from cross-suite parallel pressure
 	// (race detector + many parallel sub-tests). Future tightening: move
 	// the yaml.Marshal off the renderer goroutine (channel carries raw
-	// data interface{}, consumer marshals on dequeue) to drop the Write()
+	// data any, consumer marshals on dequeue) to drop the Write()
 	// path to pure channel send; the threshold can then return to ~1ms.
 	const maxAcceptableWriteLatency = 50 * time.Millisecond
 	if stats.MaxWriteLatency > maxAcceptableWriteLatency {

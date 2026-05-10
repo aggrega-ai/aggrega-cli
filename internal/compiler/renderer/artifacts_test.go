@@ -21,7 +21,7 @@ import (
 // rendering — only the type-assertion fork inside evaluateArtifacts.
 type stubEngine struct{}
 
-func (stubEngine) Render(_ context.Context, _ map[string]interface{}, _ NodeRenderContext) (map[string][]byte, error) {
+func (stubEngine) Render(_ context.Context, _ map[string]any, _ NodeRenderContext) (map[string][]byte, error) {
 	return nil, nil
 }
 
@@ -52,8 +52,8 @@ func (stubExternalArtifactsEngine) ArtifactDelimiters() (string, string) { retur
 func newArtifactsCtx() (*types.TemplateContext, *PhaseBState, NodeRenderContext) {
 	tmplCtx := &types.TemplateContext{
 		Context: types.ContextBlock{InstanceID: "api"},
-		Values:  types.OrderedMap[interface{}]{},
-		Infra:   types.OrderedMap[interface{}]{},
+		Values:  types.OrderedMap[any]{},
+		Infra:   types.OrderedMap[any]{},
 	}
 	r := &types.Recipe{
 		APIVersion: "aggrega.ai/v1alpha1",
@@ -246,7 +246,7 @@ spec:
 func TestEvaluateArtifacts_TemplateAccessesSource(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
-	state.Recipe.Spec.Source = map[string]interface{}{"chart": "nginx", "version": "1.2.3"}
+	state.Recipe.Spec.Source = map[string]any{"chart": "nginx", "version": "1.2.3"}
 	tmplCtx.Source = state.Recipe.Spec.Source
 
 	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
@@ -334,14 +334,14 @@ spec:
 	labels := readDocLabels(t, findEmitted(t, files, "deployment.yaml").Body)
 
 	must := map[string]string{
-		"app.kubernetes.io/name":       "api",
-		"aggrega.ai/component-id":      "api",
-		"aggrega.ai/recipe-uri":        "api-server-helm:1.0.0",
-		"aggrega.ai/boundary-path":     "production",
-		"aggrega.ai/compiler-version":  "v0.0.0-test",
-		"aggrega.ai/aggregate-name":    "demo",
-		"aggrega.ai/environment":       "prod",
-		"author":                       "alice",
+		"app.kubernetes.io/name":      "api",
+		"aggrega.ai/component-id":     "api",
+		"aggrega.ai/recipe-uri":       "api-server-helm:1.0.0",
+		"aggrega.ai/boundary-path":    "production",
+		"aggrega.ai/compiler-version": "v0.0.0-test",
+		"aggrega.ai/aggregate-name":   "demo",
+		"aggrega.ai/environment":      "prod",
+		"author":                      "alice",
 	}
 	for k, want := range must {
 		if got := labels[k]; got != want {
@@ -370,7 +370,7 @@ data:
 		t.Fatalf("evaluateArtifacts: %v", err)
 	}
 	got := findEmitted(t, files, "api-config.yaml")
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(got.Body, &doc); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}

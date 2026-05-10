@@ -16,7 +16,7 @@ import (
 // The inject pipe starts with base values resolved from developer inject → target provides
 // (populated by Pass 2 in the 3-pass renderer). This function builds the initial
 // structure with guaranteed keys for null-pointer safety.
-func BuildInjectPipe(rawInject *types.InjectBlock) (inject types.InjectPipe, injectRaw interface{}) {
+func BuildInjectPipe(rawInject *types.InjectBlock) (inject types.InjectPipe, injectRaw any) {
 	inject = types.InjectPipe{
 		Env:  types.OrderedMap[string]{},
 		File: types.OrderedMap[string]{},
@@ -134,10 +134,10 @@ func mergeSortedPlain(dest *types.OrderedMap[string], src map[string]string) {
 }
 
 // normalizeInjectMechanism converts the polymorphic inject mechanism value
-// (either map[string]string or map[string]interface{}) to OrderedMap[string].
+// (either map[string]string or map[string]any) to OrderedMap[string].
 // Unsorted plain-map input loses author order; callers should prefer the
 // verbose-form path where OrderedMap semantics survive.
-func normalizeInjectMechanism(raw interface{}) types.OrderedMap[string] {
+func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
 	if raw == nil {
 		return out
@@ -152,7 +152,7 @@ func normalizeInjectMechanism(raw interface{}) types.OrderedMap[string] {
 		for _, k := range keys {
 			out.Set(k, v[k])
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		keys := make([]string, 0, len(v))
 		for k := range v {
 			keys = append(keys, k)

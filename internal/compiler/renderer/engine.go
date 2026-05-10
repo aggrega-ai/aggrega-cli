@@ -11,7 +11,7 @@ import "context"
 // with the boundary path (and, for chart-structure engines, a `charts/<nodeID>/`
 // sub-chart prefix).
 type Engine interface {
-	Render(ctx context.Context, values map[string]interface{}, nodeCtx NodeRenderContext) (map[string][]byte, error)
+	Render(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) (map[string][]byte, error)
 }
 
 // EngineFactory returns the Engine implementation for a given provider name
@@ -95,10 +95,10 @@ type IREdgeInfo struct {
 
 // SubChartInfo describes one sub-chart contributing to an umbrella chart.
 type SubChartInfo struct {
-	InstanceID string                 // dot-notation node ID
-	Version    string                 // resolved version
-	Values     map[string]interface{} // per-sub-chart values for umbrella values.yaml
-	Source     interface{}            // forwarded recipe.spec.source; nil for generative sub-charts
+	InstanceID string         // dot-notation node ID
+	Version    string         // resolved version
+	Values     map[string]any // per-sub-chart values for umbrella values.yaml
+	Source     any            // forwarded recipe.spec.source; nil for generative sub-charts
 }
 
 // NodeRenderContext provides identity metadata for manifest generation.
@@ -107,12 +107,12 @@ type NodeRenderContext struct {
 	Labels          map[string]string
 	Annotations     map[string]string // merged release annotations
 	BoundaryPath    string
-	SyncWave        int               // deployment wave from the containing boundary's syncWave (signed integer; default 0)
+	SyncWave        int // deployment wave from the containing boundary's syncWave (signed integer; default 0)
 	ResolvedVersion string
 	Component       string
-	Source          interface{} // forwarded from recipe.spec.source (nil / string path / structured)
-	RecipeName      string      // recipe metadata.name; empty when no Recipe selected for this node
-	RecipeVersion   string      // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
+	Source          any    // forwarded from recipe.spec.source (nil / string path / structured)
+	RecipeName      string // recipe metadata.name; empty when no Recipe selected for this node
+	RecipeVersion   string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
 	// LabelComponentID, when non-empty, overrides NodeID as the value of the
 	// app.kubernetes.io/name and aggrega.ai/component-id labels. Used by FR-
 	// emitted resources whose internal NodeID carries marker syntax

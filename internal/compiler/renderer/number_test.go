@@ -12,10 +12,10 @@ func TestAsNumber(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name    string
-		in      interface{}
-		want    float64
-		wantOK  bool
+		name   string
+		in     any
+		want   float64
+		wantOK bool
 	}{
 		{name: "int", in: int(42), want: 42, wantOK: true},
 		{name: "int64", in: int64(42), want: 42, wantOK: true},

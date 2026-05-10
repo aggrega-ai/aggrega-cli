@@ -156,8 +156,8 @@ func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.
 
 func TestPipeline_SimpleTopology(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"main-db"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", []any{"main-db"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
@@ -186,8 +186,17 @@ func TestPipeline_SimpleTopology(t *testing.T) {
 
 func TestPipeline_PolymorphicUses(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", map[string]interface{}{"hr-db": map[string]interface{}{"target": "main-db", "inject": map[string]interface{}{"env": map[string]interface{}{"DB_URL": "host"}}}})
+	uses := types.OrderedMap[any]{}
+	hrDB := types.NewOrderedMap[any]()
+	hrDB.Set("target", "main-db")
+	envOM := types.NewOrderedMap[any]()
+	envOM.Set("DB_URL", "host")
+	injectOM := types.NewOrderedMap[any]()
+	injectOM.Set("env", envOM)
+	hrDB.Set("inject", injectOM)
+	verbose := types.NewOrderedMap[any]()
+	verbose.Set("hr-db", hrDB)
+	uses.Set("databases", verbose)
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
@@ -226,8 +235,8 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 			ExportedComponents: exportedComponents,
 		},
 	}
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"data-mod.child-db"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", []any{"data-mod.child-db"})
 	components2 := types.OrderedMap[types.ComponentInstance]{}
 	components2.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	aggregates := types.OrderedMap[types.SubAggregate]{}
@@ -268,10 +277,10 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 
 func TestPipeline_CyclicEdges(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("delegates", []interface{}{"agent-b"})
-	uses2 := types.OrderedMap[interface{}]{}
-	uses2.Set("delegates", []interface{}{"agent-a"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("delegates", []any{"agent-b"})
+	uses2 := types.OrderedMap[any]{}
+	uses2.Set("delegates", []any{"agent-a"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("agent-a", types.ComponentInstance{Type: "core/agent", Uses: uses})
 	components.Set("agent-b", types.ComponentInstance{Type: "core/agent",
@@ -302,8 +311,8 @@ func TestPipeline_CyclicEdges(t *testing.T) {
 
 func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("targets", []interface{}{"api"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("targets", []any{"api"})
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("mon", types.FeatureInstance{Type: "core/monitoring",
 
@@ -333,9 +342,9 @@ func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 
 func TestPipeline_FeatureNormalization(t *testing.T) {
 	t.Parallel()
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("level", "warn")
-	values2 := types.OrderedMap[interface{}]{}
+	values2 := types.OrderedMap[any]{}
 	values2.Set("path", "/secret")
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("mon", types.FeatureInstance{Type: "core/monitoring",
@@ -388,8 +397,8 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 
 func TestPipeline_SelectorViolation(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"cache"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", []any{"cache"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	components.Set("cache", types.ComponentInstance{Type: "core/redis"})
@@ -413,7 +422,7 @@ func TestPipeline_SelectorViolation(t *testing.T) {
 
 func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 	t.Parallel()
-	values := types.OrderedMap[interface{}]{}
+	values := types.OrderedMap[any]{}
 	values.Set("x", 1)
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("feat", types.FeatureInstance{Type: "type-a", Values: values})
@@ -454,12 +463,12 @@ func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 
 func TestPipeline_DeterministicOutput(t *testing.T) {
 	t.Parallel()
-	uses := types.OrderedMap[interface{}]{}
-	uses.Set("databases", []interface{}{"db"})
-	uses2 := types.OrderedMap[interface{}]{}
-	uses2.Set("databases", []interface{}{"db"})
-	uses3 := types.OrderedMap[interface{}]{}
-	uses3.Set("databases", []interface{}{"db"})
+	uses := types.OrderedMap[any]{}
+	uses.Set("databases", []any{"db"})
+	uses2 := types.OrderedMap[any]{}
+	uses2.Set("databases", []any{"db"})
+	uses3 := types.OrderedMap[any]{}
+	uses3.Set("databases", []any{"db"})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("z-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
 	components.Set("a-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses2})

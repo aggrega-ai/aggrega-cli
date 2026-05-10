@@ -16,10 +16,10 @@ import (
 // Self-contained data only: instance_id, values, infra, provides (Pass 1 output).
 // Locals templates MUST NOT reference .context.inject or .context.uses.
 type LocalsContext struct {
-	Context  ProvidesContextBlock          `json:"context"`
-	Values   types.OrderedMap[interface{}] `json:"values"`
-	Infra    types.OrderedMap[interface{}] `json:"infra"`
-	Provides types.OrderedMap[string]      `json:"provides"`
+	Context  ProvidesContextBlock     `json:"context"`
+	Values   types.OrderedMap[any]    `json:"values"`
+	Infra    types.OrderedMap[any]    `json:"infra"`
+	Provides types.OrderedMap[string] `json:"provides"`
 }
 
 // forbiddenLocalsRefs matches template actions referencing cross-node or inject data.
@@ -43,8 +43,8 @@ func CheckLocalsSelfContainment(templateText, recipeID, key string) error {
 func EvaluateRecipeLocals(
 	recipe *types.Recipe,
 	nodeID string,
-	values types.OrderedMap[interface{}],
-	infra types.OrderedMap[interface{}],
+	values types.OrderedMap[any],
+	infra types.OrderedMap[any],
 	provides types.OrderedMap[string],
 ) (types.OrderedMap[string], error) {
 	resolved := types.OrderedMap[string]{}

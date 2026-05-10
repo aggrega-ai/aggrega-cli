@@ -19,7 +19,7 @@ import (
 //
 // Raw CUE error messages are never surfaced; all errors are translated via the
 // shared validateCUEValue pipeline.
-func ValidatePillar(cueSource, pillarName string, values map[string]interface{}, entity string) []*ValidationError {
+func ValidatePillar(cueSource, pillarName string, values map[string]any, entity string) []*ValidationError {
 	if cueSource == "" || pillarName == "" {
 		return nil
 	}

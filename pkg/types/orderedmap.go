@@ -39,7 +39,7 @@ var jsonUnmarshalerCache sync.Map // map[reflect.Type]bool
 var yamlUnmarshalerCache sync.Map // map[reflect.Type]bool
 
 // vIsInterfaceCache memoizes per-V whether V is an interface kind. Used
-// by the decode helpers to dispatch between the recursive interface{}
+// by the decode helpers to dispatch between the recursive any
 // path and the typed-V plain-decode path.
 var vIsInterfaceCache sync.Map // map[reflect.Type]bool
 
@@ -64,37 +64,28 @@ var vIsInterfaceCache sync.Map // map[reflect.Type]bool
 // Mutation semantics on a nil receiver mirror Go's builtin map: Delete is
 // a no-op (returns false); Set panics with a typed error message.
 //
-// # Limitations of OrderedMap[interface{}]
+// # Round-trip fidelity for OrderedMap[any]
 //
-// When V is interface{}, two properties of encoding/json's default
-// decoding interact with OrderedMap's design and produce surprising
-// round-trip behavior:
+// When V is any, marshal/unmarshal round-trip preserves both numeric
+// precision and nested-object author order:
 //
-//   - Numeric precision: JSON numbers decode as float64 by default.
-//     Integer values larger than 2^53 (the largest integer exactly
-//     representable as float64) lose precision through marshal/unmarshal
-//     round-trip. Callers requiring exact integer preservation should
-//     use a typed V (e.g., json.Number, or a domain-specific numeric
-//     type) rather than interface{}.
+//   - Numeric precision: JSON numbers decode as json.Number on the
+//     JSON path, preserving exact integer precision regardless of
+//     magnitude. Callers reading numeric values via type-switch handle
+//     case json.Number and convert via .Int64() / .Float64() / .String()
+//     as the use case requires. The YAML path preserves precision via
+//     yaml.v3's int64 default; numeric values surface as int / int64 /
+//     float64 per yaml.v3's type detection.
 //
-//   - Nested-object order: JSON objects nested inside interface{}-typed
-//     values decode as map[string]interface{}, which does not preserve
-//     key order. Author-order preservation only holds at the OrderedMap
-//     level, not at deeper levels of an interface{}-typed payload.
-//     Callers requiring order preservation through nested structures
-//     should use a typed V (e.g., OrderedMap[OrderedMap[interface{}]]
-//     for one level of nesting) rather than OrderedMap[interface{}]
-//     alone.
+//   - Nested-object author order: JSON objects and YAML mappings nested
+//     inside any-typed values decode as nested *OrderedMap[any] rather
+//     than map[string]any, preserving author order at every nesting
+//     depth. Callers reading nested objects via type-switch handle case
+//     *OrderedMap[any] and iterate via .All() for author-ordered
+//     traversal.
 //
-// YAML round-trip exhibits the same nested-object order loss and
-// preserves integer precision (yaml.v3's default integer decoder uses
-// int64). The asymmetry is in encoding/json's defaults, not OrderedMap.
-//
-// These limitations are documented as interim discipline. A forthcoming
-// proposal will introduce OrderedMap-aware nested decoding that closes
-// both gaps at the type level; until that proposal lands, callers
-// requiring deep-order or numeric-precision preservation through JSON
-// round-trip should use typed V as recommended above.
+// Decode depth is bounded; pathological input that exceeds the internal
+// depth limit returns an error wrapping ErrOrderedMapDecodeDepthExceeded.
 type OrderedMap[V any] struct {
 	keys   []string
 	values map[string]V
@@ -136,6 +127,10 @@ func (m OrderedMap[V]) IsZero() bool {
 // method is the intentional bridge to the alphabetical-iteration template
 // boundary that matches Helm-community authoring expectations.
 //
+// Single-level only: nested *OrderedMap[any] values pass through unchanged.
+// Callers that need a fully unwrapped representation walkable by Go templates
+// at every depth use TemplateAlphabeticalMapDeep instead.
+//
 // Value receiver so the method dispatches when OrderedMap is a field value
 // (same rationale as MarshalYAML / MarshalJSON).
 func (m OrderedMap[V]) TemplateAlphabeticalMap() map[string]any {
@@ -147,6 +142,55 @@ func (m OrderedMap[V]) TemplateAlphabeticalMap() map[string]any {
 		out[k] = m.values[k]
 	}
 	return out
+}
+
+// TemplateAlphabeticalMapDeep returns a fully-unwrapped representation of
+// the ordered map for Go-template consumption: nested *OrderedMap[any]
+// values become map[string]any, []any elements walk recursively, and
+// scalars pass through unchanged. Use this when the consumer is a Go
+// template that needs to traverse nested objects via field-access syntax
+// (.foo.bar.baz) and the value tree may contain gamma-decoded shapes
+// (json.Number for numerics, *OrderedMap[any] for nested objects).
+//
+// The conversion is template-input-only — does not affect storage, marshal
+// output, or author-order preservation at the OrderedMap level. Iteration
+// inside the returned map is alphabetical (Go stdlib map default), matching
+// TemplateAlphabeticalMap's contract.
+//
+// Value receiver matches TemplateAlphabeticalMap's dispatch rationale.
+func (m OrderedMap[V]) TemplateAlphabeticalMapDeep() map[string]any {
+	if len(m.keys) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(m.keys))
+	for _, k := range m.keys {
+		out[k] = unwrapForTemplate(m.values[k])
+	}
+	return out
+}
+
+// unwrapForTemplate recursively converts gamma-decoded OrderedMap structures
+// into plain Go maps and slices. Nested *OrderedMap[any] values become
+// map[string]any via TemplateAlphabeticalMapDeep; []any elements walk
+// recursively; everything else passes through unchanged.
+func unwrapForTemplate(v any) any {
+	switch val := v.(type) {
+	case *OrderedMap[any]:
+		if val == nil {
+			return nil
+		}
+		return val.TemplateAlphabeticalMapDeep()
+	case OrderedMap[any]:
+		return val.TemplateAlphabeticalMapDeep()
+	case []any:
+		out := make([]any, len(val))
+		for i, elem := range val {
+			out[i] = unwrapForTemplate(elem)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // Get returns the value stored at k and whether k is present.
@@ -235,9 +279,9 @@ func (m *OrderedMap[V]) All() iter.Seq2[string, V] {
 // the order of keys as they appear in the source. Returns an error if the
 // same key appears more than once within the source document.
 //
-// When V is interface{}, value-side decoding produces shapes that round-trip
+// When V is any, value-side decoding produces shapes that round-trip
 // without losing structure: nested YAML mappings decode into nested
-// *OrderedMap[interface{}] (preserving author key order at every depth),
+// *OrderedMap[any] (preserving author key order at every depth),
 // sequences walk element-wise with the same recursion for mapping-kind
 // elements, and scalars surface via yaml.v3's default type detection. Numeric
 // precision relies on yaml.v3's int64 default, so high-precision integers
@@ -361,9 +405,9 @@ func (m OrderedMap[V]) MarshalJSON() ([]byte, error) {
 // default json.Unmarshal into a map collapses order, so we parse the object
 // manually one key-value pair at a time.
 //
-// When V is interface{}, value-side decoding produces shapes that round-trip
+// When V is any, value-side decoding produces shapes that round-trip
 // without losing structure: nested JSON objects decode into nested
-// *OrderedMap[interface{}] (preserving author key order at every depth),
+// *OrderedMap[any] (preserving author key order at every depth),
 // numeric values decode as json.Number (preserving exact integer precision
 // regardless of magnitude), and arrays of objects recurse element-wise. When
 // V is concrete and implements json.Unmarshaler (value or pointer receiver),
@@ -481,8 +525,8 @@ func vImplementsYAMLUnmarshaler[V any]() bool {
 }
 
 // vIsInterface reports whether V is an interface kind. Used by the decode
-// helpers to dispatch between the recursive interface{} path (which
-// produces nested *OrderedMap[interface{}] for nested objects and
+// helpers to dispatch between the recursive any path (which
+// produces nested *OrderedMap[any] for nested objects and
 // json.Number for numerics) and the typed-V plain-decode path.
 func vIsInterface[V any]() bool {
 	var zero V
@@ -503,8 +547,8 @@ func vIsInterface[V any]() bool {
 //     UnmarshalJSON method runs.
 //  3. If V is concrete (kind != Interface), plain json.Unmarshal — typed
 //     decode unchanged from pre-gamma behavior.
-//  4. If V is interface{}: peek the first non-whitespace byte and dispatch:
-//     '{' recurses into a fresh *OrderedMap[interface{}], '[' walks the
+//  4. If V is any: peek the first non-whitespace byte and dispatch:
+//     '{' recurses into a fresh *OrderedMap[any], '[' walks the
 //     array element-wise with recursive decode for each element, numeric
 //     values decode via a per-value json.Decoder with UseNumber producing
 //     json.Number, scalars (string, bool, null) plain-decode.
@@ -543,7 +587,7 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 
 	switch trimmed[0] {
 	case '{':
-		nested := NewOrderedMap[interface{}]()
+		nested := NewOrderedMap[any]()
 		if err := nested.unmarshalJSONWithDepth(raw, depth); err != nil {
 			return zero, err
 		}
@@ -554,9 +598,9 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 		if err := json.Unmarshal(raw, &rawArr); err != nil {
 			return zero, err
 		}
-		result := make([]interface{}, 0, len(rawArr))
+		result := make([]any, 0, len(rawArr))
 		for _, elem := range rawArr {
-			ev, err := decodeJSONValue[interface{}](elem, depth+1)
+			ev, err := decodeJSONValue[any](elem, depth+1)
 			if err != nil {
 				return zero, err
 			}
@@ -589,8 +633,8 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 //  2. If V or *V implements yaml.Unmarshaler, valueNode.Decode delegates to
 //     V's UnmarshalYAML method.
 //  3. If V is concrete (kind != Interface), valueNode.Decode runs unchanged.
-//  4. If V is interface{}: branch on valueNode.Kind. Mapping nodes recurse
-//     into a fresh *OrderedMap[interface{}]; sequence nodes walk element-
+//  4. If V is any: branch on valueNode.Kind. Mapping nodes recurse
+//     into a fresh *OrderedMap[any]; sequence nodes walk element-
 //     wise with recursive decode for each element; scalar / alias / document
 //     nodes use yaml.v3's default Decode (which preserves int64 precision
 //     for numerics, so no parallel UseNumber-style layer is needed).
@@ -619,16 +663,16 @@ func decodeYAMLValue[V any](valueNode *yaml.Node, depth int) (V, error) {
 
 	switch valueNode.Kind {
 	case yaml.MappingNode:
-		nested := NewOrderedMap[interface{}]()
+		nested := NewOrderedMap[any]()
 		if err := nested.unmarshalYAMLWithDepth(valueNode, depth); err != nil {
 			return zero, err
 		}
 		return any(nested).(V), nil
 
 	case yaml.SequenceNode:
-		result := make([]interface{}, 0, len(valueNode.Content))
+		result := make([]any, 0, len(valueNode.Content))
 		for _, elem := range valueNode.Content {
-			ev, err := decodeYAMLValue[interface{}](elem, depth+1)
+			ev, err := decodeYAMLValue[any](elem, depth+1)
 			if err != nil {
 				return zero, err
 			}

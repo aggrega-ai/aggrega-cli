@@ -45,14 +45,14 @@ type IRMetadata struct {
 //
 // Schema: ir-v1alpha1.schema.json#/properties/spec
 type IRSpec struct {
-	Nodes                OrderedMap[IRNode]                       `json:"nodes"`
-	Edges                []IREdge                                 `json:"edges"`
-	FeatureMarkers       []string                                 `json:"feature_markers"`
-	ValuesMapping        OrderedMap[json.RawMessage]              `json:"values_mapping"`
-	InfraMapping         OrderedMap[json.RawMessage]              `json:"infra_mapping"`
-	FeatureValuesMapping OrderedMap[OrderedMap[IRFeatureEntry]]   `json:"feature_values_mapping"`
-	Secrets              OrderedMap[OrderedMap[IRSecretEntry]]    `json:"secrets"`
-	Provenance           IRProvenance                             `json:"provenance"`
+	Nodes                OrderedMap[IRNode]                     `json:"nodes"`
+	Edges                []IREdge                               `json:"edges"`
+	FeatureMarkers       []string                               `json:"feature_markers"`
+	ValuesMapping        OrderedMap[json.RawMessage]            `json:"values_mapping"`
+	InfraMapping         OrderedMap[json.RawMessage]            `json:"infra_mapping"`
+	FeatureValuesMapping OrderedMap[OrderedMap[IRFeatureEntry]] `json:"feature_values_mapping"`
+	Secrets              OrderedMap[OrderedMap[IRSecretEntry]]  `json:"secrets"`
+	Provenance           IRProvenance                           `json:"provenance"`
 }
 
 // IRNode is a single node in the IR graph. Purely topological — no opaque payload.
@@ -99,8 +99,8 @@ type IREdge struct {
 type IRFeatureEntry struct {
 	Type            string                         `json:"type"`
 	ResolvedVersion string                         `json:"resolved_version"`
-	Values          OrderedMap[interface{}]        `json:"values,omitempty,omitzero"`
-	Infra           OrderedMap[interface{}]        `json:"infra,omitempty,omitzero"`
+	Values          OrderedMap[any]                `json:"values,omitempty,omitzero"`
+	Infra           OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject          OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 	Secrets         OrderedMap[IRSecretEntry]      `json:"secrets,omitempty,omitzero"`
 }
@@ -110,7 +110,7 @@ type IRFeatureEntry struct {
 type IRSecretEntry struct {
 	Type            string                         `json:"type"`
 	ResolvedVersion string                         `json:"resolved_version"`
-	Values          OrderedMap[interface{}]        `json:"values,omitempty,omitzero"`
+	Values          OrderedMap[any]                `json:"values,omitempty,omitzero"`
 	Inject          OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 }
 
