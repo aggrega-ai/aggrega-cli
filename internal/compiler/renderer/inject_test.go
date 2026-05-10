@@ -136,12 +136,10 @@ func TestBuildInjectAll_CustomMechanisms(t *testing.T) {
 		Env:  omStrInject("ENV_KEY", "e"),
 		File: omStrInject("FILE_KEY", "f"),
 		Arg:  omStrInject("ARG_KEY", "a"),
-		Additional: map[string]map[string]string{
-			"vault":   {"VAULT_KEY": "v"},
-			"ssm":     {"SSM_KEY": "s"},
-			"azurekv": {"AZ_KEY": "z"},
-		},
 	}
+	inject.Additional.Set("vault", omStrInject("VAULT_KEY", "v"))
+	inject.Additional.Set("ssm", omStrInject("SSM_KEY", "s"))
+	inject.Additional.Set("azurekv", omStrInject("AZ_KEY", "z"))
 
 	all := buildInjectAll(inject)
 	if all.Len() != 6 {

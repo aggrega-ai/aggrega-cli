@@ -117,7 +117,7 @@ func collectInjectMechanisms(inject *types.InjectBlock) []string {
 	if inject.Arg != nil {
 		mechs = append(mechs, "arg")
 	}
-	for k := range inject.Additional {
+	for k := range inject.Additional.All() {
 		mechs = append(mechs, k)
 	}
 	sort.Strings(mechs)
@@ -151,7 +151,7 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 	extractKeys("env", inject.Env)
 	extractKeys("file", inject.File)
 	extractKeys("arg", inject.Arg)
-	for k, v := range inject.Additional {
+	for k, v := range inject.Additional.All() {
 		extractKeys(k, v)
 	}
 	// Sort each mechanism's keys
@@ -208,7 +208,7 @@ func collectUsesInjectDeliveryKeys(uses types.OrderedMap[types.UsesSocketValue])
 			extractKeys("env", entry.Inject.Env)
 			extractKeys("file", entry.Inject.File)
 			extractKeys("arg", entry.Inject.Arg)
-			for mech, mechRaw := range entry.Inject.Additional {
+			for mech, mechRaw := range entry.Inject.Additional.All() {
 				extractKeys(mech, mechRaw)
 			}
 		}

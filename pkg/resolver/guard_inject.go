@@ -133,13 +133,14 @@ func injectMechanisms(inject types.InjectBlock) []mechanismRaw {
 		{"env", inject.Env},
 		{"file", inject.File},
 	}
-	additionalNames := make([]string, 0, len(inject.Additional))
-	for k := range inject.Additional {
+	additionalNames := make([]string, 0, inject.Additional.Len())
+	for k := range inject.Additional.All() {
 		additionalNames = append(additionalNames, k)
 	}
 	sort.Strings(additionalNames)
 	for _, k := range additionalNames {
-		out = append(out, mechanismRaw{k, inject.Additional[k]})
+		v, _ := inject.Additional.Get(k)
+		out = append(out, mechanismRaw{k, v})
 	}
 	return out
 }

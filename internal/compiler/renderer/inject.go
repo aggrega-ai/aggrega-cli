@@ -101,14 +101,16 @@ func buildInjectAll(inject types.InjectPipe) types.OrderedMap[string] {
 	mergeSorted(&all, inject.File)
 
 	// Custom mechanisms via Additional
-	if inject.Additional != nil {
-		mechNames := make([]string, 0, len(inject.Additional))
-		for k := range inject.Additional {
+	if inject.Additional.Len() > 0 {
+		mechNames := make([]string, 0, inject.Additional.Len())
+		for k := range inject.Additional.All() {
 			mechNames = append(mechNames, k)
 		}
 		sort.Strings(mechNames)
 		for _, mech := range mechNames {
-			mergeSortedPlain(&all, inject.Additional[mech])
+			if val, ok := inject.Additional.Get(mech); ok {
+				mergeSorted(&all, val)
+			}
 		}
 	}
 
@@ -119,17 +121,6 @@ func mergeSorted(dest *types.OrderedMap[string], src types.OrderedMap[string]) {
 	// Merge in author order — the underlying OrderedMap already carries it.
 	for k, v := range src.All() {
 		dest.Set(k, v)
-	}
-}
-
-func mergeSortedPlain(dest *types.OrderedMap[string], src map[string]string) {
-	keys := make([]string, 0, len(src))
-	for k := range src {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		dest.Set(k, src[k])
 	}
 }
 

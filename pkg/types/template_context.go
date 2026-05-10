@@ -3,6 +3,15 @@
 
 package types
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"gopkg.in/yaml.v3"
+)
+
 // TemplateContext is the runtime view assembled by the Go compiler and injected into
 // Recipe and FeatureRecipe Go templates during Step 5. This is NOT persisted to disk;
 // it exists only in compiler memory during rendering.
@@ -51,14 +60,231 @@ type AnnotationBuckets struct {
 }
 
 // InjectPipe is the pre-hydrated delivery pipe available in templates.
-// Known mechanisms: env, file, arg, all. Custom mechanisms use Additional.
+// Known mechanisms: env, file, arg, all. Custom mechanisms beyond the core
+// three are routed into Additional preserving author order; the runtime-side
+// shape carries fully-resolved string-to-string maps per mechanism.
+//
+// Duplicate top-level mechanism keys (any combination of env/file/arg/all/custom)
+// are rejected at the unmarshal layer with a wrapped error; the check fires
+// uniformly across all key kinds.
+//
+// The `json:"-" yaml:"-"` tag on Additional keeps standard tag-driven dispatch
+// from observing the field; the UnmarshalYAML / UnmarshalJSON / MarshalYAML /
+// MarshalJSON methods take responsibility for routing keys into and out of it.
+//
 // Schema: template-context-v1alpha1.schema.json context.inject
 type InjectPipe struct {
-	Env        OrderedMap[string]           `json:"env,omitempty,omitzero" yaml:"env,omitempty"`
-	File       OrderedMap[string]           `json:"file,omitempty,omitzero" yaml:"file,omitempty"`
-	Arg        OrderedMap[string]           `json:"arg,omitempty,omitzero" yaml:"arg,omitempty"`
-	All        OrderedMap[string]           `json:"all,omitempty,omitzero" yaml:"all,omitempty"`
-	Additional map[string]map[string]string `json:"-" yaml:"-"` // custom mechanisms; populated by custom unmarshal — opaque payload, kept as plain map
+	Env        OrderedMap[string]                 `json:"env,omitempty,omitzero" yaml:"env,omitempty"`
+	File       OrderedMap[string]                 `json:"file,omitempty,omitzero" yaml:"file,omitempty"`
+	Arg        OrderedMap[string]                 `json:"arg,omitempty,omitzero" yaml:"arg,omitempty"`
+	All        OrderedMap[string]                 `json:"all,omitempty,omitzero" yaml:"all,omitempty"`
+	Additional OrderedMap[OrderedMap[string]]     `json:"-" yaml:"-"`
+}
+
+// UnmarshalYAML decodes a mapping node into the InjectPipe, dispatching env /
+// file / arg / all into the typed fields and routing every other top-level key
+// into Additional preserving author order. Duplicate keys at any kind return
+// a wrapped error.
+func (p *InjectPipe) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("InjectPipe: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
+	}
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode, valNode := node.Content[i], node.Content[i+1]
+		var key string
+		if err := keyNode.Decode(&key); err != nil {
+			return fmt.Errorf("InjectPipe: decoding key at line %d: %w", keyNode.Line, err)
+		}
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf("InjectPipe: duplicate mechanism key %q at line %d", key, keyNode.Line)
+		}
+		seen[key] = struct{}{}
+		switch key {
+		case "env":
+			if err := valNode.Decode(&p.Env); err != nil {
+				return fmt.Errorf("InjectPipe.env at line %d: %w", valNode.Line, err)
+			}
+		case "file":
+			if err := valNode.Decode(&p.File); err != nil {
+				return fmt.Errorf("InjectPipe.file at line %d: %w", valNode.Line, err)
+			}
+		case "arg":
+			if err := valNode.Decode(&p.Arg); err != nil {
+				return fmt.Errorf("InjectPipe.arg at line %d: %w", valNode.Line, err)
+			}
+		case "all":
+			if err := valNode.Decode(&p.All); err != nil {
+				return fmt.Errorf("InjectPipe.all at line %d: %w", valNode.Line, err)
+			}
+		default:
+			var v OrderedMap[string]
+			if err := valNode.Decode(&v); err != nil {
+				return fmt.Errorf("InjectPipe.%s at line %d: %w", key, valNode.Line, err)
+			}
+			p.Additional.Set(key, v)
+		}
+	}
+	return nil
+}
+
+// UnmarshalJSON decodes a JSON object into the InjectPipe with the same
+// dispatch as UnmarshalYAML. Streaming json.Decoder preserves source key order.
+func (p *InjectPipe) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("InjectPipe: reading JSON opening token: %w", err)
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim != '{' {
+		return fmt.Errorf("InjectPipe: expected JSON object, got token %v", tok)
+	}
+	seen := make(map[string]struct{})
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("InjectPipe: reading JSON key: %w", err)
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return fmt.Errorf("InjectPipe: expected string key, got token %v", keyTok)
+		}
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf("InjectPipe: duplicate mechanism key %q", key)
+		}
+		seen[key] = struct{}{}
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return fmt.Errorf("InjectPipe: reading JSON value for key %q: %w", key, err)
+		}
+		switch key {
+		case "env":
+			if err := json.Unmarshal(raw, &p.Env); err != nil {
+				return fmt.Errorf("InjectPipe.env: %w", err)
+			}
+		case "file":
+			if err := json.Unmarshal(raw, &p.File); err != nil {
+				return fmt.Errorf("InjectPipe.file: %w", err)
+			}
+		case "arg":
+			if err := json.Unmarshal(raw, &p.Arg); err != nil {
+				return fmt.Errorf("InjectPipe.arg: %w", err)
+			}
+		case "all":
+			if err := json.Unmarshal(raw, &p.All); err != nil {
+				return fmt.Errorf("InjectPipe.all: %w", err)
+			}
+		default:
+			var v OrderedMap[string]
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return fmt.Errorf("InjectPipe.%s: %w", key, err)
+			}
+			p.Additional.Set(key, v)
+		}
+	}
+	if _, err := dec.Token(); err != nil && err != io.EOF {
+		return fmt.Errorf("InjectPipe: reading JSON closing token: %w", err)
+	}
+	return nil
+}
+
+// MarshalYAML emits a mapping node with env / file / arg / all first if non-zero
+// (in struct-field order), followed by Additional entries in author order.
+func (p InjectPipe) MarshalYAML() (any, error) {
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	addPair := func(k string, v any) error {
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+		valNode := &yaml.Node{}
+		if err := valNode.Encode(v); err != nil {
+			return fmt.Errorf("InjectPipe: encoding value for key %q: %w", k, err)
+		}
+		out.Content = append(out.Content, keyNode, valNode)
+		return nil
+	}
+	if !p.Env.IsZero() {
+		if err := addPair("env", p.Env); err != nil {
+			return nil, err
+		}
+	}
+	if !p.File.IsZero() {
+		if err := addPair("file", p.File); err != nil {
+			return nil, err
+		}
+	}
+	if !p.Arg.IsZero() {
+		if err := addPair("arg", p.Arg); err != nil {
+			return nil, err
+		}
+	}
+	if !p.All.IsZero() {
+		if err := addPair("all", p.All); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range p.Additional.All() {
+		if err := addPair(k, v); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// MarshalJSON emits a JSON object preserving the same emission order as
+// MarshalYAML — env / file / arg / all first if non-zero, then Additional in
+// author order.
+func (p InjectPipe) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	addPair := func(k string, v any) error {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		keyBytes, err := json.Marshal(k)
+		if err != nil {
+			return fmt.Errorf("InjectPipe: encoding JSON key %q: %w", k, err)
+		}
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+		valBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("InjectPipe: encoding JSON value for key %q: %w", k, err)
+		}
+		buf.Write(valBytes)
+		return nil
+	}
+	if !p.Env.IsZero() {
+		if err := addPair("env", p.Env); err != nil {
+			return nil, err
+		}
+	}
+	if !p.File.IsZero() {
+		if err := addPair("file", p.File); err != nil {
+			return nil, err
+		}
+	}
+	if !p.Arg.IsZero() {
+		if err := addPair("arg", p.Arg); err != nil {
+			return nil, err
+		}
+	}
+	if !p.All.IsZero() {
+		if err := addPair("all", p.All); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range p.Additional.All() {
+		if err := addPair(k, v); err != nil {
+			return nil, err
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 // EnrichedEdge is an enriched topological edge assembled by the compiler for template consumption.

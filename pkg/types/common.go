@@ -3,6 +3,15 @@
 
 package types
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Maintainer identifies an entity owner.
 // Shared across all entity metadata blocks.
 type Maintainer struct {
@@ -49,15 +58,226 @@ const FeatureKindLabel = "feature.aggrega.ai/kind"
 // FeatureKindSecret is the label value marking a Feature as a credential Feature.
 const FeatureKindSecret = "secret"
 
-// InjectBlock is the agnostic injection routing block from aggregate-v1alpha1.schema.json#/$defs/inject_block.
-// Known mechanisms are env, file, arg. Custom mechanisms use Additional.
-// Each mechanism value is an InjectDelivery: either compact map[string]string or verbose []{in,from}.
-// Both forms are represented as any and normalized to map[string]string during Step 2.
+// InjectBlock is the agnostic injection routing block from
+// aggregate-v1alpha1.schema.json#/$defs/inject_block. Known mechanisms are env,
+// file, arg. Custom mechanisms beyond the core three are routed into Additional
+// preserving author order; the schema's `additionalProperties` slot accepts any
+// mechanism conforming to the inject_delivery shape, and the custom UnmarshalYAML
+// / UnmarshalJSON hooks below populate Additional from non-core top-level keys.
+//
+// Each core mechanism value is an InjectDelivery: either compact map[string]string
+// or verbose []{in,from}. Both forms are represented as any and normalized to
+// map[string]string downstream. Additional values carry the same polymorphic
+// shape and the same downstream normalization.
+//
+// Duplicate top-level mechanism keys (any combination of env/file/arg/custom) are
+// rejected at the unmarshal layer with a wrapped error naming the offending key
+// and its source line. The check fires uniformly across all key kinds — yaml.v3's
+// parser-layer strictness varies, and encoding/json silently overwrites duplicate
+// keys in default decode paths; the hook closes the asymmetry.
+//
+// The `json:"-" yaml:"-"` tag on Additional keeps standard tag-driven dispatch
+// from observing the field; the UnmarshalYAML / UnmarshalJSON / MarshalYAML /
+// MarshalJSON methods take responsibility for routing keys into and out of it.
 type InjectBlock struct {
-	Env        any            `json:"env,omitempty" yaml:"env,omitempty"`
-	File       any            `json:"file,omitempty" yaml:"file,omitempty"`
-	Arg        any            `json:"arg,omitempty" yaml:"arg,omitempty"`
-	Additional map[string]any `json:"-" yaml:"-"` // custom mechanisms; populated by custom unmarshal — opaque payload, kept as plain map
+	Env        any             `json:"env,omitempty" yaml:"env,omitempty"`
+	File       any             `json:"file,omitempty" yaml:"file,omitempty"`
+	Arg        any             `json:"arg,omitempty" yaml:"arg,omitempty"`
+	Additional OrderedMap[any] `json:"-" yaml:"-"`
+}
+
+// UnmarshalYAML decodes a mapping node into the InjectBlock, dispatching env /
+// file / arg into the typed fields and routing every other top-level key into
+// Additional preserving author order. Duplicate top-level keys at any kind
+// (core or custom) return a wrapped error.
+func (b *InjectBlock) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("InjectBlock: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
+	}
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode, valNode := node.Content[i], node.Content[i+1]
+		var key string
+		if err := keyNode.Decode(&key); err != nil {
+			return fmt.Errorf("InjectBlock: decoding key at line %d: %w", keyNode.Line, err)
+		}
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf("InjectBlock: duplicate mechanism key %q at line %d", key, keyNode.Line)
+		}
+		seen[key] = struct{}{}
+		switch key {
+		case "env":
+			if err := valNode.Decode(&b.Env); err != nil {
+				return fmt.Errorf("InjectBlock.env at line %d: %w", valNode.Line, err)
+			}
+		case "file":
+			if err := valNode.Decode(&b.File); err != nil {
+				return fmt.Errorf("InjectBlock.file at line %d: %w", valNode.Line, err)
+			}
+		case "arg":
+			if err := valNode.Decode(&b.Arg); err != nil {
+				return fmt.Errorf("InjectBlock.arg at line %d: %w", valNode.Line, err)
+			}
+		default:
+			var v any
+			if err := valNode.Decode(&v); err != nil {
+				return fmt.Errorf("InjectBlock.%s at line %d: %w", key, valNode.Line, err)
+			}
+			b.Additional.Set(key, v)
+		}
+	}
+	return nil
+}
+
+// UnmarshalJSON decodes a JSON object into the InjectBlock with the same
+// dispatch as UnmarshalYAML. Uses a streaming json.Decoder with Token() to
+// observe keys in source order — encoding/json's default object decode collapses
+// order, so we parse the object manually one key-value pair at a time.
+func (b *InjectBlock) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("InjectBlock: reading JSON opening token: %w", err)
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim != '{' {
+		return fmt.Errorf("InjectBlock: expected JSON object, got token %v", tok)
+	}
+	seen := make(map[string]struct{})
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("InjectBlock: reading JSON key: %w", err)
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return fmt.Errorf("InjectBlock: expected string key, got token %v", keyTok)
+		}
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf("InjectBlock: duplicate mechanism key %q", key)
+		}
+		seen[key] = struct{}{}
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return fmt.Errorf("InjectBlock: reading JSON value for key %q: %w", key, err)
+		}
+		switch key {
+		case "env":
+			if err := json.Unmarshal(raw, &b.Env); err != nil {
+				return fmt.Errorf("InjectBlock.env: %w", err)
+			}
+		case "file":
+			if err := json.Unmarshal(raw, &b.File); err != nil {
+				return fmt.Errorf("InjectBlock.file: %w", err)
+			}
+		case "arg":
+			if err := json.Unmarshal(raw, &b.Arg); err != nil {
+				return fmt.Errorf("InjectBlock.arg: %w", err)
+			}
+		default:
+			var v any
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return fmt.Errorf("InjectBlock.%s: %w", key, err)
+			}
+			b.Additional.Set(key, v)
+		}
+	}
+	if _, err := dec.Token(); err != nil && err != io.EOF {
+		return fmt.Errorf("InjectBlock: reading JSON closing token: %w", err)
+	}
+	return nil
+}
+
+// MarshalYAML emits a mapping node with env / file / arg first (in struct-field
+// order, matching the existing serialised emission) followed by Additional
+// entries in author order. Value receiver matches OrderedMap.MarshalYAML's
+// dispatch rationale — yaml.v3's reflection sees value-receiver methods on the
+// type's method set regardless of addressability.
+func (b InjectBlock) MarshalYAML() (any, error) {
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	addPair := func(k string, v any) error {
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+		valNode := &yaml.Node{}
+		if err := valNode.Encode(v); err != nil {
+			return fmt.Errorf("InjectBlock: encoding value for key %q: %w", k, err)
+		}
+		out.Content = append(out.Content, keyNode, valNode)
+		return nil
+	}
+	if b.Env != nil {
+		if err := addPair("env", b.Env); err != nil {
+			return nil, err
+		}
+	}
+	if b.File != nil {
+		if err := addPair("file", b.File); err != nil {
+			return nil, err
+		}
+	}
+	if b.Arg != nil {
+		if err := addPair("arg", b.Arg); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range b.Additional.All() {
+		if err := addPair(k, v); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// MarshalJSON emits a JSON object preserving the same emission order as
+// MarshalYAML — env / file / arg first if non-nil, then Additional entries in
+// author order. Builds the object manually because encoding/json does not expose
+// a way to influence its default map-key ordering.
+func (b InjectBlock) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	addPair := func(k string, v any) error {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		keyBytes, err := json.Marshal(k)
+		if err != nil {
+			return fmt.Errorf("InjectBlock: encoding JSON key %q: %w", k, err)
+		}
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+		valBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("InjectBlock: encoding JSON value for key %q: %w", k, err)
+		}
+		buf.Write(valBytes)
+		return nil
+	}
+	if b.Env != nil {
+		if err := addPair("env", b.Env); err != nil {
+			return nil, err
+		}
+	}
+	if b.File != nil {
+		if err := addPair("file", b.File); err != nil {
+			return nil, err
+		}
+	}
+	if b.Arg != nil {
+		if err := addPair("arg", b.Arg); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range b.Additional.All() {
+		if err := addPair(k, v); err != nil {
+			return nil, err
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 // FeatureInstance is a feature attachment on a component or subsystem.

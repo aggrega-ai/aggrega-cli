@@ -135,7 +135,7 @@ func normalizeSecretsForCUE(secrets types.OrderedMap[types.SecretInstance]) map[
 			if arg := normalizeInjectMechanism(sec.Inject.Arg); arg != nil {
 				inj["arg"] = arg
 			}
-			for mech, raw := range sec.Inject.Additional {
+			for mech, raw := range sec.Inject.Additional.All() {
 				if m := normalizeInjectMechanism(raw); m != nil {
 					inj[mech] = m
 				}
@@ -230,7 +230,7 @@ func normalizeUsesForCUE(uses types.OrderedMap[types.UsesSocketValue]) map[strin
 				if arg := normalizeInjectMechanism(entry.Inject.Arg); arg != nil {
 					injMap["arg"] = arg
 				}
-				for mech, raw := range entry.Inject.Additional {
+				for mech, raw := range entry.Inject.Additional.All() {
 					if m := normalizeInjectMechanism(raw); m != nil {
 						injMap[mech] = m
 					}
