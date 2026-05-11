@@ -250,8 +250,8 @@ properties:
 // TestCanonicalSchemaID verifies the canonical $id derivation format.
 func TestCanonicalSchemaID(t *testing.T) {
 	t.Parallel()
-	got := CanonicalSchemaID("hub.aggrega.io", "WebPrimitives", "1.0.0", "URL")
-	want := "oci://hub.aggrega.io/WebPrimitives@1.0.0#/schemas/URL"
+	got := CanonicalSchemaID("hub.aggrega.ai", "WebPrimitives", "1.0.0", "URL")
+	want := "oci://hub.aggrega.ai/WebPrimitives@1.0.0#/schemas/URL"
 	if got != want {
 		t.Errorf("CanonicalSchemaID = %q, want %q", got, want)
 	}

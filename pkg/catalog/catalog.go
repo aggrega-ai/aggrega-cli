@@ -41,13 +41,14 @@ import (
 // future kinds; an unregistered provider name produces a fatal halt at
 // dispatch time).
 type Catalog struct {
-	Components      map[string]types.Component
-	Features        map[string]types.Feature
-	Recipes         map[string]types.Recipe        // keyed by spec.implements
-	FeatureRecipes  map[string]types.FeatureRecipe // keyed by spec.implements
-	Aggregates      map[string]types.Aggregate     // keyed by metadata.name
-	Providers       map[string]types.Provider      // keyed by metadata.name (e.g. "helm", "helm-chart")
-	SchemaLibraries map[string]types.SchemaLibrary // keyed by metadata.name (PascalCase library identifier)
+	Components       map[string]types.Component
+	Features         map[string]types.Feature
+	Recipes          map[string]types.Recipe         // keyed by spec.implements
+	FeatureRecipes   map[string]types.FeatureRecipe  // keyed by spec.implements
+	Aggregates       map[string]types.Aggregate      // keyed by metadata.name
+	Providers        map[string]types.Provider       // keyed by metadata.name (e.g. "helm", "helm-chart")
+	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
+	MappingLibraries map[string]types.MappingLibrary // keyed by metadata.name (PascalCase library identifier)
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -92,13 +93,14 @@ func Load(dir string) (*Catalog, error) {
 // is run from a different working directory.
 func LoadAll(dirs ...string) (*Catalog, error) {
 	c := &Catalog{
-		Components:      make(map[string]types.Component),
-		Features:        make(map[string]types.Feature),
-		Recipes:         make(map[string]types.Recipe),
-		FeatureRecipes:  make(map[string]types.FeatureRecipe),
-		Aggregates:      make(map[string]types.Aggregate),
-		Providers:       make(map[string]types.Provider),
-		SchemaLibraries: make(map[string]types.SchemaLibrary),
+		Components:       make(map[string]types.Component),
+		Features:         make(map[string]types.Feature),
+		Recipes:          make(map[string]types.Recipe),
+		FeatureRecipes:   make(map[string]types.FeatureRecipe),
+		Aggregates:       make(map[string]types.Aggregate),
+		Providers:        make(map[string]types.Provider),
+		SchemaLibraries:  make(map[string]types.SchemaLibrary),
+		MappingLibraries: make(map[string]types.MappingLibrary),
 	}
 	for _, dir := range dirs {
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -244,6 +246,18 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			}
 		}
 		c.SchemaLibraries[e.Metadata.Name] = e
+	case "MappingLibrary":
+		var e types.MappingLibrary
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal MappingLibrary")
+		}
+		// No template-body content validation analogous to SchemaLibrary's
+		// $dynamicAnchor / $dynamicRef scan — MappingLibrary entries are
+		// opaque Go template strings; the compiler does not parse them
+		// at entity load. Content semantics (including any cross-library
+		// $import: references) resolve at Recipe / FeatureRecipe render
+		// time via the Go template engine.
+		c.MappingLibraries[e.Metadata.Name] = e
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil

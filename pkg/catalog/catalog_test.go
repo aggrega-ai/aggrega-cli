@@ -163,6 +163,82 @@ spec:
 	}
 }
 
+// TestLoad_MappingLibrary verifies the catalog walker recognises
+// MappingLibrary entries (kind: MappingLibrary) and indexes them by
+// metadata.name. Per-version subdirectory layout
+// (mappinglibrary/<namespace>/<name>/<version>/library.yaml) is covered
+// by the existing recursive WalkDir.
+func TestLoad_MappingLibrary(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "mappinglibrary", "core", "BaseMappings", "1.0.0", "library.yaml")
+	if err := os.MkdirAll(filepath.Dir(libPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: MappingLibrary
+metadata:
+  name: BaseMappings
+  version: 1.0.0
+spec:
+  mappings:
+    SimpleValues: 'image: {{ .Values.image }}'
+    Replicas: 'replicas: {{ .Values.replicas | default 1 }}'
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(c.MappingLibraries) != 1 {
+		t.Fatalf("expected 1 MappingLibrary; got %d", len(c.MappingLibraries))
+	}
+	lib, ok := c.MappingLibraries["BaseMappings"]
+	if !ok {
+		t.Fatalf("expected BaseMappings MappingLibrary; got %v", c.MappingLibraries)
+	}
+	if lib.Spec.Mappings.Len() != 2 {
+		t.Errorf("expected 2 mapping entries; got %d", lib.Spec.Mappings.Len())
+	}
+}
+
+// TestLoad_MappingLibrary_NonScalarEntryRejected verifies the catalog
+// walker surfaces the Go-side typed-unmarshal rejection when a
+// MappingLibrary entry's value is not a string scalar (e.g., a mapping
+// or sequence). The envelope JSON Schema would reject the same shape
+// at workspace-load time; the Go-side check provides defense-in-depth.
+func TestLoad_MappingLibrary_NonScalarEntryRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "library.yaml")
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: MappingLibrary
+metadata:
+  name: BadEntry
+  version: 1.0.0
+spec:
+  mappings:
+    BadShape:
+      not: a string
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for non-scalar mapping entry; got nil")
+	}
+	if !errors.Is(err, types.ErrMappingEntryNotScalar) {
+		t.Errorf("expected ErrMappingEntryNotScalar in chain; got %v", err)
+	}
+}
+
 // TestLoad_SchemaLibrary_TemplateBodyForbiddenKeywordRejectedAtLoad
 // verifies the catalog walker scans template bodies (not only schema
 // entries) for $dynamicAnchor / $dynamicRef at workspace-load time.

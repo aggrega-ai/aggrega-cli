@@ -260,6 +260,6 @@ func CanonicalSchemaID(host, libraryName, version, schemaName string) string {
 // yet published to an OCI registry). The publishing pipeline at the next
 // code change of this phase replaces this placeholder with the canonical host at
 // publish time. The value is visually distinct from canonical
-// `hub.aggrega.io`-style hosts so logs and emitted artifacts flag local
+// `hub.aggrega.ai`-style hosts so logs and emitted artifacts flag local
 // references at a glance.
 const LocalDevelopmentHost = "local.aggrega"
