@@ -6,7 +6,6 @@ package validator
 import (
 	"fmt"
 
-	"cuelang.org/go/cue/cuecontext"
 	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/cognitio/aggrega-cli/pkg/validator/merger"
@@ -15,37 +14,48 @@ import (
 // maxInheritanceDepth prevents unbounded chains.
 const maxInheritanceDepth = 10
 
-// CatalogEntry provides the metadata and CUE schema for an entity resolved by URI.
-// The caller (Step 1 resolver) populates these from the loaded catalog.
+// CatalogEntry provides the metadata and schema for an entity resolved
+// by URI. The caller (Step 1 resolver) populates these from the loaded
+// catalog.
 type CatalogEntry struct {
 	URI      string         // e.g. "core/api-server:1.0.0"
 	Extends  string         // parent URI, empty if no inheritance
 	Metadata map[string]any // raw YAML metadata for deep merge
-	CUE      string         // cueSchema string
+	CUE      string         // cueSchema string (transitional: retained for backward-compat fields)
 
 	// JSONSchema is the entity's JSON Schema 2020-12 payload (the
 	// output of pkg/compactform's compile step). When populated, the
-	// inheritance walker also runs Phase 3 to produce a merged
-	// JSON Schema with source-position provenance metadata via the
-	// pkg/validator/merger package. The field is opt-in: catalog
-	// entries authored before the migration omit it, and Phase 3
-	// is a no-op for those entries.
+	// inheritance walker also runs the JSON-Schema merge phase to
+	// produce a merged JSON Schema with source-position provenance
+	// metadata via the pkg/validator/merger package. The field is
+	// opt-in: catalog entries authored before the migration omit
+	// it, and the merge phase is a no-op for those entries.
 	JSONSchema *jsonschema.Schema
 }
 
 // InheritanceResult holds the output of resolving an extends chain.
+//
+// Phase 1 (YAML metadata deep-merge) populates MergedMetadata. The
+// JSON-Schema-merge phase populates MergedJSONSchema when any chain
+// entry carries a JSONSchema payload; the field stays nil for chains
+// composed entirely of CUE-authored entries.
 type InheritanceResult struct {
-	MergedMetadata   map[string]any     // Phase 1 result: deep-merged YAML metadata
-	UnifiedCUE       string             // Phase 2 result: unified CUE schema string (for downstream use)
-	MergedJSONSchema *merger.Schema     // Phase 3 result: merged JSON Schema with provenance; nil when no chain entry carried a JSONSchema payload
-	Errors           []*ValidationError // any errors encountered
+	MergedMetadata   map[string]any
+	MergedJSONSchema *merger.Schema
+	Errors           []*ValidationError
 }
 
-// ResolveInheritance resolves the extends chain for an entity using the provided catalog lookup.
-// Phase 1: deep-merges YAML metadata bottom-up.
-// Phase 2: unifies CUE schemas via the & operator bottom-up.
+// ResolveInheritance resolves the extends chain for an entity using
+// the provided catalog lookup.
+//
+//   - Phase 1: deep-merges YAML metadata bottom-up.
+//   - Phase 2: when any chain entry carries a JSONSchema payload,
+//     composes the chain via pkg/validator/merger to produce a merged
+//     schema with provenance metadata.
+//
+// Cycle detection (visited-set keyed by URI) and max-depth bound
+// (10 levels) gate both phases.
 func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntry, bool)) InheritanceResult {
-	// Collect the chain from child → parent → grandparent
 	chain := []CatalogEntry{entry}
 	visited := map[string]bool{entry.URI: true}
 	current := entry
@@ -93,7 +103,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 		current = parent
 	}
 
-	// Phase 1: deep-merge metadata from root ancestor → child (child wins)
+	// Phase 1: deep-merge YAML metadata from root ancestor → child.
 	mergedMeta := map[string]any{}
 	for i := len(chain) - 1; i >= 0; i-- {
 		if chain[i].Metadata != nil {
@@ -101,57 +111,15 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 		}
 	}
 
-	// Phase 2: verify CUE schemas unify without conflict, emit concatenated source.
-	// CUE's `&` semantics are preserved by concatenation — compiling the joined
-	// string is equivalent to pairwise unification, with the upside that downstream
-	// consumers (evaluateSchema, ValidatePillar) receive a real CUE source they can
-	// recompile without losing constraints (MarshalJSON would have dropped them).
-	ctx := cuecontext.New()
-	cueVal := ctx.CompileString("{}")
+	result := InheritanceResult{MergedMetadata: mergedMeta}
 
-	var sourceParts []string
-	for i := len(chain) - 1; i >= 0; i-- {
-		if chain[i].CUE == "" {
-			continue
-		}
-		parentVal := ctx.CompileString(chain[i].CUE)
-		if parentVal.Err() != nil {
-			return InheritanceResult{
-				MergedMetadata: mergedMeta,
-				Errors: []*ValidationError{{
-					Entity:     chain[i].URI,
-					FieldPath:  ".spec.cueSchema",
-					Constraint: "CUE schema compilation failed",
-					Suggestion: "Check the cueSchema syntax",
-					Err:        ErrInheritanceMerge,
-				}},
-			}
-		}
-		cueVal = cueVal.Unify(parentVal)
-		if cueVal.Err() != nil {
-			return InheritanceResult{
-				MergedMetadata: mergedMeta,
-				Errors:         translateCUEErrors(cueVal.Err(), entry.URI, ErrInheritanceMerge),
-			}
-		}
-		sourceParts = append(sourceParts, chain[i].CUE)
-	}
-
-	result := InheritanceResult{
-		MergedMetadata: mergedMeta,
-		UnifiedCUE:     joinCUESources(sourceParts),
-	}
-
-	// Phase 3: merge JSON Schema payloads via pkg/validator/merger.
+	// Phase 2: merge JSON Schema payloads via pkg/validator/merger.
 	// Dormant unless at least one chain entry carries a JSONSchema
 	// payload — current callers don't populate the field; the
 	// catalog walker activates this path once entries carry their
-	// JSON Schema 2020-12 payloads alongside (or in place of) their
-	// CUE sources. The merger emits structural narrowing-violation
-	// signals via the returned Schema's NarrowingViolations slice;
-	// language-level CUE narrowing enforcement above runs in parallel
-	// for the legacy pipeline and co-exists with the structural
-	// signal until the CUE imports retire.
+	// JSON Schema 2020-12 payloads (handled by the schema-authoring
+	// phase). The merger emits structural narrowing-violation
+	// signals via the returned Schema's NarrowingViolations slice.
 	hasJSONSchema := false
 	for _, ent := range chain {
 		if ent.JSONSchema != nil {
@@ -177,13 +145,12 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 		if len(mergerChain) > 0 {
 			merged, err := merger.Merge(mergerChain)
 			if err != nil {
-				// TODO: when the catalog walker activates this hook,
-				// preserve the merger sentinel chain alongside
-				// ErrInheritanceMerge so callers can distinguish
-				// cycle / max-depth / invalid-input via errors.Is.
-				// Current shape squashes the inner sentinel into the
-				// Constraint string; the dormant state has no
-				// callers depending on the distinction yet.
+				// TODO: preserve the merger sentinel chain
+				// alongside ErrInheritanceMerge so callers can
+				// distinguish cycle / max-depth / invalid-input
+				// via errors.Is. Squashing the inner sentinel into
+				// the Constraint string is acceptable until a
+				// caller depends on the distinction.
 				result.Errors = append(result.Errors, &ValidationError{
 					Entity:     entry.URI,
 					FieldPath:  ".spec.jsonSchema",
@@ -198,27 +165,4 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 	}
 
 	return result
-}
-
-// joinCUESources concatenates CUE source fragments with a blank line between each.
-// CUE parses the joined document as pairwise unification.
-func joinCUESources(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	if len(parts) == 1 {
-		return parts[0]
-	}
-	var total int
-	for _, p := range parts {
-		total += len(p) + 2
-	}
-	buf := make([]byte, 0, total)
-	for i, p := range parts {
-		if i > 0 {
-			buf = append(buf, '\n', '\n')
-		}
-		buf = append(buf, p...)
-	}
-	return string(buf)
 }

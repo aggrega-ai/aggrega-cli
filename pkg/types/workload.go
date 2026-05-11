@@ -4,16 +4,17 @@
 // Workload struct surface — the platform-owned `aggrega.ai/v1alpha1` Workload
 // kind referenced by Recipes that adopt the synthesized input kind. Field
 // shapes mirror workload-v1alpha1.schema.json in the aggrega-schemas repo and are
-// constrained at runtime by the embedded CUE schema at
-// pkg/schemas/cue/workload.cue.
+// constrained at runtime by the embedded JSON Schema at
+// pkg/schemas/jsonschema/workload.json.
 //
 // Validation flow: yaml.Unmarshal decodes into typed Go fields; the consumer
-// (Phase B.2) calls validator.ValidateWorkload to unify the parsed value
-// against the embedded CUE. Closed-disjunction discriminators (Volume's five
-// variants, Probe's three shapes, Lifecycle hook's two forms, ContainerSecret's
-// env/file split) are not enforced at the Go type level — pointer fields can
-// all be set simultaneously by programmatic construction. Mutual-exclusion is
-// the validator's job; consumers MUST call ValidateWorkload before trusting
+// (Phase B.2) calls validator.ValidateWorkload to validate the parsed value
+// against the embedded JSON Schema via the pkg/validator/jsonschema adapter.
+// Closed-disjunction discriminators (Volume's five variants, Probe's three
+// shapes, Lifecycle hook's two forms, ContainerSecret's env/file split) are
+// not enforced at the Go type level — pointer fields can all be set
+// simultaneously by programmatic construction. Mutual-exclusion is the
+// validator's job; consumers MUST call ValidateWorkload before trusting
 // the parsed shape.
 
 package types
@@ -74,7 +75,7 @@ type ContainerSpec struct {
 // SecretRef references a Component secretsSchema slot. As is "env" or "file";
 // when As == "file", Path is required (the in-container mount path).
 //
-// Mutual exclusion of env vs file is a CUE-validation rule, not a Go-type
+// Mutual exclusion of env vs file is a schema-validation rule, not a Go-type
 // constraint — both fields can be set simultaneously by programmatic
 // construction. Validate via validator.ValidateWorkload.
 type SecretRef struct {
@@ -84,7 +85,7 @@ type SecretRef struct {
 }
 
 // VolumeSpec is a closed disjunction over five variants. Exactly one pointer
-// field should be set; mutual exclusion is enforced by CUE validation, not
+// field should be set; mutual exclusion is enforced by schema validation, not
 // Go-type structure. Programmatic construction can produce invalid states
 // (multiple variants set) that bypass validation if no explicit
 // validator.ValidateWorkload call follows — provider synthesisers should
@@ -129,7 +130,8 @@ type PersistentTemplateVolume struct {
 }
 
 // ServiceSpec describes one Service in a Workload. Type is one of
-// ClusterIP / NodePort / LoadBalancer / Headless (validated by CUE).
+// ClusterIP / NodePort / LoadBalancer / Headless (enum-validated by
+// the embedded Workload schema).
 type ServiceSpec struct {
 	Type  string          `json:"type" yaml:"type"`
 	Ports OrderedMap[int] `json:"ports,omitempty,omitzero" yaml:"ports,omitempty"`
@@ -155,7 +157,7 @@ type HealthSpec struct {
 }
 
 // ProbeSpec is a closed disjunction over three shapes (http / tcp / exec).
-// Mutual exclusion is enforced by CUE validation, not Go-type structure.
+// Mutual exclusion is enforced by schema validation, not Go-type structure.
 type ProbeSpec struct {
 	HTTP                string   `json:"http,omitempty" yaml:"http,omitempty"`
 	TCP                 int      `json:"tcp,omitempty" yaml:"tcp,omitempty"`
@@ -181,10 +183,10 @@ type LifecycleSpec struct {
 }
 
 // LifecycleHookSpec is a closed disjunction over two shapes (exec / httpGet).
-// Mutual exclusion enforced by CUE.
+// Mutual exclusion enforced by schema validation.
 //
-// HTTPGet is K8s-shaped pass-through (validated structurally only by CUE;
-// internal shape is the provider's responsibility).
+// HTTPGet is K8s-shaped pass-through (validated structurally only by the
+// embedded Workload schema; internal shape is the provider's responsibility).
 type LifecycleHookSpec struct {
 	Exec    []string       `json:"exec,omitempty" yaml:"exec,omitempty"`
 	HTTPGet map[string]any `json:"httpGet,omitempty" yaml:"httpGet,omitempty"`
@@ -193,9 +195,10 @@ type LifecycleHookSpec struct {
 // Scheduling carries pod placement intent.
 //
 // Affinity / Tolerations / TopologySpreadConstraints are typed `any` (opaque
-// pass-through to the provider rendering layer). Aggrega's CUE schema
-// constrains structural presence only; internal shape validation is delegated
-// to provider engines (helm's K8s pod spec, compose's restart policy, etc.).
+// pass-through to the provider rendering layer). The embedded Workload
+// schema constrains structural presence only; internal shape validation is
+// delegated to provider engines (helm's K8s pod spec, compose's restart
+// policy, etc.).
 type Scheduling struct {
 	NodeSelector              map[string]string `json:"nodeSelector,omitempty" yaml:"nodeSelector,omitempty"`
 	Affinity                  any               `json:"affinity,omitempty" yaml:"affinity,omitempty"`

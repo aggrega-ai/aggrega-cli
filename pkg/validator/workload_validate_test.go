@@ -119,7 +119,16 @@ func TestValidateWorkload_AllServiceTypesValid(t *testing.T) {
 	t.Parallel()
 	for _, svcType := range []string{"ClusterIP", "NodePort", "LoadBalancer", "Headless"} {
 		w := minimalWorkload()
-		w.Services.Set("api", types.ServiceSpec{Type: svcType})
+		// The JSON Schema requires services to declare at least one port —
+		// stricter than the prior CUE schema, which permitted a service
+		// with no ports map. The public Workload schema at
+		// aggrega-schemas/json-schemas/workload-v1alpha1.schema.json
+		// marks ports as required; the new validator honors that. Supply
+		// a representative port per service type so the test verifies
+		// type-discriminant acceptance, not ports-presence.
+		ports := types.OrderedMap[int]{}
+		ports.Set("http", 80)
+		w.Services.Set("api", types.ServiceSpec{Type: svcType, Ports: ports})
 		if err := validator.ValidateWorkload(w, "", "", ""); err != nil {
 			t.Errorf("service type %q should pass, got %v", svcType, err)
 		}

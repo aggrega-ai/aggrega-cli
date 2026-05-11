@@ -4,11 +4,9 @@
 package renderer
 
 import (
-	"fmt"
+	"log"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
 )
 
 // ProviderLookup resolves a provider by name (e.g. "helm", "helm-chart").
@@ -31,36 +29,48 @@ func isSourceless(recipe *types.Recipe) bool {
 	return false
 }
 
-// ValidateValuesAgainstBaseSchema validates a valuesMapping output against the
-// provider's baseSchema CUE definition. Used in sourceless (generative) mode to
-// ensure the Recipe's valuesMapping output conforms to the provider's contract.
+// ValidateValuesAgainstBaseSchema is the transitional stub during the
+// JSON Schema migration. The validator pipeline no longer processes
+// CUE source strings; provider baseSchema fields authored in CUE do
+// not get validated until the schema-authoring phase migrates them
+// to JSON Schema 2020-12. When a provider carries a non-empty
+// Spec.BaseSchema, this function logs a deprecation note once per
+// provider and returns nil (skip).
 //
-// Returns nil on success. If the provider has no baseSchema, validation is
-// skipped (baseSchema is optional).
+// Returns nil on success or when validation is skipped. If the
+// provider has no baseSchema, validation is skipped silently (the
+// field is optional).
 func ValidateValuesAgainstBaseSchema(
 	providerName string,
 	providerLookup ProviderLookup,
-	values map[string]any,
-	entityForErrors string,
+	_ map[string]any,
+	_ string,
 ) error {
 	if providerLookup == nil {
 		return nil
 	}
 	p, found := providerLookup(providerName)
 	if !found {
-		return nil // provider not registered in catalog — not a validation concern here
+		return nil
 	}
 	if p.Spec.BaseSchema == "" {
 		return nil
 	}
-	errs := validator.ValidateValues(p.Spec.BaseSchema, values, entityForErrors)
-	if len(errs) == 0 {
-		return nil
+	logBaseSchemaSkipOnce(providerName)
+	return nil
+}
+
+// loggedBaseSchemaSkips tracks per-provider skip notifications so the
+// deprecation log fires once per provider rather than once per
+// validation call. The package-level map is not safe for concurrent
+// mutation; renderer invocations are single-threaded per pipeline run.
+var loggedBaseSchemaSkips = map[string]bool{}
+
+func logBaseSchemaSkipOnce(providerName string) {
+	if loggedBaseSchemaSkips[providerName] {
+		return
 	}
-	// Return a compact error message listing all violations
-	msg := fmt.Sprintf("provider %q baseSchema validation failed", providerName)
-	for _, e := range errs {
-		msg += "\n  - " + e.Error()
-	}
-	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: entityForErrors}, msg, nil, nil)
+	loggedBaseSchemaSkips[providerName] = true
+	log.Printf("warning: provider %q authors Spec.BaseSchema; baseSchema validation skipped pending JSON Schema migration",
+		providerName)
 }

@@ -5,29 +5,27 @@ package validator
 
 import (
 	"encoding/json"
-	"fmt"
 
-	"cuelang.org/go/cue"
-	"cuelang.org/go/cue/cuecontext"
-	cueerrors "cuelang.org/go/cue/errors"
+	libschema "github.com/google/jsonschema-go/jsonschema"
 
-	cueschemas "github.com/cognitio/aggrega-cli/pkg/schemas/cue"
+	jsonschemas "github.com/cognitio/aggrega-cli/pkg/schemas/jsonschema"
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
 )
 
-// ValidateWorkload unifies a parsed Workload against the embedded
-// `aggrega.ai/v1alpha1` Workload CUE schema. Returns nil when the value
-// satisfies every constraint; otherwise returns a *WorkloadValidationError
-// with one finding per CUE rule violation.
+// ValidateWorkload validates a parsed Workload against the embedded
+// aggrega.ai/v1alpha1 Workload JSON Schema 2020-12. Returns nil when
+// the value satisfies every constraint; otherwise returns a
+// *WorkloadValidationError with one finding per violation.
 //
-// pkg/types is a CUE-free leaf package; this validator is the explicit
-// load-time entry point invoked by Phase B.2 (and any other consumer that
-// constructs a Workload programmatically and wants to verify its shape
-// before handing it to a synthesizer).
+// pkg/types is a validator-free leaf package; this validator is the
+// explicit load-time entry point invoked by Phase B.2 (and any other
+// consumer that constructs a Workload programmatically and wants to
+// verify its shape before handing it to a synthesizer).
 //
-// recipePath / recipeName / recipeVersion are threaded into the error for
-// operator-facing message context; pass "" when not available (e.g., tests
-// that build a Workload directly).
+// recipePath / recipeName / recipeVersion are threaded into the
+// error for operator-facing message context; pass "" when not
+// available (e.g., tests that build a Workload directly).
 func ValidateWorkload(
 	w *types.Workload,
 	recipePath, recipeName, recipeVersion string,
@@ -36,28 +34,43 @@ func ValidateWorkload(
 		return nil
 	}
 
-	ctx := cuecontext.New()
-
-	schemaVal := ctx.CompileString(cueschemas.WorkloadCUE)
-	if err := schemaVal.Err(); err != nil {
-		// The embedded CUE source is verified to compile by
-		// pkg/schemas/cue/workload_test.go:TestWorkloadCUECompiles. A
-		// failure here would mean an embed regression; surface it as a
-		// single finding rather than panicking.
+	// Unmarshal the embedded JSON Schema into a library Schema.
+	// The embedded schema is verified to parse by
+	// pkg/schemas/jsonschema/workload_test.go:TestWorkloadJSONSchemaParses;
+	// a failure here would mean an embed regression, surfaced as a
+	// single finding rather than a panic.
+	schema := &libschema.Schema{}
+	if err := json.Unmarshal([]byte(jsonschemas.WorkloadJSONSchema), schema); err != nil {
 		return &WorkloadValidationError{
 			Path:          recipePath,
 			RecipeName:    recipeName,
 			RecipeVersion: recipeVersion,
 			Stage:         "schema",
 			Findings: []WorkloadValidationFinding{{
-				Constraint: "embedded Workload CUE source failed to compile: " + err.Error(),
+				Constraint: "embedded Workload JSON Schema failed to parse: " + err.Error(),
 			}},
 			Err: ErrWorkloadValidation,
 		}
 	}
 
-	// Marshal the typed Workload to JSON, then compile as CUE data. Mirrors
-	// the existing evaluateSchema pattern in schema_engine.go.
+	v, err := jsonvalidator.New(schema)
+	if err != nil {
+		return &WorkloadValidationError{
+			Path:          recipePath,
+			RecipeName:    recipeName,
+			RecipeVersion: recipeVersion,
+			Stage:         "schema",
+			Findings: []WorkloadValidationFinding{{
+				Constraint: "embedded Workload JSON Schema failed to resolve: " + err.Error(),
+			}},
+			Err: ErrWorkloadValidation,
+		}
+	}
+
+	// Marshal the typed Workload to JSON, then unmarshal as a generic
+	// any-typed value. The validator's instance walk handles
+	// map[string]any; this round-trip normalises typed fields into
+	// the shape the walker expects.
 	dataJSON, err := json.Marshal(w)
 	if err != nil {
 		return &WorkloadValidationError{
@@ -66,112 +79,73 @@ func ValidateWorkload(
 			RecipeVersion: recipeVersion,
 			Stage:         "schema",
 			Findings: []WorkloadValidationFinding{{
-				Constraint: fmt.Sprintf("failed to marshal Workload to JSON: %v", err),
+				Constraint: "failed to marshal Workload to JSON: " + err.Error(),
 			}},
 			Err: ErrWorkloadValidation,
 		}
 	}
-
-	dataVal := ctx.CompileBytes(dataJSON)
-	if err := dataVal.Err(); err != nil {
+	var instance any
+	if err := json.Unmarshal(dataJSON, &instance); err != nil {
 		return &WorkloadValidationError{
 			Path:          recipePath,
 			RecipeName:    recipeName,
 			RecipeVersion: recipeVersion,
 			Stage:         "schema",
 			Findings: []WorkloadValidationFinding{{
-				Constraint: "failed to compile Workload as CUE: " + err.Error(),
+				Constraint: "failed to unmarshal Workload JSON for validation: " + err.Error(),
 			}},
 			Err: ErrWorkloadValidation,
 		}
 	}
 
-	// Look up the #Workload definition and unify the data against it.
-	workloadDef := schemaVal.LookupPath(cue.ParsePath("#Workload"))
-	if err := workloadDef.Err(); err != nil {
+	rpt, err := v.Validate(instance, nil)
+	if err != nil {
 		return &WorkloadValidationError{
 			Path:          recipePath,
 			RecipeName:    recipeName,
 			RecipeVersion: recipeVersion,
 			Stage:         "schema",
 			Findings: []WorkloadValidationFinding{{
-				Constraint: "embedded Workload CUE missing #Workload definition: " + err.Error(),
+				Constraint: "Workload validation pipeline error: " + err.Error(),
 			}},
 			Err: ErrWorkloadValidation,
 		}
 	}
 
-	unified := workloadDef.Unify(dataVal)
-	if err := unified.Validate(cue.Concrete(true), cue.Final()); err != nil {
-		findings := translateCUEErrorsToWorkloadFindings(err)
-		return &WorkloadValidationError{
-			Path:          recipePath,
-			RecipeName:    recipeName,
-			RecipeVersion: recipeVersion,
-			Stage:         "schema",
-			Findings:      findings,
-			Err:           ErrWorkloadValidation,
-		}
+	if len(rpt.Findings) == 0 {
+		return nil
 	}
 
-	return nil
+	return &WorkloadValidationError{
+		Path:          recipePath,
+		RecipeName:    recipeName,
+		RecipeVersion: recipeVersion,
+		Stage:         "schema",
+		Findings:      findingsToWorkloadFindings(rpt.Findings),
+		Err:           ErrWorkloadValidation,
+	}
 }
 
-// translateCUEErrorsToWorkloadFindings adapts the existing CUE-error
-// translation infrastructure (translate.go) into the WorkloadValidationFinding
-// shape. Each CUE error becomes one finding with the offending field path and
-// a sanitised constraint description.
-func translateCUEErrorsToWorkloadFindings(err error) []WorkloadValidationFinding {
-	cueErrs := cueerrors.Errors(err)
-	if len(cueErrs) == 0 {
-		return []WorkloadValidationFinding{{
-			FieldPath:  ".",
-			Constraint: "validation failed",
-		}}
-	}
-
-	out := make([]WorkloadValidationFinding, 0, len(cueErrs))
-	for _, ce := range cueErrs {
-		out = append(out, oneCUEErrorToFinding(ce))
+// findingsToWorkloadFindings adapts validator Findings into the
+// WorkloadValidationFinding shape. FieldPath converts from the
+// validator's instance-relative dot-delimited form ("containers.main.health")
+// into the legacy leading-dot form (".containers.main.health") expected
+// by downstream consumers of WorkloadValidationError. Each finding's
+// Message becomes the Constraint; Suggestion stays empty by default
+// (callers may layer suggestions in a higher-level error formatter).
+func findingsToWorkloadFindings(findings []jsonvalidator.Finding) []WorkloadValidationFinding {
+	out := make([]WorkloadValidationFinding, 0, len(findings))
+	for _, f := range findings {
+		path := f.FieldPath
+		if path != "" {
+			path = "." + path
+		} else {
+			path = "."
+		}
+		out = append(out, WorkloadValidationFinding{
+			FieldPath:  path,
+			Constraint: f.Message,
+		})
 	}
 	return out
-}
-
-func oneCUEErrorToFinding(ce error) WorkloadValidationFinding {
-	path := cueErrorPath(ce)
-	msg := cueerrors.Details(ce, nil)
-
-	finding := WorkloadValidationFinding{FieldPath: path}
-
-	switch {
-	case containsAny(msg, "conflicting values"):
-		finding.Constraint = extractConflict(msg)
-		finding.Suggestion = "check that the value matches the expected type or enum"
-	case containsAny(msg, "incomplete value"):
-		finding.Constraint = "required field is missing"
-		finding.Suggestion = "add the required field"
-	case containsAny(msg, "not allowed"):
-		finding.Constraint = "field not allowed by schema"
-		finding.Suggestion = "remove the unexpected field"
-	default:
-		finding.Constraint = sanitizeCUEMessage(msg)
-	}
-
-	return finding
-}
-
-func containsAny(haystack string, needle string) bool {
-	return len(haystack) >= len(needle) && (stringContains(haystack, needle))
-}
-
-// stringContains is a thin wrapper to avoid pulling strings into this file's
-// imports just for one call (translate.go already imports strings; reusing
-// extractConflict / sanitizeCUEMessage from there).
-func stringContains(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
 }

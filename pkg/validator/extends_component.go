@@ -52,9 +52,13 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 		merged = mergeComponent(merged, chain[i])
 	}
 
-	// Overwrite CueSchema with the CUE source returned by ResolveInheritance so
-	// constraints survive (MarshalJSON dropped them in earlier implementations).
-	merged.Spec.CueSchema = result.UnifiedCUE
+	// Spec.CueSchema is left as-authored on the merged component. The
+	// extends-chain composition into a single CUE source has retired
+	// alongside the validator's CUE pipeline; downstream validation
+	// against the merged component runs through the resolver-layer
+	// JSON Schema path (which currently stub-skips Spec.CueSchema-
+	// bearing entries pending the schema-authoring migration).
+	_ = result
 	return merged, nil
 }
 
@@ -87,7 +91,9 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 	for i := len(chain) - 2; i >= 0; i-- {
 		merged = mergeFeature(merged, chain[i])
 	}
-	merged.Spec.CueSchema = result.UnifiedCUE
+	// Spec.CueSchema is left as-authored on the merged feature; same
+	// rationale as ResolveComponentExtends above.
+	_ = result
 	return merged, nil
 }
 

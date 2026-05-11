@@ -4,156 +4,177 @@
 package validator
 
 import (
-	"fmt"
-	"strings"
+	"sort"
 
-	"cuelang.org/go/cue/cuecontext"
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// GenerateBaseUsesCueSchema builds a CUE schema string from a component/feature usesSchema map.
-// Each socket category becomes an optional struct in the uses pillar. If inject is allowlisted,
-// only those mechanisms are allowed; if omitted, inject is forbidden (Black-Box pattern).
+// jsonSchemaFalseSentinel is the JSON Schema 2020-12 equivalent of a
+// closed object — a schema that rejects every value. The library's
+// *Schema lets us express "additionalProperties: false" as a Not-of-
+// empty sub-schema (Not: &Schema{} rejects everything).
+var jsonSchemaFalseSentinel = &jsonschema.Schema{Not: &jsonschema.Schema{}}
+
+// GenerateBaseUsesJSONSchema builds a JSON Schema 2020-12 sub-schema
+// from a component/feature usesSchema map. The returned schema
+// represents the `uses` pillar's structural shape: each socket
+// becomes a property; each socket's value is an object map keyed by
+// instance name whose values carry the (target, inject?) shape.
 //
-// Each socket carries two CUE attribute tags for downstream tooling (policy engines,
-// inspection output): `@selector("<expr>")` with the original selector expression, and
-// `@inject("env,file")` when an allowlist is present. CUE attributes are metadata —
-// they don't affect validation; the selector itself is enforced by the analyzer
-// (Step 4 selector matcher), not here.
-func GenerateBaseUsesCueSchema(usesSchema types.OrderedMap[types.UsesSchemaEntry]) string {
+// Extension keywords attach Aggrega-specific metadata for downstream
+// tooling: `x-aggrega-selector` carries the original selector
+// expression on each socket; `x-aggrega-inject` (when the entry
+// supplies an Inject allowlist) carries the list of permitted
+// mechanism strings. The selector itself is not enforced at the
+// schema level — the analyzer (Step 4 selector matcher) handles that;
+// the extension keyword is metadata-only for inspection + policy
+// tooling.
+//
+// Closed-struct discipline: the parent `uses` schema rejects
+// socket names not declared in usesSchema via
+// additionalProperties: false (Schema-form: Not of empty). Author-
+// order from the OrderedMap input drives PropertyOrder on the
+// emitted schema, preserving the author's declared sequence.
+func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntry]) *jsonschema.Schema {
 	if usesSchema.Len() == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	// Emit as file-level `uses:` field declaration (not wrapped in extra braces)
-	// so `LookupPath("uses")` resolves to the close() struct. `close()` rejects
-	// socket names not declared in usesSchema.
-	b.WriteString("uses: close({\n")
-
-	for socketName, entry := range usesSchema.All() {
-		// Selector attribute: always present, even if the selector string is empty —
-		// the socket is still a declared topology slot. @inject attribute
-		// reflects the allowlist for downstream policy tooling (Black-Box when absent).
-		b.WriteString(fmt.Sprintf("\t%s?: {\n", socketName))
-		b.WriteString(fmt.Sprintf("\t\t@selector(%q)\n", entry.Selector))
-		if len(entry.Inject) > 0 {
-			b.WriteString(fmt.Sprintf("\t\t@inject(%q)\n", strings.Join(entry.Inject, ",")))
-		}
-		b.WriteString("\t\t[string]: {\n")
-		b.WriteString("\t\t\ttarget: string\n")
-
-		if len(entry.Inject) > 0 {
-			b.WriteString("\t\t\tinject?: {\n")
-			for _, mechanism := range entry.Inject {
-				b.WriteString(fmt.Sprintf("\t\t\t\t%s?: {[string]: string}\n", mechanism))
-			}
-			b.WriteString("\t\t\t}\n")
-		}
-
-		b.WriteString("\t\t}\n")
-		b.WriteString("\t}\n")
-	}
-
-	b.WriteString("})\n")
-	return b.String()
-}
-
-// GenerateBaseSecretsCueSchema builds a CUE schema string from a Component or
-// Feature secretsSchema map. Each slot becomes a field in the `secrets` pillar:
-//
-//   - Required=true → `<name>: { ... }` (mandatory; close() rejects absence).
-//   - Required=false → `<name>?: { ... }` (optional).
-//   - Inject empty (Black-Box) → no `inject` field emitted, so the pillar
-//     rejects any inject declared in the Aggregate (close() + absent field).
-//   - Inject non-empty (Transparent) → `inject?: { <mech>?: {[string]: string} }`
-//     limited to allowlisted mechanisms.
-//
-// @required and @inject CUE attribute tags surface slot semantics for
-// downstream policy tools. Deterministic via sorted slot names.
-func GenerateBaseSecretsCueSchema(secretsSchema types.OrderedMap[types.SecretSlot]) string {
-	if secretsSchema.Len() == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	b.WriteString("secrets: close({\n")
-
-	for slotName, slot := range secretsSchema.All() {
-		// Required slots omit the "?" optional marker on the slot field and
-		// make `type` mandatory inside the slot — a missing slot leaves `type`
-		// incomplete, so Validate(Concrete, Final) flags it. Optional slots
-		// carry "?" so absence is fine.
-		if slot.Required {
-			b.WriteString(fmt.Sprintf("\t%s: close({\n", slotName))
-		} else {
-			b.WriteString(fmt.Sprintf("\t%s?: close({\n", slotName))
-		}
-		b.WriteString(fmt.Sprintf("\t\t@required(%q)\n", fmt.Sprintf("%t", slot.Required)))
-		if slot.Required {
-			b.WriteString("\t\ttype: string\n")
-		} else {
-			b.WriteString("\t\ttype?: string\n")
-		}
-		b.WriteString("\t\tvalues?: {...}\n")
-		b.WriteString("\t\tuses?: {...}\n")
-		if len(slot.Inject) > 0 {
-			b.WriteString(fmt.Sprintf("\t\t@inject(%q)\n", strings.Join(slot.Inject, ",")))
-			b.WriteString("\t\tinject?: {\n")
-			for _, mechanism := range slot.Inject {
-				b.WriteString(fmt.Sprintf("\t\t\t%s?: {[string]: string}\n", mechanism))
-			}
-			b.WriteString("\t\t}\n")
-		}
-		b.WriteString("\t})\n")
-	}
-
-	b.WriteString("})\n")
-	return b.String()
-}
-
-// UnifySchemas unifies a base CUE schema with a user CUE schema (base & user).
-// Returns translated errors if unification fails.
-func UnifySchemas(baseCUE, userCUE, entity string) []*ValidationError {
-	if baseCUE == "" && userCUE == "" {
 		return nil
 	}
 
-	ctx := cuecontext.New()
+	propertyOrder := make([]string, 0, usesSchema.Len())
+	properties := map[string]*jsonschema.Schema{}
 
-	var baseVal = ctx.CompileString("{}")
-	if baseCUE != "" {
-		baseVal = ctx.CompileString(baseCUE)
-		if baseVal.Err() != nil {
-			return []*ValidationError{{
-				Entity:     entity,
-				FieldPath:  ".spec.usesSchema",
-				Constraint: "generated baseUsesCueSchema failed to compile",
-				Suggestion: "This is a compiler bug — report it",
-				Err:        ErrUsesSchemaUnification,
-			}}
+	for socketName, entry := range usesSchema.All() {
+		// Per-instance-name value: { target: string, inject?: { ... } }.
+		instanceValue := &jsonschema.Schema{
+			Type:                 "object",
+			Required:             []string{"target"},
+			Properties:           map[string]*jsonschema.Schema{"target": {Type: "string"}},
+			AdditionalProperties: jsonSchemaFalseSentinel,
+		}
+		instanceValue.PropertyOrder = []string{"target"}
+		if len(entry.Inject) > 0 {
+			injectProps := map[string]*jsonschema.Schema{}
+			for _, mech := range entry.Inject {
+				injectProps[mech] = &jsonschema.Schema{
+					Type:                 "object",
+					AdditionalProperties: &jsonschema.Schema{Type: "string"},
+				}
+			}
+			instanceValue.Properties["inject"] = &jsonschema.Schema{
+				Type:                 "object",
+				Properties:           injectProps,
+				AdditionalProperties: jsonSchemaFalseSentinel,
+			}
+			instanceValue.PropertyOrder = append(instanceValue.PropertyOrder, "inject")
+		}
+
+		// Socket schema: object map keyed by instance name. Each
+		// instance-name's value matches instanceValue (above) via
+		// AdditionalProperties as a constraining sub-schema.
+		socketSchema := &jsonschema.Schema{
+			Type:                 "object",
+			AdditionalProperties: instanceValue,
+			Extra: map[string]any{
+				"x-aggrega-selector": entry.Selector,
+			},
+		}
+		if len(entry.Inject) > 0 {
+			socketSchema.Extra["x-aggrega-inject"] = append([]string(nil), entry.Inject...)
+		}
+
+		properties[socketName] = socketSchema
+		propertyOrder = append(propertyOrder, socketName)
+	}
+
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Properties:           properties,
+		PropertyOrder:        propertyOrder,
+		AdditionalProperties: jsonSchemaFalseSentinel,
+	}
+}
+
+// GenerateBaseSecretsJSONSchema builds a JSON Schema 2020-12
+// sub-schema from a component/feature secretsSchema map. Each slot
+// becomes a property in the `secrets` object; required slots land in
+// the parent's Required: []string array (alphabetically sorted for
+// determinism); optional slots stay outside.
+//
+// Extension keyword: `x-aggrega-inject` (when the slot supplies an
+// Inject allowlist) carries the list of permitted mechanism strings
+// on the slot's sub-schema. The inject sub-schema mirrors the
+// declared allowlist as a closed-properties object — undeclared
+// mechanisms get rejected at the schema level.
+//
+// Author-order from the OrderedMap input drives PropertyOrder.
+func GenerateBaseSecretsJSONSchema(secretsSchema types.OrderedMap[types.SecretSlot]) *jsonschema.Schema {
+	if secretsSchema.Len() == 0 {
+		return nil
+	}
+
+	propertyOrder := make([]string, 0, secretsSchema.Len())
+	properties := map[string]*jsonschema.Schema{}
+	var required []string
+
+	for slotName, slot := range secretsSchema.All() {
+		slotSchema := &jsonschema.Schema{
+			Type: "object",
+			Properties: map[string]*jsonschema.Schema{
+				"type":   {Type: "string"},
+				"values": {Type: "object"},
+				"uses":   {Type: "object"},
+			},
+			AdditionalProperties: jsonSchemaFalseSentinel,
+		}
+		slotSchema.PropertyOrder = []string{"type", "values", "uses"}
+
+		// slotSchema.Required carries the slot-internal requirement
+		// (the slot's value-map must declare a `type` field) when the
+		// slot is required at the parent level. The parent-level
+		// slot-requirement is handled separately by appending to the
+		// outer Required slice below. Same Required field name, two
+		// distinct meanings at different schema depths.
+		if slot.Required {
+			slotSchema.Required = []string{"type"}
+		}
+
+		if len(slot.Inject) > 0 {
+			injectProps := map[string]*jsonschema.Schema{}
+			for _, mech := range slot.Inject {
+				injectProps[mech] = &jsonschema.Schema{
+					Type:                 "object",
+					AdditionalProperties: &jsonschema.Schema{Type: "string"},
+				}
+			}
+			slotSchema.Properties["inject"] = &jsonschema.Schema{
+				Type:                 "object",
+				Properties:           injectProps,
+				AdditionalProperties: jsonSchemaFalseSentinel,
+			}
+			slotSchema.PropertyOrder = append(slotSchema.PropertyOrder, "inject")
+			slotSchema.Extra = map[string]any{
+				"x-aggrega-inject": append([]string(nil), slot.Inject...),
+			}
+		}
+
+		properties[slotName] = slotSchema
+		propertyOrder = append(propertyOrder, slotName)
+		if slot.Required {
+			required = append(required, slotName)
 		}
 	}
 
-	var userVal = ctx.CompileString("{}")
-	if userCUE != "" {
-		userVal = ctx.CompileString(userCUE)
-		if userVal.Err() != nil {
-			return []*ValidationError{{
-				Entity:     entity,
-				FieldPath:  ".spec.cueSchema",
-				Constraint: "user cueSchema failed to compile",
-				Suggestion: "Check the cueSchema syntax",
-				Err:        ErrUsesSchemaUnification,
-			}}
-		}
+	if len(required) > 0 {
+		sort.Strings(required)
 	}
 
-	unified := baseVal.Unify(userVal)
-	if unified.Err() != nil {
-		return translateCUEErrors(unified.Err(), entity, ErrUsesSchemaUnification)
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Properties:           properties,
+		PropertyOrder:        propertyOrder,
+		Required:             required,
+		AdditionalProperties: jsonSchemaFalseSentinel,
 	}
-
-	return nil
 }

@@ -4,7 +4,6 @@
 package renderer_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
@@ -33,28 +32,31 @@ func TestValidateValuesAgainstBaseSchema_Success(t *testing.T) {
 	}
 }
 
-func TestValidateValuesAgainstBaseSchema_Fail(t *testing.T) {
+// TestValidateValuesAgainstBaseSchema_StubSkipsCueAuthoring verifies the
+// transitional stub-skip behavior: when a provider authors a non-empty
+// BaseSchema (currently CUE source), the validator does NOT halt the
+// build. The function logs a deprecation note and returns nil. The
+// schema-authoring phase restores per-value validation once providers
+// migrate BaseSchema to JSON Schema 2020-12.
+func TestValidateValuesAgainstBaseSchema_StubSkipsCueAuthoring(t *testing.T) {
 	t.Parallel()
 
 	lookup := func(name string) (types.Provider, bool) {
 		return types.Provider{
 			Spec: types.ProviderSpec{
-				BaseSchema: `image: string, replicas: int & >=1`, // replicas required
+				BaseSchema: `image: string, replicas: int & >=1`,
 			},
 		}, true
 	}
 
 	err := renderer.ValidateValuesAgainstBaseSchema(
-		"test-provider",
+		"transition-provider",
 		lookup,
-		map[string]any{"image": "app:latest"}, // missing replicas
+		map[string]any{"image": "app:latest"}, // would have failed under legacy CUE validation
 		"test-node",
 	)
-	if err == nil {
-		t.Fatal("expected validation failure for missing required field")
-	}
-	if !strings.Contains(err.Error(), "baseSchema validation failed") {
-		t.Errorf("unexpected error message: %v", err)
+	if err != nil {
+		t.Errorf("expected nil (stub-skips Spec.BaseSchema); got %v", err)
 	}
 }
 

@@ -303,9 +303,13 @@ spec:
 	if tierLabel != "prod" {
 		t.Errorf("child tier label lost, got %v", resolved.Metadata.Labels.Keys())
 	}
-	// Both constraints present in unified schema
-	if !strings.Contains(resolved.Spec.CueSchema, ">=1024") || !strings.Contains(resolved.Spec.CueSchema, "<=65535") {
-		t.Errorf("unified schema missing constraints:\n%s", resolved.Spec.CueSchema)
+	// Child's authored CueSchema is preserved as-is. The legacy
+	// CUE-source concatenation across the extends chain retired
+	// alongside the validator's CUE pipeline; downstream schema
+	// composition operates on JSON Schema payloads via the merger
+	// package, not on Spec.CueSchema.
+	if !strings.Contains(resolved.Spec.CueSchema, "<=65535") {
+		t.Errorf("child's authored CueSchema lost:\n%s", resolved.Spec.CueSchema)
 	}
 }
 

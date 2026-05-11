@@ -105,12 +105,14 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 		t.Error("expected child 'caches' socket")
 	}
 
-	// CueSchema concatenates parent + child sources so constraints survive
-	if !strings.Contains(got.Spec.CueSchema, ">=1024") {
-		t.Errorf("expected parent constraint in unified CUE, got:\n%s", got.Spec.CueSchema)
-	}
+	// CueSchema carries the child's as-authored content. The legacy
+	// extends-chain CUE-source concatenation has retired alongside
+	// the validator's CUE pipeline; downstream schema composition is
+	// the merger package's responsibility and operates on JSON
+	// Schema payloads (Spec.JSONSchema, populated by the schema-
+	// authoring phase), not on Spec.CueSchema.
 	if !strings.Contains(got.Spec.CueSchema, "name: string") {
-		t.Errorf("expected child field in unified CUE, got:\n%s", got.Spec.CueSchema)
+		t.Errorf("expected child's authored CueSchema preserved, got:\n%s", got.Spec.CueSchema)
 	}
 
 	// Identity stays child's
