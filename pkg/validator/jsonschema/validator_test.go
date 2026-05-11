@@ -348,6 +348,219 @@ data:
 	}
 }
 
+// TestValidate_RefDefsSubSchema_Success verifies that a schema with
+// $defs/Probe plus two properties using `$ref → #/$defs/Probe`
+// validates a good instance with zero findings and a bad instance
+// with findings rebased to the per-property path. Exercises the
+// indexSubSchemas $defs-graft mechanism — the cloned-and-grafted
+// sub-schema resolves and validates against its $ref'd definition.
+func TestValidate_RefDefsSubSchema_Success(t *testing.T) {
+	t.Parallel()
+
+	src := `
+$defs:
+  Probe:
+    path: { type: string, minLength: 1 }
+    port: { type: integer, min: 1, max: 65535 }
+liveness: { $ref: "#/$defs/Probe" }
+readiness: { $ref: "#/$defs/Probe" }
+`
+	schema := mustCompileAndConvert(t, src)
+	v, err := New(schema)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	good := map[string]any{
+		"liveness":  map[string]any{"path": "/healthz", "port": 8080},
+		"readiness": map[string]any{"path": "/ready", "port": 8081},
+	}
+	rpt, err := v.Validate(good, nil)
+	if err != nil {
+		t.Fatalf("Validate good: %v", err)
+	}
+	if len(rpt.Findings) != 0 {
+		t.Errorf("good $ref-using instance should produce zero findings; got %v", rpt.Findings)
+	}
+
+	bad := map[string]any{
+		"liveness":  map[string]any{"path": "/healthz", "port": 0},
+		"readiness": map[string]any{"path": "/ready", "port": 8081},
+	}
+	rptBad, err := v.Validate(bad, nil)
+	if err != nil {
+		t.Fatalf("Validate bad: %v", err)
+	}
+	if len(rptBad.Findings) == 0 {
+		t.Fatalf("bad $ref-using instance should produce findings; got none (the graft did not propagate findings)")
+	}
+	foundLiveness := false
+	for _, f := range rptBad.Findings {
+		if isUnderPath(f.FieldPath, "liveness") {
+			foundLiveness = true
+		}
+	}
+	if !foundLiveness {
+		t.Errorf("expected finding rebased under liveness; got %v", rptBad.Findings)
+	}
+}
+
+// TestValidate_RefDefsSubSchema_MultipleViolations verifies the
+// $defs graft preserves the deterministic-output invariant for
+// multi-violation instances. Two $ref'd properties each fail one
+// distinct constraint; the report's Findings + ordering are
+// byte-identical across 25 trials.
+func TestValidate_RefDefsSubSchema_MultipleViolations(t *testing.T) {
+	t.Parallel()
+
+	src := `
+$defs:
+  Probe:
+    path: { type: string, minLength: 1 }
+    port: { type: integer, min: 1, max: 65535 }
+liveness: { $ref: "#/$defs/Probe" }
+readiness: { $ref: "#/$defs/Probe" }
+`
+	schema := mustCompileAndConvert(t, src)
+	v, err := New(schema)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Bad instance with one distinct violation per $ref'd property —
+	// liveness.port fails minimum; readiness.path fails minLength.
+	// Per-property single-failure shape sidesteps the library's
+	// non-deterministic constraint-iteration within an object
+	// sub-schema (which would otherwise flip path-vs-port reporting
+	// across runs).
+	instance := map[string]any{
+		"liveness":  map[string]any{"path": "/healthz", "port": 0},
+		"readiness": map[string]any{"path": "", "port": 8080},
+	}
+
+	rpt := assertDeterministicValidation(t, v, instance, nil, 25)
+	if len(rpt.Findings) < 2 {
+		t.Errorf("expected >=2 findings across two $ref'd properties; got %d (%v)",
+			len(rpt.Findings), rpt.Findings)
+	}
+}
+
+// TestValidate_RefDefsLocalDefsTakePrecedence verifies the graft's
+// local-takes-precedence semantic: when a sub-schema declares its
+// own $defs entry with the same name as a root $defs entry, the
+// local entry applies inside the sub-schema. Matches JSON Schema
+// 2020-12's nearest-enclosing-$defs resolution rule.
+//
+// Constructed via direct JSON so the schema shape is unambiguous —
+// the compact-form compiler's handling of non-root $defs blocks is
+// not in scope for this test.
+func TestValidate_RefDefsLocalDefsTakePrecedence(t *testing.T) {
+	t.Parallel()
+
+	src := `{
+  "$defs": {
+    "Inner": { "type": "integer", "minimum": 100 }
+  },
+  "type": "object",
+  "properties": {
+    "wrapper": {
+      "$defs": {
+        "Inner": { "type": "string", "minLength": 3 }
+      },
+      "type": "object",
+      "properties": {
+        "value": { "$ref": "#/$defs/Inner" }
+      }
+    }
+  }
+}`
+	schema := &jsonschema.Schema{}
+	if err := json.Unmarshal([]byte(src), schema); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	v, err := New(schema)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Good per local Inner (string, minLength 3) — would FAIL per
+	// root Inner (integer, minimum 100) since "hello" is not an int.
+	good := map[string]any{
+		"wrapper": map[string]any{"value": "hello"},
+	}
+	rpt, err := v.Validate(good, nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) != 0 {
+		t.Errorf("local $defs/Inner (string) should take precedence over root $defs/Inner (integer); got %v",
+			rpt.Findings)
+	}
+}
+
+// TestValidate_RefDefsNestedDepth2 verifies the graft propagates
+// through recursion — a `$ref → #/$defs/X` at depth 2 (under
+// outer.properties.inner) resolves and validates against the
+// definition. Catches the failure mode where the graft applies only
+// at depth 1 and silently silent-skips at deeper levels.
+func TestValidate_RefDefsNestedDepth2(t *testing.T) {
+	t.Parallel()
+
+	src := `
+$defs:
+  Leaf:
+    type: object
+    properties:
+      tag: { type: string, minLength: 1 }
+    required: [tag]
+outer:
+  type: object
+  properties:
+    inner: { $ref: "#/$defs/Leaf" }
+`
+	schema := mustCompileAndConvert(t, src)
+	v, err := New(schema)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	good := map[string]any{
+		"outer": map[string]any{
+			"inner": map[string]any{"tag": "hello"},
+		},
+	}
+	rpt, err := v.Validate(good, nil)
+	if err != nil {
+		t.Fatalf("Validate good: %v", err)
+	}
+	if len(rpt.Findings) != 0 {
+		t.Errorf("good depth-2 $ref instance should produce zero findings; got %v", rpt.Findings)
+	}
+
+	// Bad: outer.inner.tag is empty (violates minLength).
+	bad := map[string]any{
+		"outer": map[string]any{
+			"inner": map[string]any{"tag": ""},
+		},
+	}
+	rptBad, err := v.Validate(bad, nil)
+	if err != nil {
+		t.Fatalf("Validate bad: %v", err)
+	}
+	if len(rptBad.Findings) == 0 {
+		t.Fatalf("bad depth-2 $ref instance should produce findings; got none (graft did not propagate to depth 2)")
+	}
+	found := false
+	for _, f := range rptBad.Findings {
+		if isUnderPath(f.FieldPath, "outer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected finding rebased under outer; got %v", rptBad.Findings)
+	}
+}
+
 // TestValidateDeterminism verifies the deterministic-output invariant
 // for both single-violation and multi-violation instances. The
 // deterministic property walk in (*googleAdapter).Validate validates
@@ -374,30 +587,10 @@ host: { type: string, format: hostname }
 		"host": "ok.example.com",
 	}
 
-	// Run the same Validate call many times. Even with Go's
-	// randomised map iteration over Properties, the sorted walk
-	// produces the same finding set + same ordering each time.
-	const trials = 25
-	var first string
-	for i := 0; i < trials; i++ {
-		rpt, err := v.Validate(instance, nil)
-		if err != nil {
-			t.Fatalf("Validate trial %d: %v", i, err)
-		}
-		current, _ := json.Marshal(rpt)
-		if i == 0 {
-			first = string(current)
-			// Both violations should surface; expect at least 2 findings.
-			if len(rpt.Findings) < 2 {
-				t.Errorf("multi-violation instance should produce >= 2 findings; got %d (%v)",
-					len(rpt.Findings), rpt.Findings)
-			}
-			continue
-		}
-		if string(current) != first {
-			t.Fatalf("trial %d Report drifted from first:\nfirst:    %s\ncurrent:  %s",
-				i, first, current)
-		}
+	rpt := assertDeterministicValidation(t, v, instance, nil, 25)
+	if len(rpt.Findings) < 2 {
+		t.Errorf("multi-violation instance should produce >= 2 findings; got %d (%v)",
+			len(rpt.Findings), rpt.Findings)
 	}
 }
 
@@ -548,6 +741,39 @@ optionalGate:
 		// finding about missing properties, but no AdapterError.
 		t.Logf("Validate returned error (acceptable): %v", err)
 	}
+}
+
+// assertDeterministicValidation runs v.Validate(instance, ctx) the
+// given number of trials and asserts every Report marshals to the
+// same JSON bytes. Returns the first Report so callers can do
+// additional assertions on Finding shape and content.
+//
+// Sidesteps Go's randomised map iteration: the deterministic walk
+// in (*googleAdapter).Validate validates each property's sub-instance
+// against its pre-resolved sub-schema in sorted-key order, so the
+// emitted Findings + their ordering are stable across runs of the
+// same binary against the same input.
+func assertDeterministicValidation(t *testing.T, v Validator, instance any, ctx *Context, trials int) *Report {
+	t.Helper()
+	var first string
+	var firstRpt *Report
+	for i := 0; i < trials; i++ {
+		rpt, err := v.Validate(instance, ctx)
+		if err != nil {
+			t.Fatalf("Validate trial %d: %v", i, err)
+		}
+		current, _ := json.Marshal(rpt)
+		if i == 0 {
+			first = string(current)
+			firstRpt = rpt
+			continue
+		}
+		if string(current) != first {
+			t.Fatalf("trial %d Report drifted from first:\nfirst:    %s\ncurrent:  %s",
+				i, first, current)
+		}
+	}
+	return firstRpt
 }
 
 // mustCompileAndConvert is a test helper that takes a compact-form

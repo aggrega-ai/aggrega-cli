@@ -271,24 +271,62 @@ func joinPath(path []string) string {
 // The sorted instance keys at Validate time + this index together
 // give deterministic multi-violation Reports.
 //
+// $defs graft for non-root sub-schemas: a sub-schema using
+// `$ref → #/$defs/X` cannot standalone-resolve because its own
+// $defs scope is empty (the entries live on the root or on an
+// enclosing parent). At every non-root level, the walker clones the
+// sub-schema via (*Schema).CloneSchemas() and grafts a merged $defs
+// map onto the clone — ambient entries (each deep-cloned to keep
+// the library's tree-uniqueness invariant intact across the
+// construction sweep) plus any local entries the sub-schema
+// declared. Local entries take precedence on name collision,
+// matching JSON Schema 2020-12's nearest-enclosing-$defs semantic.
+//
+// The ambient set threads through recursion: the initial call from
+// New() passes the root schema's $defs as the initial ambient; each
+// level's graft computes the next ambient (parent's ambient unioned
+// with the sub-schema's local entries) and passes it to descendants.
+// So `$ref → #/$defs/X` resolves at any depth and against any
+// enclosing scope, not only against the document root.
+//
 // PatternProperties / DependentSchemas / AdditionalProperties are
 // recursed for x-aggrega-* discovery in walk() but are not indexed
 // for deterministic sub-schema validation here — the library's own
-// iteration over those map-typed fields remains non-deterministic and
-// is a documented limitation routed to a follow-up.
-func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string) error {
+// iteration over those map-typed fields remains non-deterministic
+// and is a documented limitation routed to a follow-up.
+//
+// Residual walker-completeness gaps for `$ref` resolution: (a)
+// cross-property refs (`$ref → #/properties/foo` — the graft covers
+// $defs only, not /properties), (b) `$defs/X` entries whose own
+// refs leave $defs scope (e.g., `$defs/X` referencing
+// `/properties/foo`). Either pattern would require root-validate +
+// finding-filter and accept determinism degradation for the affected
+// paths only.
+func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema) error {
 	if s == nil {
 		return nil
+	}
+
+	if path != "" && len(ambientDefs) > 0 {
+		s = s.CloneSchemas()
+		merged := make(map[string]*jsonschema.Schema, len(ambientDefs)+len(s.Defs))
+		for k, v := range ambientDefs {
+			merged[k] = v.CloneSchemas()
+		}
+		for k, v := range s.Defs {
+			merged[k] = v
+		}
+		s.Defs = merged
 	}
 
 	// Resolve this sub-schema as a standalone root. The root schema
 	// (path == "") MUST resolve — propagating the error gives the
 	// calling pipeline a fail-fast on a malformed top-level schema.
-	// Sub-schemas (path != "") may $ref: to root-level $defs whose
-	// scope is lost when treating the sub-schema as a standalone
-	// root; in that case, skip the path from the deterministic
-	// walk's index. Those subtrees surface as a documented
-	// walker-completeness gap rather than a validation failure.
+	// Sub-schemas (path != "") whose $ref targets remain unresolvable
+	// after the graft (cross-property refs; $defs chains escaping
+	// $defs scope) tolerate-skip from the deterministic-walk index
+	// rather than fail construction — those subtrees are the
+	// documented residual walker-completeness gap.
 	resolved, err := s.Resolve(nil)
 	if err != nil {
 		if path == "" {
@@ -309,6 +347,12 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string) error
 	}
 
 	if s.Properties != nil {
+		// nextAmbient = the $defs in scope for descendants — the post-graft
+		// s.Defs is exactly this (ambient unioned with local overrides).
+		// At the root, s.Defs is the root's original $defs (no graft
+		// occurred at path == "").
+		nextAmbient := s.Defs
+
 		propertyNames := make([]string, 0, len(s.Properties))
 		for name := range s.Properties {
 			propertyNames = append(propertyNames, name)
@@ -319,7 +363,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string) error
 			if path != "" {
 				subPath = path + "." + name
 			}
-			if err := a.indexSubSchemas(s.Properties[name], subPath); err != nil {
+			if err := a.indexSubSchemas(s.Properties[name], subPath, nextAmbient); err != nil {
 				return err
 			}
 		}

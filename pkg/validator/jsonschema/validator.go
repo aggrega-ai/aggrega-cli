@@ -66,6 +66,7 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 	a := &googleAdapter{
 		subResolved: map[string]*jsonschema.Resolved{},
 		required:    map[string][]string{},
+		rootDefs:    schema.Defs,
 	}
 
 	// First pass: walk the schema to find x-aggrega-when: and
@@ -88,7 +89,7 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 	// $ref to root-level $defs from a sub-context) are tolerated by
 	// indexSubSchemas and surface as a documented walker-
 	// completeness gap rather than a construction error.
-	if err := a.indexSubSchemas(schema, ""); err != nil {
+	if err := a.indexSubSchemas(schema, "", a.rootDefs); err != nil {
 		return nil, err
 	}
 
@@ -128,6 +129,24 @@ type googleAdapter struct {
 	// positions with their pre-compiled templates and validateMessage
 	// content.
 	validateNodes []validateNode
+
+	// rootDefs holds direct (un-cloned) references to the input
+	// schema's $defs entries. New() passes this map as the initial
+	// ambient $defs into indexSubSchemas; the walker threads the
+	// ambient set through recursion (parent's ambient unioned with
+	// each level's local $defs, local overriding) so any non-root
+	// sub-schema's $ref → #/$defs/X resolves against the correct
+	// enclosing scope. Each graft point in indexSubSchemas clones
+	// the ambient entries via CloneSchemas() before installing them
+	// into the cloned sub-schema's merged $defs map, so every
+	// per-level Resolve() operates on its own independent clone
+	// graph and the library's tree-uniqueness invariant (each
+	// *Schema appears at most once in a resolved graph) is
+	// preserved across the construction sweep. The un-cloned-handle
+	// posture matches the adapter's "schema must not be mutated
+	// after New returns" precondition: rootDefs is a read-only
+	// pointer into the input schema.
+	rootDefs map[string]*jsonschema.Schema
 }
 
 // whenNode is a single x-aggrega-when: position in the schema with
