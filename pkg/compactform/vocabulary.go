@@ -143,17 +143,3 @@ func isCompactKeyword(key string) bool {
 		(compositionKeywords[key] && (key == "valuesType")) ||
 		aggregaSpecificKeywords[key]
 }
-
-// isJSONSchemaReservedKeyword reports whether the given key is one of
-// JSON Schema 2020-12's reserved keywords (including the ones compact
-// form also borrows by name like `allOf`). Used by dispatch to detect
-// JSON-Schema-flavoured content.
-func isJSONSchemaReservedKeyword(key string) bool {
-	return jsonSchemaReservedKeywords[key] ||
-		compositionKeywords[key] && key != "valuesType" ||
-		containerKeywords[key] ||
-		referenceKeywords[key] ||
-		key == "type" || key == "description" || key == "default" ||
-		key == "enum" || key == "pattern" || key == "format" ||
-		key == "minLength" || key == "maxLength"
-}

@@ -25,6 +25,7 @@ func TestCompileFixtures(t *testing.T) {
 	fixtures := []string{
 		"minimal-uuid-generator",
 		"midsize-pod-resources",
+		"production-realistic-http-server",
 	}
 
 	for _, name := range fixtures {
@@ -184,6 +185,223 @@ func TestCompileConstraintTypeMismatch(t *testing.T) {
 	}
 	if !errors.Is(err, ErrConstraintTypeMismatch) {
 		t.Fatalf("expected ErrConstraintTypeMismatch; got %v", err)
+	}
+}
+
+// TestCompileNodeUnsupportedKind verifies compileNode's defensive
+// branch for YAML node kinds outside the documented set. Reaches the
+// default arm of the dispatch switch by passing a synthetic node.
+func TestCompileNodeUnsupportedKind(t *testing.T) {
+	t.Parallel()
+
+	bogus := &yaml.Node{Kind: yaml.Kind(99), Line: 7}
+	_, err := compileNode(bogus, "synthetic")
+	if err == nil {
+		t.Fatal("expected error for unsupported node kind; got nil")
+	}
+	if !errors.Is(err, ErrEscapeContentInvalid) {
+		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
+	}
+}
+
+// TestCompileNodeNilSilent verifies compileNode tolerates a nil node
+// (returns nil, nil) rather than panicking. Defensive contract for
+// helpers that may pass nil through.
+func TestCompileNodeNilSilent(t *testing.T) {
+	t.Parallel()
+
+	v, err := compileNode(nil, "")
+	if err != nil {
+		t.Errorf("nil node should not error; got %v", err)
+	}
+	if v != nil {
+		t.Errorf("nil node should return nil; got %v", v)
+	}
+}
+
+// TestCompileAliasNilTarget verifies an alias node with a nil target
+// returns (nil, nil) safely — the defensive branch in compileNode's
+// AliasNode case.
+func TestCompileAliasNilTarget(t *testing.T) {
+	t.Parallel()
+
+	alias := &yaml.Node{Kind: yaml.AliasNode, Alias: nil}
+	v, err := compileNode(alias, "")
+	if err != nil {
+		t.Errorf("alias-with-nil-target should not error; got %v", err)
+	}
+	if v != nil {
+		t.Errorf("alias-with-nil-target should return nil; got %v", v)
+	}
+}
+
+// TestEmitSchemaMapNonMapping verifies emitSchemaMap's defensive
+// branch for nil and non-mapping inputs returns an empty schema map
+// without error.
+func TestEmitSchemaMapNonMapping(t *testing.T) {
+	t.Parallel()
+
+	out, err := emitSchemaMap(nil, "")
+	if err != nil {
+		t.Errorf("nil node should not error; got %v", err)
+	}
+	if len(out) != 0 {
+		t.Errorf("nil node should produce empty map; got %v", out)
+	}
+	scalar := &yaml.Node{Kind: yaml.ScalarNode, Value: "x"}
+	out, err = emitSchemaMap(scalar, "")
+	if err != nil {
+		t.Errorf("non-mapping should not error; got %v", err)
+	}
+	if len(out) != 0 {
+		t.Errorf("non-mapping should produce empty map; got %v", out)
+	}
+}
+
+// TestHelperNilNodeGuards exercises the defensive nil/non-mapping
+// guards in mappingValue, mappingKeyOrder, nodeLine, decodeScalar,
+// and isRequiredLeaf. Internal-API tests; document the contract that
+// these helpers tolerate nil rather than panicking.
+func TestHelperNilNodeGuards(t *testing.T) {
+	t.Parallel()
+
+	if v := mappingValue(nil, "any"); v != nil {
+		t.Errorf("mappingValue(nil, ...) should return nil; got %v", v)
+	}
+	scalar := &yaml.Node{Kind: yaml.ScalarNode, Value: "x"}
+	if v := mappingValue(scalar, "any"); v != nil {
+		t.Errorf("mappingValue(non-mapping, ...) should return nil; got %v", v)
+	}
+	if keys := mappingKeyOrder(nil); keys != nil {
+		t.Errorf("mappingKeyOrder(nil) should return nil; got %v", keys)
+	}
+	if line := nodeLine(nil); line != 0 {
+		t.Errorf("nodeLine(nil) should return 0; got %d", line)
+	}
+	if v := decodeScalar(nil); v != nil {
+		t.Errorf("decodeScalar(nil) should return nil; got %v", v)
+	}
+	mapping := &yaml.Node{Kind: yaml.MappingNode}
+	if v := decodeScalar(mapping); v != nil {
+		t.Errorf("decodeScalar(non-scalar) should return nil; got %v", v)
+	}
+	if isRequiredLeaf(nil) {
+		t.Errorf("isRequiredLeaf(nil) should return false")
+	}
+	if isRequiredLeaf(scalar) {
+		t.Errorf("isRequiredLeaf(non-mapping) should return false")
+	}
+}
+
+// TestCompileLargeSequence exercises emitSequence's indexSegment path
+// for indices >= 2 (intToString is exercised for multi-digit values).
+func TestCompileLargeSequence(t *testing.T) {
+	t.Parallel()
+
+	src := `
+listed:
+  type: array
+  items: { type: integer }
+  enum: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	listed := out["properties"].(Schema)["listed"].(Schema)
+	enum, ok := listed["enum"].([]any)
+	if !ok {
+		t.Fatalf("enum should be a slice; got %T", listed["enum"])
+	}
+	if len(enum) != 11 {
+		t.Errorf("expected 11 enum entries; got %d", len(enum))
+	}
+}
+
+// TestCompileYAMLAlias exercises compileNode's alias-node path. YAML
+// anchors + aliases produce alias nodes that dereference to their
+// target during compile.
+func TestCompileYAMLAlias(t *testing.T) {
+	t.Parallel()
+
+	src := `
+$defs:
+  Common: &common
+    type: string
+    pattern: "^[a-z]+$"
+field1: *common
+field2: *common
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	props := out["properties"].(Schema)
+	f1, ok := props["field1"].(Schema)
+	if !ok {
+		t.Fatalf("field1 should be Schema after alias deref; got %T", props["field1"])
+	}
+	if f1["type"] != "string" {
+		t.Errorf("aliased field1.type=string expected; got %v", f1["type"])
+	}
+	f2, ok := props["field2"].(Schema)
+	if !ok {
+		t.Fatalf("field2 should be Schema after alias deref; got %T", props["field2"])
+	}
+	if f2["pattern"] != "^[a-z]+$" {
+		t.Errorf("aliased field2.pattern expected; got %v", f2["pattern"])
+	}
+}
+
+// TestCompileEmptyMapping exercises emitImplicitObject on an empty
+// mapping (no properties; required[] empty; rootMeta empty).
+func TestCompileEmptyMapping(t *testing.T) {
+	t.Parallel()
+
+	src := `{}`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if out["type"] != "object" {
+		t.Errorf("empty mapping should compile to type=object; got %v", out)
+	}
+	props, ok := out["properties"].(Schema)
+	if !ok || len(props) != 0 {
+		t.Errorf("empty mapping should have empty properties; got %v", out["properties"])
+	}
+}
+
+// TestCompileRequiredFalseNotAccumulated verifies that `required: false`
+// (or any non-true value) on a leaf does NOT accumulate to the parent's
+// required array. Exercises isRequiredLeaf's non-"true" branch.
+func TestCompileRequiredFalseNotAccumulated(t *testing.T) {
+	t.Parallel()
+
+	src := `
+field1: { type: string, required: true }
+field2: { type: string, required: false }
+field3: { type: string }
+`
+	out := mustCompile(t, src)
+	required, ok := out["required"].([]string)
+	if !ok {
+		t.Fatalf("required should be []string; got %T", out["required"])
+	}
+	if len(required) != 1 || required[0] != "field1" {
+		t.Errorf("only field1 (required: true) should accumulate; got %v", required)
 	}
 }
 

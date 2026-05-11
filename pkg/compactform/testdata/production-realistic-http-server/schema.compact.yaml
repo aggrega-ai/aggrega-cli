@@ -1,0 +1,59 @@
+$defs:
+  Resources:
+    cpuRequest: { type: string, pattern: "^[0-9]+(m|\\.[0-9]+)?$", default: "250m" }
+    cpuLimit: { type: string, pattern: "^[0-9]+(m|\\.[0-9]+)?$", default: "500m" }
+    memoryRequest: { type: string, pattern: "^[1-9][0-9]*(Mi|Gi)$", default: "256Mi" }
+    memoryLimit: { type: string, pattern: "^[1-9][0-9]*(Mi|Gi)$", default: "512Mi" }
+  Probe:
+    path: { type: string, pattern: "^/.*$", default: "/" }
+    port: { type: integer, min: 1, max: 65535 }
+    intervalSec: { type: integer, min: 1, max: 300, default: 10 }
+    timeoutSec: { type: integer, min: 1, max: 60, default: 5 }
+    fallback: { $ref: "#/$defs/Probe" }
+name:
+  type: string
+  pattern: "^[a-z][a-z0-9-]{0,62}$"
+  validate: '{{ ne . "default" }}'
+  validateMessage: "name 'default' is reserved"
+  required: true
+listenHost: { type: string, default: "0.0.0.0" }
+listenPort:
+  type: integer
+  min: 1024
+  max: 65535
+  default: 8080
+  validate: '{{ ne . 22 }}'
+  validateMessage: "listenPort must not collide with the SSH default"
+tlsEnabled: { type: boolean, default: false }
+tlsConfig:
+  when: '{{ eq $.tlsEnabled true }}'
+  then:
+    certPath: { type: string, pattern: "^/.*\\.pem$", required: true }
+    keyPath: { type: string, pattern: "^/.*\\.pem$", required: true }
+  else:
+    plainPort: { type: integer, min: 1024, max: 65535 }
+replicas: { type: integer, min: 1, max: 100, default: 1 }
+resources: { $ref: "#/$defs/Resources" }
+env: { type: object, valuesType: string }
+secretRefs:
+  type: array
+  items: { type: string, pattern: "^[a-z][a-z0-9-]+$" }
+  min: 0
+  max: 16
+livenessProbe: { $ref: "#/$defs/Probe" }
+readinessProbe: { $ref: "#/$defs/Probe" }
+protocol: { type: string, enum: ["http/1.1", "http/2", "http/3"], default: "http/2" }
+corsConfig:
+  $jsonschema: |
+    type: object
+    properties:
+      enabled: { type: boolean, default: false }
+      allowedOrigins:
+        type: array
+        items: { type: string, format: uri }
+      allowedHeaders:
+        type: array
+        items: { type: string }
+    patternProperties:
+      "^x-cors-": { type: string }
+    additionalProperties: false

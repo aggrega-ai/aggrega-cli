@@ -134,27 +134,17 @@ func indexSegment(i int) string {
 	}
 }
 
-// intToString avoids strconv to keep the package self-contained at
-// the leaf-emission layer; sufficient for path-provenance ints.
+// intToString formats a positive int for path-provenance segments.
+// indexSegment handles indices 0 and 1 directly and only delegates
+// here for i >= 2, so the zero-and-negative branches are unreachable
+// and intentionally omitted.
 func intToString(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := false
-	if i < 0 {
-		neg = true
-		i = -i
-	}
 	var buf [20]byte
 	pos := len(buf)
 	for i > 0 {
 		pos--
 		buf[pos] = byte('0' + i%10)
 		i /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
 	}
 	return string(buf[pos:])
 }

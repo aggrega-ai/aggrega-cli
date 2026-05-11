@@ -1,0 +1,190 @@
+{
+  "$defs": {
+    "Probe": {
+      "additionalProperties": false,
+      "properties": {
+        "fallback": {
+          "$ref": "#/$defs/Probe"
+        },
+        "intervalSec": {
+          "default": 10,
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "default": "/",
+          "pattern": "^/.*$",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeoutSec": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Resources": {
+      "additionalProperties": false,
+      "properties": {
+        "cpuLimit": {
+          "default": "500m",
+          "pattern": "^[0-9]+(m|\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "cpuRequest": {
+          "default": "250m",
+          "pattern": "^[0-9]+(m|\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "memoryLimit": {
+          "default": "512Mi",
+          "pattern": "^[1-9][0-9]*(Mi|Gi)$",
+          "type": "string"
+        },
+        "memoryRequest": {
+          "default": "256Mi",
+          "pattern": "^[1-9][0-9]*(Mi|Gi)$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "corsConfig": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-cors-": {
+          "type": "string"
+        }
+      },
+      "properties": {
+        "allowedHeaders": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowedOrigins": {
+          "items": {
+            "format": "uri",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "env": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "listenHost": {
+      "default": "0.0.0.0",
+      "type": "string"
+    },
+    "listenPort": {
+      "default": 8080,
+      "maximum": 65535,
+      "minimum": 1024,
+      "type": "integer",
+      "x-aggrega-validate": "{{ ne . 22 }}",
+      "x-aggrega-validateMessage": "listenPort must not collide with the SSH default"
+    },
+    "livenessProbe": {
+      "$ref": "#/$defs/Probe"
+    },
+    "name": {
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "type": "string",
+      "x-aggrega-validate": "{{ ne . \"default\" }}",
+      "x-aggrega-validateMessage": "name 'default' is reserved"
+    },
+    "protocol": {
+      "default": "http/2",
+      "enum": [
+        "http/1.1",
+        "http/2",
+        "http/3"
+      ],
+      "type": "string"
+    },
+    "readinessProbe": {
+      "$ref": "#/$defs/Probe"
+    },
+    "replicas": {
+      "default": 1,
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "resources": {
+      "$ref": "#/$defs/Resources"
+    },
+    "secretRefs": {
+      "items": {
+        "pattern": "^[a-z][a-z0-9-]+$",
+        "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 0,
+      "type": "array"
+    },
+    "tlsConfig": {
+      "else": {
+        "additionalProperties": false,
+        "properties": {
+          "plainPort": {
+            "maximum": 65535,
+            "minimum": 1024,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "if": true,
+      "then": {
+        "additionalProperties": false,
+        "properties": {
+          "certPath": {
+            "pattern": "^/.*\\.pem$",
+            "type": "string"
+          },
+          "keyPath": {
+            "pattern": "^/.*\\.pem$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "certPath",
+          "keyPath"
+        ],
+        "type": "object"
+      },
+      "x-aggrega-when": "{{ eq $.tlsEnabled true }}"
+    },
+    "tlsEnabled": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}

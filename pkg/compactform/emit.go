@@ -17,7 +17,6 @@ func emitCompactConstraint(node *yaml.Node, path string) (Schema, error) {
 	out := Schema{}
 	keys := mappingKeyOrder(node)
 	typ := ""
-	var requiredHint bool
 
 	// First pass: collect `type:` so subsequent dispatch knows the
 	// constraint-keyword mapping target.
@@ -26,9 +25,6 @@ func emitCompactConstraint(node *yaml.Node, path string) (Schema, error) {
 		if k == "type" && v != nil && v.Kind == yaml.ScalarNode {
 			typ = v.Value
 			out["type"] = v.Value
-		}
-		if k == "required" && v != nil && v.Kind == yaml.ScalarNode && v.Value == "true" {
-			requiredHint = true
 		}
 	}
 
@@ -77,6 +73,18 @@ func emitCompactConstraint(node *yaml.Node, path string) (Schema, error) {
 			out["x-aggrega-validateMessage"] = decodeScalar(v)
 		case "when":
 			out["x-aggrega-when"] = decodeScalar(v)
+		case "then":
+			child, err := compileNode(v, pathJoin(path, "then"))
+			if err != nil {
+				return nil, err
+			}
+			out["then"] = child
+		case "else":
+			child, err := compileNode(v, pathJoin(path, "else"))
+			if err != nil {
+				return nil, err
+			}
+			out["else"] = child
 		case "$ref":
 			out["$ref"] = decodeScalar(v)
 		case "items":
@@ -87,11 +95,26 @@ func emitCompactConstraint(node *yaml.Node, path string) (Schema, error) {
 			}
 			out["items"] = child
 		case "properties":
-			child, err := compileNode(v, pathJoin(path, "properties"))
+			// `properties:` value is a map of property-name -> schema;
+			// each entry is compiled as a schema but the outer container
+			// is a flat map, not an implicit-object scope.
+			child, err := emitSchemaMap(v, pathJoin(path, "properties"))
 			if err != nil {
 				return nil, err
 			}
 			out["properties"] = child
+		case "patternProperties":
+			child, err := emitSchemaMap(v, pathJoin(path, "patternProperties"))
+			if err != nil {
+				return nil, err
+			}
+			out["patternProperties"] = child
+		case "$defs", "definitions", "dependentSchemas":
+			child, err := emitSchemaMap(v, pathJoin(path, k))
+			if err != nil {
+				return nil, err
+			}
+			out[k] = child
 		case "additionalProperties":
 			child, err := compileNode(v, pathJoin(path, "additionalProperties"))
 			if err != nil {
@@ -119,8 +142,66 @@ func emitCompactConstraint(node *yaml.Node, path string) (Schema, error) {
 		}
 	}
 
-	_ = requiredHint // surfaced to parent via emitImplicitObject's loop
+	injectWhenWrapper(out)
 	return out, nil
+}
+
+// emitSchemaMap compiles the value of a JSON Schema reserved keyword
+// whose content is a flat map of name -> schema (`properties:`,
+// `patternProperties:`, `$defs:`, `definitions:`, `dependentSchemas:`).
+// Each entry's value is dispatched through compileNode and stored at
+// the entry's key in the output map. The container itself is a plain
+// map — it is not wrapped in an implicit-object schema, since the
+// enclosing keyword's semantics already say "this is a map of schemas".
+func emitSchemaMap(node *yaml.Node, path string) (Schema, error) {
+	out := Schema{}
+	if node == nil || node.Kind != yaml.MappingNode {
+		return out, nil
+	}
+	keys := mappingKeyOrder(node)
+	for _, k := range keys {
+		v := mappingValue(node, k)
+		child, err := compileNode(v, pathJoin(path, k))
+		if err != nil {
+			return nil, err
+		}
+		out[k] = child
+	}
+	return out, nil
+}
+
+// injectWhenWrapper adds `"if": true` to a schema that pairs
+// `x-aggrega-when:` with `then:` and/or `else:` clauses. The boolean
+// `if: true` makes standard JSON Schema 2020-12 consumers (those without
+// the Aggrega validator adapter) apply the `then:` constraints
+// unconditionally; an Aggrega adapter that recognises `x-aggrega-when:`
+// is expected to evaluate the template predicate and rewrite the
+// resolved schema accordingly. Without `if:`, `then:` and `else:` are
+// inert under standard JSON Schema semantics, which silently drops the
+// gated constraints.
+//
+// The helper is a no-op when `x-aggrega-when:` is absent (so a node
+// carrying only `then:` / `else:` from explicit JSON Schema YAML
+// authoring is not touched) and when neither `then:` nor `else:` is
+// present (so the standalone `when:` form keeps its prior semantic of
+// gating the surrounding node's constraints rather than introducing
+// an if/then/else wrapper).
+func injectWhenWrapper(out Schema) {
+	if _, hasWhen := out["x-aggrega-when"]; !hasWhen {
+		return
+	}
+	if _, hasIf := out["if"]; hasIf {
+		// Explicit `if:` from authored content takes precedence; the
+		// wrapper is only synthesised when the author did not specify
+		// an `if:` themselves.
+		return
+	}
+	_, hasThen := out["then"]
+	_, hasElse := out["else"]
+	if !hasThen && !hasElse {
+		return
+	}
+	out["if"] = true
 }
 
 // minMaxKeyForType resolves the JSON Schema keyword to emit for a
@@ -162,13 +243,30 @@ func minMaxKeyForType(typ string, isMin bool, path, keyword string, line int) (s
 // authoring shape: an object where every YAML map entry is a
 // property-name -> child-schema pair. Per-leaf `required: true` markers
 // in children accumulate into the parent's `required:` array.
+//
+// Top-level JSON Schema meta-keywords authored alongside property
+// declarations (`$defs:`, `definitions:`) emit at the schema root
+// rather than inside the `properties:` map — they describe reusable
+// schemas, not properties of the current object.
 func emitImplicitObject(node *yaml.Node, path string) (Schema, error) {
 	keys := mappingKeyOrder(node)
 	properties := Schema{}
 	required := []string{}
+	rootMeta := Schema{}
 
 	for _, k := range keys {
 		v := mappingValue(node, k)
+
+		// JSON Schema meta-keywords authored at the implicit-object
+		// scope root: emit at the schema root, not inside properties.
+		if k == "$defs" || k == "definitions" {
+			child, err := emitSchemaMap(v, pathJoin(path, k))
+			if err != nil {
+				return nil, err
+			}
+			rootMeta[k] = child
+			continue
+		}
 
 		// Recurse the child for its own schema emission.
 		childSchema, err := compileNode(v, pathJoin(path, k))
@@ -191,10 +289,13 @@ func emitImplicitObject(node *yaml.Node, path string) (Schema, error) {
 	out := Schema{
 		"type":                 "object",
 		"properties":           properties,
-		"additionalProperties": false, // closure-by-default per chapter 03
+		"additionalProperties": false, // close objects by default; opt-in via additionalProperties: true
 	}
 	if len(required) > 0 {
 		out["required"] = required
+	}
+	for k, v := range rootMeta {
+		out[k] = v
 	}
 	return out, nil
 }
@@ -222,7 +323,11 @@ func isRequiredLeaf(node *yaml.Node) bool {
 // emitJSONSchemaPassthrough emits a node containing JSON Schema-reserved
 // structural keywords (properties, items, additionalProperties, if/then/
 // else, not, etc.) unchanged: the YAML structure maps directly to JSON
-// Schema, with per-child recursion for nested mappings.
+// Schema, with per-child recursion for nested mappings. Keywords whose
+// value is a map-of-schemas (`properties:`, `patternProperties:`,
+// `$defs:`, `definitions:`, `dependentSchemas:`) route through
+// emitSchemaMap so the container is a flat map rather than an implicit-
+// object schema.
 func emitJSONSchemaPassthrough(node *yaml.Node, path string) (Schema, error) {
 	out := Schema{}
 	keys := mappingKeyOrder(node)
@@ -241,11 +346,20 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string) (Schema, error) {
 				Err:     ErrUnknownKeyword,
 			}
 		}
-		child, err := compileNode(v, pathJoin(path, k))
-		if err != nil {
-			return nil, err
+		switch k {
+		case "properties", "patternProperties", "$defs", "definitions", "dependentSchemas":
+			child, err := emitSchemaMap(v, pathJoin(path, k))
+			if err != nil {
+				return nil, err
+			}
+			out[k] = child
+		default:
+			child, err := compileNode(v, pathJoin(path, k))
+			if err != nil {
+				return nil, err
+			}
+			out[k] = child
 		}
-		out[k] = child
 	}
 	return out, nil
 }
@@ -348,6 +462,7 @@ func emitReference(node *yaml.Node, path string) (Schema, error) {
 			out[k.Value] = child
 		}
 	}
+	injectWhenWrapper(out)
 	return out, nil
 }
 
@@ -412,6 +527,7 @@ func emitComposition(node *yaml.Node, compKey, path string) (Schema, error) {
 			out[k] = child
 		}
 	}
+	injectWhenWrapper(out)
 	return out, nil
 }
 

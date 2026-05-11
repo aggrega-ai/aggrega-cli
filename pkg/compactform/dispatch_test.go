@@ -168,3 +168,223 @@ secondary:
 		t.Errorf("first allOf entry should carry $ref; got %v", first)
 	}
 }
+
+// TestDispatchCompositionAnyOf verifies anyOf composition with
+// sibling validate: + when: + then: keywords (exercises the
+// emitComposition path's sibling handling).
+func TestDispatchCompositionAnyOf(t *testing.T) {
+	t.Parallel()
+
+	src := `
+shape:
+  anyOf:
+    - { type: string, minLength: 1 }
+    - { type: integer, min: 0 }
+  validate: '{{ ne . nil }}'
+  validateMessage: "shape must be non-nil"
+  when: '{{ .shapeRequired }}'
+  then:
+    description: { type: string, required: true }
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	shape := out["properties"].(Schema)["shape"].(Schema)
+	if _, ok := shape["anyOf"].([]any); !ok {
+		t.Errorf("anyOf should be a slice; got %T", shape["anyOf"])
+	}
+	if _, ok := shape["x-aggrega-validate"]; !ok {
+		t.Errorf("validate: sibling should emit x-aggrega-validate")
+	}
+	if shape["x-aggrega-validateMessage"] != "shape must be non-nil" {
+		t.Errorf("validateMessage sibling missing or wrong; got %v", shape["x-aggrega-validateMessage"])
+	}
+	if shape["if"] != true {
+		t.Errorf("when:+then: should inject if=true; got %v", shape["if"])
+	}
+}
+
+// TestDispatchCompositionOneOf verifies oneOf composition with a $ref
+// sibling key, exercising emitComposition's default-case branch.
+func TestDispatchCompositionOneOf(t *testing.T) {
+	t.Parallel()
+
+	src := `
+target:
+  oneOf:
+    - { $ref: "#/$defs/A" }
+    - { $ref: "#/$defs/B" }
+  $ref: "#/$defs/Base"
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	target := out["properties"].(Schema)["target"].(Schema)
+	if target["$ref"] != "#/$defs/Base" {
+		t.Errorf("sibling $ref should round-trip; got %v", target["$ref"])
+	}
+	entries, ok := target["oneOf"].([]any)
+	if !ok || len(entries) != 2 {
+		t.Errorf("oneOf should carry 2 entries; got %v", target["oneOf"])
+	}
+}
+
+// TestDispatchCompositionEntryUnknown verifies the composition path's
+// unknown-keyword rejection on a sibling key.
+func TestDispatchCompositionEntryUnknown(t *testing.T) {
+	t.Parallel()
+
+	src := `
+bad:
+  anyOf:
+    - { type: string }
+  bogus: 42
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrUnknownKeyword; got nil")
+	}
+	if !errors.Is(err, ErrUnknownKeyword) {
+		t.Errorf("expected ErrUnknownKeyword; got %v", err)
+	}
+}
+
+// TestDispatchCompositionWrongShape verifies that allOf with a scalar
+// value (not a sequence) rejects with ErrEscapeContentInvalid.
+func TestDispatchCompositionWrongShape(t *testing.T) {
+	t.Parallel()
+
+	src := `
+bad:
+  allOf: "not a sequence"
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrEscapeContentInvalid; got nil")
+	}
+	if !errors.Is(err, ErrEscapeContentInvalid) {
+		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
+	}
+}
+
+// TestDispatchEscapeMalformedYAML verifies a $jsonschema: block-scalar
+// carrying malformed YAML rejects with ErrEscapeContentInvalid.
+func TestDispatchEscapeMalformedYAML(t *testing.T) {
+	t.Parallel()
+
+	src := "field:\n  $jsonschema: \"unclosed_string\nthis: is broken\""
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		// If the outer YAML fails to parse, the test setup is wrong;
+		// retry with a well-formed outer and an inner that yaml.v3 will
+		// reject.
+		_ = err
+	}
+	src2 := `
+field:
+  $jsonschema: |
+    type: object
+    properties:
+      a: { type: "broken
+`
+	if err := yaml.Unmarshal([]byte(src2), &input); err != nil {
+		t.Fatalf("outer unmarshal should succeed; got %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrEscapeContentInvalid; got nil")
+	}
+	if !errors.Is(err, ErrEscapeContentInvalid) {
+		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
+	}
+}
+
+// TestDispatchEscapeWrongShape verifies a $jsonschema: with neither
+// scalar nor mapping value rejects.
+func TestDispatchEscapeWrongShape(t *testing.T) {
+	t.Parallel()
+
+	src := `
+field:
+  $jsonschema: [one, two, three]
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrEscapeContentInvalid; got nil")
+	}
+	if !errors.Is(err, ErrEscapeContentInvalid) {
+		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
+	}
+}
+
+// TestDispatchJSONSchemaPassthroughUnknownKey verifies the unknown-
+// keyword error path through emitJSONSchemaPassthrough.
+func TestDispatchJSONSchemaPassthroughUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	src := `
+field:
+  $mode: jsonschema
+  bogus_keyword_xyz: "value"
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrUnknownKeyword; got nil")
+	}
+	if !errors.Is(err, ErrUnknownKeyword) {
+		t.Errorf("expected ErrUnknownKeyword; got %v", err)
+	}
+}
+
+// TestDispatchSequenceAtRoot verifies a YAML sequence at the root
+// compiles without error (exercises emitSequence path).
+func TestDispatchSequenceAtRoot(t *testing.T) {
+	t.Parallel()
+
+	src := `
+listed:
+  type: array
+  items:
+    type: array
+    items: { type: string }
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	listed := out["properties"].(Schema)["listed"].(Schema)
+	inner := listed["items"].(Schema)
+	if inner["type"] != "array" {
+		t.Errorf("nested array items: should compile; got %v", inner)
+	}
+}
