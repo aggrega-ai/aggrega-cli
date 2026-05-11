@@ -41,12 +41,13 @@ import (
 // future kinds; an unregistered provider name produces a fatal halt at
 // dispatch time).
 type Catalog struct {
-	Components     map[string]types.Component
-	Features       map[string]types.Feature
-	Recipes        map[string]types.Recipe        // keyed by spec.implements
-	FeatureRecipes map[string]types.FeatureRecipe // keyed by spec.implements
-	Aggregates     map[string]types.Aggregate     // keyed by metadata.name
-	Providers      map[string]types.Provider      // keyed by metadata.name (e.g. "helm", "helm-chart")
+	Components      map[string]types.Component
+	Features        map[string]types.Feature
+	Recipes         map[string]types.Recipe        // keyed by spec.implements
+	FeatureRecipes  map[string]types.FeatureRecipe // keyed by spec.implements
+	Aggregates      map[string]types.Aggregate     // keyed by metadata.name
+	Providers       map[string]types.Provider      // keyed by metadata.name (e.g. "helm", "helm-chart")
+	SchemaLibraries map[string]types.SchemaLibrary // keyed by metadata.name (PascalCase library identifier)
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -91,12 +92,13 @@ func Load(dir string) (*Catalog, error) {
 // is run from a different working directory.
 func LoadAll(dirs ...string) (*Catalog, error) {
 	c := &Catalog{
-		Components:     make(map[string]types.Component),
-		Features:       make(map[string]types.Feature),
-		Recipes:        make(map[string]types.Recipe),
-		FeatureRecipes: make(map[string]types.FeatureRecipe),
-		Aggregates:     make(map[string]types.Aggregate),
-		Providers:      make(map[string]types.Provider),
+		Components:      make(map[string]types.Component),
+		Features:        make(map[string]types.Feature),
+		Recipes:         make(map[string]types.Recipe),
+		FeatureRecipes:  make(map[string]types.FeatureRecipe),
+		Aggregates:      make(map[string]types.Aggregate),
+		Providers:       make(map[string]types.Provider),
+		SchemaLibraries: make(map[string]types.SchemaLibrary),
 	}
 	for _, dir := range dirs {
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -219,6 +221,29 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
 		}
 		c.Providers[e.Metadata.Name] = e
+	case "SchemaLibrary":
+		var e types.SchemaLibrary
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal SchemaLibrary")
+		}
+		// Validate each schema entry's content + each template body for
+		// forbidden JSON Schema keywords ($dynamicAnchor / $dynamicRef)
+		// at parse time. Authors who use these keywords get a clear
+		// error citing the file path; the publishing-linter (separate
+		// WI) layers a redundant guard at publish time. The
+		// InstantiateTemplate post-substitution scan closes the
+		// parametric-introduction route at instantiation time.
+		for name, entry := range e.Spec.Schemas.All() {
+			if err := types.ValidateSchemaEntry(&entry); err != nil {
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("SchemaLibrary %q schema %q: %v", e.Metadata.Name, name, err))
+			}
+		}
+		for name, tmpl := range e.Spec.Templates.All() {
+			if err := types.ValidateTemplateBody(&tmpl); err != nil {
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("SchemaLibrary %q template %q: %v", e.Metadata.Name, name, err))
+			}
+		}
+		c.SchemaLibraries[e.Metadata.Name] = e
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil

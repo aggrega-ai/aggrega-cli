@@ -34,10 +34,13 @@
 package catalog
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
 func TestLoad_AllEntityTypes(t *testing.T) {
@@ -107,6 +110,130 @@ func TestProviderLookup(t *testing.T) {
 	_, ok = c.ProviderLookup("nonexistent")
 	if ok {
 		t.Error("expected not found")
+	}
+}
+
+// TestLoad_SchemaLibrary verifies the catalog walker recognises
+// SchemaLibrary entries (kind: SchemaLibrary) and indexes them by
+// metadata.name. The walker treats SchemaLibrary like any other catalog
+// entity kind — the per-version subdirectory layout
+// schemalibrary/<namespace>/<name>/<version>/library.yaml is covered by
+// the existing recursive WalkDir; this test verifies the kind dispatch
+// + map indexing.
+func TestLoad_SchemaLibrary(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "schemalibrary", "core", "Probes", "1.0.0", "library.yaml")
+	if err := os.MkdirAll(filepath.Dir(libPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Probes
+  version: 1.0.0
+spec:
+  schemas:
+    LivenessProbe:
+      type: object
+      properties:
+        path:
+          type: string
+        port:
+          type: integer
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(c.SchemaLibraries) != 1 {
+		t.Fatalf("expected 1 SchemaLibrary; got %d", len(c.SchemaLibraries))
+	}
+	lib, ok := c.SchemaLibraries["Probes"]
+	if !ok {
+		t.Fatalf("expected Probes SchemaLibrary; got %v", c.SchemaLibraries)
+	}
+	if lib.Spec.Schemas.Len() != 1 {
+		t.Errorf("expected 1 schema entry; got %d", lib.Spec.Schemas.Len())
+	}
+}
+
+// TestLoad_SchemaLibrary_TemplateBodyForbiddenKeywordRejectedAtLoad
+// verifies the catalog walker scans template bodies (not only schema
+// entries) for $dynamicAnchor / $dynamicRef at workspace-load time.
+// Authors writing template bodies with the forbidden keywords see
+// errors at-author-time rather than at first instantiation, matching
+// the fail-fast discipline applied to schema entries.
+func TestLoad_SchemaLibrary_TemplateBodyForbiddenKeywordRejectedAtLoad(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "library.yaml")
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BadTemplate
+  version: 1.0.0
+spec:
+  schemas:
+    Placeholder:
+      type: object
+  templates:
+    Probe:
+      $params:
+        port:
+          type: integer
+      type: object
+      $dynamicAnchor: someAnchor
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for $dynamicAnchor in template body; got nil")
+	}
+	if !errors.Is(err, types.ErrForbiddenKeyword) {
+		t.Errorf("expected ErrForbiddenKeyword in chain; got %v", err)
+	}
+}
+
+// TestLoad_SchemaLibrary_ForbiddenKeywordRejected verifies the parser-side
+// $dynamicAnchor / $dynamicRef rejection signal fires at catalog load
+// time. Authors using these keywords get a clear CATALOG_ERROR citing the
+// file path.
+func TestLoad_SchemaLibrary_ForbiddenKeywordRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "library.yaml")
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Forbidden
+  version: 1.0.0
+spec:
+  schemas:
+    BadEntry:
+      type: object
+      $dynamicAnchor: someAnchor
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for $dynamicAnchor; got nil")
+	}
+	if !errors.Is(err, types.ErrForbiddenKeyword) {
+		t.Errorf("expected ErrForbiddenKeyword in chain; got %v", err)
 	}
 }
 
