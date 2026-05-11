@@ -1,0 +1,456 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package jsonschema
+
+import (
+	"bytes"
+	"sort"
+	"strconv"
+	"strings"
+	"text/template"
+)
+
+// Validate implements the Validator interface. The algorithm:
+//
+//  1. Deterministic property walk. Recursively iterate the instance's
+//     keys in sorted order; at each property, validate the sub-instance
+//     against the pre-resolved sub-schema (from a.subResolved) and
+//     emit a Finding on failure. Check the schema's Required slice at
+//     each level and emit one Finding per missing required key in
+//     sorted order. Recurse into nested objects so deep properties
+//     walk deterministically rather than relying on the library's
+//     randomised internal Properties iteration. Cross-property
+//     constraints at the root (allOf, anyOf, oneOf, not at root) and
+//     patternProperties / dependentSchemas iteration are documented
+//     walker-completeness gaps — not covered by this walk.
+//
+//  2. Walk the pre-collected x-aggrega-when: nodes shallowest-first.
+//     For each:
+//     - Navigate to the node's instance position.
+//     - Evaluate the pre-compiled template against the parent of the
+//       when-node (the surrounding object scope where sibling fields
+//       live; templates reference siblings via $.fieldname).
+//     - On truthy: keep the walk's findings for this subtree (the walk
+//       has already validated against the sub-schema rooted at the
+//       subtree, which includes any then: constraints in the
+//       compact-form-emitted shape).
+//     - On falsy + else: present: drop the walk's findings for this
+//       subtree and validate the sub-instance against the pre-resolved
+//       else: branch (findings rebased to the sub-instance's path).
+//     - On falsy + no else: present: drop the walk's findings for this
+//       subtree (no constraint applies when falsy and no else: was
+//       authored — D-001b-2 semantic).
+//     Subsequent x-aggrega-when: nodes nested under a falsy outer
+//     branch are skipped (consumed by the outer's filter).
+//
+//  3. Walk the pre-collected x-aggrega-validate: nodes. For each:
+//     - Navigate to the node's instance position.
+//     - Evaluate the pre-compiled template against the field value.
+//     - On falsy: append a Finding carrying the x-aggrega-validateMessage:
+//       content.
+//
+//  4. Sort the findings (FieldPath -> Keyword -> Message) per the
+//     deterministic-output invariant.
+func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
+	rpt := &Report{}
+
+	// Step 1: deterministic property walk. Validates each property's
+	// sub-instance against its pre-resolved sub-schema in sorted-key
+	// order; checks required at each level. Sidesteps the library's
+	// fail-fast-with-randomised-iteration semantic so multi-violation
+	// Reports are byte-identical across builds.
+	//
+	// Cross-property constraints at the root (allOf, anyOf, oneOf,
+	// not, patternProperties, dependentSchemas) are NOT validated by
+	// this walk. The library's own root validation would catch them
+	// but reintroduces non-determinism because the library's root
+	// Validate uses randomised map iteration internally. These
+	// constraints surface as a documented walker-completeness gap;
+	// the typical compact-form output uses object-with-properties
+	// patterns that the walk covers fully.
+	a.deterministicWalk(instance, "", rpt)
+
+	// Step 2: x-aggrega-when: filter pass.
+	// Process shallowest-first so an outer falsy predicate consumes
+	// any nested predicates inside its (no-longer-applicable) then:
+	// subtree before they are evaluated.
+	handled := []string{}
+nextWhen:
+	for _, wn := range a.whenNodes {
+		whenPathStr := joinPath(wn.instancePath)
+		for _, consumed := range handled {
+			if isUnderPath(whenPathStr, consumed) {
+				continue nextWhen
+			}
+		}
+
+		subInstance, ok := navigate(instance, wn.instancePath)
+		// If the instance does not extend to the when: node's position,
+		// the predicate cannot evaluate against a meaningful sub-instance.
+		// Skip the subtree: any walk-findings for this path were already
+		// emitted by the deterministic walk and remain accurate (the
+		// missing-required check handles "field not present").
+		if !ok {
+			continue
+		}
+
+		// For x-aggrega-when:, the template's data scope is the parent
+		// of the when-node — the surrounding object where sibling
+		// fields live; an `$.architecture` style predicate reads a
+		// sibling of the when-bearing field. For a root-level
+		// when-node (empty instancePath), parent = instance.
+		parentInstance := instance
+		if len(wn.instancePath) > 0 {
+			parentPath := wn.instancePath[:len(wn.instancePath)-1]
+			if p, ok := navigate(instance, parentPath); ok {
+				parentInstance = p
+			}
+		}
+
+		truthy, err := evaluateTemplate(wn.tpl, parentInstance)
+		if err != nil {
+			return nil, &AdapterError{
+				Path:    whenPathStr,
+				Keyword: "x-aggrega-when",
+				Message: "template evaluation: " + err.Error(),
+				Err:     ErrExtensionEval,
+			}
+		}
+
+		if truthy {
+			// Truthy: keep the deterministic walk's findings for this
+			// subtree — they correctly reflect the gated then:
+			// constraints applying (the walk validated against the
+			// sub-schema rooted at the subtree).
+			continue
+		}
+
+		// Falsy: drop the walk's findings under this subtree.
+		rpt.Findings = filterOutPath(rpt.Findings, whenPathStr)
+
+		// If else: was authored, validate against it.
+		if wn.elseResolved != nil {
+			if err := wn.elseResolved.Validate(subInstance); err != nil {
+				a.libraryErrorToFindingsWithPathPrefix(rpt, err, whenPathStr)
+			}
+		}
+
+		// Record this path as consumed; nested when: nodes inside it
+		// are no longer relevant.
+		handled = append(handled, whenPathStr)
+	}
+
+	// Step 3: x-aggrega-validate: evaluation.
+nextValidate:
+	for _, vn := range a.validateNodes {
+		vnPathStr := joinPath(vn.instancePath)
+		for _, consumed := range handled {
+			if isUnderPath(vnPathStr, consumed) {
+				continue nextValidate
+			}
+		}
+
+		fieldValue, ok := navigate(instance, vn.instancePath)
+		if !ok {
+			// Field not present in the instance. The deterministic
+			// walk's required-key check (Step 1) reports missing
+			// required fields; no separate x-aggrega-validate finding
+			// here.
+			continue
+		}
+
+		truthy, err := evaluateTemplate(vn.tpl, fieldValue)
+		if err != nil {
+			return nil, &AdapterError{
+				Path:    vnPathStr,
+				Keyword: "x-aggrega-validate",
+				Message: "template evaluation: " + err.Error(),
+				Err:     ErrExtensionEval,
+			}
+		}
+
+		if !truthy {
+			rpt.append(Finding{
+				FieldPath: vnPathStr,
+				Keyword:   "x-aggrega-validate",
+				Message:   vn.message,
+			})
+		}
+	}
+
+	// Step 4: deterministic sort.
+	rpt.sort()
+	return rpt, nil
+}
+
+// deterministicWalk recursively validates each property in the
+// instance against its pre-resolved sub-schema (from a.subResolved)
+// in sorted-key order, plus checks required-property presence at each
+// level. Sidesteps the library's randomised property iteration so
+// multi-violation Reports are byte-identical across builds.
+//
+// The walk emits findings with FieldPath at the property's instance
+// path. Library sub-schema validation produces deterministic findings
+// for leaf constraints (type, pattern, range, enum, etc.) per call.
+// For sub-schemas that themselves contain Properties, the recursion
+// descends into each child rather than letting the library iterate
+// internally.
+//
+// Cross-property constraints at intermediate levels (allOf, anyOf,
+// oneOf, not, patternProperties, dependentSchemas) are not validated
+// here — the root-level catch-all in Validate handles them via the
+// library, accepting library-internal iteration order as a documented
+// limitation.
+func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report) {
+	// Required-property check at this level: emit one finding per
+	// missing key, in sorted order, BEFORE recursing into present
+	// children (so the per-finding ordering is path-then-keyword
+	// stable).
+	if req, ok := a.required[path]; ok {
+		if m, ok := instance.(map[string]any); ok {
+			for _, key := range req {
+				if _, present := m[key]; !present {
+					missingPath := key
+					if path != "" {
+						missingPath = path + "." + key
+					}
+					rpt.append(Finding{
+						FieldPath: missingPath,
+						Keyword:   "required",
+						Message:   "missing required property: " + key,
+					})
+				}
+			}
+		}
+	}
+
+	m, ok := instance.(map[string]any)
+	if !ok {
+		return
+	}
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		subPath := k
+		if path != "" {
+			subPath = path + "." + k
+		}
+		subResolved, hasSub := a.subResolved[subPath]
+		if !hasSub {
+			// Property not declared in the schema's Properties — let
+			// the root-level catch-all handle it (additionalProperties
+			// concerns surface there).
+			continue
+		}
+		if err := subResolved.Validate(m[k]); err != nil {
+			rpt.append(Finding{
+				FieldPath: subPath,
+				Keyword:   "validation",
+				Message:   err.Error(),
+			})
+		}
+		// Recurse into nested objects so deeper properties also walk
+		// deterministically rather than relying on the library's
+		// internal iteration at this sub-schema's call.
+		a.deterministicWalk(m[k], subPath, rpt)
+	}
+}
+
+// evaluateTemplate runs a pre-compiled template against a data value,
+// returning a boolean result. The data scope is passed directly so the
+// template's `.` accesses it naturally:
+//
+//   - For x-aggrega-validate: callers pass the field value; templates
+//     reference it via `.` (e.g., `{{ regexMatch "Gi$" . }}` checks
+//     the field's string value against a pattern).
+//   - For x-aggrega-when: callers pass the parent of the when-node;
+//     templates reference sibling fields via `.fieldname` or `$.fieldname`
+//     (e.g., `{{ eq $.tlsEnabled true }}` reads a sibling at the
+//     parent's scope).
+//
+// Templates emit "true" / "false" textually; the result is parsed as
+// a Go boolean. Numeric outputs are truthy if nonzero. Any non-empty
+// non-falsy string is truthy (standard Go template boolean convention).
+//
+// Parameter context (Context.Parameters) is not yet plumbed into the
+// template scope; current canonical predicate examples use only the
+// field value + surrounding scope. Parameter access through
+// `{{ .parameters.X }}` is a follow-up enhancement once an authoring
+// pattern surfaces that requires it.
+func evaluateTemplate(tpl *template.Template, data any) (bool, error) {
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, data); err != nil {
+		return false, err
+	}
+	out := strings.TrimSpace(buf.String())
+	switch out {
+	case "true", "True", "TRUE":
+		return true, nil
+	case "false", "False", "FALSE", "":
+		return false, nil
+	}
+	// Numeric: nonzero is truthy.
+	if n, err := strconv.ParseFloat(out, 64); err == nil {
+		return n != 0, nil
+	}
+	// Any other non-empty string is truthy (matches Go template
+	// convention for boolean-like outputs).
+	return true, nil
+}
+
+// navigate walks the instance to the position indicated by path.
+// Returns (sub-instance, true) on success; (nil, false) when the path
+// does not exist or traverses through a non-map value.
+//
+// Currently supports object-property navigation only (matching the
+// walker's instance-path collection — array-internal positions are
+// not tracked at adapter construction). Map-typed instances may be
+// map[string]any (the standard JSON-unmarshalled shape).
+func navigate(instance any, path []string) (any, bool) {
+	current := instance
+	for _, segment := range path {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		v, ok := m[segment]
+		if !ok {
+			return nil, false
+		}
+		current = v
+	}
+	return current, true
+}
+
+// filterOutPath returns the findings whose FieldPath is NOT under the
+// given path (the path itself plus any descendants). Used to drop the
+// library's findings for a subtree whose x-aggrega-when: evaluated
+// falsy.
+func filterOutPath(findings []Finding, path string) []Finding {
+	if path == "" {
+		// An empty path matches everything; this would drop all
+		// findings. Defensive — should not happen since x-aggrega-when:
+		// at the root has an empty instance path, but the dropping
+		// makes the falsy-root semantic correct.
+		return nil
+	}
+	out := findings[:0]
+	for _, f := range findings {
+		if isUnderPath(f.FieldPath, path) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// isUnderPath reports whether child is path itself or a descendant
+// of path. Both arguments are dot-delimited strings produced by
+// joinPath. The check uses a strict prefix match on path + "." to
+// avoid matching siblings whose paths share a prefix (e.g.,
+// "foo.bar" is NOT under "foo.b").
+func isUnderPath(child, path string) bool {
+	if child == path {
+		return true
+	}
+	return strings.HasPrefix(child, path+".")
+}
+
+// libraryErrorToFindings translates a library validation error into
+// structured Finding entries appended to the report. The library's
+// validation error includes the schema's keyword location in its
+// message text; extractPath parses the deepest `/properties/<name>`
+// chain and maps it to the dot-delimited instance path the adapter
+// uses for findings.
+//
+// First-pass: one Finding per library error envelope. Splitting a
+// single library error into multiple per-keyword findings is a
+// follow-up enhancement.
+func (a *googleAdapter) libraryErrorToFindings(rpt *Report, err error) {
+	if err == nil {
+		return
+	}
+	rpt.append(Finding{
+		FieldPath: extractPath(err),
+		Keyword:   "validation",
+		Message:   err.Error(),
+	})
+}
+
+// libraryErrorToFindingsWithPathPrefix is libraryErrorToFindings with
+// the resulting Findings' FieldPath prefixed by the given path. Used
+// when an else: branch validation produces findings whose paths are
+// relative to the sub-instance; the prefix rebases them to the root
+// instance's path space.
+func (a *googleAdapter) libraryErrorToFindingsWithPathPrefix(rpt *Report, err error, prefix string) {
+	if err == nil {
+		return
+	}
+	subPath := extractPath(err)
+	full := prefix
+	if subPath != "" {
+		full = prefix + "." + subPath
+	}
+	rpt.append(Finding{
+		FieldPath: full,
+		Keyword:   "validation",
+		Message:   err.Error(),
+	})
+}
+
+// extractPath parses the library error's message text to find the
+// schema's keyword-location chain (e.g. "/properties/tlsConfig/then"),
+// extracts each `properties/<name>` segment, and returns a dot-delimited
+// instance path ("tlsConfig"). Keywords that do not advance instance
+// position (`then`, `else`, `if`, `allOf`, `anyOf`, `oneOf`,
+// `not`, numeric indices) are skipped.
+//
+// The library's error format may shift across versions; this extractor
+// targets the format observed at v0.4.3. If the format changes, the
+// extractor needs an update.
+func extractPath(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Find the LAST `validating ` occurrence in the message — that
+	// segment's path is the deepest keyword location.
+	idx := strings.LastIndex(msg, "validating ")
+	if idx < 0 {
+		return ""
+	}
+	tail := msg[idx+len("validating "):]
+	// Trim to the first `:` or whitespace separator.
+	end := len(tail)
+	for i, c := range tail {
+		if c == ':' || c == '\n' || c == ' ' {
+			end = i
+			break
+		}
+	}
+	pathPart := tail[:end]
+	if pathPart == "root" {
+		return ""
+	}
+	// Walk the slash-delimited segments. Capture each `properties/<name>`
+	// pair; skip composition / branch / numeric keywords.
+	segments := strings.Split(pathPart, "/")
+	out := make([]string, 0, len(segments)/2)
+	for i := 0; i < len(segments); i++ {
+		if segments[i] == "properties" && i+1 < len(segments) {
+			out = append(out, segments[i+1])
+			i++ // skip the captured property name
+		}
+		// All other segments (empty, "then", "else", "if",
+		// "allOf", "anyOf", "oneOf", "not", numeric indices,
+		// "items", "patternProperties", "$defs") do not advance the
+		// instance position and are skipped.
+	}
+	return strings.Join(out, ".")
+}
