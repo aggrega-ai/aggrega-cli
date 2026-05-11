@@ -7,6 +7,9 @@ import (
 	"fmt"
 
 	"cuelang.org/go/cue/cuecontext"
+	"github.com/google/jsonschema-go/jsonschema"
+
+	"github.com/cognitio/aggrega-cli/pkg/validator/merger"
 )
 
 // maxInheritanceDepth prevents unbounded chains.
@@ -19,13 +22,23 @@ type CatalogEntry struct {
 	Extends  string         // parent URI, empty if no inheritance
 	Metadata map[string]any // raw YAML metadata for deep merge
 	CUE      string         // cueSchema string
+
+	// JSONSchema is the entity's JSON Schema 2020-12 payload (the
+	// output of pkg/compactform's compile step). When populated, the
+	// inheritance walker also runs Phase 3 to produce a merged
+	// JSON Schema with source-position provenance metadata via the
+	// pkg/validator/merger package. The field is opt-in: catalog
+	// entries authored before the migration omit it, and Phase 3
+	// is a no-op for those entries.
+	JSONSchema *jsonschema.Schema
 }
 
 // InheritanceResult holds the output of resolving an extends chain.
 type InheritanceResult struct {
-	MergedMetadata map[string]any     // Phase 1 result: deep-merged YAML metadata
-	UnifiedCUE     string             // Phase 2 result: unified CUE schema string (for downstream use)
-	Errors         []*ValidationError // any errors encountered
+	MergedMetadata   map[string]any     // Phase 1 result: deep-merged YAML metadata
+	UnifiedCUE       string             // Phase 2 result: unified CUE schema string (for downstream use)
+	MergedJSONSchema *merger.Schema     // Phase 3 result: merged JSON Schema with provenance; nil when no chain entry carried a JSONSchema payload
+	Errors           []*ValidationError // any errors encountered
 }
 
 // ResolveInheritance resolves the extends chain for an entity using the provided catalog lookup.
@@ -124,10 +137,67 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 		sourceParts = append(sourceParts, chain[i].CUE)
 	}
 
-	return InheritanceResult{
+	result := InheritanceResult{
 		MergedMetadata: mergedMeta,
 		UnifiedCUE:     joinCUESources(sourceParts),
 	}
+
+	// Phase 3: merge JSON Schema payloads via pkg/validator/merger.
+	// Dormant unless at least one chain entry carries a JSONSchema
+	// payload — current callers don't populate the field; the
+	// catalog walker activates this path once entries carry their
+	// JSON Schema 2020-12 payloads alongside (or in place of) their
+	// CUE sources. The merger emits structural narrowing-violation
+	// signals via the returned Schema's NarrowingViolations slice;
+	// language-level CUE narrowing enforcement above runs in parallel
+	// for the legacy pipeline and co-exists with the structural
+	// signal until the CUE imports retire.
+	hasJSONSchema := false
+	for _, ent := range chain {
+		if ent.JSONSchema != nil {
+			hasJSONSchema = true
+			break
+		}
+	}
+	if hasJSONSchema {
+		// Build a root-ancestor-first slice of *merger.Schema. Each
+		// catalog entry's URI becomes the merger Schema's Source so
+		// __source_origin metadata surfaces the originating entity.
+		mergerChain := make([]*merger.Schema, 0, len(chain))
+		for i := len(chain) - 1; i >= 0; i-- {
+			ent := chain[i]
+			if ent.JSONSchema == nil {
+				continue
+			}
+			mergerChain = append(mergerChain, &merger.Schema{
+				Schema: ent.JSONSchema,
+				Source: ent.URI,
+			})
+		}
+		if len(mergerChain) > 0 {
+			merged, err := merger.Merge(mergerChain)
+			if err != nil {
+				// TODO: when the catalog walker activates this hook,
+				// preserve the merger sentinel chain alongside
+				// ErrInheritanceMerge so callers can distinguish
+				// cycle / max-depth / invalid-input via errors.Is.
+				// Current shape squashes the inner sentinel into the
+				// Constraint string; the dormant state has no
+				// callers depending on the distinction yet.
+				result.Errors = append(result.Errors, &ValidationError{
+					Entity:     entry.URI,
+					FieldPath:  ".spec.jsonSchema",
+					Constraint: "JSON Schema merge failed: " + err.Error(),
+					Suggestion: "Verify the JSON Schema payloads on each catalog entry in the extends chain",
+					Err:        ErrInheritanceMerge,
+				})
+			} else {
+				result.MergedJSONSchema = merged
+			}
+		}
+	}
+
+	return result
 }
 
 // joinCUESources concatenates CUE source fragments with a blank line between each.
