@@ -101,6 +101,42 @@ func TestResolve_Integration(t *testing.T) {
 				// Should not reach here — wantErr is set
 			},
 		},
+		{
+			name:     "typed parameters pass Step 1a validation end-to-end",
+			fixtures: "typed-params-pass",
+			wantErr:  nil,
+			validate: func(t *testing.T, result *ResolveResult) {
+				t.Helper()
+				if result.Aggregate == nil {
+					t.Fatal("expected non-nil Aggregate")
+				}
+				if result.Parameters["api_port"] != 9090 {
+					t.Errorf("api_port = %v; want 9090", result.Parameters["api_port"])
+				}
+				if result.Parameters["env"] != "prod" {
+					t.Errorf("env = %v; want prod", result.Parameters["env"])
+				}
+			},
+		},
+		{
+			name:     "typed parameters fail enum + range constraints at Step 1a",
+			fixtures: "typed-params-fail",
+			wantErr:  ErrParameterContractViolation,
+		},
+		{
+			name:     "mixed simple + typed parameters dispatch per-entry",
+			fixtures: "typed-params-mixed",
+			wantErr:  nil,
+			validate: func(t *testing.T, result *ResolveResult) {
+				t.Helper()
+				if result.Parameters["api_port"] != 9090 {
+					t.Errorf("api_port = %v; want 9090", result.Parameters["api_port"])
+				}
+				if result.Parameters["env"] != "staging" {
+					t.Errorf("env = %v; want staging", result.Parameters["env"])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

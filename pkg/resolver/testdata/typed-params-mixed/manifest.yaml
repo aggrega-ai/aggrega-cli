@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: typed-params-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    helm:
+      components:
+        type:
+          "core/server": "recipes/helm-server:1.0.0"

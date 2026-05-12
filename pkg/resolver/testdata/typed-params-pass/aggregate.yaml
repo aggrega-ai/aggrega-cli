@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: typed-params-pass
+  version: "1.0.0"
+spec:
+  parameters:
+    api_port:
+      type: integer
+      description: API listener port
+      default: 8080
+      min: 1024
+      max: 65535
+    db_host:
+      type: string
+      pattern: "^[a-z][a-z0-9.-]*$"
+      required: true
+    env:
+      type: string
+      enum:
+        - dev
+        - staging
+        - prod
+      default: dev
+  components:
+    api:
+      type: core/server:1.0.0
+      values:
+        port: "{{ .parameters.api_port }}"
+        host: "{{ .parameters.db_host }}"

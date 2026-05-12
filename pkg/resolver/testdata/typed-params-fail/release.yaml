@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: typed-params-fail
+  environment: prod
+  version: "1.0.0"
+spec:
+  aggregate: typed-params-fail
+  manifest: typed-params-manifest
+  parameters:
+    api_port: 99999
+    env: production
+  boundaries:
+    prod:
+      directory: ./output
+      components:
+        api:
+          infra:
+            replicas: 1

@@ -7,6 +7,17 @@ metadata:
   name: param-app
   version: "1.0.0"
 spec:
+  parameters:
+    api_port: "3000"
+    db:
+      type: object
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+    extra_key:
+      type: string
   components:
     api:
       type: core/server:1.0.0

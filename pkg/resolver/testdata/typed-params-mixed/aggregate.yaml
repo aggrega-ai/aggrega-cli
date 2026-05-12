@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: typed-params-mixed
+  version: "1.0.0"
+spec:
+  parameters:
+    api_port: 8080
+    db_host: localhost
+    env:
+      type: string
+      enum:
+        - dev
+        - staging
+        - prod
+      default: dev
+  components:
+    api:
+      type: core/server:1.0.0
+      values:
+        port: "{{ .parameters.api_port }}"
+        host: "{{ .parameters.db_host }}"

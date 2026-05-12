@@ -111,6 +111,18 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 	// 3. Merge parameters
 	params := MergeParameters(release.Spec.Parameters, externalParams)
 
+	// 3a. Step 1a: validate merged parameter map against the Aggregate's
+	// typed contract before interpolation. The contract is extracted via a
+	// shallow parse of the raw Aggregate YAML (the contract block is static
+	// authoring data and does not require template interpolation).
+	contract, err := LoadAggregateParameterContract(cfg.AggregatePath)
+	if err != nil {
+		return nil, err
+	}
+	if verrs := ValidateParametersAgainstContract(contract, params, cfg.AggregatePath); len(verrs) > 0 {
+		return nil, verrs[0]
+	}
+
 	// 4. Read raw Aggregate YAML and interpolate
 	rawAgg, err := os.ReadFile(cfg.AggregatePath)
 	if err != nil {

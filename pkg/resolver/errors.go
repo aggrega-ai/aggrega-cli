@@ -72,6 +72,18 @@ var (
 	// ErrMissingRequiredSocket wraps a uses-socket marked required in the
 	// Component's usesSchema that no instance populates.
 	ErrMissingRequiredSocket = errors.New("required uses socket not populated")
+
+	// ErrParameterMissing wraps a parameter declared required: true in the
+	// Aggregate's typed contract that neither the Aggregate's default nor
+	// the Release fulfillment supplies. Surfaced at Step 1a.
+	ErrParameterMissing = errors.New("required parameter not supplied")
+
+	// ErrParameterContractViolation wraps a parameter value that fails the
+	// Aggregate's typed contract — type mismatch, enum / pattern / range
+	// violation, validate-predicate failure, or a Release key with no
+	// corresponding Aggregate declaration (closed-contract policy).
+	// Surfaced at Step 1a.
+	ErrParameterContractViolation = errors.New("parameter contract violated")
 )
 
 // ResolverError carries entity and field context alongside a sentinel error.
