@@ -48,6 +48,14 @@ type FeatureSpec struct {
 	Interoperability     *Interoperability           `json:"interoperability,omitempty" yaml:"interoperability,omitempty"`
 	UsesSchema           OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
 	Schema               yaml.Node                   `json:"schema,omitempty" yaml:"schema,omitempty"`
+	// Assertions carries build-time cross-field validation as a map of named
+	// Go template rules. Evaluation runs at Step 4b (post-resolution, post-
+	// analyzer-gate, pre-render); the first rule whose template invokes
+	// {{ fail "message" }} halts the build. Per-instance: a Feature with
+	// N attachments produces N evaluations. Strict reference semantics
+	// via missingkey=error. See internal/compiler/renderer/assertions.go
+	// and internal/compiler/renderer/assertions_step4b.go.
+	Assertions OrderedMap[string] `json:"assertions,omitempty,omitzero" yaml:"assertions,omitempty"`
 }
 
 // LabelSelectorRequirement is a single label selector requirement (AND logic).

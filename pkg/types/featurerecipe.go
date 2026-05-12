@@ -48,4 +48,17 @@ type FeatureRecipeSpec struct {
 	InjectMapping  string             `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
 	Pipeline       []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
 	ExecutionScope string             `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
+	// Assertions carries build-time cross-field validation as a map of named
+	// Go template rules. Evaluation runs at Step 5b (post-binding, post-
+	// allProvides-evaluation, pre-render); the first rule whose template
+	// invokes {{ fail "message" }} halts the build. FeatureRecipe assertions
+	// express implementation invariants of the specific wrapped chart or
+	// module for the attached Feature, distinct from Feature-level
+	// architectural invariants which live at the Feature entity. Per-
+	// attachment: one evaluation per node-with-Feature-attached. Strict
+	// reference semantics via missingkey=error. Template context adds
+	// .provides / .locals / .recipe on top of the Feature-shape base. See
+	// internal/compiler/renderer/assertions.go and
+	// internal/compiler/renderer/assertions_step5b.go.
+	Assertions OrderedMap[string] `json:"assertions,omitempty,omitzero" yaml:"assertions,omitempty"`
 }

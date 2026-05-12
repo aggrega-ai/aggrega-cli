@@ -417,3 +417,79 @@ spec:
 		t.Fatalf("expected envelope rejection on oci:// URL at artifacts entry; got no findings")
 	}
 }
+
+// TestRecipeEnvelope_AcceptsAssertions pins the new spec.assertions:
+// field — an OrderedMap of named Go template strings carrying Recipe-
+// level implementation-invariant rules. Evaluated at Step 5b.
+func TestRecipeEnvelope_AcceptsAssertions(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: bitnami/datastore/mariadb/k8s
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/datastore/mariadb:^1.0.0
+  source:
+    chart: oci://registry-1.docker.io/bitnamicharts/mariadb
+    version: "20.0.0"
+  valuesMapping: |
+    {}
+  locals: {}
+  assertions:
+    chart-replication-arm-incompatible: |
+      {{- if and (eq .values.architecture "replication") (contains "arm" .infra.architecture) -}}
+        {{- fail "Bitnami chart 20.x is incompatible with ARM replication" -}}
+      {{- end -}}
+    metrics-namespace-required: |
+      {{- if and (eq .values.architecture "replication") .values.metrics.serviceMonitor.enabled -}}
+        {{- if not .values.metrics.serviceMonitor.namespace -}}
+          {{- fail "metrics.serviceMonitor.namespace required" -}}
+        {{- end -}}
+      {{- end -}}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) != 0 {
+		t.Errorf("expected acceptance of named assertions; got %d findings: %v",
+			len(rpt.Findings), rpt.Findings)
+	}
+}
+
+// TestRecipeEnvelope_RejectsNonStringAssertionValue pins the
+// additionalProperties: { type: string } constraint on Recipe assertions.
+func TestRecipeEnvelope_RejectsNonStringAssertionValue(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: bitnami/datastore/mariadb/k8s
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/datastore/mariadb:^1.0.0
+  source:
+    chart: oci://registry-1.docker.io/bitnamicharts/mariadb
+    version: "20.0.0"
+  valuesMapping: |
+    {}
+  locals: {}
+  assertions:
+    bad-rule:
+      nested: object
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on non-string assertion value; got no findings")
+	}
+}

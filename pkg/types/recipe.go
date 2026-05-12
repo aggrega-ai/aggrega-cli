@@ -54,4 +54,16 @@ type RecipeSpec struct {
 	Workload      WorkloadTemplate          `json:"workload,omitempty" yaml:"workload,omitempty"`
 	Artifacts     OrderedMap[ArtifactEntry] `json:"artifacts,omitempty,omitzero" yaml:"artifacts,omitempty"`
 	Pipeline      []PipelineStep            `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
+	// Assertions carries build-time cross-field validation as a map of named
+	// Go template rules. Evaluation runs at Step 5b (post-binding, post-
+	// allProvides-evaluation, pre-render); the first rule whose template
+	// invokes {{ fail "message" }} halts the build. Recipe assertions
+	// express implementation invariants of the specific wrapped chart or
+	// module, distinct from Component-level architectural invariants which
+	// live at the Component entity. Per-instance: one evaluation per node
+	// bound to this Recipe. Strict reference semantics via missingkey=error.
+	// Template context adds .provides / .locals / .recipe on top of the
+	// Component-shape base. See internal/compiler/renderer/assertions.go
+	// and internal/compiler/renderer/assertions_step5b.go.
+	Assertions OrderedMap[string] `json:"assertions,omitempty,omitzero" yaml:"assertions,omitempty"`
 }

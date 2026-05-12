@@ -78,4 +78,16 @@ var (
 	// mismatches. Category: CATALOG_ERROR (catalog-authored FR
 	// references invalid context for its scope).
 	ErrFRTemplateInvalidField = errors.New("FeatureRecipe template references a per-component-only field with executionScope: boundary")
+
+	// ErrAssertionFailed wraps a build halt triggered by {{ fail "..." }}
+	// invocation inside a Component / Feature / Recipe / FeatureRecipe
+	// assertion template. Step 4b (Component/Feature, post-resolution,
+	// pre-render) and Step 5b (Recipe/FeatureRecipe, post-binding,
+	// pre-render) both produce this sentinel. The wrapping chain at
+	// the wire-in sites adds the failing entity kind/type, the failing
+	// assertion name, and the per-instance node ID; the inner error
+	// message carries the operator-supplied fail-call argument. The
+	// evaluator uses missingkey=error so any reference to an undefined
+	// field also halts here.
+	ErrAssertionFailed = errors.New("assertion failed")
 )

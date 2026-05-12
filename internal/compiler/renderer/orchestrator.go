@@ -107,6 +107,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5 Pass 1: provides evaluation")
 	}
 
+	// Step 5b: Recipe / FeatureRecipe assertions.
+	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides); err != nil {
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5b (Recipe/FeatureRecipe assertions)")
+	}
+
 	dispatch := map[dispatchKey]*pendingDispatch{}
 	orderedDispatch := []dispatchKey{}
 

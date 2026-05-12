@@ -20,6 +20,7 @@ import (
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
 	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/resolver"
 
 	"github.com/spf13/cobra"
@@ -181,6 +182,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			errs[i] = analysis.Errors[i].ToCompilerError()
 		}
 		return stderrors.Join(errs...)
+	}
+
+	// Step 4b: Component / Feature assertions.
+	if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Step 4b (Component/Feature assertions)")
 	}
 
 	// Step 5: Render

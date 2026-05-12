@@ -50,6 +50,16 @@ type ComponentSpec struct {
 	Inject           []string                    `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).
 	UsesSchema       OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
 	Schema           yaml.Node                   `json:"schema,omitempty" yaml:"schema,omitempty"`
+	// Assertions carries build-time cross-field validation as a map of named
+	// Go template rules. Evaluation runs at Step 4b (post-resolution, post-
+	// analyzer-gate, pre-render); the first rule whose template invokes
+	// {{ fail "message" }} halts the build. Per-instance: a Component with
+	// N instances produces N evaluations, one per node. Strict reference
+	// semantics: the evaluator uses missingkey=error so cross-phase reference
+	// typos surface as no-such-key halts. See
+	// internal/compiler/renderer/assertions.go for the evaluator and
+	// internal/compiler/renderer/assertions_step4b.go for the phase driver.
+	Assertions OrderedMap[string] `json:"assertions,omitempty,omitzero" yaml:"assertions,omitempty"`
 }
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.
