@@ -8,8 +8,7 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
-    helm:
-      components:
-        type:
-          "core/server": "recipes/helm-server:1.0.0"
-          "core/worker": "recipes/helm-worker:1.0.0"
+    components:
+      type:
+        "core/server": "recipes/helm-server:1.0.0"
+        "core/worker": "recipes/helm-worker:1.0.0"
