@@ -26,7 +26,7 @@ import (
 //
 // The `$mode:` annotation, when present, overrides the heuristic and
 // forces dispatch to either `compact` or `jsonschema`.
-func dispatchMapping(node *yaml.Node, path string) (any, error) {
+func dispatchMapping(node *yaml.Node, path string, ctx *compileCtx) (any, error) {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil, &CompileError{
 			Path:    path,
@@ -48,9 +48,9 @@ func dispatchMapping(node *yaml.Node, path string) (any, error) {
 	if mode != "" {
 		switch mode {
 		case "compact":
-			return emitCompactConstraint(node, path)
+			return emitCompactConstraint(node, path, ctx)
 		case "jsonschema":
-			return emitJSONSchemaPassthrough(node, path)
+			return emitJSONSchemaPassthrough(node, path, ctx)
 		default:
 			return nil, &CompileError{
 				Path:    path,
@@ -64,24 +64,27 @@ func dispatchMapping(node *yaml.Node, path string) (any, error) {
 
 	// Escape: $jsonschema present.
 	if _, ok := keys["$jsonschema"]; ok {
-		return emitEscape(node, path)
+		return emitEscape(node, path, ctx)
 	}
 
-	// Reference: $ref present.
+	// Reference: $ref present. The reference handler branches internally
+	// between in-document refs (today's passthrough behaviour, preserved
+	// verbatim for in-document `#/$defs/...` and the like) and cross-
+	// document refs (expanded against ctx.libraries at compile time).
 	if _, ok := keys["$ref"]; ok {
-		return emitReference(node, path)
+		return emitReference(node, path, ctx)
 	}
 
 	// Composition: allOf / anyOf / oneOf present at the top of this
 	// node. Recurse into each composing entry.
 	if _, ok := keys["allOf"]; ok {
-		return emitComposition(node, "allOf", path)
+		return emitComposition(node, "allOf", path, ctx)
 	}
 	if _, ok := keys["anyOf"]; ok {
-		return emitComposition(node, "anyOf", path)
+		return emitComposition(node, "anyOf", path, ctx)
 	}
 	if _, ok := keys["oneOf"]; ok {
-		return emitComposition(node, "oneOf", path)
+		return emitComposition(node, "oneOf", path, ctx)
 	}
 
 	// Compact constraint: the node has a `type:` or another compact-
@@ -90,19 +93,19 @@ func dispatchMapping(node *yaml.Node, path string) (any, error) {
 	// case where the schema has a property literally named `type` (in
 	// which case `$mode:` is required, handled above).
 	if hasCompactConstraintShape(keys) {
-		return emitCompactConstraint(node, path)
+		return emitCompactConstraint(node, path, ctx)
 	}
 
 	// Schema container: JSON Schema-reserved structural keywords
 	// (properties, items, additionalProperties, if, etc.) present.
 	if hasSchemaContainerShape(keys) {
-		return emitJSONSchemaPassthrough(node, path)
+		return emitJSONSchemaPassthrough(node, path, ctx)
 	}
 
 	// Implicit object: every key is a property name (no compact-form
 	// or JSON-Schema-reserved keywords). Emit as a JSON Schema object
 	// with properties: { ... } populated by recursing each child.
-	return emitImplicitObject(node, path)
+	return emitImplicitObject(node, path, ctx)
 }
 
 // hasCompactConstraintShape reports whether the node looks like a

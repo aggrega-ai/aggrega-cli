@@ -1,0 +1,20 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "x-aggrega-source": "BaseComponents#/schemas/BaseComponentParameter"
+    },
+    "note": {
+      "type": "string",
+      "x-aggrega-source": "BaseComponents#/schemas/BaseComponentParameter"
+    },
+    "volumeClaim": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}

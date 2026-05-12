@@ -4,6 +4,7 @@
 package compactform
 
 import (
+	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -13,6 +14,47 @@ import (
 // pkg/validator/jsonschema/ accepts this shape and adapts it to the
 // google/jsonschema-go typed surface internally.
 type Schema = map[string]any
+
+// compileCtx carries the cross-document expansion state through the
+// compactform pipeline: the catalog's SchemaLibraries map for $ref target
+// resolution, the consumer file location for error provenance, and the
+// in-flight resolution stack for cycle detection. A nil or zero-value ctx
+// disables cross-document expansion — references with a document portion
+// fall through to the existing reference passthrough, and a $ref against
+// any library produces ErrUnresolvedSchemaLibraryRef.
+type compileCtx struct {
+	libraries       map[string]types.SchemaLibrary
+	consumerFile    string
+	resolutionStack []string
+}
+
+// CompileOption configures a Compile invocation. Options are functional;
+// each closure mutates the compile context built up before the root node
+// dispatch fires. The pattern lets the public Compile signature stay
+// variadic-stable: callers without cross-document expansion needs invoke
+// Compile(node) unchanged; callers consuming a SchemaLibrary catalog
+// invoke Compile(node, WithSchemaLibraries(...), WithConsumerFile(...)).
+type CompileOption func(*compileCtx)
+
+// WithSchemaLibraries supplies the SchemaLibraries map the compactform
+// expander consults when resolving cross-document $ref URIs. The map is
+// the catalog's Catalog.SchemaLibraries (keyed by metadata.name). Absent
+// this option, cross-document $ref expansion is disabled.
+func WithSchemaLibraries(libs map[string]types.SchemaLibrary) CompileOption {
+	return func(ctx *compileCtx) {
+		ctx.libraries = libs
+	}
+}
+
+// WithConsumerFile records the source file path of the consumer entity
+// whose schema is being compiled. The path appears in cross-document $ref
+// expansion error messages so callers can locate the offending authoring
+// site without further plumbing.
+func WithConsumerFile(path string) CompileOption {
+	return func(ctx *compileCtx) {
+		ctx.consumerFile = path
+	}
+}
 
 // Compile transforms a compact-form (or JSON Schema YAML, or mixed)
 // input yaml.Node into a resolved JSON Schema 2020-12 document. The
@@ -26,13 +68,19 @@ type Schema = map[string]any
 // Errors are *CompileError values wrapping one of the package
 // sentinels (ErrUnknownKeyword / ErrAmbiguousDispatch /
 // ErrEscapeContentInvalid / ErrConstraintTypeMismatch /
-// ErrReferenceUnresolvable). Use errors.Is to match.
-func Compile(input *yaml.Node) (Schema, error) {
+// ErrReferenceUnresolvable / ErrUnresolvedSchemaLibraryRef /
+// ErrCircularRef / ErrOCINotYetSupported). Use errors.Is to match.
+func Compile(input *yaml.Node, opts ...CompileOption) (Schema, error) {
 	if input == nil {
 		return nil, &CompileError{
 			Message: "input is nil",
 			Err:     ErrEscapeContentInvalid,
 		}
+	}
+
+	ctx := &compileCtx{}
+	for _, opt := range opts {
+		opt(ctx)
 	}
 
 	// Unwrap a document node — top-level YAML documents wrap content
@@ -43,7 +91,7 @@ func Compile(input *yaml.Node) (Schema, error) {
 		node = node.Content[0]
 	}
 
-	out, err := compileNode(node, "")
+	out, err := compileNode(node, "", ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +106,9 @@ func Compile(input *yaml.Node) (Schema, error) {
 // compileNode dispatches a single node to the appropriate emission
 // pathway based on its content shape. The path argument carries the
 // YAML-path-like location for error provenance (e.g.
-// "spec.schema.values.port").
-func compileNode(node *yaml.Node, path string) (any, error) {
+// "spec.schema.values.port"). The ctx argument carries the cross-document
+// expansion state; a nil ctx disables cross-document $ref expansion.
+func compileNode(node *yaml.Node, path string, ctx *compileCtx) (any, error) {
 	if node == nil {
 		return nil, nil
 	}
@@ -68,13 +117,13 @@ func compileNode(node *yaml.Node, path string) (any, error) {
 	case yaml.ScalarNode:
 		return scalarValue(node), nil
 	case yaml.SequenceNode:
-		return emitSequence(node, path)
+		return emitSequence(node, path, ctx)
 	case yaml.MappingNode:
-		return dispatchMapping(node, path)
+		return dispatchMapping(node, path, ctx)
 	case yaml.AliasNode:
 		// YAML aliases dereference to their target; treat as the target.
 		if node.Alias != nil {
-			return compileNode(node.Alias, path)
+			return compileNode(node.Alias, path, ctx)
 		}
 		return nil, nil
 	default:
@@ -99,11 +148,11 @@ func scalarValue(node *yaml.Node) any {
 
 // emitSequence emits a YAML sequence as a Go slice. Each element
 // recurses through compileNode for per-entry dispatch.
-func emitSequence(node *yaml.Node, path string) ([]any, error) {
+func emitSequence(node *yaml.Node, path string, ctx *compileCtx) ([]any, error) {
 	out := make([]any, 0, len(node.Content))
 	for i, child := range node.Content {
 		childPath := pathJoin(path, indexSegment(i))
-		v, err := compileNode(child, childPath)
+		v, err := compileNode(child, childPath, ctx)
 		if err != nil {
 			return nil, err
 		}

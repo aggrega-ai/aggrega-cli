@@ -35,6 +35,21 @@ type Finding struct {
 	// of the source schema position the constraint originated from).
 	// Empty until the custom merger ships and populates leaves.
 	SourceOrigin string
+
+	// LibrarySource carries the originating SchemaLibrary URI for
+	// constraints contributed by a cross-document $ref expansion at
+	// compactform compile time. The value matches the cross-document
+	// $ref authoring shape (e.g. "BaseComponents#/schemas/Probe").
+	// Empty when the failing constraint is locally authored. Populated
+	// by EnrichFinding after Validate returns; the validator itself
+	// does not consult the annotation.
+	LibrarySource string
+
+	// ConsumerFile carries the source file path of the consumer entity
+	// whose schema the validator was given. Paired with LibrarySource
+	// by EnrichFinding so error formatters can name both the originating
+	// library and the consumer site in one message.
+	ConsumerFile string
 }
 
 // sort orders the report's findings deterministically per the

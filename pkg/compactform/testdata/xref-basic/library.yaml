@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: 1.0.0
+spec:
+  schemas:
+    BaseComponentParameter:
+      name: { type: string, required: true }
+      note: { type: string }
+    Probe:
+      port: { type: integer, min: 1, max: 65535, required: true }
+      path: { type: string, default: "/healthz" }

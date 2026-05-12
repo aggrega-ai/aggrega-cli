@@ -41,6 +41,31 @@ var (
 	// pkg/validator/jsonschema/; the compactform compiler only validates
 	// the URL shape).
 	ErrReferenceUnresolvable = errors.New("compactform: $ref unresolvable")
+
+	// ErrUnresolvedSchemaLibraryRef indicates a cross-document `$ref:`
+	// targets a SchemaLibrary entry that is not present in the catalog —
+	// either the library name (document portion of the URI) is unknown
+	// or the entry name (fragment portion) is absent from the library's
+	// schemas map. Distinct from ErrReferenceUnresolvable which signals
+	// a syntactically malformed URL; this sentinel signals a syntactically
+	// valid URL whose target does not exist.
+	ErrUnresolvedSchemaLibraryRef = errors.New("compactform: cross-document $ref target not found")
+
+	// ErrCircularRef indicates a cross-document `$ref:` expansion cycle.
+	// The compactform expander maintains a resolution-stack of in-flight
+	// URIs during recursive expansion; a URI already on the stack triggers
+	// this error with the chain named in the error message
+	// (e.g. "A#/schemas/X -> B#/schemas/Y -> A#/schemas/X"). Basic two-
+	// entry cycles are detected; deeper cycle graphs across multi-hop
+	// reference chains are detected by the same stack discipline.
+	ErrCircularRef = errors.New("compactform: circular cross-document $ref expansion")
+
+	// ErrOCINotYetSupported indicates a cross-document `$ref:` URI uses
+	// the `oci://` scheme. The OCI URI form is defined-but-deferred: the
+	// authoring shape is reserved for use once the lockfile + OCI pull
+	// infrastructure ships in the publishing-runtime sub-intent. Pre-1.0
+	// the compactform expander rejects OCI URIs with this sentinel.
+	ErrOCINotYetSupported = errors.New("compactform: oci:// $ref scheme not yet supported")
 )
 
 // CompileError is a structured compile failure carrying source-position

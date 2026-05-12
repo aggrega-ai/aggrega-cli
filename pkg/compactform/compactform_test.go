@@ -195,7 +195,7 @@ func TestCompileNodeUnsupportedKind(t *testing.T) {
 	t.Parallel()
 
 	bogus := &yaml.Node{Kind: yaml.Kind(99), Line: 7}
-	_, err := compileNode(bogus, "synthetic")
+	_, err := compileNode(bogus, "synthetic", nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported node kind; got nil")
 	}
@@ -210,7 +210,7 @@ func TestCompileNodeUnsupportedKind(t *testing.T) {
 func TestCompileNodeNilSilent(t *testing.T) {
 	t.Parallel()
 
-	v, err := compileNode(nil, "")
+	v, err := compileNode(nil, "", nil)
 	if err != nil {
 		t.Errorf("nil node should not error; got %v", err)
 	}
@@ -226,7 +226,7 @@ func TestCompileAliasNilTarget(t *testing.T) {
 	t.Parallel()
 
 	alias := &yaml.Node{Kind: yaml.AliasNode, Alias: nil}
-	v, err := compileNode(alias, "")
+	v, err := compileNode(alias, "", nil)
 	if err != nil {
 		t.Errorf("alias-with-nil-target should not error; got %v", err)
 	}
@@ -241,7 +241,7 @@ func TestCompileAliasNilTarget(t *testing.T) {
 func TestEmitSchemaMapNonMapping(t *testing.T) {
 	t.Parallel()
 
-	out, err := emitSchemaMap(nil, "")
+	out, err := emitSchemaMap(nil, "", nil)
 	if err != nil {
 		t.Errorf("nil node should not error; got %v", err)
 	}
@@ -249,7 +249,7 @@ func TestEmitSchemaMapNonMapping(t *testing.T) {
 		t.Errorf("nil node should produce empty map; got %v", out)
 	}
 	scalar := &yaml.Node{Kind: yaml.ScalarNode, Value: "x"}
-	out, err = emitSchemaMap(scalar, "")
+	out, err = emitSchemaMap(scalar, "", nil)
 	if err != nil {
 		t.Errorf("non-mapping should not error; got %v", err)
 	}
