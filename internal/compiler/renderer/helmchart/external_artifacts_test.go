@@ -115,13 +115,15 @@ spec:
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(string) (*types.Recipe, bool) {
+			artifacts := types.OrderedMap[types.ArtifactEntry]{}
+			artifacts.Set("crd.yaml", types.ArtifactEntry{Import: crdPath})
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
 					Provider:      "helm-chart",
 					Source:        chartDir,
 					ValuesMapping: types.ValuesMapping{Inline: `{}`},
-					ArtifactsFrom: []string{crdPath},
+					Artifacts:     artifacts,
 				},
 			}, true
 		},

@@ -90,12 +90,12 @@ func TestInterpolateParameters_SprigRequired(t *testing.T) {
 	}
 }
 
-func TestLoadParametersFrom_SingleFile(t *testing.T) {
+func TestLoadParametersImport_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "params.yaml")
 	os.WriteFile(f, []byte("db_host: localhost\ndb_port: 5432"), 0644)
 
-	params, err := LoadParametersFrom([]string{f})
+	params, err := LoadParametersImport(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,45 +104,25 @@ func TestLoadParametersFrom_SingleFile(t *testing.T) {
 	}
 }
 
-func TestLoadParametersFrom_DeepMerge(t *testing.T) {
-	dir := t.TempDir()
-	f1 := filepath.Join(dir, "base.yaml")
-	f2 := filepath.Join(dir, "override.yaml")
-	os.WriteFile(f1, []byte("db:\n  host: base-host\n  port: 5432"), 0644)
-	os.WriteFile(f2, []byte("db:\n  host: override-host\n  name: mydb"), 0644)
-
-	params, err := LoadParametersFrom([]string{f1, f2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, ok := params["db"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected db to be map, got %T", params["db"])
-	}
-	if db["host"] != "override-host" {
-		t.Errorf("expected overridden host, got %v", db["host"])
-	}
-	if db["port"] != 5432 {
-		t.Errorf("expected inherited port, got %v", db["port"])
-	}
-	if db["name"] != "mydb" {
-		t.Errorf("expected added name, got %v", db["name"])
-	}
-}
-
-func TestLoadParametersFrom_FileNotFound(t *testing.T) {
-	_, err := LoadParametersFrom([]string{"/nonexistent/params.yaml"})
+// TestLoadParametersImport_FileNotFound verifies the error path: a
+// non-existent path produces ErrParametersImportLoad. The pre-migration
+// deep-merge-over-list test (TestLoadParametersFrom_DeepMerge) retires
+// alongside the list-form retirement; multi-source layering migrates
+// to Release extends: chains, which are exercised by their own tests.
+func TestLoadParametersImport_FileNotFound(t *testing.T) {
+	_, err := LoadParametersImport("/nonexistent/params.yaml")
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
-	if !errors.Is(err, ErrParametersFromLoad) {
-		t.Errorf("expected ErrParametersFromLoad, got %v", err)
+	if !errors.Is(err, ErrParametersImportLoad) {
+		t.Errorf("expected ErrParametersImportLoad, got %v", err)
 	}
 }
 
 func TestMergeParameters_ReleaseOverridesExternal(t *testing.T) {
-	release := types.OrderedMap[any]{}
-	release.Set("key", "release-val")
+	inline := types.OrderedMap[any]{}
+	inline.Set("key", "release-val")
+	release := types.ParametersBlock{Inline: inline}
 	external := map[string]any{"key": "external-val", "extra": "ext"}
 
 	merged := MergeParameters(release, external)

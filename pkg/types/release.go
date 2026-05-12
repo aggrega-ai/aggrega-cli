@@ -33,12 +33,11 @@ type ReleaseMetadata struct {
 // the only required field — every Release must declare at least one
 // boundary, since a Release with no boundaries has nothing to route into.
 type ReleaseSpec struct {
-	Aggregate      string               `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
-	Manifest       string               `json:"manifest,omitempty" yaml:"manifest,omitempty"`
-	Extends        string               `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Parameters     OrderedMap[any]      `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
-	ParametersFrom []string             `json:"parametersFrom,omitempty" yaml:"parametersFrom,omitempty"`
-	Boundaries     OrderedMap[Boundary] `json:"boundaries" yaml:"boundaries"`
+	Aggregate  string               `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
+	Manifest   string               `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+	Extends    string               `json:"extends,omitempty" yaml:"extends,omitempty"`
+	Parameters ParametersBlock      `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Boundaries OrderedMap[Boundary] `json:"boundaries" yaml:"boundaries"`
 }
 
 // Boundary is a recursive logical box into which components are routed.

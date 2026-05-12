@@ -14,7 +14,6 @@ package renderer
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -121,26 +120,17 @@ func evaluateArtifacts(
 	if state == nil || state.Recipe == nil {
 		return nil, nil
 	}
-	hasInline := state.Recipe.Spec.Artifacts.Len() > 0
-	hasFromFile := len(state.Recipe.Spec.ArtifactsFrom) > 0
-	if !hasInline && !hasFromFile {
+	if state.Recipe.Spec.Artifacts.Len() == 0 {
 		return nil, nil
 	}
 
 	if _, external := engine.(ExternalArtifactsHandler); external {
-		if hasInline {
-			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
-				fmt.Sprintf("recipe %q (%q): provider %q does not support inline artifacts:; declare artifactsFrom: instead so the files can be injected into the chart's templates/ directory",
-					state.RecipeName, state.RecipePath, state.Recipe.Spec.Provider),
-				nil, nil)
-		}
-		// External-handler engines: evaluate each artifactsFrom file with
-		// the engine's chosen template-delimiter pair, place each emission
-		// at the engine-provided path, and feed every emission into
-		// state.EmittedFiles for downstream collision detection (Phase B.5)
-		// and per-node grouping. The two capability interfaces
-		// (ArtifactsPathProvider, ArtifactsTemplateDelims) drive per-engine
-		// behaviour; defaults apply when an engine does not implement them.
+		// External-handler engines (helm-chart and similar): each
+		// artifact entry must be a file-import (mode 2). Inline
+		// content is forbidden because the engine consumes pre-
+		// templated files at chart-templates/ injection time; the
+		// inline-template-string pattern doesn't survive the chart's
+		// own template engine.
 		leftDelim, rightDelim := "{{", "}}"
 		if d, ok := engine.(ArtifactsTemplateDelims); ok {
 			leftDelim, rightDelim = d.ArtifactDelimiters()
@@ -150,15 +140,22 @@ func evaluateArtifacts(
 			pathFn = p.PathForArtifact
 		}
 		var out []EmittedFile
-		for _, path := range state.Recipe.Spec.ArtifactsFrom {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe %q artifactsFrom %q", state.RecipeName, path))
+		for _, name := range state.Recipe.Spec.Artifacts.Keys() {
+			entry, _ := state.Recipe.Spec.Artifacts.Get(name)
+			if entry.Inline != "" {
+				return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
+					fmt.Sprintf("recipe %q (%q): provider %q does not support inline artifacts entries; use the {$import: <path>} mode so the file can be injected into the chart's templates/ directory",
+						state.RecipeName, state.RecipePath, state.Recipe.Spec.Provider),
+					nil, nil)
 			}
-			basename := filepath.Base(path)
+			tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, name)
+			if err != nil {
+				return nil, err
+			}
+			basename := filepath.Base(entry.Import)
 			body, err := evaluateOneArtifactWithDelims(
-				tmplCtx, state, nodeCtx, basename, string(data),
-				fmt.Sprintf("artifactsFrom[%s/%s]", state.RecipeName, basename),
+				tmplCtx, state, nodeCtx, basename, tmplText,
+				fmt.Sprintf("artifactsImport[%s/%s]", state.RecipeName, basename),
 				leftDelim, rightDelim,
 			)
 			if err != nil {
@@ -176,43 +173,33 @@ func evaluateArtifacts(
 
 	// Intermediate-tagged emitted files are consumed by the orchestrator's
 	// per-(path, provider) grouping in RenderAll — the `if f.Intermediate`
-	// branch routes solely on the flag. The grouping is Origin-agnostic:
-	// every Intermediate=true EmittedFile flows to AssembleBoundary
-	// regardless of EmitOrigin. End-to-end exercise:
-	// TestPhaseB3_ArtifactsIntermediate_RoutesViaReleaseComposer in
-	// renderer_integration_test.go is the live anchor — a regression that
-	// breaks the routing changes the test outcome.
+	// branch routes solely on the flag.
 	_, isAssembler := engine.(BoundaryAssembler)
 
 	var out []EmittedFile
 
 	for _, filename := range state.Recipe.Spec.Artifacts.Keys() {
-		tmpl, _ := state.Recipe.Spec.Artifacts.Get(filename)
-		body, err := evaluateOneArtifact(tmplCtx, state, nodeCtx, filename, tmpl, fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, filename))
+		entry, _ := state.Recipe.Spec.Artifacts.Get(filename)
+		tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, filename)
+		if err != nil {
+			return nil, err
+		}
+		// Mode 1 (inline) — filename is the author-declared map key.
+		// Mode 2 (file import) — filename is still the map key (the
+		// author chose it; basename derivation happens at the
+		// external-handler path above where the chart-injection
+		// convention requires basename-from-path).
+		origin := EmitOriginArtifactsInline
+		if entry.Import != "" {
+			origin = EmitOriginArtifactsFromFile
+		}
+		body, err := evaluateOneArtifact(tmplCtx, state, nodeCtx, filename, tmplText, fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, filename))
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, EmittedFile{
 			Name:         filename,
-			Origin:       EmitOriginArtifactsInline,
-			Body:         body,
-			Intermediate: isAssembler,
-		})
-	}
-
-	for _, path := range state.Recipe.Spec.ArtifactsFrom {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe %q artifactsFrom %q", state.RecipeName, path))
-		}
-		basename := filepath.Base(path)
-		body, err := evaluateOneArtifact(tmplCtx, state, nodeCtx, basename, string(data), fmt.Sprintf("artifactsFrom[%s/%s]", state.RecipeName, basename))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, EmittedFile{
-			Name:         basename,
-			Origin:       EmitOriginArtifactsFromFile,
+			Origin:       origin,
 			Body:         body,
 			Intermediate: isAssembler,
 		})

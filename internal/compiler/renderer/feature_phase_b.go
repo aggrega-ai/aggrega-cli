@@ -40,6 +40,48 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 	return string(data), nil
 }
 
+// resolveWorkloadText resolves a WorkloadTemplate struct to its Go-
+// template source string. Mode 1 (inline) returns the authored content
+// directly; mode 2 (file $import:) reads the file from disk. The
+// envelope schema rejects oci:// prefixes at workload: — library
+// imports aren't a supported mode at this site — so an oci:// value
+// reaches this function only when authors bypass envelope validation
+// (which production load doesn't enforce); the file read surfaces a
+// generic "file not found" error in that case. The empty struct
+// returns "" + nil (callers treat as "no workload declared").
+func resolveWorkloadText(w types.WorkloadTemplate, entityName string) (string, error) {
+	if w.IsEmpty() {
+		return "", nil
+	}
+	if w.Inline != "" {
+		return w.Inline, nil
+	}
+	data, err := os.ReadFile(w.Import)
+	if err != nil {
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: w.Import}, fmt.Sprintf("Recipe %q workload file import", entityName))
+	}
+	return string(data), nil
+}
+
+// resolveArtifactEntryText resolves an ArtifactEntry struct to its
+// Go-template source string. Mode 1 (inline) returns the authored
+// content directly; mode 2 (file $import:) reads the file from disk.
+// The envelope schema rejects oci:// prefixes at artifacts entries
+// for the same reason as workload:.
+func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName string) (string, error) {
+	if a.IsEmpty() {
+		return "", nil
+	}
+	if a.Inline != "" {
+		return a.Inline, nil
+	}
+	data, err := os.ReadFile(a.Import)
+	if err != nil {
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: a.Import}, fmt.Sprintf("Recipe %q artifact %q file import", entityName, artifactName))
+	}
+	return string(data), nil
+}
+
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the
 // feature-scoped context and returns the resolved map. Same self-containment
 // rules as Recipe locals: no .context.inject / .context.uses references.

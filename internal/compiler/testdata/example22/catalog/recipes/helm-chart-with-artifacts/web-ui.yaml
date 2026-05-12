@@ -7,8 +7,9 @@ spec:
   provider: helm-chart
   implements: core/server/web-ui
   source: ./charts/web-ui
-  artifactsFrom:
-    - ./extras/web-ui-policy.yaml
+  artifacts:
+    web-ui-policy.yaml:
+      $import: ./extras/web-ui-policy.yaml
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "{{ .values.port }}"

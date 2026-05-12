@@ -181,19 +181,21 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			}
 			e.Spec.Source = abs
 		}
-		// Resolve relative artifactsFrom paths against the Recipe file's
-		// directory so co-located artifact files stay bundled with their
-		// Recipe. The chapter's "paths are relative to the Recipe directory"
-		// contract anchors here. Mirrors the source-resolution pattern above.
-		for i, p := range e.Spec.ArtifactsFrom {
-			if p == "" || filepath.IsAbs(p) {
+		// Resolve relative $import: paths in artifacts entries against the
+		// Recipe file's directory so co-located artifact files stay bundled
+		// with their Recipe. Inline entries (no $import: target) are
+		// unaffected.
+		for _, name := range e.Spec.Artifacts.Keys() {
+			entry, _ := e.Spec.Artifacts.Get(name)
+			if entry.Import == "" || filepath.IsAbs(entry.Import) {
 				continue
 			}
-			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), p))
+			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
 			if err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifactsFrom %q", p))
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifact %q $import target %q", name, entry.Import))
 			}
-			e.Spec.ArtifactsFrom[i] = abs
+			entry.Import = abs
+			e.Spec.Artifacts.Set(name, entry)
 		}
 		c.Recipes[e.Spec.Implements] = e
 	case "FeatureRecipe":

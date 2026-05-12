@@ -16,7 +16,6 @@ package renderer
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
@@ -155,13 +154,9 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		return nil
 	}
 
-	workloadText := state.Recipe.Spec.Workload
-	if workloadText == "" && state.Recipe.Spec.WorkloadFrom != "" {
-		data, err := os.ReadFile(state.Recipe.Spec.WorkloadFrom)
-		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.Recipe.Spec.WorkloadFrom}, fmt.Sprintf("Phase B.2: recipe %q workloadFrom", state.Recipe.Metadata.Name))
-		}
-		workloadText = string(data)
+	workloadText, wlErr := resolveWorkloadText(state.Recipe.Spec.Workload, state.Recipe.Metadata.Name)
+	if wlErr != nil {
+		return wlErr
 	}
 	if workloadText == "" {
 		state.PhaseReached = 2
@@ -217,7 +212,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 		state.PhaseReached = 3
 		return nil
 	}
-	if state.Recipe.Spec.Artifacts.Len() == 0 && len(state.Recipe.Spec.ArtifactsFrom) == 0 {
+	if state.Recipe.Spec.Artifacts.Len() == 0 {
 		state.PhaseReached = 3
 		return nil
 	}

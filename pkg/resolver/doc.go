@@ -10,9 +10,9 @@
 //
 //   - Resolve produces the mechanical artifacts: parsed Aggregate / Release /
 //     Manifest plus per-component boundary infra context. It performs YAML
-//     loading, parametersFrom merging, Go-template interpolation against the
-//     merged parameter map, instance-name validation, boundary infra wiring,
-//     and active parameter-map purge.
+//     loading, parameters $import: resolution + inline merge, Go-template
+//     interpolation against the merged parameter map, instance-name
+//     validation, boundary infra wiring, and active parameter-map purge.
 //
 //   - RunGuards executes the semantic checks that need a catalog lookup
 //     (uses-socket existence, self-inject allowlist, inject key collisions,
@@ -29,8 +29,10 @@
 //
 //  1. Load Release.
 //  2. Load Manifest.
-//  3. Load parametersFrom external files (deep-merge, later overrides earlier).
-//  4. Merge Release.parameters over external parameters (Release wins).
+//  3. Load Release.spec.parameters.$import: target if populated (single
+//     source file).
+//  4. Merge the loaded values with Release.spec.parameters inline content
+//     (single-source-only design — exactly one mode is populated).
 //  5. Read raw Aggregate YAML.
 //  6. Interpolate parameters into the raw bytes via Go template + Sprig.
 //  7. Unmarshal the interpolated bytes into a typed Aggregate.

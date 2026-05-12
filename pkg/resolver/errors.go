@@ -18,9 +18,9 @@ var (
 	// surfaced during parameter interpolation.
 	ErrInvalidParameterRef = errors.New("invalid parameter reference")
 
-	// ErrParametersFromLoad wraps a read or unmarshal failure for any path
-	// listed in Release.spec.parametersFrom.
-	ErrParametersFromLoad = errors.New("parametersFrom load failed")
+	// ErrParametersImportLoad wraps a read or unmarshal failure for the
+	// single path supplied at Release.spec.parameters.$import:.
+	ErrParametersImportLoad = errors.New("parameters $import: load failed")
 
 	// ErrInvalidInstanceName wraps a user-authored dictionary key (component,
 	// feature, secret, subsystem, aggregate name) that does not match the

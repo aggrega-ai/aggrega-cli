@@ -105,12 +105,12 @@ func TestPhaseB_ContextAvailabilityMatrix_WorkloadPopulates(t *testing.T) {
 
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
   main:
     image: app:1.0
-`
+`}
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
 	emptyProvides := types.OrderedMap[string]{}
 	emptySlots := types.OrderedMap[types.SecretSlot]{}
@@ -152,12 +152,12 @@ func TestPhaseB2_WorkloadValidationFlow_ValidPasses(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
   main:
     image: app:1.0
-`
+`}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	emptySlots := types.OrderedMap[types.SecretSlot]{}
 
@@ -189,7 +189,7 @@ func TestPhaseB2_WorkloadValidationFlow_BadServiceTypeFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
   main:
@@ -199,7 +199,7 @@ services:
     type: Bogus
     ports:
       web: 8080
-`
+`}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	emptySlots := types.OrderedMap[types.SecretSlot]{}
 
@@ -217,7 +217,7 @@ func TestPhaseB2_WorkloadValidationFlow_SecretsSchemaFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
   main:
@@ -226,7 +226,7 @@ containers:
       DB:
         from: undeclared-slot
         as: env
-`
+`}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 
 	// Slots: only "other" exists; the workload references "undeclared-slot".

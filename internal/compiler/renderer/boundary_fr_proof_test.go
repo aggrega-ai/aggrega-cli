@@ -47,7 +47,7 @@ services:
 `
 	return &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: name + "-recipe", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "compose", Workload: body},
+		Spec:     types.RecipeSpec{Provider: "compose", Workload: types.WorkloadTemplate{Inline: body}},
 	}
 }
 

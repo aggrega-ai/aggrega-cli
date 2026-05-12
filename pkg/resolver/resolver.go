@@ -49,9 +49,11 @@ type ResolveResult struct {
 //
 //  1. Load Release.
 //  2. Load Manifest.
-//  3. Load parametersFrom external files (deep-merge in declared order;
-//     later files override earlier).
-//  4. Merge Release.parameters over the external map (Release wins per key).
+//  3. Load Release.spec.parameters.$import: target if present (single-
+//     source file; the pre-migration parametersFrom list-form retires).
+//  4. Merge the loaded values with Release.spec.parameters inline content
+//     when both are populated; in the current single-source-only design
+//     exactly one mode is populated per Release.
 //  5. Read raw Aggregate YAML bytes.
 //  6. Interpolate the merged parameter map into the raw bytes via Go
 //     template + Sprig (missingkey=zero, so undefined references render
@@ -96,10 +98,11 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 		return nil, err
 	}
 
-	// 2. Load parametersFrom
+	// 2. Load parameters' $import: target if present (mode 2). Inline
+	// content (mode 1) flows through MergeParameters directly.
 	var externalParams map[string]any
-	if len(release.Spec.ParametersFrom) > 0 {
-		externalParams, err = LoadParametersFrom(release.Spec.ParametersFrom)
+	if release.Spec.Parameters.Import != "" {
+		externalParams, err = LoadParametersImport(release.Spec.Parameters.Import)
 		if err != nil {
 			return nil, err
 		}

@@ -25,7 +25,7 @@ func ValidateRecipeProviderBinding(r *types.Recipe, p *types.Provider, sourcePat
 	if r == nil {
 		return nil
 	}
-	if r.Spec.Workload == "" && r.Spec.WorkloadFrom == "" {
+	if r.Spec.Workload.IsEmpty() {
 		return nil
 	}
 	if p != nil && providerHasWorkloadSchema(p) {

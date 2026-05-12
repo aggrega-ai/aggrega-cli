@@ -273,3 +273,147 @@ spec:
 		t.Fatalf("expected envelope rejection on retired valuesMappingFile: field; got no findings")
 	}
 }
+
+// TestRecipeEnvelope_RejectsWorkloadFrom pins the envelope-load rejection
+// of the retired workloadFrom: field. The file-import capability
+// relocates into workload: { $import: ... } (mode 2 of the
+// WorkloadTemplate discriminator).
+func TestRecipeEnvelope_RejectsWorkloadFrom(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: legacy-workload-from
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  workloadFrom: ./workload.yaml
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on retired workloadFrom: field; got no findings")
+	}
+}
+
+// TestRecipeEnvelope_RejectsArtifactsFrom pins the envelope-load rejection
+// of the retired artifactsFrom: field. The list-form capability migrates
+// to per-entry $import: under the artifacts: map.
+func TestRecipeEnvelope_RejectsArtifactsFrom(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: legacy-artifacts-from
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  artifactsFrom:
+    - ./extras/policy.yaml
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on retired artifactsFrom: field; got no findings")
+	}
+}
+
+// TestRecipeEnvelope_AcceptsWorkloadImport pins the positive path for
+// the WorkloadTemplate mode 2 (file $import:).
+func TestRecipeEnvelope_AcceptsWorkloadImport(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: workload-import
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  workload:
+    $import: ./workload.yaml
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) != 0 {
+		t.Errorf("expected envelope acceptance of workload: {$import:}; got %d findings: %v", len(rpt.Findings), rpt.Findings)
+	}
+}
+
+// TestRecipeEnvelope_RejectsWorkloadOCIImport pins the operator-decided
+// Mode-3 envelope rejection: oci:// URLs are not supported at workload:.
+// The schema's `not: pattern` constraint on the $import: string value
+// surfaces the rejection at envelope load with a specific error
+// rather than a generic file-not-found at consumption time.
+func TestRecipeEnvelope_RejectsWorkloadOCIImport(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: workload-oci-import
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  workload:
+    $import: oci://hub.aggrega.ai/aggrega/helpers@1.0.0#/workloads/Default
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on oci:// URL at workload: site; got no findings")
+	}
+}
+
+// TestRecipeEnvelope_RejectsArtifactsOCIImport pins the parallel Mode-3
+// rejection for artifacts entries.
+func TestRecipeEnvelope_RejectsArtifactsOCIImport(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: artifacts-oci-import
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  source: ./chart
+  valuesMapping: |
+    {}
+  artifacts:
+    policy.yaml:
+      $import: oci://hub.aggrega.ai/aggrega/policies@1.0.0#/artifacts/Default
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on oci:// URL at artifacts entry; got no findings")
+	}
+}

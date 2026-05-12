@@ -259,7 +259,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// (where the rendering input lives inside the parsed Workload, not in
 		// the values dict). Phase B.2 + ValidateWorkload + ValidateWorkloadSecrets
 		// cover the workload-mode validation surface.
-		hasWorkload := recipe != nil && (recipe.Spec.Workload != "" || recipe.Spec.WorkloadFrom != "")
+		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
 		if recipe != nil && input.ProviderLookup != nil && isSourceless(recipe) && !hasWorkload {
 			if err := ValidateValuesAgainstBaseSchema(
 				recipe.Spec.Provider,

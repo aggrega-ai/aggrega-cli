@@ -52,55 +52,56 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// LoadParametersFrom reads each external parameter YAML file in declared
-// order and deep-merges them into a single map. The merge semantics are:
-//
-//   - For keys whose value is a map on both sides, the maps recurse.
-//   - For keys whose value is a scalar or array on either side, the later
-//     value replaces the earlier (no concat, no scalar-additive behavior).
-//   - For keys present only on one side, that side's value is carried
-//     through.
+// LoadParametersImport reads a single parameter YAML file from the
+// path supplied at Release.spec.parameters.$import: and returns its
+// decoded map. The pre-migration LoadParametersFrom (deep-merge over
+// a list of paths) retired with the *From: family retirement; the
+// multi-source layering use case migrates to Release extends: chains
+// where the parent Release carries base parameters and the child
+// extends + overrides.
 //
 // Read or unmarshal errors are wrapped as ResolverError with
-// ErrParametersFromLoad and the offending path attached.
-func LoadParametersFrom(paths []string) (map[string]any, error) {
-	merged := map[string]any{}
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, &ResolverError{
-				Entity:  "Release",
-				Field:   fmt.Sprintf(".spec.parametersFrom[%s]", path),
-				Message: fmt.Sprintf("failed to read file: %v", err),
-				Err:     ErrParametersFromLoad,
-			}
+// ErrParametersImportLoad and the offending path attached.
+func LoadParametersImport(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &ResolverError{
+			Entity:  "Release",
+			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
+			Message: fmt.Sprintf("failed to read file: %v", err),
+			Err:     ErrParametersImportLoad,
 		}
-		var params map[string]any
-		if err := yaml.Unmarshal(data, &params); err != nil {
-			return nil, &ResolverError{
-				Entity:  "Release",
-				Field:   fmt.Sprintf(".spec.parametersFrom[%s]", path),
-				Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
-				Err:     ErrParametersFromLoad,
-			}
-		}
-		merged = deepMerge(merged, params)
 	}
-	return merged, nil
+	var params map[string]any
+	if err := yaml.Unmarshal(data, &params); err != nil {
+		return nil, &ResolverError{
+			Entity:  "Release",
+			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
+			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
+			Err:     ErrParametersImportLoad,
+		}
+	}
+	return params, nil
 }
 
-// MergeParameters layers Release.spec.parameters on top of the
-// LoadParametersFrom result and returns the combined map for template use.
+// MergeParameters returns the combined parameter map for template use,
+// given the Release.spec.parameters discriminator and any external
+// values loaded via LoadParametersImport.
 //
-// Precedence is Release-wins-per-key: external parameter files supply the
-// base, and Release.spec.parameters override on collision.
+// Precedence is Release-wins-per-key when both inline and external
+// are present — but post-migration the discriminator enforces
+// exactly-one-mode (inline OR import), so the two-side merge is
+// vestigial. The function is preserved for the (currently unused)
+// future case where extends: chains supply external + inline at the
+// same Release.
 //
-// Author order of Release.spec.parameters is lost at this boundary because
-// Go's text/template data is plain map[string]any, which does not
-// preserve insertion order. The lost ordering does not affect the rendered
-// output — template references are by key, not by iteration order.
-func MergeParameters(release types.OrderedMap[any], external map[string]any) map[string]any {
-	releasePlain := orderedMapToPlain(release)
+// Author order of inline Release parameters is lost at this boundary
+// because Go's text/template data is plain map[string]any, which does
+// not preserve insertion order. The lost ordering does not affect the
+// rendered output — template references are by key, not by iteration
+// order.
+func MergeParameters(release types.ParametersBlock, external map[string]any) map[string]any {
+	releasePlain := orderedMapToPlain(release.Inline)
 	if releasePlain == nil && external == nil {
 		return map[string]any{}
 	}

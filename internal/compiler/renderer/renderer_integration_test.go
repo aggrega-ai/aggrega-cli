@@ -326,8 +326,8 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 			name:     "inline",
 			filename: "extra-services.yaml",
 			buildSpec: func(*testing.T) types.RecipeSpec {
-				artifacts := types.OrderedMap[string]{}
-				artifacts.Set("extra-services.yaml", fragmentBody)
+				artifacts := types.OrderedMap[types.ArtifactEntry]{}
+				artifacts.Set("extra-services.yaml", types.ArtifactEntry{Inline: fragmentBody})
 				return types.RecipeSpec{Provider: "compose", Artifacts: artifacts}
 			},
 			wantOrigin: renderer.EmitOriginArtifactsInline,
@@ -341,7 +341,9 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 				if err := os.WriteFile(p, []byte(fragmentBody), 0o644); err != nil {
 					t.Fatalf("WriteFile: %v", err)
 				}
-				return types.RecipeSpec{Provider: "compose", ArtifactsFrom: []string{p}}
+				artifacts := types.OrderedMap[types.ArtifactEntry]{}
+				artifacts.Set("from-file-services.yaml", types.ArtifactEntry{Import: p})
+				return types.RecipeSpec{Provider: "compose", Artifacts: artifacts}
 			},
 			wantOrigin: renderer.EmitOriginArtifactsFromFile,
 		},

@@ -80,38 +80,10 @@ func TestValidateRecipe_Rule2_SourceWithoutValuesMapping_Fails(t *testing.T) {
 	}
 }
 
-// ----- Rule 3: workload + workloadFrom mutually exclusive -----
-
-func TestValidateRecipe_Rule3_WorkloadOnly_Passes(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1
-kind: Workload
-spec: {}`
-	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected pass, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Rule3_WorkloadFromOnly_Passes(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.WorkloadFrom = "./workload.yaml"
-	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected pass, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Rule3_BothWorkloadFields_Fails(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.Workload = `apiVersion: aggrega.ai/v1alpha1`
-	r.Spec.WorkloadFrom = "./workload.yaml"
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule3) {
-		t.Fatalf("expected ErrRecipeRule3, got %v", err)
-	}
-}
+// Rule 3 (workload + workloadFrom mutex) retired with the file-import
+// vocabulary unification: WorkloadTemplate's content-shape dispatch
+// admits either inline content or {$import:} at the type level, not
+// both. The pre-migration mutex is encoded in the type's structure.
 
 // ----- Rule 5: at least one input kind -----
 
@@ -128,16 +100,17 @@ func TestValidateRecipe_Rule5_HasSourceAndValuesMapping_Passes(t *testing.T) {
 func TestValidateRecipe_Rule5_HasWorkload_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
-	r.Spec.Workload = "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"
+	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
 }
 
-func TestValidateRecipe_Rule5_HasArtifactsFrom_Passes(t *testing.T) {
+func TestValidateRecipe_Rule5_HasArtifacts_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
-	r.Spec.ArtifactsFrom = []string{"./manifests/deploy.yaml"}
+	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	r.Spec.Artifacts.Set("deploy.yaml", types.ArtifactEntry{Import: "./manifests/deploy.yaml"})
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
@@ -153,59 +126,13 @@ func TestValidateRecipe_Rule5_NoInputKind_Fails(t *testing.T) {
 	}
 }
 
-// ----- Rule 6: artifacts ↔ artifactsFrom basename collision -----
-
-func TestValidateRecipe_Rule6_NoCollision_Passes(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.Artifacts = types.OrderedMap[string]{}
-	r.Spec.Artifacts.Set("config.yaml", `data: {}`)
-	r.Spec.ArtifactsFrom = []string{"./manifests/deploy.yaml"}
-	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected pass, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Rule6_BasenameCollision_Fails(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.Artifacts = types.OrderedMap[string]{}
-	r.Spec.Artifacts.Set("deploy.yaml", `kind: Deployment`)
-	r.Spec.ArtifactsFrom = []string{"./manifests/deploy.yaml"}
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule6) {
-		t.Fatalf("expected ErrRecipeRule6, got %v", err)
-	}
-	// Detail line names the colliding basename.
-	if !strings.Contains(err.Error(), "deploy.yaml") {
-		t.Errorf("error detail should name the collision: %v", err)
-	}
-}
-
-func TestValidateRecipe_Rule6_OnlyOneSide_NoCheck(t *testing.T) {
-	t.Parallel()
-	// Inline artifacts with no artifactsFrom: inline×from class doesn't
-	// apply. The Recipe still needs to be otherwise valid.
-	r := newRecipe("helm")
-	r.Spec.Artifacts = types.OrderedMap[string]{}
-	r.Spec.Artifacts.Set("config.yaml", `data: {}`)
-	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected pass, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Rule6_ArtifactsFromInternalCollision_Fails(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.ArtifactsFrom = []string{"./a/foo.yaml", "./b/foo.yaml"}
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule6) {
-		t.Fatalf("expected ErrRecipeRule6 for within-artifactsFrom basename collision, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "foo.yaml") {
-		t.Errorf("error detail should name the colliding basename: %v", err)
-	}
-}
+// Rule 6 (artifacts <-> artifactsFrom basename collision) retired with
+// the artifactsFrom list-form retirement. Artifacts is a single
+// OrderedMap keyed by output filename; cross-key collisions are
+// impossible at load (yaml.v3's OrderedMap unmarshal collapses
+// duplicates last-wins). The Rule 6 call site stays declared in
+// validator/recipe_validate.go for future collision classes (e.g.,
+// source-output basename vs artifacts entry names).
 
 // ----- Helm-chart provider: inline artifacts forbidden -----
 
@@ -214,8 +141,8 @@ func TestValidateRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
 	r := newRecipe("helm-chart")
 	r.Spec.Source = "./chart"
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "app:1"}`}
-	r.Spec.Artifacts = types.OrderedMap[string]{}
-	r.Spec.Artifacts.Set("inline-cm.yaml", `kind: ConfigMap`)
+	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	r.Spec.Artifacts.Set("inline-cm.yaml", types.ArtifactEntry{Inline: `kind: ConfigMap`})
 
 	err := validator.ValidateRecipe(r, tFile)
 	if !errors.Is(err, validator.ErrRecipeHelmChartInlineArtifacts) {
@@ -224,20 +151,21 @@ func TestValidateRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
 	if !strings.Contains(err.Error(), "inline-cm.yaml") {
 		t.Errorf("error detail should name the offending inline filename, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "artifactsFrom") {
-		t.Errorf("error should recommend artifactsFrom, got %v", err)
+	if !strings.Contains(err.Error(), "$import") {
+		t.Errorf("error should recommend the {$import:} migration path, got %v", err)
 	}
 }
 
-func TestValidateRecipe_HelmChartArtifactsFromOnly_Passes(t *testing.T) {
+func TestValidateRecipe_HelmChartArtifactsImportOnly_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm-chart")
 	r.Spec.Source = "./chart"
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "app:1"}`}
-	r.Spec.ArtifactsFrom = []string{"./manifests/crd.yaml"}
+	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	r.Spec.Artifacts.Set("crd.yaml", types.ArtifactEntry{Import: "./manifests/crd.yaml"})
 
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected helm-chart + artifactsFrom-only to pass, got %v", err)
+		t.Fatalf("expected helm-chart + import-only artifacts to pass, got %v", err)
 	}
 }
 
@@ -266,7 +194,7 @@ func TestValidateRecipe_Eval_RejectsValuesMapping(t *testing.T) {
 func TestValidateRecipe_Eval_RejectsWorkload(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("eval")
-	r.Spec.Workload = "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"
+	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
 	err := validator.ValidateRecipe(r, tFile)
 	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint) {
 		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
@@ -276,7 +204,8 @@ func TestValidateRecipe_Eval_RejectsWorkload(t *testing.T) {
 func TestValidateRecipe_Eval_RejectsArtifacts(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("eval")
-	r.Spec.ArtifactsFrom = []string{"./x.yaml"}
+	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	r.Spec.Artifacts.Set("x.yaml", types.ArtifactEntry{Import: "./x.yaml"})
 	err := validator.ValidateRecipe(r, tFile)
 	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint) {
 		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)

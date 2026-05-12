@@ -26,22 +26,13 @@ var (
 	// ErrRecipeRule2: source requires valuesMapping.
 	ErrRecipeRule2 = errors.New("recipe rule 2: source requires valuesMapping")
 
-	// ErrRecipeRule3: workload and workloadFrom are mutually exclusive.
-	ErrRecipeRule3 = errors.New("recipe rule 3: workload and workloadFrom are mutually exclusive")
-
-	// ErrRecipeRule4: workload/workloadFrom requires the resolved Provider to
+	// ErrRecipeRule4: workload requires the resolved Provider to
 	// declare workloadSchema. Surfaced post-Manifest-resolution by
 	// ValidateRecipeProviderBinding, not at Recipe load time.
-	ErrRecipeRule4 = errors.New("recipe rule 4: workload/workloadFrom requires provider workloadSchema")
+	ErrRecipeRule4 = errors.New("recipe rule 4: workload requires provider workloadSchema")
 
 	// ErrRecipeRule5: at least one input kind must be present.
 	ErrRecipeRule5 = errors.New("recipe rule 5: at least one input kind required")
-
-	// ErrRecipeRule6: filenames emitted by the artifacts input kind must
-	// not collide. Two sub-classes: inline `artifacts:` keys clashing with
-	// `artifactsFrom:` basenames; and two or more `artifactsFrom:` entries
-	// whose basenames collide. Both classes share this sentinel.
-	ErrRecipeRule6 = errors.New("recipe rule 6: artifact-emitted output filename collision")
 
 	// ErrRecipeHelmChartInlineArtifacts: provider helm-chart with inline
 	// artifacts: declared. Helm-chart emits an umbrella chart structure;

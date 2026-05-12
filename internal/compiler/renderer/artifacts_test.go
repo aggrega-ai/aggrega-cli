@@ -105,14 +105,14 @@ func readDocLabels(t *testing.T, body []byte) map[string]string {
 func TestEvaluateArtifacts_InlineOnly(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("configmap.yaml", `apiVersion: v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("configmap.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: api-config
 data:
   greeting: hello
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -154,7 +154,8 @@ spec:
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	state.Recipe.Spec.ArtifactsFrom = []string{manifestPath}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(manifestPath), types.ArtifactEntry{Import: manifestPath})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -178,12 +179,12 @@ func TestEvaluateArtifacts_MixedInlineAndFromFile(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("inline-cm.yaml", `apiVersion: v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("inline-cm.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: inline-config
-`)
+`})
 
 	dir := t.TempDir()
 	p := filepath.Join(dir, "external.yaml")
@@ -194,7 +195,7 @@ metadata:
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	state.Recipe.Spec.ArtifactsFrom = []string{p}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -220,16 +221,16 @@ func TestEvaluateArtifacts_TemplateAccessesWorkload(t *testing.T) {
 	tmplCtx.Workload = &types.Workload{}
 	tmplCtx.Workload.Containers = types.OrderedMap[types.ContainerSpec]{}
 	tmplCtx.Workload.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
-	state.Recipe.Spec.Workload = "set" // marker; template doesn't read it but pre-check uses ParsedWorkload.
+	state.Recipe.Spec.Workload = types.WorkloadTemplate{Inline: "set"} // marker; template doesn't read it but pre-check uses ParsedWorkload.
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("monitor.yaml", `apiVersion: monitoring.coreos.com/v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("monitor.yaml", types.ArtifactEntry{Inline: `apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: api-monitor
 spec:
   image: {{ (index .workload.containers "main").image }}
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -249,14 +250,14 @@ func TestEvaluateArtifacts_TemplateAccessesSource(t *testing.T) {
 	state.Recipe.Spec.Source = map[string]any{"chart": "nginx", "version": "1.2.3"}
 	tmplCtx.Source = state.Recipe.Spec.Source
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("info.yaml", `apiVersion: v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("info.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: source-info
 data:
   chart: {{ .source.chart }}
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -275,12 +276,12 @@ func TestEvaluateArtifacts_NilWorkloadProducesClearError(t *testing.T) {
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	// state.ParsedWorkload remains nil (Recipe declares no workload:).
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("monitor.yaml", `apiVersion: monitoring.coreos.com/v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("monitor.yaml", types.ArtifactEntry{Inline: `apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 spec:
   port: {{ .workload.containers.main.ports.web }}
-`)
+`})
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -316,8 +317,8 @@ func TestEvaluateArtifacts_ProvenanceLabelsOnK8sResource(t *testing.T) {
 		Environment:      "prod",
 	}
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("deployment.yaml", `apiVersion: apps/v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("deployment.yaml", types.ArtifactEntry{Inline: `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api
@@ -325,7 +326,7 @@ metadata:
     author: alice
 spec:
   replicas: 1
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -356,14 +357,14 @@ func TestEvaluateArtifacts_ConfigMapReferencedByWorkload(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("api-config.yaml", `apiVersion: v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("api-config.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: api-config
 data:
   feature_flag: "true"
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -386,11 +387,11 @@ func TestEvaluateArtifacts_ComposeProviderProducesIntermediate(t *testing.T) {
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	state.Recipe.Spec.Provider = "compose"
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("extra-services.yaml", `services:
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("extra-services.yaml", types.ArtifactEntry{Inline: `services:
   sidecar:
     image: busybox:1.36
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubComposeEngine{}, nodeCtx)
 	if err != nil {
@@ -414,8 +415,8 @@ func TestEvaluateArtifacts_HelmChartProviderRejectsInline(t *testing.T) {
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	state.Recipe.Spec.Provider = "helm-chart"
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("any.yaml", `kind: ConfigMap`)
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("any.yaml", types.ArtifactEntry{Inline: `kind: ConfigMap`})
 
 	_, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
 	if err == nil {
@@ -439,14 +440,14 @@ func TestEvaluateArtifacts_PreservesAuthoredKeyOrder(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("ordered.yaml", `apiVersion: apps/v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("ordered.yaml", types.ArtifactEntry{Inline: `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api
 spec:
   replicas: 1
-`)
+`})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err != nil {
@@ -482,13 +483,13 @@ func TestEvaluateArtifacts_TemplateParseErrorSurfaces(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
 	// Unbalanced "{{" — Go template parser rejects this at parse time.
-	state.Recipe.Spec.Artifacts.Set("broken.yaml", `apiVersion: v1
+	state.Recipe.Spec.Artifacts.Set("broken.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ .context.instance_id
-`)
+`})
 
 	_, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err == nil {
@@ -512,15 +513,15 @@ func TestEvaluateArtifacts_RejectsMalformedMetadataLabels(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 
-	state.Recipe.Spec.Artifacts = types.OrderedMap[string]{}
-	state.Recipe.Spec.Artifacts.Set("bad-labels.yaml", `apiVersion: v1
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set("bad-labels.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: bad
   labels:
     - foo
     - bar
-`)
+`})
 
 	_, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubEngine{}, nodeCtx)
 	if err == nil {
@@ -556,7 +557,8 @@ data:
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	state.Recipe.Spec.ArtifactsFrom = []string{p}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
 	if err != nil {
@@ -599,7 +601,8 @@ data:
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	state.Recipe.Spec.ArtifactsFrom = []string{p}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
 
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
 	if err != nil {
@@ -645,7 +648,8 @@ metadata:
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	state.Recipe.Spec.ArtifactsFrom = []string{p}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -699,7 +703,8 @@ func TestEvaluateArtifacts_HelmChartCollisionAtPhaseB5(t *testing.T) {
 	if err := os.WriteFile(p, []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: clash\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	state.Recipe.Spec.ArtifactsFrom = []string{p}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
 
 	out, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
 	if err != nil {

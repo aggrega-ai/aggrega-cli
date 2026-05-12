@@ -35,24 +35,23 @@ type RecipeMetadata struct {
 //     ValuesMapping field carries one of three modes per its own type
 //     documentation (inline Go template, file $import:, or library $import:).
 //
-//   - Synthesized mode: Workload (inline template) or WorkloadFrom (template file).
-//     The compiler templates a Workload YAML body and hands the parsed Workload to
-//     the provider's WorkloadSynthesizer for translation into provider-native
-//     manifests.
+//   - Synthesized mode: Workload (a WorkloadTemplate discriminator: inline Go
+//     template OR file $import:). The compiler templates a Workload YAML body
+//     and hands the parsed Workload to the provider's WorkloadSynthesizer for
+//     translation into provider-native manifests.
 //
-//   - Artifacts mode: Artifacts (inline filename -> template map) and/or ArtifactsFrom
-//     (list of template files). Each template is evaluated and emitted as a file
-//     in the boundary's output directory.
+//   - Artifacts mode: Artifacts (OrderedMap[ArtifactEntry] keyed by output
+//     filename). Each entry's value carries one of two modes (inline Go template
+//     OR file $import:). The pre-migration ArtifactsFrom []string list-form
+//     retires; basename-derived entry names replace it.
 type RecipeSpec struct {
-	Provider      string             `json:"provider" yaml:"provider"`
-	Implements    string             `json:"implements" yaml:"implements"`
-	Source        any                `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
-	Locals        OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
-	Provides      OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	ValuesMapping ValuesMapping      `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
-	Workload      string             `json:"workload,omitempty" yaml:"workload,omitempty"`
-	WorkloadFrom  string             `json:"workloadFrom,omitempty" yaml:"workloadFrom,omitempty"`
-	Artifacts     OrderedMap[string] `json:"artifacts,omitempty,omitzero" yaml:"artifacts,omitempty"`
-	ArtifactsFrom []string           `json:"artifactsFrom,omitempty" yaml:"artifactsFrom,omitempty"`
-	Pipeline      []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
+	Provider      string                    `json:"provider" yaml:"provider"`
+	Implements    string                    `json:"implements" yaml:"implements"`
+	Source        any                       `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
+	Locals        OrderedMap[string]        `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
+	Provides      OrderedMap[string]        `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	ValuesMapping ValuesMapping             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
+	Workload      WorkloadTemplate          `json:"workload,omitempty" yaml:"workload,omitempty"`
+	Artifacts     OrderedMap[ArtifactEntry] `json:"artifacts,omitempty,omitzero" yaml:"artifacts,omitempty"`
+	Pipeline      []PipelineStep            `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
 }

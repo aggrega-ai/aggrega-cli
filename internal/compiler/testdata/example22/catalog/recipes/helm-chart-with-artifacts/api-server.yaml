@@ -7,8 +7,9 @@ spec:
   provider: helm-chart
   implements: core/server/api-server
   source: ./charts/api-server
-  artifactsFrom:
-    - ./extras/api-server-policy.yaml
+  artifacts:
+    api-server-policy.yaml:
+      $import: ./extras/api-server-policy.yaml
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "{{ .values.port }}"

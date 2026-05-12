@@ -5,8 +5,6 @@ package validator
 
 import (
 	"fmt"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
@@ -43,13 +41,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeRule2(r, sourcePath); err != nil {
 		return err
 	}
-	if err := validateRecipeRule3(r, sourcePath); err != nil {
-		return err
-	}
 	if err := validateRecipeRule5(r, sourcePath); err != nil {
-		return err
-	}
-	if err := validateRecipeRule6(r, sourcePath); err != nil {
 		return err
 	}
 	if err := validateRecipeHelmChartProvider(r, sourcePath); err != nil {
@@ -59,24 +51,35 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 }
 
 // validateRecipeHelmChartProvider enforces the helm-chart-specific load-time
-// constraint: inline artifacts: is forbidden. Helm-chart emits an umbrella
-// chart structure rather than flat manifests; artifacts must be physical
-// files that the engine can inject into the chart's templates/ directory
-// before Helm rendering, so inline artifact maps have no place in this
-// authoring path. The fix the message recommends is to declare the same
-// content under artifactsFrom:.
+// constraint: inline-mode artifact entries are forbidden. Helm-chart emits
+// an umbrella chart structure rather than flat manifests; artifact bodies
+// must be physical files that the engine can inject into the chart's
+// templates/ directory before Helm rendering, so inline (mode 1) entries
+// have no place in this authoring path. Import-mode entries (mode 2,
+// {$import: <local-path>}) are accepted. The fix the message recommends
+// is to migrate the inline content to a file and reference it via
+// {$import:}.
 func validateRecipeHelmChartProvider(r *types.Recipe, sourcePath string) error {
 	if r.Spec.Provider != "helm-chart" || r.Spec.Artifacts.Len() == 0 {
 		return nil
 	}
-	keys := r.Spec.Artifacts.Keys()
+	var inlineKeys []string
+	for _, name := range r.Spec.Artifacts.Keys() {
+		entry, _ := r.Spec.Artifacts.Get(name)
+		if entry.Inline != "" {
+			inlineKeys = append(inlineKeys, name)
+		}
+	}
+	if len(inlineKeys) == 0 {
+		return nil
+	}
 	return &RecipeValidationError{
 		Path:        sourcePath,
 		Name:        r.Metadata.Name,
 		Version:     r.Metadata.Version,
 		Rule:        "helm-chart-inline-artifacts",
-		Description: "provider helm-chart does not support inline artifacts:",
-		Detail:      fmt.Sprintf("inline artifacts: %s; declare artifactsFrom: instead so the files can be injected into the chart's templates/ directory", strings.Join(keys, ", ")),
+		Description: "provider helm-chart does not support inline artifact entries",
+		Detail:      fmt.Sprintf("inline artifacts: %s; migrate the content to a file and reference it via {$import: <path>} so the file can be injected into the chart's templates/ directory", strings.Join(inlineKeys, ", ")),
 		Err:         ErrRecipeHelmChartInlineArtifacts,
 	}
 }
@@ -90,17 +93,11 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 	if !sourceIsEmpty(r.Spec.Source) {
 		declared = append(declared, "source")
 	}
-	if r.Spec.Workload != "" {
+	if !r.Spec.Workload.IsEmpty() {
 		declared = append(declared, "workload")
-	}
-	if r.Spec.WorkloadFrom != "" {
-		declared = append(declared, "workloadFrom")
 	}
 	if r.Spec.Artifacts.Len() > 0 {
 		declared = append(declared, "artifacts")
-	}
-	if len(r.Spec.ArtifactsFrom) > 0 {
-		declared = append(declared, "artifactsFrom")
 	}
 	if !r.Spec.ValuesMapping.IsEmpty() {
 		declared = append(declared, "valuesMapping")
@@ -161,24 +158,8 @@ func validateRecipeRule2(r *types.Recipe, sourcePath string) error {
 		Version:     r.Metadata.Version,
 		Rule:        "2",
 		Description: "source requires valuesMapping",
-		Detail:      "declare a valuesMapping alongside source, or use a different input kind (workload, workloadFrom, artifacts, artifactsFrom)",
+		Detail:      "declare a valuesMapping alongside source, or use a different input kind (workload, artifacts)",
 		Err:         ErrRecipeRule2,
-	}
-}
-
-// validateRecipeRule3: workload and workloadFrom are mutually exclusive.
-func validateRecipeRule3(r *types.Recipe, sourcePath string) error {
-	if r.Spec.Workload == "" || r.Spec.WorkloadFrom == "" {
-		return nil
-	}
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "3",
-		Description: "workload and workloadFrom are mutually exclusive",
-		Detail:      "declare workload (inline template) or workloadFrom (file reference), not both",
-		Err:         ErrRecipeRule3,
 	}
 }
 
@@ -187,18 +168,18 @@ func validateRecipeRule3(r *types.Recipe, sourcePath string) error {
 // The three input kinds (any one suffices):
 //
 //  1. Sourced — source + valuesMapping (and ValuesMapping has its own paired rules above).
-//  2. Synthesized — workload OR workloadFrom.
-//  3. Artifacts — artifacts OR artifactsFrom.
+//  2. Synthesized — workload (inline OR $import: file).
+//  3. Artifacts — at least one entry under artifacts.
 //
 // A Recipe with none of these declared has no rendering surface.
 func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 	if !sourceIsEmpty(r.Spec.Source) {
 		return nil
 	}
-	if r.Spec.Workload != "" || r.Spec.WorkloadFrom != "" {
+	if !r.Spec.Workload.IsEmpty() {
 		return nil
 	}
-	if r.Spec.Artifacts.Len() > 0 || len(r.Spec.ArtifactsFrom) > 0 {
+	if r.Spec.Artifacts.Len() > 0 {
 		return nil
 	}
 	return &RecipeValidationError{
@@ -209,71 +190,6 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		Description: "at least one input kind must be present",
 		Detail:      "declare one of: source (with valuesMapping), workload, workloadFrom, artifacts, artifactsFrom",
 		Err:         ErrRecipeRule5,
-	}
-}
-
-// validateRecipeRule6: artifacts output filenames must not collide. Two
-// sub-classes are caught at load time:
-//
-//  1. Inline `artifacts:` keys clashing with `artifactsFrom:` basenames.
-//  2. Two or more `artifactsFrom:` entries whose basenames collide
-//     (e.g., `./a/foo.yaml` and `./b/foo.yaml`).
-//
-// Both classes produce the same sentinel (ErrRecipeRule6); the Detail line
-// names every colliding output filename.
-func validateRecipeRule6(r *types.Recipe, sourcePath string) error {
-	hasInline := r.Spec.Artifacts.Len() > 0
-	hasFromFile := len(r.Spec.ArtifactsFrom) > 0
-	if !hasInline && !hasFromFile {
-		return nil
-	}
-
-	collisionSet := map[string]struct{}{}
-
-	if hasInline && hasFromFile {
-		inlineKeys := r.Spec.Artifacts.Keys()
-		inlineSet := make(map[string]struct{}, len(inlineKeys))
-		for _, k := range inlineKeys {
-			inlineSet[k] = struct{}{}
-		}
-		for _, p := range r.Spec.ArtifactsFrom {
-			base := filepath.Base(p)
-			if _, hit := inlineSet[base]; hit {
-				collisionSet[base] = struct{}{}
-			}
-		}
-	}
-
-	if hasFromFile {
-		baseCounts := map[string]int{}
-		for _, p := range r.Spec.ArtifactsFrom {
-			baseCounts[filepath.Base(p)]++
-		}
-		for base, n := range baseCounts {
-			if n > 1 {
-				collisionSet[base] = struct{}{}
-			}
-		}
-	}
-
-	if len(collisionSet) == 0 {
-		return nil
-	}
-
-	collisions := make([]string, 0, len(collisionSet))
-	for c := range collisionSet {
-		collisions = append(collisions, c)
-	}
-	sort.Strings(collisions)
-
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "6",
-		Description: "artifact-emitted output filename collision: inline artifacts: keys vs artifactsFrom: basenames, or within artifactsFrom:",
-		Detail:      fmt.Sprintf("colliding output filenames: %s", strings.Join(collisions, ", ")),
-		Err:         ErrRecipeRule6,
 	}
 }
 

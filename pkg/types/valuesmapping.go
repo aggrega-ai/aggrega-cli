@@ -5,7 +5,6 @@ package types
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -65,55 +64,23 @@ func (v ValuesMapping) IsEmpty() bool {
 	return v.Inline == "" && v.Import == ""
 }
 
-// UnmarshalYAML dispatches by content shape per the schema-language
-// migration's mapping authoring surface. A nil node is a no-op so
-// callers using *ValuesMapping with omitempty don't trip the sentinel.
+// UnmarshalYAML dispatches by content shape via the shared
+// unmarshalImportable helper. A nil node is a no-op so callers using
+// *ValuesMapping with omitempty don't trip the sentinel.
 func (v *ValuesMapping) UnmarshalYAML(node *yaml.Node) error {
-	if node == nil {
-		return nil
+	inline, importTarget, err := unmarshalImportable(node, ErrValuesMappingShape)
+	if err != nil {
+		return err
 	}
-	switch node.Kind {
-	case yaml.ScalarNode:
-		v.Inline = node.Value
-		return nil
-	case yaml.MappingNode:
-		// Exactly one key, "$import", with a string-scalar value.
-		if len(node.Content) != 2 {
-			return fmt.Errorf("%w: got %d keys at line %d", ErrValuesMappingShape, len(node.Content)/2, node.Line)
-		}
-		keyNode := node.Content[0]
-		valNode := node.Content[1]
-		if keyNode.Kind != yaml.ScalarNode || keyNode.Value != "$import" {
-			return fmt.Errorf("%w: got key %q at line %d", ErrValuesMappingShape, keyNode.Value, keyNode.Line)
-		}
-		if valNode.Kind != yaml.ScalarNode {
-			return fmt.Errorf("%w: $import value must be a string scalar at line %d", ErrValuesMappingShape, valNode.Line)
-		}
-		v.Import = valNode.Value
-		return nil
-	default:
-		return fmt.Errorf("%w: got kind %d at line %d", ErrValuesMappingShape, node.Kind, node.Line)
-	}
+	v.Inline = inline
+	v.Import = importTarget
+	return nil
 }
 
-// MarshalYAML emits the populated mode. Inline → string scalar (literal
-// style when the content carries newlines, plain otherwise). Import →
-// {$import: <value>} mapping. Empty struct → nil (omitempty on the
-// owning field elides the key entirely).
+// MarshalYAML emits the populated mode via the shared marshalImportable
+// helper. Inline → string scalar (literal style for multi-line). Import
+// → {$import: <value>}. Empty struct → nil (omitempty on the owning
+// field elides the key entirely).
 func (v ValuesMapping) MarshalYAML() (any, error) {
-	switch {
-	case v.Inline != "":
-		node := &yaml.Node{
-			Kind:  yaml.ScalarNode,
-			Value: v.Inline,
-		}
-		if strings.ContainsRune(v.Inline, '\n') {
-			node.Style = yaml.LiteralStyle
-		}
-		return node, nil
-	case v.Import != "":
-		return map[string]string{"$import": v.Import}, nil
-	default:
-		return nil, nil
-	}
+	return marshalImportable(v.Inline, v.Import)
 }
