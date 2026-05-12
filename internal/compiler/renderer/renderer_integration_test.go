@@ -42,7 +42,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 				Metadata: types.RecipeMetadata{Name: "bad-recipe"},
 				Spec: types.RecipeSpec{
 					Provides:      provides,
-					ValuesMapping: `{"image": "app:latest"}`,
+					ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`},
 				},
 			}, true
 		},
@@ -104,7 +104,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						ValuesMapping: `{"image": "api:latest", "environment": {"DB_URL": "{{ .context.inject.env.DB_URL }}"}}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "api:latest", "environment": {"DB_URL": "{{ .context.inject.env.DB_URL }}"}}`},
 					},
 				}, true
 			case "core/database/postgres":
@@ -114,7 +114,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
 						Provides:      provides,
-						ValuesMapping: `{"image": "pg:15"}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "pg:15"}`},
 					},
 				}, true
 			default:
@@ -180,7 +180,7 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 		Recipe: func(string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "r"},
-				Spec:     types.RecipeSpec{ValuesMapping: `{"image": "app:latest"}`},
+				Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
 			}, true
 		},
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
@@ -252,7 +252,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
 				Spec: types.RecipeSpec{
 					// Template reads .values.port and .infra.replicas — the critical flow
-					ValuesMapping: `{"image": "api:latest", "ports": ["{{ .values.port }}:{{ .values.port }}"], "replicas": {{ .infra.replicas }}}`,
+					ValuesMapping: types.ValuesMapping{Inline: `{"image": "api:latest", "ports": ["{{ .values.port }}:{{ .values.port }}"], "replicas": {{ .infra.replicas }}}`},
 				},
 			}, true
 		},

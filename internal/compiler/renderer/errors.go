@@ -8,10 +8,18 @@ import "errors"
 var (
 	ErrProvidesSelfContainment      = errors.New("provides block references cross-node data")
 	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
-	ErrJsonnetNotSupported          = errors.New("valuesMappingJsonnet is not supported; use valuesMapping or valuesMappingFile")
 	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
 	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output")
+
+	// ErrLibraryImportNotYetSupported fires when a Recipe / FeatureRecipe
+	// valuesMapping carries a mapping-library import (mode 3) — an
+	// $import: targeting an oci:// URL into a MappingLibrary entry. The
+	// resolution pipeline lands when the lockfile + OCI pull
+	// infrastructure ships; until then, authors use a local file path
+	// import (mode 2) as the workaround. The error message names the
+	// workaround inline so authors aren't blocked.
+	ErrLibraryImportNotYetSupported = errors.New("library import via oci:// URL is not yet supported in this milestone. Use a local file path import as a workaround (valuesMapping: { $import: ./relative/path.tmpl }) until the OCI publishing pipeline lands.")
 
 	// ErrUnknownProvider is the compiler-level fatal halt produced by the
 	// build-time engineFactory when a Recipe declares a provider name that

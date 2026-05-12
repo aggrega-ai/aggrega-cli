@@ -32,7 +32,7 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "api-recipe"},
 		Spec: types.RecipeSpec{
-			ValuesMapping: `{"image": "myapp:latest", "port": {{ .values.port }}, "replicas": {{ .infra.replicas }}}`,
+			ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "port": {{ .values.port }}, "replicas": {{ .infra.replicas }}}`},
 		},
 	}
 
@@ -77,23 +77,23 @@ func TestExecutePhaseB_NoValuesMapping(t *testing.T) {
 	}
 }
 
-func TestExecutePhaseB_JsonnetRejected(t *testing.T) {
+func TestExecutePhaseB_LibraryImportNotYetSupported(t *testing.T) {
 	t.Parallel()
 
 	ctx := &types.TemplateContext{}
 	recipe := &types.Recipe{
-		Metadata: types.RecipeMetadata{Name: "jsonnet-recipe"},
+		Metadata: types.RecipeMetadata{Name: "library-import-recipe"},
 		Spec: types.RecipeSpec{
-			ValuesMappingJsonnet: "some.jsonnet",
+			ValuesMapping: types.ValuesMapping{Import: "oci://hub.aggrega.ai/aggrega/helpers@1.0.0#/mappings/Core"},
 		},
 	}
 
 	_, err := ExecutePhaseB(ctx, recipe)
 	if err == nil {
-		t.Fatal("expected error for valuesMappingJsonnet")
+		t.Fatal("expected error for library-import valuesMapping")
 	}
-	if !errors.Is(err, ErrJsonnetNotSupported) {
-		t.Errorf("expected ErrJsonnetNotSupported, got: %v", err)
+	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
+		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestExecutePhaseB_InvalidYAML(t *testing.T) {
 		Spec: types.RecipeSpec{
 			// A bare scalar is parseable YAML but cannot decode into a
 			// map[string]any; the parse-into-map step fails.
-			ValuesMapping: `not a mapping at all`,
+			ValuesMapping: types.ValuesMapping{Inline: `not a mapping at all`},
 		},
 	}
 
@@ -145,7 +145,7 @@ func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "inject-consumer"},
 		Spec: types.RecipeSpec{
-			ValuesMapping: `{"env": [{"name": "DATABASE_URL", "value": "{{ .context.inject.env.DB_URL }}"}]}`,
+			ValuesMapping: types.ValuesMapping{Inline: `{"env": [{"name": "DATABASE_URL", "value": "{{ .context.inject.env.DB_URL }}"}]}`},
 		},
 	}
 

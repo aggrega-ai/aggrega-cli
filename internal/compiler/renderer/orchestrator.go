@@ -234,9 +234,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Ghost Infrastructure: compare valuesMapping template references against
 		// the keys actually in .values / .infra — unused keys emit a warning so
 		// catalog authors notice when a Release infra knob is never consumed.
-		// Skip file-based templates (too large; defer) and nil recipes.
-		if recipe != nil && recipe.Spec.ValuesMapping != "" {
-			if refs, parseErr := CollectTemplateFieldAccesses(recipe.Spec.ValuesMapping); parseErr == nil {
+		// Inline-mode templates only; file / library imports defer (the
+		// template text is disk-resident or OCI-resolved at render time).
+		if recipe != nil && recipe.Spec.ValuesMapping.Inline != "" {
+			if refs, parseErr := CollectTemplateFieldAccesses(recipe.Spec.ValuesMapping.Inline); parseErr == nil {
 				for _, k := range UnreadKeys(refs, ".values", tmplCtx.Values) {
 					result.Warnings = append(result.Warnings,
 						fmt.Sprintf("node %q: unused .values key %q (not referenced by valuesMapping of recipe %q)",

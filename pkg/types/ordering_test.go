@@ -250,9 +250,9 @@ spec:
 	}
 
 	want := []string{"zulu-provider", "alpha-provider", "mike-provider"}
-	got := m.Spec.Mappings.Keys()
+	got := m.Spec.Mappings.Legacy.Keys()
 	if !slices.Equal(got, want) {
-		t.Errorf("Mappings keys = %v, want %v", got, want)
+		t.Errorf("Mappings legacy keys = %v, want %v", got, want)
 	}
 }
 

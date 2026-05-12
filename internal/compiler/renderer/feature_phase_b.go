@@ -13,6 +13,33 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+// resolveValuesMappingText resolves a ValuesMapping struct to a Go template
+// source string. Mode 1 (inline) returns the authored content directly;
+// mode 2 (file $import:) reads the file from disk; mode 3 (library
+// $import: with oci:// prefix) returns ErrLibraryImportNotYetSupported
+// until the lockfile + OCI pull pipeline lands. The empty struct returns
+// "" + nil (callers treat as "no valuesMapping").
+//
+// entityKind is one of "Recipe" / "FeatureRecipe" / "Provider"; used in
+// error wrapping for diagnostic clarity. entityName is the metadata.name
+// of the loaded entity.
+func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind string) (string, error) {
+	if vm.IsEmpty() {
+		return "", nil
+	}
+	if vm.Inline != "" {
+		return vm.Inline, nil
+	}
+	if vm.HasOCIPrefix() {
+		return "", cerrors.Wrap(ErrLibraryImportNotYetSupported, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping library import %q", entityKind, entityName, vm.Import))
+	}
+	data, err := os.ReadFile(vm.Import)
+	if err != nil {
+		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: vm.Import}, fmt.Sprintf("%s %q valuesMapping file import", entityKind, entityName))
+	}
+	return string(data), nil
+}
+
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the
 // feature-scoped context and returns the resolved map. Same self-containment
 // rules as Recipe locals: no .context.inject / .context.uses references.
@@ -49,25 +76,20 @@ func EvaluateFeatureRecipeLocals(
 	return resolved, nil
 }
 
-// ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping (or
-// valuesMappingFile) and returns the values dictionary for the provider engine.
-// Mirrors ExecutePhaseB for base Recipes but takes a *types.FeatureRecipe.
+// ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and
+// returns the values dictionary for the provider engine. Mirrors
+// ExecutePhaseB for base Recipes but takes a *types.FeatureRecipe. The
+// valuesMapping field carries one of three content-shape-dispatched
+// modes (inline / file $import: / library $import:); this function
+// resolves the mode and returns the templated values output.
 func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe) (map[string]any, error) {
 	if fr == nil {
 		return map[string]any{}, nil
 	}
 
-	if fr.Spec.ValuesMappingJsonnet != "" {
-		return nil, cerrors.Wrap(ErrJsonnetNotSupported, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q uses valuesMappingJsonnet", fr.Metadata.Name))
-	}
-
-	tmplText := fr.Spec.ValuesMapping
-	if tmplText == "" && fr.Spec.ValuesMappingFile != "" {
-		data, err := os.ReadFile(fr.Spec.ValuesMappingFile)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Spec.ValuesMappingFile}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMappingFile", fr.Metadata.Name))
-		}
-		tmplText = string(data)
+	tmplText, err := resolveValuesMappingText(fr.Spec.ValuesMapping, fr.Metadata.Name, "FeatureRecipe")
+	if err != nil {
+		return nil, err
 	}
 
 	if tmplText == "" {
@@ -112,10 +134,7 @@ func isResourceGeneratingFR(fr *types.FeatureRecipe) bool {
 			return true
 		}
 	}
-	if fr.Spec.ValuesMapping != "" {
-		return true
-	}
-	if fr.Spec.ValuesMappingFile != "" {
+	if !fr.Spec.ValuesMapping.IsEmpty() {
 		return true
 	}
 	return false

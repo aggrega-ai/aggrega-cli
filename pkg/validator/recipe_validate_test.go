@@ -33,7 +33,7 @@ func TestValidateRecipe_Rule1_ValuesMappingWithSource_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"image": "demo:1.0"}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1.0"}`}
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
@@ -42,17 +42,17 @@ func TestValidateRecipe_Rule1_ValuesMappingWithSource_Passes(t *testing.T) {
 func TestValidateRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
-	r.Spec.ValuesMapping = `{"image": "demo:1.0"}` // no source
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1.0"}`} // no source
 	err := validator.ValidateRecipe(r, tFile)
 	if !errors.Is(err, validator.ErrRecipeRule1) {
 		t.Fatalf("expected ErrRecipeRule1, got %v", err)
 	}
 }
 
-func TestValidateRecipe_Rule1_ValuesMappingFileWithoutSource_Fails(t *testing.T) {
+func TestValidateRecipe_Rule1_ValuesMappingFileImportWithoutSource_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
-	r.Spec.ValuesMappingFile = "./values.tmpl" // no source
+	r.Spec.ValuesMapping = types.ValuesMapping{Import: "./values.tmpl"} // no source
 	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeRule1) {
 		t.Fatalf("expected ErrRecipeRule1, got %v", err)
 	}
@@ -64,7 +64,7 @@ func TestValidateRecipe_Rule2_SourceWithValuesMapping_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"image": "demo:1.0"}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1.0"}`}
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
@@ -119,7 +119,7 @@ func TestValidateRecipe_Rule5_HasSourceAndValuesMapping_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"a": 1}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"a": 1}`}
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
@@ -213,7 +213,7 @@ func TestValidateRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm-chart")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"image": "app:1"}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "app:1"}`}
 	r.Spec.Artifacts = types.OrderedMap[string]{}
 	r.Spec.Artifacts.Set("inline-cm.yaml", `kind: ConfigMap`)
 
@@ -233,7 +233,7 @@ func TestValidateRecipe_HelmChartArtifactsFromOnly_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm-chart")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"image": "app:1"}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "app:1"}`}
 	r.Spec.ArtifactsFrom = []string{"./manifests/crd.yaml"}
 
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
@@ -256,7 +256,7 @@ func TestValidateRecipe_Eval_BareProvides_Passes(t *testing.T) {
 func TestValidateRecipe_Eval_RejectsValuesMapping(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("eval")
-	r.Spec.ValuesMapping = `{"x": 1}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"x": 1}`}
 	err := validator.ValidateRecipe(r, tFile)
 	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint) {
 		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)

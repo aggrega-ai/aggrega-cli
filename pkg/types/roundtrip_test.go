@@ -227,7 +227,7 @@ spec:
 `)
 	assertEntityRoundTrip[Manifest](
 		t, src,
-		func(m *Manifest) []string { return m.Spec.Mappings.Keys() },
+		func(m *Manifest) []string { return m.Spec.Mappings.Legacy.Keys() },
 		[]string{"zulu-provider", "alpha-provider", "mike-provider"},
 	)
 }
@@ -307,14 +307,14 @@ spec:
 		t.Fatalf("first Unmarshal: %v", err)
 	}
 
-	// Outer level — provider order in spec.mappings.
+	// Outer level — provider order in spec.mappings.Legacy.
 	wantOuter := []string{"helm", "compose"}
-	if got := first.Spec.Mappings.Keys(); !slices.Equal(got, wantOuter) {
-		t.Errorf("outer Mappings keys = %v, want %v", got, wantOuter)
+	if got := first.Spec.Mappings.Legacy.Keys(); !slices.Equal(got, wantOuter) {
+		t.Errorf("outer Mappings legacy keys = %v, want %v", got, wantOuter)
 	}
 
 	// Inner level — component-type order under helm.
-	helmMappings, ok := first.Spec.Mappings.Get("helm")
+	helmMappings, ok := first.Spec.Mappings.Legacy.Get("helm")
 	if !ok {
 		t.Fatal("helm mappings missing")
 	}
@@ -344,7 +344,7 @@ spec:
 	}
 
 	// Inner author order survives.
-	helmMappings2, _ := second.Spec.Mappings.Get("helm")
+	helmMappings2, _ := second.Spec.Mappings.Legacy.Get("helm")
 	if got := helmMappings2.Components.Type.Keys(); !slices.Equal(got, wantInner) {
 		t.Errorf("after round-trip, inner helm components.type keys = %v, want %v", got, wantInner)
 	}

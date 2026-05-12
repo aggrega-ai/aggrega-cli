@@ -97,17 +97,9 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		state.PhaseReached = 1
 		return nil
 	}
-	if state.Recipe.Spec.ValuesMappingJsonnet != "" {
-		return cerrors.Wrap(ErrJsonnetNotSupported, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q uses valuesMappingJsonnet", state.Recipe.Metadata.Name))
-	}
-
-	tmplText := state.Recipe.Spec.ValuesMapping
-	if tmplText == "" && state.Recipe.Spec.ValuesMappingFile != "" {
-		data, err := os.ReadFile(state.Recipe.Spec.ValuesMappingFile)
-		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.Recipe.Spec.ValuesMappingFile}, fmt.Sprintf("Phase B.1: recipe %q valuesMappingFile", state.Recipe.Metadata.Name))
-		}
-		tmplText = string(data)
+	tmplText, vmErr := resolveValuesMappingText(state.Recipe.Spec.ValuesMapping, state.Recipe.Metadata.Name, "Recipe")
+	if vmErr != nil {
+		return vmErr
 	}
 
 	if tmplText == "" {

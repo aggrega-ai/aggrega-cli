@@ -43,7 +43,7 @@ func TestValidateRecipeProviderBinding_NoWorkload_Passes(t *testing.T) {
 	// regardless of provider's workloadSchema state.
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"x": 1}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"x": 1}`}
 	p := providerWithoutSchema("helm")
 	if err := validator.ValidateRecipeProviderBinding(r, p, tFile); err != nil {
 		t.Fatalf("expected pass for sourced-mode Recipe, got %v", err)

@@ -19,7 +19,7 @@ func TestExecutePhaseB_NumberShape_IntLiteralIsInt(t *testing.T) {
 	ctx := &types.TemplateContext{}
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "int-recipe"},
-		Spec:     types.RecipeSpec{ValuesMapping: `{"ports": 8080}`},
+		Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"ports": 8080}`}},
 	}
 	values, err := ExecutePhaseB(ctx, recipe)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestExecutePhaseB_NumberShape_FloatLiteralIsFloat(t *testing.T) {
 	ctx := &types.TemplateContext{}
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "float-recipe"},
-		Spec:     types.RecipeSpec{ValuesMapping: `{"replicas": 3.0}`},
+		Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"replicas": 3.0}`}},
 	}
 	values, err := ExecutePhaseB(ctx, recipe)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestExecutePhaseB_NumberShape_StringNumericIsRejectedByAsNumber(t *testing.
 		// Author wrote a string where a number was expected. yaml decodes "8080"
 		// as a quoted scalar (string). Downstream coercion via asNumber returns
 		// ok=false, allowing the consumer to emit a clear "expected number" error.
-		Spec: types.RecipeSpec{ValuesMapping: `{"ports": "8080"}`},
+		Spec: types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"ports": "8080"}`}},
 	}
 	values, err := ExecutePhaseB(ctx, recipe)
 	if err != nil {
@@ -84,11 +84,11 @@ func TestExecutePhaseB_YAMLBlockScalar(t *testing.T) {
 	ctx := &types.TemplateContext{}
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "block-scalar-recipe"},
-		Spec: types.RecipeSpec{ValuesMapping: `motd: |
+		Spec: types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `motd: |
   line1
   line2
   line3
-`},
+`}},
 	}
 	values, err := ExecutePhaseB(ctx, recipe)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestExecutePhaseB_JSONShapedParity(t *testing.T) {
 	ctx := &types.TemplateContext{Values: v}
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "json-shaped"},
-		Spec:     types.RecipeSpec{ValuesMapping: `{"image": "demo:1.0", "name": "{{ .values.name }}", "port": {{ .values.port }}, "enabled": true, "tags": ["a", "b"]}`},
+		Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "demo:1.0", "name": "{{ .values.name }}", "port": {{ .values.port }}, "enabled": true, "tags": ["a", "b"]}`}},
 	}
 	values, err := ExecutePhaseB(ctx, recipe)
 	if err != nil {

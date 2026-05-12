@@ -120,7 +120,7 @@ spec:
 				Spec: types.RecipeSpec{
 					Provider:      "helm-chart",
 					Source:        chartDir,
-					ValuesMapping: `{}`,
+					ValuesMapping: types.ValuesMapping{Inline: `{}`},
 					ArtifactsFrom: []string{crdPath},
 				},
 			}, true

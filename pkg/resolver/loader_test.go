@@ -126,7 +126,7 @@ spec:
 	if man.Metadata.Name != "test-manifest" {
 		t.Errorf("expected name test-manifest, got %s", man.Metadata.Name)
 	}
-	if _, ok := man.Spec.Mappings.Get("helm"); !ok {
-		t.Error("expected mappings for 'helm' provider")
+	if _, ok := man.Spec.Mappings.Legacy.Get("helm"); !ok {
+		t.Error("expected legacy mappings for 'helm' provider")
 	}
 }

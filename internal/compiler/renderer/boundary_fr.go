@@ -147,8 +147,11 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 		text  string
 	}
 	var tmpls []tmplField
-	if fr.Spec.ValuesMapping != "" {
-		tmpls = append(tmpls, tmplField{label: "valuesMapping", text: fr.Spec.ValuesMapping})
+	// Inline-mode valuesMapping text is available here; file / library
+	// imports defer to render-time validation (the template text is
+	// disk-resident or OCI-resolved at that point).
+	if fr.Spec.ValuesMapping.Inline != "" {
+		tmpls = append(tmpls, tmplField{label: "valuesMapping", text: fr.Spec.ValuesMapping.Inline})
 	}
 	if fr.Spec.InjectMapping != "" {
 		tmpls = append(tmpls, tmplField{label: "injectMapping", text: fr.Spec.InjectMapping})

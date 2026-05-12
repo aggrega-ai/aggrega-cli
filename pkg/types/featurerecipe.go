@@ -27,9 +27,11 @@ type FeatureRecipeMetadata struct {
 
 // FeatureRecipeSpec defines the provider binding, mapping, and pipeline
 // for a FeatureRecipe. Compared to [RecipeSpec], FeatureRecipes support
-// only the sourced input kind (Source + ValuesMapping*); the synthesized
+// only the sourced input kind (Source + ValuesMapping); the synthesized
 // (Workload / WorkloadFrom) and artifacts (Artifacts / ArtifactsFrom)
-// modes are Recipe-only.
+// modes are Recipe-only. ValuesMapping carries one of three modes per
+// its own type documentation (inline Go template, file $import:, or
+// library $import:).
 //
 // InjectMapping is unique to FeatureRecipes and carries the templated
 // string that maps Aggrega's typed inject block to the provider's
@@ -37,15 +39,13 @@ type FeatureRecipeMetadata struct {
 // names). Where ValuesMapping transforms values data, InjectMapping
 // transforms inject delivery.
 type FeatureRecipeSpec struct {
-	Provider             string             `json:"provider" yaml:"provider"`
-	Implements           string             `json:"implements" yaml:"implements"`
-	Locals               OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
-	Provides             OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	Source               any                `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
-	ValuesMapping        string             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
-	ValuesMappingFile    string             `json:"valuesMappingFile,omitempty" yaml:"valuesMappingFile,omitempty"`
-	ValuesMappingJsonnet string             `json:"valuesMappingJsonnet,omitempty" yaml:"valuesMappingJsonnet,omitempty"`
-	InjectMapping        string             `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
-	Pipeline             []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
-	ExecutionScope       string             `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
+	Provider       string             `json:"provider" yaml:"provider"`
+	Implements     string             `json:"implements" yaml:"implements"`
+	Locals         OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
+	Provides       OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	Source         any                `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
+	ValuesMapping  ValuesMapping      `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
+	InjectMapping  string             `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
+	Pipeline       []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
+	ExecutionScope string             `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
 }

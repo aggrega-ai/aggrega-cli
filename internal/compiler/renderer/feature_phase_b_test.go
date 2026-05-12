@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -79,7 +80,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec: types.FeatureRecipeSpec{
-			ValuesMapping: `{"image": "prom/mon:{{ .values.tag }}", "port": {{ .values.port }}}`,
+			ValuesMapping: types.ValuesMapping{Inline: `{"image": "prom/mon:{{ .values.tag }}", "port": {{ .values.port }}}`},
 		},
 	}
 	values2 := types.OrderedMap[any]{}
@@ -128,15 +129,18 @@ func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) 
 	}
 }
 
-func TestExecutePhaseBForFeature_RejectsJsonnet(t *testing.T) {
+func TestExecutePhaseBForFeature_RejectsLibraryImport(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
-		Metadata: types.FeatureRecipeMetadata{Name: "js"},
-		Spec:     types.FeatureRecipeSpec{ValuesMappingJsonnet: "// jsonnet code"},
+		Metadata: types.FeatureRecipeMetadata{Name: "lib"},
+		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "oci://hub.aggrega.ai/aggrega/helpers@1.0.0#/mappings/Core"}},
 	}
 	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
 	if err == nil {
-		t.Fatal("expected jsonnet rejection")
+		t.Fatal("expected library-import rejection")
+	}
+	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
+		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
 	}
 }
 
@@ -144,7 +148,7 @@ func TestExecutePhaseBForFeature_InvalidYAML(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "bad"},
-		Spec:     types.FeatureRecipeSpec{ValuesMapping: `not a mapping`},
+		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `not a mapping`}},
 	}
 	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
 	if err == nil {
@@ -169,10 +173,10 @@ func TestIsResourceGeneratingFR(t *testing.T) {
 			Spec: types.FeatureRecipeSpec{InjectMapping: `{"env":{"X":"1"}}`},
 		}, false},
 		{"has valuesMapping", &types.FeatureRecipe{
-			Spec: types.FeatureRecipeSpec{ValuesMapping: `{"image":"x"}`},
+			Spec: types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image":"x"}`}},
 		}, true},
 		{"has valuesMappingFile", &types.FeatureRecipe{
-			Spec: types.FeatureRecipeSpec{ValuesMappingFile: "/tmp/v.yaml"},
+			Spec: types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "/tmp/v.yaml"}},
 		}, true},
 		{"has source string", &types.FeatureRecipe{
 			Spec: types.FeatureRecipeSpec{Source: "./charts/x"},

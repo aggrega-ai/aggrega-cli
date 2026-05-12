@@ -98,7 +98,7 @@ func boundaryScopeBridgeFR(t *testing.T) *types.FeatureRecipe {
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         fragPath,
-			ValuesMapping:  `{}`,
+			ValuesMapping: types.ValuesMapping{Inline: `{}`},
 		},
 	}
 }

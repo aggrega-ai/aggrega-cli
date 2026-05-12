@@ -75,7 +75,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 						Implements:    "core/server/api-server",
 						Provides:      provides,
 						Locals:        locals,
-						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"], "environment": {"PORT": "8080"}}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"], "environment": {"PORT": "8080"}}`},
 					},
 				}, true
 			}
@@ -134,7 +134,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						ValuesMapping: `{"image": "api:latest", "environment": {"DB_HOST": "{{ .context.inject.env.DB_HOST }}"}}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "api:latest", "environment": {"DB_HOST": "{{ .context.inject.env.DB_HOST }}"}}`},
 					},
 				}, true
 			case "core/database/postgres":
@@ -144,7 +144,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
 						Provides:      provides,
-						ValuesMapping: `{"image": "postgres:15"}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "postgres:15"}`},
 					},
 				}, true
 			default:
@@ -178,7 +178,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "pipeline-recipe"},
 				Spec: types.RecipeSpec{
-					ValuesMapping: `{"image": "app:latest"}`,
+					ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`},
 					Pipeline: []types.PipelineStep{
 						{ID: "step1", Plugin: "envoy-sidecar.wasm", Function: "inject"},
 					},
@@ -218,7 +218,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 		Recipe: func(string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "generic"},
-				Spec:     types.RecipeSpec{ValuesMapping: `{"image": "app:latest"}`},
+				Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
 			}, true
 		},
 		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
@@ -270,7 +270,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 					Spec: types.RecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/server/api-server",
-						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"]}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
 					},
 				}, true
 			}
@@ -286,7 +286,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 						Provider:      "helm-chart",
 						Implements:    "core/monitoring",
 						Locals:        locals,
-						ValuesMapping: `{"image": "prom/mon:v1", "ports": ["{{ .values.scrape_port }}:9090"]}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "prom/mon:v1", "ports": ["{{ .values.scrape_port }}:9090"]}`},
 					},
 				}, true
 			}
@@ -357,7 +357,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
-					Spec:     types.RecipeSpec{ValuesMapping: `{"image": "app:latest"}`},
+					Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
 				}, true
 			}
 			return nil, false
@@ -419,7 +419,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 					Spec: types.RecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/server/api-server",
-						ValuesMapping: `{"image": "myapp:latest", "ports": ["8080:8080"]}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
 					},
 				}, true
 			}
@@ -434,7 +434,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 					Spec: types.FeatureRecipeSpec{
 						Provider:      "helm-chart",
 						Implements:    "core/db-password",
-						ValuesMapping: `{"image": "pw-gen:v1", "environment": {"SECRET_NAME": "{{ .secret_name }}", "BINDING": "{{ .inject.env.DB_PASSWORD }}"}}`,
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "pw-gen:v1", "environment": {"SECRET_NAME": "{{ .secret_name }}", "BINDING": "{{ .inject.env.DB_PASSWORD }}"}}`},
 					},
 				}, true
 			}
@@ -488,7 +488,7 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "ghost-recipe"},
 				Spec: types.RecipeSpec{
-					ValuesMapping: `{"image": "app:latest", "port": {{ .values.port }}}`,
+					ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest", "port": {{ .values.port }}}`},
 				},
 			}, true
 		},

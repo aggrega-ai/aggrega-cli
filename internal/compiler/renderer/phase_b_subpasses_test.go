@@ -43,7 +43,7 @@ func TestPhaseB_ContextAvailabilityMatrix(t *testing.T) {
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
 	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = `{"image": "demo:1"}`
+	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1"}`}
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
 	emptyProvides := types.OrderedMap[string]{}
 

@@ -102,11 +102,8 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 	if len(r.Spec.ArtifactsFrom) > 0 {
 		declared = append(declared, "artifactsFrom")
 	}
-	if r.Spec.ValuesMapping != "" {
+	if !r.Spec.ValuesMapping.IsEmpty() {
 		declared = append(declared, "valuesMapping")
-	}
-	if r.Spec.ValuesMappingFile != "" {
-		declared = append(declared, "valuesMappingFile")
 	}
 
 	if len(declared) == 0 {
@@ -129,8 +126,7 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 // A Recipe with valuesMapping but no Source has no chart/module to overlay
 // values onto.
 func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
-	hasValuesMapping := r.Spec.ValuesMapping != "" || r.Spec.ValuesMappingFile != ""
-	if !hasValuesMapping {
+	if r.Spec.ValuesMapping.IsEmpty() {
 		return nil
 	}
 	if !sourceIsEmpty(r.Spec.Source) {
@@ -156,8 +152,7 @@ func validateRecipeRule2(r *types.Recipe, sourcePath string) error {
 	if sourceIsEmpty(r.Spec.Source) {
 		return nil
 	}
-	hasValuesMapping := r.Spec.ValuesMapping != "" || r.Spec.ValuesMappingFile != ""
-	if hasValuesMapping {
+	if !r.Spec.ValuesMapping.IsEmpty() {
 		return nil
 	}
 	return &RecipeValidationError{
@@ -166,7 +161,7 @@ func validateRecipeRule2(r *types.Recipe, sourcePath string) error {
 		Version:     r.Metadata.Version,
 		Rule:        "2",
 		Description: "source requires valuesMapping",
-		Detail:      "declare a valuesMapping (or valuesMappingFile) alongside source, or use a different input kind (workload, workloadFrom, artifacts, artifactsFrom)",
+		Detail:      "declare a valuesMapping alongside source, or use a different input kind (workload, workloadFrom, artifacts, artifactsFrom)",
 		Err:         ErrRecipeRule2,
 	}
 }
