@@ -13,7 +13,6 @@ func TestResolveInheritance_SingleLevel(t *testing.T) {
 		URI:      "child:1.0.0",
 		Extends:  "parent:1.0.0",
 		Metadata: map[string]any{"name": "child", "extra": "from-child"},
-		CUE:      `{ port: int }`,
 	}
 
 	lookup := func(uri string) (CatalogEntry, bool) {
@@ -21,7 +20,6 @@ func TestResolveInheritance_SingleLevel(t *testing.T) {
 			return CatalogEntry{
 				URI:      "parent:1.0.0",
 				Metadata: map[string]any{"name": "parent", "base_key": "from-parent"},
-				CUE:      `{ port: int, host: string }`,
 			}, true
 		}
 		return CatalogEntry{}, false
@@ -44,7 +42,6 @@ func TestResolveInheritance_MultiLevelChain(t *testing.T) {
 		URI:      "grandchild:1.0.0",
 		Extends:  "child:1.0.0",
 		Metadata: map[string]any{"level": "3"},
-		CUE:      `{ port: int }`,
 	}
 
 	lookup := func(uri string) (CatalogEntry, bool) {
@@ -54,13 +51,11 @@ func TestResolveInheritance_MultiLevelChain(t *testing.T) {
 				URI:      "child:1.0.0",
 				Extends:  "parent:1.0.0",
 				Metadata: map[string]any{"level": "2", "child_key": "c"},
-				CUE:      `{ port: int, name: string }`,
 			}, true
 		case "parent:1.0.0":
 			return CatalogEntry{
 				URI:      "parent:1.0.0",
 				Metadata: map[string]any{"level": "1", "parent_key": "p"},
-				CUE:      `{ port: int, name: string, host: string }`,
 			}, true
 		}
 		return CatalogEntry{}, false
@@ -85,13 +80,12 @@ func TestResolveInheritance_CycleDetection(t *testing.T) {
 	entry := CatalogEntry{
 		URI:     "a:1.0.0",
 		Extends: "b:1.0.0",
-		CUE:     `{ x: int }`,
 	}
 
 	lookup := func(uri string) (CatalogEntry, bool) {
 		switch uri {
 		case "b:1.0.0":
-			return CatalogEntry{URI: "b:1.0.0", Extends: "a:1.0.0", CUE: `{ y: int }`}, true
+			return CatalogEntry{URI: "b:1.0.0", Extends: "a:1.0.0"}, true
 		}
 		return CatalogEntry{}, false
 	}
@@ -131,7 +125,6 @@ func TestResolveInheritance_NoExtends(t *testing.T) {
 	entry := CatalogEntry{
 		URI:      "standalone:1.0.0",
 		Metadata: map[string]any{"name": "standalone"},
-		CUE:      `{ port: int }`,
 	}
 
 	result := ResolveInheritance(entry, nil)

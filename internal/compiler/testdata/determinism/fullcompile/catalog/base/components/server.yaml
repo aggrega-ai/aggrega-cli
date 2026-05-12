@@ -6,5 +6,5 @@ metadata:
   labels:
     component.aggrega.ai/type: "server"
 spec:
-  cueSchema: |
+  schema: |
     values: { port?: int | *8080 }

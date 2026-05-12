@@ -21,15 +21,13 @@ type CatalogEntry struct {
 	URI      string         // e.g. "core/api-server:1.0.0"
 	Extends  string         // parent URI, empty if no inheritance
 	Metadata map[string]any // raw YAML metadata for deep merge
-	CUE      string         // cueSchema string (transitional: retained for backward-compat fields)
 
 	// JSONSchema is the entity's JSON Schema 2020-12 payload (the
 	// output of pkg/compactform's compile step). When populated, the
 	// inheritance walker also runs the JSON-Schema merge phase to
 	// produce a merged JSON Schema with source-position provenance
 	// metadata via the pkg/validator/merger package. The field is
-	// opt-in: catalog entries authored before the migration omit
-	// it, and the merge phase is a no-op for those entries.
+	// opt-in: entries that omit it skip the merge phase as a no-op.
 	JSONSchema *jsonschema.Schema
 }
 
@@ -37,8 +35,8 @@ type CatalogEntry struct {
 //
 // Phase 1 (YAML metadata deep-merge) populates MergedMetadata. The
 // JSON-Schema-merge phase populates MergedJSONSchema when any chain
-// entry carries a JSONSchema payload; the field stays nil for chains
-// composed entirely of CUE-authored entries.
+// entry carries a JSONSchema payload; the field stays nil when no
+// chain entry carries JSON Schema content.
 type InheritanceResult struct {
 	MergedMetadata   map[string]any
 	MergedJSONSchema *merger.Schema

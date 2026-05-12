@@ -150,12 +150,14 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
+		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Components[e.Metadata.Name] = e
 	case "Feature":
 		var e types.Feature
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Feature")
 		}
+		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Features[e.Metadata.Name] = e
 	case "Recipe":
 		var e types.Recipe
@@ -331,17 +333,17 @@ func (c *Catalog) DeprecationWarnings() []string {
 // ResolveAllExtends walks every Component and Feature in the catalog and
 // resolves its extends chain in-place via the validator package's
 // ResolveComponentExtends / ResolveFeatureExtends. The merge follows the
-// two-tiered inheritance pattern: deep-merge the YAML envelope, unify
-// the cueSchema with parent via CUE's `&` (monotonic — child may narrow,
-// never widen). Cycles are detected by the validator and surface as
-// errors rather than infinite loops.
+// two-tiered inheritance pattern: deep-merge the YAML envelope, compose
+// the Schema with parent under JSON Schema narrowing semantics (a child
+// may narrow a parent's constraint, never relax it). Cycles are detected
+// by the validator and surface as errors rather than infinite loops.
 //
 // Precondition. Must be called after Load / LoadAll and before any
 // downstream consumer reads from the catalog (CatalogLookup, RecipeLookup,
 // the inspect command's render, the resolver's guard checks). Catalog
 // entries with non-empty Spec.Extends are stored unresolved by the loader;
 // downstream code that reads those entries directly will see the child's
-// own metadata + cueSchema only. There is no compiler-side guard that
+// own metadata + Schema only. There is no compiler-side guard that
 // catches "ResolveAllExtends was skipped" — caller discipline at the
 // command-line entry points (cmd/aggrega/build.go and inspect.go each
 // call this immediately after Load) carries the contract today.

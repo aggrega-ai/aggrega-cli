@@ -25,10 +25,10 @@
 //
 // ResolveAllExtends walks the loaded Component / Feature entries and
 // performs the Two-Tiered Inheritance Merge: deep-merge of the YAML
-// envelope plus monotonic CUE unification of cueSchema (a child can
-// narrow a parent's constraint, never relax it). Recipe and FeatureRecipe
-// split into separate index maps keyed by spec.implements so their
-// distinct schemas and roles stay distinct.
+// envelope plus JSON Schema composition of the entity's authored Schema
+// content (a child can narrow a parent's constraint, never relax it).
+// Recipe and FeatureRecipe split into separate index maps keyed by
+// spec.implements so their distinct schemas and roles stay distinct.
 //
 // LoadAll merges multiple directories with last-write-wins semantics, which
 // supports layered catalogs of the form `base/` + `recipes/<variant>/` —

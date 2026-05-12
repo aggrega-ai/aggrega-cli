@@ -3,6 +3,8 @@
 
 package types
 
+import "gopkg.in/yaml.v3"
+
 // Component is the abstract definition of an atomic building block (catalog entity).
 // Schema: component-v1alpha1.schema.json
 type Component struct {
@@ -29,6 +31,17 @@ type ComponentMetadata struct {
 }
 
 // ComponentSpec defines validation schemas and constraints for a catalog Component.
+//
+// Schema carries the free-form pillars (values / infra / provides) as JSON
+// Schema 2020-12 content. The field accepts three authoring modes via
+// content-shape dispatch: inline content (compact form / JSON Schema YAML
+// / mixed); single-file replacement via {$import: <path>}; and cross-document
+// reference via {$ref: oci://<host>/<library>@<version>#/schemas/<name>}
+// into a SchemaLibrary entry. UsesSchema and SecretsSchema cover the
+// fixed-shape pillars (dependency sockets, credential bindings); their
+// bridge synthesis emits JSON Schema with x-aggrega-selector / x-aggrega-
+// inject extension keywords composed with Schema into the entity's
+// unified validation surface.
 type ComponentSpec struct {
 	Extends          string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
 	SecretNames      []string                    `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema. Kept as a fallback during transition.
@@ -36,8 +49,7 @@ type ComponentSpec struct {
 	RequiredFeatures []string                    `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
 	Inject           []string                    `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).
 	UsesSchema       OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
-	CueSchema        string                      `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
-	CueSchemaRef     string                      `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
+	Schema           yaml.Node                   `json:"schema,omitempty" yaml:"schema,omitempty"`
 }
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.

@@ -35,8 +35,7 @@ type CatalogLookup struct {
 //  4. Credential label partition — credentials in secrets:, non-credentials in features:.
 //  5. requiredFeatures completeness — each declared requirement satisfied.
 //  6. Release feature merge — type agreement on dual-declared features.
-//  7. cueSchema pillar validation — .values from Aggregate, .infra from Release boundary.
-//  8. Required uses-socket population — usesSchema.required enforcement.
+//  7. Required uses-socket population — usesSchema.required enforcement.
 //
 // All violations are collected; no guard short-circuits the others. Within a
 // guard, errors sort by (Entity, Field) for byte-identical output across
@@ -53,7 +52,7 @@ func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLook
 	errs = append(errs, guardCredentialPartition(agg, catalog)...)
 	errs = append(errs, guardRequiredFeatures(agg, release, catalog)...)
 	errs = append(errs, guardFeatureMerge(agg, release)...)
-	errs = append(errs, guardCueSchema(agg, catalog, boundaryInfra)...)
 	errs = append(errs, guardRequiredUsesSockets(agg, catalog)...)
+	_ = boundaryInfra // reserved for the .infra pillar validator (Step 1c) once it lands
 	return errs
 }

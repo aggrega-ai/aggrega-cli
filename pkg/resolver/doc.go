@@ -17,12 +17,13 @@
 //   - RunGuards executes the semantic checks that need a catalog lookup
 //     (uses-socket existence, self-inject allowlist, inject key collisions,
 //     credential label partition, requiredFeatures completeness, Release
-//     feature merge, cueSchema pillar validation, required uses-socket
-//     population). Callers run RunGuards after Resolve and before topology.
+//     feature merge, required uses-socket population). Callers run
+//     RunGuards after Resolve and before topology.
 //
-// CUE schema parsing and validation live in pkg/validator. The resolver
-// invokes pkg/validator only from within RunGuards' cueSchema arm; it does
-// not parse CUE itself.
+// JSON Schema parsing and validation live in pkg/validator. The resolver
+// surfaces catalog state to RunGuards; the schema-content validation flow
+// runs in the validator pipeline against the entity's authored Schema
+// content composed with usesSchema / secretsSchema bridge synthesis.
 //
 // The Resolve pipeline ordering is:
 //

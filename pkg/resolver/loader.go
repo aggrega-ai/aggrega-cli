@@ -14,8 +14,9 @@ import (
 // The three Load* functions in this file are raw YAML readers: each reads a
 // path, unmarshals into the typed entity, and wraps any failure as a
 // ResolverError with the entity kind and source path attached. They do not
-// validate against the JSON Schema or the CUE schema — schema validation is
-// handled in pkg/validator and is invoked from RunGuards' cueSchema arm.
+// validate against the JSON Schema envelope — schema validation is handled
+// in pkg/validator against the entity's authored Schema content composed
+// with the usesSchema / secretsSchema bridge synthesis.
 //
 // LoadRelease and LoadManifest are used directly: cmd/aggrega/build.go
 // pre-loads the Release to discover the Aggregate and Manifest paths, and

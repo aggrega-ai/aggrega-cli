@@ -11,5 +11,5 @@ spec:
     apis:
       selector: "component.aggrega.ai/type=server"
       inject: ["env"]
-  cueSchema: |
+  schema: |
     values: { port?: int | *3000 }

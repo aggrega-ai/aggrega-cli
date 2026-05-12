@@ -18,9 +18,14 @@ type FeatureLookup func(uri string) (types.Feature, bool)
 // extends chain. Labels/Annotations maps are deep-merged (child wins per key),
 // list fields (SecretNames, Inject, RequiredFeatures) are concatenated and
 // deduplicated, UsesSchema entries are merged (child entry overrides parent on
-// the same socket name), and CueSchema is the concatenated source of every
-// ancestor then the child (CUE parses the joined document as unification).
-// Returns the original component unchanged when Spec.Extends == "".
+// the same socket name). Returns the original component unchanged when
+// Spec.Extends == "".
+//
+// Spec.Schema is left as-authored on the merged component. JSON Schema
+// composition across the extends chain runs through the JSON-Schema-merge
+// phase in ResolveInheritance when CatalogEntry.JSONSchema is populated; the
+// schema-authoring migration leaves Schema content authored verbatim on each
+// entry and lets the merger phase unify them.
 func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (types.Component, []*ValidationError) {
 	if comp.Spec.Extends == "" {
 		return comp, nil
@@ -31,9 +36,9 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 		if !ok {
 			return CatalogEntry{}, false
 		}
-		return CatalogEntry{URI: c.Metadata.Name, Extends: c.Spec.Extends, CUE: c.Spec.CueSchema}, true
+		return CatalogEntry{URI: c.Metadata.Name, Extends: c.Spec.Extends}, true
 	}
-	entry := CatalogEntry{URI: comp.Metadata.Name, Extends: comp.Spec.Extends, CUE: comp.Spec.CueSchema}
+	entry := CatalogEntry{URI: comp.Metadata.Name, Extends: comp.Spec.Extends}
 
 	result := ResolveInheritance(entry, catalogLookup)
 	if len(result.Errors) > 0 {
@@ -52,12 +57,6 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 		merged = mergeComponent(merged, chain[i])
 	}
 
-	// Spec.CueSchema is left as-authored on the merged component. The
-	// extends-chain composition into a single CUE source has retired
-	// alongside the validator's CUE pipeline; downstream validation
-	// against the merged component runs through the resolver-layer
-	// JSON Schema path (which currently stub-skips Spec.CueSchema-
-	// bearing entries pending the schema-authoring migration).
 	_ = result
 	return merged, nil
 }
@@ -73,9 +72,9 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 		if !ok {
 			return CatalogEntry{}, false
 		}
-		return CatalogEntry{URI: f.Metadata.Name, Extends: f.Spec.Extends, CUE: f.Spec.CueSchema}, true
+		return CatalogEntry{URI: f.Metadata.Name, Extends: f.Spec.Extends}, true
 	}
-	entry := CatalogEntry{URI: feat.Metadata.Name, Extends: feat.Spec.Extends, CUE: feat.Spec.CueSchema}
+	entry := CatalogEntry{URI: feat.Metadata.Name, Extends: feat.Spec.Extends}
 
 	result := ResolveInheritance(entry, catalogLookup)
 	if len(result.Errors) > 0 {
@@ -91,8 +90,6 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 	for i := len(chain) - 2; i >= 0; i-- {
 		merged = mergeFeature(merged, chain[i])
 	}
-	// Spec.CueSchema is left as-authored on the merged feature; same
-	// rationale as ResolveComponentExtends above.
 	_ = result
 	return merged, nil
 }
@@ -173,9 +170,6 @@ func mergeComponent(parent, child types.Component) types.Component {
 	out.Spec.RequiredFeatures = concatDedupeString(parent.Spec.RequiredFeatures, child.Spec.RequiredFeatures)
 	out.Spec.Inject = concatDedupeString(parent.Spec.Inject, child.Spec.Inject)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
-	if out.Spec.CueSchemaRef == "" {
-		out.Spec.CueSchemaRef = parent.Spec.CueSchemaRef
-	}
 	return out
 }
 
@@ -187,9 +181,6 @@ func mergeFeature(parent, child types.Feature) types.Feature {
 	out.Spec.SecretNames = concatDedupeString(parent.Spec.SecretNames, child.Spec.SecretNames)
 	out.Spec.SecretsSchema = mergeSecretsSchema(parent.Spec.SecretsSchema, child.Spec.SecretsSchema)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
-	if out.Spec.CueSchemaRef == "" {
-		out.Spec.CueSchemaRef = parent.Spec.CueSchemaRef
-	}
 	return out
 }
 

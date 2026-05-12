@@ -65,9 +65,9 @@ var (
 	// inject source for the same component.
 	ErrInjectKeyCollision = errors.New("duplicate delivery key across inject sources")
 
-	// ErrSchemaValidation wraps a CUE pillar validation failure (.values
+	// ErrSchemaValidation wraps a pillar validation failure (.values
 	// from the Aggregate, .infra from the Release boundary).
-	ErrSchemaValidation = errors.New("cueSchema validation failed")
+	ErrSchemaValidation = errors.New("schema validation failed")
 
 	// ErrMissingRequiredSocket wraps a uses-socket marked required in the
 	// Component's usesSchema that no instance populates.

@@ -54,7 +54,7 @@ func init() {
 //
 //  1. Catalog load + extends resolution + deprecation surface — the
 //     catalog must be fully resolved (inherited labels, secretNames,
-//     usesSchema, unified cueSchema) before any pipeline step consumes
+//     usesSchema, composed schema) before any pipeline step consumes
 //     catalog entities, because guards and renderer assume the
 //     fully-merged shape.
 //  2. Step 1 (Resolve) — loads the Release, derives Aggregate and
@@ -92,7 +92,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Resolve extends inheritance for every Component and Feature so downstream
 	// guards/renderer see the fully-merged entity (inherited labels, secretNames,
-	// usesSchema, unified cueSchema).
+	// usesSchema, composed schema).
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		for _, e := range extErrs {
 			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)

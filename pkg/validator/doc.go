@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package validator implements CUE-based schema validation for Aggrega entities.
+// Package validator implements JSON Schema 2020-12 validation for Aggrega entities.
 //
 // Three engines:
-//   - Schema Engine: evaluates CUE schemas against developer values
-//   - Inheritance Engine: Two-Tiered Merge (YAML deep-merge + CUE unification via extends)
-//   - Split Schema Engine: generates baseUsesCueSchema from usesSchema, unifies with user cueSchema
+//   - Schema Engine: evaluates JSON Schema against developer values
+//   - Inheritance Engine: Two-Tiered Merge (YAML metadata deep-merge + JSON Schema
+//     composition via extends)
+//   - Split Schema Engine: synthesises a base JSON Schema from usesSchema and
+//     composes it with the entity's authored Schema content via the merger phase
 //
-// All CUE errors pass through an Aggrega error translation layer. Raw CUE error
-// strings never reach the user.
+// All validation errors pass through an Aggrega error translation layer; raw
+// validator library error strings never reach the user.
 package validator

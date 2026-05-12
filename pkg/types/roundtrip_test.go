@@ -127,7 +127,7 @@ spec:
       selector: component.aggrega.ai/type=stateful-server
     m-socket:
       selector: component.aggrega.ai/type=resource
-  cueSchema: |
+  schema:
     values: {}
 `)
 	assertEntityRoundTrip[Component](
@@ -149,7 +149,7 @@ spec:
     z-key: z-value
     a-key: a-value
     m-key: m-value
-  cueSchema: |
+  schema:
     values: {}
 `)
 	assertEntityRoundTrip[Feature](

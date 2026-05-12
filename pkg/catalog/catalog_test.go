@@ -20,9 +20,9 @@
 //     than an error when the input directory carries no entity YAML.
 //
 //   - ResolveAllExtends round-trip on a parent / child Component pair —
-//     pins both the inherited-label persistence and the unified-cueSchema
+//     pins both the inherited-label persistence and the composed-schema
 //     constraint propagation that the Two-Tiered Inheritance Merge
-//     (deep YAML merge + monotonic CUE unification) guarantees.
+//     (deep YAML merge + JSON Schema composition) guarantees.
 //
 //   - Recipe relative-source resolution to absolute path so co-located
 //     charts stay resolvable regardless of the consumer's working directory.
@@ -41,6 +41,7 @@ import (
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoad_AllEntityTypes(t *testing.T) {
@@ -462,8 +463,9 @@ metadata:
   labels:
     component.aggrega.ai/type: server
 spec:
-  cueSchema: |
-    values: { port?: int & >=1024 }
+  schema:
+    values:
+      port: { type: integer, minimum: 1024 }
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -476,8 +478,9 @@ metadata:
     tier: prod
 spec:
   extends: core/server/base
-  cueSchema: |
-    values: { port?: int & <=65535 }
+  schema:
+    values:
+      port: { type: integer, maximum: 65535 }
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -487,9 +490,9 @@ spec:
 		t.Fatalf("load: %v", err)
 	}
 
-	// Before resolution: child has only its own cueSchema.
-	if cat.Components["core/server/api"].Spec.CueSchema == "" {
-		t.Fatal("child component missing cueSchema before resolution")
+	// Before resolution: child has its own Schema populated.
+	if cat.Components["core/server/api"].Spec.Schema.Kind == 0 {
+		t.Fatal("child component missing schema before resolution")
 	}
 
 	errs := cat.ResolveAllExtends()
@@ -506,13 +509,16 @@ spec:
 	if tierLabel != "prod" {
 		t.Errorf("child tier label lost, got %v", resolved.Metadata.Labels.Keys())
 	}
-	// Child's authored CueSchema is preserved as-is. The legacy
-	// CUE-source concatenation across the extends chain retired
-	// alongside the validator's CUE pipeline; downstream schema
-	// composition operates on JSON Schema payloads via the merger
-	// package, not on Spec.CueSchema.
-	if !strings.Contains(resolved.Spec.CueSchema, "<=65535") {
-		t.Errorf("child's authored CueSchema lost:\n%s", resolved.Spec.CueSchema)
+	// Child's authored Schema is preserved as-is. JSON Schema composition
+	// across the extends chain runs through the validator/merger package
+	// against the structured Schema content; this test pins that the
+	// child's own constraint survives the merge.
+	schemaText, err := yaml.Marshal(&resolved.Spec.Schema)
+	if err != nil {
+		t.Fatalf("marshal Schema: %v", err)
+	}
+	if !strings.Contains(string(schemaText), "65535") {
+		t.Errorf("child's authored Schema lost:\n%s", string(schemaText))
 	}
 }
 

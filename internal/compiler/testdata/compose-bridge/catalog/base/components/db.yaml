@@ -7,6 +7,6 @@ metadata:
     component.aggrega.ai/type: "stateful-server"
 spec:
   inject: ["env"]
-  cueSchema: |
+  schema: |
     values: {}
     provides: { host: string, port: int }

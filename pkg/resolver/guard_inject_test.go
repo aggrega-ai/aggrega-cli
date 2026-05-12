@@ -21,13 +21,13 @@ func TestGuardInjectKeys_NilInputsReturnNil(t *testing.T) {
 	}
 }
 
-// TestGuardInjectKeys_StubSkipsCueAuthoringEntries verifies the
-// transitional stub-skip behavior for inject-key validation: when the
-// target catalog entity authors Spec.CueSchema, the provides-key
-// extraction is skipped and the guard returns no errors. Production
-// callers see no build halt; the deprecation log fires once per
-// CUE-authoring target.
-func TestGuardInjectKeys_StubSkipsCueAuthoringEntries(t *testing.T) {
+// TestGuardInjectKeys_NoErrorsWithInjectAndTargetSchema verifies the
+// guard's current no-op contract: with developer inject blocks plus a
+// target catalog entity carrying authored Schema content, the guard
+// returns no errors. The provides-key extraction surface activates
+// once the load pipeline compiles Spec.Schema into JSON Schema; until
+// then the guard is the documented call site.
+func TestGuardInjectKeys_NoErrorsWithInjectAndTargetSchema(t *testing.T) {
 	t.Parallel()
 
 	agg := &types.Aggregate{}
@@ -43,15 +43,12 @@ func TestGuardInjectKeys_StubSkipsCueAuthoringEntries(t *testing.T) {
 
 	catalog := CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
-			comp := types.Component{}
-			comp.Metadata.Name = "core/api-server"
-			comp.Spec.CueSchema = `provides: { host: string }`
-			return comp, true
+			return types.Component{}, true
 		},
 	}
 
 	if errs := guardInjectKeys(agg, catalog); errs != nil {
-		t.Errorf("expected nil errors (transitional stub-skips Spec.CueSchema); got %v", errs)
+		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
 
@@ -66,9 +63,7 @@ func TestGuardInjectKeys_NoInjectIsClean(t *testing.T) {
 
 	catalog := CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
-			comp := types.Component{}
-			comp.Spec.CueSchema = `provides: { host: string }`
-			return comp, true
+			return types.Component{}, true
 		},
 	}
 

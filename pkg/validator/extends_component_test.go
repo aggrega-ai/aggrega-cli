@@ -9,19 +9,51 @@ import (
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	"gopkg.in/yaml.v3"
 )
+
+// mustParseSchema parses a YAML string into a yaml.Node suitable for use
+// as a ComponentSpec.Schema / FeatureSpec.Schema field. Test helper.
+func mustParseSchema(t *testing.T, src string) yaml.Node {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	// yaml.Unmarshal returns a DocumentNode at top-level; the actual content
+	// is the first child. Use the child so the Schema field carries a
+	// mapping node directly.
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		return *doc.Content[0]
+	}
+	return doc
+}
+
+// schemaContains marshals a Schema node and substring-checks the result.
+// Tolerates YAML formatting drift (whitespace, key order, scalar style).
+func schemaContains(t *testing.T, n yaml.Node, want string) bool {
+	t.Helper()
+	out, err := yaml.Marshal(&n)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	return strings.Contains(string(out), want)
+}
 
 func TestResolveComponentExtends_NoExtends(t *testing.T) {
 	t.Parallel()
+	schema := mustParseSchema(t, `values:
+  port: { type: integer }
+`)
 	comp := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/standalone", Version: "1.0.0"},
-		Spec:     types.ComponentSpec{CueSchema: `values: {port: int}`},
+		Spec:     types.ComponentSpec{Schema: schema},
 	}
 	got, errs := ResolveComponentExtends(comp, func(string) (types.Component, bool) { return types.Component{}, false })
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if got.Spec.CueSchema != comp.Spec.CueSchema {
+	if !schemaContains(t, got.Spec.Schema, "port") {
 		t.Errorf("no-extends should return unchanged comp")
 	}
 }
@@ -43,7 +75,9 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 			SecretNames: []string{"root_password"},
 			Inject:      []string{"env"},
 			UsesSchema:  usesSchema,
-			CueSchema:   `values: { port?: int & >=1024 }`,
+			Schema: mustParseSchema(t, `values:
+  port: { type: integer, minimum: 1024 }
+`),
 		},
 	}
 	labels2 := types.OrderedMap[string]{}
@@ -61,7 +95,9 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 			SecretNames: []string{"api_token"},
 			Inject:      []string{"env", "file"},
 			UsesSchema:  usesSchema2,
-			CueSchema:   `values: { name: string }`,
+			Schema: mustParseSchema(t, `values:
+  name: { type: string }
+`),
 		},
 	}
 
@@ -105,14 +141,12 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 		t.Error("expected child 'caches' socket")
 	}
 
-	// CueSchema carries the child's as-authored content. The legacy
-	// extends-chain CUE-source concatenation has retired alongside
-	// the validator's CUE pipeline; downstream schema composition is
-	// the merger package's responsibility and operates on JSON
-	// Schema payloads (Spec.JSONSchema, populated by the schema-
-	// authoring phase), not on Spec.CueSchema.
-	if !strings.Contains(got.Spec.CueSchema, "name: string") {
-		t.Errorf("expected child's authored CueSchema preserved, got:\n%s", got.Spec.CueSchema)
+	// Schema carries the child's as-authored content. JSON Schema
+	// composition across the extends chain runs through the merger
+	// package against the structured Schema payloads (Spec.JSONSchema);
+	// the mergeComponent step preserves the child's Spec.Schema as-is.
+	if !schemaContains(t, got.Spec.Schema, "name") {
+		t.Errorf("expected child's authored Schema preserved")
 	}
 
 	// Identity stays child's
@@ -249,14 +283,18 @@ func TestResolveFeatureExtends_Basic(t *testing.T) {
 	parent := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring/base", Version: "1.0.0"},
 		Spec: types.FeatureSpec{
-			CueSchema: `values: { scrape_port: int }`,
+			Schema: mustParseSchema(t, `values:
+  scrape_port: { type: integer }
+`),
 		},
 	}
 	child := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring/strict", Version: "1.0.0"},
 		Spec: types.FeatureSpec{
-			Extends:   "core/monitoring/base",
-			CueSchema: `values: { scrape_port: int & >=9000 }`,
+			Extends: "core/monitoring/base",
+			Schema: mustParseSchema(t, `values:
+  scrape_port: { type: integer, minimum: 9000 }
+`),
 		},
 	}
 	lookup := func(uri string) (types.Feature, bool) {
@@ -269,7 +307,7 @@ func TestResolveFeatureExtends_Basic(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if !strings.Contains(got.Spec.CueSchema, ">=9000") {
-		t.Errorf("child constraint missing in unified schema: %s", got.Spec.CueSchema)
+	if !schemaContains(t, got.Spec.Schema, "9000") {
+		t.Errorf("child constraint missing in resolved schema")
 	}
 }

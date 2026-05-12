@@ -8,13 +8,14 @@ import (
 
 	"github.com/cognitio/aggrega-cli/pkg/catalog"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var inspectCatalogDir string
 
 var inspectCmd = &cobra.Command{
 	Use:   "inspect <component-type>",
-	Short: "Render the final merged CUE schema for a component (base + all active overlays)",
+	Short: "Render the final merged schema for a component (base + all active overlays)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runInspect,
 }
@@ -31,10 +32,8 @@ func init() {
 //
 //   - A header line naming the component (with "(resolved from
 //     inheritance chain)" suffix when extends was resolved).
-//   - The cueSchema body if the component declares an inline schema,
-//     OR the cueSchemaRef pointer line if the schema is referenced
-//     rather than inlined, OR a "// (no CUE schema defined)"
-//     placeholder.
+//   - The schema body if the component declares one, or a
+//     "// (no schema defined)" placeholder otherwise.
 //   - A "// usesSchema:" header followed by per-socket selector
 //     entries if the component declares a usesSchema.
 //
@@ -51,7 +50,7 @@ func runInspect(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
-	// Resolve extends chains so the printed cueSchema reflects inheritance.
+	// Resolve extends chains so the printed schema reflects inheritance.
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
@@ -67,12 +66,14 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println(header)
 
-	if comp.Spec.CueSchema != "" {
-		fmt.Println(comp.Spec.CueSchema)
-	} else if comp.Spec.CueSchemaRef != "" {
-		fmt.Printf("// schema ref: %s\n", comp.Spec.CueSchemaRef)
+	if comp.Spec.Schema.Kind != 0 {
+		out, err := yaml.Marshal(&comp.Spec.Schema)
+		if err != nil {
+			return fmt.Errorf("render schema: %w", err)
+		}
+		fmt.Print(string(out))
 	} else {
-		fmt.Println("// (no CUE schema defined)")
+		fmt.Println("// (no schema defined)")
 	}
 
 	// Print usesSchema if present

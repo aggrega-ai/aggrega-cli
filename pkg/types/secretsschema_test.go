@@ -27,7 +27,7 @@ spec:
       description: Admin password
     tls_ca:
       required: false
-  cueSchema: |
+  schema:
     values: {}
 `)
 

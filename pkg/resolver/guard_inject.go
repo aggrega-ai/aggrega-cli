@@ -4,56 +4,26 @@
 package resolver
 
 import (
-	"log"
-
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// guardInjectKeys is the transitional stub during the JSON Schema
-// migration. The inject-key validation depended on extracting
-// `provides:` keys from a CUE schema source; the validator pipeline
-// no longer processes CUE. When a target catalog entity carries
-// Spec.CueSchema, this guard logs a deprecation note and returns
-// nil (skip) for that target's inject-key validation.
+// guardInjectKeys is a placeholder for the inject-from-key validator
+// against the target catalog entity's provides set. The validator
+// extracts the `provides` pillar shape from the target's Spec.Schema
+// JSON Schema content and checks that every `from:` key in the
+// developer's inject blocks references a published key.
 //
-// When the catalog migrates, the schema-authoring phase populates a
-// JSON Schema 2020-12 payload that carries the `provides:` shape
-// explicitly; a future integration extracts the keys from the new
-// payload and restores the inject-key validation surface.
+// The extractor activates once the load pipeline compiles Spec.Schema
+// into JSON Schema (via pkg/compactform) and surfaces the `provides`
+// keys as a typed set on the resolved catalog entity. Today the guard
+// is a no-op; the call site exists so RunGuards' contract — Step 1
+// runs an inject-key check — stays declared even while the extractor
+// integration ships in a separate work item.
 func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
-
-	logged := map[string]bool{}
-	for _, comp := range agg.Spec.Components.All() {
-		target, ok := catalog.Component(comp.Type)
-		if !ok {
-			continue
-		}
-		hasInject := false
-		for _, feat := range comp.Features.All() {
-			if feat.Inject != nil {
-				hasInject = true
-				break
-			}
-		}
-		if !hasInject {
-			for _, sec := range comp.Secrets.All() {
-				if sec.Inject != nil {
-					hasInject = true
-					break
-				}
-			}
-		}
-		if !hasInject {
-			continue
-		}
-		if target.Spec.CueSchema != "" && !logged[target.Metadata.Name] {
-			log.Printf("warning: target catalog entity %q authors Spec.CueSchema; inject-key validation skipped pending JSON Schema migration",
-				target.Metadata.Name)
-			logged[target.Metadata.Name] = true
-		}
-	}
+	_ = agg
+	_ = catalog
 	return nil
 }

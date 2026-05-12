@@ -3,6 +3,8 @@
 
 package types
 
+import "gopkg.in/yaml.v3"
+
 // Feature is a modular operational feature that binds dynamically to components.
 // Schema: feature-v1alpha1.schema.json
 type Feature struct {
@@ -29,6 +31,13 @@ type FeatureMetadata struct {
 }
 
 // FeatureSpec defines the validation, targeting, and interoperability of a catalog Feature.
+//
+// Schema carries the free-form pillars (values / infra / provides) as JSON
+// Schema 2020-12 content with the same three-mode authoring surface as
+// ComponentSpec.Schema (inline content; {$import: <path>} for single-file
+// replacement; {$ref: oci://...#/schemas/<name>} for SchemaLibrary
+// references). UsesSchema and SecretsSchema cover the fixed-shape pillars;
+// bridge synthesis composes the three into the unified validation surface.
 type FeatureSpec struct {
 	Extends              string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
 	SecretNames          []string                    `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema.
@@ -38,8 +47,7 @@ type FeatureSpec struct {
 	AppliesToAnyOf       []SelectorTerm              `json:"appliesToAnyOf,omitempty" yaml:"appliesToAnyOf,omitempty"`
 	Interoperability     *Interoperability           `json:"interoperability,omitempty" yaml:"interoperability,omitempty"`
 	UsesSchema           OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
-	CueSchema            string                      `json:"cueSchema,omitempty" yaml:"cueSchema,omitempty"`
-	CueSchemaRef         string                      `json:"cueSchemaRef,omitempty" yaml:"cueSchemaRef,omitempty"`
+	Schema               yaml.Node                   `json:"schema,omitempty" yaml:"schema,omitempty"`
 }
 
 // LabelSelectorRequirement is a single label selector requirement (AND logic).

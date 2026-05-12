@@ -6,7 +6,7 @@ metadata:
   labels:
     component.aggrega.ai/type: "stateful-server"
 spec:
-  cueSchema: |
+  schema: |
     values: { database?: string | *"app", port?: int | *3306 }
     provides: { host: string, port: string }
   secretsSchema:

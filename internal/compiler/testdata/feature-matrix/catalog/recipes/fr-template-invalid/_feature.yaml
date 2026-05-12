@@ -5,5 +5,5 @@ metadata:
   version: "1.0.0"
 spec:
   scope: boundary
-  cueSchema: |
+  schema: |
     parameter: { _: bool | *true }
