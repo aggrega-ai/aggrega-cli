@@ -5,10 +5,143 @@ package compactform
 
 import (
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+// TestEmitCompactConstraint_TypeArray_LeafPosition verifies the
+// compactform `type:` handler accepts JSON Schema 2020-12 array-of-types
+// at a leaf-position node. The CUE pattern `[string]: string | int | bool`
+// translates to `additionalProperties: { type: [string, integer, boolean] }`;
+// the inner `additionalProperties` value is a leaf-position node whose
+// `type:` value is a SequenceNode. Prior to the fix the SequenceNode value
+// was silently dropped because the `type:` handler accepted ScalarNode
+// only; the compiled output had no `type:` key at all.
+func TestEmitCompactConstraint_TypeArray_LeafPosition(t *testing.T) {
+	t.Parallel()
+
+	src := `type: [string, integer, boolean]`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	got, ok := out["type"]
+	if !ok {
+		t.Fatalf("expected `type:` key in compiled schema; got %v", out)
+	}
+	want := []any{"string", "integer", "boolean"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("type = %v (%T); want %v ([]any)", got, got, want)
+	}
+}
+
+// TestEmitCompactConstraint_TypeArray_UnionWithMinHalts verifies the
+// loud-halt error path documented at minMaxKeyForType: a node with
+// `type: [string, integer, ...]` (union) plus `min:` cannot resolve
+// the polymorphic dispatch (minimum vs minLength vs minItems) and
+// raises ErrConstraintTypeMismatch with a message that names the
+// unresolved-type origin.
+func TestEmitCompactConstraint_TypeArray_UnionWithMinHalts(t *testing.T) {
+	t.Parallel()
+
+	src := `type: [string, integer]
+min: 5`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrConstraintTypeMismatch for union-with-min; got nil")
+	}
+	if !errors.Is(err, ErrConstraintTypeMismatch) {
+		t.Errorf("expected ErrConstraintTypeMismatch; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unresolved") {
+		t.Errorf("error message should name the unresolved-type origin; got %q", err.Error())
+	}
+}
+
+// TestEmitCompactConstraint_TypeUnsupportedNodeKind_Halts verifies the
+// explicit error path for `type:` values that are neither scalar nor
+// sequence (e.g., a YAML mapping authored at the `type:` slot). Prior
+// to the cleanup, MappingNode and AliasNode values at `type:` silently
+// dropped — bug surface was smaller than pre-P1 but not closed.
+func TestEmitCompactConstraint_TypeUnsupportedNodeKind_Halts(t *testing.T) {
+	t.Parallel()
+
+	src := `type:
+  foo: bar
+min: 1`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	_, err := Compile(&input)
+	if err == nil {
+		t.Fatal("expected ErrConstraintTypeMismatch for unsupported type-value node kind; got nil")
+	}
+	if !errors.Is(err, ErrConstraintTypeMismatch) {
+		t.Errorf("expected ErrConstraintTypeMismatch; got %v", err)
+	}
+}
+
+// TestEmitCompactConstraint_TypeArray_CrossCutThroughJSONSchemaEscape
+// verifies the compactform `type:` array-of-types support through the
+// `$jsonschema:` escape's directly-nested mapping form — the path that
+// flowise's `override_config?: { [string]: string | int | bool }`
+// authoring exercises in the catalog. The compile must produce the
+// full nested shape with `additionalProperties: { type: [...] }`
+// preserved verbatim.
+func TestEmitCompactConstraint_TypeArray_CrossCutThroughJSONSchemaEscape(t *testing.T) {
+	t.Parallel()
+
+	src := `
+override_config:
+  $jsonschema:
+    type: object
+    additionalProperties:
+      type: [string, integer, boolean]
+`
+	var input yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &input); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := Compile(&input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	props, ok := out["properties"].(Schema)
+	if !ok {
+		t.Fatalf("expected properties map; got %v", out["properties"])
+	}
+	override, ok := props["override_config"].(Schema)
+	if !ok {
+		t.Fatalf("expected override_config schema; got %v", props["override_config"])
+	}
+	if got := override["type"]; got != "object" {
+		t.Errorf("override_config.type = %v; want \"object\"", got)
+	}
+	addProps, ok := override["additionalProperties"].(Schema)
+	if !ok {
+		t.Fatalf("expected additionalProperties schema; got %v", override["additionalProperties"])
+	}
+	typeField, hasType := addProps["type"]
+	if !hasType {
+		t.Fatalf("expected additionalProperties.type key; got %v", addProps)
+	}
+	want := []any{"string", "integer", "boolean"}
+	if !reflect.DeepEqual(typeField, want) {
+		t.Errorf("additionalProperties.type = %v (%T); want %v ([]any)", typeField, typeField, want)
+	}
+}
 
 // TestEmitMinMaxDispatchInteger verifies min/max on a `type: integer`
 // field emit as `minimum` and `maximum`.

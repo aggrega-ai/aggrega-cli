@@ -3,6 +3,8 @@
 
 package compactform
 
+import "strings"
+
 // Compact-form vocabulary — the closed enumeration of keywords the
 // compiler recognises in compact-form positions. JSON Schema's reserved
 // keywords (type, properties, items, additionalProperties, allOf,
@@ -120,10 +122,25 @@ var jsonSchemaReservedKeywords = map[string]bool{
 	"contentSchema":    true,
 }
 
+// isAggregaExtensionKey reports whether the given key matches the
+// `x-aggrega-*` extension-keyword namespace. Aggrega-specific extension
+// annotations (`x-aggrega-source` from cross-document `$ref:` expansion,
+// `x-aggrega-validate` / `x-aggrega-when` / `x-aggrega-validateMessage`
+// from validate-and-when authoring, `x-aggrega-selector` from typed-
+// reference fields) all share this prefix. The pattern recognition lets
+// new extension annotations enter the catalog without per-keyword edits
+// to the vocabulary allowlist. The recognition is namespaced to
+// `x-aggrega-*` rather than the broader JSON Schema 2020-12 `x-*`
+// extension prefix so catalog authoring catches typos (e.g. `x-agrega-source`)
+// at compile time rather than silently accepting third-party extensions.
+func isAggregaExtensionKey(key string) bool {
+	return strings.HasPrefix(key, "x-aggrega-")
+}
+
 // isKnownKeyword reports whether the given key is recognised by the
 // compactform compiler in any role (compact-form keyword, JSON Schema-
-// reserved keyword, or reference keyword). Unknown keys surface as
-// ErrUnknownKeyword during dispatch.
+// reserved keyword, reference keyword, or Aggrega extension annotation).
+// Unknown keys surface as ErrUnknownKeyword during dispatch.
 func isKnownKeyword(key string) bool {
 	return typeIdentityKeywords[key] ||
 		constraintKeywords[key] ||
@@ -131,7 +148,8 @@ func isKnownKeyword(key string) bool {
 		containerKeywords[key] ||
 		aggregaSpecificKeywords[key] ||
 		referenceKeywords[key] ||
-		jsonSchemaReservedKeywords[key]
+		jsonSchemaReservedKeywords[key] ||
+		isAggregaExtensionKey(key)
 }
 
 // isCompactKeyword reports whether the given key is specifically a

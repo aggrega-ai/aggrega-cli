@@ -20,11 +20,40 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 
 	// First pass: collect `type:` so subsequent dispatch knows the
 	// constraint-keyword mapping target.
+	//
+	// `type:` accepts both scalar (the common case: `type: string`) and
+	// sequence (JSON Schema 2020-12 array-of-types: `type: [string, integer,
+	// boolean]`). For sequence-valued `type:`, the array is emitted as-is
+	// into the compiled schema; `typ` stays empty because there is no
+	// single resolved type for `min:`/`max:` polymorphism. If a later
+	// constraint keyword needs polymorphic dispatch (`min:` / `max:`) and
+	// the type is unresolved-due-to-union, minMaxKeyForType returns
+	// ErrConstraintTypeMismatch, which is the right loud halt — the
+	// author can't compose a numeric range constraint against a union
+	// type that might be string-valued.
 	for _, k := range keys {
 		v := mappingValue(node, k)
-		if k == "type" && v != nil && v.Kind == yaml.ScalarNode {
+		if k != "type" || v == nil {
+			continue
+		}
+		switch v.Kind {
+		case yaml.ScalarNode:
 			typ = v.Value
 			out["type"] = v.Value
+		case yaml.SequenceNode:
+			child, err := emitSequence(v, pathJoin(path, "type"), ctx)
+			if err != nil {
+				return nil, err
+			}
+			out["type"] = child
+		default:
+			return nil, &CompileError{
+				Path:    path,
+				Line:    nodeLine(v),
+				Keyword: "type",
+				Message: "expected a scalar type name or a sequence of type names (JSON Schema 2020-12 array-of-types); got unsupported node kind",
+				Err:     ErrConstraintTypeMismatch,
+			}
 		}
 	}
 
@@ -209,6 +238,13 @@ func injectWhenWrapper(out Schema) {
 // Numeric -> minimum / maximum; string -> minLength / maxLength;
 // array -> minItems / maxItems. Other types reject with
 // ErrConstraintTypeMismatch.
+//
+// The empty `typ` case arises when `type:` was authored as a JSON
+// Schema 2020-12 array-of-types (union) — `type: [string, integer,
+// boolean]`. No single resolved type means `min:`/`max:` polymorphic
+// dispatch cannot pick `minimum` vs `minLength` vs `minItems`; the
+// loud halt names the union origin so the author can either narrow the
+// `type:` to a single value or remove the `min:`/`max:` constraint.
 func minMaxKeyForType(typ string, isMin bool, path, keyword string, line int) (string, error) {
 	switch typ {
 	case "integer", "number":
@@ -226,6 +262,14 @@ func minMaxKeyForType(typ string, isMin bool, path, keyword string, line int) (s
 			return "minItems", nil
 		}
 		return "maxItems", nil
+	case "":
+		return "", &CompileError{
+			Path:    path,
+			Line:    line,
+			Keyword: keyword,
+			Message: "constraint applies to a single declared type (integer/number/string/array); `type:` is unresolved (union or absent) — narrow `type:` to a single value or remove this constraint",
+			Err:     ErrConstraintTypeMismatch,
+		}
 	default:
 		return "", &CompileError{
 			Path:    path,
