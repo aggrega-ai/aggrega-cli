@@ -15,8 +15,10 @@ spec:
             target: db
             inject:
               env:
-                DB_HOST: host
-                DB_PORT: port
+                - in: DB_HOST
+                  from: host
+                - in: DB_PORT
+                  from: port
       features:
         metrics:
           type: core/prometheus-exporter

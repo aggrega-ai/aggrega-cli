@@ -280,6 +280,62 @@ func (b InjectBlock) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// DecodeVerboseInjectEntry extracts (in, value, from) from a single schema-
+// verbose-form inject entry. The entry is one element of the schema's
+// inject_delivery array — shaped as {in: K, from?: P, value?: V} per the
+// aggregate-v1alpha1 schema. The inner shape can decode as either
+// map[string]any (default YAML/JSON unmarshal) or *OrderedMap[any]
+// (round-trip-fidelity decode path); the helper handles both uniformly
+// so consumer-site decode arms don't asymmetrically skip valid entries
+// that happen to arrive via the ordered path.
+//
+// Schema validation enforces required "in" plus exactly one of "from" or
+// "value" per entry; ok=true only when "in" is present, non-empty, and
+// string-typed. The hasValue and hasFrom flags let callers pick a
+// preference at decode time (sites that propagate both fields into a
+// downstream entry struct can ignore the preference; sites that collapse
+// into a single string can prefer one). Non-string in/value/from fields,
+// or absent entries, return zero-valued slots; ok=false.
+func DecodeVerboseInjectEntry(entry any) (in, value, from string, hasValue, hasFrom, ok bool) {
+	var get func(key string) (any, bool)
+	switch e := entry.(type) {
+	case map[string]any:
+		get = func(key string) (any, bool) { v, ok := e[key]; return v, ok }
+	case *OrderedMap[any]:
+		if e == nil {
+			return
+		}
+		get = e.Get
+	default:
+		return
+	}
+
+	inRaw, hasIn := get("in")
+	if !hasIn {
+		return
+	}
+	inStr, isStr := inRaw.(string)
+	if !isStr || inStr == "" {
+		return
+	}
+	in = inStr
+
+	if vRaw, hv := get("value"); hv {
+		if s, isStr := vRaw.(string); isStr {
+			value = s
+			hasValue = true
+		}
+	}
+	if fRaw, hf := get("from"); hf {
+		if s, isStr := fRaw.(string); isStr {
+			from = s
+			hasFrom = true
+		}
+	}
+	ok = true
+	return
+}
+
 // FeatureInstance is a feature attachment on a component or subsystem.
 // Used in Aggregate component.features, subsystem.features, and Release boundary features.
 type FeatureInstance struct {

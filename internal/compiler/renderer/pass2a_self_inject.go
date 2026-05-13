@@ -310,6 +310,35 @@ func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 		for key, val := range v {
 			result[key] = selfInjectEntry{isLiteral: true, value: val}
 		}
+	case []any:
+		// Schema-verbose-form: array of {in, from?, value?} per inject_delivery
+		// definition. The `in:` field carries the inject key (parallel to the
+		// per-key iteration key in the map-based arms above); `value:` and
+		// `from:` carry the same semantics as the verbose-shape extraction
+		// in the *OrderedMap[any] and map[string]any arms above. Schema
+		// validation enforces mutual-exclusivity of value: and from: per
+		// entry; the IR-build-time validator at ir.ValidateInjectBlocks is
+		// the second-line-of-defense halt that catches schema-bypass paths
+		// before any consumer site (including this one) runs. If both
+		// fields somehow reach decode here, both populate the entry — the
+		// rendering-time fallthrough is direct-construction unit tests
+		// only; downstream resolveSelfInjectEntry's if/else cascade picks
+		// from: over value: in that scenario per the
+		// reference-before-template ordering of its function body.
+		for _, entry := range v {
+			in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+			if !ok {
+				continue
+			}
+			outEntry := selfInjectEntry{}
+			if hasValue {
+				outEntry.value = value
+			}
+			if hasFrom {
+				outEntry.from = from
+			}
+			result[in] = outEntry
+		}
 	}
 
 	return result, nil

@@ -185,3 +185,41 @@ func TestNormalizeInjectMechanism_OrderedMapShape_PreservesAuthorOrder(t *testin
 		}
 	}
 }
+
+// TestNormalizeInjectMechanism_VerboseArrayForm pins the schema-verbose-form
+// decode arm. Entries decode in source order; value: wins over from: when
+// both are present. Entries without `in:` skip.
+func TestNormalizeInjectMechanism_VerboseArrayForm(t *testing.T) {
+	t.Parallel()
+
+	raw := []any{
+		map[string]any{"in": "DB_URL", "from": "connection.url"},
+		map[string]any{"in": "PORT", "value": "8080"},
+		map[string]any{"in": "BOTH", "from": "ref.path", "value": "literal"},
+	}
+
+	out := normalizeInjectMechanism(raw)
+	if out.Len() != 3 {
+		t.Fatalf("expected 3 entries, got %d", out.Len())
+	}
+	keys := out.Keys()
+	if keys[0] != "DB_URL" || keys[1] != "PORT" || keys[2] != "BOTH" {
+		t.Errorf("output key order = %v, want [DB_URL PORT BOTH] (source order)", keys)
+	}
+	cases := map[string]string{
+		"DB_URL": "connection.url",
+		"PORT":   "8080",
+		"BOTH":   "literal",
+	}
+	for k, want := range cases {
+		got, _ := out.Get(k)
+		if got != want {
+			t.Errorf("out[%q] = %q, want %q", k, got, want)
+		}
+	}
+
+	emptyOut := normalizeInjectMechanism([]any{})
+	if emptyOut.Len() != 0 {
+		t.Errorf("empty []any should produce empty result; got Len=%d", emptyOut.Len())
+	}
+}

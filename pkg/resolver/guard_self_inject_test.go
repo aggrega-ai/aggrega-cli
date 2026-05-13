@@ -267,3 +267,53 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 		}
 	}
 }
+
+// TestCollectInjectDeliveryKeys_VerboseArrayForm pins the schema-verbose-form
+// decode at the resolver-guard's key-collection helper. The verbose form's
+// [{in: K, from?: P, value?: V}] elements get keyed by `in:` only — the
+// guard cares about delivery-key identity (the inject target name), not
+// the value-or-reference distinction. Verbose entries lacking `in:` or
+// carrying a non-string `in:` skip.
+func TestCollectInjectDeliveryKeys_VerboseArrayForm(t *testing.T) {
+	t.Parallel()
+
+	inject := &types.InjectBlock{
+		Env: []any{
+			map[string]any{"in": "DB_URL", "from": "connection.url"},
+			map[string]any{"in": "PORT", "value": "8080"},
+		},
+		Arg: []any{
+			map[string]any{"in": "FLAG", "value": "--enable"},
+		},
+	}
+
+	keys := collectInjectDeliveryKeys(inject)
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 mechanisms, got %d: %v", len(keys), keys)
+	}
+	if got := keys["env"]; len(got) != 2 || got[0] != "DB_URL" || got[1] != "PORT" {
+		t.Errorf("env keys = %v, want [DB_URL PORT] (sorted)", got)
+	}
+	if got := keys["arg"]; len(got) != 1 || got[0] != "FLAG" {
+		t.Errorf("arg keys = %v, want [FLAG]", got)
+	}
+
+	emptyInject := &types.InjectBlock{Env: []any{}}
+	emptyKeys := collectInjectDeliveryKeys(emptyInject)
+	if len(emptyKeys) != 0 {
+		t.Errorf("empty []any{} should produce no mechanism keys; got %v", emptyKeys)
+	}
+
+	skipInject := &types.InjectBlock{
+		Env: []any{
+			map[string]any{"in": "GOOD", "value": "ok"},
+			map[string]any{"value": "missing-in"},
+			map[string]any{"in": "", "value": "empty-in"},
+			"not-a-map",
+		},
+	}
+	skipKeys := collectInjectDeliveryKeys(skipInject)
+	if got := skipKeys["env"]; len(got) != 1 || got[0] != "GOOD" {
+		t.Errorf("malformed entries should skip; got env=%v want [GOOD]", got)
+	}
+}

@@ -15,6 +15,7 @@ spec:
             target: db
             inject:
               env:
-                DB_HOST: host
+                - in: DB_HOST
+                  from: host
     db:
       type: core/db

@@ -31,6 +31,8 @@
 package ir
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
@@ -464,5 +466,121 @@ func TestConvertInjectBlock_CoreOnlyUnchanged(t *testing.T) {
 	}
 	if _, ok := result.Get("file"); !ok {
 		t.Errorf("result missing file")
+	}
+}
+
+// TestConvertInjectBlock_VerboseArrayForm pins the schema-verbose-form
+// decode arm. The verbose form's [{in: K, from?: P, value?: V}] elements
+// decode into the same OrderedMap[string] shape as the compact form. The
+// `value:` field is preferred over `from:` if both are present (defensive;
+// schema validation should preempt). Empty arrays produce no mechanism
+// entry; entries without `in:` or with non-string `in:` are skipped.
+func TestConvertInjectBlock_VerboseArrayForm(t *testing.T) {
+	t.Parallel()
+
+	inject := &types.InjectBlock{
+		Env: []any{
+			map[string]any{"in": "DB_URL", "from": "connection.url"},
+			map[string]any{"in": "PORT", "value": "8080"},
+		},
+		Arg: []any{
+			map[string]any{"in": "FLAG", "value": "--enable"},
+		},
+	}
+
+	result := convertInjectBlock(inject)
+	if result.Len() != 2 {
+		t.Fatalf("result.Len = %d, want 2 (env+arg); got %v", result.Len(), result.Keys())
+	}
+
+	envInner, ok := result.Get("env")
+	if !ok {
+		t.Fatalf("result missing env")
+	}
+	if v, _ := envInner.Get("DB_URL"); v != "connection.url" {
+		t.Errorf("env.DB_URL = %q, want %q", v, "connection.url")
+	}
+	if v, _ := envInner.Get("PORT"); v != "8080" {
+		t.Errorf("env.PORT = %q, want %q", v, "8080")
+	}
+
+	argInner, ok := result.Get("arg")
+	if !ok {
+		t.Fatalf("result missing arg")
+	}
+	if v, _ := argInner.Get("FLAG"); v != "--enable" {
+		t.Errorf("arg.FLAG = %q, want %q", v, "--enable")
+	}
+
+	// Empty verbose-array → mechanism not present (mirrors empty-map semantic).
+	emptyInject := &types.InjectBlock{Env: []any{}}
+	emptyResult := convertInjectBlock(emptyInject)
+	if emptyResult.Len() != 0 {
+		t.Errorf("empty []any{} should produce no mechanism entry; got Len=%d", emptyResult.Len())
+	}
+
+	// Defensive: value: wins when both value: and from: are present.
+	bothInject := &types.InjectBlock{
+		Env: []any{map[string]any{"in": "BOTH", "from": "ref.path", "value": "literal"}},
+	}
+	bothResult := convertInjectBlock(bothInject)
+	bothInner, _ := bothResult.Get("env")
+	if v, _ := bothInner.Get("BOTH"); v != "literal" {
+		t.Errorf("when both value: and from: present, value: should win; got %q", v)
+	}
+}
+
+// TestBuildIR_InjectValidationHaltsWithSpecificError pins the BuildIR-level
+// wiring of the second-line-of-defense inject validator: a resolved
+// Aggregate carrying a both-`value:`-and-`from:`-present inject entry
+// halts BuildIR before any IR construction begins, with the error wrapping
+// ErrInjectEntryAmbiguous and the field path of the violating entry. The
+// case is schema-illegal (inject_delivery oneOf rejects it at envelope
+// load); this test exercises the schema-bypass path that motivates the
+// validator's existence — a programmatically constructed Aggregate that
+// never passed through schema validation.
+func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
+	t.Parallel()
+
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Type: "core/server/api-server",
+		Inject: &types.InjectBlock{
+			Env: []any{
+				map[string]any{"in": "DB_URL", "from": "connection.url", "value": "literal-text"},
+			},
+		},
+	})
+
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{
+			Metadata: types.AggregateMetadata{Name: "test-app", Version: "1.0.0"},
+			Spec:     types.AggregateSpec{Components: components},
+		},
+		Release: &types.Release{
+			Metadata: types.ReleaseMetadata{Name: "test-release", Version: "1.0.0", Environment: "local"},
+			Spec:     types.ReleaseSpec{Boundaries: types.OrderedMap[types.Boundary]{}},
+		},
+		Manifest:      &types.Manifest{Metadata: types.ManifestMetadata{Version: "1.0.0"}},
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+	}
+
+	graph, _, err := BuildIR(BuildIRConfig{
+		Topology:        &topology.TopologyResult{Nodes: types.OrderedMap[*topology.TopologyNode]{}},
+		ResolveResult:   resolveResult,
+		CatalogLookup:   testCatalog(),
+		CompilerVersion: "0.1.0",
+	})
+	if err == nil {
+		t.Fatalf("expected ErrInjectEntryAmbiguous, got nil")
+	}
+	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
+	}
+	if !strings.Contains(err.Error(), `components["api"].inject.env[0]`) {
+		t.Errorf("error path missing components[\"api\"].inject.env[0]: %v", err)
+	}
+	if graph != nil {
+		t.Errorf("expected nil graph on validation halt, got non-nil")
 	}
 }

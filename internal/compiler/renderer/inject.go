@@ -125,12 +125,15 @@ func mergeSorted(dest *types.OrderedMap[string], src types.OrderedMap[string]) {
 }
 
 // normalizeInjectMechanism converts the polymorphic inject mechanism value
-// (map[string]string, map[string]any, or *types.OrderedMap[any]) to
-// OrderedMap[string]. The *types.OrderedMap[any] shape arrives from
-// round-trip-fidelity decoding when the inject block is reached via an
-// OrderedMap[any]-routed authoring path; iteration via .All() preserves
-// author order. Unsorted plain-map shapes lose authoring order at decode
-// and are sorted alphabetically here for stability.
+// (map[string]string, map[string]any, *types.OrderedMap[any], or []any
+// schema-verbose-form entries) to OrderedMap[string]. The
+// *types.OrderedMap[any] shape arrives from round-trip-fidelity decoding
+// when the inject block is reached via an OrderedMap[any]-routed authoring
+// path; iteration via .All() preserves author order. Unsorted plain-map
+// shapes lose authoring order at decode and are sorted alphabetically here
+// for stability. The schema-verbose-form []any (elements
+// {in, from?, value?}) iterates in source order; value: wins over from: if
+// both are present at an entry.
 func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
 	if raw == nil {
@@ -164,6 +167,20 @@ func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 		for _, k := range keys {
 			if s, ok := v[k].(string); ok {
 				out.Set(k, s)
+			}
+		}
+	case []any:
+		for _, entry := range v {
+			in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+			if !ok {
+				continue
+			}
+			if hasValue {
+				out.Set(in, value)
+				continue
+			}
+			if hasFrom {
+				out.Set(in, from)
 			}
 		}
 	}

@@ -178,6 +178,92 @@ func TestNormalizeSelfInjectEntries_OrderedMapShape_DecodesEntries(t *testing.T)
 	}
 }
 
+// TestNormalizeSelfInjectEntries_VerboseArrayForm pins the schema-verbose-form
+// outer-array decode arm. The schema's inject_delivery accepts
+// [{in: K, from?: P, value?: V}] as the canonical authoring shape after the
+// compact-form retirement. The `in:` field maps to the entry key; `value:`
+// and `from:` propagate to the selfInjectEntry's value / from fields with
+// the same per-field semantics as the existing per-key {value, from}
+// extraction arms above.
+func TestNormalizeSelfInjectEntries_VerboseArrayForm(t *testing.T) {
+	t.Parallel()
+
+	raw := []any{
+		map[string]any{"in": "DB_URL", "from": "connection.url"},
+		map[string]any{"in": "PORT", "value": "8080"},
+	}
+
+	entries, err := normalizeSelfInjectEntries(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if e, ok := entries["DB_URL"]; !ok || e.from != "connection.url" {
+		t.Errorf("DB_URL: %+v want from=connection.url", e)
+	}
+	if e, ok := entries["PORT"]; !ok || e.value != "8080" {
+		t.Errorf("PORT: %+v want value=8080", e)
+	}
+
+	emptyEntries, _ := normalizeSelfInjectEntries([]any{})
+	if len(emptyEntries) != 0 {
+		t.Errorf("empty []any should produce empty map; got %d entries", len(emptyEntries))
+	}
+}
+
+// TestNormalizeSelfInjectEntries_BothFieldsPresent_BlocksTheCaseBeforeResolveRuns
+// pins the architectural-intent record: a verbose-form entry that
+// simultaneously carries `value:` AND `from:` is schema-illegal (the
+// inject_delivery schema's `oneOf: [required:[from], required:[value]]`
+// rejects it at envelope load); the IR-build-time second-line-of-defense
+// validator at [ir.ValidateInjectBlocks] halts the build with
+// [ir.ErrInjectEntryAmbiguous] for code paths that bypass envelope-load
+// validation (in-memory fixtures, programmatic catalog builders). The
+// renderer-layer decode arm still populates both selfInjectEntry fields
+// verbatim if the case somehow reaches Pass 2a (e.g., a unit test that
+// constructs entries directly without running through IR build); this
+// test documents that direct-construction path and pins
+// resolveSelfInjectEntry's downstream behavior in that scenario — `from:`
+// resolves first per the function body's if/else cascade. The pin is
+// architectural-intent documentation; the case is unreachable in any
+// production path through BuildIR because the validator blocks it.
+func TestNormalizeSelfInjectEntries_BothFieldsPresent_BlocksTheCaseBeforeResolveRuns(t *testing.T) {
+	t.Parallel()
+
+	verboseRaw := []any{
+		map[string]any{"in": "BOTH", "from": "ref.path", "value": "literal-text"},
+	}
+	entries, err := normalizeSelfInjectEntries(verboseRaw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	entry, ok := entries["BOTH"]
+	if !ok {
+		t.Fatalf("entry BOTH missing from decoded entries")
+	}
+	if entry.value != "literal-text" || entry.from != "ref.path" {
+		t.Fatalf("decode should populate both fields verbatim; got value=%q from=%q",
+			entry.value, entry.from)
+	}
+
+	// Direct-construction scenario: the only path to reach resolveSelfInjectEntry
+	// with both fields populated is to skip IR build entirely (this test does so).
+	// Under that scenario, the function's if/else cascade picks from: first.
+	ownProvides := types.OrderedMap[string]{}
+	ownProvides.Set("ref.path", "resolved-from-provides")
+
+	resolved, err := resolveSelfInjectEntry("BOTH", entry, "env", ownProvides, SelfInjectContext{})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved != "resolved-from-provides" {
+		t.Errorf("direct-construction scenario: from: should win at resolveSelfInjectEntry; got %q want %q",
+			resolved, "resolved-from-provides")
+	}
+}
+
 // usesEdge constructs an IREdge with a uses-inject delivery key on the named
 // mechanism. Helper for collision tests below.
 func usesEdge(source, target, socket, mechanism, deliveryKey, providesKey string) types.IREdge {

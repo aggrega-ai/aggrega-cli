@@ -25,5 +25,7 @@ spec:
             target: backend
             inject:
               env:
-                API_HOST: host
-                API_PORT: service_port
+                - in: API_HOST
+                  from: host
+                - in: API_PORT
+                  from: service_port

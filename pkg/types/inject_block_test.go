@@ -220,3 +220,137 @@ zzz_mechanism:
 	// we don't assert anything here but reference the package to keep imports honest in tooling.
 	_ = errors.New
 }
+
+// TestDecodeVerboseInjectEntry_MapShape pins the helper's behavior on
+// map[string]any entries (the default YAML/JSON unmarshal shape). Covers
+// in+from / in+value / both-present / missing-in / non-string-in /
+// empty-in / non-string-value / not-a-map / nil.
+func TestDecodeVerboseInjectEntry_MapShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		entry    any
+		wantIn   string
+		wantVal  string
+		wantFrom string
+		wantHV   bool
+		wantHF   bool
+		wantOK   bool
+	}{
+		{
+			name:     "in+from",
+			entry:    map[string]any{"in": "DB_URL", "from": "connection.url"},
+			wantIn:   "DB_URL",
+			wantFrom: "connection.url",
+			wantHF:   true,
+			wantOK:   true,
+		},
+		{
+			name:    "in+value",
+			entry:   map[string]any{"in": "PORT", "value": "8080"},
+			wantIn:  "PORT",
+			wantVal: "8080",
+			wantHV:  true,
+			wantOK:  true,
+		},
+		{
+			name:     "both-present",
+			entry:    map[string]any{"in": "BOTH", "from": "ref", "value": "literal"},
+			wantIn:   "BOTH",
+			wantVal:  "literal",
+			wantFrom: "ref",
+			wantHV:   true,
+			wantHF:   true,
+			wantOK:   true,
+		},
+		{name: "missing-in", entry: map[string]any{"value": "v"}, wantOK: false},
+		{name: "non-string-in", entry: map[string]any{"in": 42, "value": "v"}, wantOK: false},
+		{name: "empty-in", entry: map[string]any{"in": "", "value": "v"}, wantOK: false},
+		{name: "non-string-value", entry: map[string]any{"in": "K", "value": 42}, wantIn: "K", wantOK: true},
+		{name: "not-a-map", entry: "scalar", wantOK: false},
+		{name: "nil", entry: nil, wantOK: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			in, value, from, hasValue, hasFrom, ok := DecodeVerboseInjectEntry(tt.entry)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if in != tt.wantIn {
+				t.Errorf("in = %q, want %q", in, tt.wantIn)
+			}
+			if value != tt.wantVal {
+				t.Errorf("value = %q, want %q", value, tt.wantVal)
+			}
+			if from != tt.wantFrom {
+				t.Errorf("from = %q, want %q", from, tt.wantFrom)
+			}
+			if hasValue != tt.wantHV {
+				t.Errorf("hasValue = %v, want %v", hasValue, tt.wantHV)
+			}
+			if hasFrom != tt.wantHF {
+				t.Errorf("hasFrom = %v, want %v", hasFrom, tt.wantHF)
+			}
+		})
+	}
+}
+
+// TestDecodeVerboseInjectEntry_OrderedMapShape pins the helper's behavior
+// on *OrderedMap[any] entries (the round-trip-fidelity decode shape). The
+// asymmetry concern the outer arms address — outer `case *OrderedMap[any]:`
+// exists alongside `case map[string]any:` — extends to verbose-form
+// entries: a future authoring path that engages OrderedMap-aware decoding
+// for InjectBlock field values would produce inner entries shaped as
+// *OrderedMap[any]. The helper handles both shapes uniformly so consumer
+// sites don't silently skip valid OrderedMap-shaped verbose entries.
+func TestDecodeVerboseInjectEntry_OrderedMapShape(t *testing.T) {
+	t.Parallel()
+
+	build := func(pairs ...[2]any) *OrderedMap[any] {
+		m := NewOrderedMap[any]()
+		for _, p := range pairs {
+			m.Set(p[0].(string), p[1])
+		}
+		return m
+	}
+
+	t.Run("in+from", func(t *testing.T) {
+		t.Parallel()
+		e := build([2]any{"in", "DB_URL"}, [2]any{"from", "connection.url"})
+		in, value, from, hasValue, hasFrom, ok := DecodeVerboseInjectEntry(e)
+		if !ok || in != "DB_URL" || from != "connection.url" || value != "" || hasFrom != true || hasValue != false {
+			t.Errorf("got (in=%q value=%q from=%q hV=%v hF=%v ok=%v)", in, value, from, hasValue, hasFrom, ok)
+		}
+	})
+
+	t.Run("in+value", func(t *testing.T) {
+		t.Parallel()
+		e := build([2]any{"in", "PORT"}, [2]any{"value", "8080"})
+		in, value, _, hasValue, _, ok := DecodeVerboseInjectEntry(e)
+		if !ok || in != "PORT" || value != "8080" || hasValue != true {
+			t.Errorf("got (in=%q value=%q hV=%v ok=%v)", in, value, hasValue, ok)
+		}
+	})
+
+	t.Run("nil-ordered-map", func(t *testing.T) {
+		t.Parallel()
+		var e *OrderedMap[any]
+		_, _, _, _, _, ok := DecodeVerboseInjectEntry(e)
+		if ok {
+			t.Error("nil *OrderedMap[any] should return ok=false")
+		}
+	})
+
+	t.Run("missing-in-ordered-map", func(t *testing.T) {
+		t.Parallel()
+		e := build([2]any{"value", "v"})
+		_, _, _, _, _, ok := DecodeVerboseInjectEntry(e)
+		if ok {
+			t.Error("OrderedMap without `in` should return ok=false")
+		}
+	})
+}

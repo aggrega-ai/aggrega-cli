@@ -189,6 +189,14 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 			for k := range v {
 				result[mech] = append(result[mech], k)
 			}
+		case []any:
+			for _, entry := range v {
+				in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
+				if !ok {
+					continue
+				}
+				result[mech] = append(result[mech], in)
+			}
 		}
 	}
 	extractKeys("env", inject.Env)
@@ -239,6 +247,14 @@ func collectUsesInjectDeliveryKeys(uses types.OrderedMap[types.UsesSocketValue])
 		case map[string]string:
 			for k := range v {
 				result[mech] = append(result[mech], k)
+			}
+		case []any:
+			for _, entry := range v {
+				in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
+				if !ok {
+					continue
+				}
+				result[mech] = append(result[mech], in)
 			}
 		}
 	}

@@ -101,6 +101,17 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult
 
+	// Defense-in-depth: catch any verbose-form inject entry that carries
+	// both `value:` and `from:` simultaneously. Schema validation at
+	// envelope load preempts this case in production paths; the validator
+	// here covers schema-bypass paths (in-memory fixtures, programmatic
+	// catalog builders) per ErrInjectEntryAmbiguous's contract.
+	if res != nil {
+		if err := ValidateInjectBlocks(res.Aggregate, res.Release); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	irNodes := types.OrderedMap[types.IRNode]{}
 	valuesMapping := types.OrderedMap[json.RawMessage]{}
 	infraMapping := types.OrderedMap[json.RawMessage]{}
@@ -254,9 +265,10 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 // values per delivery key); the silent drop is the function's current
 // behaviour and may need revisiting if upstream coercion bugs surface as
 // missing inject entries downstream. The verbose-array form (encoded as
-// []any) is not currently handled at this layer; if a custom mechanism
-// authored with the verbose form reaches here, the type-switch falls through
-// silently.
+// []any with elements {in, from?, value?}) decodes by iterating entries
+// and copying (in, value-or-from) pairs into the same OrderedMap[string]
+// shape. The verbose form is the canonical authoring shape after the
+// schema flip retired compact-form authoring at inject_delivery.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
@@ -296,6 +308,24 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 				for k, val := range v {
 					m.Set(k, val)
 				}
+				result.Set(mech, m)
+			}
+		case []any:
+			m := types.OrderedMap[string]{}
+			for _, entry := range v {
+				in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+				if !ok {
+					continue
+				}
+				if hasValue {
+					m.Set(in, value)
+					continue
+				}
+				if hasFrom {
+					m.Set(in, from)
+				}
+			}
+			if m.Len() > 0 {
 				result.Set(mech, m)
 			}
 		}
