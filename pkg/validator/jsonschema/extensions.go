@@ -5,6 +5,7 @@ package jsonschema
 
 import (
 	"bytes"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -197,16 +198,24 @@ nextValidate:
 // descends into each child rather than letting the library iterate
 // internally.
 //
-// Cross-property constraints at intermediate levels (allOf, anyOf,
-// oneOf, not, patternProperties, dependentSchemas) are not validated
-// here — the root-level catch-all in Validate handles them via the
-// library, accepting library-internal iteration order as a documented
-// limitation.
+// Per-key dispatch follows the WI 05b precedence rule: Properties >
+// PatternProperties > AdditionalProperties. A key declared in
+// Properties validates against the Property's sub-schema. A key
+// matching one or more patternProperties validates against each
+// matching pattern's sub-schema via walkBranch. A key in neither falls
+// through to additionalProperties (if declared as a schema; the
+// boolean form is enforced via Properties shape alone).
+//
+// Cross-property constraints (allOf, anyOf, oneOf, not, dependentSchemas)
+// evaluate at the current path after the per-key dispatch via Option α
+// recursive walkBranch. The library's instance-root Validate is never
+// invoked for these constructs — the walker delivers deterministic
+// finding emission across the full JSON Schema 2020-12 surface the
+// LDR enumerates.
 func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report) {
 	// Required-property check at this level: emit one finding per
 	// missing key, in sorted order, BEFORE recursing into present
-	// children (so the per-finding ordering is path-then-keyword
-	// stable).
+	// children.
 	if req, ok := a.required[path]; ok {
 		if m, ok := instance.(map[string]any); ok {
 			for _, key := range req {
@@ -225,41 +234,351 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 		}
 	}
 
-	m, ok := instance.(map[string]any)
-	if !ok {
-		return
+	if m, ok := instance.(map[string]any); ok {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		// Per-key dispatch with WI 05b precedence rule:
+		// Properties > PatternProperties > AdditionalProperties.
+		for _, k := range keys {
+			subPath := k
+			if path != "" {
+				subPath = path + "." + k
+			}
+
+			// Arm 1: declared in Properties.
+			if subResolved, hasSub := a.subResolved[subPath]; hasSub {
+				if err := subResolved.Validate(m[k]); err != nil {
+					rpt.append(Finding{
+						FieldPath: subPath,
+						Keyword:   "validation",
+						Message:   err.Error(),
+					})
+				}
+				a.deterministicWalk(m[k], subPath, rpt)
+				continue
+			}
+
+			// Arm 2: matches one or more patternProperties — validate against EACH match.
+			if patterns, hasPP := a.patternPropsResolved[path]; hasPP {
+				matched := false
+				for _, pe := range patterns {
+					if pe.pattern.MatchString(k) {
+						matched = true
+						branchRpt := a.walkBranch(pe.branch, m[k], subPath)
+						rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
+					}
+				}
+				if matched {
+					continue
+				}
+			}
+
+			// Arm 3: undeclared key falls through to additionalProperties.
+			if apBranch, ok := a.additionalPropsBranch[path]; ok {
+				branchRpt := a.walkBranch(apBranch, m[k], subPath)
+				rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
+			}
+		}
 	}
 
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	// Combinator evaluation at this path via Option α recursive walkBranch.
+	if branches, ok := a.oneOfBranches[path]; ok {
+		evaluateOneOf(a, branches, instance, path, rpt)
 	}
-	sort.Strings(keys)
+	if branches, ok := a.allOfBranches[path]; ok {
+		evaluateAllOf(a, branches, instance, path, rpt)
+	}
+	if branches, ok := a.anyOfBranches[path]; ok {
+		evaluateAnyOf(a, branches, instance, path, rpt)
+	}
+	if notBranch, ok := a.notIndexes[path]; ok {
+		evaluateNot(a, notBranch, instance, path, rpt)
+	}
 
-	for _, k := range keys {
-		subPath := k
-		if path != "" {
-			subPath = path + "." + k
+	// DependentSchemas evaluation at this path.
+	if deps, ok := a.dependentSchemas[path]; ok {
+		if m, ok := instance.(map[string]any); ok {
+			for _, dep := range deps {
+				if _, present := m[dep.triggerKey]; !present {
+					continue
+				}
+				branchRpt := a.walkBranch(dep.branch, instance, path)
+				for _, f := range branchRpt.Findings {
+					rpt.append(Finding{
+						FieldPath: f.FieldPath,
+						Keyword:   "dependentSchemas/" + dep.triggerKey + "/" + f.Keyword,
+						Message:   f.Message,
+					})
+				}
+			}
 		}
-		subResolved, hasSub := a.subResolved[subPath]
-		if !hasSub {
-			// Property not declared in the schema's Properties — let
-			// the root-level catch-all handle it (additionalProperties
-			// concerns surface there).
-			continue
-		}
-		if err := subResolved.Validate(m[k]); err != nil {
+	}
+}
+
+// walkBranch validates an instance against a pre-indexed branch using
+// the same deterministic property-walk discipline as the top-level
+// walker. Reads from the branchIndex rather than googleAdapter's
+// top-level maps. Recursion through nested combinators is bounded by
+// schema depth.
+//
+// Leaf-vs-compound discipline (Option α-strict): bi.resolved is
+// populated ONLY for leaf branches (no Properties, no nested
+// combinators, no patternProperties, no dependentSchemas, no
+// additionalProperties). For leaf branches the library Validate runs
+// (deterministic at the library level for type/pattern/enum/range
+// constraints). For compound branches, bi.resolved is nil and only
+// the per-construct walks run — the library is never invoked at
+// instance-root scope.
+func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *Report {
+	rpt := &Report{}
+	if bi == nil {
+		return rpt
+	}
+
+	// Leaf-validation fallback (Option α-strict).
+	if bi.resolved != nil {
+		if err := bi.resolved.Validate(instance); err != nil {
 			rpt.append(Finding{
-				FieldPath: subPath,
+				FieldPath: path,
 				Keyword:   "validation",
 				Message:   err.Error(),
 			})
 		}
-		// Recurse into nested objects so deeper properties also walk
-		// deterministically rather than relying on the library's
-		// internal iteration at this sub-schema's call.
-		a.deterministicWalk(m[k], subPath, rpt)
+		return rpt
 	}
+
+	// Compound branch: implicit type gate. If the branch carries any
+	// object-requiring constructs (Properties, patternProperties,
+	// additionalProperties, dependentSchemas) AND the instance is not
+	// a map, emit a deterministic type-mismatch finding and return —
+	// the per-construct walks below would silently no-op on
+	// wrong-typed instances (e.g., calling instance.(map[string]any)
+	// returns ok=false), which would let a non-object instance pass
+	// branch validation when the branch shape clearly requires an
+	// object. The gate closes that hole without invoking the library's
+	// non-deterministic root validation.
+	requiresObject := len(bi.subResolved) > 0 ||
+		len(bi.patternPropsResolved) > 0 ||
+		len(bi.additionalPropsBranch) > 0 ||
+		len(bi.dependentSchemas) > 0
+	if requiresObject {
+		if _, ok := instance.(map[string]any); !ok {
+			rpt.append(Finding{
+				FieldPath: path,
+				Keyword:   "type",
+				Message:   fmt.Sprintf("expected object, got %T", instance),
+			})
+			return rpt
+		}
+	}
+
+	// Compound branch: required check + per-key dispatch + combinators + dependentSchemas.
+	if req, ok := bi.required[""]; ok {
+		if m, ok := instance.(map[string]any); ok {
+			for _, key := range req {
+				if _, present := m[key]; !present {
+					missingPath := key
+					if path != "" {
+						missingPath = path + "." + key
+					}
+					rpt.append(Finding{
+						FieldPath: missingPath,
+						Keyword:   "required",
+						Message:   "missing required property: " + key,
+					})
+				}
+			}
+		}
+	}
+
+	if m, ok := instance.(map[string]any); ok {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			subPath := k
+			if path != "" {
+				subPath = path + "." + k
+			}
+
+			// Arm 1: declared in Properties (branch-local).
+			if subResolved, hasSub := bi.subResolved[k]; hasSub {
+				if err := subResolved.Validate(m[k]); err != nil {
+					rpt.append(Finding{
+						FieldPath: subPath,
+						Keyword:   "validation",
+						Message:   err.Error(),
+					})
+				}
+				continue
+			}
+
+			// Arm 2: patternProperties (branch-local).
+			if patterns, hasPP := bi.patternPropsResolved[""]; hasPP {
+				matched := false
+				for _, pe := range patterns {
+					if pe.pattern.MatchString(k) {
+						matched = true
+						branchRpt := a.walkBranch(pe.branch, m[k], subPath)
+						rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
+					}
+				}
+				if matched {
+					continue
+				}
+			}
+
+			// Arm 3: additionalProperties (branch-local).
+			if apBranch, ok := bi.additionalPropsBranch[""]; ok {
+				branchRpt := a.walkBranch(apBranch, m[k], subPath)
+				rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
+			}
+		}
+	}
+
+	// Combinators at this branch (Option α recursion).
+	if branches, ok := bi.oneOfBranches[""]; ok {
+		evaluateOneOf(a, branches, instance, path, rpt)
+	}
+	if branches, ok := bi.allOfBranches[""]; ok {
+		evaluateAllOf(a, branches, instance, path, rpt)
+	}
+	if branches, ok := bi.anyOfBranches[""]; ok {
+		evaluateAnyOf(a, branches, instance, path, rpt)
+	}
+	if notBranch, ok := bi.notIndexes[""]; ok {
+		evaluateNot(a, notBranch, instance, path, rpt)
+	}
+
+	// dependentSchemas at this branch.
+	if deps, ok := bi.dependentSchemas[""]; ok {
+		if m, ok := instance.(map[string]any); ok {
+			for _, dep := range deps {
+				if _, present := m[dep.triggerKey]; !present {
+					continue
+				}
+				branchRpt := a.walkBranch(dep.branch, instance, path)
+				for _, f := range branchRpt.Findings {
+					rpt.append(Finding{
+						FieldPath: f.FieldPath,
+						Keyword:   "dependentSchemas/" + dep.triggerKey + "/" + f.Keyword,
+						Message:   f.Message,
+					})
+				}
+			}
+		}
+	}
+
+	return rpt
+}
+
+// evaluateOneOf walks each branch via walkBranch; exactly-one
+// clean-match accepts the instance; zero matches or multi-match emit
+// a single deterministic Finding. Multi-match diagnostics include the
+// matched-branch indices (revision-2 enhancement for operator
+// debugging).
+func evaluateOneOf(a *googleAdapter, branches []*branchIndex, instance any, path string, rpt *Report) {
+	var matchedIndices []int
+	var failures []string
+	for i, branch := range branches {
+		branchRpt := a.walkBranch(branch, instance, path)
+		if len(branchRpt.Findings) == 0 {
+			matchedIndices = append(matchedIndices, i)
+		} else {
+			failures = append(failures, fmt.Sprintf("branch[%d]: %s", i, summarizeBranchFindings(branchRpt)))
+		}
+	}
+	if len(matchedIndices) != 1 {
+		rpt.append(Finding{
+			FieldPath: path,
+			Keyword:   "oneOf",
+			Message:   formatOneOfFailure(matchedIndices, len(branches), failures),
+		})
+	}
+}
+
+// evaluateAllOf walks every branch; emits one Finding per failing
+// branch (union of failing-branch findings).
+func evaluateAllOf(a *googleAdapter, branches []*branchIndex, instance any, path string, rpt *Report) {
+	for i, branch := range branches {
+		branchRpt := a.walkBranch(branch, instance, path)
+		if len(branchRpt.Findings) == 0 {
+			continue
+		}
+		for _, f := range branchRpt.Findings {
+			rpt.append(Finding{
+				FieldPath: f.FieldPath,
+				Keyword:   fmt.Sprintf("allOf/branch[%d]/%s", i, f.Keyword),
+				Message:   f.Message,
+			})
+		}
+	}
+}
+
+// evaluateAnyOf walks branches in declared order; accepts on the
+// first clean match; emits a single Finding listing per-branch
+// summaries on no-match.
+func evaluateAnyOf(a *googleAdapter, branches []*branchIndex, instance any, path string, rpt *Report) {
+	var failures []string
+	for i, branch := range branches {
+		branchRpt := a.walkBranch(branch, instance, path)
+		if len(branchRpt.Findings) == 0 {
+			return // anyOf short-circuits on first clean match
+		}
+		failures = append(failures, fmt.Sprintf("branch[%d]: %s", i, summarizeBranchFindings(branchRpt)))
+	}
+	rpt.append(Finding{
+		FieldPath: path,
+		Keyword:   "anyOf",
+		Message:   "no anyOf branch matched: " + strings.Join(failures, "; "),
+	})
+}
+
+// evaluateNot walks the inverse schema; if instance MATCHES the
+// inverse (zero findings), emit a single "not" Finding.
+func evaluateNot(a *googleAdapter, notBranch *branchIndex, instance any, path string, rpt *Report) {
+	branchRpt := a.walkBranch(notBranch, instance, path)
+	if len(branchRpt.Findings) == 0 {
+		rpt.append(Finding{
+			FieldPath: path,
+			Keyword:   "not",
+			Message:   "instance must NOT match the inverse schema",
+		})
+	}
+}
+
+// summarizeBranchFindings produces a single-line summary of a
+// branch's findings for inclusion in aggregated combinator error
+// messages. Format: "<keyword>: <message>" per finding, comma-joined.
+func summarizeBranchFindings(rpt *Report) string {
+	parts := make([]string, 0, len(rpt.Findings))
+	for _, f := range rpt.Findings {
+		parts = append(parts, fmt.Sprintf("%s: %s", f.Keyword, f.Message))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// formatOneOfFailure formats the oneOf failure Finding message.
+// No-match case lists per-branch failures; multi-match case names
+// the matched-branch indices for operator debugging.
+func formatOneOfFailure(matchedIndices []int, total int, failures []string) string {
+	if len(matchedIndices) == 0 {
+		return fmt.Sprintf("no oneOf branch matched (%d branches tried): %s",
+			total, strings.Join(failures, "; "))
+	}
+	indices := make([]string, len(matchedIndices))
+	for i, idx := range matchedIndices {
+		indices[i] = strconv.Itoa(idx)
+	}
+	return fmt.Sprintf("multiple oneOf branches matched (branches [%s] of %d): expected exactly one",
+		strings.Join(indices, ", "), total)
 }
 
 // evaluateTemplate runs a pre-compiled template against a data value,

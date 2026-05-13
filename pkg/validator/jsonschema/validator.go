@@ -4,6 +4,7 @@
 package jsonschema
 
 import (
+	"regexp"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -64,9 +65,16 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 	}
 
 	a := &googleAdapter{
-		subResolved: map[string]*jsonschema.Resolved{},
-		required:    map[string][]string{},
-		rootDefs:    schema.Defs,
+		subResolved:           map[string]*jsonschema.Resolved{},
+		required:              map[string][]string{},
+		rootDefs:              schema.Defs,
+		additionalPropsBranch: map[string]*branchIndex{},
+		oneOfBranches:         map[string][]*branchIndex{},
+		allOfBranches:         map[string][]*branchIndex{},
+		anyOfBranches:         map[string][]*branchIndex{},
+		notIndexes:            map[string]*branchIndex{},
+		patternPropsResolved:  map[string][]*patternEntry{},
+		dependentSchemas:      map[string][]*dependentEntry{},
 	}
 
 	// First pass: walk the schema to find x-aggrega-when: and
@@ -147,6 +155,86 @@ type googleAdapter struct {
 	// after New returns" precondition: rootDefs is a read-only
 	// pointer into the input schema.
 	rootDefs map[string]*jsonschema.Schema
+
+	// additionalPropsBranch maps a parent path to its
+	// AdditionalProperties-as-schema branchIndex. Populated only when
+	// the schema node at the path carries AdditionalProperties as a
+	// non-nil *Schema (vs the boolean-shorthand case). Carries the
+	// recursive branchIndex shape so nested-Properties
+	// additionalProperties (e.g., the parameter-contract's
+	// {oneOf: [scalar, typed-form]}) walk deterministically through
+	// walkBranch.
+	additionalPropsBranch map[string]*branchIndex
+
+	// oneOf/allOf/anyOf/notIndexes map a path to the ordered list (or
+	// single, for not) of branchIndex sub-structures. Option α
+	// recursive branch walking reads these branchIndex shapes via
+	// walkBranch rather than calling the library's randomised root
+	// validation.
+	oneOfBranches map[string][]*branchIndex
+	allOfBranches map[string][]*branchIndex
+	anyOfBranches map[string][]*branchIndex
+	notIndexes    map[string]*branchIndex
+
+	// patternPropsResolved maps a parent path to its patternProperties
+	// entries — each is a compiled regex + the sub-schema's
+	// branchIndex. Pattern entries are sorted alphabetically by
+	// pattern string at index time so iteration at walk time is
+	// deterministic (the library's PatternProperties iteration is
+	// randomised).
+	patternPropsResolved map[string][]*patternEntry
+
+	// dependentSchemas maps a parent path to its trigger-key-keyed
+	// dependent sub-schemas. Each entry is (triggerKey,
+	// dependentBranchIndex). Sorted alphabetically by triggerKey at
+	// index time for deterministic walk-time iteration.
+	dependentSchemas map[string][]*dependentEntry
+}
+
+// branchIndex carries a single combinator branch's (or
+// AdditionalProperties / patternProperties value's / dependentSchemas
+// value's) pre-indexed validation state. Mirrors googleAdapter's
+// top-level maps at the branch scope so walkBranch can validate
+// deterministically without invoking the library's randomised root
+// validation.
+//
+// Leaf-vs-compound discipline (Option α-strict): the resolved field
+// is populated ONLY for leaf branches — branches with no Properties,
+// no nested combinators (oneOf/allOf/anyOf/not), no patternProperties,
+// no dependentSchemas, and no additionalProperties. For leaf branches
+// the resolved.Validate call below is deterministic at the library
+// level (type/pattern/enum/range constraints produce stable
+// single-message findings; no map iteration involved). For compound
+// branches, resolved is nil and walkBranch reads from the
+// per-construct maps; the library is never invoked at instance-root
+// scope for these branches.
+type branchIndex struct {
+	resolved              *jsonschema.Resolved // leaf-only; nil for compound branches per Option α-strict
+	subResolved           map[string]*jsonschema.Resolved
+	required              map[string][]string
+	additionalPropsBranch map[string]*branchIndex
+	oneOfBranches         map[string][]*branchIndex
+	allOfBranches         map[string][]*branchIndex
+	anyOfBranches         map[string][]*branchIndex
+	notIndexes            map[string]*branchIndex
+	patternPropsResolved  map[string][]*patternEntry
+	dependentSchemas      map[string][]*dependentEntry
+}
+
+// patternEntry pairs a compiled regex with its sub-schema's
+// branchIndex. Stored in alphabetically-sorted slices keyed by parent
+// path so walk-time iteration is deterministic.
+type patternEntry struct {
+	pattern *regexp.Regexp
+	branch  *branchIndex
+}
+
+// dependentEntry pairs a trigger key with its dependent sub-schema's
+// branchIndex. Stored in alphabetically-sorted slices keyed by parent
+// path so walk-time iteration is deterministic.
+type dependentEntry struct {
+	triggerKey string
+	branch     *branchIndex
 }
 
 // whenNode is a single x-aggrega-when: position in the schema with

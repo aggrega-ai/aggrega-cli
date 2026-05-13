@@ -180,3 +180,59 @@ func canonicalJSON(t *testing.T, v any) string {
 	}
 	return strings.TrimSpace(string(b))
 }
+
+// TestValidateParameterContractEnvelope_Determinism is the load-bearing
+// acceptance signal for WI 05b's Step D migration: after retiring the
+// library-direct Resolved.Validate bypass in favor of the
+// pkg/validator/jsonschema wrapper, multi-violation envelope errors
+// must produce byte-identical content across runs (the property the
+// wrapper was designed to deliver, restored at this code-path by the
+// Option α recursive branch-walking extension at WI 05b).
+//
+// Test runs the envelope validator 10× in the same process on a
+// malformed contract producing multiple violations and asserts
+// byte-identical error.Error() output. Pre-WI-05b (library-direct
+// bypass), the equivalent assertion would have failed because the
+// library's randomised Properties iteration produced variable
+// error-string content across runs.
+func TestValidateParameterContractEnvelope_Determinism(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+spec:
+  parameters:
+    bad1:
+      type: invalid
+    bad2:
+      type: string
+      minLength: not-a-number
+    bad3:
+      type: string
+      maxLength: also-not-a-number
+`
+	path := filepath.Join(tmp, "aggregate.yaml")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var first string
+	for i := 0; i < 10; i++ {
+		_, err := LoadAggregateParameterContract(path)
+		if err == nil {
+			t.Fatalf("run %d: expected envelope-validation error, got nil", i)
+		}
+		got := err.Error()
+		if i == 0 {
+			first = got
+			continue
+		}
+		if got != first {
+			t.Errorf("run %d: envelope error differs from run 0\n  run 0:  %s\n  run %d: %s",
+				i, first, i, got)
+		}
+	}
+}

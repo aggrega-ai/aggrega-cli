@@ -5,6 +5,7 @@ package jsonschema
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
@@ -346,13 +347,13 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		a.required[path] = req
 	}
 
-	if s.Properties != nil {
-		// nextAmbient = the $defs in scope for descendants — the post-graft
-		// s.Defs is exactly this (ambient unioned with local overrides).
-		// At the root, s.Defs is the root's original $defs (no graft
-		// occurred at path == "").
-		nextAmbient := s.Defs
+	// nextAmbient = the $defs in scope for descendants — the post-graft
+	// s.Defs is exactly this (ambient unioned with local overrides).
+	// At the root, s.Defs is the root's original $defs (no graft
+	// occurred at path == "").
+	nextAmbient := s.Defs
 
+	if s.Properties != nil {
 		propertyNames := make([]string, 0, len(s.Properties))
 		for name := range s.Properties {
 			propertyNames = append(propertyNames, name)
@@ -368,5 +369,271 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 			}
 		}
 	}
+
+	// WI 05b indexing for the seven walker-completeness gap constructs.
+	// AdditionalProperties / oneOf / allOf / anyOf / not / patternProperties /
+	// dependentSchemas all populate branchIndex structures via
+	// buildBranchIndex which recursively constructs the branch-local
+	// validation state for deterministic walkBranch evaluation.
+
+	// additionalProperties: <schema> — promoted to branchIndex per
+	// Decision 3 so nested-Properties additionalProperties walk
+	// deterministically.
+	if s.AdditionalProperties != nil {
+		if bi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient); bi != nil {
+			a.additionalPropsBranch[path] = bi
+		}
+	}
+
+	if len(s.OneOf) > 0 {
+		branches := make([]*branchIndex, 0, len(s.OneOf))
+		for _, b := range s.OneOf {
+			if bi := a.buildBranchIndex(b, nextAmbient); bi != nil {
+				branches = append(branches, bi)
+			}
+		}
+		if len(branches) > 0 {
+			a.oneOfBranches[path] = branches
+		}
+	}
+
+	if len(s.AllOf) > 0 {
+		branches := make([]*branchIndex, 0, len(s.AllOf))
+		for _, b := range s.AllOf {
+			if bi := a.buildBranchIndex(b, nextAmbient); bi != nil {
+				branches = append(branches, bi)
+			}
+		}
+		if len(branches) > 0 {
+			a.allOfBranches[path] = branches
+		}
+	}
+
+	if len(s.AnyOf) > 0 {
+		branches := make([]*branchIndex, 0, len(s.AnyOf))
+		for _, b := range s.AnyOf {
+			if bi := a.buildBranchIndex(b, nextAmbient); bi != nil {
+				branches = append(branches, bi)
+			}
+		}
+		if len(branches) > 0 {
+			a.anyOfBranches[path] = branches
+		}
+	}
+
+	if s.Not != nil {
+		if bi := a.buildBranchIndex(s.Not, nextAmbient); bi != nil {
+			a.notIndexes[path] = bi
+		}
+	}
+
+	if len(s.PatternProperties) > 0 {
+		patterns := make([]string, 0, len(s.PatternProperties))
+		for p := range s.PatternProperties {
+			patterns = append(patterns, p)
+		}
+		sort.Strings(patterns)
+		entries := make([]*patternEntry, 0, len(patterns))
+		for _, p := range patterns {
+			re, perr := regexp.Compile(p)
+			if perr != nil {
+				return &AdapterError{
+					Path:    path,
+					Message: "patternProperties regex compile: " + perr.Error(),
+					Err:     ErrSchemaResolve,
+				}
+			}
+			if bi := a.buildBranchIndex(s.PatternProperties[p], nextAmbient); bi != nil {
+				entries = append(entries, &patternEntry{pattern: re, branch: bi})
+			}
+		}
+		if len(entries) > 0 {
+			a.patternPropsResolved[path] = entries
+		}
+	}
+
+	if len(s.DependentSchemas) > 0 {
+		keys := make([]string, 0, len(s.DependentSchemas))
+		for k := range s.DependentSchemas {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		entries := make([]*dependentEntry, 0, len(keys))
+		for _, k := range keys {
+			if bi := a.buildBranchIndex(s.DependentSchemas[k], nextAmbient); bi != nil {
+				entries = append(entries, &dependentEntry{triggerKey: k, branch: bi})
+			}
+		}
+		if len(entries) > 0 {
+			a.dependentSchemas[path] = entries
+		}
+	}
+
 	return nil
+}
+
+// buildBranchIndex constructs a branchIndex for a sub-schema. Applies
+// the Option α-strict leaf-vs-compound discipline: leaf branches get
+// resolved populated only; compound branches recursively populate the
+// per-construct maps and leave resolved nil.
+//
+// Returns nil if Resolve fails after $defs graft (tolerate-skip per
+// the existing walker-completeness gap pattern; the corresponding
+// branch's validation surfaces as a documented gap rather than a
+// construction error).
+func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[string]*jsonschema.Schema) *branchIndex {
+	if s == nil {
+		return nil
+	}
+
+	if len(ambientDefs) > 0 {
+		s = s.CloneSchemas()
+		merged := make(map[string]*jsonschema.Schema, len(ambientDefs)+len(s.Defs))
+		for k, v := range ambientDefs {
+			merged[k] = v.CloneSchemas()
+		}
+		for k, v := range s.Defs {
+			merged[k] = v
+		}
+		s.Defs = merged
+	}
+
+	resolved, err := s.Resolve(nil)
+	if err != nil {
+		return nil
+	}
+
+	bi := &branchIndex{}
+
+	// Leaf-vs-compound decision: a branch is a leaf iff it has no
+	// Properties, no nested combinators, no patternProperties, no
+	// dependentSchemas, and no additionalProperties.
+	isLeaf := s.Properties == nil &&
+		len(s.OneOf) == 0 &&
+		len(s.AllOf) == 0 &&
+		len(s.AnyOf) == 0 &&
+		s.Not == nil &&
+		len(s.PatternProperties) == 0 &&
+		len(s.DependentSchemas) == 0 &&
+		s.AdditionalProperties == nil
+
+	if isLeaf {
+		bi.resolved = resolved
+		return bi
+	}
+
+	// Compound branch: populate per-construct maps. Uses the same
+	// ambient-defs threading as indexSubSchemas; nextAmbient = s.Defs
+	// post-graft.
+	nextAmbient := s.Defs
+	bi.subResolved = map[string]*jsonschema.Resolved{}
+	bi.required = map[string][]string{}
+
+	if len(s.Required) > 0 {
+		req := append([]string{}, s.Required...)
+		sort.Strings(req)
+		bi.required[""] = req
+	}
+
+	if s.Properties != nil {
+		propertyNames := make([]string, 0, len(s.Properties))
+		for name := range s.Properties {
+			propertyNames = append(propertyNames, name)
+		}
+		sort.Strings(propertyNames)
+		for _, name := range propertyNames {
+			propResolved, perr := s.Properties[name].Resolve(nil)
+			if perr == nil {
+				bi.subResolved[name] = propResolved
+			}
+		}
+	}
+
+	if s.AdditionalProperties != nil {
+		if apBi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient); apBi != nil {
+			bi.additionalPropsBranch = map[string]*branchIndex{"": apBi}
+		}
+	}
+
+	if len(s.OneOf) > 0 {
+		branches := make([]*branchIndex, 0, len(s.OneOf))
+		for _, b := range s.OneOf {
+			if sub := a.buildBranchIndex(b, nextAmbient); sub != nil {
+				branches = append(branches, sub)
+			}
+		}
+		if len(branches) > 0 {
+			bi.oneOfBranches = map[string][]*branchIndex{"": branches}
+		}
+	}
+
+	if len(s.AllOf) > 0 {
+		branches := make([]*branchIndex, 0, len(s.AllOf))
+		for _, b := range s.AllOf {
+			if sub := a.buildBranchIndex(b, nextAmbient); sub != nil {
+				branches = append(branches, sub)
+			}
+		}
+		if len(branches) > 0 {
+			bi.allOfBranches = map[string][]*branchIndex{"": branches}
+		}
+	}
+
+	if len(s.AnyOf) > 0 {
+		branches := make([]*branchIndex, 0, len(s.AnyOf))
+		for _, b := range s.AnyOf {
+			if sub := a.buildBranchIndex(b, nextAmbient); sub != nil {
+				branches = append(branches, sub)
+			}
+		}
+		if len(branches) > 0 {
+			bi.anyOfBranches = map[string][]*branchIndex{"": branches}
+		}
+	}
+
+	if s.Not != nil {
+		if notBi := a.buildBranchIndex(s.Not, nextAmbient); notBi != nil {
+			bi.notIndexes = map[string]*branchIndex{"": notBi}
+		}
+	}
+
+	if len(s.PatternProperties) > 0 {
+		patterns := make([]string, 0, len(s.PatternProperties))
+		for p := range s.PatternProperties {
+			patterns = append(patterns, p)
+		}
+		sort.Strings(patterns)
+		entries := make([]*patternEntry, 0, len(patterns))
+		for _, p := range patterns {
+			re, perr := regexp.Compile(p)
+			if perr != nil {
+				continue
+			}
+			if sub := a.buildBranchIndex(s.PatternProperties[p], nextAmbient); sub != nil {
+				entries = append(entries, &patternEntry{pattern: re, branch: sub})
+			}
+		}
+		if len(entries) > 0 {
+			bi.patternPropsResolved = map[string][]*patternEntry{"": entries}
+		}
+	}
+
+	if len(s.DependentSchemas) > 0 {
+		keys := make([]string, 0, len(s.DependentSchemas))
+		for k := range s.DependentSchemas {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		entries := make([]*dependentEntry, 0, len(keys))
+		for _, k := range keys {
+			if sub := a.buildBranchIndex(s.DependentSchemas[k], nextAmbient); sub != nil {
+				entries = append(entries, &dependentEntry{triggerKey: k, branch: sub})
+			}
+		}
+		if len(entries) > 0 {
+			bi.dependentSchemas = map[string][]*dependentEntry{"": entries}
+		}
+	}
+
+	return bi
 }

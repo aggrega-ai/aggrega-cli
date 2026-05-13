@@ -11,6 +11,7 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // parameterContractSchemaJSON is the hardcoded map-level sub-schema for
@@ -71,38 +72,41 @@ const parameterContractSchemaJSON = `{
 }`
 
 var (
-	parameterContractResolvedOnce sync.Once
-	parameterContractResolved     *libschema.Resolved
-	parameterContractResolvedErr  error
+	parameterContractValidatorOnce sync.Once
+	parameterContractValidator     jsonvalidator.Validator
+	parameterContractValidatorErr  error
 )
 
-// loadParameterContractResolved lazily compiles parameterContractSchemaJSON
-// into a *libschema.Resolved via the google/jsonschema-go library directly.
-// The pkg/validator/jsonschema wrapper is intentionally bypassed because
-// its deterministic walker does not validate root-level oneOf or
-// additionalProperties — the parameter-contract schema's structure is
-// exactly `{additionalProperties: {oneOf: [...]}}`, which the wrapper
-// would silently skip. The library's Resolved.Validate covers the full
-// JSON Schema 2020-12 surface including root-level oneOf semantics.
+// loadParameterContractValidator lazily compiles parameterContractSchemaJSON
+// into a jsonvalidator.Validator via the pkg/validator/jsonschema wrapper.
+//
+// At WI 05 Step C this code-path bypassed the wrapper and called the
+// google/jsonschema-go library directly because the wrapper's
+// deterministic walker did not cover root-level `oneOf` or
+// `additionalProperties: <schema>` — both of which the
+// parameter-contract sub-schema uses. WI 05b extended the walker to
+// cover all seven documented walker-completeness gaps; the wrapper
+// now provides full coverage with deterministic finding emission, so
+// the bypass was retired here.
 //
 // Compilation happens once per process; subsequent calls return the
-// cached resolved schema. Returns the compilation error if the literal
+// cached validator. Returns the compilation error if the literal
 // fails to compile (programmer error — caught by tests).
-func loadParameterContractResolved() (*libschema.Resolved, error) {
-	parameterContractResolvedOnce.Do(func() {
+func loadParameterContractValidator() (jsonvalidator.Validator, error) {
+	parameterContractValidatorOnce.Do(func() {
 		schema := &libschema.Schema{}
 		if err := json.Unmarshal([]byte(parameterContractSchemaJSON), schema); err != nil {
-			parameterContractResolvedErr = fmt.Errorf("unmarshal parameter-contract sub-schema: %w", err)
+			parameterContractValidatorErr = fmt.Errorf("unmarshal parameter-contract sub-schema: %w", err)
 			return
 		}
-		resolved, err := schema.Resolve(nil)
+		v, err := jsonvalidator.New(schema)
 		if err != nil {
-			parameterContractResolvedErr = fmt.Errorf("resolve parameter-contract sub-schema: %w", err)
+			parameterContractValidatorErr = fmt.Errorf("compile parameter-contract sub-schema: %w", err)
 			return
 		}
-		parameterContractResolved = resolved
+		parameterContractValidator = v
 	})
-	return parameterContractResolved, parameterContractResolvedErr
+	return parameterContractValidator, parameterContractValidatorErr
 }
 
 // validateParameterContractEnvelope runs the second-line-of-defense
@@ -115,23 +119,21 @@ func loadParameterContractResolved() (*libschema.Resolved, error) {
 // LoadAggregateParameterContract's shallow unmarshal. Conversion to a
 // generic any shape happens via JSON round-trip (OrderedMap →
 // MarshalJSON preserves key order and produces standard JSON; the
-// re-unmarshal lands in map[string]any). Validation findings convert to
-// *ResolverError entries with ErrYAMLLoad as the sentinel
-// (envelope-level failures are workspace-load issues, not contract
-// violations).
+// re-unmarshal lands in map[string]any).
 //
-// Returns an aggregated *ResolverError per the
-// aggregateParameterViolations contract (single-violation case returns
-// the lone error directly; multi-violation case aggregates into one
-// multi-line-Message *ResolverError). Returns nil if the contract
-// passes envelope validation.
+// Per-Finding ResolverErrors aggregate via aggregateParameterViolations
+// for consistency with the contract-validation multi-violation path
+// (Step A of WI 05). Envelope-level failures carry ErrYAMLLoad as the
+// sentinel (workspace-load issues, not contract violations).
+//
+// Returns nil if the contract passes envelope validation.
 func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregatePath string) *ResolverError {
-	resolved, err := loadParameterContractResolved()
+	v, err := loadParameterContractValidator()
 	if err != nil {
 		return &ResolverError{
 			Entity:  "Aggregate",
 			Field:   aggregatePath,
-			Message: fmt.Sprintf("internal: failed to load parameter-contract sub-schema: %v", err),
+			Message: fmt.Sprintf("internal: failed to load parameter-contract sub-schema validator: %v", err),
 			Err:     ErrYAMLLoad,
 		}
 	}
@@ -156,17 +158,31 @@ func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregate
 		}
 	}
 
-	// Library's Resolved.Validate returns a single non-nil error when the
-	// instance fails — covers full JSON Schema 2020-12 surface including
-	// root-level oneOf and additionalProperties (the catalog validator's
-	// deterministic walker bypasses both root-level constructs).
-	if vErr := resolved.Validate(instance); vErr != nil {
+	rpt, vErr := v.Validate(instance, nil)
+	if vErr != nil {
 		return &ResolverError{
 			Entity:  "Aggregate",
 			Field:   ".spec.parameters",
-			Message: fmt.Sprintf("envelope: %v", vErr),
+			Message: fmt.Sprintf("envelope-validation execution failed: %v", vErr),
 			Err:     ErrYAMLLoad,
 		}
 	}
-	return nil
+	if len(rpt.Findings) == 0 {
+		return nil
+	}
+
+	verrs := make([]*ResolverError, 0, len(rpt.Findings))
+	for _, f := range rpt.Findings {
+		field := ".spec.parameters"
+		if f.FieldPath != "" {
+			field = ".spec.parameters." + f.FieldPath
+		}
+		verrs = append(verrs, &ResolverError{
+			Entity:  "Aggregate",
+			Field:   field,
+			Message: fmt.Sprintf("envelope: %s: %s", f.Keyword, f.Message),
+			Err:     ErrYAMLLoad,
+		})
+	}
+	return aggregateParameterViolations(verrs)
 }
