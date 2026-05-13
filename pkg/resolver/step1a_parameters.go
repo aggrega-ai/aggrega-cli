@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -51,7 +52,50 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 			Err:     ErrYAMLLoad,
 		}
 	}
+	// Second-line-of-defense: envelope-validate the shallow-loaded contract
+	// against the canonical aggregate-v1alpha1 sub-schema. Catches malformed
+	// contracts (wrong type for min:, invalid enum shape, etc.) at workspace
+	// load rather than as contract-violation failures at Step 1a validation.
+	if envErr := validateParameterContractEnvelope(shell.Spec.Parameters, path); envErr != nil {
+		return types.OrderedMap[any]{}, envErr
+	}
 	return shell.Spec.Parameters, nil
+}
+
+// aggregateParameterViolations collapses a slice of parameter-contract
+// violations into a single *ResolverError. Single-violation case returns
+// the original error unchanged; multi-violation case constructs an
+// aggregated *ResolverError whose multi-line Message lists every
+// violation's Field and Message, prefixed by a header line naming the
+// violation count.
+//
+// The single-*ResolverError surface preserves errors.As(*ResolverError)
+// at the CLI's display layer (formatCompilerError at
+// cmd/aggrega/error_format.go) which threads through fmt.Errorf
+// wrapping and renders via ResolverError.ToCompilerError(). An
+// errors.Join chain wrapped via fmt.Errorf would defeat the renderer's
+// multi-error detection (Unwrap() error from the wrapping layer
+// shadows the joined error's Unwrap() []error), so the aggregated-
+// single-error shape is the load-bearing choice for end-to-end
+// multi-violation display.
+//
+// Caller invariant: never called with an empty slice; the call site
+// gates on len(verrs) > 0.
+func aggregateParameterViolations(verrs []*ResolverError) *ResolverError {
+	if len(verrs) == 1 {
+		return verrs[0]
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d parameter contract violations:", len(verrs))
+	for _, v := range verrs {
+		fmt.Fprintf(&b, "\n  - %s: %s", v.Field, v.Message)
+	}
+	return &ResolverError{
+		Entity:  "Aggregate",
+		Field:   ".spec.parameters",
+		Message: b.String(),
+		Err:     ErrParameterContractViolation,
+	}
 }
 
 // ValidateParametersAgainstContract checks every Release-supplied parameter
@@ -159,6 +203,8 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 		errs = append(errs, checkNumericConstraints(path, pc, value)...)
 	case "object":
 		errs = append(errs, checkObjectConstraints(path, pc, value)...)
+	case "array":
+		errs = append(errs, checkArrayConstraints(path, pc, value)...)
 	}
 
 	if len(pc.Enum) > 0 {
@@ -311,9 +357,20 @@ func checkNumericConstraints(path string, pc types.ParameterContract, v any) []*
 // Children declared in Properties but absent from the Release map check
 // their own required-marker; children present in the Release map but
 // absent from Properties violate the closed-contract policy at the
-// nested level.
+// nested level — UNLESS the contract also declares ValuesType.
+//
+// ValuesType handling (typed-value-map):
+//
+// When the contract declares ValuesType, unknown keys are no longer
+// violations — they are the typed-value-map's open extension surface.
+// The closed-object unknown-key rejection is silenced; every key not in
+// Properties is validated against the ValuesType sub-contract instead.
+// If both Properties and ValuesType are declared, Properties takes
+// precedence for named keys (matching JSON Schema's
+// `properties + additionalProperties: <schema>` semantic at the
+// typed-value-map level).
 func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*ResolverError {
-	if pc.Properties.Len() == 0 {
+	if pc.Properties.Len() == 0 && pc.ValuesType == nil {
 		return nil
 	}
 	childMap, ok := v.(map[string]any)
@@ -327,16 +384,21 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 	for _, k := range pc.Properties.Keys() {
 		declared[k] = struct{}{}
 	}
-	for k := range childMap {
-		if _, ok := declared[k]; !ok {
-			errs = append(errs, &ResolverError{
-				Entity: "Aggregate",
-				Field:  fmt.Sprintf(".spec.parameters.%s.%s", path, k),
-				Message: fmt.Sprintf(
-					"Release supplies nested parameter %q under %q with no corresponding Properties declaration",
-					k, path),
-				Err: ErrParameterContractViolation,
-			})
+	// Closed-object unknown-key rejection is silenced when ValuesType is
+	// declared — typed-value-maps accept any key, validated under the
+	// ValuesType sub-contract below.
+	if pc.ValuesType == nil {
+		for k := range childMap {
+			if _, ok := declared[k]; !ok {
+				errs = append(errs, &ResolverError{
+					Entity: "Aggregate",
+					Field:  fmt.Sprintf(".spec.parameters.%s.%s", path, k),
+					Message: fmt.Sprintf(
+						"Release supplies nested parameter %q under %q with no corresponding Properties declaration",
+						k, path),
+					Err: ErrParameterContractViolation,
+				})
+			}
 		}
 	}
 
@@ -365,6 +427,59 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 		case childHas:
 			errs = append(errs, validateEntry(childPath, childPC, childValue)...)
 		}
+	}
+
+	// ValuesType pass: validate every key NOT in Properties against the
+	// ValuesType sub-contract (Properties takes precedence for named keys).
+	if pc.ValuesType != nil {
+		valuesPC, derr := types.DecodeParameterContract(pc.ValuesType)
+		if derr != nil {
+			errs = append(errs, &ResolverError{
+				Entity:  "Aggregate",
+				Field:   fmt.Sprintf(".spec.parameters.%s", path),
+				Message: fmt.Sprintf("failed to decode valuesType contract: %v", derr),
+				Err:     ErrParameterContractViolation,
+			})
+		} else {
+			for k, val := range childMap {
+				if _, named := declared[k]; named {
+					continue
+				}
+				childPath := fmt.Sprintf("%s.%s", path, k)
+				errs = append(errs, validateEntry(childPath, valuesPC, val)...)
+			}
+		}
+	}
+
+	return errs
+}
+
+// checkArrayConstraints validates each element of a Release-supplied array
+// against the contract's declared Items sub-contract. Element paths use
+// dot notation (parent.0, parent.1, ...) consistent with the Properties
+// recursion convention; no enforcement runs if Items is unset (a contract
+// declaring type: array without items: accepts any element).
+func checkArrayConstraints(path string, pc types.ParameterContract, v any) []*ResolverError {
+	if pc.Items == nil {
+		return nil
+	}
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	itemsPC, derr := types.DecodeParameterContract(pc.Items)
+	if derr != nil {
+		return []*ResolverError{{
+			Entity:  "Aggregate",
+			Field:   fmt.Sprintf(".spec.parameters.%s", path),
+			Message: fmt.Sprintf("failed to decode items contract: %v", derr),
+			Err:     ErrParameterContractViolation,
+		}}
+	}
+	var errs []*ResolverError
+	for i, elem := range arr {
+		elemPath := fmt.Sprintf("%s.%d", path, i)
+		errs = append(errs, validateEntry(elemPath, itemsPC, elem)...)
 	}
 	return errs
 }

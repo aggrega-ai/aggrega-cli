@@ -120,7 +120,7 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 		return nil, err
 	}
 	if verrs := ValidateParametersAgainstContract(contract, params, cfg.AggregatePath); len(verrs) > 0 {
-		return nil, verrs[0]
+		return nil, aggregateParameterViolations(verrs)
 	}
 
 	// 4. Read raw Aggregate YAML and interpolate

@@ -390,3 +390,191 @@ spec:
 	}
 }
 
+// TestAggregateParameterViolations_MultiViolation_SingleResolverError pins
+// the multi-violation reporting contract per the aggregateParameterViolations
+// helper. When two parameters violate their contracts simultaneously, the
+// returned error is a single *ResolverError extractable via errors.As,
+// with Field == ".spec.parameters" and a multi-line Message naming both
+// violation paths + reasons. This shape preserves the CLI renderer's
+// errors.As(*ResolverError) extraction at error_format.go through the
+// fmt.Errorf wrapping that would otherwise defeat an errors.Join chain's
+// multi-error detection.
+func TestAggregateParameterViolations_MultiViolation_SingleResolverError(t *testing.T) {
+	t.Parallel()
+
+	contract := buildContract(t,
+		"port", map[string]any{"type": "integer", "min": 1024},
+		"host", map[string]any{"type": "string"},
+	)
+	params := map[string]any{
+		"port": "not-an-integer",
+		"host": 42,
+	}
+
+	verrs := ValidateParametersAgainstContract(contract, params, "test.yaml")
+	if len(verrs) < 2 {
+		t.Fatalf("expected >=2 violations; got %d: %v", len(verrs), verrs)
+	}
+
+	err := aggregateParameterViolations(verrs)
+	if err == nil {
+		t.Fatalf("expected aggregated error, got nil")
+	}
+	if err.Field != ".spec.parameters" {
+		t.Errorf("aggregated Field = %q; want %q", err.Field, ".spec.parameters")
+	}
+	if !errors.Is(err, ErrParameterContractViolation) {
+		t.Errorf("aggregated error not ErrParameterContractViolation: %v", err)
+	}
+
+	// Assert the multi-line Message names BOTH violation paths.
+	if !strings.Contains(err.Message, ".spec.parameters.port") {
+		t.Errorf("aggregated Message missing port violation: %s", err.Message)
+	}
+	if !strings.Contains(err.Message, ".spec.parameters.host") {
+		t.Errorf("aggregated Message missing host violation: %s", err.Message)
+	}
+
+	// Single-violation case: aggregator returns the original error unchanged.
+	singleVerr := []*ResolverError{verrs[0]}
+	single := aggregateParameterViolations(singleVerr)
+	if single != verrs[0] {
+		t.Errorf("single-violation case should pass through unchanged; got new error %v", single)
+	}
+}
+
+// TestValidateParametersAgainstContract_ArrayItems_TypeMismatch pins
+// element-type enforcement at the items: layer. A contract declaring
+// array-of-string Release-supplied as integers produces one violation
+// per non-conforming element, with dot-notation paths.
+func TestValidateParametersAgainstContract_ArrayItems_TypeMismatch(t *testing.T) {
+	t.Parallel()
+	contract := buildContract(t,
+		"hosts", map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+	)
+	params := map[string]any{"hosts": []any{1, 2, 3}}
+
+	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
+	if len(errs) != 3 {
+		t.Fatalf("expected 3 element violations, got %d: %v", len(errs), errs)
+	}
+	for i, e := range errs {
+		want := "hosts." + string(rune('0'+i))
+		if !strings.Contains(e.Field, want) {
+			t.Errorf("error[%d].Field = %q; want to contain %q", i, e.Field, want)
+		}
+	}
+}
+
+// TestValidateParametersAgainstContract_ArrayItems_ConstraintViolation pins
+// per-element constraint enforcement: items contract declares minLength
+// and only elements failing minLength produce errors.
+func TestValidateParametersAgainstContract_ArrayItems_ConstraintViolation(t *testing.T) {
+	t.Parallel()
+	contract := buildContract(t,
+		"tags", map[string]any{
+			"type":  "array",
+			"items": map[string]any{"type": "string", "minLength": 3},
+		},
+	)
+	params := map[string]any{"tags": []any{"a", "ab", "abc"}}
+
+	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 short-element violations, got %d: %v", len(errs), errs)
+	}
+	// Element 0 ("a") and element 1 ("ab") should fail; element 2 ("abc") passes.
+	if !strings.Contains(errs[0].Field, "tags.0") {
+		t.Errorf("expected tags.0 violation; got %q", errs[0].Field)
+	}
+	if !strings.Contains(errs[1].Field, "tags.1") {
+		t.Errorf("expected tags.1 violation; got %q", errs[1].Field)
+	}
+}
+
+// TestValidateParametersAgainstContract_ValuesType_TypeMismatch pins the
+// typed-value-map validation: a contract declaring ValuesType (no
+// Properties) is exercised end-to-end. The early-return gate must NOT
+// short-circuit when Properties is empty but ValuesType is set.
+func TestValidateParametersAgainstContract_ValuesType_TypeMismatch(t *testing.T) {
+	t.Parallel()
+	contract := buildContract(t,
+		"limits", map[string]any{
+			"type":       "object",
+			"valuesType": map[string]any{"type": "integer"},
+		},
+	)
+	params := map[string]any{"limits": map[string]any{"a": 1, "b": "two"}}
+
+	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 ValuesType violation, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Field, "limits.b") {
+		t.Errorf("expected limits.b violation; got %q", errs[0].Field)
+	}
+}
+
+// TestValidateParametersAgainstContract_ValuesType_PlusProperties_Precedence
+// pins the Properties-takes-precedence semantic when both Properties and
+// ValuesType are declared.
+func TestValidateParametersAgainstContract_ValuesType_PlusProperties_Precedence(t *testing.T) {
+	t.Parallel()
+	contract := buildContract(t,
+		"config", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"a": map[string]any{"type": "integer"},
+			},
+			"valuesType": map[string]any{"type": "string"},
+		},
+	)
+
+	// Case 1: a matches Properties, b matches ValuesType → no errors.
+	clean := map[string]any{"config": map[string]any{"a": 1, "b": "x"}}
+	errs := ValidateParametersAgainstContract(contract, clean, "test.yaml")
+	if len(errs) != 0 {
+		t.Errorf("clean case: expected no errors, got %d: %v", len(errs), errs)
+	}
+
+	// Case 2: a fails Properties (Properties takes precedence; "wrong" not integer).
+	badA := map[string]any{"config": map[string]any{"a": "wrong", "b": "x"}}
+	errs = ValidateParametersAgainstContract(contract, badA, "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("badA: expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Field, "config.a") {
+		t.Errorf("badA: expected config.a violation, got %q", errs[0].Field)
+	}
+
+	// Case 3: b fails ValuesType (42 not a string).
+	badB := map[string]any{"config": map[string]any{"a": 1, "b": 42}}
+	errs = ValidateParametersAgainstContract(contract, badB, "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("badB: expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Field, "config.b") {
+		t.Errorf("badB: expected config.b violation, got %q", errs[0].Field)
+	}
+}
+
+// TestValidateParametersAgainstContract_ValuesType_OpenObject_NoUnknownKeyRejection
+// pins the closed-object-semantic adjustment: when ValuesType is declared,
+// keys absent from Properties are NOT rejected as unknown — they're the
+// typed-value-map's open extension surface.
+func TestValidateParametersAgainstContract_ValuesType_OpenObject_NoUnknownKeyRejection(t *testing.T) {
+	t.Parallel()
+	contract := buildContract(t,
+		"tags", map[string]any{
+			"type":       "object",
+			"valuesType": map[string]any{"type": "integer"},
+		},
+	)
+	params := map[string]any{"tags": map[string]any{"x": 1, "y": 2, "z": 3}}
+
+	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no unknown-key rejection; got %d errors: %v", len(errs), errs)
+	}
+}
+

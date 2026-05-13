@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package resolver
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// TestLoadAggregateParameterContract_EnvelopeRejection_BadType pins
+// envelope-validation: a contract entry declaring an invalid type
+// surfaces at workspace load (LoadAggregateParameterContract) rather
+// than as a contract-violation at Step 1a.
+func TestLoadAggregateParameterContract_EnvelopeRejection_BadType(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+spec:
+  parameters:
+    bad:
+      type: invalid
+`
+	path := filepath.Join(tmp, "aggregate.yaml")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadAggregateParameterContract(path)
+	if err == nil {
+		t.Fatalf("expected envelope-validation error for invalid type; got nil")
+	}
+	var re *ResolverError
+	if !errors.As(err, &re) {
+		t.Fatalf("expected *ResolverError, got %T: %v", err, err)
+	}
+	if !errors.Is(err, ErrYAMLLoad) {
+		t.Errorf("expected ErrYAMLLoad sentinel; got %v", err)
+	}
+}
+
+// TestLoadAggregateParameterContract_EnvelopeRejection_BadMinLength pins
+// envelope-validation for the minLength field type mismatch (the schema
+// requires integer; a string fails).
+func TestLoadAggregateParameterContract_EnvelopeRejection_BadMinLength(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+spec:
+  parameters:
+    name:
+      type: string
+      minLength: not-a-number
+`
+	path := filepath.Join(tmp, "aggregate.yaml")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadAggregateParameterContract(path)
+	if err == nil {
+		t.Fatalf("expected envelope-validation error for non-integer minLength; got nil")
+	}
+	if !errors.Is(err, ErrYAMLLoad) {
+		t.Errorf("expected ErrYAMLLoad sentinel; got %v", err)
+	}
+}
+
+// TestLoadAggregateParameterContract_EnvelopeAccepts_ValidContract pins
+// the happy path: a fully-valid typed-form contract passes envelope
+// validation cleanly.
+func TestLoadAggregateParameterContract_EnvelopeAccepts_ValidContract(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+spec:
+  parameters:
+    port:
+      type: integer
+      min: 1024
+      max: 65535
+      default: 8080
+    host:
+      type: string
+      pattern: "^[a-z0-9.-]+$"
+      required: true
+    simple: "literal-default"
+`
+	path := filepath.Join(tmp, "aggregate.yaml")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	contract, err := LoadAggregateParameterContract(path)
+	if err != nil {
+		t.Fatalf("expected no envelope error on valid contract; got %v", err)
+	}
+	if contract.Len() != 3 {
+		t.Errorf("expected 3 contract entries; got %d", contract.Len())
+	}
+}
+
+// TestParameterContractSchema_NoDrift is the maintenance-contract guard
+// for the hardcoded parameterContractSchemaJSON literal. It reads the
+// canonical aggregate-v1alpha1.schema.json from the aggrega-schemas
+// subrepo, extracts the `properties.spec.properties.parameters` subtree,
+// and asserts byte-equivalent content (after canonical JSON formatting)
+// against the hardcoded literal. Drift in either direction fails the
+// test with a directed message naming the canonical schema path.
+//
+// MAINTENANCE — when `aggregate-v1alpha1.schema.json` legitimately
+// changes its `properties.spec.properties.parameters` subtree, update
+// the hardcoded literal at parameterContractSchemaJSON in lockstep.
+func TestParameterContractSchema_NoDrift(t *testing.T) {
+	t.Parallel()
+
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "aggregate-v1alpha1.schema.json")
+	schemaBytes, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Skipf("aggregate-v1alpha1.schema.json not reachable at %s: %v", schemaPath, err)
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(schemaBytes, &root); err != nil {
+		t.Fatalf("unmarshal canonical schema: %v", err)
+	}
+	props, _ := root["properties"].(map[string]any)
+	spec, _ := props["spec"].(map[string]any)
+	specProps, _ := spec["properties"].(map[string]any)
+	parametersSubtree, ok := specProps["parameters"]
+	if !ok {
+		t.Fatalf("canonical schema missing properties.spec.properties.parameters")
+	}
+
+	// Canonical formatting: re-marshal both sides via the SAME path so
+	// whitespace and key-ordering differences don't trigger false drift.
+	canonical := canonicalJSON(t, parametersSubtree)
+
+	var hardcoded any
+	if err := json.Unmarshal([]byte(parameterContractSchemaJSON), &hardcoded); err != nil {
+		t.Fatalf("unmarshal hardcoded sub-schema: %v", err)
+	}
+	hardcodedCanonical := canonicalJSON(t, hardcoded)
+
+	if canonical != hardcodedCanonical {
+		t.Errorf("parameter-contract sub-schema drift detected.\n"+
+			"  Canonical source: %s (properties.spec.properties.parameters subtree)\n"+
+			"  Hardcoded literal: pkg/resolver/step1a_parameter_schema.go::parameterContractSchemaJSON\n"+
+			"  Update the literal in lockstep with the canonical schema.\n\n"+
+			"  Canonical:\n%s\n\n  Hardcoded:\n%s\n",
+			schemaPath, canonical, hardcodedCanonical)
+	}
+}
+
+// canonicalJSON produces a stable JSON representation of an arbitrary
+// value for cross-source equivalence comparison. encoding/json's default
+// map-key sort + 2-space indent is deterministic; identical inputs
+// produce identical outputs.
+func canonicalJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		t.Fatalf("canonicalJSON: %v", err)
+	}
+	return strings.TrimSpace(string(b))
+}
