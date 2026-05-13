@@ -243,6 +243,49 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 	}
 }
 
+// TestStep5b_FeatureRecipeMetadataProviderAvailable pins the
+// FeatureRecipe-side sibling of the Recipe-side
+// TestStep5b_RecipeMetadataProviderAvailable test above. Verifies the
+// FeatureRecipe assertion evaluation surfaces `.Recipe.Metadata.provider`
+// from the FeatureRecipe's Spec.Provider — exercising the FR code-path
+// at assertions_step5b.go:109-127 specifically. Closes the test-coverage
+// gap that the WI 06 follow-up 3 entry-state finding identified
+// (code-side symmetry was already resolved at the time of this run; the
+// test-side was asymmetric — only the Recipe side pinned).
+func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
+	t.Parallel()
+	graph := step5bGraph(t, "web", omAny(t), omAny(t))
+	fvm := types.OrderedMap[types.IRFeatureEntry]{}
+	fvm.Set("audit-on-web", types.IRFeatureEntry{
+		Type:   "ops/audit",
+		Values: omAny(t),
+	})
+	graph.Spec.FeatureValuesMapping.Set("web", fvm)
+
+	recipe := &types.Recipe{Metadata: types.RecipeMetadata{Name: "helm-server"}}
+	fr := types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "audit-fr", Version: "1.0.0"},
+		Spec: types.FeatureRecipeSpec{
+			Provider: "helm",
+			Assertions: omString(t,
+				"provider-must-be-helm",
+				`{{ if ne .Recipe.Metadata.provider "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
+			),
+		},
+	}
+	rl := RecipeLookup{
+		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return &fr, true },
+	}
+	if err := EvaluateRecipeAndFeatureRecipeAssertions(
+		graph,
+		map[string]*types.Recipe{"web": recipe},
+		rl,
+		NodeProvides{},
+	); err != nil {
+		t.Errorf("expected nil (FeatureRecipe provider populated); got %v", err)
+	}
+}
+
 // TestStep5b_FeatureRecipeAssertionFailsHaltsBuild pins FR-side eval.
 func TestStep5b_FeatureRecipeAssertionFailsHaltsBuild(t *testing.T) {
 	t.Parallel()

@@ -6,6 +6,7 @@ package renderer_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -518,4 +519,125 @@ func fileKeys(m map[string][]byte) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TestStep4b_AssertionFailureHaltsEvaluator pins the wire-in regression
+// coverage for Component/Feature assertion evaluation. A Component with
+// a `{{ fail "..." }}` assertion fails at Step 4b; the evaluator returns
+// an error chain containing ErrAssertionFailed + the fail-call's message
+// text. If a future refactor deletes the EvaluateComponentAndFeatureAssertions
+// body's actual fail-call invocation, this test catches the regression.
+//
+// Note on call-site coverage: the production call to
+// renderer.EvaluateComponentAndFeatureAssertions lives at
+// cmd/aggrega/build.go:188; that call site is not exercised by this
+// test (a separate CLI-level smoke test would catch a build.go:188
+// deletion). This test exercises the evaluator body + the call-chain
+// from a Component-with-failing-assertion through the resolver-level
+// CatalogLookup to the per-instance evaluator.
+func TestStep4b_AssertionFailureHaltsEvaluator(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+
+	failingComponent := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/server/api-server"},
+		Spec: types.ComponentSpec{
+			Assertions: buildOrderedMap(map[string]string{
+				"test_assert": `{{ fail "component-assertion-smoke-fired" }}`,
+			}),
+		},
+	}
+	catalogLookup := resolver.CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			if typeURI == "core/server/api-server" {
+				return failingComponent, true
+			}
+			return types.Component{}, false
+		},
+	}
+
+	err := renderer.EvaluateComponentAndFeatureAssertions(input.Graph, catalogLookup)
+	if err == nil {
+		t.Fatalf("expected ErrAssertionFailed; got nil")
+	}
+	if !errors.Is(err, renderer.ErrAssertionFailed) {
+		t.Errorf("error chain missing ErrAssertionFailed: %v", err)
+	}
+	if !strings.Contains(err.Error(), "component-assertion-smoke-fired") {
+		t.Errorf("error message missing fail-call text: %v", err)
+	}
+}
+
+// TestRenderAll_Step5bAssertionFailureHaltsPipeline pins the wire-in
+// regression coverage for the Step 5b production call at
+// orchestrator.go:111. A Recipe with a `{{ fail "..." }}` assertion
+// fails inside RenderAll; the orchestrator's cerrors.Wrap surfaces the
+// failure with ErrAssertionFailed in the inner chain.
+//
+// If a future refactor deletes the orchestrator.go:111
+// EvaluateRecipeAndFeatureRecipeAssertions call, this test catches the
+// regression because RenderAll would complete successfully without
+// surfacing the assertion failure.
+func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	lookup := renderer.RecipeLookup{
+		Recipe: func(componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe-failing"},
+					Spec: types.RecipeSpec{
+						Provider:      "helm",
+						Implements:    "core/server/api-server",
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest"}`},
+						Assertions: buildOrderedMap(map[string]string{
+							"recipe_assert": `{{ fail "recipe-assertion-smoke-fired" }}`,
+						}),
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+			return nil, false
+		},
+	}
+
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	if err == nil {
+		t.Fatalf("expected RenderAll to halt with assertion failure; got nil")
+	}
+	if !errors.Is(err, renderer.ErrAssertionFailed) {
+		t.Errorf("error chain missing ErrAssertionFailed: %v", err)
+	}
+	// The fail-call text is preserved in the inner wrap chain (cerrors.Wrap's
+	// outer Error() surface displays only the prefix); walk the chain to
+	// verify the inner message survives.
+	innerMessage := false
+	for cause := err; cause != nil; cause = errors.Unwrap(cause) {
+		if strings.Contains(cause.Error(), "recipe-assertion-smoke-fired") {
+			innerMessage = true
+			break
+		}
+	}
+	if !innerMessage {
+		t.Errorf("error chain missing fail-call text in any cause: %v", err)
+	}
+}
+
+// buildOrderedMap constructs an OrderedMap[string] from a regular map.
+// Iteration order is sorted for deterministic test output.
+func buildOrderedMap(m map[string]string) types.OrderedMap[string] {
+	out := types.OrderedMap[string]{}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out.Set(k, m[k])
+	}
+	return out
 }
