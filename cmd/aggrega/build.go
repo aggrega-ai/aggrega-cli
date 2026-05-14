@@ -107,18 +107,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 1: Resolve
-	relData, err := os.ReadFile(releasePath)
-	if err != nil {
-		return fmt.Errorf("read release: %w", err)
-	}
-
 	// Determine aggregate and manifest paths from release directory
 	releaseDir := filepath.Dir(releasePath)
 	rel, err := resolver.LoadRelease(releasePath)
 	if err != nil {
 		return fmt.Errorf("load release: %w", err)
 	}
-	_ = relData
 
 	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
 	manifestPath := filepath.Join(releaseDir, rel.Spec.Manifest+".yaml")

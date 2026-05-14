@@ -14,7 +14,7 @@ import (
 var inspectCatalogDir string
 
 var inspectCmd = &cobra.Command{
-	Use:   "inspect <component-type>",
+	Use:   "inspect <component-name>",
 	Short: "Render the final merged schema for a component (base + all active overlays)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runInspect,
