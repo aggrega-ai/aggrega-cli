@@ -29,16 +29,17 @@ var (
 )
 
 // HandlesArtifactsExternally satisfies renderer.ExternalArtifactsHandler.
-// The helm-chart engine merges Recipe artifactsFrom: files into the
-// chart's templates/ directory rather than emitting standalone files;
-// Phase B.3 dispatches to the external-handler branch when this marker
-// is satisfied. Inline artifacts: is rejected at the same point — Helm's
-// chart structure requires templates as physical files.
+// The helm-chart engine merges $import:-loaded artifact entries from the
+// Recipe into the chart's templates/ directory rather than emitting
+// standalone files; Phase B.3 dispatches to the external-handler branch
+// when this marker is satisfied. Inline-content artifact entries are
+// rejected at the same point — Helm's chart structure requires templates
+// as physical files.
 func (e *HelmEngine) HandlesArtifactsExternally() {}
 
 // PathForArtifact satisfies renderer.ArtifactsPathProvider. Each
-// artifactsFrom file lands at templates/<basename> within the per-node
-// output; the orchestrator's per-boundary nesting layers
+// $import:-loaded artifact file lands at templates/<basename> within the
+// per-node output; the orchestrator's per-boundary nesting layers
 // boundaries/<bp>/charts/<nodeID>/ on top, so the emitted file is
 // positioned alongside the sourced chart's templates and participates in
 // Helm's downstream render pass.
@@ -47,11 +48,11 @@ func (e *HelmEngine) PathForArtifact(_ renderer.NodeRenderContext, basename stri
 }
 
 // ArtifactDelimiters satisfies renderer.ArtifactsTemplateDelims. helm-chart
-// artifactsFrom files use "[[", "]]" for Aggrega's pre-templating pass so
-// Helm's "{{ ... }}" template syntax inside the file survives untouched
-// into Helm's downstream render. Authors writing artifactsFrom files for
-// helm-chart use [[ .pillar ]] for Aggrega context and {{ .Values.x }}
-// for Helm context.
+// $import:-loaded artifact files use "[[", "]]" for Aggrega's pre-templating
+// pass so Helm's "{{ ... }}" template syntax inside the file survives
+// untouched into Helm's downstream render. Authors writing $import:-loaded
+// artifact files for helm-chart use [[ .pillar ]] for Aggrega context and
+// {{ .Values.x }} for Helm context.
 func (e *HelmEngine) ArtifactDelimiters() (string, string) {
 	return "[[", "]]"
 }

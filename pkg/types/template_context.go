@@ -22,7 +22,7 @@ import (
 //     evaluation. nil before B.0; nil for Recipes that don't declare source.
 //   - .workload — populated at Phase B.2 after Workload yaml.Unmarshal +
 //     validator.ValidateWorkload + validator.ValidateWorkloadSecrets succeed.
-//     nil before B.2; nil for Recipes that don't declare workload / workloadFrom.
+//     nil before B.2; nil for Recipes that don't declare workload:.
 type TemplateContext struct {
 	Context    ContextBlock                `json:"context" yaml:"context"`
 	Values     OrderedMap[any]             `json:"values" yaml:"values"`

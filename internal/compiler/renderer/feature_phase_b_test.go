@@ -175,7 +175,7 @@ func TestIsResourceGeneratingFR(t *testing.T) {
 		{"has valuesMapping", &types.FeatureRecipe{
 			Spec: types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image":"x"}`}},
 		}, true},
-		{"has valuesMappingFile", &types.FeatureRecipe{
+		{"has valuesMapping with $import", &types.FeatureRecipe{
 			Spec: types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "/tmp/v.yaml"}},
 		}, true},
 		{"has source string", &types.FeatureRecipe{

@@ -22,8 +22,8 @@ import (
 //
 // The eval-provider carve-out is two-sided:
 //
-//  1. Reject non-empty source / workload / workloadFrom / artifacts /
-//     artifactsFrom (eval has no rendering surface).
+//  1. Reject non-empty source / workload / artifacts (eval has no rendering
+//     surface).
 //  2. Exempt eval Recipes from rule 5 (a Recipe declaring only `provides:`
 //     is legitimate eval-mode authoring).
 func ValidateRecipe(r *types.Recipe, sourcePath string) error {
@@ -188,7 +188,7 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		Version:     r.Metadata.Version,
 		Rule:        "5",
 		Description: "at least one input kind must be present",
-		Detail:      "declare one of: source (with valuesMapping), workload, workloadFrom, artifacts, artifactsFrom",
+		Detail:      "declare one of: source (with valuesMapping), workload, artifacts",
 		Err:         ErrRecipeRule5,
 	}
 }

@@ -46,8 +46,7 @@ type PhaseBState struct {
 
 	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal
 	// + validator.ValidateWorkload + validator.ValidateWorkloadSecrets all
-	// succeed. nil before B.2 and for Recipes that don't declare
-	// workload: / workloadFrom:.
+	// succeed. nil before B.2 and for Recipes that don't declare workload:.
 	ParsedWorkload *types.Workload
 
 	// EmittedFiles accumulates the per-input-kind file contributions across

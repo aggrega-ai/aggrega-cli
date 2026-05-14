@@ -203,10 +203,10 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // The provider's engine governs file routing: BoundaryAssembler engines
 // (compose, helm-chart) receive intermediates that AssembleBoundary merges
 // per-(path, provider); flat engines (helm, terraform, cloudformation)
-// receive standalone files at the dispatch path. helm-chart inline
-// artifacts: is rejected with a CATALOG_ERROR; helm-chart artifactsFrom:
-// is a B.3 no-op (provider-specific pre-template injection lives outside
-// Phase B).
+// receive standalone files at the dispatch path. helm-chart inline-content
+// artifacts: entries are rejected with a CATALOG_ERROR; $import:-loaded
+// entries are a B.3 no-op for helm-chart (provider-specific pre-template
+// injection lives outside Phase B).
 func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Engine, nodeCtx NodeRenderContext) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 3
@@ -276,7 +276,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // state.EmittedFiles. Cross-origin collisions produce a
 // RecipeValidationError{Rule: "7"} (the reserved rule-7 sentinel format).
 // Within-origin collisions are caught by other rules (rule 6 at load time
-// for artifacts vs artifactsFrom; engine-internal logic for duplicate
+// for duplicate artifacts: entry keys; engine-internal logic for duplicate
 // sourced output).
 //
 // Implementation lives in phase_b_collision.go's detectFilenameCollisions.

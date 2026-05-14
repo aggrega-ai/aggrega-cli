@@ -19,7 +19,7 @@ import (
 //
 // Implements renderer.WorkloadSynthesizer via SynthesizeWorkload (defined in
 // workload_synth.go) — Phase B.4 dispatches to that method when the bound
-// Recipe declares workload: or workloadFrom:.
+// Recipe declares workload:.
 type HelmEngine struct{}
 
 var (

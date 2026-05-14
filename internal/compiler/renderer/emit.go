@@ -7,8 +7,8 @@ package renderer
 // load-bearing for Phase B.5 filename-collision detection — collisions
 // across input kinds produce a CATALOG_ERROR per chapter 16 rule 7, while
 // collisions within a single input kind are caught by other rules (rule 6
-// at load time for artifacts vs artifactsFrom; engine-internal logic for
-// duplicate sourced or synthesized output).
+// at load time for duplicate artifacts: entry keys; engine-internal logic
+// for duplicate sourced or synthesized output).
 type EmitOrigin int
 
 const (
@@ -16,18 +16,19 @@ const (
 	// kind (Helm chart, Terraform module, compose file overlay).
 	EmitOriginSource EmitOrigin = iota
 
-	// EmitOriginWorkload — the file originated from the Recipe's
-	// workload: / workloadFrom: input kind, translated by the provider's
+	// EmitOriginWorkload — the file originated from the Recipe's workload:
+	// input kind (inline or $import:-loaded), translated by the provider's
 	// WorkloadSynthesizer.
 	EmitOriginWorkload
 
-	// EmitOriginArtifactsInline — the file originated from an entry in the
-	// Recipe's artifacts: inline map. Reserved for the artifacts render
-	// path (Phase B.3 is a stub today).
+	// EmitOriginArtifactsInline — the file originated from an artifacts: entry
+	// authored with inline content. Reserved for the artifacts render path
+	// (Phase B.3 is a stub today).
 	EmitOriginArtifactsInline
 
-	// EmitOriginArtifactsFromFile — the file originated from a path in the
-	// Recipe's artifactsFrom: list. Reserved for the artifacts render path.
+	// EmitOriginArtifactsFromFile — the file originated from an artifacts:
+	// entry authored with $import: (file path). Reserved for the artifacts
+	// render path.
 	EmitOriginArtifactsFromFile
 )
 

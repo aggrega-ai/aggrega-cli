@@ -57,7 +57,7 @@ const (
 
 // SynthesizeWorkload translates a parsed Workload into K8s manifest files for
 // the helm provider. Implements renderer.WorkloadSynthesizer; called by
-// Phase B.4 when the bound Recipe declares workload: or workloadFrom:.
+// Phase B.4 when the bound Recipe declares workload:.
 //
 // Returns []EmittedFile{Name, Body}; the dispatcher (renderer/synthesis.go)
 // tags Origin = EmitOriginWorkload before appending to PhaseBState.

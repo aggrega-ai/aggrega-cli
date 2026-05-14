@@ -297,7 +297,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// files are tagged EmitOriginSource and accumulated on the state
 		// for B.5's collision detector.
 		//
-		// Skipped when the Recipe declares workload: / workloadFrom: but no
+		// Skipped when the Recipe declares workload: but no
 		// source: (workload-only path). The Workload synthesizer at Phase
 		// B.4 is the source of truth for that path; engine.Render's
 		// sourceless mode would produce a duplicate Deployment that rule
@@ -358,7 +358,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Phase B.2 — workload eval + ValidateWorkload + ValidateWorkloadSecrets.
-		// No-op for Recipes that don't declare workload: / workloadFrom:.
+		// No-op for Recipes that don't declare workload:.
 		// Slots lookup deferred to inside the function body (passes empty
 		// when no workload is declared); future enhancement: thread the
 		// Component's secretsSchema from input.CatalogLookup so the
@@ -368,9 +368,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 
-		// Phase B.3 — artifacts evaluation. Inline artifacts: and
-		// artifactsFrom: render through Go templates against the full
-		// TemplateContext, get provenance labels merged into K8s metadata
+		// Phase B.3 — artifacts evaluation. Each artifacts: entry (inline
+		// content or $import:-loaded) renders through Go templates against
+		// the full TemplateContext, gets provenance labels merged into K8s metadata
 		// when present, and accumulate on state.EmittedFiles for Phase
 		// B.5 collision detection.
 		if err := phaseB3(ctx, tmplCtx, state, engine, nodeCtx); err != nil {

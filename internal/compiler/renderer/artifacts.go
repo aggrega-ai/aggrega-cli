@@ -2,12 +2,13 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Phase B.3 artifacts evaluation per chapter 16's three-input-kinds model.
-// Inline `artifacts:` (OrderedMap filename → template) and file-loaded
-// `artifactsFrom:` (list of paths) both evaluate against the full
-// TemplateContext including .workload and .source, get provenance labels
-// merged into K8s-style metadata.labels, and emit as EmittedFile entries
-// tagged with their origin so the Phase B.5 collision detector can name
-// every contributor on a cross-origin clash.
+// `artifacts:` is a single OrderedMap keyed by output filename; each entry
+// is either inline content (a templated string) or $import:-loaded (a map
+// containing only $import: with a file path). Both forms evaluate against
+// the full TemplateContext including .workload and .source, get provenance
+// labels merged into K8s-style metadata.labels, and emit as EmittedFile
+// entries tagged with their origin so the Phase B.5 collision detector can
+// name every contributor on a cross-origin clash.
 
 package renderer
 
@@ -26,26 +27,26 @@ import (
 
 // ExternalArtifactsHandler is the marker interface implemented by Engines
 // whose provider model handles artifacts outside Phase B's standard
-// emission path. Today: the helm-chart engine, whose `artifactsFrom:`
-// files are merged into the chart's `templates/` directory rather than
-// emitted as standalone files. Engines satisfying this marker reject
-// inline `artifacts:` at Phase B.3 (the chart structure cannot accept
-// inline declarations).
+// emission path. Today: the helm-chart engine, whose $import:-loaded
+// artifact entries are merged into the chart's `templates/` directory
+// rather than emitted as standalone files. Engines satisfying this marker
+// reject inline-content entries at Phase B.3 (the chart structure cannot
+// accept inline-content artifact declarations).
 //
 // Optional companion capabilities. Engines that opt into external
 // dispatch tune the per-artifact placement and the template delimiter
 // pair through two independent capability interfaces:
 //
 //   - ArtifactsPathProvider — engine declares the per-node-relative path
-//     each emitted artifactsFrom file lands at (e.g., helm-chart's
+//     each emitted $import:-loaded artifact lands at (e.g., helm-chart's
 //     "templates/<basename>"). Engines that don't implement this interface
 //     emit at the bare basename, matching the standard non-external
 //     emission shape.
 //
 //   - ArtifactsTemplateDelims — engine declares the Go-template delimiter
-//     pair Aggrega's pre-templating uses on each artifactsFrom file
-//     (e.g., helm-chart's "[[", "]]" so Helm's "{{ ... }}" survives into
-//     the downstream render). Engines that don't implement this
+//     pair Aggrega's pre-templating uses on each $import:-loaded artifact
+//     file (e.g., helm-chart's "[[", "]]" so Helm's "{{ ... }}" survives
+//     into the downstream render). Engines that don't implement this
 //     interface use the default "{{", "}}" delimiters.
 //
 // Dispatch parity. Phase B.3 dispatches by marker assertion in the same
@@ -63,19 +64,19 @@ type ExternalArtifactsHandler interface {
 // the dispatch path's prefix and `charts/<nodeID>/` on top for
 // BoundaryAssembler engines. Engines that don't implement this interface
 // fall back to the bare basename — matching the standard non-external
-// emission shape — when the artifacts evaluator dispatches an artifactsFrom
-// file.
+// emission shape — when the artifacts evaluator dispatches a $import:-loaded
+// artifact entry.
 type ArtifactsPathProvider interface {
 	PathForArtifact(nodeCtx NodeRenderContext, basename string) string
 }
 
 // ArtifactsTemplateDelims declares the Go-template delimiter pair used
-// when Aggrega's pre-templating evaluates artifactsFrom files for an
-// ExternalArtifactsHandler engine. Engines whose provider model runs a
-// downstream templating pass with the same default `{{ }}` delimiters
-// return alternates here so Aggrega's pass leaves the downstream syntax
-// untouched. helm-chart returns "[[", "]]" so Helm's `{{ ... }}` blocks
-// survive into the chart's render pipeline.
+// when Aggrega's pre-templating evaluates $import:-loaded artifact files
+// for an ExternalArtifactsHandler engine. Engines whose provider model
+// runs a downstream templating pass with the same default `{{ }}`
+// delimiters return alternates here so Aggrega's pass leaves the
+// downstream syntax untouched. helm-chart returns "[[", "]]" so Helm's
+// `{{ ... }}` blocks survive into the chart's render pipeline.
 //
 // Engines that don't implement this interface fall back to the default
 // "{{", "}}" pair (text/template default).
@@ -83,13 +84,14 @@ type ArtifactsTemplateDelims interface {
 	ArtifactDelimiters() (left, right string)
 }
 
-// evaluateArtifacts walks Recipe.Spec.Artifacts (inline) followed by
-// Recipe.Spec.ArtifactsFrom (file-loaded), evaluates each entry as a Go
-// template against tmplCtx, parses the output as YAML, merges the canonical
-// provenance label set into metadata.labels (when the document carries
-// metadata), and returns the emitted-file slice for the caller to append to
-// state.EmittedFiles. Each emission carries the matching EmitOrigin tag so
-// Phase B.5 cross-origin collision detection can name every contributor.
+// evaluateArtifacts walks Recipe.Spec.Artifacts in author order, dispatching
+// per entry on content shape (inline content vs $import:-loaded), evaluates
+// each entry as a Go template against tmplCtx, parses the output as YAML,
+// merges the canonical provenance label set into metadata.labels (when the
+// document carries metadata), and returns the emitted-file slice for the
+// caller to append to state.EmittedFiles. Each emission carries the matching
+// EmitOrigin tag so Phase B.5 cross-origin collision detection can name
+// every contributor.
 //
 // Per-provider dispatch:
 //   - helm / terraform / cloudformation / future flat providers — emissions
@@ -99,11 +101,12 @@ type ArtifactsTemplateDelims interface {
 //     routes them to ComposeRelease's parseNodeFragment via ReleaseInfo,
 //     mirroring how engine.Render output is routed for ReleaseComposer
 //     engines today.
-//   - helm-chart — inline `artifacts:` is rejected with a CATALOG_ERROR
-//     because Helm owns the chart's templates/ directory and cannot accept
-//     inline-only artifacts. `artifactsFrom:` is a no-op at B.3; the
-//     helm-chart provider's special pre-template injection path is the
-//     responsibility of a follow-up work item, not B.3.
+//   - helm-chart — inline-content artifact entries are rejected with a
+//     CATALOG_ERROR because Helm owns the chart's templates/ directory and
+//     cannot accept inline-content artifact declarations. $import:-loaded
+//     entries are a no-op at B.3; the helm-chart provider's special
+//     pre-template injection path is the responsibility of a follow-up work
+//     item, not B.3.
 //
 // Self-containment: the chapter requires artifacts to reference only the
 // Recipe's declared inputs (pillars, .workload, .source). Cross-Recipe
@@ -217,7 +220,7 @@ func evaluateArtifacts(
 // stays clean.
 func provenanceSkipWarning(filename string) string {
 	return fmt.Sprintf(
-		"artifactsFrom %q: skipped provenance label injection (file contains downstream template syntax incompatible with Aggrega's pre-render YAML round-trip); use chart _helpers.tpl for provenance on this file",
+		"artifact %q ($import-loaded): skipped provenance label injection (file contains downstream template syntax incompatible with Aggrega's pre-render YAML round-trip); use chart _helpers.tpl for provenance on this file",
 		filename,
 	)
 }
@@ -254,7 +257,7 @@ func evaluateOneArtifact(
 //     `{{ }}` template structure with YAML, and is NOT an error. The
 //     evaluator emits the rendered bytes unchanged, skips provenance
 //     injection, and appends a state.Warnings entry naming the
-//     artifactsFrom file so the build surfaces the gap.
+//     $import:-loaded artifact file so the build surfaces the gap.
 //
 // The delimiter pair drives the dispatch — when leftDelim+rightDelim
 // differ from the default `{{ }}`, the parse-failure path takes the
@@ -373,7 +376,7 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 	for _, ref := range refs {
 		if !workloadDeclared && (ref == ".workload" || strings.HasPrefix(ref, ".workload.")) {
 			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
-				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:/workloadFrom:", filename, ref),
+				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:", filename, ref),
 				nil, nil)
 		}
 		if !sourceDeclared && (ref == ".source" || strings.HasPrefix(ref, ".source.")) {

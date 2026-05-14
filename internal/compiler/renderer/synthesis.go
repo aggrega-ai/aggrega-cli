@@ -14,8 +14,7 @@ import (
 // WorkloadSynthesizer is the optional interface a provider engine implements
 // to translate a parsed types.Workload into provider-native manifests. Phase
 // B.4 type-asserts the engine to this interface when a Recipe has declared
-// workload: or workloadFrom:; engines that don't implement it produce a
-// CATALOG_ERROR at B.4.
+// workload:; engines that don't implement it produce a CATALOG_ERROR at B.4.
 //
 // Implemented by: helm and compose engines. Other providers (terraform,
 // cloudformation, eval) do not implement WorkloadSynthesizer today.
@@ -53,7 +52,7 @@ func dispatchWorkloadSynthesis(
 	synth, ok := engine.(WorkloadSynthesizer)
 	if !ok {
 		inner := fmt.Errorf(
-			"CATALOG_ERROR: provider %q does not implement WorkloadSynthesizer; the Recipe declares workload: or workloadFrom: but the bound provider has no synthesised-mode implementation",
+			"CATALOG_ERROR: provider %q does not implement WorkloadSynthesizer; the Recipe declares workload: but the bound provider has no synthesised-mode implementation",
 			providerName,
 		)
 		return nil, cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())

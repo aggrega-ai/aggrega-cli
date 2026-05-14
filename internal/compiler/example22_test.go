@@ -370,8 +370,8 @@ func TestExample22_HelmChartWithArtifacts(t *testing.T) {
 	assertSourcedUmbrellaProof(t, res)
 	// HelmChart sub-chart templates stay {{ .Values.* }}-templated and
 	// do not carry rendered labels; assertProvenanceLabels is skipped.
-	// Byte-compare on goldens validates labels in the artifactsFrom output
-	// via the artifacts evaluator's buildProvenanceLabels.
+	// Byte-compare on goldens validates labels in the $import:-loaded
+	// artifact output via the artifacts evaluator's buildProvenanceLabels.
 	assertDistMatches(t, res.Files, "testdata/example22/expected/helm-chart-with-artifacts", "dist/")
 }
 
