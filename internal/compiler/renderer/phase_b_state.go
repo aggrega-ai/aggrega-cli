@@ -28,7 +28,7 @@ type PhaseBState struct {
 	// BoundaryPath is the boundary the node belongs to. Used by the
 	// orchestrator's per-boundary file collection; not consumed by Phase B
 	// sub-passes today but kept for forward compatibility (B.5 may need
-	// it once cross-boundary detection lands in a future intent).
+	// it once cross-boundary detection lands).
 	BoundaryPath string
 
 	// RecipePath / RecipeName / RecipeVersion are operator-facing

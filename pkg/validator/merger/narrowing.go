@@ -161,7 +161,7 @@ func detectNarrowing(parent, child *Schema, pathPrefix string, provenance map[st
 	// JSON Schema 2020-12 has no formal type hierarchy beyond
 	// equality + (single-type <-> multi-types-list compatibility), so
 	// the check is conservative: flag mismatches outright. A future
-	// LDR can layer a stricter hierarchy if needed.
+	// revision can layer a stricter hierarchy if needed.
 	if p.Type != "" && c.Type != "" && p.Type != c.Type {
 		violations = append(violations, NarrowingViolation{
 			FieldPath:    pathPrefix,

@@ -76,7 +76,7 @@ func ExecutePass2a(
 // presence in both sources is sufficient signal regardless of value equality;
 // authors resolve by removing one source.
 //
-// The LDR anticipates a second detection layer for template-expanded keys
+// A second detection layer is anticipated for template-expanded keys
 // (delivery keys produced by self-inject value: template evaluation that may
 // collide with uses-inject hydrated keys at render time). That layer is not
 // yet wired; this function's scope is the static authoring layer only.

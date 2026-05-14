@@ -5,11 +5,10 @@
 // validator's input schema to a finding's FieldPath, reads the
 // x-aggrega-source extension annotation injected by the compactform
 // cross-document $ref expander, and decorates the finding with library
-// + consumer attribution. The integration story is documented at LDR
-// 0088: a validation error in a property pulled from a SchemaLibrary
-// surfaces the originating library + consumer file location, recovering
-// the debugging clarity that runtime $ref resolution would have
-// provided naturally.
+// + consumer attribution. A validation error in a property pulled from
+// a SchemaLibrary surfaces the originating library + consumer file
+// location, recovering the debugging clarity that runtime $ref
+// resolution would have provided naturally.
 
 package jsonschema
 

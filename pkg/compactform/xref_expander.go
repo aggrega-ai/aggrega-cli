@@ -68,9 +68,9 @@ func parseCrossDocRefURI(ref string) (xrefURI, bool) {
 }
 
 // isOCIRef reports whether a $ref value carries the `oci://` scheme.
-// OCI URIs are recognised but rejected with ErrOCINotYetSupported at this
-// milestone; activation lands when the publishing-runtime sub-intent ships
-// the lockfile + OCI pull infrastructure.
+// OCI URIs are recognised but currently rejected with
+// ErrOCINotYetSupported; activation lands when the lockfile + OCI pull
+// infrastructure ships.
 func isOCIRef(ref string) bool {
 	return strings.HasPrefix(ref, "oci://")
 }

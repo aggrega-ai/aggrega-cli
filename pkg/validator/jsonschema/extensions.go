@@ -210,8 +210,8 @@ nextValidate:
 // evaluate at the current path after the per-key dispatch via Option α
 // recursive walkBranch. The library's instance-root Validate is never
 // invoked for these constructs — the walker delivers deterministic
-// finding emission across the full JSON Schema 2020-12 surface the
-// LDR enumerates.
+// finding emission across the full JSON Schema 2020-12 surface this
+// adapter covers.
 func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report) {
 	// Required-property check at this level: emit one finding per
 	// missing key, in sorted order, BEFORE recursing into present

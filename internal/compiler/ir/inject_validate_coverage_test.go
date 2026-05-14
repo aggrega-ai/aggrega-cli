@@ -26,7 +26,7 @@ import (
 // changed.
 //
 // The four entries below correspond to the four typed surfaces walked
-// today (per LDR 0086 §4 cross-site-coherence closure notes):
+// today:
 //
 //   - ComponentInstance.Inject (component self-inject)
 //   - FeatureInstance.Inject (feature attachment inject)
@@ -49,8 +49,8 @@ var expectedInjectBlockFields = map[string]struct{}{
 //   - A new field surfaces without an inventory entry — typically the
 //     failure mode when a future schema revision adds a *InjectBlock
 //     field to an existing type (e.g., Subsystem-level self-inject,
-//     Release-side BoundaryFeature.Inject per LDR 0086's documented
-//     extension point) and the walker is not updated in lockstep.
+//     Release-side BoundaryFeature.Inject) and the walker is not
+//     updated in lockstep.
 //
 //   - An expected field disappears without an inventory removal —
 //     typically a type rename or field deletion that should also remove

@@ -683,14 +683,14 @@ func parseBoundaryFeatureRaw(raw any) types.BoundaryFeature {
 // path back to root; at each level, check state.Provides for
 // (level, frInstance). Return on first hit.
 //
-// Wiring status (boundary-scope-feature-recipe intent close): this
-// function is declared and ready, but RehydrateInjectFromProvides at
-// inject.go does NOT yet call it. The wiring requires a (Feature-type-URI
-// → FR-instance-name) resolution path that today's IREdge.OriginFeature
-// (carries the catalog Feature TYPE URI, not the per-attachment instance
-// name) doesn't supply directly. The instance-name derivation depends on
-// walking the per-component feature cascade to identify which attachment
-// fired the edge — a substantive change to the topology/IR pipeline that
+// Wiring status: this function is declared and ready, but
+// RehydrateInjectFromProvides at inject.go does NOT yet call it. The
+// wiring requires a (Feature-type-URI → FR-instance-name) resolution
+// path that today's IREdge.OriginFeature (carries the catalog Feature
+// TYPE URI, not the per-attachment instance name) doesn't supply
+// directly. The instance-name derivation depends on walking the
+// per-component feature cascade to identify which attachment fired
+// the edge — a substantive change to the topology/IR pipeline that
 // belongs in a follow-up driven by a real consumer-side fixture.
 //
 // Practical consequence today: a per-component consumer that references

@@ -9,9 +9,9 @@ import (
 
 // SchemaLibrary is the typed Go representation of the aggrega.ai/v1alpha1
 // SchemaLibrary catalog entity. The entity holds reusable JSON Schema 2020-12
-// definitions plus optional parameterized helpers (`$templates:`). Tier 3
-// per the master schema-language LDR — opt-in for catalogs that need cross-
-// Component schema reuse.
+// definitions plus optional parameterized helpers (`$templates:`). Tier 3 in
+// the entity-tier model — opt-in for catalogs that need cross-Component
+// schema reuse.
 //
 // Schema: schemalibrary-v1alpha1.schema.json (in the aggrega-schemas repo).
 type SchemaLibrary struct {

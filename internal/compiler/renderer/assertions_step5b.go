@@ -58,9 +58,9 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 		// Step 5b evaluates Recipe Locals inline here so they're available to
 		// assertion templates via AssertionContext.Locals. The orchestrator's
 		// main render loop re-evaluates the same Locals during rendering;
-		// double evaluation is accepted at this milestone because Locals
-		// templates are pure (same input -> same output). A future refactor
-		// may consolidate via a pre-loop pass into a shared map[nodeID]locals.
+		// double evaluation is accepted today because Locals templates are
+		// pure (same input -> same output). A future refactor may
+		// consolidate via a pre-loop pass into a shared map[nodeID]locals.
 		valuesOM := orderedAnyFromMap(base.Values)
 		infraOM := orderedAnyFromMap(base.Infra)
 		locals, lerr := EvaluateRecipeLocals(recipe, nodeID, valuesOM, infraOM, providesForNode)

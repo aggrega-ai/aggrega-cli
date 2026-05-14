@@ -24,7 +24,7 @@ var ErrTemplateParamMissing = errors.New("schemalibrary: template parameter miss
 var ErrTemplateParamTypeMismatch = errors.New("schemalibrary: template parameter type mismatch")
 
 // ErrForbiddenKeyword fires when a schema entry uses a JSON Schema keyword
-// the master LDR lists as forbidden by default. Currently: $dynamicAnchor,
+// forbidden by default in SchemaLibrary content. Currently: $dynamicAnchor,
 // $dynamicRef.
 var ErrForbiddenKeyword = errors.New("schemalibrary: forbidden JSON Schema keyword")
 

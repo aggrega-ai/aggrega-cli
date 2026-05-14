@@ -22,9 +22,8 @@ var ErrMappingEntryNotScalar = errors.New("mappinglibrary: entry body must be a 
 // MappingLibrary is the typed Go representation of the aggrega.ai/v1alpha1
 // MappingLibrary catalog entity. The entity holds reusable Go template
 // fragments that Recipes and FeatureRecipes consume at render time via
-// `valuesMapping: { $import: ... }` directives. Tier 3 per the master
-// schema-language LDR — opt-in for catalogs that need cross-Recipe
-// mapping reuse.
+// `valuesMapping: { $import: ... }` directives. Tier 3 in the entity-tier
+// model — opt-in for catalogs that need cross-Recipe mapping reuse.
 //
 // Schema: mappinglibrary-v1alpha1.schema.json (in the aggrega-schemas repo).
 type MappingLibrary struct {

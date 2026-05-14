@@ -22,12 +22,12 @@
 // entry whose property names include `description:` routes through
 // emitCompactConstraint and rejects its sibling property names as
 // unknown keywords. Library authors who need `description:` as a
-// property name (a legitimate use case for the BaseComponentParameter
-// example documented in LDR 0088) author the entry in explicit JSON
-// Schema form with `type: object, properties: { ... }` instead of
-// inferred form. The constraint is a pre-existing compactform-language
-// authoring requirement, not a WI 10 regression; documented here so
-// future fixture authors don't bump into it silently.
+// property name (a legitimate use case for BaseComponentParameter-style
+// entries) author the entry in explicit JSON Schema form with
+// `type: object, properties: { ... }` instead of inferred form. The
+// constraint is a pre-existing compactform-language authoring
+// requirement; documented here so future fixture authors don't bump
+// into it silently.
 
 package compactform
 

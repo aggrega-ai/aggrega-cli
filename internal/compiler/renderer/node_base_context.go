@@ -16,7 +16,7 @@ import (
 //
 // Step 5b adds Provides + Locals + Recipe on top of NodeBaseContext via
 // AssertionContext population. The existing AssembleNodeContext stays
-// unchanged at this milestone; future refactor may collapse the duplicate
+// unchanged today; a future refactor may collapse the duplicate
 // IR-graph reads into a shared extraction.
 type NodeBaseContext struct {
 	NodeID   string

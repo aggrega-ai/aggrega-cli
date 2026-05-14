@@ -19,7 +19,7 @@ var (
 	// infrastructure ships; until then, authors use a local file path
 	// import (mode 2) as the workaround. The error message names the
 	// workaround inline so authors aren't blocked.
-	ErrLibraryImportNotYetSupported = errors.New("library import via oci:// URL is not yet supported in this milestone. Use a local file path import as a workaround (valuesMapping: { $import: ./relative/path.tmpl }) until the OCI publishing pipeline lands.")
+	ErrLibraryImportNotYetSupported = errors.New("library import via oci:// URL is not yet supported. Use a local file path import as a workaround (valuesMapping: { $import: ./relative/path.tmpl }) until the OCI publishing pipeline lands.")
 
 	// ErrUnknownProvider is the compiler-level fatal halt produced by the
 	// build-time engineFactory when a Recipe declares a provider name that

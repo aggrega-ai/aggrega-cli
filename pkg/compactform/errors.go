@@ -63,8 +63,8 @@ var (
 	// ErrOCINotYetSupported indicates a cross-document `$ref:` URI uses
 	// the `oci://` scheme. The OCI URI form is defined-but-deferred: the
 	// authoring shape is reserved for use once the lockfile + OCI pull
-	// infrastructure ships in the publishing-runtime sub-intent. Pre-1.0
-	// the compactform expander rejects OCI URIs with this sentinel.
+	// infrastructure ships. Pre-1.0 the compactform expander rejects OCI
+	// URIs with this sentinel.
 	ErrOCINotYetSupported = errors.New("compactform: oci:// $ref scheme not yet supported")
 )
 
