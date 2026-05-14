@@ -6,6 +6,7 @@ package resolver
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/cognitio/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
@@ -70,7 +71,15 @@ func LoadRelease(path string) (*types.Release, error) {
 	return &rel, nil
 }
 
-// LoadManifest reads and unmarshals a Manifest YAML file.
+// LoadManifest reads and unmarshals a Manifest YAML file. The loader
+// enforces the reserved-prefix rule on annotation-binding keys: any
+// features.annotations entry keyed under the bare aggrega.ai/ prefix is
+// rejected with a CATALOG_ERROR-prefixed message at load time. The
+// prefix is reserved for the provider well-known annotations documented
+// at aggrega-docs/language-reference/providers/well-known-annotations.md;
+// authors of annotation-driven Feature bindings use feature.aggrega.ai/
+// for standard-library shortcuts or a custom domain for enterprise
+// shortcuts.
 func LoadManifest(path string) (*types.Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -90,5 +99,51 @@ func LoadManifest(path string) (*types.Manifest, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
+	if err := rejectReservedAnnotationBindings(&man, path); err != nil {
+		return nil, err
+	}
 	return &man, nil
+}
+
+// rejectReservedAnnotationBindings walks every annotation-binding key
+// declared on the Manifest (flat features tier plus any legacy
+// per-provider tiers within the migration window) and rejects any key
+// using the reserved aggrega.ai/ prefix. First-violation-halt matches
+// existing Manifest-load patterns for shape-level rejections.
+func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
+	const reservedPrefix = "aggrega.ai/"
+	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) error {
+		if annotations == nil {
+			return nil
+		}
+		for _, key := range annotations.Keys() {
+			if strings.HasPrefix(key, reservedPrefix) {
+				return &ResolverError{
+					Entity: "Manifest",
+					Field:  path,
+					Message: fmt.Sprintf(
+						"CATALOG_ERROR: features.annotations binding %q uses reserved prefix %q; reserved for provider well-known annotations. Use feature.<your-domain>/ for Feature bindings.",
+						key, reservedPrefix,
+					),
+					Err: ErrManifestReservedPrefix,
+				}
+			}
+		}
+		return nil
+	}
+
+	if man.Spec.Mappings.Features != nil {
+		if err := check(man.Spec.Mappings.Features.Annotations); err != nil {
+			return err
+		}
+	}
+	for _, prov := range man.Spec.Mappings.Legacy.Keys() {
+		tier, _ := man.Spec.Mappings.Legacy.Get(prov)
+		if tier.Features != nil {
+			if err := check(tier.Features.Annotations); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

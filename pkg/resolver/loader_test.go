@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -130,3 +131,95 @@ spec:
 		t.Error("expected legacy mappings for 'helm' provider")
 	}
 }
+
+func TestLoadManifest_RejectsReservedPrefix_FlatShape(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        aggrega.ai/forbidden-binding:
+          feature: core/forbidden:1.0.0
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected CATALOG_ERROR on reserved-prefix binding; got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "CATALOG_ERROR") {
+		t.Errorf("error missing CATALOG_ERROR prefix: %s", msg)
+	}
+	if !strings.Contains(msg, "aggrega.ai/forbidden-binding") {
+		t.Errorf("error message should name the offending key; got: %s", msg)
+	}
+	if !strings.Contains(msg, "reserved prefix") {
+		t.Errorf("error message should explain the reservation; got: %s", msg)
+	}
+	if !errors.Is(err, ErrManifestReservedPrefix) {
+		t.Errorf("error should wrap ErrManifestReservedPrefix (not ErrYAMLLoad); got chain: %v", err)
+	}
+	if errors.Is(err, ErrYAMLLoad) {
+		t.Errorf("error should NOT wrap ErrYAMLLoad — the YAML parsed successfully; the failure is a semantic reservation check")
+	}
+}
+
+func TestLoadManifest_RejectsReservedPrefix_LegacyShape(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    helm:
+      features:
+        annotations:
+          aggrega.ai/legacy-shape-also-rejected:
+            feature: core/foo:1.0.0
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected CATALOG_ERROR on reserved-prefix binding under legacy tier; got nil")
+	}
+	if !strings.Contains(err.Error(), "CATALOG_ERROR") {
+		t.Errorf("legacy-shape rejection should also use CATALOG_ERROR prefix; got: %s", err)
+	}
+}
+
+func TestLoadManifest_AcceptsNamespacedPrefix(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.aggrega.ai/standard-library-binding:
+          feature: core/foo:1.0.0
+        feature.myco/enterprise-binding:
+          feature: core/bar:1.0.0
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err != nil {
+		t.Fatalf("namespaced prefixes should be accepted; got error: %v", err)
+	}
+}
+

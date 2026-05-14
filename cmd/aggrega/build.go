@@ -131,6 +131,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// path), bounding the in-memory parameter window to one build invocation.
 	defer resolver.PurgeParameters(&resolveResult.Parameters)
 
+	// Annotation-driven Feature expansion runs between the mechanical
+	// resolver and the guards pass so synthetic Feature attachments are
+	// visible to RunGuards' requiredFeatures completeness check.
+	if err := resolver.ExpandAnnotations(resolveResult); err != nil {
+		return fmt.Errorf("Step 1 (annotation expansion): %w", err)
+	}
+
 	// Run guards
 	catalogLookup := cat.CatalogLookup()
 	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)

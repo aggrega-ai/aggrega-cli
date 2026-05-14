@@ -35,6 +35,17 @@ var (
 	// three source documents (Aggregate, Release, Manifest).
 	ErrYAMLLoad = errors.New("YAML load failed")
 
+	// ErrManifestReservedPrefix wraps a Manifest features.annotations
+	// binding key that uses the reserved aggrega.ai/ prefix. The prefix
+	// is reserved for the provider well-known annotations documented at
+	// aggrega-docs/language-reference/providers/well-known-annotations.md;
+	// authors of annotation-driven Feature bindings use a namespaced
+	// sub-prefix (feature.aggrega.ai/ for standard-library shortcuts,
+	// any custom domain for enterprise shortcuts). The rule is enforced
+	// at Manifest load — the YAML parsed successfully but the binding
+	// fails a semantic reservation check, distinct from ErrYAMLLoad.
+	ErrManifestReservedPrefix = errors.New("manifest annotation binding uses reserved prefix")
+
 	// ErrInvalidInjectKey wraps an inject delivery key that does not match
 	// the expected per-mechanism format.
 	ErrInvalidInjectKey = errors.New("invalid inject key")
