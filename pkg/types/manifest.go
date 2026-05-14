@@ -21,10 +21,36 @@ type Manifest struct {
 	Spec       ManifestSpec     `json:"spec" yaml:"spec"`
 }
 
-// AnnotationBinding is an empty stub in this intent; fields land in
-// annotation-expansion. Declared here so the deterministic-ordering refactor
-// can reserve the MappingTier.Annotations slot with an OrderedMap-typed field.
-type AnnotationBinding struct{}
+// AnnotationBinding declares how a Release-level annotation on a boundary
+// or component expands into a synthetic Feature attachment when the
+// annotation-expansion sub-phase runs. Bindings are declared on the
+// Manifest under `mappings.features.annotations`; the binding key is the
+// annotation name (for example `feature.myco/rewrite-host`). The
+// `aggrega.ai/` prefix is reserved for platform-native provider
+// annotations and is rejected at expansion time.
+// Schema: manifest-v1alpha1.schema.json#/properties/spec/properties/mappings/properties/features/properties/annotations/additionalProperties
+type AnnotationBinding struct {
+	// Feature is the Feature type URI this annotation expands into
+	// (for example `core/rewrite-host:1.0.0`). The referenced type
+	// must also appear in `features.type` — the FeatureRecipe version
+	// binding lives there, not on the annotation binding.
+	Feature string `json:"feature" yaml:"feature"`
+
+	// Infra is the validating-schema source for the ops-facing payload
+	// produced by the annotation value. The shape is an arbitrary
+	// mapping mirroring the schema's `additionalProperties: true`; the
+	// expansion sub-phase interprets the content as a JSON Schema
+	// 2020-12 source. OrderedMap[any] preserves author-declared key
+	// order through JSON re-emission for byte-identical output across
+	// compile runs, matching the convention used on BoundaryComponent.Infra
+	// and IRSecretEntry.Values for structurally parallel inline-schema
+	// payloads.
+	Infra OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+
+	// Values is the validating-schema source for the dev-facing payload.
+	// Empty for annotations that only expose ops-facing knobs.
+	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+}
 
 // ManifestMetadata carries identity for a Manifest entity.
 type ManifestMetadata struct {
