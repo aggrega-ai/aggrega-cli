@@ -21,35 +21,84 @@ type Manifest struct {
 	Spec       ManifestSpec     `json:"spec" yaml:"spec"`
 }
 
-// AnnotationBinding declares how a Release-level annotation on a boundary
-// or component expands into a synthetic Feature attachment when the
-// annotation-expansion sub-phase runs. Bindings are declared on the
-// Manifest under `mappings.features.annotations`; the binding key is the
-// annotation name (for example `feature.myco/rewrite-host`). The
+// AnnotationBinding declares how an annotation key in a Manifest's
+// annotation registry routes to a Feature attachment's pillar fields.
+// The binding associates an annotation key with a Feature URI and a
+// pillar-grouped list of dotted-path subkey routes naming which Feature
+// schema properties the annotation may populate. Bindings are declared
+// on the Manifest under `mappings.features.annotations`; the binding key
+// is the annotation name (for example `feature.myco/rewrite-host`). The
 // `aggrega.ai/` prefix is reserved for platform-native provider
 // annotations and is rejected at expansion time.
+//
+// The annotation value's structure determines how Maps is consumed:
+//   - A scalar annotation value with a single declared path (across both
+//     pillar lists, total) routes the scalar to that path.
+//   - A scalar annotation value with multiple declared paths is an error
+//     (ambiguous routing).
+//
+// Dotted-path subkey routes navigate into nested Feature schema
+// properties. Path "ingress.host" addresses Feature.Spec.Schema.values
+// (or .infra).properties.ingress.properties.host. Each path component
+// must be a JSON-Schema-valid identifier; wildcards are not supported.
+//
+// Validation derives from the Feature's own spec.schema: for each path
+// in Maps.Infra the compiler navigates Feature.Spec.Schema.infra through
+// the dotted components and verifies the leaf exists; same for Maps.Values
+// against Feature.Spec.Schema.values. The Feature is the single source
+// of truth for declared property paths; the binding declares only the
+// routing.
+//
+// The authoring side (Aggregate Subsystem/Component or Release
+// Boundary/BoundaryComponent) constrains which pillar's path list fires:
+//   - Aggregate-side annotations may only route via Maps.Values paths
+//     (per the Aggregate-as-Authoring-Surface invariant).
+//   - Release-side annotations may only route via Maps.Infra paths
+//     (per the same invariant's symmetric corollary).
+//
+// A binding can carry paths in both pillar lists; each side fires only
+// its compatible subset. Cross-side path routing mismatches halt the
+// build with a clear error.
+//
 // Schema: manifest-v1alpha1.schema.json#/properties/spec/properties/mappings/properties/features/properties/annotations/additionalProperties
 type AnnotationBinding struct {
-	// Feature is the Feature type URI this annotation expands into
-	// (for example `core/rewrite-host:1.0.0`). The referenced type
-	// must also appear in `features.type` — the FeatureRecipe version
-	// binding lives there, not on the annotation binding.
+	// Feature is the Feature URI this annotation routes to (for example
+	// `core/rewrite-host:1.0.0`). The referenced type must also appear
+	// in `features.type` — the FeatureRecipe version binding lives
+	// there, not on the annotation binding.
 	Feature string `json:"feature" yaml:"feature"`
 
-	// Infra is the validating-schema source for the ops-facing payload
-	// produced by the annotation value. The shape is an arbitrary
-	// mapping mirroring the schema's `additionalProperties: true`; the
-	// expansion sub-phase interprets the content as a JSON Schema
-	// 2020-12 source. OrderedMap[any] preserves author-declared key
-	// order through JSON re-emission for byte-identical output across
-	// compile runs, matching the convention used on BoundaryComponent.Infra
-	// and IRSecretEntry.Values for structurally parallel inline-schema
-	// payloads.
-	Infra OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	// Maps is the pillar-grouped routing table: each pillar (infra,
+	// values) carries an author-ordered list of dotted-path subkey
+	// routes naming which Feature schema properties the annotation may
+	// populate. At least one of Maps.Infra or Maps.Values must be
+	// non-empty; the Manifest JSON Schema enforces this.
+	Maps AnnotationBindingMaps `json:"maps" yaml:"maps"`
+}
 
-	// Values is the validating-schema source for the dev-facing payload.
-	// Empty for annotations that only expose ops-facing knobs.
-	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+// AnnotationBindingMaps groups subkey-path routes by their target pillar.
+// At least one of Infra or Values must declare at least one path (enforced
+// by the Manifest JSON Schema). Paths within a list are unique; cross-list
+// path appearances are allowed only when the target Feature's spec.schema
+// declares the property in both pillars (the schema-pillar-overlap lint
+// surfaces the smell).
+type AnnotationBindingMaps struct {
+	// Infra carries the dotted-path subkey routes targeting the Feature's
+	// infra pillar. Release-side annotations may only route via Infra
+	// paths; Aggregate-side annotations cannot fire Infra entries.
+	Infra []string `json:"infra,omitempty" yaml:"infra,omitempty"`
+
+	// Values carries the dotted-path subkey routes targeting the Feature's
+	// values pillar. Aggregate-side annotations may only route via Values
+	// paths; Release-side annotations cannot fire Values entries.
+	Values []string `json:"values,omitempty" yaml:"values,omitempty"`
+}
+
+// Len returns the total number of declared subkey paths across both pillar
+// lists. Used by expansion-time checks to detect the multi-path case
+// (which is ambiguous when paired with a scalar annotation value).
+func (m AnnotationBindingMaps) Len() int {
+	return len(m.Infra) + len(m.Values)
 }
 
 // ManifestMetadata carries identity for a Manifest entity.

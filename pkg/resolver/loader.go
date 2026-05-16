@@ -102,6 +102,9 @@ func LoadManifest(path string) (*types.Manifest, error) {
 	if err := rejectReservedAnnotationBindings(&man, path); err != nil {
 		return nil, err
 	}
+	if err := rejectCrossBindingPathPillarCollision(&man, path); err != nil {
+		return nil, err
+	}
 	return &man, nil
 }
 
@@ -127,6 +130,77 @@ func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
 					),
 					Err: ErrManifestReservedPrefix,
 				}
+			}
+		}
+		return nil
+	}
+
+	if man.Spec.Mappings.Features != nil {
+		if err := check(man.Spec.Mappings.Features.Annotations); err != nil {
+			return err
+		}
+	}
+	for _, prov := range man.Spec.Mappings.Legacy.Keys() {
+		tier, _ := man.Spec.Mappings.Legacy.Get(prov)
+		if tier.Features != nil {
+			if err := check(tier.Features.Annotations); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// rejectCrossBindingPathPillarCollision walks every annotation binding
+// on the Manifest and rejects the case where two bindings target the
+// same Feature with the same dotted-path subkey routing to the same
+// pillar. The collision case produces an ambiguous "which binding routes
+// this path?" question the expansion pipeline cannot resolve. A single
+// Feature may carry distinct bindings for distinct (path, pillar) pairs;
+// the rule rejects only the same-Feature same-(path, pillar) duplicate.
+//
+// First-violation-halt matches existing Manifest-load patterns for
+// shape-level rejections.
+func rejectCrossBindingPathPillarCollision(man *types.Manifest, path string) error {
+	type pillarTarget struct{ path, pillar string }
+
+	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) error {
+		if annotations == nil {
+			return nil
+		}
+		// seen tracks, per Feature URI, the set of (path, pillar) pairs
+		// and the first annotation key that declared the pair.
+		seen := map[string]map[pillarTarget]string{}
+		for _, key := range annotations.Keys() {
+			binding, _ := annotations.Get(key)
+			featureMap, ok := seen[binding.Feature]
+			if !ok {
+				featureMap = map[pillarTarget]string{}
+				seen[binding.Feature] = featureMap
+			}
+			collect := func(paths []string, pillar string) error {
+				for _, p := range paths {
+					target := pillarTarget{path: p, pillar: pillar}
+					if priorKey, dup := featureMap[target]; dup {
+						return &ResolverError{
+							Entity: "Manifest",
+							Field:  path,
+							Message: fmt.Sprintf(
+								"CATALOG_ERROR: annotation bindings %q and %q both target Feature %q with path %q routing to pillar %q; only one binding may declare a given (path, pillar) pair per Feature.",
+								priorKey, key, binding.Feature, p, pillar,
+							),
+							Err: ErrManifestCrossBindingPillarCollision,
+						}
+					}
+					featureMap[target] = key
+				}
+				return nil
+			}
+			if err := collect(binding.Maps.Infra, "infra"); err != nil {
+				return err
+			}
+			if err := collect(binding.Maps.Values, "values"); err != nil {
+				return err
 			}
 		}
 		return nil

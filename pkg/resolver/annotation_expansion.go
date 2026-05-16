@@ -4,14 +4,10 @@
 package resolver
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	libschema "github.com/google/jsonschema-go/jsonschema"
-
 	"github.com/cognitio/aggrega-cli/pkg/types"
-	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // ExpandAnnotations runs the annotation-driven Feature expansion pass.
@@ -167,140 +163,143 @@ func annotationSourcePath(releasePath, boundaryPath, componentName, key string) 
 	return prefix + ":" + dotted + ".annotations." + key
 }
 
-// expandBinding parses a single annotation value against its binding's
-// validating schema and produces the synthetic BoundaryFeature payload
-// for injection. The value is interpreted in three shapes per the
-// annotation-driven Feature expansion design: (a) empty string means
-// "accept all schema defaults"; (b) scalar (non-empty string) maps to
-// the first field of the Infra schema's properties; (c) any other
-// shape (map-bearing YAML) is parsed as a multi-field payload. The
-// current implementation supports shapes (a) and (b) at the YAML
-// surface — Release.Boundary annotation values are typed
-// OrderedMap[string], which collapses author-authored maps to their
-// string serialization; full map-shape parsing depends on a parallel
-// tristate-and-value-shape pass not yet active.
+// expandBinding consumes a scalar annotation value plus its binding and
+// produces the synthetic BoundaryFeature payload for injection on the
+// Release side. The binding's Maps groups dotted-path subkey routes by
+// target pillar (Maps.Infra, Maps.Values). For the Release-side cascade,
+// only paths in Maps.Infra fire; Maps.Values paths are inert here
+// (Aggregate-side expansion handles them in a parallel pass).
 //
-// Schema-defaults policy: this layer does NOT merge schema defaults
-// into the synthetic Feature's Infra payload. The Infra produced here
-// carries only the fields the author actually populated through the
-// annotation value (one field for shape (b); zero fields for shape
-// (a)). Default-value materialization is the FeatureRecipe rendering
-// layer's responsibility, applied uniformly to explicit and synthetic
-// attachments so that the two paths produce byte-identical IR and
-// rendered output for the same effective configuration. Validation
-// against the binding schema runs here as a pure conformance check —
-// the validator reports findings but does not mutate the instance,
-// so the synthetic Feature reflects author intent rather than
-// default-resolved intent.
+// Annotation values are scalar in this layer. A scalar paired with a
+// binding declaring more than one path total (Maps.Infra plus Maps.Values)
+// is ambiguous routing and halts the build with an OPS_ERROR.
+//
+// Scalar paired with a single-path binding whose declared path sits in
+// Maps.Infra routes the value into the synthetic Feature's Infra at the
+// dotted-path leaf — setPillarLeaf navigates the path components,
+// creating intermediate OrderedMap nodes for nested schema shapes.
+//
+// An empty scalar populates no field; the synthetic Feature carries an
+// empty Infra pillar. FeatureRecipe rendering materializes any
+// target-Feature schema defaults downstream — the expansion layer
+// carries only the values the author actually populated through the
+// annotation.
+//
+// Path-target validation against the target Feature's spec.schema (does
+// the routed path correspond to an actually-declared property?) runs at
+// the catalog cross-reference pass, not here. Expansion-time receives a
+// binding whose paths have already been schema-target validated.
 func expandBinding(key, value string, binding types.AnnotationBinding, boundaryPath, componentName string) (types.BoundaryFeature, error) {
-	parsed, err := parseAnnotationValue(value, binding)
+	path, pillar, err := resolveBindingTarget(binding, value)
 	if err != nil {
 		return types.BoundaryFeature{}, wrapAnnotationOpsError(boundaryPath, componentName, key, "parse", err)
-	}
-
-	if err := validateAnnotationValue(parsed, binding); err != nil {
-		return types.BoundaryFeature{}, wrapAnnotationOpsError(boundaryPath, componentName, key, "validate", err)
 	}
 
 	feature := types.BoundaryFeature{
 		Type: binding.Feature,
 	}
-	if parsed != nil {
-		for k, v := range parsed {
-			feature.Infra.Set(k, v)
-		}
+	// Release-side cascade processes only the infra-pillar routes from
+	// the binding's Maps. Paths in Maps.Values are inert on this side;
+	// the parallel Aggregate-side expansion handles values-pillar routes.
+	//
+	// Empty annotation value populates no field; the synthetic Feature
+	// attachment is produced with an empty pillar. FeatureRecipe
+	// rendering materializes any schema defaults uniformly across
+	// explicit and synthetic attachments downstream.
+	if pillar == "infra" && value != "" {
+		setPillarLeaf(&feature.Infra, path, value)
 	}
 	return feature, nil
 }
 
-// parseAnnotationValue produces a field-map ready for schema validation
-// from the annotation's authored string value. An empty value means
-// "accept the schema defaults"; a non-empty scalar maps to the first
-// field declared on the binding's Infra schema (in author order).
-func parseAnnotationValue(value string, binding types.AnnotationBinding) (map[string]any, error) {
-	if value == "" {
-		return nil, nil
+// resolveBindingTarget reads a binding's Maps and returns the dotted-path
+// route plus its target pillar for a scalar annotation value. The binding
+// must declare exactly one path across both pillar lists for scalar
+// routing to be unambiguous; declaring multiple paths paired with a
+// scalar annotation surfaces as the unambiguous-routing error.
+//
+// An empty annotation value still resolves the (path, pillar) target —
+// the empty value populates no leaf, but the caller may need to know
+// the routing for provenance recording. A binding with zero declared
+// paths is structurally invalid and is rejected at Manifest load by the
+// JSON Schema's minProperties / minItems constraints; this function
+// returns a clear runtime error if the load-time check has been bypassed.
+func resolveBindingTarget(binding types.AnnotationBinding, value string) (string, string, error) {
+	total := binding.Maps.Len()
+	if total == 0 {
+		return "", "", fmt.Errorf("binding for feature %q declares no paths in maps; scalar annotation value cannot route to any subkey", binding.Feature)
 	}
-	firstField, ok := firstSchemaField(binding.Infra)
-	if !ok {
-		return nil, fmt.Errorf("binding for feature %q declares no infra fields; scalar annotation value cannot map to a field", binding.Feature)
+	if total > 1 && value != "" {
+		paths := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
+		return "", "", fmt.Errorf("binding for feature %q maps multiple subkey paths (%v); scalar annotation value %q cannot route to multiple subkeys unambiguously. Provide separate annotation keys for each path", binding.Feature, paths, value)
 	}
-	return map[string]any{firstField: value}, nil
+	if len(binding.Maps.Infra) == 1 {
+		return binding.Maps.Infra[0], "infra", nil
+	}
+	if len(binding.Maps.Values) == 1 {
+		return binding.Maps.Values[0], "values", nil
+	}
+	// total == 0 covered above; total > 1 covered above; remaining case
+	// is exactly one path across both lists, handled by the two branches.
+	// Defensive fallback for unreachable state.
+	return "", "", fmt.Errorf("binding for feature %q maps shape is structurally invalid", binding.Feature)
 }
 
-// firstSchemaField returns the first property name declared on a binding's
-// validating schema in author order. The binding schema is an inline
-// JSON Schema 2020-12 source represented in Go as OrderedMap[any] — the
-// schema's top-level "properties" entry is itself an OrderedMap-shaped
-// object; the property names declared inside it are the binding's
-// fields. Returns false when the schema does not declare a properties
-// object or when the object is empty.
-func firstSchemaField(infra types.OrderedMap[any]) (string, bool) {
-	props, ok := infra.Get("properties")
-	if !ok {
-		return "", false
-	}
-	switch p := props.(type) {
-	case *types.OrderedMap[any]:
-		if p == nil {
-			return "", false
+// setPillarLeaf walks the dotted-path components through a pillar tree
+// (an OrderedMap whose leaves are scalar values and whose intermediate
+// nodes are nested OrderedMaps), creating intermediate nodes as needed,
+// and sets the leaf value at the final component.
+//
+// A path of "ingress.host" against an empty pillar tree produces:
+//
+//	{ "ingress": OrderedMap[any]{ "host": <value> } }
+//
+// A path of "host" against an empty pillar tree produces a top-level
+// leaf: { "host": <value> }. Subsequent calls to setPillarLeaf against
+// the same tree may extend nested intermediates; if a path's intermediate
+// already exists, the existing node is reused.
+//
+// The function does not protect against tree-shape collisions (e.g.
+// writing a scalar leaf to a path whose intermediate node was previously
+// a scalar). The schema-target validation at catalog cross-reference
+// time rejects bindings whose paths cannot be navigated through the
+// Feature's schema tree; this layer trusts the validated input.
+func setPillarLeaf(pillarTree *types.OrderedMap[any], path string, value any) {
+	components := strings.Split(path, ".")
+	current := pillarTree
+	for i, comp := range components {
+		if i == len(components)-1 {
+			current.Set(comp, value)
+			return
 		}
-		keys := p.Keys()
-		if len(keys) == 0 {
-			return "", false
+		next, exists := current.Get(comp)
+		if !exists {
+			child := types.OrderedMap[any]{}
+			current.Set(comp, &child)
+			current = &child
+			continue
 		}
-		return keys[0], true
-	case types.OrderedMap[any]:
-		keys := p.Keys()
-		if len(keys) == 0 {
-			return "", false
+		switch n := next.(type) {
+		case *types.OrderedMap[any]:
+			current = n
+		case types.OrderedMap[any]:
+			// The intermediate is stored value-typed (e.g., YAML unmarshalling
+			// nested objects yields value-typed entries by default). Take a
+			// local copy, write its pointer back into the parent so subsequent
+			// mutations propagate, then descend into the upgraded entry.
+			upgraded := n
+			current.Set(comp, &upgraded)
+			current = &upgraded
+		default:
+			// Intermediate exists but is not an OrderedMap — a tree-shape
+			// collision the schema-target validation should have rejected.
+			// Overwrite with a fresh intermediate; subsequent components
+			// proceed against the new node.
+			child := types.OrderedMap[any]{}
+			current.Set(comp, &child)
+			current = &child
 		}
-		return keys[0], true
-	case map[string]any:
-		for k := range p {
-			return k, true
-		}
-		return "", false
 	}
-	return "", false
-}
-
-// validateAnnotationValue validates the parsed annotation field-map
-// against the binding's Infra schema using the project's JSON Schema
-// 2020-12 validator. Marshal the OrderedMap[any] author content to JSON,
-// unmarshal into a libschema.Schema, construct a validator, and
-// validate the parsed instance. The function tolerates a nil parsed
-// instance — the schema-defaults case validates by construction when
-// the binding schema's required fields all carry defaults.
-func validateAnnotationValue(parsed map[string]any, binding types.AnnotationBinding) error {
-	if binding.Infra.Len() == 0 {
-		return nil
-	}
-	raw, err := json.Marshal(binding.Infra)
-	if err != nil {
-		return fmt.Errorf("marshal binding infra schema: %w", err)
-	}
-	schema := &libschema.Schema{}
-	if err := json.Unmarshal(raw, schema); err != nil {
-		return fmt.Errorf("parse binding infra schema: %w", err)
-	}
-	v, err := jsonvalidator.New(schema)
-	if err != nil {
-		return fmt.Errorf("resolve binding infra schema: %w", err)
-	}
-	instance := any(parsed)
-	if parsed == nil {
-		instance = map[string]any{}
-	}
-	report, err := v.Validate(instance, &jsonvalidator.Context{Surround: instance})
-	if err != nil {
-		return fmt.Errorf("validator error: %w", err)
-	}
-	if report != nil && len(report.Findings) > 0 {
-		f := report.Findings[0]
-		return fmt.Errorf("schema validation failed at %q (%s): %s", f.FieldPath, f.Keyword, f.Message)
-	}
-	return nil
 }
 
 // writeComponent persists a mutated component back into its containing

@@ -12,9 +12,10 @@ import (
 )
 
 // Test fixtures: a Manifest declaring a single annotation binding
-// `feature.myco/rewrite-host` whose infra schema declares an
-// `upstream` string field followed by an `enforce` boolean field with
-// default true. The schema is JSON Schema 2020-12.
+// `feature.myco/rewrite-host` that routes a scalar annotation value
+// to the target Feature's infra.upstream field. The binding declares
+// only the routing; validating types derive from the target Feature's
+// spec.schema.infra.upstream declaration.
 
 const testManifestYAML = `
 apiVersion: aggrega.ai/v1alpha1
@@ -30,14 +31,9 @@ spec:
       annotations:
         feature.myco/rewrite-host:
           feature: core/rewrite-host:1.0.0
-          infra:
-            type: object
-            properties:
-              upstream:
-                type: string
-              enforce:
-                type: boolean
-                default: true
+          maps:
+            infra:
+              - upstream
 `
 
 func loadTestManifest(t *testing.T) *types.Manifest {
@@ -146,7 +142,7 @@ spec:
 	}
 }
 
-func TestExpandAnnotations_ScalarValueMapsToFirstSchemaField(t *testing.T) {
+func TestExpandAnnotations_RoutesToBindingSingleSubkey(t *testing.T) {
 	t.Parallel()
 	src := `
 apiVersion: aggrega.ai/v1alpha1
@@ -176,10 +172,90 @@ spec:
 	}
 	upstream, ok := feat.Infra.Get("upstream")
 	if !ok {
-		t.Fatalf("Feature.Infra.upstream missing — scalar should map to first schema field")
+		t.Fatalf("Feature.Infra.upstream missing — scalar should route to the binding's single declared path")
 	}
 	if upstream != "scalar.example.com" {
 		t.Errorf("upstream = %v, want scalar.example.com", upstream)
+	}
+}
+
+func TestExpandAnnotations_ScalarRoutesToNestedPath(t *testing.T) {
+	t.Parallel()
+	// A binding declaring a dotted path routes the scalar value through
+	// the path components, creating nested OrderedMap intermediates as
+	// it walks. The synthetic Feature's Infra carries the value at the
+	// dotted leaf.
+	manifestSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/rewrite-host: rewrite-host-helm:1.0.0
+      annotations:
+        feature.myco/rewrite-host:
+          feature: core/rewrite-host:1.0.0
+          maps:
+            infra:
+              - ingress.host
+`
+	releaseSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      components:
+        api:
+          annotations:
+            feature.myco/rewrite-host: "api.example.com"
+`
+	var m types.Manifest
+	if err := yaml.Unmarshal([]byte(manifestSrc), &m); err != nil {
+		t.Fatalf("manifest unmarshal: %v", err)
+	}
+	rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
+	api, _ := prod.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/rewrite-host")
+	if !ok {
+		t.Fatalf("api missing synthetic Feature")
+	}
+	ingress, ok := feat.Infra.Get("ingress")
+	if !ok {
+		t.Fatalf("Feature.Infra.ingress missing — dotted path should produce nested intermediate")
+	}
+	switch n := ingress.(type) {
+	case *types.OrderedMap[any]:
+		host, ok := n.Get("host")
+		if !ok {
+			t.Fatalf("Feature.Infra.ingress.host missing on nested OrderedMap")
+		}
+		if host != "api.example.com" {
+			t.Errorf("ingress.host = %v, want api.example.com", host)
+		}
+	case types.OrderedMap[any]:
+		host, ok := n.Get("host")
+		if !ok {
+			t.Fatalf("Feature.Infra.ingress.host missing on nested OrderedMap")
+		}
+		if host != "api.example.com" {
+			t.Errorf("ingress.host = %v, want api.example.com", host)
+		}
+	default:
+		t.Errorf("Feature.Infra.ingress should be a nested OrderedMap; got %T", ingress)
 	}
 }
 
@@ -229,8 +305,12 @@ spec:
 	}
 }
 
-func TestExpandAnnotations_ValidationFailure_ReturnsOpsError(t *testing.T) {
+func TestExpandAnnotations_ScalarMultiMap_ReturnsOpsError(t *testing.T) {
 	t.Parallel()
+	// A binding declaring multiple paths (across the Infra and Values
+	// lists, total) paired with a scalar annotation value cannot resolve
+	// routing unambiguously — which path receives the value? Expansion
+	// halts with an OPS_ERROR naming the binding and its declared paths.
 	manifestSrc := `
 apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
@@ -245,11 +325,10 @@ spec:
       annotations:
         feature.myco/rewrite-host:
           feature: core/rewrite-host:1.0.0
-          infra:
-            type: object
-            properties:
-              upstream:
-                type: integer
+          maps:
+            infra:
+              - upstream
+              - timeout
 `
 	releaseSrc := `
 apiVersion: aggrega.ai/v1alpha1
@@ -265,7 +344,7 @@ spec:
       components:
         api:
           annotations:
-            feature.myco/rewrite-host: "not-an-integer"
+            feature.myco/rewrite-host: "scalar-cant-route-to-two-paths"
 `
 	var m types.Manifest
 	if err := yaml.Unmarshal([]byte(manifestSrc), &m); err != nil {
@@ -274,10 +353,13 @@ spec:
 	rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
 	err := ExpandAnnotations(rr)
 	if err == nil {
-		t.Fatalf("expected OPS_ERROR on type mismatch; got nil")
+		t.Fatalf("expected OPS_ERROR on ambiguous routing; got nil")
 	}
 	if !strings.Contains(err.Error(), "OPS_ERROR") {
 		t.Errorf("error missing OPS_ERROR prefix: %v", err)
+	}
+	if !strings.Contains(err.Error(), "multiple subkey paths") {
+		t.Errorf("error missing 'multiple subkey paths' diagnostic: %v", err)
 	}
 }
 
@@ -372,11 +454,11 @@ spec:
 
 func TestExpandAnnotations_EmptyStringValue_EmptyInfra(t *testing.T) {
 	t.Parallel()
-	// An empty-string annotation value means "accept all schema
-	// defaults". The synthetic Feature's Infra is empty
-	// at this layer; FeatureRecipe rendering supplies the defaults
-	// downstream. The test pins the empty-string code path that
-	// parseAnnotationValue treats as the no-fields case.
+	// An empty-string annotation value populates no field on the
+	// synthetic Feature attachment. FeatureRecipe rendering supplies
+	// any target-Feature schema defaults downstream — the expansion
+	// layer carries only the fields the author populated through the
+	// annotation value.
 	manifestSrc := `
 apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
@@ -391,15 +473,9 @@ spec:
       annotations:
         feature.myco/rewrite-host:
           feature: core/rewrite-host:1.0.0
-          infra:
-            type: object
-            properties:
-              upstream:
-                type: string
-                default: "default-upstream.example.com"
-              enforce:
-                type: boolean
-                default: true
+          maps:
+            infra:
+              - upstream
 `
 	releaseSrc := `
 apiVersion: aggrega.ai/v1alpha1
@@ -700,18 +776,14 @@ spec:
       annotations:
         feature.myco/rewrite-host:
           feature: core/rewrite-host:1.0.0
-          infra:
-            type: object
-            properties:
-              upstream:
-                type: string
+          maps:
+            infra:
+              - upstream
         feature.myco/metrics:
           feature: core/metrics-exporter:1.0.0
-          infra:
-            type: object
-            properties:
-              endpoint:
-                type: string
+          maps:
+            infra:
+              - endpoint
 `
 	releaseSrc := `
 apiVersion: aggrega.ai/v1alpha1
@@ -764,4 +836,89 @@ func keysOf(m map[string]AnnotationProvenance) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestSetPillarLeaf_NavigatesValueTypedIntermediate pins the
+// value-typed-intermediate descent path. YAML unmarshalling nested
+// objects, programmatic OrderedMap construction without explicit
+// pointers, and any caller that stores intermediate maps by value will
+// land in this code path. The leaf write MUST propagate to the parent
+// pillar tree; a self-referential or local-copy write would silently
+// drop the contribution.
+func TestSetPillarLeaf_NavigatesValueTypedIntermediate(t *testing.T) {
+	t.Parallel()
+	pillar := types.OrderedMap[any]{}
+	intermediate := types.OrderedMap[any]{}
+	intermediate.Set("existing", "preserved")
+	pillar.Set("ingress", intermediate) // value-typed, not &intermediate
+
+	setPillarLeaf(&pillar, "ingress.host", "new-host")
+
+	got, ok := pillar.Get("ingress")
+	if !ok {
+		t.Fatal("ingress missing from pillar after setPillarLeaf")
+	}
+	var ingressMap types.OrderedMap[any]
+	switch n := got.(type) {
+	case *types.OrderedMap[any]:
+		ingressMap = *n
+	case types.OrderedMap[any]:
+		ingressMap = n
+	default:
+		t.Fatalf("ingress entry has unexpected type %T", got)
+	}
+	host, ok := ingressMap.Get("host")
+	if !ok {
+		t.Fatal("ingress.host not propagated to parent — value-typed-intermediate descent dropped the write")
+	}
+	if host != "new-host" {
+		t.Errorf("host = %v, want new-host", host)
+	}
+	existing, ok := ingressMap.Get("existing")
+	if !ok {
+		t.Fatal("pre-existing sibling entry lost during value-typed-intermediate descent")
+	}
+	if existing != "preserved" {
+		t.Errorf("existing = %v, want preserved", existing)
+	}
+}
+
+// TestSetPillarLeaf_NavigatesPointerTypedIntermediate pins the
+// pointer-typed-intermediate descent path. Subsequent setPillarLeaf
+// calls into the same pillar tree should reuse the existing pointer
+// intermediate rather than creating a fresh one.
+func TestSetPillarLeaf_NavigatesPointerTypedIntermediate(t *testing.T) {
+	t.Parallel()
+	pillar := types.OrderedMap[any]{}
+	setPillarLeaf(&pillar, "ingress.enabled", true)
+	setPillarLeaf(&pillar, "ingress.host", "shared-host")
+
+	got, _ := pillar.Get("ingress")
+	ingress, ok := got.(*types.OrderedMap[any])
+	if !ok {
+		t.Fatalf("ingress should be *OrderedMap after first setPillarLeaf; got %T", got)
+	}
+	enabled, _ := ingress.Get("enabled")
+	host, _ := ingress.Get("host")
+	if enabled != true {
+		t.Errorf("ingress.enabled = %v, want true", enabled)
+	}
+	if host != "shared-host" {
+		t.Errorf("ingress.host = %v, want shared-host", host)
+	}
+}
+
+// TestSetPillarLeaf_TopLevelLeaf pins the no-intermediate case: a
+// single-component path writes a leaf directly into the pillar tree.
+func TestSetPillarLeaf_TopLevelLeaf(t *testing.T) {
+	t.Parallel()
+	pillar := types.OrderedMap[any]{}
+	setPillarLeaf(&pillar, "upstream", "api.example.com")
+	got, ok := pillar.Get("upstream")
+	if !ok {
+		t.Fatal("upstream missing")
+	}
+	if got != "api.example.com" {
+		t.Errorf("upstream = %v, want api.example.com", got)
+	}
 }

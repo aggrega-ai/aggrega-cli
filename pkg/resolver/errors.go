@@ -46,6 +46,14 @@ var (
 	// fails a semantic reservation check, distinct from ErrYAMLLoad.
 	ErrManifestReservedPrefix = errors.New("manifest annotation binding uses reserved prefix")
 
+	// ErrManifestCrossBindingPillarCollision wraps two Manifest
+	// annotation bindings that target the same Feature URI with the
+	// same (path, pillar) routing pair. Only one binding may declare
+	// a given (path, pillar) pair per target Feature; multiple
+	// bindings competing for the same routing slot cannot resolve
+	// unambiguously at expansion time.
+	ErrManifestCrossBindingPillarCollision = errors.New("manifest annotation bindings collide on same Feature path+pillar")
+
 	// ErrInvalidInjectKey wraps an inject delivery key that does not match
 	// the expected per-mechanism format.
 	ErrInvalidInjectKey = errors.New("invalid inject key")

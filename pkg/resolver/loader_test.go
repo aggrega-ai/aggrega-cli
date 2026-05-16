@@ -212,14 +212,134 @@ spec:
       annotations:
         feature.aggrega.ai/standard-library-binding:
           feature: core/foo:1.0.0
+          maps:
+            infra:
+              - field_a
         feature.myco/enterprise-binding:
           feature: core/bar:1.0.0
+          maps:
+            values:
+              - field_b
 `
 	os.WriteFile(f, []byte(yaml), 0644)
 
 	_, err := LoadManifest(f)
 	if err != nil {
 		t.Fatalf("namespaced prefixes should be accepted; got error: %v", err)
+	}
+}
+
+func TestLoadManifest_RejectsCrossBindingPillarCollision(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/first-binding:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+        feature.myco/second-binding:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected CATALOG_ERROR on cross-binding (path, pillar) collision; got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "CATALOG_ERROR") {
+		t.Errorf("error missing CATALOG_ERROR prefix: %s", msg)
+	}
+	if !strings.Contains(msg, "first-binding") || !strings.Contains(msg, "second-binding") {
+		t.Errorf("error should name both colliding bindings; got: %s", msg)
+	}
+	if !strings.Contains(msg, "core/shared:1.0.0") {
+		t.Errorf("error should name the target Feature; got: %s", msg)
+	}
+	if !strings.Contains(msg, "pool_size") {
+		t.Errorf("error should name the colliding path; got: %s", msg)
+	}
+	if !errors.Is(err, ErrManifestCrossBindingPillarCollision) {
+		t.Errorf("error should wrap ErrManifestCrossBindingPillarCollision; got chain: %v", err)
+	}
+}
+
+func TestLoadManifest_RejectsCrossBindingCollision_NestedPath(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/first:
+          feature: core/shared:1.0.0
+          maps:
+            values:
+              - ingress.host
+        feature.myco/second:
+          feature: core/shared:1.0.0
+          maps:
+            values:
+              - ingress.host
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected CATALOG_ERROR on nested-path collision; got nil")
+	}
+	if !strings.Contains(err.Error(), "ingress.host") {
+		t.Errorf("error should name the colliding nested path; got: %v", err)
+	}
+}
+
+func TestLoadManifest_AcceptsCrossBindingDifferentSubkeyOrPillar(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	// Two bindings targeting the same Feature with different (path, pillar)
+	// pairs are legitimate — distinct routing slots compose without collision.
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/dev-binding:
+          feature: core/shared:1.0.0
+          maps:
+            values:
+              - db_name
+        feature.myco/ops-binding:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err != nil {
+		t.Fatalf("distinct (path, pillar) pairs on the same Feature should be accepted; got error: %v", err)
 	}
 }
 

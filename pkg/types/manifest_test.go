@@ -14,7 +14,7 @@ import (
 // `mappings.features.annotations` from the flat Manifest shape into the
 // `*OrderedMap[AnnotationBinding]` container declared on MappingTier.
 // Tests pin the load-bearing nil-vs-empty distinction on the Annotations
-// pointer and the inner-key ordering on Infra/Values OrderedMaps.
+// pointer and the pillar-grouped dotted-path routing on the Maps struct.
 
 func TestManifest_AnnotationBinding_SingleBindingRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -32,17 +32,13 @@ spec:
       annotations:
         feature.myco/rewrite-host:
           feature: core/rewrite-host:1.0.0
-          infra:
-            zulu_field:
-              type: string
-            alpha_field:
-              type: boolean
-              default: true
-          values:
-            mike_field:
-              type: integer
-            bravo_field:
-              type: string
+          maps:
+            infra:
+              - zulu_field
+              - alpha_field
+            values:
+              - mike_field
+              - bravo_field
 `)
 
 	var m Manifest
@@ -64,16 +60,58 @@ spec:
 		t.Errorf("Feature = %q, want core/rewrite-host:1.0.0", binding.Feature)
 	}
 
-	gotInfra := binding.Infra.Keys()
 	wantInfra := []string{"zulu_field", "alpha_field"}
-	if !slices.Equal(gotInfra, wantInfra) {
-		t.Errorf("Infra keys = %v, want %v (author order)", gotInfra, wantInfra)
+	if !slices.Equal(binding.Maps.Infra, wantInfra) {
+		t.Errorf("Maps.Infra = %v, want %v (author order)", binding.Maps.Infra, wantInfra)
 	}
 
-	gotValues := binding.Values.Keys()
 	wantValues := []string{"mike_field", "bravo_field"}
-	if !slices.Equal(gotValues, wantValues) {
-		t.Errorf("Values keys = %v, want %v (author order)", gotValues, wantValues)
+	if !slices.Equal(binding.Maps.Values, wantValues) {
+		t.Errorf("Maps.Values = %v, want %v (author order)", binding.Maps.Values, wantValues)
+	}
+}
+
+func TestManifest_AnnotationBinding_NestedPathRoundTrips(t *testing.T) {
+	t.Parallel()
+	src := []byte(`
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        myco/db-pool: db-pool-helm:1.0.0
+      annotations:
+        feature.myco/db-pool:
+          feature: myco/db-pool:1.0.0
+          maps:
+            values:
+              - db_name
+              - ingress.enabled
+              - ingress.host
+            infra:
+              - pool_size
+              - max_connections
+`)
+
+	var m Manifest
+	if err := yaml.Unmarshal(src, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	binding, ok := m.Spec.Mappings.Features.Annotations.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatalf("binding feature.myco/db-pool missing")
+	}
+	wantValues := []string{"db_name", "ingress.enabled", "ingress.host"}
+	if !slices.Equal(binding.Maps.Values, wantValues) {
+		t.Errorf("Maps.Values = %v, want %v (dotted paths round-trip unchanged)", binding.Maps.Values, wantValues)
+	}
+	wantInfra := []string{"pool_size", "max_connections"}
+	if !slices.Equal(binding.Maps.Infra, wantInfra) {
+		t.Errorf("Maps.Infra = %v, want %v", binding.Maps.Infra, wantInfra)
 	}
 }
 
@@ -185,9 +223,9 @@ spec:
         annotations:
           feature.myco/rewrite-host:
             feature: core/rewrite-host:1.0.0
-            infra:
-              min_version:
-                type: string
+            maps:
+              infra:
+                - min_version
 `)
 
 	var m Manifest
@@ -208,7 +246,10 @@ spec:
 	if binding.Feature != "core/rewrite-host:1.0.0" {
 		t.Errorf("legacy binding.Feature = %q, want core/rewrite-host:1.0.0", binding.Feature)
 	}
-	if got := binding.Infra.Keys(); !slices.Equal(got, []string{"min_version"}) {
-		t.Errorf("legacy binding.Infra keys = %v, want [min_version]", got)
+	if !slices.Equal(binding.Maps.Infra, []string{"min_version"}) {
+		t.Errorf("legacy binding.Maps.Infra = %v, want [min_version]", binding.Maps.Infra)
+	}
+	if len(binding.Maps.Values) != 0 {
+		t.Errorf("legacy binding.Maps.Values = %v, want empty", binding.Maps.Values)
 	}
 }
