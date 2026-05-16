@@ -10,13 +10,18 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+// strPtr returns a pointer to s. Used to populate pointer-tristate
+// annotation maps in tests where the author-intent is a non-nil
+// explicit value.
+func strPtr(s string) *string { return &s }
+
 func TestWireBoundaryInfra_BoundaryComponentAnnotationsOverride(t *testing.T) {
 	t.Parallel()
-	annotations2 := types.OrderedMap[string]{}
-	annotations2.Set("aggrega.ai/namespace", "backend-api-ns")
-	annotations := types.OrderedMap[string]{}
-	annotations.Set("aggrega.ai/namespace", "backend-zone")
-	annotations.Set("aggrega.ai/image-registry", "registry.example.com")
+	annotations2 := types.OrderedMap[*string]{}
+	annotations2.Set("aggrega.ai/namespace", strPtr("backend-api-ns"))
+	annotations := types.OrderedMap[*string]{}
+	annotations.Set("aggrega.ai/namespace", strPtr("backend-zone"))
+	annotations.Set("aggrega.ai/image-registry", strPtr("registry.example.com"))
 	components := types.OrderedMap[types.BoundaryComponent]{}
 	components.Set("api", types.BoundaryComponent{Annotations: annotations2})
 	components.Set("worker", types.BoundaryComponent{})

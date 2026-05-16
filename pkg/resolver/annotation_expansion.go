@@ -43,15 +43,14 @@ import (
 // give the diagnostic layer the information to surface annotation-
 // origin in error chains.
 //
-// Null-opt-out (explicit YAML `null` removing an inherited Feature) is
-// not yet active in this pass. The type-level tristate change required
-// to distinguish "annotation key absent" from "annotation key present
-// with null" on Boundary.Annotations and BoundaryComponent.Annotations
-// is the subject of a follow-up implementation pass. Until that lands,
-// annotations declared with explicit null on Release components have
-// no opt-out effect; the inherited Feature attachment remains. Callers
-// wanting the opt-out semantics today must omit the annotation key
-// entirely from the overriding component.
+// Null-opt-out: explicit YAML `null` on an annotation key removes the
+// inherited binding from the overriding boundary or component. The
+// cascade carries the pointer-tristate from Boundary.Annotations and
+// BoundaryComponent.Annotations (both OrderedMap[*string]) through to
+// the per-component effective set; nil-pointer entries are skipped at
+// injection time and do not produce synthetic Feature attachments.
+// Sibling components in the same boundary that did not opt out still
+// receive the inherited binding.
 func ExpandAnnotations(rr *ResolveResult) error {
 	if rr == nil || rr.Release == nil {
 		return nil
@@ -65,7 +64,7 @@ func ExpandAnnotations(rr *ResolveResult) error {
 	}
 
 	for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-		if err := expandBoundary(bName, "", boundary, types.OrderedMap[string]{}, map[string]string{}, registry, rr); err != nil {
+		if err := expandBoundary(bName, "", boundary, types.OrderedMap[*string]{}, map[string]string{}, registry, rr); err != nil {
 			return err
 		}
 	}
@@ -74,16 +73,18 @@ func ExpandAnnotations(rr *ResolveResult) error {
 
 // expandBoundary walks one boundary (and its descendants) of the Release
 // tree, cascading annotation values + their source locations from outer
-// to inner. parentAnnotations carries the effective value map at entry;
-// parentSources carries the per-key author location (the boundary path
-// or component path where the annotation was authored, NOT the boundary
-// where it currently applies — the distinction matters for provenance,
-// because an inherited annotation reports its authoring boundary as its
-// source).
+// to inner. parentAnnotations carries the effective pointer-tristate
+// value map at entry; parentSources carries the per-key author location
+// (the boundary path or component path where the annotation was
+// authored, NOT the boundary where it currently applies — the
+// distinction matters for provenance, because an inherited annotation
+// reports its authoring boundary as its source). Nil-pointer values in
+// the effective map are opt-out signals; expansion skips them without
+// injecting a synthetic Feature and without recording provenance.
 func expandBoundary(
 	name, parentPath string,
 	b types.Boundary,
-	parentAnnotations types.OrderedMap[string],
+	parentAnnotations types.OrderedMap[*string],
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
 	rr *ResolveResult,
@@ -93,7 +94,7 @@ func expandBoundary(
 		currentPath = parentPath + "/" + name
 	}
 
-	mergedAnnotations := mergeStringMaps(parentAnnotations, b.Annotations)
+	mergedAnnotations := mergePointerStringMaps(parentAnnotations, b.Annotations)
 	mergedSources := make(map[string]string, len(parentSources)+b.Annotations.Len())
 	for k, v := range parentSources {
 		mergedSources[k] = v
@@ -103,7 +104,7 @@ func expandBoundary(
 	}
 
 	for compName, comp := range b.Components.All() {
-		effective := mergeStringMaps(mergedAnnotations, comp.Annotations)
+		effective := mergePointerStringMaps(mergedAnnotations, comp.Annotations)
 		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
 		for k, v := range mergedSources {
 			effectiveSources[k] = v
@@ -112,12 +113,18 @@ func expandBoundary(
 			effectiveSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, compName, k)
 		}
 
-		for key, value := range effective.All() {
+		for key, ptr := range effective.All() {
+			if ptr == nil {
+				// Explicit null in the effective map is the opt-out
+				// signal: no synthetic Feature for this key on this
+				// component; no provenance record.
+				continue
+			}
 			binding, ok := registry.Lookup(key)
 			if !ok {
 				continue
 			}
-			feature, err := expandBinding(key, value, binding, currentPath, compName)
+			feature, err := expandBinding(key, *ptr, binding, currentPath, compName)
 			if err != nil {
 				return err
 			}

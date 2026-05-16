@@ -53,16 +53,25 @@ type ReleaseSpec struct {
 // Boundary carries no Infra field — physical sizing is per-component
 // concern and lives on [BoundaryComponent] only.
 type Boundary struct {
-	Description  string                        `json:"description,omitempty" yaml:"description,omitempty"`
-	Directory    string                        `json:"directory,omitempty" yaml:"directory,omitempty"`
-	SubDirectory string                        `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
-	SyncWave     int                           `json:"syncWave,omitempty" yaml:"syncWave,omitempty"`
-	Annotations  OrderedMap[string]            `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-	Features     OrderedMap[any]               `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets      OrderedMap[any]               `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
-	Boundaries   OrderedMap[Boundary]          `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
-	Components   OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
-	Aggregates   OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
+	Description  string `json:"description,omitempty" yaml:"description,omitempty"`
+	Directory    string `json:"directory,omitempty" yaml:"directory,omitempty"`
+	SubDirectory string `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
+	SyncWave     int    `json:"syncWave,omitempty" yaml:"syncWave,omitempty"`
+	// Annotations carries boundary-wide Ops annotations with three-state
+	// presence per key: absent (no entry; inherits parent cascade), present
+	// with a non-nil pointer (explicit string value, overrides parent),
+	// present with a nil pointer (explicit YAML null; opt-out signal that
+	// removes the inherited binding from this boundary's effective
+	// annotation set). The cascade walker at pkg/resolver/boundary.go
+	// propagates the tristate; the flattener at the post-cascade
+	// boundary filters nil entries and dereferences non-nils so
+	// downstream consumers see OrderedMap[string].
+	Annotations OrderedMap[*string]           `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	Features    OrderedMap[any]               `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets     OrderedMap[any]               `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Boundaries  OrderedMap[Boundary]          `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
+	Components  OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
+	Aggregates  OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 }
 
 // BoundaryComponent is a component instance routed into a boundary with
@@ -76,12 +85,19 @@ type Boundary struct {
 // metadata; the former is the actual sizing carrier for a routed
 // component.
 type BoundaryComponent struct {
-	Description  string                      `json:"description,omitempty" yaml:"description,omitempty"`
-	SubDirectory string                      `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
-	Annotations  OrderedMap[string]          `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-	Infra        OrderedMap[any]             `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
-	Features     OrderedMap[BoundaryFeature] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets      OrderedMap[BoundaryFeature] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Description  string `json:"description,omitempty" yaml:"description,omitempty"`
+	SubDirectory string `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
+	// Annotations carries component-specific Ops annotations with the
+	// same three-state presence semantics as [Boundary.Annotations]:
+	// absent (no entry; inherits the boundary cascade), present with a
+	// non-nil pointer (explicit string value, overrides the cascade),
+	// present with a nil pointer (explicit YAML null; opt-out signal
+	// that removes the inherited binding from this component while
+	// sibling components retain it).
+	Annotations OrderedMap[*string]         `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	Infra       OrderedMap[any]             `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Features    OrderedMap[BoundaryFeature] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets     OrderedMap[BoundaryFeature] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }
 
 // BoundaryFeature is a feature or secret attachment within a Release boundary.

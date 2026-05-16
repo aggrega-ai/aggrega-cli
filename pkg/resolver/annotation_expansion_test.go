@@ -593,6 +593,171 @@ spec:
 	}
 }
 
+func TestExpandAnnotations_NullOptOut_BoundaryToComponent(t *testing.T) {
+	t.Parallel()
+	src := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/rewrite-host: "boundary.example.com"
+      components:
+        api:
+          description: inherits boundary
+        opted-out:
+          annotations:
+            feature.myco/rewrite-host: null
+`
+	rr := &ResolveResult{
+		Manifest:             loadTestManifest(t),
+		Release:              loadTestRelease(t, src),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
+
+	// Sibling component inherits the boundary annotation and gets the
+	// synthetic Feature.
+	api, _ := prod.Components.Get("api")
+	if _, ok := api.Features.Get("feature.myco/rewrite-host"); !ok {
+		t.Errorf("sibling component should inherit the boundary-cascaded Feature")
+	}
+	if _, ok := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")]; !ok {
+		t.Errorf("provenance missing for sibling component")
+	}
+
+	// Opt-out component does NOT get the synthetic Feature.
+	optedOut, _ := prod.Components.Get("opted-out")
+	if _, ok := optedOut.Features.Get("feature.myco/rewrite-host"); ok {
+		t.Errorf("opt-out component should NOT have the inherited Feature")
+	}
+	if _, ok := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "opted-out", "feature.myco/rewrite-host")]; ok {
+		t.Errorf("opt-out component should produce no provenance record (no synthetic Feature, no record)")
+	}
+}
+
+func TestExpandAnnotations_NullOptOut_NoInheritance_IsNoOp(t *testing.T) {
+	t.Parallel()
+	src := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      components:
+        api:
+          annotations:
+            feature.myco/rewrite-host: null
+`
+	rr := &ResolveResult{
+		Manifest:             loadTestManifest(t),
+		Release:              loadTestRelease(t, src),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
+	api, _ := prod.Components.Get("api")
+	if _, ok := api.Features.Get("feature.myco/rewrite-host"); ok {
+		t.Errorf("explicit null with no inheritance should be a no-op, not produce a Feature")
+	}
+	if len(rr.AnnotationProvenance) != 0 {
+		t.Errorf("no provenance should be recorded for a no-op opt-out; got %d entries", len(rr.AnnotationProvenance))
+	}
+}
+
+func TestExpandAnnotations_NullOptOut_PreservesOtherKeys(t *testing.T) {
+	t.Parallel()
+	manifestSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/rewrite-host: rewrite-host-helm:1.0.0
+        core/metrics-exporter: metrics-helm:1.0.0
+      annotations:
+        feature.myco/rewrite-host:
+          feature: core/rewrite-host:1.0.0
+          infra:
+            type: object
+            properties:
+              upstream:
+                type: string
+        feature.myco/metrics:
+          feature: core/metrics-exporter:1.0.0
+          infra:
+            type: object
+            properties:
+              endpoint:
+                type: string
+`
+	releaseSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/rewrite-host: "boundary.example.com"
+        feature.myco/metrics: "metrics.example.com"
+      components:
+        api:
+          annotations:
+            feature.myco/rewrite-host: null
+`
+	var m types.Manifest
+	if err := yaml.Unmarshal([]byte(manifestSrc), &m); err != nil {
+		t.Fatalf("manifest unmarshal: %v", err)
+	}
+	rr := &ResolveResult{
+		Manifest:             &m,
+		Release:              loadTestRelease(t, releaseSrc),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
+	api, _ := prod.Components.Get("api")
+
+	// Opted-out key: no Feature.
+	if _, ok := api.Features.Get("feature.myco/rewrite-host"); ok {
+		t.Errorf("opted-out key should not produce a Feature on the api component")
+	}
+	// Non-opted-out key: Feature inherited from the boundary.
+	if _, ok := api.Features.Get("feature.myco/metrics"); !ok {
+		t.Errorf("non-opted-out key should still produce a Feature on the api component")
+	}
+}
+
 func keysOf(m map[string]AnnotationProvenance) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
