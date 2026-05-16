@@ -101,13 +101,28 @@ type IREdge struct {
 // features: block on the Aggregate, Subsystem, Boundary, or
 // BoundaryComponent (Origin = "explicit") from synthetic attachments
 // produced by the annotation-driven expansion pass (Origin =
-// "annotation"). For annotation-driven attachments, AnnotationKey
-// carries the annotation name that triggered the expansion and
-// AnnotationSource locates the source declaration as
-// <release-file-path>:<dotted-yaml-key-path>. Both fields are empty
-// when Origin is "explicit"; the JSON tags `omitempty` keep the wire
+// "annotation"). When values-pillar contributions and infra-pillar
+// contributions on the same (Component, Feature) pair come from
+// different authoring sides — or when explicit and annotation
+// contributions land on the same attachment at different leaves —
+// Origin widens to "mixed" and per-leaf detail lives in the two
+// provenance maps below. For annotation-driven attachments,
+// AnnotationKey carries the annotation name that triggered the
+// expansion and AnnotationSource locates the source declaration as
+// <file-path>:<dotted-yaml-key-path>. The top-level provenance
+// fields populate to the singular value when every leaf shares the
+// same FieldProvenance shape; when leaves diverge, the top-level
+// fields stay empty and consumers must read ValuesProvenance /
+// InfraProvenance per leaf. JSON tags `omitempty` keep the wire
 // shape backwards-compatible — pre-provenance fixtures and golden
 // files re-marshal without spurious empty-field entries.
+//
+// ValuesProvenance and InfraProvenance carry per-leaf FieldProvenance
+// keyed by the same leaf names that appear in the Values / Infra
+// OrderedMaps. The maps populate at IR-build time during the per-
+// pillar per-leaf merge; downstream consumers (inspect, lint) read
+// them to surface per-leaf origin markers and emit explicit-overrides-
+// annotation warnings.
 type IRFeatureEntry struct {
 	Type             string                         `json:"type"`
 	ResolvedVersion  string                         `json:"resolved_version"`
@@ -118,6 +133,38 @@ type IRFeatureEntry struct {
 	Origin           string                         `json:"origin,omitempty"`
 	AnnotationKey    string                         `json:"annotation_key,omitempty"`
 	AnnotationSource string                         `json:"annotation_source,omitempty"`
+	ValuesProvenance OrderedMap[FieldProvenance]    `json:"values_provenance,omitempty,omitzero"`
+	InfraProvenance  OrderedMap[FieldProvenance]    `json:"infra_provenance,omitempty,omitzero"`
+}
+
+// FieldProvenance records the origin of one leaf in an IR feature
+// attachment's values or infra pillar.
+//
+// Origin is "explicit" for leaves declared by an author-written
+// features: block; "annotation" for leaves contributed by the
+// annotation-driven expansion pass.
+//
+// Side is "aggregate" or "release" when Origin is "annotation",
+// naming the authoring surface the annotation was declared on; empty
+// when Origin is "explicit".
+//
+// AnnotationKey and AnnotationSource carry the triggering annotation
+// for "annotation"-origin leaves: the key as declared in the manifest
+// binding registry, and the source location as
+// <file-path>:<dotted-yaml-key-path>. Both fields are empty for
+// "explicit"-origin leaves.
+//
+// OverridesAnnotation is populated when an explicit contribution
+// overwrites an annotation contribution at the same leaf, capturing
+// the suppressed FieldProvenance so inspect rendering can surface the
+// override and the lint pass can emit explicit-overrides-annotation
+// warnings. Nil when no override occurred at this leaf.
+type FieldProvenance struct {
+	Origin              string           `json:"origin"`
+	Side                string           `json:"side,omitempty"`
+	AnnotationKey       string           `json:"annotation_key,omitempty"`
+	AnnotationSource    string           `json:"annotation_source,omitempty"`
+	OverridesAnnotation *FieldProvenance `json:"overrides_annotation,omitempty"`
 }
 
 // IRSecretEntry is a validated credential request for a node.

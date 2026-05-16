@@ -131,6 +131,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// path), bounding the in-memory parameter window to one build invocation.
 	defer resolver.PurgeParameters(&resolveResult.Parameters)
 
+	// Validate annotation binding target paths against each target
+	// Feature's spec.schema before expansion runs. A binding that
+	// routes a value to a path the Feature schema does not declare
+	// halts here with a clear OPS_ERROR, ahead of any synthesis that
+	// would carry the unrecognized field into downstream validation.
+	catalogLookup := cat.CatalogLookup()
+	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
+		return fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+	}
+
 	// Annotation-driven Feature expansion runs between the mechanical
 	// resolver and the guards pass so synthetic Feature attachments are
 	// visible to RunGuards' requiredFeatures completeness check.
@@ -139,7 +149,6 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run guards
-	catalogLookup := cat.CatalogLookup()
 	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
 	if len(guardErrs) > 0 {
 		for _, e := range guardErrs {
