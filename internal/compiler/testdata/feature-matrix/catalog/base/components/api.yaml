@@ -11,6 +11,9 @@ spec:
     databases:
       selector: "component.aggrega.ai/type=stateful-server"
       inject: ["env"]
-  schema: |
-    values: { port?: int | *8080 }
-    provides: { host: string, service_port: string }
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+    provides:
+      host: { type: string, required: true }
+      service_port: { type: string, required: true }

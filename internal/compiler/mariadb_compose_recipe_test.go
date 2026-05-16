@@ -59,6 +59,7 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	cat, err := catalog.LoadAll(
 		"../../../aggrega-hub/aggrega-catalog/component/core/database",
 		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb",
+		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
 	)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)

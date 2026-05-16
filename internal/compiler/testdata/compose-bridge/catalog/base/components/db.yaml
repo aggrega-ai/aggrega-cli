@@ -7,6 +7,7 @@ metadata:
     component.aggrega.ai/type: "stateful-server"
 spec:
   inject: ["env"]
-  schema: |
-    values: {}
-    provides: { host: string, port: int }
+  schema:
+    provides:
+      host: { type: string, required: true }
+      port: { type: integer, required: true }

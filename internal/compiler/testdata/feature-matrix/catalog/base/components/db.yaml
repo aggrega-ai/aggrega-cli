@@ -6,9 +6,13 @@ metadata:
   labels:
     component.aggrega.ai/type: "stateful-server"
 spec:
-  schema: |
-    values: { database?: string | *"app", port?: int | *3306 }
-    provides: { host: string, port: string }
+  schema:
+    values:
+      database: { type: string, default: "app" }
+      port: { type: integer, default: 3306 }
+    provides:
+      host: { type: string, required: true }
+      port: { type: string, required: true }
   secretsSchema:
     root_password:
       inject: []

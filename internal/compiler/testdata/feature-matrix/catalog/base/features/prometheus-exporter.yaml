@@ -6,5 +6,6 @@ metadata:
 spec:
   appliesTo:
     component.aggrega.ai/type: "server"
-  schema: |
-    parameter: { scrapePath?: string | *"/metrics" }
+  schema:
+    values:
+      scrapePath: { type: string, default: "/metrics" }

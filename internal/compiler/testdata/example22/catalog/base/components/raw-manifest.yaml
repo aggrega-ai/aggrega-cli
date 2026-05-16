@@ -6,5 +6,6 @@ metadata:
   labels:
     component.aggrega.ai/type: "raw"
 spec:
-  schema: |
-    values: { name?: string | *"raw-config" }
+  schema:
+    values:
+      name: { type: string, default: "raw-config" }

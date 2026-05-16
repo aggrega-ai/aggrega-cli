@@ -50,6 +50,7 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 		"testdata/compose-bridge/catalog/base",
 		"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
 		"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
+		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
 	)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)

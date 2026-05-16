@@ -6,6 +6,9 @@ metadata:
   labels:
     component.aggrega.ai/type: "stateful-server"
 spec:
-  schema: |
-    values: { database_name?: string | *"app" }
-    provides: { host: string, service_port: string }
+  schema:
+    values:
+      database_name: { type: string, default: "app" }
+    provides:
+      host: { type: string, required: true }
+      service_port: { type: string, required: true }

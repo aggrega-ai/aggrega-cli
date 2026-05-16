@@ -49,6 +49,15 @@ type Catalog struct {
 	Providers        map[string]types.Provider       // keyed by metadata.name (e.g. "helm", "helm-chart")
 	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
 	MappingLibraries map[string]types.MappingLibrary // keyed by metadata.name (PascalCase library identifier)
+
+	// componentSources / featureSources track the file path each entity was
+	// loaded from. Populated by Pass 1 (indexFile) and consumed by Pass 2
+	// (the schema-pillar validation pass at the end of LoadAll) so the
+	// validator's error messages name the offending file. Unexported because
+	// the bookkeeping is internal to LoadAll; downstream callers identify
+	// entities by metadata.name, not by source path.
+	componentSources map[string]string
+	featureSources   map[string]string
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -91,6 +100,18 @@ func Load(dir string) (*Catalog, error) {
 // string spec.source to an absolute path against the Recipe file's
 // directory so co-located charts stay resolvable when the consuming code
 // is run from a different working directory.
+//
+// Two-pass load model. Pass 1 walks dirs and hydrates every entity into the
+// typed maps via indexFile. Pass 2 runs at the end of LoadAll once Pass 1
+// has populated the full SchemaLibraries map, and validates each Component
+// and Feature's spec.schema body against the canonical pillar contract via
+// validator.ValidateSchemaPillars. Splitting the work lets cross-document
+// $ref expansion succeed regardless of filesystem walk order: a Feature
+// authored before its SchemaLibrary in walk order still validates because
+// the library is in the map by the time Pass 2 runs. Pass 1 errors are
+// fail-fast (a YAML parse failure aborts the walk); Pass 2 errors are
+// collected across entities and surfaced as a single aggregate CatalogError
+// so authors fix all schema failures in one editing pass.
 func LoadAll(dirs ...string) (*Catalog, error) {
 	c := &Catalog{
 		Components:       make(map[string]types.Component),
@@ -101,6 +122,8 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 		Providers:        make(map[string]types.Provider),
 		SchemaLibraries:  make(map[string]types.SchemaLibrary),
 		MappingLibraries: make(map[string]types.MappingLibrary),
+		componentSources: make(map[string]string),
+		featureSources:   make(map[string]string),
 	}
 	for _, dir := range dirs {
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -119,7 +142,75 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 		}
 	}
+
+	if err := c.validateSchemaPillarsPass(); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component and
+// Feature in sorted-name order, runs validator.ValidateSchemaPillars against
+// the entity's spec.schema yaml.Node with the now-fully-populated
+// SchemaLibraries map for cross-document $ref expansion, collects every
+// failure, and returns a single aggregated CatalogError when at least one
+// entity failed. Sorted-name iteration is required for diagnostic stability:
+// a map-iteration order would flap across runs and make CI logs unstable
+// against the deterministic-output invariant.
+func (c *Catalog) validateSchemaPillarsPass() error {
+	var validationErrors []error
+
+	componentNames := make([]string, 0, len(c.Components))
+	for name := range c.Components {
+		componentNames = append(componentNames, name)
+	}
+	sort.Strings(componentNames)
+	for _, name := range componentNames {
+		comp := c.Components[name]
+		if err := validator.ValidateSchemaPillars(
+			"Component",
+			name,
+			c.componentSources[name],
+			&comp.Spec.Schema,
+			c.SchemaLibraries,
+		); err != nil {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+
+	featureNames := make([]string, 0, len(c.Features))
+	for name := range c.Features {
+		featureNames = append(featureNames, name)
+	}
+	sort.Strings(featureNames)
+	for _, name := range featureNames {
+		feat := c.Features[name]
+		if err := validator.ValidateSchemaPillars(
+			"Feature",
+			name,
+			c.featureSources[name],
+			&feat.Spec.Schema,
+			c.SchemaLibraries,
+		); err != nil {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+
+	if len(validationErrors) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(validationErrors))
+	for _, e := range validationErrors {
+		parts = append(parts, e.Error())
+	}
+	return cerrors.New(
+		cerrors.CatalogError,
+		cerrors.SourceLocation{},
+		fmt.Sprintf("catalog load: %d schema pillar validation error(s):\n  - %s",
+			len(validationErrors), strings.Join(parts, "\n  - ")),
+		nil,
+		nil,
+	)
 }
 
 // entityHeader peeks at the top-level "kind:" field before deciding which
@@ -150,8 +241,15 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
+		// DiscourageDirectXAggregaInSchema runs at Pass 1 (per-file) because
+		// it walks for x-aggrega-* extension keys statically — it needs
+		// neither SchemaLibrary access nor compactform expansion. The
+		// pillar-shape + body validation runs at Pass 2 via
+		// validateSchemaPillarsPass; keeping the two checks in separate
+		// passes keeps each pass's responsibility clear.
 		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Components[e.Metadata.Name] = e
+		c.componentSources[e.Metadata.Name] = path
 	case "Feature":
 		var e types.Feature
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -159,6 +257,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Features[e.Metadata.Name] = e
+		c.featureSources[e.Metadata.Name] = path
 	case "Recipe":
 		var e types.Recipe
 		if err := yaml.Unmarshal(data, &e); err != nil {

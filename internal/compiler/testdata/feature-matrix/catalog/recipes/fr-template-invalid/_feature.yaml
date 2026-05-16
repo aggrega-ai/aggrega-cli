@@ -5,5 +5,6 @@ metadata:
   version: "1.0.0"
 spec:
   scope: boundary
-  schema: |
-    parameter: { _: bool | *true }
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

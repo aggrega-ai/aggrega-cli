@@ -77,8 +77,9 @@ metadata:
   labels:
     component.aggrega.ai/type: "server"
 spec:
-  schema: |
-    values: { port?: int | *8080 }
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
   assertions:
     smoke_assert: '{{ fail "cli-step4b-smoke-fired" }}'
 `)

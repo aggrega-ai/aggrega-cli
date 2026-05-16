@@ -81,6 +81,7 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 	bridgeCatalogPaths := []string{
 		"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
 		"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
+		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
 	}
 	variants := []featureMatrixVariant{
 		{name: "helm-synthesized", releaseFile: "helm-synthesized.yaml"},
