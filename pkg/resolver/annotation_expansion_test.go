@@ -472,3 +472,131 @@ spec:
 		t.Errorf("explicit Feature was overwritten by synthetic injection; description = %q, want explicit", feat.Description)
 	}
 }
+
+func TestExpandAnnotations_RecordsProvenance_BoundaryLevel(t *testing.T) {
+	t.Parallel()
+	src := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/rewrite-host: "upstream.example.com"
+      components:
+        api:
+          description: api comp
+`
+	rr := &ResolveResult{
+		Manifest:             loadTestManifest(t),
+		Release:              loadTestRelease(t, src),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	key := AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")
+	rec, ok := rr.AnnotationProvenance[key]
+	if !ok {
+		t.Fatalf("provenance missing for boundary-inherited annotation; keys: %v", keysOf(rr.AnnotationProvenance))
+	}
+	if rec.AnnotationKey != "feature.myco/rewrite-host" {
+		t.Errorf("AnnotationKey = %q, want feature.myco/rewrite-host", rec.AnnotationKey)
+	}
+	wantSource := "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host"
+	if rec.AnnotationSource != wantSource {
+		t.Errorf("AnnotationSource = %q, want %q (must point to boundary where author wrote it, not where it applied)", rec.AnnotationSource, wantSource)
+	}
+}
+
+func TestExpandAnnotations_RecordsProvenance_ComponentLevel(t *testing.T) {
+	t.Parallel()
+	src := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      components:
+        api:
+          annotations:
+            feature.myco/rewrite-host: "component-level.example.com"
+`
+	rr := &ResolveResult{
+		Manifest:             loadTestManifest(t),
+		Release:              loadTestRelease(t, src),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	rec, ok := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")]
+	if !ok {
+		t.Fatalf("provenance missing for component-level annotation")
+	}
+	wantSource := "release.yaml:boundaries.prod.components.api.annotations.feature.myco/rewrite-host"
+	if rec.AnnotationSource != wantSource {
+		t.Errorf("AnnotationSource = %q, want %q", rec.AnnotationSource, wantSource)
+	}
+}
+
+func TestExpandAnnotations_RecordsProvenance_ComponentOverrideUpdatesSource(t *testing.T) {
+	t.Parallel()
+	src := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/rewrite-host: "boundary.example.com"
+      components:
+        api:
+          description: inherits boundary
+        special:
+          annotations:
+            feature.myco/rewrite-host: "override.example.com"
+`
+	rr := &ResolveResult{
+		Manifest:             loadTestManifest(t),
+		Release:              loadTestRelease(t, src),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	apiRec, _ := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")]
+	specialRec, _ := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "special", "feature.myco/rewrite-host")]
+	if apiRec.AnnotationSource != "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host" {
+		t.Errorf("api source should point to boundary; got %q", apiRec.AnnotationSource)
+	}
+	if specialRec.AnnotationSource != "release.yaml:boundaries.prod.components.special.annotations.feature.myco/rewrite-host" {
+		t.Errorf("special source should point to component override; got %q", specialRec.AnnotationSource)
+	}
+}
+
+func keysOf(m map[string]AnnotationProvenance) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

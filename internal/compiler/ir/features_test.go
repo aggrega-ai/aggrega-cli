@@ -33,7 +33,9 @@
 package ir
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
@@ -237,6 +239,164 @@ func TestCollectNodeFeatures_MarkersDeduplicatedAndSorted(t *testing.T) {
 	}
 	if result.Markers[0] != "a-type" || result.Markers[1] != "z-type" {
 		t.Errorf("markers not sorted/deduped: %v", result.Markers)
+	}
+}
+
+func TestCollectNodeFeatures_ProvenanceExplicit_Tier1(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "monitoring", Feature: types.FeatureInstance{Type: "core/monitoring"}},
+			},
+		},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+	}
+
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	f, _ := result.Features.Get("monitoring")
+	if f.Origin != "explicit" {
+		t.Errorf("Origin = %q, want explicit (Tier 1/2 attachments are always explicit)", f.Origin)
+	}
+	if f.AnnotationKey != "" || f.AnnotationSource != "" {
+		t.Errorf("explicit attachment should have empty key/source; got key=%q source=%q", f.AnnotationKey, f.AnnotationSource)
+	}
+}
+
+func TestCollectNodeFeatures_ProvenanceAnnotation_Tier5(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api", BoundaryPath: "prod"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{Nodes: nodes}
+
+	comp := types.BoundaryComponent{}
+	comp.Features.Set("feature.myco/rewrite-host", types.BoundaryFeature{Type: "core/rewrite-host:1.0.0"})
+	prod := types.Boundary{}
+	prod.Components.Set("api", comp)
+	release := &types.Release{}
+	release.Spec.Boundaries.Set("prod", prod)
+
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		Release:   release,
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{
+			resolver.AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host"): {
+				AnnotationKey:    "feature.myco/rewrite-host",
+				AnnotationSource: "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host",
+			},
+		},
+	}
+
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	f, ok := result.Features.Get("feature.myco/rewrite-host")
+	if !ok {
+		t.Fatalf("Tier 5 attachment missing from IR features")
+	}
+	if f.Origin != "annotation" {
+		t.Errorf("Origin = %q, want annotation (side-table entry present)", f.Origin)
+	}
+	if f.AnnotationKey != "feature.myco/rewrite-host" {
+		t.Errorf("AnnotationKey = %q, want feature.myco/rewrite-host", f.AnnotationKey)
+	}
+	if f.AnnotationSource != "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host" {
+		t.Errorf("AnnotationSource = %q (expected from side-table)", f.AnnotationSource)
+	}
+}
+
+func TestCollectNodeFeatures_ProvenanceTier5_NoSideTableEntry_IsExplicit(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api", BoundaryPath: "prod"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{Nodes: nodes}
+
+	comp := types.BoundaryComponent{}
+	comp.Features.Set("core/server-explicit", types.BoundaryFeature{Type: "core/server-explicit:1.0.0"})
+	prod := types.Boundary{}
+	prod.Components.Set("api", comp)
+	release := &types.Release{}
+	release.Spec.Boundaries.Set("prod", prod)
+
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		Release:   release,
+		// Empty side-table — the Tier 5 attachment was author-written, not annotation-driven.
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{},
+	}
+
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	f, _ := result.Features.Get("core/server-explicit")
+	if f.Origin != "explicit" {
+		t.Errorf("Origin = %q, want explicit (no side-table entry)", f.Origin)
+	}
+}
+
+func TestIRFeatureEntry_ProvenanceRoundTrip(t *testing.T) {
+	t.Parallel()
+	entry := types.IRFeatureEntry{
+		Type:             "core/rewrite-host:1.0.0",
+		ResolvedVersion:  "1.0.0",
+		Origin:           "annotation",
+		AnnotationKey:    "feature.myco/rewrite-host",
+		AnnotationSource: "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host",
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round types.IRFeatureEntry
+	if err := json.Unmarshal(data, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if round.Origin != entry.Origin || round.AnnotationKey != entry.AnnotationKey || round.AnnotationSource != entry.AnnotationSource {
+		t.Errorf("round-trip lost provenance: got %+v", round)
+	}
+
+	// Explicit attachment: Origin is populated ("explicit") and serializes;
+	// AnnotationKey and AnnotationSource are empty and omitempty drops them.
+	entryExplicit := types.IRFeatureEntry{Type: "core/server:1.0.0", ResolvedVersion: "1.0.0", Origin: "explicit"}
+	data2, err := json.Marshal(entryExplicit)
+	if err != nil {
+		t.Fatalf("marshal explicit: %v", err)
+	}
+	if !strings.Contains(string(data2), `"origin":"explicit"`) {
+		t.Errorf("explicit Origin should serialize; got: %s", data2)
+	}
+	if strings.Contains(string(data2), `"annotation_key"`) || strings.Contains(string(data2), `"annotation_source"`) {
+		t.Errorf("omitempty failed; empty key/source serialized: %s", data2)
+	}
+
+	// Truly-empty provenance: Origin, AnnotationKey, AnnotationSource all
+	// empty. All three carry `json:",omitempty"`, so all three drop from
+	// the wire. Pre-provenance IR fixtures and golden files re-marshal
+	// without introducing the new keys, which is the backwards-compat
+	// contract the field tags exist to guarantee.
+	entryNoProv := types.IRFeatureEntry{Type: "core/server:1.0.0", ResolvedVersion: "1.0.0"}
+	data3, err := json.Marshal(entryNoProv)
+	if err != nil {
+		t.Fatalf("marshal no-provenance: %v", err)
+	}
+	if strings.Contains(string(data3), `"origin"`) {
+		t.Errorf("empty Origin should be omitted; got: %s", data3)
+	}
+	if strings.Contains(string(data3), `"annotation_key"`) || strings.Contains(string(data3), `"annotation_source"`) {
+		t.Errorf("empty key/source should be omitted; got: %s", data3)
 	}
 }
 

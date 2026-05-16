@@ -96,13 +96,28 @@ type IREdge struct {
 
 // IRFeatureEntry is one feature attached to a node in the feature_values_mapping.
 // Schema: ir-v1alpha1.schema.json feature_values_mapping entry
+//
+// Origin distinguishes Feature attachments authored in an explicit
+// features: block on the Aggregate, Subsystem, Boundary, or
+// BoundaryComponent (Origin = "explicit") from synthetic attachments
+// produced by the annotation-driven expansion pass (Origin =
+// "annotation"). For annotation-driven attachments, AnnotationKey
+// carries the annotation name that triggered the expansion and
+// AnnotationSource locates the source declaration as
+// <release-file-path>:<dotted-yaml-key-path>. Both fields are empty
+// when Origin is "explicit"; the JSON tags `omitempty` keep the wire
+// shape backwards-compatible — pre-provenance fixtures and golden
+// files re-marshal without spurious empty-field entries.
 type IRFeatureEntry struct {
-	Type            string                         `json:"type"`
-	ResolvedVersion string                         `json:"resolved_version"`
-	Values          OrderedMap[any]                `json:"values,omitempty,omitzero"`
-	Infra           OrderedMap[any]                `json:"infra,omitempty,omitzero"`
-	Inject          OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
-	Secrets         OrderedMap[IRSecretEntry]      `json:"secrets,omitempty,omitzero"`
+	Type             string                         `json:"type"`
+	ResolvedVersion  string                         `json:"resolved_version"`
+	Values           OrderedMap[any]                `json:"values,omitempty,omitzero"`
+	Infra            OrderedMap[any]                `json:"infra,omitempty,omitzero"`
+	Inject           OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
+	Secrets          OrderedMap[IRSecretEntry]      `json:"secrets,omitempty,omitzero"`
+	Origin           string                         `json:"origin,omitempty"`
+	AnnotationKey    string                         `json:"annotation_key,omitempty"`
+	AnnotationSource string                         `json:"annotation_source,omitempty"`
 }
 
 // IRSecretEntry is a validated credential request for a node.

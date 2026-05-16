@@ -42,6 +42,23 @@ type ResolveResult struct {
 	BoundaryInfra       map[string]*BoundaryInfra           // per-component boundary context
 	BoundaryAnnotations map[string]types.OrderedMap[string] // per-boundary cascaded annotations keyed by boundary path; effective set without per-component overrides
 	Parameters          map[string]any                      // merged parameter map (alive through end-of-pipeline)
+	ReleasePath         string                              // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
+
+	// AnnotationProvenance records, for every synthetic Feature
+	// attachment produced by ExpandAnnotations, the annotation key
+	// that triggered the expansion and the source location where
+	// the annotation was authored. The IR builder consults this
+	// side-table during Tier 5 (Release per-component Features)
+	// processing to populate the IRFeatureEntry's Origin /
+	// AnnotationKey / AnnotationSource fields. Explicit Feature
+	// attachments do not appear in the map; their absence is the
+	// "explicit" signal at the IR builder layer.
+	//
+	// Keyed via AnnotationProvenanceKey(boundaryPath,
+	// componentName, featureName). The map is always non-nil after
+	// Resolve returns; consumers can range or Get without nil
+	// checks.
+	AnnotationProvenance map[string]AnnotationProvenance
 }
 
 // Resolve executes the Step 1 pipeline against the configured paths and
@@ -165,11 +182,13 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 	//    can read .parameters.<key> from the live map.
 
 	return &ResolveResult{
-		Aggregate:           &agg,
-		Release:             release,
-		Manifest:            manifest,
-		BoundaryInfra:       boundaryInfra,
-		BoundaryAnnotations: boundaryAnnotations,
-		Parameters:          params,
+		Aggregate:            &agg,
+		Release:              release,
+		Manifest:             manifest,
+		BoundaryInfra:        boundaryInfra,
+		BoundaryAnnotations:  boundaryAnnotations,
+		Parameters:           params,
+		ReleasePath:          cfg.ReleasePath,
+		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}, nil
 }

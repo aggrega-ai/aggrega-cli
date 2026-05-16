@@ -21,6 +21,25 @@ type featureResult struct {
 	Markers      []string // canonical feature type strings
 }
 
+// featureProvenance is the trio mergeFeature stamps on the IR entry at
+// first-sight insertion. Origin is "explicit" for author-declared
+// features (Tiers 1-4 plus Tier 5 entries with no matching side-table
+// record) and "annotation" for synthetic attachments produced by the
+// annotation-driven expansion pass (Tier 5 entries matched in
+// ResolveResult.AnnotationProvenance). AnnotationKey + AnnotationSource
+// populate only on the annotation path; both are empty when Origin is
+// "explicit".
+type featureProvenance struct {
+	Origin           string
+	AnnotationKey    string
+	AnnotationSource string
+}
+
+// explicitProvenance is the sentinel value passed to mergeFeature from
+// the Aggregate-side, Subsystem, and Boundary tiers — all of which
+// produce explicit attachments.
+var explicitProvenance = featureProvenance{Origin: "explicit"}
+
 // collectNodeFeatures assembles the merged Feature list for one node by
 // processing five ordered cascade tiers in sequence. mergeFeature handles
 // per-instance "last wins" on values, the type-mismatch fatal halt that
@@ -82,7 +101,7 @@ func collectNodeFeatures(
 	// These are already collected in topology.FeatureAttachments by flattenAggregate.
 	if attachments, ok := topoResult.FeatureAttachments[nodeID]; ok {
 		for _, fa := range attachments {
-			if err := mergeFeature(result, fa.InstanceName, fa.Feature, markerSet, catalogLookup, nodeID); err != nil {
+			if err := mergeFeature(result, fa.InstanceName, fa.Feature, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
 				return nil, err
 			}
 		}
@@ -92,7 +111,7 @@ func collectNodeFeatures(
 	if topoNode.SubsystemPath != "" {
 		subsystemFeatures := collectSubsystemFeatures(resolveResult.Aggregate, topoNode.SubsystemPath)
 		for _, sf := range subsystemFeatures {
-			if err := mergeFeature(result, sf.name, sf.feat, markerSet, catalogLookup, nodeID); err != nil {
+			if err := mergeFeature(result, sf.name, sf.feat, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
 				return nil, err
 			}
 		}
@@ -103,7 +122,7 @@ func collectNodeFeatures(
 		boundaryFeatures := collectBoundaryWideFeatures(resolveResult.Release.Spec.Boundaries, topoNode.BoundaryPath)
 		for _, bf := range boundaryFeatures {
 			feat := types.FeatureInstance{Type: bf.feat.Type} // Release provides infra only, not values
-			if err := mergeFeature(result, bf.name, feat, markerSet, catalogLookup, nodeID); err != nil {
+			if err := mergeFeature(result, bf.name, feat, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
 				return nil, err
 			}
 			// Merge infra separately for Release features
@@ -119,12 +138,26 @@ func collectNodeFeatures(
 		}
 	}
 
-	// Tier 5: Release component-specific features
+	// Tier 5: Release component-specific features. Annotation-driven
+	// synthetic attachments (produced by resolver.ExpandAnnotations during
+	// Step 1) live in BoundaryComponent.Features alongside author-declared
+	// explicit attachments and are indistinguishable here. The IR layer
+	// recovers the distinction by consulting
+	// resolveResult.AnnotationProvenance: a side-table entry signals an
+	// annotation-driven attachment; absence signals explicit.
 	if resolveResult.Release != nil {
 		compFeatures := collectReleaseComponentFeatures(resolveResult.Release.Spec.Boundaries, nodeID)
 		for _, cf := range compFeatures {
 			feat := types.FeatureInstance{Type: cf.feat.Type}
-			if err := mergeFeature(result, cf.name, feat, markerSet, catalogLookup, nodeID); err != nil {
+			prov := explicitProvenance
+			if record, ok := resolveResult.AnnotationProvenance[resolver.AnnotationProvenanceKey(topoNode.BoundaryPath, nodeID, cf.name)]; ok {
+				prov = featureProvenance{
+					Origin:           "annotation",
+					AnnotationKey:    record.AnnotationKey,
+					AnnotationSource: record.AnnotationSource,
+				}
+			}
+			if err := mergeFeature(result, cf.name, feat, markerSet, catalogLookup, nodeID, prov); err != nil {
 				return nil, err
 			}
 			if existing, ok := result.Features.Get(cf.name); ok && cf.feat.Infra.Len() > 0 {
@@ -193,6 +226,7 @@ func mergeFeature(
 	markerSet map[string]bool,
 	catalogLookup resolver.CatalogLookup,
 	nodeID string,
+	provenance featureProvenance,
 ) error {
 	// Check if credential feature
 	if isCredential(feat.Type, catalogLookup) {
@@ -206,10 +240,13 @@ func mergeFeature(
 
 	existing, exists := result.Features.Get(instanceName)
 	if !exists {
-		// New feature
+		// New feature — first sight wins for provenance fields.
 		result.Features.Set(instanceName, types.IRFeatureEntry{
-			Type:   feat.Type,
-			Values: feat.Values,
+			Type:             feat.Type,
+			Values:           feat.Values,
+			Origin:           provenance.Origin,
+			AnnotationKey:    provenance.AnnotationKey,
+			AnnotationSource: provenance.AnnotationSource,
 		})
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
 		markerSet[feat.Type] = true

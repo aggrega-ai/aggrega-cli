@@ -6,6 +6,7 @@ package resolver
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
@@ -59,25 +60,57 @@ func ExpandAnnotations(rr *ResolveResult) error {
 	if registry.Len() == 0 {
 		return nil
 	}
+	if rr.AnnotationProvenance == nil {
+		rr.AnnotationProvenance = map[string]AnnotationProvenance{}
+	}
 
 	for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-		if err := expandBoundary(bName, "", boundary, types.OrderedMap[string]{}, registry, rr.Release); err != nil {
+		if err := expandBoundary(bName, "", boundary, types.OrderedMap[string]{}, map[string]string{}, registry, rr); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func expandBoundary(name, parentPath string, b types.Boundary, parentAnnotations types.OrderedMap[string], registry *AnnotationRegistry, release *types.Release) error {
+// expandBoundary walks one boundary (and its descendants) of the Release
+// tree, cascading annotation values + their source locations from outer
+// to inner. parentAnnotations carries the effective value map at entry;
+// parentSources carries the per-key author location (the boundary path
+// or component path where the annotation was authored, NOT the boundary
+// where it currently applies — the distinction matters for provenance,
+// because an inherited annotation reports its authoring boundary as its
+// source).
+func expandBoundary(
+	name, parentPath string,
+	b types.Boundary,
+	parentAnnotations types.OrderedMap[string],
+	parentSources map[string]string,
+	registry *AnnotationRegistry,
+	rr *ResolveResult,
+) error {
 	currentPath := name
 	if parentPath != "" {
 		currentPath = parentPath + "/" + name
 	}
 
 	mergedAnnotations := mergeStringMaps(parentAnnotations, b.Annotations)
+	mergedSources := make(map[string]string, len(parentSources)+b.Annotations.Len())
+	for k, v := range parentSources {
+		mergedSources[k] = v
+	}
+	for k := range b.Annotations.All() {
+		mergedSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, "", k)
+	}
 
 	for compName, comp := range b.Components.All() {
 		effective := mergeStringMaps(mergedAnnotations, comp.Annotations)
+		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
+		for k, v := range mergedSources {
+			effectiveSources[k] = v
+		}
+		for k := range comp.Annotations.All() {
+			effectiveSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, compName, k)
+		}
 
 		for key, value := range effective.All() {
 			binding, ok := registry.Lookup(key)
@@ -92,17 +125,39 @@ func expandBoundary(name, parentPath string, b types.Boundary, parentAnnotations
 				continue
 			}
 			comp.Features.Set(key, feature)
+			rr.AnnotationProvenance[AnnotationProvenanceKey(currentPath, compName, key)] = AnnotationProvenance{
+				AnnotationKey:    key,
+				AnnotationSource: effectiveSources[key],
+			}
 		}
 
-		writeComponent(release, currentPath, compName, comp)
+		writeComponent(rr.Release, currentPath, compName, comp)
 	}
 
 	for childName, child := range b.Boundaries.All() {
-		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, registry, release); err != nil {
+		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, mergedSources, registry, rr); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// annotationSourcePath formats the source location for an annotation
+// declaration. The format is <release-file-path>:<dotted-yaml-key-path>;
+// line numbers are deferred until yaml.Node access lands in the
+// resolver pipeline. componentName empty signals a boundary-level
+// annotation; non-empty signals a component-level annotation under
+// that boundary.
+func annotationSourcePath(releasePath, boundaryPath, componentName, key string) string {
+	prefix := releasePath
+	if prefix == "" {
+		prefix = "release.yaml"
+	}
+	dotted := "boundaries." + strings.ReplaceAll(boundaryPath, "/", ".boundaries.")
+	if componentName != "" {
+		return prefix + ":" + dotted + ".components." + componentName + ".annotations." + key
+	}
+	return prefix + ":" + dotted + ".annotations." + key
 }
 
 // expandBinding parses a single annotation value against its binding's
