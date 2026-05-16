@@ -223,8 +223,9 @@ func annotationSourcePath(releasePath, boundaryPath, componentName, key string) 
 //
 // Scalar paired with a single-path binding whose declared path sits in
 // Maps.Infra routes the value into the synthetic Feature's Infra at the
-// dotted-path leaf — setPillarLeaf navigates the path components,
-// creating intermediate OrderedMap nodes for nested schema shapes.
+// dotted-path leaf — types.SetLeafAtPath navigates the path
+// components, creating intermediate OrderedMap nodes for nested
+// schema shapes.
 //
 // An empty scalar populates no field; the synthetic Feature carries an
 // empty Infra pillar. FeatureRecipe rendering materializes any
@@ -254,7 +255,7 @@ func expandBinding(key, value string, binding types.AnnotationBinding, boundaryP
 	// rendering materializes any schema defaults uniformly across
 	// explicit and synthetic attachments downstream.
 	if pillar == "infra" && value != "" {
-		setPillarLeaf(&feature.Infra, path, value)
+		types.SetLeafAtPath(&feature.Infra, path, value)
 	}
 	return feature, nil
 }
@@ -290,63 +291,6 @@ func resolveBindingTarget(binding types.AnnotationBinding, value string) (string
 	// is exactly one path across both lists, handled by the two branches.
 	// Defensive fallback for unreachable state.
 	return "", "", fmt.Errorf("binding for feature %q maps shape is structurally invalid", binding.Feature)
-}
-
-// setPillarLeaf walks the dotted-path components through a pillar tree
-// (an OrderedMap whose leaves are scalar values and whose intermediate
-// nodes are nested OrderedMaps), creating intermediate nodes as needed,
-// and sets the leaf value at the final component.
-//
-// A path of "ingress.host" against an empty pillar tree produces:
-//
-//	{ "ingress": OrderedMap[any]{ "host": <value> } }
-//
-// A path of "host" against an empty pillar tree produces a top-level
-// leaf: { "host": <value> }. Subsequent calls to setPillarLeaf against
-// the same tree may extend nested intermediates; if a path's intermediate
-// already exists, the existing node is reused.
-//
-// The function does not protect against tree-shape collisions (e.g.
-// writing a scalar leaf to a path whose intermediate node was previously
-// a scalar). The schema-target validation at catalog cross-reference
-// time rejects bindings whose paths cannot be navigated through the
-// Feature's schema tree; this layer trusts the validated input.
-func setPillarLeaf(pillarTree *types.OrderedMap[any], path string, value any) {
-	components := strings.Split(path, ".")
-	current := pillarTree
-	for i, comp := range components {
-		if i == len(components)-1 {
-			current.Set(comp, value)
-			return
-		}
-		next, exists := current.Get(comp)
-		if !exists {
-			child := types.OrderedMap[any]{}
-			current.Set(comp, &child)
-			current = &child
-			continue
-		}
-		switch n := next.(type) {
-		case *types.OrderedMap[any]:
-			current = n
-		case types.OrderedMap[any]:
-			// The intermediate is stored value-typed (e.g., YAML unmarshalling
-			// nested objects yields value-typed entries by default). Take a
-			// local copy, write its pointer back into the parent so subsequent
-			// mutations propagate, then descend into the upgraded entry.
-			upgraded := n
-			current.Set(comp, &upgraded)
-			current = &upgraded
-		default:
-			// Intermediate exists but is not an OrderedMap — a tree-shape
-			// collision the schema-target validation should have rejected.
-			// Overwrite with a fresh intermediate; subsequent components
-			// proceed against the new node.
-			child := types.OrderedMap[any]{}
-			current.Set(comp, &child)
-			current = &child
-		}
-	}
 }
 
 // writeComponent persists a mutated component back into its containing
@@ -598,7 +542,7 @@ func expandAggregateSubsystem(
 func synthesizeAggregateFeature(binding types.AnnotationBinding, value, path, pillar string) types.FeatureInstance {
 	feature := types.FeatureInstance{Type: binding.Feature}
 	if pillar == "values" && value != "" {
-		setPillarLeaf(&feature.Values, path, value)
+		types.SetLeafAtPath(&feature.Values, path, value)
 	}
 	return feature
 }

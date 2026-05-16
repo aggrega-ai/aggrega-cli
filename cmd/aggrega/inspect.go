@@ -316,10 +316,29 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 		}
 		fmt.Println("  Features:")
 		for instanceName, entry := range featureMap.All() {
-			fmt.Printf("    - %s    %s\n", featureLabel(instanceName, entry), provenanceBracket(entry))
+			renderFeatureAttachment(instanceName, entry)
 		}
 	}
 	return nil
+}
+
+// renderFeatureAttachment writes one Feature attachment to stdout.
+// When the attachment's per-leaf provenance is uniform across both
+// pillars, the function emits the per-attachment marker (the format
+// established before per-leaf provenance shipped) so callers reading
+// the common case see one compact line per attachment. When provenance
+// diverges across leaves, the function expands into per-leaf lines —
+// one bracket per leaf the attachment populates — so the rendered
+// output surfaces the divergence that consumers would otherwise miss.
+func renderFeatureAttachment(instanceName string, entry types.IRFeatureEntry) {
+	if featureProvenanceLayout(entry) {
+		fmt.Printf("    - %s    %s\n", featureLabel(instanceName, entry), perAttachmentBracket(entry))
+		return
+	}
+	fmt.Printf("    - %s\n", featureLabel(instanceName, entry))
+	for _, leaf := range walkLeavesInOrder(entry) {
+		fmt.Printf("        %s: %v    %s\n", leaf.path, leaf.value, perLeafBracket(leaf.provenance))
+	}
 }
 
 // featureLabel formats the Feature URI line. The IR's Type field
@@ -336,11 +355,105 @@ func featureLabel(instanceName string, entry types.IRFeatureEntry) string {
 	return label
 }
 
-// provenanceBracket formats the trailing [explicit] / [annotation: ...]
-// suffix appended to each Feature listing under a Release inspection.
-func provenanceBracket(entry types.IRFeatureEntry) string {
+// perAttachmentBracket formats the trailing [explicit] /
+// [annotation: ...] suffix appended to each Feature listing when every
+// populated leaf shares the same FieldProvenance shape. The function
+// reads the top-level Origin / AnnotationKey / AnnotationSource fields
+// the IR builder populates from the per-leaf provenance derivation.
+func perAttachmentBracket(entry types.IRFeatureEntry) string {
 	if entry.Origin == "annotation" {
 		return fmt.Sprintf("[annotation: %s from %s]", entry.AnnotationKey, entry.AnnotationSource)
 	}
 	return "[explicit]"
+}
+
+// perLeafBracket formats the bracket suffix for one leaf when the
+// attachment's per-leaf provenance is heterogeneous. The shape mirrors
+// perAttachmentBracket but emits an additional "overrides annotation"
+// clause when the leaf's explicit contribution suppressed an annotation
+// contribution at the same leaf.
+func perLeafBracket(prov types.FieldProvenance) string {
+	if prov.Origin == "annotation" {
+		return fmt.Sprintf("[annotation: %s from %s]", prov.AnnotationKey, prov.AnnotationSource)
+	}
+	if prov.OverridesAnnotation != nil {
+		return fmt.Sprintf("[explicit; overrides annotation: %s from %s]",
+			prov.OverridesAnnotation.AnnotationKey,
+			prov.OverridesAnnotation.AnnotationSource)
+	}
+	return "[explicit]"
+}
+
+// featureProvenanceLayout reports whether an IRFeatureEntry's per-leaf
+// provenance is uniform across both pillars. The decision rule:
+//
+//   - Empty per-leaf maps → uniform (the attachment carries no leaves;
+//     the top-level provenance is the only signal).
+//   - Every populated leaf shares the same FieldProvenance shape
+//     (same Origin, Side, AnnotationKey, AnnotationSource, no
+//     OverridesAnnotation at any leaf) → uniform.
+//   - Otherwise → heterogeneous.
+//
+// Uniform attachments fall back to the per-attachment marker for
+// compact output; heterogeneous attachments expand into per-leaf
+// lines so consumers see each leaf's origin distinctly.
+func featureProvenanceLayout(entry types.IRFeatureEntry) bool {
+	var first types.FieldProvenance
+	hasFirst := false
+	check := func(m types.OrderedMap[types.FieldProvenance]) bool {
+		for _, fp := range m.All() {
+			if fp.OverridesAnnotation != nil {
+				return false
+			}
+			if !hasFirst {
+				first = fp
+				hasFirst = true
+				continue
+			}
+			if fp.Origin != first.Origin ||
+				fp.Side != first.Side ||
+				fp.AnnotationKey != first.AnnotationKey ||
+				fp.AnnotationSource != first.AnnotationSource {
+				return false
+			}
+		}
+		return true
+	}
+	if !check(entry.ValuesProvenance) {
+		return false
+	}
+	return check(entry.InfraProvenance)
+}
+
+// leafRecord pairs a dotted-path leaf identifier with the leaf's scalar
+// value and the FieldProvenance carried for that leaf. walkLeavesInOrder
+// emits these in the order the inspect renderer prints them.
+type leafRecord struct {
+	path       string
+	value      any
+	provenance types.FieldProvenance
+}
+
+// walkLeavesInOrder returns the populated leaves of an IRFeatureEntry
+// in render order — values pillar first (author order, flattened to
+// dotted-path scalars from nested OrderedMap intermediates), then
+// infra pillar (same discipline). Each leaf's path carries the pillar
+// prefix (`values.` / `infra.`) followed by the dotted segment chain
+// produced by types.FlattenLeaves walking the nested OrderedMap tree;
+// the leaf's value is the primitive scalar at the terminal segment;
+// the FieldProvenance lookup uses the flat-dotted-leaf path (the
+// same key the IR builder records during the per-leaf merge). The
+// IR builder and the inspect renderer share types.FlattenLeaves so
+// the two sequences align by construction.
+func walkLeavesInOrder(entry types.IRFeatureEntry) []leafRecord {
+	out := make([]leafRecord, 0, entry.ValuesProvenance.Len()+entry.InfraProvenance.Len())
+	for _, p := range types.FlattenLeaves(entry.Values) {
+		prov, _ := entry.ValuesProvenance.Get(p.Path)
+		out = append(out, leafRecord{path: "values." + p.Path, value: p.Value, provenance: prov})
+	}
+	for _, p := range types.FlattenLeaves(entry.Infra) {
+		prov, _ := entry.InfraProvenance.Get(p.Path)
+		out = append(out, leafRecord{path: "infra." + p.Path, value: p.Value, provenance: prov})
+	}
+	return out
 }

@@ -838,90 +838,12 @@ func keysOf(m map[string]AnnotationProvenance) []string {
 	return out
 }
 
-// TestSetPillarLeaf_NavigatesValueTypedIntermediate pins the
-// value-typed-intermediate descent path. YAML unmarshalling nested
-// objects, programmatic OrderedMap construction without explicit
-// pointers, and any caller that stores intermediate maps by value will
-// land in this code path. The leaf write MUST propagate to the parent
-// pillar tree; a self-referential or local-copy write would silently
-// drop the contribution.
-func TestSetPillarLeaf_NavigatesValueTypedIntermediate(t *testing.T) {
-	t.Parallel()
-	pillar := types.OrderedMap[any]{}
-	intermediate := types.OrderedMap[any]{}
-	intermediate.Set("existing", "preserved")
-	pillar.Set("ingress", intermediate) // value-typed, not &intermediate
-
-	setPillarLeaf(&pillar, "ingress.host", "new-host")
-
-	got, ok := pillar.Get("ingress")
-	if !ok {
-		t.Fatal("ingress missing from pillar after setPillarLeaf")
-	}
-	var ingressMap types.OrderedMap[any]
-	switch n := got.(type) {
-	case *types.OrderedMap[any]:
-		ingressMap = *n
-	case types.OrderedMap[any]:
-		ingressMap = n
-	default:
-		t.Fatalf("ingress entry has unexpected type %T", got)
-	}
-	host, ok := ingressMap.Get("host")
-	if !ok {
-		t.Fatal("ingress.host not propagated to parent — value-typed-intermediate descent dropped the write")
-	}
-	if host != "new-host" {
-		t.Errorf("host = %v, want new-host", host)
-	}
-	existing, ok := ingressMap.Get("existing")
-	if !ok {
-		t.Fatal("pre-existing sibling entry lost during value-typed-intermediate descent")
-	}
-	if existing != "preserved" {
-		t.Errorf("existing = %v, want preserved", existing)
-	}
-}
-
-// TestSetPillarLeaf_NavigatesPointerTypedIntermediate pins the
-// pointer-typed-intermediate descent path. Subsequent setPillarLeaf
-// calls into the same pillar tree should reuse the existing pointer
-// intermediate rather than creating a fresh one.
-func TestSetPillarLeaf_NavigatesPointerTypedIntermediate(t *testing.T) {
-	t.Parallel()
-	pillar := types.OrderedMap[any]{}
-	setPillarLeaf(&pillar, "ingress.enabled", true)
-	setPillarLeaf(&pillar, "ingress.host", "shared-host")
-
-	got, _ := pillar.Get("ingress")
-	ingress, ok := got.(*types.OrderedMap[any])
-	if !ok {
-		t.Fatalf("ingress should be *OrderedMap after first setPillarLeaf; got %T", got)
-	}
-	enabled, _ := ingress.Get("enabled")
-	host, _ := ingress.Get("host")
-	if enabled != true {
-		t.Errorf("ingress.enabled = %v, want true", enabled)
-	}
-	if host != "shared-host" {
-		t.Errorf("ingress.host = %v, want shared-host", host)
-	}
-}
-
-// TestSetPillarLeaf_TopLevelLeaf pins the no-intermediate case: a
-// single-component path writes a leaf directly into the pillar tree.
-func TestSetPillarLeaf_TopLevelLeaf(t *testing.T) {
-	t.Parallel()
-	pillar := types.OrderedMap[any]{}
-	setPillarLeaf(&pillar, "upstream", "api.example.com")
-	got, ok := pillar.Get("upstream")
-	if !ok {
-		t.Fatal("upstream missing")
-	}
-	if got != "api.example.com" {
-		t.Errorf("upstream = %v, want api.example.com", got)
-	}
-}
+// Leaf-writer unit-test coverage for the dotted-path writer lives in
+// pkg/types/orderedmap_setleaf_test.go alongside the shared
+// types.SetLeafAtPath primitive. Resolver-level call sites that
+// depended on the writer's value-typed-intermediate, pointer-typed-
+// intermediate, and top-level-leaf disciplines are exercised by the
+// integration tests above through ExpandAnnotations.
 
 // Aggregate-side expansion tests. These tests pin the Aggregate-side
 // leg of the annotation-driven Feature expansion pass: the

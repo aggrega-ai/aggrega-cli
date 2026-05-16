@@ -963,6 +963,71 @@ func TestIRBuilder_SubAggregateComponent_StampsExplicit_SkipsSideTableLookup(t *
 	}
 }
 
+func TestIRBuilder_NestedLeafProvenance_KeyedByDottedPath(t *testing.T) {
+	t.Parallel()
+	// Annotation routes to a nested binding path values.ingress.host.
+	// The synthesized contribution carries a nested OrderedMap shape:
+	//   Values = { ingress: { host: "api.example.com" } }
+	// The IR builder must record FieldProvenance at the flat-dotted-
+	// leaf key "ingress.host" — NOT at the top-level key "ingress".
+
+	innerVals := types.OrderedMap[any]{}
+	innerVals.Set("host", "api.example.com")
+	values := types.OrderedMap[any]{}
+	values.Set("ingress", &innerVals)
+
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "feature.myco/host", Feature: types.FeatureInstance{
+					Type:   "core/ingress:1.0.0",
+					Values: values,
+				}},
+			},
+		},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{
+			resolver.AnnotationProvenanceKey("components.api", "", "feature.myco/host"): {
+				AnnotationKey:    "feature.myco/host",
+				AnnotationSource: "aggregate.yaml:components.api.annotations.feature.myco/host",
+			},
+		},
+	}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	feat, _ := result.Features.Get("feature.myco/host")
+
+	// The flat-dotted-leaf key is "ingress.host" — not "ingress".
+	prov, ok := feat.ValuesProvenance.Get("ingress.host")
+	if !ok {
+		t.Fatalf("ValuesProvenance.Get(\"ingress.host\") missing; got keys: %v", provenanceKeys(feat.ValuesProvenance))
+	}
+	if prov.Origin != "annotation" || prov.Side != "aggregate" {
+		t.Errorf("nested-leaf provenance Origin=%q Side=%q; want annotation/aggregate", prov.Origin, prov.Side)
+	}
+	// And the top-level "ingress" key should NOT exist as a
+	// provenance entry — provenance lives at the leaf granularity.
+	if _, present := feat.ValuesProvenance.Get("ingress"); present {
+		t.Error("ValuesProvenance should NOT carry a top-level 'ingress' entry; provenance is per-leaf, not per-intermediate")
+	}
+}
+
+func provenanceKeys(m types.OrderedMap[types.FieldProvenance]) []string {
+	out := []string{}
+	for k := range m.All() {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestIRBuilder_LeavesLastWins_SameOrigin_ProvenanceRefreshes(t *testing.T) {
 	t.Parallel()
 	// Two explicit contributions to the same leaf: the later tier

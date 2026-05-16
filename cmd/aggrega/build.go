@@ -106,6 +106,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
 	}
 
+	// Surface non-fatal lint advisories from catalog load (e.g.
+	// schema-pillar-overlap warnings).
+	for _, w := range cat.LintWarnings() {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+
 	// Step 1: Resolve
 	// Determine aggregate and manifest paths from release directory
 	releaseDir := filepath.Dir(releasePath)
@@ -180,6 +186,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Step 4: Analyze
 	analysis := analyzer.Analyze(graph, catalogLookup)
+	for _, w := range analysis.Warnings {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
 	if len(analysis.Errors) > 0 {
 		// Bubble each violation as a CompilerError via errors.Join. The
 		// formatter walks the join'd chain and renders each violation

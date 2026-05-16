@@ -59,6 +59,15 @@ type Catalog struct {
 	componentSources map[string]string
 	featureSources   map[string]string
 	providerSources  map[string]string
+
+	// lintWarnings accumulates non-fatal advisory diagnostics raised
+	// during catalog load — currently the schema-pillar-overlap
+	// lint, which warns when a Component or Feature declares the
+	// same property name in both values: and infra: pillars at the
+	// same nesting depth. Build callers retrieve these via
+	// LintWarnings() and print them to stderr alongside
+	// DeprecationWarnings.
+	lintWarnings []string
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -186,6 +195,12 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
+		c.lintWarnings = append(c.lintWarnings, validator.ValidateSchemaPillarOverlap(
+			"Component",
+			name,
+			c.componentSources[name],
+			comp.Spec.Schema,
+		)...)
 	}
 
 	featureNames := make([]string, 0, len(c.Features))
@@ -204,6 +219,12 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
+		c.lintWarnings = append(c.lintWarnings, validator.ValidateSchemaPillarOverlap(
+			"Feature",
+			name,
+			c.featureSources[name],
+			feat.Spec.Schema,
+		)...)
 	}
 
 	providerNames := make([]string, 0, len(c.Providers))
@@ -431,6 +452,25 @@ func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
 // point where "what counts as a deprecated catalog shape" lives; rules
 // living elsewhere risk drifting out of the build command's warning
 // stream.
+// LintWarnings returns non-fatal advisory diagnostics accumulated
+// during catalog load. Today's lint surface is schema-pillar-overlap:
+// a warning fires when a Component or Feature declares the same
+// property name in both values: and infra: pillars at the same
+// nesting depth. The compiler accepts overlaps (pillars are separate
+// namespaces by design); the lint surfaces a frequent authoring smell
+// where reads and template authors face "which pillar holds the foo
+// I'm reading?" friction.
+//
+// Returns nil when no lint warnings fired. Build callers range the
+// returned slice and print each line to stderr alongside the existing
+// DeprecationWarnings output.
+func (c *Catalog) LintWarnings() []string {
+	if c == nil {
+		return nil
+	}
+	return c.lintWarnings
+}
+
 func (c *Catalog) DeprecationWarnings() []string {
 	var msgs []string
 	compNames := make([]string, 0, len(c.Components))

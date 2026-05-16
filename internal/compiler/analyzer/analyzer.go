@@ -26,6 +26,7 @@ import (
 //     not-yet-executed status.
 type AnalysisResult struct {
 	Errors      []AnalysisError
+	Warnings    []string
 	Paths       []PrecalculatedPath
 	PolicyInput *PolicyValidatorInput
 }
@@ -142,8 +143,12 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 	// 4. Assemble policy input
 	policyInput := assemblePolicyInput(graph, paths)
 
+	// 5. Advisory lints (non-fatal warnings).
+	warnings := lintExplicitOverridesAnnotation(graph)
+
 	return &AnalysisResult{
 		Errors:      errs,
+		Warnings:    warnings,
 		Paths:       paths,
 		PolicyInput: policyInput,
 	}

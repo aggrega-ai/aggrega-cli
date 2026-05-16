@@ -317,6 +317,13 @@ func mergeContribution(
 		// contribution carries no Values or Infra leaves. The leaf-
 		// derived top-level Origin computed by finalizeTopLevelOrigin
 		// overwrites these fields when per-leaf detail exists.
+		//
+		// Per-leaf provenance is keyed by flat-dotted-leaf path. The
+		// contribution's nested OrderedMap structure copies into
+		// entry.Values / entry.Infra verbatim (preserving the nested
+		// tree consumed downstream); the provenance maps record one
+		// FieldProvenance per primitive leaf, keyed by the dotted path
+		// flattened from the nested tree.
 		entry := types.IRFeatureEntry{
 			Type:             featType,
 			Values:           types.OrderedMap[any]{},
@@ -327,14 +334,18 @@ func mergeContribution(
 			AnnotationKey:    provenance.AnnotationKey,
 			AnnotationSource: provenance.AnnotationSource,
 		}
-		fp := provenance.toFieldProvenance()
 		for k, v := range values.All() {
 			entry.Values.Set(k, v)
-			entry.ValuesProvenance.Set(k, fp)
 		}
 		for k, v := range infra.All() {
 			entry.Infra.Set(k, v)
-			entry.InfraProvenance.Set(k, fp)
+		}
+		fp := provenance.toFieldProvenance()
+		for _, leaf := range types.FlattenLeaves(values) {
+			entry.ValuesProvenance.Set(leaf.Path, fp)
+		}
+		for _, leaf := range types.FlattenLeaves(infra) {
+			entry.InfraProvenance.Set(leaf.Path, fp)
 		}
 		result.Features.Set(instanceName, entry)
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
@@ -351,11 +362,11 @@ func mergeContribution(
 		)
 	}
 
-	for k, v := range values.All() {
-		mergeLeaf(&existing.Values, &existing.ValuesProvenance, k, v, provenance)
+	for _, leaf := range types.FlattenLeaves(values) {
+		mergeLeaf(&existing.Values, &existing.ValuesProvenance, leaf.Path, leaf.Value, provenance)
 	}
-	for k, v := range infra.All() {
-		mergeLeaf(&existing.Infra, &existing.InfraProvenance, k, v, provenance)
+	for _, leaf := range types.FlattenLeaves(infra) {
+		mergeLeaf(&existing.Infra, &existing.InfraProvenance, leaf.Path, leaf.Value, provenance)
 	}
 
 	if featType != "" {
@@ -367,13 +378,18 @@ func mergeContribution(
 }
 
 // mergeLeaf applies one leaf-level merge into a pillar tree per the
-// explicit-wins-at-leaf rule. The pillar values and pillar provenance
-// maps mutate in place; the leaf entry is created or updated per the
-// rule documented on mergeContribution.
+// explicit-wins-at-leaf rule. leafPath is a flat-dotted-leaf path
+// (e.g. "pool" for a top-level leaf or "ingress.host" for a nested
+// leaf); the pillar values map carries the nested OrderedMap tree,
+// and types.SetLeafAtPath writes the leaf value at the path's
+// terminal position, creating intermediate OrderedMap nodes as
+// needed. The pillar provenance map is keyed by the flat-dotted-leaf
+// path so every leaf has its own FieldProvenance regardless of
+// nesting depth.
 func mergeLeaf(
 	pillarValues *types.OrderedMap[any],
 	pillarProv *types.OrderedMap[types.FieldProvenance],
-	leafName string,
+	leafPath string,
 	incomingValue any,
 	incomingProv featureProvenance,
 ) {
@@ -383,10 +399,10 @@ func mergeLeaf(
 	if pillarProv.Len() == 0 {
 		*pillarProv = types.OrderedMap[types.FieldProvenance]{}
 	}
-	existingProv, exists := pillarProv.Get(leafName)
+	existingProv, exists := pillarProv.Get(leafPath)
 	if !exists {
-		pillarValues.Set(leafName, incomingValue)
-		pillarProv.Set(leafName, incomingProv.toFieldProvenance())
+		types.SetLeafAtPath(pillarValues, leafPath, incomingValue)
+		pillarProv.Set(leafPath, incomingProv.toFieldProvenance())
 		return
 	}
 	if existingProv.Origin == "explicit" && incomingProv.Origin == "annotation" {
@@ -400,12 +416,12 @@ func mergeLeaf(
 		suppressed := existingProv
 		newProv := incomingProv.toFieldProvenance()
 		newProv.OverridesAnnotation = &suppressed
-		pillarValues.Set(leafName, incomingValue)
-		pillarProv.Set(leafName, newProv)
+		types.SetLeafAtPath(pillarValues, leafPath, incomingValue)
+		pillarProv.Set(leafPath, newProv)
 		return
 	}
-	pillarValues.Set(leafName, incomingValue)
-	pillarProv.Set(leafName, incomingProv.toFieldProvenance())
+	types.SetLeafAtPath(pillarValues, leafPath, incomingValue)
+	pillarProv.Set(leafPath, incomingProv.toFieldProvenance())
 }
 
 // finalizeTopLevelOrigin walks every IRFeatureEntry in the per-node

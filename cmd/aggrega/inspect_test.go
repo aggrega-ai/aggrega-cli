@@ -189,35 +189,225 @@ func TestIsPathInput(t *testing.T) {
 }
 
 // TestProvenanceBracket pins the trailing-bracket format for both
-// explicit and annotation-driven Feature attachments. The bracket
-// format is part of the inspect command's user-facing contract on
-// Release inspection; regression here would silently break
-// operator-readable output.
+// explicit and annotation-driven Feature attachments when the
+// attachment's per-leaf provenance is uniform. The bracket format is
+// part of the inspect command's user-facing contract on Release
+// inspection; regression here would silently break operator-readable
+// output.
 func TestProvenanceBracket(t *testing.T) {
 	t.Parallel()
 	// Explicit attachment: the bracket reads exactly [explicit].
-	got := provenanceBracketShim("explicit", "", "")
+	got := perAttachmentBracketShim("explicit", "", "")
 	if got != "[explicit]" {
 		t.Errorf("explicit bracket = %q, want [explicit]", got)
 	}
 
 	// Annotation attachment: the bracket carries the annotation key
 	// and source location.
-	got = provenanceBracketShim("annotation", "feature.myco/rewrite-host", "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host")
+	got = perAttachmentBracketShim("annotation", "feature.myco/rewrite-host", "release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host")
 	want := "[annotation: feature.myco/rewrite-host from release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host]"
 	if got != want {
 		t.Errorf("annotation bracket = %q, want %q", got, want)
 	}
 }
 
-// provenanceBracketShim constructs an IRFeatureEntry with the given
+// perAttachmentBracketShim constructs an IRFeatureEntry with the given
 // provenance fields and renders its bracket. Wraps the package-private
-// provenanceBracket so the test can name field values without an
+// perAttachmentBracket so the test can name field values without an
 // otherwise-noisy literal construction.
-func provenanceBracketShim(origin, key, source string) string {
-	return provenanceBracket(types.IRFeatureEntry{
+func perAttachmentBracketShim(origin, key, source string) string {
+	return perAttachmentBracket(types.IRFeatureEntry{
 		Origin:           origin,
 		AnnotationKey:    key,
 		AnnotationSource: source,
 	})
+}
+
+// Per-leaf provenance rendering tests. featureProvenanceLayout decides
+// uniform vs heterogeneous; uniform attachments use perAttachmentBracket
+// (pre-Phase-F goldens preserved); heterogeneous attachments use
+// perLeafBracket per leaf with the dotted-path leaf label.
+
+func annotationProvenance(key, source, side string) types.FieldProvenance {
+	return types.FieldProvenance{
+		Origin:           "annotation",
+		Side:             side,
+		AnnotationKey:    key,
+		AnnotationSource: source,
+	}
+}
+
+func explicitProvenance() types.FieldProvenance {
+	return types.FieldProvenance{Origin: "explicit"}
+}
+
+func TestFeatureProvenanceLayout_AllExplicit_Uniform(t *testing.T) {
+	t.Parallel()
+	entry := types.IRFeatureEntry{
+		Values:           orderedMapAny("enabled", true),
+		ValuesProvenance: orderedMapProvenance("enabled", explicitProvenance()),
+	}
+	if !featureProvenanceLayout(entry) {
+		t.Error("all-explicit single leaf should be uniform")
+	}
+}
+
+func TestFeatureProvenanceLayout_AllSameAnnotation_Uniform(t *testing.T) {
+	t.Parallel()
+	prov := annotationProvenance("feature.myco/db-pool", "aggregate.yaml:...db-pool", "aggregate")
+	entry := types.IRFeatureEntry{
+		Values: orderedMapAny("pool", "shared", "replicas", 5),
+		ValuesProvenance: orderedMapProvenance(
+			"pool", prov,
+			"replicas", prov,
+		),
+	}
+	if !featureProvenanceLayout(entry) {
+		t.Error("two leaves with identical annotation provenance should be uniform")
+	}
+}
+
+func TestFeatureProvenanceLayout_CrossSide_Heterogeneous(t *testing.T) {
+	t.Parallel()
+	// Values pillar from Aggregate-side annotation; Infra pillar from
+	// Release-side annotation. Cross-side compose → heterogeneous.
+	entry := types.IRFeatureEntry{
+		Values:           orderedMapAny("pool", "shared-pool"),
+		Infra:            orderedMapAny("pool_size", 20),
+		ValuesProvenance: orderedMapProvenance("pool", annotationProvenance("feature.myco/db-pool", "aggregate.yaml", "aggregate")),
+		InfraProvenance:  orderedMapProvenance("pool_size", annotationProvenance("feature.myco/db-pool", "release.yaml", "release")),
+	}
+	if featureProvenanceLayout(entry) {
+		t.Error("cross-side compose should be heterogeneous (different Side values)")
+	}
+}
+
+func TestFeatureProvenanceLayout_ExplicitOverridesAnnotation_Heterogeneous(t *testing.T) {
+	t.Parallel()
+	suppressed := annotationProvenance("feature.myco/db-pool", "aggregate.yaml", "aggregate")
+	overrideProv := types.FieldProvenance{
+		Origin:              "explicit",
+		OverridesAnnotation: &suppressed,
+	}
+	entry := types.IRFeatureEntry{
+		Values:           orderedMapAny("pool", "explicit-value"),
+		ValuesProvenance: orderedMapProvenance("pool", overrideProv),
+	}
+	if featureProvenanceLayout(entry) {
+		t.Error("attachment with OverridesAnnotation on any leaf should be heterogeneous")
+	}
+}
+
+func TestPerLeafBracket_Explicit(t *testing.T) {
+	t.Parallel()
+	got := perLeafBracket(explicitProvenance())
+	if got != "[explicit]" {
+		t.Errorf("explicit leaf bracket = %q, want [explicit]", got)
+	}
+}
+
+func TestPerLeafBracket_Annotation(t *testing.T) {
+	t.Parallel()
+	got := perLeafBracket(annotationProvenance("feature.myco/db-pool", "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool", "aggregate"))
+	want := "[annotation: feature.myco/db-pool from aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool]"
+	if got != want {
+		t.Errorf("annotation leaf bracket = %q, want %q", got, want)
+	}
+}
+
+func TestPerLeafBracket_ExplicitOverridesAnnotation(t *testing.T) {
+	t.Parallel()
+	suppressed := annotationProvenance("feature.myco/db-pool", "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool", "aggregate")
+	got := perLeafBracket(types.FieldProvenance{
+		Origin:              "explicit",
+		OverridesAnnotation: &suppressed,
+	})
+	want := "[explicit; overrides annotation: feature.myco/db-pool from aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool]"
+	if got != want {
+		t.Errorf("override bracket = %q, want %q", got, want)
+	}
+}
+
+func TestWalkLeavesInOrder_NestedOrderedMaps_FlattenToDottedPaths(t *testing.T) {
+	t.Parallel()
+	// IRFeatureEntry whose Values pillar carries a nested OrderedMap
+	// (the shape the IR builder produces when an annotation routes to
+	// a binding path like values.ingress.host). The renderer must flatten through
+	// the nested intermediate and emit one leaf record per primitive
+	// leaf with the dotted-path label, looking up FieldProvenance by
+	// the flat-dotted-leaf key.
+	innerVals := types.OrderedMap[any]{}
+	innerVals.Set("host", "api.example.com")
+	innerVals.Set("port", 443)
+	values := types.OrderedMap[any]{}
+	values.Set("ingress", &innerVals)
+
+	hostProv := annotationProvenance("feature.myco/host", "aggregate.yaml:components.api.annotations.feature.myco/host", "aggregate")
+	portProv := annotationProvenance("feature.myco/port", "aggregate.yaml:components.api.annotations.feature.myco/port", "aggregate")
+	provenance := types.OrderedMap[types.FieldProvenance]{}
+	provenance.Set("ingress.host", hostProv)
+	provenance.Set("ingress.port", portProv)
+
+	entry := types.IRFeatureEntry{
+		Values:           values,
+		ValuesProvenance: provenance,
+	}
+	leaves := walkLeavesInOrder(entry)
+	if len(leaves) != 2 {
+		t.Fatalf("expected 2 flattened leaves; got %d: %v", len(leaves), leaves)
+	}
+	wantPaths := []string{"values.ingress.host", "values.ingress.port"}
+	wantValues := []any{"api.example.com", 443}
+	for i, leaf := range leaves {
+		if leaf.path != wantPaths[i] {
+			t.Errorf("leaves[%d].path = %q, want %q", i, leaf.path, wantPaths[i])
+		}
+		if leaf.value != wantValues[i] {
+			t.Errorf("leaves[%d].value = %v, want %v", i, leaf.value, wantValues[i])
+		}
+	}
+	if leaves[0].provenance.AnnotationKey != "feature.myco/host" {
+		t.Errorf("leaves[0].provenance key = %q, want feature.myco/host", leaves[0].provenance.AnnotationKey)
+	}
+	if leaves[1].provenance.AnnotationKey != "feature.myco/port" {
+		t.Errorf("leaves[1].provenance key = %q, want feature.myco/port", leaves[1].provenance.AnnotationKey)
+	}
+}
+
+func TestWalkLeavesInOrder_ValuesThenInfra_AuthorOrderPreserved(t *testing.T) {
+	t.Parallel()
+	entry := types.IRFeatureEntry{
+		Values:           orderedMapAny("alpha", 1, "bravo", 2),
+		Infra:            orderedMapAny("charlie", 3),
+		ValuesProvenance: orderedMapProvenance("alpha", explicitProvenance(), "bravo", explicitProvenance()),
+		InfraProvenance:  orderedMapProvenance("charlie", explicitProvenance()),
+	}
+	leaves := walkLeavesInOrder(entry)
+	if len(leaves) != 3 {
+		t.Fatalf("want 3 leaves, got %d", len(leaves))
+	}
+	wantPaths := []string{"values.alpha", "values.bravo", "infra.charlie"}
+	for i, leaf := range leaves {
+		if leaf.path != wantPaths[i] {
+			t.Errorf("leaves[%d].path = %q, want %q", i, leaf.path, wantPaths[i])
+		}
+	}
+}
+
+// orderedMapAny + orderedMapProvenance are tiny test-local builders that
+// preserve author order when constructing OrderedMap entries inline.
+func orderedMapAny(pairs ...any) types.OrderedMap[any] {
+	m := types.OrderedMap[any]{}
+	for i := 0; i < len(pairs); i += 2 {
+		m.Set(pairs[i].(string), pairs[i+1])
+	}
+	return m
+}
+
+func orderedMapProvenance(pairs ...any) types.OrderedMap[types.FieldProvenance] {
+	m := types.OrderedMap[types.FieldProvenance]{}
+	for i := 0; i < len(pairs); i += 2 {
+		m.Set(pairs[i].(string), pairs[i+1].(types.FieldProvenance))
+	}
+	return m
 }
