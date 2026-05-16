@@ -64,7 +64,20 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 			continue // already emitted above
 		}
 		if k == "required" {
-			continue // accumulated to parent in implicit-object emission
+			// Two shapes carry meaning here:
+			//   - Compact-form per-leaf marker (`required: true`): accumulated
+			//     by the parent's implicit-object emission, ignored here.
+			//   - JSON Schema array (`required: [name1, name2]`): a top-level
+			//     keyword the author wrote alongside type/properties; passes
+			//     through as a JSON Schema 2020-12 required array.
+			if v != nil && v.Kind == yaml.SequenceNode {
+				child, err := emitSequence(v, pathJoin(path, "required"), ctx)
+				if err != nil {
+					return nil, err
+				}
+				out["required"] = child
+			}
+			continue
 		}
 		if k == "$mode" {
 			continue // dispatch-time hint only

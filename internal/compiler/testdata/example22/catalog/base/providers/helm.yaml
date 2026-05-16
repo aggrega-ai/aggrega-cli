@@ -6,16 +6,28 @@ metadata:
 spec:
   # baseSchema validates the valuesMapping output for sourceless (generative) mode.
   # The helm provider generates flat Deployment + optional Service from this dict.
+  # Authored as JSON Schema 2020-12 (compact-form YAML accepted).
   baseSchema: |
-    {
-      image: string
-      replicas?: int | *1
-      ports?: [...string]
-      environment?: {[string]: string | int}
-    }
+    type: object
+    properties:
+      image: { type: string }
+      replicas: { type: integer, default: 1 }
+      ports:
+        type: array
+        items: { type: string }
+      environment:
+        type: object
+        additionalProperties:
+          oneOf:
+            - { type: string }
+            - { type: integer }
+    required: [image]
+    additionalProperties: true
   # workloadSchema documents how the aggrega.ai/v1alpha1 Workload kind
-  # translates to helm output. Documentation-only today; becomes
-  # executable input to Wasm translators in a future iteration.
+  # translates to helm output. Today the field acts as a presence flag
+  # (non-empty = Workload synthesis supported); the body is a placeholder
+  # JSON Schema that becomes executable input to Wasm translators in a
+  # future iteration.
   workloadSchema: |
-    // See specs/cue/workload.cue for the Workload kind surface.
-    #WorkloadSupported: true
+    type: object
+    additionalProperties: true

@@ -35,6 +35,6 @@ type ProviderMetadata struct {
 // load time.
 type ProviderSpec struct {
 	Plugin         string `json:"plugin,omitempty" yaml:"plugin,omitempty"`
-	BaseSchema     string `json:"baseSchema,omitempty" yaml:"baseSchema,omitempty"`         // CUE schema for sourceless-mode validation
-	WorkloadSchema string `json:"workloadSchema,omitempty" yaml:"workloadSchema,omitempty"` // CUE-style documentation of Workload → provider-native translation
+	BaseSchema     string `json:"baseSchema,omitempty" yaml:"baseSchema,omitempty"`         // JSON Schema 2020-12 (compact-form YAML accepted) for sourceless-mode valuesMapping validation
+	WorkloadSchema string `json:"workloadSchema,omitempty" yaml:"workloadSchema,omitempty"` // JSON Schema 2020-12 (compact-form YAML accepted); presence flags Workload synthesis support
 }

@@ -50,14 +50,15 @@ type Catalog struct {
 	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
 	MappingLibraries map[string]types.MappingLibrary // keyed by metadata.name (PascalCase library identifier)
 
-	// componentSources / featureSources track the file path each entity was
-	// loaded from. Populated by Pass 1 (indexFile) and consumed by Pass 2
-	// (the schema-pillar validation pass at the end of LoadAll) so the
-	// validator's error messages name the offending file. Unexported because
-	// the bookkeeping is internal to LoadAll; downstream callers identify
-	// entities by metadata.name, not by source path.
+	// componentSources / featureSources / providerSources track the file path
+	// each entity was loaded from. Populated by Pass 1 (indexFile) and
+	// consumed by Pass 2 (the schema validation pass at the end of LoadAll)
+	// so the validator's error messages name the offending file. Unexported
+	// because the bookkeeping is internal to LoadAll; downstream callers
+	// identify entities by metadata.name, not by source path.
 	componentSources map[string]string
 	featureSources   map[string]string
+	providerSources  map[string]string
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -124,6 +125,7 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 		MappingLibraries: make(map[string]types.MappingLibrary),
 		componentSources: make(map[string]string),
 		featureSources:   make(map[string]string),
+		providerSources:  make(map[string]string),
 	}
 	for _, dir := range dirs {
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -149,14 +151,22 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 	return c, nil
 }
 
-// validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component and
-// Feature in sorted-name order, runs validator.ValidateSchemaPillars against
-// the entity's spec.schema yaml.Node with the now-fully-populated
-// SchemaLibraries map for cross-document $ref expansion, collects every
-// failure, and returns a single aggregated CatalogError when at least one
-// entity failed. Sorted-name iteration is required for diagnostic stability:
-// a map-iteration order would flap across runs and make CI logs unstable
+// validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component,
+// Feature, and Provider in sorted-name order, runs the corresponding
+// load-time validator against each entity's schema-bearing fields with
+// the now-fully-populated SchemaLibraries map for cross-document $ref
+// expansion (Component / Feature only), collects every failure, and
+// returns a single aggregated CatalogError when at least one entity
+// failed. Sorted-name iteration is required for diagnostic stability:
+// map-iteration order would flap across runs and make CI logs unstable
 // against the deterministic-output invariant.
+//
+// The Provider block validates the flat baseSchema / workloadSchema
+// JSON Schema bodies (different contract from the pillar-wrapped
+// Component / Feature schemas — no SchemaLibrary $ref expansion is
+// expected at the Provider field surface today). Wired so today's
+// catalogs reach the same load-time guardrail the Component / Feature
+// surface enjoys.
 func (c *Catalog) validateSchemaPillarsPass() error {
 	var validationErrors []error
 
@@ -196,6 +206,22 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		}
 	}
 
+	providerNames := make([]string, 0, len(c.Providers))
+	for name := range c.Providers {
+		providerNames = append(providerNames, name)
+	}
+	sort.Strings(providerNames)
+	for _, name := range providerNames {
+		p := c.Providers[name]
+		for _, err := range validator.ValidateProviderSchemas(
+			name,
+			c.providerSources[name],
+			&p.Spec,
+		) {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+
 	if len(validationErrors) == 0 {
 		return nil
 	}
@@ -206,7 +232,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 	return cerrors.New(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
-		fmt.Sprintf("catalog load: %d schema pillar validation error(s):\n  - %s",
+		fmt.Sprintf("catalog load: %d schema validation error(s):\n  - %s",
 			len(validationErrors), strings.Join(parts, "\n  - ")),
 		nil,
 		nil,
@@ -326,6 +352,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
 		}
 		c.Providers[e.Metadata.Name] = e
+		c.providerSources[e.Metadata.Name] = path
 	case "SchemaLibrary":
 		var e types.SchemaLibrary
 		if err := yaml.Unmarshal(data, &e); err != nil {

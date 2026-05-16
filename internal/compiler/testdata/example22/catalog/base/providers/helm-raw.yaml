@@ -7,5 +7,5 @@ spec:
   # No baseSchema — artifacts-only Recipes don't go through valuesMapping,
   # so there is nothing to validate against. The helm-raw provider exists
   # for fixtures whose Recipes emit only artifacts:/artifactsFrom: content.
-  workloadSchema: |
-    #WorkloadSupported: false
+  # workloadSchema is intentionally absent: this provider does not support
+  # Workload synthesis (artifacts-only Recipes carry no Workload kind).

@@ -91,12 +91,12 @@ metadata:
   version: "1.0.0"
 spec:
   baseSchema: |
-    {
-      image: string
-      replicas?: int | *1
-      ports?: [...string]
-      environment?: {[string]: string | int}
-    }
+    type: object
+    properties:
+      image: { type: string }
+      replicas: { type: integer, default: 1 }
+    required: [image]
+    additionalProperties: true
 `)
 
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1

@@ -4,9 +4,17 @@
 package renderer
 
 import (
-	"log"
+	"encoding/json"
+	"fmt"
+	"strings"
 
+	libschema "github.com/google/jsonschema-go/jsonschema"
+	"gopkg.in/yaml.v3"
+
+	"github.com/cognitio/aggrega-cli/pkg/compactform"
+	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // ProviderLookup resolves a provider by name (e.g. "helm", "helm-chart").
@@ -29,22 +37,29 @@ func isSourceless(recipe *types.Recipe) bool {
 	return false
 }
 
-// ValidateValuesAgainstBaseSchema is the transitional stub during the
-// JSON Schema migration. The validator pipeline no longer processes
-// CUE source strings; provider baseSchema fields authored in CUE do
-// not get validated until the schema-authoring phase migrates them
-// to JSON Schema 2020-12. When a provider carries a non-empty
-// Spec.BaseSchema, this function logs a deprecation note once per
-// provider and returns nil (skip).
+// ValidateValuesAgainstBaseSchema validates a Recipe's resolved values
+// dictionary against the bound Provider's baseSchema in sourceless
+// (generative) mode. The provider's baseSchema is authored as JSON Schema
+// 2020-12 (compact-form YAML accepted); this function parses it via
+// pkg/compactform.Compile and runs the resulting schema against the
+// supplied values dict using the pkg/validator/jsonschema adapter.
 //
-// Returns nil on success or when validation is skipped. If the
-// provider has no baseSchema, validation is skipped silently (the
-// field is optional).
+// Returns nil on success, when validation is skipped (provider missing,
+// no ProviderLookup supplied, or baseSchema empty), or when the schema
+// body compiles to an empty schema. Returns a CATALOG_ERROR-wrapped
+// validation error on findings, with the consumer file path threaded
+// through so operators locate the offending Recipe from the diagnostic.
+//
+// Sourceless-mode-only by construction — the caller (Phase B in the
+// orchestrator) guards on isSourceless before invoking. Workload-mode
+// validation is covered by ValidateWorkload + ValidateWorkloadSecrets;
+// sourced-mode validation is covered by the upstream chart/module
+// renderer accepting the values dict on its own terms.
 func ValidateValuesAgainstBaseSchema(
 	providerName string,
 	providerLookup ProviderLookup,
-	_ map[string]any,
-	_ string,
+	values map[string]any,
+	consumerLabel string,
 ) error {
 	if providerLookup == nil {
 		return nil
@@ -53,24 +68,103 @@ func ValidateValuesAgainstBaseSchema(
 	if !found {
 		return nil
 	}
-	if p.Spec.BaseSchema == "" {
+	if strings.TrimSpace(p.Spec.BaseSchema) == "" {
 		return nil
 	}
-	logBaseSchemaSkipOnce(providerName)
-	return nil
+
+	var bodyNode yaml.Node
+	if err := yaml.Unmarshal([]byte(p.Spec.BaseSchema), &bodyNode); err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q baseSchema YAML parse", providerName))
+	}
+
+	schemaMap, err := compactform.Compile(&bodyNode)
+	if err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q baseSchema compactform compile", providerName))
+	}
+	if len(schemaMap) == 0 {
+		return nil
+	}
+
+	schemaJSON, err := json.Marshal(schemaMap)
+	if err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q baseSchema marshal", providerName))
+	}
+	libSchema := &libschema.Schema{}
+	if err := json.Unmarshal(schemaJSON, libSchema); err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q baseSchema unmarshal", providerName))
+	}
+	v, err := jsonvalidator.New(libSchema)
+	if err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q baseSchema validator construction", providerName))
+	}
+
+	instance, err := normaliseInstance(values)
+	if err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q valuesMapping output JSON normalisation", providerName))
+	}
+
+	rpt, err := v.Validate(instance, nil)
+	if err != nil {
+		return cerrors.Wrap(err,
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: consumerLabel},
+			fmt.Sprintf("provider %q baseSchema validate", providerName))
+	}
+	if rpt == nil || len(rpt.Findings) == 0 {
+		return nil
+	}
+
+	parts := make([]string, 0, len(rpt.Findings))
+	for _, f := range rpt.Findings {
+		fieldPath := f.FieldPath
+		if fieldPath == "" {
+			fieldPath = "."
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s", fieldPath, f.Message))
+	}
+	return cerrors.New(
+		cerrors.CatalogError,
+		cerrors.SourceLocation{File: consumerLabel},
+		fmt.Sprintf("provider %q baseSchema validation rejected valuesMapping output:\n  - %s",
+			providerName, strings.Join(parts, "\n  - ")),
+		nil,
+		nil,
+	)
 }
 
-// loggedBaseSchemaSkips tracks per-provider skip notifications so the
-// deprecation log fires once per provider rather than once per
-// validation call. The package-level map is not safe for concurrent
-// mutation; renderer invocations are single-threaded per pipeline run.
-var loggedBaseSchemaSkips = map[string]bool{}
-
-func logBaseSchemaSkipOnce(providerName string) {
-	if loggedBaseSchemaSkips[providerName] {
-		return
+// normaliseInstance round-trips the values dict through JSON so the
+// jsonschema adapter's walker sees the canonical map[string]any /
+// []any / scalar shape regardless of what Go-typed structures the
+// caller built. Mirrors the round-trip in ValidateWorkload.
+func normaliseInstance(values map[string]any) (any, error) {
+	if values == nil {
+		return map[string]any{}, nil
 	}
-	loggedBaseSchemaSkips[providerName] = true
-	log.Printf("warning: provider %q authors Spec.BaseSchema; baseSchema validation skipped pending JSON Schema migration",
-		providerName)
+	raw, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
