@@ -40,7 +40,7 @@ func isSourceless(recipe *types.Recipe) bool {
 // ValidateValuesAgainstBaseSchema validates a Recipe's resolved values
 // dictionary against the bound Provider's baseSchema in sourceless
 // (generative) mode. The provider's baseSchema is authored as JSON Schema
-// 2020-12 (compact-form YAML accepted); this function parses it via
+// 2020-12; this function parses it via
 // pkg/compactform.Compile and runs the resulting schema against the
 // supplied values dict using the pkg/validator/jsonschema adapter.
 //

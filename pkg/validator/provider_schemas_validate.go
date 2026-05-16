@@ -15,7 +15,7 @@ import (
 
 // ValidateProviderSchemas enforces the load-time structural contract on a
 // Provider's baseSchema and workloadSchema fields. Both are typed as Go
-// strings carrying JSON Schema 2020-12 (compact-form YAML accepted); the
+// strings carrying JSON Schema 2020-12; the
 // validator parses each non-empty body via pkg/compactform.Compile and
 // surfaces any compile error wrapped in a CATALOG_ERROR-categorised
 // CompilerError citing the source file. Empty fields pass without
@@ -71,7 +71,7 @@ func validateProviderSchemaField(fieldName, providerName, filePath, body string)
 			cerrors.CatalogError,
 			cerrors.SourceLocation{File: filePath},
 			fmt.Sprintf("Provider %q: spec.%s body is not valid YAML. "+
-				"Authored as JSON Schema 2020-12 (compact-form YAML accepted); "+
+				"Authored as JSON Schema 2020-12; "+
 				"see vocabulary/compact-form-authoring.md.",
 				providerName, fieldName))
 	}

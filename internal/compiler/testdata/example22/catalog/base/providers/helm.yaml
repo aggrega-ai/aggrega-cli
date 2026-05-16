@@ -6,7 +6,7 @@ metadata:
 spec:
   # baseSchema validates the valuesMapping output for sourceless (generative) mode.
   # The helm provider generates flat Deployment + optional Service from this dict.
-  # Authored as JSON Schema 2020-12 (compact-form YAML accepted).
+  # Authored as JSON Schema 2020-12.
   baseSchema: |
     type: object
     properties:
