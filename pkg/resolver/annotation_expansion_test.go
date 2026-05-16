@@ -922,3 +922,578 @@ func TestSetPillarLeaf_TopLevelLeaf(t *testing.T) {
 		t.Errorf("upstream = %v, want api.example.com", got)
 	}
 }
+
+// Aggregate-side expansion tests. These tests pin the Aggregate-side
+// leg of the annotation-driven Feature expansion pass: the
+// expandAggregateSubsystem walker, the side-vs-pillar enforcement
+// (Aggregate-side routes only through values-pillar paths), null
+// opt-out across the subsystem cascade, explicit-feature preservation,
+// top-level component expansion, provenance recording, deeply nested
+// subsystem cascade, and cross-walker consistency between
+// WireAggregateAnnotations and ExpandAnnotations.
+
+const testValuesManifestYAML = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/db-pool: db-pool-helm:1.0.0
+      annotations:
+        feature.myco/db-pool:
+          feature: core/db-pool:1.0.0
+          maps:
+            values:
+              - pool
+`
+
+func loadTestAggregate(t *testing.T, src string) *types.Aggregate {
+	t.Helper()
+	var a types.Aggregate
+	if err := yaml.Unmarshal([]byte(src), &a); err != nil {
+		t.Fatalf("aggregate unmarshal: %v", err)
+	}
+	return &a
+}
+
+func loadValuesManifest(t *testing.T) *types.Manifest {
+	t.Helper()
+	var m types.Manifest
+	if err := yaml.Unmarshal([]byte(testValuesManifestYAML), &m); err != nil {
+		t.Fatalf("values manifest unmarshal: %v", err)
+	}
+	return &m
+}
+
+func TestExpand_AggregateSide_ScalarAnnotation_RoutesToValues(t *testing.T) {
+	t.Parallel()
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool: "shared-pool"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
+	api, _ := data.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatalf("api missing synthetic Feature attachment")
+	}
+	if feat.Type != "core/db-pool:1.0.0" {
+		t.Errorf("Feature.Type = %q, want core/db-pool:1.0.0", feat.Type)
+	}
+	pool, ok := feat.Values.Get("pool")
+	if !ok {
+		t.Fatalf("Feature.Values.pool missing — Aggregate-side annotation should route into the values pillar")
+	}
+	if pool != "shared-pool" {
+		t.Errorf("pool = %v, want shared-pool", pool)
+	}
+}
+
+func TestExpand_AggregateSide_BindingMapsToInfra_ErrorsLoud(t *testing.T) {
+	t.Parallel()
+	// Aggregate-side annotation paired with a binding that declares
+	// only infra paths: the side-vs-pillar mismatch halts the build.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/rewrite-host: "api.example.com"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             loadTestManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr)
+	if err == nil {
+		t.Fatal("expected side-vs-pillar mismatch error; got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"OPS_ERROR",
+		"feature.myco/rewrite-host",
+		"upstream",
+		"infra",
+		"aggregate",
+		"values",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error message missing %q\nfull message: %s", want, msg)
+		}
+	}
+}
+
+func TestExpand_ReleaseSide_BindingMapsToValues_ErrorsLoud(t *testing.T) {
+	t.Parallel()
+	// Release-side annotation paired with a binding that declares
+	// only values paths: the symmetric mismatch halts the build.
+	releaseSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/db-pool: "from-release"
+      components:
+        api:
+          description: api comp
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Release:              loadTestRelease(t, releaseSrc),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr)
+	if err == nil {
+		t.Fatal("expected side-vs-pillar mismatch error; got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"OPS_ERROR",
+		"feature.myco/db-pool",
+		"pool",
+		"values",
+		"release",
+		"infra",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error message missing %q\nfull message: %s", want, msg)
+		}
+	}
+}
+
+func TestExpand_ScalarRoutesToNestedAggregateValuesPath(t *testing.T) {
+	t.Parallel()
+	// Aggregate-side scalar annotation routes through a dotted-path
+	// values leaf; the synthesized FeatureInstance carries nested
+	// OrderedMap intermediates with the leaf value at the named tip.
+	manifestSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/ingress: ingress-helm:1.0.0
+      annotations:
+        feature.myco/host:
+          feature: core/ingress:1.0.0
+          maps:
+            values:
+              - ingress.host
+`
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server:1.0.0
+      annotations:
+        feature.myco/host: "api.example.com"
+`
+	var m types.Manifest
+	if err := yaml.Unmarshal([]byte(manifestSrc), &m); err != nil {
+		t.Fatalf("manifest unmarshal: %v", err)
+	}
+	rr := &ResolveResult{
+		Manifest:             &m,
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	api, _ := rr.Aggregate.Spec.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/host")
+	if !ok {
+		t.Fatalf("api missing synthetic Feature attachment")
+	}
+	ingressRaw, ok := feat.Values.Get("ingress")
+	if !ok {
+		t.Fatalf("Feature.Values.ingress missing — dotted path should create nested intermediate")
+	}
+	ingress, ok := ingressRaw.(*types.OrderedMap[any])
+	if !ok {
+		t.Fatalf("ingress should be *OrderedMap[any]; got %T", ingressRaw)
+	}
+	host, ok := ingress.Get("host")
+	if !ok {
+		t.Fatal("ingress.host missing — dotted leaf write did not reach the nested tip")
+	}
+	if host != "api.example.com" {
+		t.Errorf("host = %v, want api.example.com", host)
+	}
+}
+
+func TestExpand_AggregateSide_NullOptOut_SubsystemSuppressesContribution(t *testing.T) {
+	t.Parallel()
+	// Subsystem-level annotation propagates by default; component-level
+	// `key: null` opts the component out. Sibling components in the same
+	// subsystem retain inheritance.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool: "shared-pool"
+      components:
+        api:
+          type: core/server:1.0.0
+          annotations:
+            feature.myco/db-pool: null
+        worker:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
+	api, _ := data.Components.Get("api")
+	if _, present := api.Features.Get("feature.myco/db-pool"); present {
+		t.Error("api should have opted out (explicit null at component level removes inheritance)")
+	}
+	worker, _ := data.Components.Get("worker")
+	feat, ok := worker.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatal("worker should still inherit; sibling opt-out must not affect it")
+	}
+	pool, _ := feat.Values.Get("pool")
+	if pool != "shared-pool" {
+		t.Errorf("worker pool = %v, want shared-pool", pool)
+	}
+}
+
+func TestExpand_AggregateSide_ExplicitFeaturePreserved_NoOverwrite(t *testing.T) {
+	t.Parallel()
+	// A component that declares an explicit FeatureInstance under the
+	// same key as a registered binding keeps the explicit attachment;
+	// expansion does not overwrite.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      components:
+        api:
+          type: core/server:1.0.0
+          annotations:
+            feature.myco/db-pool: "annotation-value"
+          features:
+            feature.myco/db-pool:
+              type: core/db-pool:1.0.0
+              values:
+                pool: "explicit-value"
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
+	api, _ := data.Components.Get("api")
+	feat, _ := api.Features.Get("feature.myco/db-pool")
+	pool, _ := feat.Values.Get("pool")
+	if pool != "explicit-value" {
+		t.Errorf("pool = %v, want explicit-value (annotation expansion must not overwrite explicit attachment)", pool)
+	}
+}
+
+func TestExpand_AggregateSide_TopLevelComponent(t *testing.T) {
+	t.Parallel()
+	// Top-level component (no enclosing subsystem) carrying its own
+	// annotation: expansion routes the value directly onto the
+	// component's Features map. The canonical component path used in
+	// the provenance side-table is "components.<name>".
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server:1.0.0
+      annotations:
+        feature.myco/db-pool: "top-level-pool"
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	api, _ := rr.Aggregate.Spec.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatalf("top-level api missing synthetic Feature attachment")
+	}
+	pool, _ := feat.Values.Get("pool")
+	if pool != "top-level-pool" {
+		t.Errorf("pool = %v, want top-level-pool", pool)
+	}
+	provKey := AnnotationProvenanceKey("components.api", "", "feature.myco/db-pool")
+	prov, ok := rr.AnnotationProvenance[provKey]
+	if !ok {
+		t.Fatalf("provenance entry missing at key %q; got keys: %v", provKey, keysOf(rr.AnnotationProvenance))
+	}
+	if prov.AnnotationSource != "aggregate.yaml:components.api.annotations.feature.myco/db-pool" {
+		t.Errorf("provenance source = %q, want canonical aggregate.yaml-rooted path", prov.AnnotationSource)
+	}
+}
+
+func TestExpand_RecordsAggregateProvenance(t *testing.T) {
+	t.Parallel()
+	// A subsystem-level annotation propagating to a contained component
+	// produces a provenance entry whose AnnotationSource reports the
+	// subsystem authoring path (the cascade reports the deepest authoring
+	// scope, not the consuming scope).
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool: "from-subsystem"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	provKey := AnnotationProvenanceKey("subsystems.data.components.api", "", "feature.myco/db-pool")
+	prov, ok := rr.AnnotationProvenance[provKey]
+	if !ok {
+		t.Fatalf("provenance entry missing at key %q; got keys: %v", provKey, keysOf(rr.AnnotationProvenance))
+	}
+	if prov.AnnotationKey != "feature.myco/db-pool" {
+		t.Errorf("provenance key = %q, want feature.myco/db-pool", prov.AnnotationKey)
+	}
+	wantSource := "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool"
+	if prov.AnnotationSource != wantSource {
+		t.Errorf("provenance source = %q, want %q", prov.AnnotationSource, wantSource)
+	}
+}
+
+func TestExpand_AggregateSide_DeeplyNestedSubsystemExpansion(t *testing.T) {
+	t.Parallel()
+	// Three-level nesting: an outer-level annotation propagates down
+	// through middle into the inner-most contained component. The
+	// canonical component path is rooted at "subsystems.<outer>." and
+	// chained through ".subsystems.<middle>." down to the leaf.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    outer:
+      annotations:
+        feature.myco/db-pool: "outer-pool"
+      subsystems:
+        middle:
+          subsystems:
+            inner:
+              components:
+                leaf:
+                  type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	outer, _ := rr.Aggregate.Spec.Subsystems.Get("outer")
+	middle, _ := outer.Subsystems.Get("middle")
+	inner, _ := middle.Subsystems.Get("inner")
+	leaf, ok := inner.Components.Get("leaf")
+	if !ok {
+		t.Fatal("leaf component missing from inner subsystem after expansion")
+	}
+	feat, ok := leaf.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatal("leaf should inherit annotation across the deeply nested cascade")
+	}
+	pool, _ := feat.Values.Get("pool")
+	if pool != "outer-pool" {
+		t.Errorf("leaf pool = %v, want outer-pool", pool)
+	}
+
+	provKey := AnnotationProvenanceKey("subsystems.outer.subsystems.middle.subsystems.inner.components.leaf", "", "feature.myco/db-pool")
+	if _, ok := rr.AnnotationProvenance[provKey]; !ok {
+		t.Errorf("provenance entry missing at key %q; got keys: %v", provKey, keysOf(rr.AnnotationProvenance))
+	}
+}
+
+// TestExpand_CrossWalkerConsistency pins the cross-walker contract: the
+// per-component effective annotation set computed by
+// WireAggregateAnnotations matches the keys ExpandAnnotations
+// materializes as synthetic FeatureInstance attachments on the same
+// components, modulo bindings that are not registered. Both walkers
+// share the cascade primitives (mergePointerStringMaps +
+// flattenPointerStringMap), so per-component effective sets stay aligned;
+// this test exists to catch divergence if either walker drifts.
+func TestExpand_CrossWalkerConsistency(t *testing.T) {
+	t.Parallel()
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  components:
+    top-comp:
+      type: core/server:1.0.0
+      annotations:
+        feature.myco/db-pool: "top-value"
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool: "shared-pool"
+      components:
+        api:
+          type: core/server:1.0.0
+        worker:
+          type: core/server:1.0.0
+          annotations:
+            feature.myco/db-pool: null
+      subsystems:
+        inner:
+          components:
+            cron:
+              type: core/server:1.0.0
+`
+	agg := loadTestAggregate(t, aggSrc)
+	walked := WireAggregateAnnotations(agg)
+
+	rr := &ResolveResult{
+		Manifest:             loadValuesManifest(t),
+		Aggregate:            agg,
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+
+	postExpansion := map[string]types.ComponentInstance{}
+	if top, ok := rr.Aggregate.Spec.Components.Get("top-comp"); ok {
+		postExpansion["components.top-comp"] = top
+	}
+	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
+	if api, ok := data.Components.Get("api"); ok {
+		postExpansion["subsystems.data.components.api"] = api
+	}
+	if worker, ok := data.Components.Get("worker"); ok {
+		postExpansion["subsystems.data.components.worker"] = worker
+	}
+	inner, _ := data.Subsystems.Get("inner")
+	if cron, ok := inner.Components.Get("cron"); ok {
+		postExpansion["subsystems.data.subsystems.inner.components.cron"] = cron
+	}
+
+	for path, effective := range walked {
+		comp, ok := postExpansion[path]
+		if !ok {
+			t.Errorf("walker reported component path %q but expansion did not visit it", path)
+			continue
+		}
+		for key := range effective.All() {
+			if _, registered := loadValuesManifest(t).Spec.Mappings.Features.Annotations.Get(key); !registered {
+				continue
+			}
+			if _, ok := comp.Features.Get(key); !ok {
+				t.Errorf("path %q: walker reports key %q but expansion did not synthesize a Feature", path, key)
+			}
+		}
+	}
+}

@@ -10,22 +10,47 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+// Side-string values for validateAnnotationSideCompatibility. The two
+// authoring surfaces an annotation can originate from: Aggregate (the
+// Developer-side authoring surface) and Release (the Operator-side
+// authoring surface). The Aggregate-as-Authoring-Surface invariant
+// partitions binding paths by pillar — Aggregate-side annotations may
+// only route through values-pillar paths; Release-side annotations may
+// only route through infra-pillar paths.
+const (
+	sideAggregate = "aggregate"
+	sideRelease   = "release"
+)
+
 // ExpandAnnotations runs the annotation-driven Feature expansion pass.
 // The pass reads the resolved Manifest's flat features.annotations
-// bindings, walks the Release boundary tree with parent-to-child
+// bindings, walks both authoring trees (Release boundary tree and
+// Aggregate subsystem-and-component tree) with parent-to-child
 // inheritance, computes the effective annotation set per component, and
-// injects a synthetic BoundaryFeature attachment into
-// rr.Release.Spec.Boundaries[].Components[].Features for every effective
-// annotation that matches a registered binding.
+// injects a synthetic Feature attachment for every effective annotation
+// that matches a registered binding. On the Release side, the synthetic
+// attachment lands on rr.Release.Spec.Boundaries[].Components[].Features
+// as a BoundaryFeature; on the Aggregate side, the synthetic attachment
+// lands on rr.Aggregate.Spec.{Components, Subsystems[…].Components}[].Features
+// as a FeatureInstance.
 //
-// The pass mutates rr.Release in place by design — synthetic Feature
-// attachments are indistinguishable from explicit attachments at the
-// Release type level, so downstream phases (the guards pass, topology
-// build, IR construction, and rendering) consume them without
-// reconciling two sources. Authors who serialize the resolved Release
-// for debug see author intent + synthetic injection mingled; the
-// deterministic-output invariant holds because the pass iterates
+// The pass mutates rr.Release and rr.Aggregate in place by design —
+// synthetic Feature attachments are indistinguishable from explicit
+// attachments at the type level, so downstream phases (the guards pass,
+// topology build, IR construction, and rendering) consume them without
+// reconciling two sources. Authors who serialize a resolved Release or
+// Aggregate for debug see author intent + synthetic injection mingled;
+// the deterministic-output invariant holds because the pass iterates
 // author-ordered OrderedMaps deterministically.
+//
+// Side-vs-pillar enforcement: Aggregate-side annotations may only route
+// through binding paths in Maps.Values; Release-side annotations may
+// only route through Maps.Infra. A mismatch halts with a clear error
+// citing the annotation key, the routed path, the routed pillar, the
+// authoring side, and the source location. An annotation whose binding
+// declares paths in both pillars and is authored from one side fires
+// only the side-compatible subset; the cross-pillar partition is the
+// normal cross-side-composition scenario, not a violation.
 //
 // Pipeline placement: the orchestrator invokes ExpandAnnotations
 // between Resolve and RunGuards. RunGuards' requiredFeatures
@@ -48,7 +73,7 @@ import (
 // Sibling components in the same boundary that did not opt out still
 // receive the inherited binding.
 func ExpandAnnotations(rr *ResolveResult) error {
-	if rr == nil || rr.Release == nil {
+	if rr == nil {
 		return nil
 	}
 	registry := BuildAnnotationRegistry(rr.Manifest)
@@ -59,9 +84,24 @@ func ExpandAnnotations(rr *ResolveResult) error {
 		rr.AnnotationProvenance = map[string]AnnotationProvenance{}
 	}
 
-	for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-		if err := expandBoundary(bName, "", boundary, types.OrderedMap[*string]{}, map[string]string{}, registry, rr); err != nil {
-			return err
+	if rr.Release != nil {
+		for bName, boundary := range rr.Release.Spec.Boundaries.All() {
+			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*string]{}, map[string]string{}, registry, rr); err != nil {
+				return err
+			}
+		}
+	}
+
+	if rr.Aggregate != nil {
+		for compName, comp := range rr.Aggregate.Spec.Components.All() {
+			if err := expandAggregateTopLevelComponent(compName, comp, registry, rr); err != nil {
+				return err
+			}
+		}
+		for subName, sub := range rr.Aggregate.Spec.Subsystems.All() {
+			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*string]{}, map[string]string{}, registry, rr); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -119,6 +159,13 @@ func expandBoundary(
 			binding, ok := registry.Lookup(key)
 			if !ok {
 				continue
+			}
+			path, pillar, err := resolveBindingTarget(binding, *ptr)
+			if err != nil {
+				return wrapAnnotationOpsError(currentPath, compName, key, "parse", err)
+			}
+			if err := validateAnnotationSideCompatibility(sideRelease, key, path, pillar, effectiveSources[key]); err != nil {
+				return err
 			}
 			feature, err := expandBinding(key, *ptr, binding, currentPath, compName)
 			if err != nil {
@@ -354,4 +401,301 @@ func splitBoundaryPath(path string) []string {
 // so the error is Release-scoped (OPS_ERROR) rather than Catalog-scoped.
 func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inner error) error {
 	return fmt.Errorf("OPS_ERROR: annotation expansion %s failed at boundary %q component %q key %q: %w", stage, boundaryPath, componentName, key, inner)
+}
+
+// wrapAggregateAnnotationOpsError formats an annotation-expansion
+// failure on the Aggregate side. The bad annotation value lives in the
+// Aggregate (Developer-authored), so the error is Aggregate-scoped
+// rather than Release-scoped; the OPS_ERROR prefix is preserved for
+// uniform diagnostic ergonomics with the Release-side wrapper.
+func wrapAggregateAnnotationOpsError(componentPath, key, stage string, inner error) error {
+	return fmt.Errorf("OPS_ERROR: annotation expansion %s failed at aggregate component %q key %q: %w", stage, componentPath, key, inner)
+}
+
+// validateAnnotationSideCompatibility enforces the
+// Aggregate-as-Authoring-Surface invariant's pillar partition:
+// Aggregate-side annotations may only route through binding paths
+// targeting the values pillar; Release-side annotations may only route
+// through paths targeting infra.
+//
+// Permitted: side=sideAggregate paired with pillar="values";
+// side=sideRelease paired with pillar="infra". Any other pairing
+// returns an OPS_ERROR naming the annotation key, the routed path, the
+// routed pillar, the authoring side, and the source location so the
+// operator can navigate from the diagnostic to the authoring site.
+//
+// The function is side-of-authoring focused; bindings declaring paths
+// in both pillars route the side-compatible subset on each pass and
+// trigger no mismatch.
+func validateAnnotationSideCompatibility(side, annotationKey, path, pillar, sourceLocation string) error {
+	switch {
+	case side == sideAggregate && pillar == "values":
+		return nil
+	case side == sideRelease && pillar == "infra":
+		return nil
+	}
+	return fmt.Errorf(
+		"OPS_ERROR: annotation %q at %s routes through pillar %q at path %q, but %s-side annotations may only route through pillar %q",
+		annotationKey, sourceLocation, pillar, path, side, allowedPillarFor(side),
+	)
+}
+
+// allowedPillarFor returns the pillar each authoring side is permitted
+// to route annotations through. The mapping is part of the
+// Aggregate-as-Authoring-Surface invariant and is consulted only when
+// building the side-vs-pillar mismatch error message.
+func allowedPillarFor(side string) string {
+	if side == sideAggregate {
+		return "values"
+	}
+	return "infra"
+}
+
+// expandAggregateTopLevelComponent processes one top-level Aggregate
+// component (no enclosing subsystem). Top-level components carry no
+// inherited cascade scope; the only effective annotations are those
+// declared directly on the component. The canonical path is
+// "components.<name>". The function mirrors the per-component body of
+// expandAggregateSubsystem.
+func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, rr *ResolveResult) error {
+	componentPath := "components." + name
+	for key, ptr := range comp.Annotations.All() {
+		if ptr == nil {
+			continue
+		}
+		binding, ok := registry.Lookup(key)
+		if !ok {
+			continue
+		}
+		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
+		path, pillar, err := resolveBindingTarget(binding, *ptr)
+		if err != nil {
+			return wrapAggregateAnnotationOpsError(componentPath, key, "parse", err)
+		}
+		if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, sourceLoc); err != nil {
+			return err
+		}
+		if _, already := comp.Features.Get(key); already {
+			continue
+		}
+		feature := synthesizeAggregateFeature(binding, *ptr, path, pillar)
+		comp.Features.Set(key, feature)
+		rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
+			AnnotationKey:    key,
+			AnnotationSource: sourceLoc,
+		}
+	}
+	writeAggregateComponent(rr.Aggregate, componentPath, comp)
+	return nil
+}
+
+// expandAggregateSubsystem walks one subsystem of the Aggregate's
+// subsystem-and-component tree, cascading annotation values and their
+// authoring source locations from outer to inner. parentAnnotations
+// carries the effective pointer-tristate value map at entry;
+// parentSources carries the per-key author location.
+//
+// For each contained component, every effective annotation that matches
+// a registered binding synthesizes a FeatureInstance attachment on the
+// component's Features map. Aggregate-side expansion routes only
+// through paths in binding.Maps.Values; routing the annotation through
+// an infra-pillar path halts with a Loud Guardrail. Nil-pointer entries
+// in the effective map are opt-out signals and produce no synthetic
+// Feature and no provenance record.
+//
+// The walker carries the merged OrderedMap[*string] through recursion
+// in pointer-tristate form and flattens at write time per component;
+// nested subsystems and contained components see the same merged shape
+// regardless of whether an inherited binding originated at the
+// immediate parent or an outer ancestor.
+//
+// parentPath is the dotted prefix accumulated by the caller — for the
+// first-level entry from ExpandAnnotations, parentPath is "subsystems";
+// for a recursive call into a nested subsystem, the caller appends the
+// current subsystem name and the bridge ".subsystems".
+func expandAggregateSubsystem(
+	name, parentPath string,
+	s types.Subsystem,
+	parentAnnotations types.OrderedMap[*string],
+	parentSources map[string]string,
+	registry *AnnotationRegistry,
+	rr *ResolveResult,
+) error {
+	currentPath := parentPath + "." + name
+
+	mergedAnnotations := mergePointerStringMaps(parentAnnotations, s.Annotations)
+	mergedSources := make(map[string]string, len(parentSources)+s.Annotations.Len())
+	for k, v := range parentSources {
+		mergedSources[k] = v
+	}
+	for k := range s.Annotations.All() {
+		mergedSources[k] = aggregateAnnotationSourcePath(rr.AggregatePath, currentPath, k)
+	}
+
+	for compName, comp := range s.Components.All() {
+		componentPath := currentPath + ".components." + compName
+		effective := mergePointerStringMaps(mergedAnnotations, comp.Annotations)
+		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
+		for k, v := range mergedSources {
+			effectiveSources[k] = v
+		}
+		for k := range comp.Annotations.All() {
+			effectiveSources[k] = aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, k)
+		}
+
+		for key, ptr := range effective.All() {
+			if ptr == nil {
+				continue
+			}
+			binding, ok := registry.Lookup(key)
+			if !ok {
+				continue
+			}
+			path, pillar, err := resolveBindingTarget(binding, *ptr)
+			if err != nil {
+				return wrapAggregateAnnotationOpsError(componentPath, key, "parse", err)
+			}
+			if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, effectiveSources[key]); err != nil {
+				return err
+			}
+			if _, already := comp.Features.Get(key); already {
+				continue
+			}
+			feature := synthesizeAggregateFeature(binding, *ptr, path, pillar)
+			comp.Features.Set(key, feature)
+			rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
+				AnnotationKey:    key,
+				AnnotationSource: effectiveSources[key],
+			}
+		}
+		writeAggregateComponent(rr.Aggregate, componentPath, comp)
+	}
+
+	for childName, child := range s.Subsystems.All() {
+		if err := expandAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, mergedSources, registry, rr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// synthesizeAggregateFeature builds the FeatureInstance payload for an
+// Aggregate-side synthetic attachment. Aggregate-side expansion routes
+// only through values-pillar paths; the synthesized FeatureInstance
+// carries the value at the named values leaf via setPillarLeaf, which
+// navigates the dotted path through nested OrderedMap intermediates and
+// creates the intermediate nodes as needed.
+//
+// An empty scalar produces a FeatureInstance with an empty Values
+// pillar; FeatureRecipe rendering materializes any schema defaults
+// uniformly across explicit and synthetic attachments downstream.
+//
+// The function trusts the caller to have validated side-vs-pillar
+// compatibility upstream (see validateAnnotationSideCompatibility);
+// receiving a non-values pillar here is a programming error rather than
+// a user-error and the function returns a FeatureInstance with the
+// declared Type and empty pillars.
+func synthesizeAggregateFeature(binding types.AnnotationBinding, value, path, pillar string) types.FeatureInstance {
+	feature := types.FeatureInstance{Type: binding.Feature}
+	if pillar == "values" && value != "" {
+		setPillarLeaf(&feature.Values, path, value)
+	}
+	return feature
+}
+
+// aggregateAnnotationSourcePath formats the source location for an
+// Aggregate-authored annotation. The format is
+// <aggregate-file-path>:<canonical-dotted-path>.annotations.<key>;
+// line numbers are deferred until yaml.Node access lands in the
+// resolver pipeline. componentPath is the canonical dotted path of the
+// authoring scope (the subsystem path for a subsystem-level annotation
+// or the component path for a component-level annotation).
+func aggregateAnnotationSourcePath(aggregatePath, componentPath, key string) string {
+	prefix := aggregatePath
+	if prefix == "" {
+		prefix = "aggregate.yaml"
+	}
+	return prefix + ":" + componentPath + ".annotations." + key
+}
+
+// writeAggregateComponent persists a mutated ComponentInstance back
+// into its containing parent (either Aggregate.Spec.Components for a
+// top-level component, or a nested Subsystem's Components for a
+// subsystem-contained component) in the Aggregate tree. OrderedMap
+// returns values by value, so the cascade walker holds a local copy of
+// each component; this helper reads the subsystem chain fresh from the
+// Aggregate (picking up any prior component writes within the same
+// subsystem), Sets the mutated component at the leaf, and writes the
+// chain back up to the Aggregate root.
+//
+// The canonical path is one of:
+//   - "components.<name>" — top-level component.
+//   - "subsystems.<s1>.[subsystems.<s2>.]*components.<name>" — subsystem-
+//     contained or nested-subsystem-contained component.
+//
+// Paths that do not match the canonical shape are silently skipped; the
+// walker never produces such a path, so a non-match indicates a caller
+// error rather than a runtime condition to recover from.
+func writeAggregateComponent(agg *types.Aggregate, path string, comp types.ComponentInstance) {
+	if agg == nil {
+		return
+	}
+	segments := splitAggregatePath(path)
+	if len(segments) < 2 {
+		return
+	}
+	if segments[0] == "components" && len(segments) == 2 {
+		agg.Spec.Components.Set(segments[1], comp)
+		return
+	}
+	if segments[0] != "subsystems" {
+		return
+	}
+	// Subsystem chain: every odd-positioned segment is "subsystems" or
+	// "components"; every even-positioned segment is a name. The leaf
+	// pair is always "components.<name>". Collect the subsystem names
+	// by reading every other segment until the trailing "components"
+	// segment.
+	if len(segments) < 4 || len(segments)%2 != 0 {
+		return
+	}
+	if segments[len(segments)-2] != "components" {
+		return
+	}
+	subsystemNames := make([]string, 0, (len(segments)-2)/2)
+	for i := 1; i < len(segments)-2; i += 2 {
+		subsystemNames = append(subsystemNames, segments[i])
+	}
+	chain := make([]types.Subsystem, len(subsystemNames))
+	top, ok := agg.Spec.Subsystems.Get(subsystemNames[0])
+	if !ok {
+		return
+	}
+	chain[0] = top
+	for i := 1; i < len(subsystemNames); i++ {
+		child, ok := chain[i-1].Subsystems.Get(subsystemNames[i])
+		if !ok {
+			return
+		}
+		chain[i] = child
+	}
+	leafName := segments[len(segments)-1]
+	chain[len(chain)-1].Components.Set(leafName, comp)
+	for i := len(chain) - 1; i > 0; i-- {
+		chain[i-1].Subsystems.Set(subsystemNames[i], chain[i])
+	}
+	agg.Spec.Subsystems.Set(subsystemNames[0], chain[0])
+}
+
+// splitAggregatePath parses a canonical Aggregate component path
+// ("components.<name>", "subsystems.<s>.components.<name>", or with
+// further "subsystems.<...>" bridges) into its dot-separated segments.
+// Empty input returns nil; otherwise every segment is returned in
+// order, including the structural "components" and "subsystems"
+// tokens.
+func splitAggregatePath(path string) []string {
+	if path == "" {
+		return nil
+	}
+	return strings.Split(path, ".")
 }

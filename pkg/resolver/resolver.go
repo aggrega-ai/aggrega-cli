@@ -42,6 +42,7 @@ type ResolveResult struct {
 	BoundaryInfra       map[string]*BoundaryInfra           // per-component boundary context
 	BoundaryAnnotations map[string]types.OrderedMap[string] // per-boundary cascaded annotations keyed by boundary path; effective set without per-component overrides
 	Parameters          map[string]any                      // merged parameter map (alive through end-of-pipeline)
+	AggregatePath       string                              // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
 	ReleasePath         string                              // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
 
 	// AnnotationProvenance records, for every synthetic Feature
@@ -188,6 +189,7 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 		BoundaryInfra:        boundaryInfra,
 		BoundaryAnnotations:  boundaryAnnotations,
 		Parameters:           params,
+		AggregatePath:        cfg.AggregatePath,
 		ReleasePath:          cfg.ReleasePath,
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}, nil
