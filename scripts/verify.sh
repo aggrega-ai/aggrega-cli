@@ -12,4 +12,7 @@ go vet ./...
 echo "=== test ==="
 go test ./... -count=1 -v
 
+echo "=== coverage gate ==="
+scripts/coverage-gate.sh
+
 echo "=== all green ==="

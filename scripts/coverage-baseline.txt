@@ -1,14 +1,21 @@
 # Per-package coverage floor manifest.
 #
 # Each line records the minimum acceptable per-package coverage as
-# reported by `go test -cover`. Phase 5's coverage-gate script reads
+# reported by `go test -cover`. The coverage-gate script reads
 # this manifest, runs `go test -cover`, and fails the build if any
 # listed package falls below its declared floor.
 #
 # The floor (90) is the target threshold, not the achieved number.
 # A package landing at 92% is allowed to drop to 90% but not below.
-# Successive phases of the coverage initiative extend this manifest
-# as they bring more packages above the 90% line.
+# The manifest is extended as new packages cross the 90% line.
+#
+# Carve-outs below the 90% line carry inline rationale describing
+# which functions are excluded and why per-function unit tests are
+# categorically less valuable than the alternative coverage source
+# (binary smoke tests, downstream package failure-mode coverage).
+#
+# Run the gate with:    scripts/coverage-gate.sh
+# Also check cross-pkg: scripts/coverage-gate.sh --cross
 #
 # Format: <package-import-path> <floor>
 
@@ -16,7 +23,9 @@ github.com/cognitio/aggrega-cli/internal/compiler/registry  90
 github.com/cognitio/aggrega-cli/internal/compiler/analyzer  90
 github.com/cognitio/aggrega-cli/internal/compiler/trace     90
 github.com/cognitio/aggrega-cli/internal/compiler/ir        90
+github.com/cognitio/aggrega-cli/internal/compiler/parse     90
 github.com/cognitio/aggrega-cli/pkg/validator               90
+github.com/cognitio/aggrega-cli/pkg/validator/merger        90
 github.com/cognitio/aggrega-cli/pkg/resolver                90
 github.com/cognitio/aggrega-cli/internal/compiler/topology  90
 github.com/cognitio/aggrega-cli/pkg/validator/jsonschema    90
@@ -26,6 +35,10 @@ github.com/cognitio/aggrega-cli/internal/compiler/renderer/compose  90
 github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm     90
 github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart  90
 github.com/cognitio/aggrega-cli/pkg/catalog                 90
+github.com/cognitio/aggrega-cli/pkg/compactform             90
+github.com/cognitio/aggrega-cli/pkg/errors                  90
+github.com/cognitio/aggrega-cli/pkg/labels                  90
+github.com/cognitio/aggrega-cli/pkg/selector                90
 
 # cmd/aggrega: 82% achieved + Phase 5 exclusion-list carve-outs.
 # The package's residual gap below 90% is:
