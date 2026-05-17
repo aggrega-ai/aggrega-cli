@@ -66,10 +66,27 @@ type IRNode struct {
 	BoundaryPath         string             `json:"boundary_path,omitempty"`
 	SubsystemPath        string             `json:"subsystem_path,omitempty"`
 	CatalogMetadata      *CatalogMetadata   `json:"catalog_metadata,omitempty"`
+	// CatalogAnnotations, ReleaseAnnotations, and AggregateAnnotations
+	// carry the renderer-facing Scalar projection of the post-cascade
+	// annotation set for this IR node, partitioned by authoring side.
+	// Only scalar annotation values surface in these maps; structured
+	// annotation values participate in the cascade but flow through
+	// Feature expansion rather than template substitution.
+	//
+	// Render-context template substitution sites (`.context.annotations.*`,
+	// `.parent_boundary.annotations`) consume these maps directly.
+	// Consumers needing the full AnnotationValue shape — per-subkey
+	// routing, structured-value attribution, future programmatic
+	// access to the structured payload — read fresh from the
+	// authoring types (Release.Spec.Boundaries.<...>.Annotations,
+	// Aggregate.Spec.Subsystems.<...>.Annotations, etc.) rather than
+	// from these fields. The annotation-expansion phase does exactly
+	// that.
 	CatalogAnnotations   OrderedMap[string] `json:"catalog_annotations,omitempty,omitzero"`
 	ReleaseAnnotations   OrderedMap[string] `json:"release_annotations,omitempty,omitzero"`
 	AggregateAnnotations OrderedMap[string] `json:"aggregate_annotations,omitempty,omitzero"`
-	SelfInject           *InjectBlock       `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
+
+	SelfInject *InjectBlock `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.

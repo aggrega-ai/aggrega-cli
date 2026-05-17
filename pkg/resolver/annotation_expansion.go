@@ -86,7 +86,7 @@ func ExpandAnnotations(rr *ResolveResult) error {
 
 	if rr.Release != nil {
 		for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*string]{}, map[string]string{}, registry, rr); err != nil {
+			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, rr); err != nil {
 				return err
 			}
 		}
@@ -99,7 +99,7 @@ func ExpandAnnotations(rr *ResolveResult) error {
 			}
 		}
 		for subName, sub := range rr.Aggregate.Spec.Subsystems.All() {
-			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*string]{}, map[string]string{}, registry, rr); err != nil {
+			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, rr); err != nil {
 				return err
 			}
 		}
@@ -120,7 +120,7 @@ func ExpandAnnotations(rr *ResolveResult) error {
 func expandBoundary(
 	name, parentPath string,
 	b types.Boundary,
-	parentAnnotations types.OrderedMap[*string],
+	parentAnnotations types.OrderedMap[*types.AnnotationValue],
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
 	rr *ResolveResult,
@@ -130,7 +130,7 @@ func expandBoundary(
 		currentPath = parentPath + "/" + name
 	}
 
-	mergedAnnotations := mergePointerStringMaps(parentAnnotations, b.Annotations)
+	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, b.Annotations)
 	mergedSources := make(map[string]string, len(parentSources)+b.Annotations.Len())
 	for k, v := range parentSources {
 		mergedSources[k] = v
@@ -140,7 +140,7 @@ func expandBoundary(
 	}
 
 	for compName, comp := range b.Components.All() {
-		effective := mergePointerStringMaps(mergedAnnotations, comp.Annotations)
+		effective := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
 		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
 		for k, v := range mergedSources {
 			effectiveSources[k] = v
@@ -149,25 +149,33 @@ func expandBoundary(
 			effectiveSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, compName, k)
 		}
 
-		for key, ptr := range effective.All() {
-			if ptr == nil {
-				// Explicit null in the effective map is the opt-out
-				// signal: no synthetic Feature for this key on this
-				// component; no provenance record.
+		for key, value := range effective.All() {
+			if value.IsEmpty() {
+				// Whole-value opt-out: no synthetic Feature for this
+				// key on this component; no provenance record.
 				continue
+			}
+			if value.IsStructured() {
+				// Structured-value routing through binding.Maps lands
+				// in a follow-on iteration. The current scalar-only
+				// path emits a clear error so authoring a structured
+				// value today surfaces explicitly rather than
+				// silently dropping the contribution.
+				return wrapAnnotationOpsError(currentPath, compName, key, "expansion",
+					errStructuredValueNotYetImplemented(key, effectiveSources[key]))
 			}
 			binding, ok := registry.Lookup(key)
 			if !ok {
 				continue
 			}
-			path, pillar, err := resolveBindingTarget(binding, *ptr)
+			path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
 			if err != nil {
 				return wrapAnnotationOpsError(currentPath, compName, key, "parse", err)
 			}
 			if err := validateAnnotationSideCompatibility(sideRelease, key, path, pillar, effectiveSources[key]); err != nil {
 				return err
 			}
-			feature, err := expandBinding(key, *ptr, binding, currentPath, compName)
+			feature, err := expandBinding(key, *value.Scalar, binding, currentPath, compName)
 			if err != nil {
 				return err
 			}
@@ -190,6 +198,20 @@ func expandBoundary(
 		}
 	}
 	return nil
+}
+
+// errStructuredValueNotYetImplemented formats the placeholder error
+// returned when the scalar-only expansion path encounters a Structured
+// AnnotationValue. The follow-on iteration that ships structured-value
+// routing through binding.Maps replaces this with the per-subkey
+// routing + side-vs-pillar + Feature schema type validation flow; the
+// placeholder makes the unimplemented state explicit at the authoring
+// surface rather than silently dropping the contribution.
+func errStructuredValueNotYetImplemented(key, sourceLocation string) error {
+	return fmt.Errorf(
+		"structured annotation value at %s on key %q is not yet implemented in expansion; the parse, cascade, and schema layers accept structured values, but per-subkey expansion routing is pending the follow-on iteration",
+		sourceLocation, key,
+	)
 }
 
 // annotationSourcePath formats the source location for an annotation
@@ -403,16 +425,20 @@ func allowedPillarFor(side string) string {
 // expandAggregateSubsystem.
 func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, rr *ResolveResult) error {
 	componentPath := "components." + name
-	for key, ptr := range comp.Annotations.All() {
-		if ptr == nil {
+	for key, value := range comp.Annotations.All() {
+		if value.IsEmpty() {
 			continue
+		}
+		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
+		if value.IsStructured() {
+			return wrapAggregateAnnotationOpsError(componentPath, key, "expansion",
+				errStructuredValueNotYetImplemented(key, sourceLoc))
 		}
 		binding, ok := registry.Lookup(key)
 		if !ok {
 			continue
 		}
-		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
-		path, pillar, err := resolveBindingTarget(binding, *ptr)
+		path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
 		if err != nil {
 			return wrapAggregateAnnotationOpsError(componentPath, key, "parse", err)
 		}
@@ -422,7 +448,7 @@ func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance,
 		if _, already := comp.Features.Get(key); already {
 			continue
 		}
-		feature := synthesizeAggregateFeature(binding, *ptr, path, pillar)
+		feature := synthesizeAggregateFeature(binding, *value.Scalar, path, pillar)
 		comp.Features.Set(key, feature)
 		rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
 			AnnotationKey:    key,
@@ -436,38 +462,38 @@ func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance,
 // expandAggregateSubsystem walks one subsystem of the Aggregate's
 // subsystem-and-component tree, cascading annotation values and their
 // authoring source locations from outer to inner. parentAnnotations
-// carries the effective pointer-tristate value map at entry;
-// parentSources carries the per-key author location.
+// carries the effective AnnotationValue map at entry; parentSources
+// carries the per-key author location.
 //
-// For each contained component, every effective annotation that matches
-// a registered binding synthesizes a FeatureInstance attachment on the
-// component's Features map. Aggregate-side expansion routes only
-// through paths in binding.Maps.Values; routing the annotation through
-// an infra-pillar path halts with a Loud Guardrail. Nil-pointer entries
-// in the effective map are opt-out signals and produce no synthetic
-// Feature and no provenance record.
+// For each contained component, every effective annotation that
+// matches a registered binding synthesizes a FeatureInstance
+// attachment on the component's Features map. Aggregate-side
+// expansion routes only through paths in binding.Maps.Values; routing
+// the annotation through an infra-pillar path halts with a Loud
+// Guardrail. Empty AnnotationValue entries (whole-value opt-outs)
+// produce no synthetic Feature and no provenance record. Structured
+// values are not yet routed through expansion — the parse, cascade,
+// and schema layers accept them, but per-subkey expansion routing is
+// the follow-on iteration's scope. Encountering a structured value
+// at expansion time surfaces a clear error rather than silently
+// dropping the contribution.
 //
-// The walker carries the merged OrderedMap[*string] through recursion
-// in pointer-tristate form and flattens at write time per component;
-// nested subsystems and contained components see the same merged shape
-// regardless of whether an inherited binding originated at the
-// immediate parent or an outer ancestor.
-//
-// parentPath is the dotted prefix accumulated by the caller — for the
-// first-level entry from ExpandAnnotations, parentPath is "subsystems";
-// for a recursive call into a nested subsystem, the caller appends the
-// current subsystem name and the bridge ".subsystems".
+// parentPath is the dotted prefix accumulated by the caller — for
+// the first-level entry from ExpandAnnotations, parentPath is
+// "subsystems"; for a recursive call into a nested subsystem, the
+// caller appends the current subsystem name and the bridge
+// ".subsystems".
 func expandAggregateSubsystem(
 	name, parentPath string,
 	s types.Subsystem,
-	parentAnnotations types.OrderedMap[*string],
+	parentAnnotations types.OrderedMap[*types.AnnotationValue],
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
 	rr *ResolveResult,
 ) error {
 	currentPath := parentPath + "." + name
 
-	mergedAnnotations := mergePointerStringMaps(parentAnnotations, s.Annotations)
+	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, s.Annotations)
 	mergedSources := make(map[string]string, len(parentSources)+s.Annotations.Len())
 	for k, v := range parentSources {
 		mergedSources[k] = v
@@ -478,7 +504,7 @@ func expandAggregateSubsystem(
 
 	for compName, comp := range s.Components.All() {
 		componentPath := currentPath + ".components." + compName
-		effective := mergePointerStringMaps(mergedAnnotations, comp.Annotations)
+		effective := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
 		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
 		for k, v := range mergedSources {
 			effectiveSources[k] = v
@@ -487,15 +513,19 @@ func expandAggregateSubsystem(
 			effectiveSources[k] = aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, k)
 		}
 
-		for key, ptr := range effective.All() {
-			if ptr == nil {
+		for key, value := range effective.All() {
+			if value.IsEmpty() {
 				continue
+			}
+			if value.IsStructured() {
+				return wrapAggregateAnnotationOpsError(componentPath, key, "expansion",
+					errStructuredValueNotYetImplemented(key, effectiveSources[key]))
 			}
 			binding, ok := registry.Lookup(key)
 			if !ok {
 				continue
 			}
-			path, pillar, err := resolveBindingTarget(binding, *ptr)
+			path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
 			if err != nil {
 				return wrapAggregateAnnotationOpsError(componentPath, key, "parse", err)
 			}
@@ -505,7 +535,7 @@ func expandAggregateSubsystem(
 			if _, already := comp.Features.Get(key); already {
 				continue
 			}
-			feature := synthesizeAggregateFeature(binding, *ptr, path, pillar)
+			feature := synthesizeAggregateFeature(binding, *value.Scalar, path, pillar)
 			comp.Features.Set(key, feature)
 			rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
 				AnnotationKey:    key,

@@ -74,6 +74,50 @@ func (av *AnnotationValue) IsStructured() bool {
 	return av != nil && av.Structured.Len() > 0
 }
 
+// IsEmpty reports whether the value carries no content — neither a
+// scalar nor any structured entries. Returns true for nil receivers
+// and for non-nil AnnotationValues with both fields empty (the third
+// state the defensive UnmarshalYAML null branch can produce).
+//
+// Used by the cascade-merge logic to detect whole-value opt-out
+// signals regardless of whether the integration path produced a nil
+// pointer (yaml.v3's primary null behaviour at the parent map level)
+// or a non-nil pointer to an empty AnnotationValue (the defensive
+// parse path inside UnmarshalYAML). Merging on `IsEmpty()` rather
+// than `value == nil` is the belt-and-suspenders predicate the
+// merge primitive uses to keep the opt-out semantic intact against
+// future integration changes.
+func (av *AnnotationValue) IsEmpty() bool {
+	return av == nil || (!av.IsScalar() && !av.IsStructured())
+}
+
+// ScalarOnly projects an OrderedMap[*AnnotationValue] (the post-flatten
+// cascade output for downstream Feature expansion) into an
+// OrderedMap[string] suitable for render-context template substitution.
+// Entries whose value is a Scalar AnnotationValue contribute their
+// string value at the same key; entries whose value is Structured,
+// IsEmpty, or otherwise non-scalar are excluded from the projection.
+//
+// The projection preserves OrderedMap author order through the
+// underlying All() iterator. Empty input produces an empty output.
+//
+// Used by the compiler renderer's template-context construction sites
+// — `.context.annotations.*` and `.parent_boundary.annotations` —
+// where annotations surface as string-keyed string-valued maps for
+// template substitution. Structured annotations are routing
+// instructions for Feature expansion (they fire only through
+// annotation expansion); they do not surface in template substrate.
+func ScalarOnly(in OrderedMap[*AnnotationValue]) OrderedMap[string] {
+	out := OrderedMap[string]{}
+	for k, v := range in.All() {
+		if v == nil || !v.IsScalar() {
+			continue
+		}
+		out.Set(k, *v.Scalar)
+	}
+	return out
+}
+
 // UnmarshalYAML populates the AnnotationValue from a YAML node,
 // dispatching on the node Kind. The unmarshaller never receives null-
 // tagged values on a pointer field: yaml.v3 stores nil for **T when

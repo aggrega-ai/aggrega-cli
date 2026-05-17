@@ -59,8 +59,8 @@ spec:
 	}
 	if hasValue == nil {
 		t.Errorf("has-value should be a non-nil pointer (explicit string)")
-	} else if *hasValue != "v" {
-		t.Errorf("has-value dereferences to %q, want v", *hasValue)
+	} else if !hasValue.IsScalar() || *hasValue.Scalar != "v" {
+		t.Errorf("has-value Scalar = %v, want v", hasValue.Scalar)
 	}
 
 	optedOut, ok := prod.Annotations.Get("opted-out")
@@ -94,14 +94,14 @@ func TestBoundary_EmptyAnnotationsOmitempty(t *testing.T) {
 
 	populated := types.Boundary{}
 	v := "val"
-	populated.Annotations.Set("present", &v)
+	populated.Annotations.Set("present", &types.AnnotationValue{Scalar: &v})
 	populated.Annotations.Set("opt-out", nil)
 	data2, err := json.Marshal(populated)
 	if err != nil {
 		t.Fatalf("marshal populated: %v", err)
 	}
-	if !strings.Contains(string(data2), `"present":"val"`) {
-		t.Errorf("non-nil pointer should serialize as quoted string; got: %s", data2)
+	if !strings.Contains(string(data2), `"present"`) || !strings.Contains(string(data2), `"val"`) {
+		t.Errorf("non-nil scalar AnnotationValue should serialize with its scalar string; got: %s", data2)
 	}
 	if !strings.Contains(string(data2), `"opt-out":null`) {
 		t.Errorf("nil pointer should serialize as JSON null; got: %s", data2)

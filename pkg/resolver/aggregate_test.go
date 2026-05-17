@@ -344,3 +344,117 @@ func orderedKeys(m types.OrderedMap[string]) []string {
 	}
 	return out
 }
+
+// Structured-annotation coverage on the Aggregate-side cascade walker.
+//
+// WireAggregateAnnotations returns the renderer-facing Scalar
+// projection of the post-cascade annotation set. Structured values
+// participate in the cascade but do not surface in the projection —
+// they flow through Feature expansion in the parallel
+// annotation_expansion.go walker. The tests below pin both
+// observations.
+
+func TestWalkAggregate_StructuredAnnotationParses_AndIsOmittedFromScalarProjection(t *testing.T) {
+	t.Parallel()
+	agg := loadAggregate(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          pool_size: 20
+          max_connections: 100
+        aggrega.ai/namespace: prod-zone
+      components:
+        api:
+          type: core/server:1.0.0
+`)
+	sub, _ := agg.Spec.Subsystems.Get("data")
+	dbPool, ok := sub.Annotations.Get("feature.myco/db-pool")
+	if !ok || dbPool == nil || !dbPool.IsStructured() {
+		t.Fatalf("structured annotation didn't parse on Subsystem.Annotations; got %+v", dbPool)
+	}
+	if poolSize, _ := dbPool.Structured.Get("pool_size"); poolSize != 20 {
+		t.Errorf("pool_size subkey = %v, want 20", poolSize)
+	}
+
+	got := WireAggregateAnnotations(agg)
+	apiAnnotations, ok := got["subsystems.data.components.api"]
+	if !ok {
+		t.Fatalf("subsystems.data.components.api missing from walker output")
+	}
+	// Structured annotation excluded from renderer-facing projection.
+	if _, present := apiAnnotations.Get("feature.myco/db-pool"); present {
+		t.Error("structured annotation should NOT surface in WireAggregateAnnotations output (renderer-facing scalar projection)")
+	}
+	// Scalar annotation surfaces.
+	ns, _ := apiAnnotations.Get("aggrega.ai/namespace")
+	if ns != "prod-zone" {
+		t.Errorf("scalar annotation namespace = %q, want prod-zone", ns)
+	}
+}
+
+func TestWalkAggregate_StructuredAnnotationPerSubkeyOptOut(t *testing.T) {
+	t.Parallel()
+	// Subsystem declares a structured annotation. Component declares
+	// the same key with the per-subkey null opt-out signal. Both
+	// the parse layer and the cascade-merge primitive preserve the
+	// per-subkey opt-out — the merged effective value drops the
+	// opted-out subkey while sibling subkeys stand.
+	agg := loadAggregate(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          pool_size: 20
+          max_connections: 100
+      components:
+        api:
+          type: core/server:1.0.0
+          annotations:
+            feature.myco/db-pool:
+              max_connections: null
+`)
+	sub, _ := agg.Spec.Subsystems.Get("data")
+	api, _ := sub.Components.Get("api")
+
+	// Parse-layer check: max_connections subkey survives parse with
+	// nil value (load-bearing for the cascade-merge per-subkey
+	// opt-out signal).
+	compAnnotation, _ := api.Annotations.Get("feature.myco/db-pool")
+	if !compAnnotation.IsStructured() {
+		t.Fatal("component annotation should parse as structured")
+	}
+	maxConns, present := compAnnotation.Structured.Get("max_connections")
+	if !present {
+		t.Fatal("component-level max_connections subkey must be present (with nil value)")
+	}
+	if maxConns != nil {
+		t.Errorf("component-level max_connections = %v, want nil (per-subkey opt-out signal)", maxConns)
+	}
+
+	// Cascade-merge check: post-merge effective value drops the
+	// opted-out subkey; sibling subkey stands.
+	merged := mergeAnnotationValueMaps(sub.Annotations, api.Annotations)
+	effectiveDbPool, _ := merged.Get("feature.myco/db-pool")
+	if effectiveDbPool == nil || !effectiveDbPool.IsStructured() {
+		t.Fatalf("merged effective value should be structured; got %+v", effectiveDbPool)
+	}
+	if _, present := effectiveDbPool.Structured.Get("max_connections"); present {
+		t.Error("max_connections should be opted out post-merge")
+	}
+	if poolSize, _ := effectiveDbPool.Structured.Get("pool_size"); poolSize != 20 {
+		t.Errorf("pool_size should survive the merge unchanged; got %v", poolSize)
+	}
+}

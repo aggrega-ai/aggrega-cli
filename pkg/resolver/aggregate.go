@@ -11,8 +11,8 @@ import (
 // component tree and computes the per-component effective annotation
 // set, applying the cascade: subsystem annotations propagate to nested
 // subsystems and to contained components; closer-level overrides
-// parent at per-key granularity; nil-pointer entries (explicit YAML
-// null) opt out of inherited keys.
+// parent per-key; whole-value nils opt out of inherited keys;
+// structured-value subkey nils opt out per-subkey.
 //
 // Returns a map from canonical component path to the post-cascade
 // resolved OrderedMap[string]. Canonical component paths use dotted
@@ -22,10 +22,13 @@ import (
 //   - Subsystem-contained component:     subsystems.<sub>.components.<name>
 //   - Nested-subsystem component:        subsystems.<outer>.subsystems.<inner>.components.<name>
 //
-// The returned map values are post-flatten OrderedMap[string]: nil
-// entries (annotation opt-outs) are filtered; non-nil entries are
-// dereferenced. Author order through the cascade carries into the
-// resolved map.
+// The returned map values are the renderer-facing Scalar-projection of
+// the post-flatten cascade: only scalar entries surface in the
+// projection so consumers (template substitution, etc.) see a
+// string-keyed string-valued map. Structured annotations flow through
+// the parallel expansion cascade in annotation_expansion.go and
+// synthesize Feature attachments rather than entering the render
+// context here.
 //
 // Returns nil when agg is nil.
 func WireAggregateAnnotations(agg *types.Aggregate) map[string]types.OrderedMap[string] {
@@ -38,8 +41,8 @@ func WireAggregateAnnotations(agg *types.Aggregate) map[string]types.OrderedMap[
 	// annotation set entering this scope is empty. Component paths are
 	// rooted at the canonical "components." prefix.
 	for compName, comp := range agg.Spec.Components.All() {
-		merged := mergePointerStringMaps(types.OrderedMap[*string]{}, comp.Annotations)
-		perComponent["components."+compName] = flattenPointerStringMap(merged)
+		merged := mergeAnnotationValueMaps(types.OrderedMap[*types.AnnotationValue]{}, comp.Annotations)
+		perComponent["components."+compName] = types.ScalarOnly(merged)
 	}
 
 	// Top-level subsystems carry their own annotations plus a per-
@@ -47,7 +50,7 @@ func WireAggregateAnnotations(agg *types.Aggregate) map[string]types.OrderedMap[
 	// canonical "subsystems." prefix; the recursive helper extends the
 	// path string as it descends.
 	for subName, sub := range agg.Spec.Subsystems.All() {
-		walkAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*string]{}, perComponent)
+		walkAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, perComponent)
 	}
 
 	return perComponent
@@ -56,11 +59,12 @@ func WireAggregateAnnotations(agg *types.Aggregate) map[string]types.OrderedMap[
 // walkAggregateSubsystem recurses one Subsystem of the Aggregate tree,
 // cascading annotations from outer subsystems into the current one and
 // into each contained component, then descending into nested
-// subsystems. The cascade carries the pointer-tristate
-// OrderedMap[*string] through recursion so explicit YAML null at any
-// scope continues to opt out the inherited annotation for deeper
-// scopes; flattening to OrderedMap[string] happens only at the leaf
-// write site where the per-component effective set is finalized.
+// subsystems. The cascade carries the AnnotationValue sum-type map
+// through recursion so structured-value subkey opt-outs at any scope
+// continue to suppress inherited subkeys for deeper scopes;
+// Scalar-projecting to OrderedMap[string] happens only at the
+// renderer-facing leaf where the per-component effective set is
+// finalized for template substitution.
 //
 // parentPath is the dotted prefix accumulated by the caller — for the
 // first-level entry from WireAggregateAnnotations, parentPath is
@@ -70,7 +74,7 @@ func WireAggregateAnnotations(agg *types.Aggregate) map[string]types.OrderedMap[
 func walkAggregateSubsystem(
 	name, parentPath string,
 	s types.Subsystem,
-	parentAnnotations types.OrderedMap[*string],
+	parentAnnotations types.OrderedMap[*types.AnnotationValue],
 	perComponent map[string]types.OrderedMap[string],
 ) {
 	// The canonical authoring path for this subsystem: parent prefix +
@@ -79,26 +83,25 @@ func walkAggregateSubsystem(
 	// ".subsystems".
 	currentPath := parentPath + "." + name
 
-	// Merge parent annotations with this subsystem's own. Last-write-
-	// wins on the entire pointer per key: a nil entry from this
-	// subsystem overrides a non-nil entry from the parent (opt-out
-	// signal); a non-nil entry overrides any inherited value; keys
-	// absent from this subsystem survive from the parent (inherit).
-	mergedAnnotations := mergePointerStringMaps(parentAnnotations, s.Annotations)
+	// Merge parent annotations with this subsystem's own per the
+	// AnnotationValue cascade rules: whole-value nils opt out
+	// wholesale; structured + structured deep-merges per subkey with
+	// per-subkey nil opt-out; shape mismatches replace.
+	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, s.Annotations)
 
 	// For each contained component, merge in the component's own
-	// annotations on top of the subsystem-level cascade, then flatten
-	// to the post-cascade OrderedMap[string] downstream consumers use.
+	// annotations on top of the subsystem-level cascade, then project
+	// to the post-flatten OrderedMap[string] downstream consumers use.
 	// Components are written to perComponent keyed by their canonical
 	// dotted path.
 	for compName, comp := range s.Components.All() {
-		compAnnotations := mergePointerStringMaps(mergedAnnotations, comp.Annotations)
-		perComponent[currentPath+".components."+compName] = flattenPointerStringMap(compAnnotations)
+		compAnnotations := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
+		perComponent[currentPath+".components."+compName] = types.ScalarOnly(compAnnotations)
 	}
 
 	// Recurse into nested subsystems. The cascade-level annotation map
-	// passed down is the subsystem-merged form (still pointer-tristate)
-	// so nested scopes can further override or opt-out.
+	// passed down is the subsystem-merged form so nested scopes can
+	// further override or opt-out at any granularity.
 	for childName, child := range s.Subsystems.All() {
 		walkAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, perComponent)
 	}

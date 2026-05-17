@@ -39,9 +39,22 @@ type ResolveResult struct {
 	Aggregate           *types.Aggregate
 	Release             *types.Release
 	Manifest            *types.Manifest
-	BoundaryInfra       map[string]*BoundaryInfra           // per-component boundary context
-	BoundaryAnnotations map[string]types.OrderedMap[string] // per-boundary cascaded annotations keyed by boundary path; effective set without per-component overrides
-	Parameters          map[string]any                      // merged parameter map (alive through end-of-pipeline)
+	BoundaryInfra map[string]*BoundaryInfra // per-component boundary context
+
+	// BoundaryAnnotations carries the renderer-facing Scalar
+	// projection of the post-cascade annotation set per boundary
+	// path. Only scalar annotation values surface here; structured
+	// annotation values are excluded by construction (they
+	// participate in the cascade but flow through Feature expansion
+	// rather than template substitution). The effective set excludes
+	// per-component overrides — those land in BoundaryInfra.Annotations
+	// per-component. Consumers needing structured information — the
+	// annotation-expansion phase, future per-subkey-routing surfaces —
+	// read fresh from rr.Release.Spec.Boundaries.<...>.Annotations
+	// rather than from this field.
+	BoundaryAnnotations map[string]types.OrderedMap[string]
+
+	Parameters    map[string]any // merged parameter map (alive through end-of-pipeline)
 	AggregatePath       string                              // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
 	ReleasePath         string                              // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
 

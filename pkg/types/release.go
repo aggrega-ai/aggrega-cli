@@ -57,16 +57,25 @@ type Boundary struct {
 	Directory    string `json:"directory,omitempty" yaml:"directory,omitempty"`
 	SubDirectory string `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
 	SyncWave     int    `json:"syncWave,omitempty" yaml:"syncWave,omitempty"`
-	// Annotations carries boundary-wide Ops annotations with three-state
-	// presence per key: absent (no entry; inherits parent cascade), present
-	// with a non-nil pointer (explicit string value, overrides parent),
-	// present with a nil pointer (explicit YAML null; opt-out signal that
-	// removes the inherited binding from this boundary's effective
-	// annotation set). The cascade walker at pkg/resolver/boundary.go
-	// propagates the tristate; the flattener at the post-cascade
-	// boundary filters nil entries and dereferences non-nils so
-	// downstream consumers see OrderedMap[string].
-	Annotations OrderedMap[*string]           `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	// Annotations carries boundary-wide Ops annotations. Each entry's
+	// value is one of three shapes encoded via [AnnotationValue]:
+	// Scalar (a single string), Structured (a map of subkey to
+	// subvalue with per-subkey routing through the binding's Maps),
+	// or nil pointer (explicit YAML null at the value site — opts
+	// out of the inherited binding wholesale for this boundary).
+	// Structured values additionally support per-subkey null opt-out:
+	// a subkey with a null value inside a Structured map suppresses
+	// the corresponding inherited subkey while sibling subkeys stand.
+	//
+	// The cascade walker at pkg/resolver/boundary.go propagates the
+	// tristate; the post-cascade flattener filters whole-value nils
+	// and per-subkey nils so downstream expansion consumes a clean
+	// OrderedMap[AnnotationValue]. Render-context template
+	// substitution sites consume the Scalar-projection of the same
+	// map via [ScalarOnly] (structured annotations are routing
+	// instructions for Feature expansion and do not surface in
+	// template substrate).
+	Annotations OrderedMap[*AnnotationValue]  `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 	Features    OrderedMap[any]               `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets     OrderedMap[any]               `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 	Boundaries  OrderedMap[Boundary]          `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
@@ -88,13 +97,12 @@ type BoundaryComponent struct {
 	Description  string `json:"description,omitempty" yaml:"description,omitempty"`
 	SubDirectory string `json:"subDirectory,omitempty" yaml:"subDirectory,omitempty"`
 	// Annotations carries component-specific Ops annotations with the
-	// same three-state presence semantics as [Boundary.Annotations]:
-	// absent (no entry; inherits the boundary cascade), present with a
-	// non-nil pointer (explicit string value, overrides the cascade),
-	// present with a nil pointer (explicit YAML null; opt-out signal
-	// that removes the inherited binding from this component while
-	// sibling components retain it).
-	Annotations OrderedMap[*string]         `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	// same [AnnotationValue] shape as [Boundary.Annotations]: Scalar,
+	// Structured (with per-subkey null opt-out), or nil-pointer for
+	// whole-value opt-out from the inherited cascade. Component-level
+	// entries override the inherited boundary cascade per key; sibling
+	// components retain their own annotation maps independently.
+	Annotations OrderedMap[*AnnotationValue] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 	Infra       OrderedMap[any]             `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 	Features    OrderedMap[BoundaryFeature] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets     OrderedMap[BoundaryFeature] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`

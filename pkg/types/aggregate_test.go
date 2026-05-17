@@ -50,12 +50,12 @@ spec:
 	if got == nil {
 		t.Fatal("feature.myco/db-pool pointer is nil; scalar value should parse as non-nil pointer")
 	}
-	if *got != "prod-db" {
-		t.Errorf("*Annotations.Get(feature.myco/db-pool) = %q, want prod-db", *got)
+	if !got.IsScalar() || *got.Scalar != "prod-db" {
+		t.Errorf("Annotations.Get(feature.myco/db-pool) Scalar = %v, want prod-db", got.Scalar)
 	}
 	got2, _ := sub.Annotations.Get("feature.myco/observability")
-	if got2 == nil || *got2 != "datadog" {
-		t.Errorf("feature.myco/observability did not round-trip: got %v", got2)
+	if got2 == nil || !got2.IsScalar() || *got2.Scalar != "datadog" {
+		t.Errorf("feature.myco/observability did not round-trip: got %+v", got2)
 	}
 }
 
@@ -91,8 +91,8 @@ spec:
 	if hv == nil {
 		t.Fatal("has-value pointer is nil; want non-nil pointer to \"v\"")
 	}
-	if *hv != "v" {
-		t.Errorf("*has-value = %q, want v", *hv)
+	if !hv.IsScalar() || *hv.Scalar != "v" {
+		t.Errorf("has-value Scalar = %v, want v", hv.Scalar)
 	}
 
 	oo, ok := sub.Annotations.Get("opted-out")
@@ -100,7 +100,7 @@ spec:
 		t.Fatal("opted-out entry missing; explicit YAML null should produce a non-nil entry with nil pointer (distinct from absent key)")
 	}
 	if oo != nil {
-		t.Errorf("opted-out pointer = %v, want nil pointer (explicit YAML null)", *oo)
+		t.Errorf("opted-out pointer = %+v, want nil pointer (explicit YAML null)", oo)
 	}
 
 	if _, present := sub.Annotations.Get("absent-key"); present {
@@ -145,15 +145,15 @@ spec:
 		t.Fatalf("api.Annotations.Len() = %d, want 2", api.Annotations.Len())
 	}
 	hv, _ := api.Annotations.Get("feature.myco/rewrite-host")
-	if hv == nil || *hv != "api.example.com" {
-		t.Errorf("api.Annotations[feature.myco/rewrite-host] = %v, want non-nil pointing at api.example.com", hv)
+	if hv == nil || !hv.IsScalar() || *hv.Scalar != "api.example.com" {
+		t.Errorf("api.Annotations[feature.myco/rewrite-host] = %+v, want non-nil scalar pointing at api.example.com", hv)
 	}
 	oo, ok := api.Annotations.Get("feature.myco/observability")
 	if !ok {
 		t.Fatal("feature.myco/observability entry missing on api")
 	}
 	if oo != nil {
-		t.Errorf("feature.myco/observability pointer = %v, want nil (explicit YAML null)", *oo)
+		t.Errorf("feature.myco/observability pointer = %+v, want nil (explicit YAML null)", oo)
 	}
 
 	analytics, ok := sub.Components.Get("analytics")
@@ -195,7 +195,7 @@ spec:
 	if !ok {
 		t.Fatal("top-level api annotation missing")
 	}
-	if got == nil || *got != "top-level.example.com" {
-		t.Errorf("top-level api annotation = %v, want non-nil pointing at top-level.example.com", got)
+	if got == nil || !got.IsScalar() || *got.Scalar != "top-level.example.com" {
+		t.Errorf("top-level api annotation = %+v, want non-nil scalar pointing at top-level.example.com", got)
 	}
 }

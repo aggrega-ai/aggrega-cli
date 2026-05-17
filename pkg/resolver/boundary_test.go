@@ -10,18 +10,21 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// strPtr returns a pointer to s. Used to populate pointer-tristate
-// annotation maps in tests where the author-intent is a non-nil
-// explicit value.
-func strPtr(s string) *string { return &s }
+// scalarAnnotation returns an AnnotationValue wrapping a scalar string,
+// pointer-allocated so it can be stored in an OrderedMap[*AnnotationValue].
+// Used to populate annotation fixtures in tests where the author-intent is
+// a non-nil explicit scalar value.
+func scalarAnnotation(s string) *types.AnnotationValue {
+	return &types.AnnotationValue{Scalar: &s}
+}
 
 func TestWireBoundaryInfra_BoundaryComponentAnnotationsOverride(t *testing.T) {
 	t.Parallel()
-	annotations2 := types.OrderedMap[*string]{}
-	annotations2.Set("aggrega.ai/namespace", strPtr("backend-api-ns"))
-	annotations := types.OrderedMap[*string]{}
-	annotations.Set("aggrega.ai/namespace", strPtr("backend-zone"))
-	annotations.Set("aggrega.ai/image-registry", strPtr("registry.example.com"))
+	annotations2 := types.OrderedMap[*types.AnnotationValue]{}
+	annotations2.Set("aggrega.ai/namespace", scalarAnnotation("backend-api-ns"))
+	annotations := types.OrderedMap[*types.AnnotationValue]{}
+	annotations.Set("aggrega.ai/namespace", scalarAnnotation("backend-zone"))
+	annotations.Set("aggrega.ai/image-registry", scalarAnnotation("registry.example.com"))
 	components := types.OrderedMap[types.BoundaryComponent]{}
 	components.Set("api", types.BoundaryComponent{Annotations: annotations2})
 	components.Set("worker", types.BoundaryComponent{})

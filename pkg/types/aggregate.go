@@ -58,28 +58,32 @@ type Subsystem struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
 	// Annotations are Developer-authored annotations at the subsystem
-	// scope. Values are pointer-typed strings encoding three states:
+	// scope. Each entry's value is one of three shapes encoded via
+	// [AnnotationValue]:
 	//
-	//   - absent key: the subsystem declares no value for this
-	//     annotation; nested subsystems and contained components
-	//     inherit any binding from an ancestor scope.
-	//   - non-nil pointer: the subsystem declares a string value;
-	//     nested subsystems and contained components inherit this
-	//     value unless they declare their own (closer-level wins
-	//     per-key).
-	//   - nil pointer (explicit YAML null): the subsystem removes any
-	//     inherited binding for this key from its scope.
+	//   - Scalar — a single string. The binding's Maps must declare
+	//     exactly one path; the scalar routes to that path.
+	//   - Structured — a map of subkey to subvalue. Each subkey routes
+	//     through the binding's Maps to the Feature schema field with
+	//     the same name; subkeys whose pillar is incompatible with the
+	//     authoring side halt the build.
+	//   - Nil pointer (explicit YAML null at the value site) — the
+	//     subsystem opts out of the inherited binding wholesale for
+	//     this scope.
+	//
+	// Structured values also support per-subkey null opt-out: a subkey
+	// with a null value inside a Structured map suppresses the
+	// corresponding inherited subkey while leaving sibling subkeys
+	// untouched.
 	//
 	// Annotations declared here are inherited by nested subsystems and
 	// by contained components; they do not propagate sideways to
-	// sibling subsystems. Annotation values route to the target
-	// Feature's pillar fields per the Manifest binding's maps table;
-	// the Aggregate-as-Authoring-Surface contract permits routing only
-	// through the binding's values-pillar paths. Bindings whose maps
-	// route an annotation key through the infra pillar do not fire from
-	// Aggregate-side authoring; mismatches halt at annotation expansion
-	// time.
-	Annotations OrderedMap[*string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	// sibling subsystems. The Aggregate-as-Authoring-Surface contract
+	// permits routing only through the binding's values-pillar paths;
+	// bindings whose maps route an annotation key (or a subkey of a
+	// Structured value) through the infra pillar halt at annotation
+	// expansion time.
+	Annotations OrderedMap[*AnnotationValue] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 
 	Features   OrderedMap[FeatureInstance]   `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Subsystems OrderedMap[Subsystem]         `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
@@ -98,20 +102,19 @@ type ComponentInstance struct {
 	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 
 	// Annotations are Developer-authored annotations at the component
-	// scope. Values follow the same pointer-tristate semantic as on
-	// [Subsystem]: absent key (inherit from ancestor scope), non-nil
-	// pointer (string value declared at this scope, overriding any
-	// inherited value), nil pointer (explicit YAML null removes any
-	// inherited binding from this component).
+	// scope. Values follow the same [AnnotationValue] shape as on
+	// [Subsystem]: Scalar, Structured, or nil-pointer for whole-value
+	// opt-out. Structured values additionally support per-subkey null
+	// opt-out — a subkey with a null value inside a Structured map
+	// suppresses the corresponding inherited subkey while leaving
+	// sibling subkeys untouched.
 	//
 	// Component-level annotations declared here override inherited
 	// subsystem-level annotations per key; sibling components in the
 	// same subsystem retain their own annotation maps independently.
-	// Annotation values route to the target Feature's pillar fields
-	// per the Manifest binding's maps table; the Aggregate-as-Authoring-
-	// Surface contract permits routing only through the binding's
-	// values-pillar paths. Bindings whose maps route an annotation key
-	// through the infra pillar do not fire from Aggregate-side
-	// authoring; mismatches halt at annotation expansion time.
-	Annotations OrderedMap[*string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
+	// The Aggregate-as-Authoring-Surface contract permits routing only
+	// through the binding's values-pillar paths; bindings whose maps
+	// route an annotation key (or a subkey of a Structured value)
+	// through the infra pillar halt at annotation expansion time.
+	Annotations OrderedMap[*AnnotationValue] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 }
