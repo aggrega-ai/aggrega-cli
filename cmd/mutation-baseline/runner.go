@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -66,8 +67,8 @@ type Runner interface {
 	RunTests(ctx context.Context, packagePath string) (Outcome, error)
 }
 
-// goTestRunner runs `go test -timeout 60s -count=1 <packagePath>` from
-// the given directory and classifies the result.
+// goTestRunner runs `go test -timeout 60s -count=1 -parallel=1
+// <packagePath>` from rootDir and classifies the result.
 //
 // The runner uses per-package scope rather than `./...` to avoid pre-
 // existing test-suite order-sensitive flakiness in the broader cluster:
@@ -80,15 +81,51 @@ type Runner interface {
 // — acceptable for a baseline metric where the goal is to measure the
 // substance of each package's own tests against its own production
 // code.
+//
+// `-parallel=1` constrains intra-package test parallelism so any tests
+// that call t.Parallel run sequentially. This improves run-to-run
+// determinism in classification but is not absolute: some tests use
+// background goroutines that are not gated by t.Parallel, and the
+// scheduling of those routines can still produce minor variability
+// across runs.
+//
+// HOME is overridden to a scratch-local fake-home directory so any
+// process spawned by the test run (cache writes, editor harnesses)
+// cannot write under the operator's real $HOME. GOFLAGS=-mod=readonly
+// blocks the test run from mutating go.mod or go.sum.
 type goTestRunner struct {
 	rootDir string
 }
 
 func (r *goTestRunner) RunTests(ctx context.Context, packagePath string) (Outcome, error) {
-	cmd := exec.CommandContext(ctx, "go", "test", "-timeout", "60s", "-count=1", packagePath)
+	cmd := exec.CommandContext(ctx, "go", "test", "-timeout", "60s", "-count=1", "-parallel=1", packagePath)
 	cmd.Dir = r.rootDir
+	cmd.Env = goTestEnv(r.rootDir)
 	output, err := cmd.CombinedOutput()
 	return classify(string(output), err), nil
+}
+
+// goTestEnv builds the environment for a `go test` subprocess. Inherits
+// the parent process's environment (so PATH, GOCACHE, GOMODCACHE, GOPATH,
+// GOROOT, etc. carry through) but overrides HOME to a scratch-local
+// fake-home directory and sets GOFLAGS=-mod=readonly.
+func goTestEnv(rootDir string) []string {
+	env := os.Environ()
+	env = setEnv(env, "HOME", filepath.Join(rootDir, ".fake-home"))
+	env = setEnv(env, "GOFLAGS", "-mod=readonly")
+	return env
+}
+
+// setEnv overwrites the entry for key in env if present, or appends one.
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 // compileErrorPattern matches Go build-error output lines like
@@ -136,20 +173,31 @@ func classify(output string, err error) Outcome {
 	return OutcomeKilled
 }
 
+// restoreFile writes data back to name with the given permission. Indirected
+// through a package-scope variable so tests can inject a filesystem-failure
+// path without having to fake the entire os layer.
+var restoreFile = func(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
 // RunMutations applies each mutation in muts, runs the test suite via
 // runner, classifies the outcome, restores the original file, and returns
 // the results in the same order as muts. Sequential by design — parallel
 // mutation would require per-mutant working copies of every file, which
 // adds complexity disproportionate to a one-shot baseline run.
 //
-// rootDir is the aggrega-cli module root; mutation file paths are made
-// relative to it to derive the package-import path the runner uses.
+// rootDir is the scratch root (a copy of the aggrega-cli module under
+// $TMPDIR; see scratch.go). All mutation file paths must lie under
+// rootDir; the runner uses paths relative to rootDir to derive the
+// package-import path passed to `go test`.
 //
 // Restore happens via defer inside the per-mutation closure so a panic in
-// runner.RunTests still restores the file. A SIGKILL between mutate and
-// restore would leave the file mutated; for a one-shot tool invoked at
-// the developer's terminal this is acceptable (git status surfaces the
-// drift immediately).
+// runner.RunTests still restores the file. A failed restore is logged to
+// stderr (not silently swallowed) so the operator can react; the loop
+// continues regardless, since aborting on restore failure would leave
+// the scratch tree in mixed state without finishing the in-flight
+// classification. A SIGKILL between mutate and restore leaks at most one
+// scratch tmpdir — the original source tree is untouched.
 func RunMutations(ctx context.Context, rootDir string, muts []Mutation, runner Runner, progress func(i, total int, m Mutation, o Outcome)) ([]Result, error) {
 	results := make([]Result, 0, len(muts))
 	for i, m := range muts {
@@ -176,7 +224,9 @@ func RunMutations(ctx context.Context, rootDir string, muts []Mutation, runner R
 		var outcome Outcome
 		func() {
 			defer func() {
-				_ = os.WriteFile(m.File, orig, 0o644)
+				if err := restoreFile(m.File, orig, 0o644); err != nil {
+					fmt.Fprintf(os.Stderr, "mutation-baseline: restore FAILED for %s: %v (continuing run; the scratch copy is the only file affected)\n", m.File, err)
+				}
 			}()
 			outcome, _ = runner.RunTests(ctx, pkgPath)
 		}()

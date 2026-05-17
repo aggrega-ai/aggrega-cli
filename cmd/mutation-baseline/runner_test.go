@@ -272,6 +272,52 @@ func TestAggregateByPackage(t *testing.T) {
 	}
 }
 
+// TestRunMutations_RestoreFailureContinues pins the contract that a
+// failing restoreFile call does not abort the run: the loop continues
+// classifying remaining mutations and returns the full results slice.
+// This was a regression risk under the previous swallowed-error path
+// where a failure left the file mutated and the operator never saw the
+// signal.
+func TestRunMutations_RestoreFailureContinues(t *testing.T) {
+	orig := restoreFile
+	defer func() { restoreFile = orig }()
+
+	var callCount int
+	restoreFile = func(name string, data []byte, perm os.FileMode) error {
+		callCount++
+		// Always fail; the loop must continue regardless. The scratch
+		// copy is the only file affected so leaving it mutated is
+		// acceptable behavior.
+		return errors.New("simulated restore failure")
+	}
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "main.go")
+	src := []byte("package p\n\nfunc F(a, b int) bool { return a == b }\n")
+	if err := os.WriteFile(path, src, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	muts, err := FindMutations(path, src)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if len(muts) == 0 {
+		t.Fatalf("expected at least one mutation site")
+	}
+
+	runner := &fakeRunner{outcomes: []Outcome{OutcomeKilled, OutcomeSurvived}}
+	results, err := RunMutations(context.Background(), tmp, muts, runner, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(results) != len(muts) {
+		t.Errorf("got %d results; want %d (loop must continue past restore failure)", len(results), len(muts))
+	}
+	if callCount != len(muts) {
+		t.Errorf("restoreFile called %d times; want %d (one per mutation)", callCount, len(muts))
+	}
+}
+
 // TestProgressLine pins the format of the progress one-liner.
 func TestProgressLine(t *testing.T) {
 	t.Parallel()

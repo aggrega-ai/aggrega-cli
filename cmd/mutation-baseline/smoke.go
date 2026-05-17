@@ -15,14 +15,16 @@ import (
 // a diagnostic error when either is mismatched so the operator can
 // investigate before committing to a multi-hour full baseline run.
 //
-// Smoke targets live in the smokeprobe subpackage of this binary so they
-// are stable across refactors of the rest of the codebase. Both targets
-// are return-bool-flip mutations because that operator is the simplest
-// to reason about and the smoke check's purpose is to validate the
-// classification mechanism, not to exercise every operator.
-func runSmoke(aggregaCliRoot string, runner Runner) error {
-	probeFile := filepath.Join(aggregaCliRoot, "cmd", "mutation-baseline", "smokeprobe", "probe.go")
-	uncovFile := filepath.Join(aggregaCliRoot, "cmd", "mutation-baseline", "smokeprobe", "uncovered.go")
+// rootDir is the scratch root produced by setupScratch; smoke targets
+// live in the scratch copy's smokeprobe subpackage so they share the
+// isolation guarantees of the rest of the run.
+//
+// Both targets are return-bool-flip mutations because that operator is
+// the simplest to reason about and the smoke check's purpose is to
+// validate the classification mechanism, not to exercise every operator.
+func runSmoke(rootDir string, runner Runner) error {
+	probeFile := filepath.Join(rootDir, "cmd", "mutation-baseline", "smokeprobe", "probe.go")
+	uncovFile := filepath.Join(rootDir, "cmd", "mutation-baseline", "smokeprobe", "uncovered.go")
 
 	// Read the two files, find a single return-bool mutation in each.
 	probeMut, err := findSingleSmokeMutation(probeFile, "return_true_to_false")
@@ -36,7 +38,7 @@ func runSmoke(aggregaCliRoot string, runner Runner) error {
 
 	// Target 1: TrueAlways. Expected outcome: killed.
 	fmt.Printf("smoke target 1: %s %s:%d — expecting killed\n", probeMut.Operator, "smokeprobe/probe.go", probeMut.Position.Line)
-	if outcome, err := runSingleMutation(context.Background(), aggregaCliRoot, probeMut, runner); err != nil {
+	if outcome, err := runSingleMutation(context.Background(), rootDir, probeMut, runner); err != nil {
 		return fmt.Errorf("smoke target 1: %w", err)
 	} else if outcome != OutcomeKilled {
 		return fmt.Errorf("smoke target 1: expected killed; got %s", outcome)
@@ -45,7 +47,7 @@ func runSmoke(aggregaCliRoot string, runner Runner) error {
 
 	// Target 2: UncoveredFunc. Expected outcome: survived.
 	fmt.Printf("smoke target 2: %s %s:%d — expecting survived\n", uncovMut.Operator, "smokeprobe/uncovered.go", uncovMut.Position.Line)
-	if outcome, err := runSingleMutation(context.Background(), aggregaCliRoot, uncovMut, runner); err != nil {
+	if outcome, err := runSingleMutation(context.Background(), rootDir, uncovMut, runner); err != nil {
 		return fmt.Errorf("smoke target 2: %w", err)
 	} else if outcome != OutcomeSurvived {
 		return fmt.Errorf("smoke target 2: expected survived; got %s", outcome)

@@ -21,6 +21,20 @@
 // must be killed) and UncoveredFunc (untested, must survive). If either
 // outcome doesn't match expectation, the binary aborts before the full
 // baseline so the operator can investigate the classification mechanism.
+//
+// # Scratch-copy isolation
+//
+// Mutations apply against an isolated copy of the aggrega-cli source
+// tree under $TMPDIR (see scratch.go). The original source tree is never
+// touched. A SIGINT/SIGTERM during the run triggers cleanup of the
+// scratch directory; a SIGKILL leaks one tmpdir but cannot corrupt the
+// source. Tests spawned by the runner execute with HOME pointing inside
+// the scratch directory so any tool that writes under $HOME (caches,
+// editor state, AI-harness directories) cannot pollute the operator's
+// real $HOME. The binary itself spawns no editor and no AI-harness; any
+// such directories appearing under the source tree during a run come
+// from the operator's surrounding terminal harness, not from this
+// binary.
 package main
 
 import (
@@ -64,16 +78,28 @@ func main() {
 	)
 	flag.Parse()
 
-	aggregaCliRoot, err := findAggregaCliRoot()
+	srcRoot, err := findAggregaCliRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mutation-baseline: %v\n", err)
 		os.Exit(2)
 	}
-	runner := &goTestRunner{rootDir: aggregaCliRoot}
 
-	// Smoke check is mandatory before any full run.
+	fmt.Fprintln(os.Stderr, "=== mutation-baseline: preparing scratch copy ===")
+	scratchDir, err := setupScratch(srcRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mutation-baseline: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(scratchDir)
+	installSignalHandler(scratchDir)
+	fmt.Fprintf(os.Stderr, "scratch root: %s\n", scratchDir)
+
+	runner := &goTestRunner{rootDir: scratchDir}
+
+	// Smoke check is mandatory before any full run. Operates on the
+	// scratch copy, not on srcRoot.
 	fmt.Fprintln(os.Stderr, "=== mutation-baseline: smoke check ===")
-	if err := runSmoke(aggregaCliRoot, runner); err != nil {
+	if err := runSmoke(scratchDir, runner); err != nil {
 		fmt.Fprintf(os.Stderr, "smoke check FAILED: %v\n", err)
 		os.Exit(1)
 	}
@@ -92,7 +118,7 @@ func main() {
 	}
 
 	fmt.Fprintf(os.Stderr, "\n=== mutation-baseline: full run (%d packages) ===\n", len(packages))
-	muts, err := collectMutationsForPackages(aggregaCliRoot, packages)
+	muts, err := collectMutationsForPackages(scratchDir, packages)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "collect mutations: %v\n", err)
 		os.Exit(1)
@@ -124,13 +150,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, progressLine(i, total, m, o, started))
 		}
 	}
-	results, err := RunMutations(context.Background(), aggregaCliRoot, muts, runner, progress)
+	results, err := RunMutations(context.Background(), scratchDir, muts, runner, progress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "run mutations: %v\n", err)
 		os.Exit(1)
 	}
 
-	commit := commitHash(aggregaCliRoot)
+	commit := commitHash(srcRoot)
 	date := time.Now().Format("2006-01-02")
 	w := os.Stdout
 	if *outputPath != "" {
@@ -142,7 +168,7 @@ func main() {
 		defer f.Close()
 		w = f
 	}
-	if err := WriteMarkdown(w, results, aggregaCliRoot, commit, date); err != nil {
+	if err := WriteMarkdown(w, results, scratchDir, commit, date); err != nil {
 		fmt.Fprintf(os.Stderr, "write markdown: %v\n", err)
 		os.Exit(1)
 	}
