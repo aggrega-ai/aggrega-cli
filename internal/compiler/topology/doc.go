@@ -99,7 +99,7 @@
 // Downstream consumers. The IR builder (`internal/compiler/ir`) is the
 // production reader of TopologyResult — see its package doc.go for the
 // node / edge / attachment consumption pattern. Tests in this repo
-// (`internal/compiler/example22_test.go`, `pipeline_integration_test.go`,
+// (`internal/compiler/fullstack_app_test.go`, `pipeline_integration_test.go`,
 // `determinism_test.go`) construct topology results directly to exercise
 // the pipeline end-to-end.
 package topology

@@ -9,7 +9,7 @@ spec:
   source: ./charts/db
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
-    port: "{{ .values.port }}"
+    port: "{{ .infra.port | default 3306 }}"
   valuesMapping: |
     {
       "image": "mariadb:11",

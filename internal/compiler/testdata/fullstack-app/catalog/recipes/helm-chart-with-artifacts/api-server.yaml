@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-api-server-chart-with-artifacts
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/server/api-server
+  source: ./charts/api-server
+  artifacts:
+    api-server-policy.yaml:
+      $import: ./extras/api-server-policy.yaml
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .infra.port }}"
+  locals:
+    primary_compute: api
+  valuesMapping: |
+    {
+      "image": "api-server:latest",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .infra.port }}:{{ .infra.port }}"],
+      "environment": {
+        "PORT": "{{ .infra.port }}"
+      }
+    }

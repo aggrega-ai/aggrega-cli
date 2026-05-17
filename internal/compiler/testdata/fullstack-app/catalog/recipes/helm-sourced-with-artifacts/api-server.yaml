@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-api-server-sourced-with-artifacts
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server/api-server
+  source: ./charts/api-server
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .infra.port | default 8080 }}"
+  locals:
+    primary_compute: api
+  valuesMapping: |
+    {
+      "image": "api-server:latest",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .infra.port | default 8080 }}:{{ .infra.port | default 8080 }}"],
+      "environment": {
+        "PORT": "{{ .infra.port | default 8080 }}"
+      }
+    }
+  artifacts:
+    app-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-app-config
+      data:
+        SERVICE: {{ .context.instance_id }}
+        ENV: production

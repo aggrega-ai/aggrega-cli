@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: fullstack-app-compose-with-artifacts
+  version: "1.0.0"
+spec:
+  components:
+    overlays:
+      type: core/raw/manifest
+      values:
+        name: app-overlays

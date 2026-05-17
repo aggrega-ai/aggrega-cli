@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-web-ui-sourced
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server/web-ui
+  source: ./charts/web-ui
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .infra.port | default 3000 }}"
+  locals:
+    primary_compute: web
+  valuesMapping: |
+    {
+      "image": "web-ui:latest",
+      "replicas": {{ .infra.replicas | default 1 }},
+      "ports": ["{{ .infra.port | default 3000 }}:{{ .infra.port | default 3000 }}"],
+      "environment": {
+        "PORT": "{{ .infra.port | default 3000 }}"
+        {{- if .context.inject.env.API_HOST }},
+        "API_HOST": "{{ .context.inject.env.API_HOST }}"
+        {{- end }}
+        {{- if .context.inject.env.API_PORT }},
+        "API_PORT": "{{ .context.inject.env.API_PORT }}"
+        {{- end }}
+      }
+    }

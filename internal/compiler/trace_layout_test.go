@@ -34,7 +34,7 @@ import (
 func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 	t.Parallel()
 	traceRoot := t.TempDir()
-	res := runExample22Variant(t, variantFixture{
+	res := runFullstackAppVariant(t, variantFixture{
 		name:      "helm-sourced-with-artifacts",
 		traceRoot: traceRoot,
 	})
@@ -86,7 +86,7 @@ func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 	t.Parallel()
 	traceRoot := t.TempDir()
-	res := runExample22Variant(t, variantFixture{
+	res := runFullstackAppVariant(t, variantFixture{
 		name:      "helm-synthesized",
 		traceRoot: traceRoot,
 	})
@@ -128,11 +128,11 @@ func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 func TestTrace_ComposeWithArtifacts_LayoutPresent(t *testing.T) {
 	t.Parallel()
 	traceRoot := t.TempDir()
-	res := runExample22Variant(t, variantFixture{
+	res := runFullstackAppVariant(t, variantFixture{
 		name:          "compose-with-artifacts",
-		aggregatePath: "testdata/example22/aggregates/compose-with-artifacts.yaml",
-		releasePath:   "testdata/example22/releases/compose-with-artifacts.yaml",
-		manifestPath:  "testdata/example22/manifests/compose-with-artifacts.yaml",
+		aggregatePath: "testdata/fullstack-app/aggregates/compose-with-artifacts.yaml",
+		releasePath:   "testdata/fullstack-app/releases/compose-with-artifacts.yaml",
+		manifestPath:  "testdata/fullstack-app/manifests/compose-with-artifacts.yaml",
 		traceRoot:     traceRoot,
 	})
 	if len(res.Files) == 0 {

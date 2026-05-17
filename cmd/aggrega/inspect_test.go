@@ -13,20 +13,20 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
-// example22InspectCatalog is the catalog tree the annotation-driven
+// fullstackAppInspectCatalog is the catalog tree the annotation-driven
 // inspect-output assertions point at. Recursive walk covers base
 // entities + per-variant recipes; the helm-synthesized variant supplies
-// the Component recipes the example22 IR builder consumes.
-const example22InspectCatalog = "../../internal/compiler/testdata/example22/catalog"
+// the Component recipes the fullstack-app IR builder consumes.
+const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-app/catalog"
 
 // runInspectCaptured wires the captureStdout helper to a runInspect
-// call against a Release file with the example22 catalog set. The
+// call against a Release file with the fullstack-app catalog set. The
 // returned string is the per-component Feature-attachment block the
 // inspect command emits.
 func runInspectCaptured(t *testing.T, releasePath string) string {
 	t.Helper()
 	prior := inspectCatalogDir
-	inspectCatalogDir = example22InspectCatalog
+	inspectCatalogDir = fullstackAppInspectCatalog
 	defer func() { inspectCatalogDir = prior }()
 	out, err := captureStdout(func() error {
 		return runInspect(nil, []string{releasePath})
@@ -38,7 +38,7 @@ func runInspectCaptured(t *testing.T, releasePath string) string {
 }
 
 func TestInspect_AnnotationBoundary_Explicit_UniformBracket(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-boundary-explicit.yaml")
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-boundary-explicit.yaml")
 	if !strings.Contains(out, "feature.myco/rewrite-host") {
 		t.Errorf("inspect output missing rewrite-host Feature; got:\n%s", out)
 	}
@@ -48,7 +48,7 @@ func TestInspect_AnnotationBoundary_Explicit_UniformBracket(t *testing.T) {
 }
 
 func TestInspect_AnnotationBoundary_Annotation_UniformBracket(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-boundary-annotation.yaml")
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-boundary-annotation.yaml")
 	if !strings.Contains(out, "feature.myco/rewrite-host") {
 		t.Errorf("inspect output missing rewrite-host Feature; got:\n%s", out)
 	}
@@ -58,7 +58,7 @@ func TestInspect_AnnotationBoundary_Annotation_UniformBracket(t *testing.T) {
 }
 
 func TestInspect_AnnotationCrossSide_Explicit_PerLeafBrackets(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-cross-side-explicit.yaml")
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-cross-side-explicit.yaml")
 	// Explicit cross-side: both pillars contributed explicitly; per-leaf
 	// brackets render [explicit] on every leaf rather than the compact
 	// per-attachment marker.
@@ -71,7 +71,7 @@ func TestInspect_AnnotationCrossSide_Explicit_PerLeafBrackets(t *testing.T) {
 }
 
 func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing.T) {
-	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-cross-side-annotation.yaml")
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/fullstack-app/releases/annotation-cross-side-annotation.yaml")
 	// Annotation cross-side: per-leaf brackets attribute each pillar's
 	// authoring side. Values pillar leaf carries an aggregate-sourced
 	// annotation; infra pillar leaf carries a release-sourced annotation.

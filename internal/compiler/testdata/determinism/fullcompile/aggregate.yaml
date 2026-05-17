@@ -7,13 +7,7 @@ spec:
   components:
     zulu:
       type: core/server
-      values:
-        port: 9090
     alpha:
       type: core/server
-      values:
-        port: 8080
     middle:
       type: core/server
-      values:
-        port: 8888

@@ -9,14 +9,14 @@ spec:
   source: ./charts/api
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
-    service_port: "{{ .values.port }}"
+    service_port: "{{ .infra.port | default 8080 }}"
   valuesMapping: |
     {
       "image": "api-server:1.0.0",
       "replicas": {{ .infra.replicas | default 1 }},
-      "ports": ["{{ .values.port }}:{{ .values.port }}"],
+      "ports": ["{{ .infra.port | default 8080 }}:{{ .infra.port | default 8080 }}"],
       "environment": {
-        "PORT": "{{ .values.port }}"
+        "PORT": "{{ .infra.port | default 8080 }}"
         {{- if .context.inject.env.DB_HOST }},
         "DB_HOST": "{{ .context.inject.env.DB_HOST }}"
         {{- end }}

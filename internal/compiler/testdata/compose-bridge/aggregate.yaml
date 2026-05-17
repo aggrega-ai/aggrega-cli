@@ -7,8 +7,6 @@ spec:
   components:
     api:
       type: core/api
-      values:
-        port: 8080
       uses:
         backend:
           primary:

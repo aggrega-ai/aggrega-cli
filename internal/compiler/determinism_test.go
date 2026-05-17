@@ -35,8 +35,8 @@ type determinismCompileResult struct {
 // compileInProcess drives the full 5-step pipeline (resolve → topology →
 // IR → analyze → render) against the determinism fixture. No shell-out to
 // `aggrega build` — shell-out introduces environment dependencies and
-// makes flake-debugging harder. Mirrors the harness shape of runExample22
-// in example22_test.go.
+// makes flake-debugging harder. Mirrors the harness shape of runFullstackApp
+// in fullstack_app_test.go.
 func compileInProcess(t *testing.T) *determinismCompileResult {
 	t.Helper()
 

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: data.main-db
+    namespace: database-zone
+    labels:
+        aggrega.ai/aggregate-name: fullstack-app
+        aggrega.ai/boundary-path: data-ns
+        aggrega.ai/compiler-version: 0.1.0
+        aggrega.ai/component-id: data.main-db
+        aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-postgres-synthesized:1.0.0
+        app: data.main-db
+        app.kubernetes.io/name: data.main-db
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: data.main-db
+    template:
+        metadata:
+            name: ""
+            labels:
+                aggrega.ai/aggregate-name: fullstack-app
+                aggrega.ai/boundary-path: data-ns
+                aggrega.ai/compiler-version: 0.1.0
+                aggrega.ai/component-id: data.main-db
+                aggrega.ai/environment: production
+                aggrega.ai/recipe-uri: helm-postgres-synthesized:1.0.0
+                app: data.main-db
+                app.kubernetes.io/name: data.main-db
+        spec:
+            containers:
+                - name: main
+                  image: postgres:15
+                  ports:
+                    - name: db
+                      containerPort: 5432
+                  env:
+                    - name: POSTGRES_DB
+                      value: app_production

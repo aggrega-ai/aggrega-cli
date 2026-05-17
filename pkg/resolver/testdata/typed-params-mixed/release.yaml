@@ -11,8 +11,8 @@ spec:
   aggregate: typed-params-mixed
   manifest: typed-params-manifest
   parameters:
-    api_port: 9090
-    db_host: staging-db.internal
+    cache_ttl_seconds: 9090
+    display_name: staging-db.internal
     env: staging
   boundaries:
     staging:

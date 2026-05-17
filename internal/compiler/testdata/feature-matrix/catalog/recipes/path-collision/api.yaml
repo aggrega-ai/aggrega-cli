@@ -8,7 +8,7 @@ spec:
   implements: core/server
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
-    service_port: "{{ .values.port }}"
+    service_port: "{{ .infra.port | default 8080 }}"
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
@@ -17,9 +17,9 @@ spec:
       main:
         image: api-server:1.0.0
         ports:
-          web: {{ .values.port }}
+          web: {{ .infra.port | default 8080 }}
     services:
       api:
         type: ClusterIP
         ports:
-          web: {{ .values.port }}
+          web: {{ .infra.port | default 8080 }}

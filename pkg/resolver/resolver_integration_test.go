@@ -57,14 +57,14 @@ func TestResolve_Integration(t *testing.T) {
 				if !ok {
 					t.Fatal("expected component 'api'")
 				}
-				port, _ := comp.Values.Get("port")
-				if fmt.Sprint(port) != "8080" {
-					t.Errorf("expected interpolated port 8080, got %v", port)
+				ttl, _ := comp.Values.Get("cache_ttl_seconds")
+				if fmt.Sprint(ttl) != "8080" {
+					t.Errorf("expected interpolated cache_ttl_seconds 8080, got %v", ttl)
 				}
-				hostVal, _ := comp.Values.Get("host")
-				host, _ := hostVal.(string)
-				if host != "staging-db.internal" {
-					t.Errorf("expected interpolated host staging-db.internal, got %s", host)
+				nameVal, _ := comp.Values.Get("display_name")
+				name, _ := nameVal.(string)
+				if name != "staging-db.internal" {
+					t.Errorf("expected interpolated display_name staging-db.internal, got %s", name)
 				}
 			},
 		},
@@ -110,8 +110,8 @@ func TestResolve_Integration(t *testing.T) {
 				if result.Aggregate == nil {
 					t.Fatal("expected non-nil Aggregate")
 				}
-				if result.Parameters["api_port"] != 9090 {
-					t.Errorf("api_port = %v; want 9090", result.Parameters["api_port"])
+				if result.Parameters["cache_ttl_seconds"] != 9090 {
+					t.Errorf("cache_ttl_seconds = %v; want 9090", result.Parameters["cache_ttl_seconds"])
 				}
 				if result.Parameters["env"] != "prod" {
 					t.Errorf("env = %v; want prod", result.Parameters["env"])
@@ -129,8 +129,8 @@ func TestResolve_Integration(t *testing.T) {
 			wantErr:  nil,
 			validate: func(t *testing.T, result *ResolveResult) {
 				t.Helper()
-				if result.Parameters["api_port"] != 9090 {
-					t.Errorf("api_port = %v; want 9090", result.Parameters["api_port"])
+				if result.Parameters["cache_ttl_seconds"] != 9090 {
+					t.Errorf("cache_ttl_seconds = %v; want 9090", result.Parameters["cache_ttl_seconds"])
 				}
 				if result.Parameters["env"] != "staging" {
 					t.Errorf("env = %v; want staging", result.Parameters["env"])
@@ -246,13 +246,13 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 
 	// Verify parameters were interpolated (not raw template expressions)
 	comp, _ := result.Aggregate.Spec.Components.Get("api")
-	port, _ := comp.Values.Get("port")
-	portStr := fmt.Sprint(port)
-	if portStr == "{{ .parameters.api_port | default \"3000\" }}" {
+	ttl, _ := comp.Values.Get("cache_ttl_seconds")
+	ttlStr := fmt.Sprint(ttl)
+	if ttlStr == "{{ .parameters.cache_ttl_seconds | default \"3000\" }}" {
 		t.Error("parameter expression was not interpolated")
 	}
-	if portStr != "8080" {
-		t.Errorf("expected interpolated port 8080, got %v", port)
+	if ttlStr != "8080" {
+		t.Errorf("expected interpolated cache_ttl_seconds 8080, got %v", ttl)
 	}
 }
 
@@ -260,7 +260,7 @@ func TestResolve_SprigDefaultFallback(t *testing.T) {
 	// Test that Sprig default function works when parameter is missing
 	dir := t.TempDir()
 
-	// Release WITHOUT api_port — should fall back to default "3000"
+	// Release WITHOUT cache_ttl_seconds — should fall back to default "3000"
 	releaseYAML := `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -272,7 +272,7 @@ spec:
   manifest: param-manifest
   parameters:
     db:
-      host: localhost
+      display_name: localhost
   boundaries:
     local:
       directory: ./output
@@ -292,8 +292,8 @@ spec:
 	}
 
 	comp, _ := result.Aggregate.Spec.Components.Get("api")
-	port, _ := comp.Values.Get("port")
-	if fmt.Sprint(port) != "3000" {
-		t.Errorf("expected Sprig default 3000, got %v", port)
+	ttl, _ := comp.Values.Get("cache_ttl_seconds")
+	if fmt.Sprint(ttl) != "3000" {
+		t.Errorf("expected Sprig default 3000, got %v", ttl)
 	}
 }

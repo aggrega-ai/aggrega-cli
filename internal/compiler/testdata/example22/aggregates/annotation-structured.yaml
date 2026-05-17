@@ -1,9 +1,0 @@
-apiVersion: aggrega.ai/v1alpha1
-kind: Aggregate
-metadata:
-  name: example22-annotation-structured
-  version: "1.0.0"
-spec:
-  components:
-    dbclient:
-      type: core/server/web-ui

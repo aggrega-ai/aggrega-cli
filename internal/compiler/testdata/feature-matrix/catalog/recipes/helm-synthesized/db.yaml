@@ -8,7 +8,7 @@ spec:
   implements: core/database/mariadb
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
-    port: "{{ .values.port }}"
+    port: "{{ .infra.port | default 3306 }}"
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
@@ -17,11 +17,11 @@ spec:
       main:
         image: mariadb:11
         ports:
-          db: {{ .values.port }}
+          db: {{ .infra.port | default 3306 }}
         variables:
           MARIADB_DATABASE: "{{ .values.database }}"
     services:
       db:
         type: ClusterIP
         ports:
-          db: {{ .values.port }}
+          db: {{ .infra.port | default 3306 }}

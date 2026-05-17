@@ -11,7 +11,7 @@ spec:
   aggregate: typed-params-fail
   manifest: typed-params-manifest
   parameters:
-    api_port: 99999
+    cache_ttl_seconds: 99999
     env: production
   boundaries:
     prod:

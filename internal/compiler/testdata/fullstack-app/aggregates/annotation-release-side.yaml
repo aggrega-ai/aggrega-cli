@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: fullstack-app-annotation-release-side
+  version: "1.0.0"
+spec:
+  components:
+    app1:
+      type: core/server/web-ui
+    app2:
+      type: core/server/web-ui

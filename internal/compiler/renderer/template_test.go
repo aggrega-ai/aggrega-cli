@@ -401,7 +401,7 @@ func slicesEqual(a, b []string) bool {
 
 // TestEvalTemplate_DnsPatcherPattern exercises the exact template body
 // shipped by the rewritten k8s-dns-patcher FeatureRecipe at
-// testdata/example22/catalog/base/feature-recipes/k8s-dns-patcher.yaml.
+// testdata/fullstack-app/catalog/base/feature-recipes/k8s-dns-patcher.yaml.
 // The body picks an alphabetically-first edge via `keys | sortAlpha | first`
 // and pulls DNS host / namespace from that edge's annotations. Multiple
 // edges in the input confirm the winner is the alphabetically-first (zeta)

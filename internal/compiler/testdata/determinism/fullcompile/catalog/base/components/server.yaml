@@ -7,5 +7,5 @@ metadata:
     component.aggrega.ai/type: "server"
 spec:
   schema:
-    values:
+    infra:
       port: { type: integer, default: 8080 }

@@ -130,7 +130,7 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 		t.Run("Determinism/"+v.name, func(t *testing.T) {
 			t.Parallel()
 			const iterations = 3
-			results := make([]*example22Result, iterations)
+			results := make([]*fullstackAppResult, iterations)
 			for i := 0; i < iterations; i++ {
 				results[i] = runFeatureMatrixVariant(t, v)
 			}
@@ -491,7 +491,7 @@ func testCategorizedErrors_TagEmission(t *testing.T) {
 // separate helper than the artifacts-evaluator path; per-document assertion
 // would entrench that split. Cross-variant presence-of-any anchors the
 // label contract without requiring engine-internal alignment.
-func assertProvenanceLabelsPresent(t *testing.T, res *example22Result, variantName string) {
+func assertProvenanceLabelsPresent(t *testing.T, res *fullstackAppResult, variantName string) {
 	t.Helper()
 	required := []string{
 		"aggrega.ai/component-id:",
@@ -518,7 +518,7 @@ func assertProvenanceLabelsPresent(t *testing.T, res *example22Result, variantNa
 // assertByteIdenticalAcrossIterations compares the file sets across
 // iterations for byte-equality. Surfaces non-determinism as differences
 // in either file count or per-path bytes.
-func assertByteIdenticalAcrossIterations(t *testing.T, results []*example22Result) {
+func assertByteIdenticalAcrossIterations(t *testing.T, results []*fullstackAppResult) {
 	t.Helper()
 	if len(results) < 2 {
 		t.Fatalf("determinism check needs >= 2 iterations; got %d", len(results))

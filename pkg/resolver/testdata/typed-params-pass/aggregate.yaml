@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Cognitio S.r.l.
+#
+# Field choice exercises typed-parameter resolution mechanics; the specific
+# parameter names (cache_ttl_seconds, display_name) are placeholders for any
+# typed parameter, not exemplary authoring of those specific concepts.
 
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -8,13 +12,13 @@ metadata:
   version: "1.0.0"
 spec:
   parameters:
-    api_port:
+    cache_ttl_seconds:
       type: integer
-      description: API listener port
+      description: Cache TTL in seconds
       default: 8080
       min: 1024
       max: 65535
-    db_host:
+    display_name:
       type: string
       pattern: "^[a-z][a-z0-9.-]*$"
       required: true
@@ -29,5 +33,5 @@ spec:
     api:
       type: core/server:1.0.0
       values:
-        port: "{{ .parameters.api_port }}"
-        host: "{{ .parameters.db_host }}"
+        cache_ttl_seconds: "{{ .parameters.cache_ttl_seconds }}"
+        display_name: "{{ .parameters.display_name }}"

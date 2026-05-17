@@ -41,9 +41,9 @@ type featureMatrixVariant struct {
 }
 
 // runFeatureMatrixVariant executes the full 5-step pipeline for one Release variant
-// and returns the rendered file set. Mirrors runExample22Variant's shape with
+// and returns the rendered file set. Mirrors runFullstackAppVariant's shape with
 // per-variant Release path and per-variant catalog directory.
-func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *example22Result {
+func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *fullstackAppResult {
 	t.Helper()
 
 	base := "testdata/feature-matrix/catalog/base"
@@ -136,14 +136,14 @@ func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *exampl
 	if err != nil {
 		t.Fatalf("Step 5 (render): %v", err)
 	}
-	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}
+	return &fullstackAppResult{Files: renderResult.Files, Warnings: renderResult.Warnings}
 }
 
 // tryRunFeatureMatrixVariant mirrors runFeatureMatrixVariant but returns the
 // first pipeline error encountered instead of calling t.Fatalf. Used by
 // negative-path cross-cutting sub-tests that want to assert on the
 // compile-time error instead of treating any failure as a test fault.
-func tryRunFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) (*example22Result, error) {
+func tryRunFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) (*fullstackAppResult, error) {
 	t.Helper()
 
 	base := "testdata/feature-matrix/catalog/base"
@@ -222,13 +222,13 @@ func tryRunFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) (*ex
 	if err != nil {
 		return nil, err
 	}
-	return &example22Result{Files: renderResult.Files, Warnings: renderResult.Warnings}, nil
+	return &fullstackAppResult{Files: renderResult.Files, Warnings: renderResult.Warnings}, nil
 }
 
 // assertFeatureMatrixFilePresent checks at least one file in res whose path contains
 // each substring from parts (substring AND across parts). Returns the matched
 // content for further inspection by the caller.
-func assertFeatureMatrixFilePresent(t *testing.T, res *example22Result, parts ...string) string {
+func assertFeatureMatrixFilePresent(t *testing.T, res *fullstackAppResult, parts ...string) string {
 	t.Helper()
 	for path, content := range res.Files {
 		matched := true

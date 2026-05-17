@@ -9,6 +9,7 @@ spec:
   schema:
     values:
       database: { type: string, default: "app" }
+    infra:
       port: { type: integer, default: 3306 }
     provides:
       host: { type: string, required: true }

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: fullstack-app-dist/backend/helm-chart
+version: 0.1.0
+description: Aggrega umbrella chart for boundary "dist/backend/helm-chart"
+dependencies:
+    - name: api-server
+      version: 1.0.0
+      alias: backend
+      repository: file://charts/backend

@@ -1,9 +1,0 @@
-apiVersion: v2
-name: example22-app-dist/frontend/helm-chart
-version: 0.1.0
-description: Aggrega umbrella chart for boundary "dist/frontend/helm-chart"
-dependencies:
-    - name: web-ui
-      version: 1.0.0
-      alias: frontend
-      repository: file://charts/frontend

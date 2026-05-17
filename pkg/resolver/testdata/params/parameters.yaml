@@ -2,6 +2,6 @@
 # Copyright 2026 Cognitio S.r.l.
 
 db:
-  host: external-db.override
-  port: 5432
+  display_name: external-db.override
+  cache_ttl_seconds: 5432
 extra_key: from-external

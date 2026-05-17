@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: config
+    namespace: raw-zone
+    labels:
+        aggrega.ai/aggregate-name: fullstack-app-helm-artifacts
+        aggrega.ai/boundary-path: raw-zone
+        aggrega.ai/compiler-version: 0.1.0
+        aggrega.ai/component-id: config
+        aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-raw-manifest-artifacts:1.0.0
+        app: config
+        app.kubernetes.io/name: config
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: config
+    template:
+        metadata:
+            name: ""
+            labels:
+                aggrega.ai/aggregate-name: fullstack-app-helm-artifacts
+                aggrega.ai/boundary-path: raw-zone
+                aggrega.ai/compiler-version: 0.1.0
+                aggrega.ai/component-id: config
+                aggrega.ai/environment: production
+                aggrega.ai/recipe-uri: helm-raw-manifest-artifacts:1.0.0
+                app: config
+                app.kubernetes.io/name: config
+        spec:
+            containers:
+                - name: config
+                  image: aggrega/placeholder:latest

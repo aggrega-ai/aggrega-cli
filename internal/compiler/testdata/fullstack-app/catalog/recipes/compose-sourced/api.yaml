@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-api-sourced
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/server/api-server
+  source: ./sources/api.yaml
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "{{ .infra.port | default 8080 }}"
+  valuesMapping: |
+    {
+      "services": {
+        "api": {
+          "environment": {
+            "PORT": "{{ .infra.port | default 8080 }}"
+            {{- range $k, $v := .context.inject.env }},
+            "{{ $k }}": "{{ $v }}"
+            {{- end }}
+          }
+        }
+      }
+    }

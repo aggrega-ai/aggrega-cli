@@ -11,9 +11,9 @@ spec:
   aggregate: param-app
   manifest: param-manifest
   parameters:
-    api_port: "8080"
+    cache_ttl_seconds: "8080"
     db:
-      host: staging-db.internal
+      display_name: staging-db.internal
   boundaries:
     staging:
       directory: ./output

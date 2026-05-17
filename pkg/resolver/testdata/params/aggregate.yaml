@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Cognitio S.r.l.
+#
+# Field choice exercises parameter resolution + Sprig template mechanics;
+# the specific parameter names are placeholders for any parameter, not
+# exemplary authoring of those specific concepts.
 
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -8,13 +12,13 @@ metadata:
   version: "1.0.0"
 spec:
   parameters:
-    api_port: "3000"
+    cache_ttl_seconds: "3000"
     db:
       type: object
       properties:
-        host:
+        display_name:
           type: string
-        port:
+        cache_ttl_seconds:
           type: integer
     extra_key:
       type: string
@@ -22,5 +26,5 @@ spec:
     api:
       type: core/server:1.0.0
       values:
-        port: {{ .parameters.api_port | default "3000" }}
-        host: {{ .parameters.db.host }}
+        cache_ttl_seconds: {{ .parameters.cache_ttl_seconds | default "3000" }}
+        display_name: {{ .parameters.db.display_name }}

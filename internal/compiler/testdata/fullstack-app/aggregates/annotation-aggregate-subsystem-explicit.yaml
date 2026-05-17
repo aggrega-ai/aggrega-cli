@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: fullstack-app-annotation-aggregate-subsystem
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      components:
+        reader:
+          type: core/server/web-ui
+          features:
+            db-pool:
+              type: feature.myco/db-pool
+              values:
+                db_name: "subsystem-db"
+        writer:
+          type: core/server/web-ui
+          features:
+            db-pool:
+              type: feature.myco/db-pool
+              values:
+                db_name: "subsystem-db"
