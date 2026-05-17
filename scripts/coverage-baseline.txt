@@ -1,0 +1,22 @@
+# Per-package coverage floor manifest.
+#
+# Each line records the minimum acceptable per-package coverage as
+# reported by `go test -cover`. Phase 5's coverage-gate script reads
+# this manifest, runs `go test -cover`, and fails the build if any
+# listed package falls below its declared floor.
+#
+# The floor (90) is the target threshold, not the achieved number.
+# A package landing at 92% is allowed to drop to 90% but not below.
+# Successive phases of the coverage initiative extend this manifest
+# as they bring more packages above the 90% line.
+#
+# Format: <package-import-path> <floor>
+
+github.com/cognitio/aggrega-cli/internal/compiler/registry  90
+github.com/cognitio/aggrega-cli/internal/compiler/analyzer  90
+github.com/cognitio/aggrega-cli/internal/compiler/trace     90
+github.com/cognitio/aggrega-cli/internal/compiler/ir        90
+github.com/cognitio/aggrega-cli/pkg/validator               90
+github.com/cognitio/aggrega-cli/pkg/resolver                90
+github.com/cognitio/aggrega-cli/internal/compiler/topology  90
+github.com/cognitio/aggrega-cli/pkg/validator/jsonschema    83

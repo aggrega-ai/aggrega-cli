@@ -148,3 +148,119 @@ func TestWriter_Fs_FileSuffixForPerArtifact(t *testing.T) {
 		t.Errorf("expected per-artifact file at %q: %v", want, err)
 	}
 }
+
+// TestWriter_Stats_NoopReturnsZero pins the noopWriter branch of Stats.
+// A no-op writer carries no instrumentation; Stats returns the zero
+// value rather than panic on the type assertion miss.
+func TestWriter_Stats_NoopReturnsZero(t *testing.T) {
+	t.Parallel()
+	w := New("")
+	if err := w.Write(PassPhaseA, "x", "y", "", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("noop Write: %v", err)
+	}
+	stats := Stats(w)
+	if stats.TotalWrites != 0 || stats.DroppedWrites != 0 || stats.MaxWriteLatency != 0 {
+		t.Errorf("noop writer should report zero stats; got %+v", stats)
+	}
+}
+
+// TestWriter_Write_AfterCloseReturnsNil pins the closed-writer branch of
+// Write. A Write after Close drops silently rather than blocking on the
+// closed channel — the contract is that producers don't need to
+// coordinate close ordering with the trace consumer.
+func TestWriter_Write_AfterCloseReturnsNil(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	w := New(root)
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := w.Write(PassPhaseA, "x", "y", "", map[string]any{"k": "v"}); err != nil {
+		t.Errorf("Write after Close should return nil; got %v", err)
+	}
+}
+
+// TestWriter_Close_IsIdempotent pins the re-Close branch. The first
+// Close drains the consumer goroutine; subsequent Closes are no-ops
+// returning nil rather than panic on the already-closed channel.
+func TestWriter_Close_IsIdempotent(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	w := New(root)
+	if err := w.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Errorf("second Close should be idempotent; got %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Errorf("third Close should be idempotent; got %v", err)
+	}
+}
+
+// TestWriter_Close_SurfacesConsumerError pins the consume()/persist
+// error-propagation path. When persist fails (e.g., the root directory
+// is unwritable), the consumer goroutine stores the first error and
+// Close surfaces it.
+func TestWriter_Close_SurfacesConsumerError(t *testing.T) {
+	t.Parallel()
+	// Root with a path component that's a file (not a directory) makes
+	// MkdirAll inside persist fail.
+	root := t.TempDir()
+	blockerFile := filepath.Join(root, "boundaries")
+	if err := os.WriteFile(blockerFile, []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("setup blocker file: %v", err)
+	}
+	w := New(root)
+	if err := w.Write(PassPhaseA, "x", "y", "", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	closeErr := w.Close()
+	if closeErr == nil {
+		t.Errorf("Close should surface the persist error; got nil")
+	}
+}
+
+// TestIsPhaseAOrLater_DiscriminatesPasses pins the false-branch coverage
+// of the phase discriminator. Passes before Phase A return false; Phase
+// A and later return true.
+func TestIsPhaseAOrLater_DiscriminatesPasses(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		pass Pass
+		want bool
+	}{
+		{PassPhaseA, true},
+		{PassPhaseB6, true},
+		{PassEmission, true},
+		{PassProvides, false},
+		{PassPillarsInitial, false},
+	}
+	for _, c := range cases {
+		if got := isPhaseAOrLater(c.pass); got != c.want {
+			t.Errorf("isPhaseAOrLater(%v) = %v; want %v", c.pass, got, c.want)
+		}
+	}
+}
+
+// TestIsPhaseB0OrLater_DiscriminatesPasses pins the false-branch
+// coverage of the Phase-B0-and-later discriminator. Phase A returns
+// false (predates Phase B0); Phase B0 and later return true.
+func TestIsPhaseB0OrLater_DiscriminatesPasses(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		pass Pass
+		want bool
+	}{
+		{PassPhaseB0, true},
+		{PassPhaseB6, true},
+		{PassEmission, true},
+		{PassPhaseA, false},
+		{PassProvides, false},
+	}
+	for _, c := range cases {
+		if got := isPhaseB0OrLater(c.pass); got != c.want {
+			t.Errorf("isPhaseB0OrLater(%v) = %v; want %v", c.pass, got, c.want)
+		}
+	}
+}

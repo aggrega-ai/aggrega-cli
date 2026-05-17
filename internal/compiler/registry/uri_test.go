@@ -82,6 +82,32 @@ func TestParseRecipeURI_edgeCases(t *testing.T) {
 	}
 }
 
+// TestParseRecipeURI_leadingSlashPreservesInput pins the contract that a
+// rawURI whose first path segment is empty (a leading "/") is returned
+// unchanged rather than rewritten to a registry-prefixed URI. The caller
+// supplied a malformed input; the parser does not silently repair it.
+func TestParseRecipeURI_leadingSlashPreservesInput(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{"/foo/bar:1", "/acme/widget"} {
+		if got := ParseRecipeURI("component", raw); got != raw {
+			t.Errorf("ParseRecipeURI(%q): expected pass-through; got %q", raw, got)
+		}
+	}
+}
+
+// TestParseRecipeURI_thirdPartySingleSegment pins the third-party branch
+// for a single-segment input (no separator after the namespace). The
+// registry rewrite trails with a slash because the tail is empty.
+func TestParseRecipeURI_thirdPartySingleSegment(t *testing.T) {
+	t.Parallel()
+	if got := ParseRecipeURI("component", "acme"); got != "hub.aggrega.ai/acme/component-recipes/" {
+		t.Errorf("third-party single segment: got %q", got)
+	}
+	if got := ParseRecipeURI("feature", "lakera"); got != "hub.aggrega.ai/lakera/feature-recipes/" {
+		t.Errorf("third-party single segment (feature): got %q", got)
+	}
+}
+
 func TestCoreSets_coverIntentLists(t *testing.T) {
 	for _, id := range []string{
 		"ai-agent", "ai-datastore", "ai-gateway", "ai-model", "ai-pipeline", "ai-tool",

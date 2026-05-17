@@ -323,3 +323,117 @@ func TestAnalyze_EmptyGraph(t *testing.T) {
 		t.Errorf("expected 0 paths, got %d", len(result.Paths))
 	}
 }
+
+// TestValidateSelectors_NilCatalogLookupReturnsNil pins the early-return
+// guard when the catalog-component lookup function is nil. Without a
+// catalog source the validator cannot resolve usesSchema entries and
+// returns nil rather than panic.
+func TestValidateSelectors_NilCatalogLookupReturnsNil(t *testing.T) {
+	t.Parallel()
+	graph := &types.IRGraph{Spec: types.IRSpec{}}
+	errs := validateSelectors(graph, resolver.CatalogLookup{})
+	if errs != nil {
+		t.Errorf("expected nil errors with nil catalog lookup; got %v", errs)
+	}
+}
+
+// TestValidateSelectors_MalformedSelectorProducesParseError pins the
+// selector-parse-error branch. A usesSchema entry whose selector string
+// fails the selector parser surfaces an AnalysisError carrying
+// "selector parse error" framing.
+func TestValidateSelectors_MalformedSelectorProducesParseError(t *testing.T) {
+	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "test/with-bad-selector", Labels: labels})
+	nodes.Set("target", types.IRNode{Component: "core/redis", Labels: labels})
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: nodes,
+			Edges: []types.IREdge{{Source: "api", Target: "target", Socket: "databases"}},
+		},
+	}
+	uses := types.OrderedMap[types.UsesSchemaEntry]{}
+	uses.Set("databases", types.UsesSchemaEntry{Selector: "!"})
+	cat := resolver.CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			if typeURI == "test/with-bad-selector" {
+				return types.Component{Spec: types.ComponentSpec{UsesSchema: uses}}, true
+			}
+			return types.Component{}, false
+		},
+	}
+	errs := validateSelectors(graph, cat)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 parse-error; got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Message, "selector parse error") {
+		t.Errorf("missing parse-error framing; got: %s", errs[0].Message)
+	}
+}
+
+// TestValidateSelectors_FeatureOriginatedEdgeReadsFeatureUsesSchema pins
+// the OriginFeature branch — when an edge declares it originated from a
+// Feature, the selector resolution reads the Feature's usesSchema, not
+// the consuming Component's.
+func TestValidateSelectors_FeatureOriginatedEdgeReadsFeatureUsesSchema(t *testing.T) {
+	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "stateful-server")
+	targetLabels := types.OrderedMap[string]{}
+	targetLabels.Set(types.ComponentTypeLabel, "resource")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("backing", types.IRNode{Component: "core/redis", Labels: targetLabels})
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: nodes,
+			Edges: []types.IREdge{{
+				Source: "api", Target: "backing", Socket: "metrics_target",
+				OriginFeature: "core/metrics-exporter",
+			}},
+		},
+	}
+	featUses := types.OrderedMap[types.UsesSchemaEntry]{}
+	featUses.Set("metrics_target", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=server"})
+	feat := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/metrics-exporter"},
+		Spec:     types.FeatureSpec{UsesSchema: featUses},
+	}
+	errs := validateSelectors(graph, analyzerCatalogWithFeature(feat))
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 no-match error from Feature-resolved selector; got %d: %v", len(errs), errs)
+	}
+	if errs[0].Selector != "component.aggrega.ai/type=server" {
+		t.Errorf("expected selector resolved via Feature usesSchema; got %q", errs[0].Selector)
+	}
+}
+
+// TestFormatAppliesTo_MultiLabelOutput pins the multi-label branch of
+// formatAppliesTo's diagnostic shaping. Two or more labels render in
+// stable alphabetical order joined by comma. The function also surfaces
+// optional count-form suffixes for appliesToExpressions and
+// appliesToAnyOf when those structured-form lists are non-empty.
+func TestFormatAppliesTo_MultiLabelOutput(t *testing.T) {
+	t.Parallel()
+	appliesTo := types.OrderedMap[string]{}
+	appliesTo.Set("component.aggrega.ai/type", "server")
+	appliesTo.Set("compliance.aggrega.ai/tier", "pci-dss")
+	spec := types.FeatureSpec{
+		AppliesTo:            appliesTo,
+		AppliesToExpressions: []types.LabelSelectorRequirement{{Key: "k", Operator: "In", Values: []string{"v"}}},
+		AppliesToAnyOf:       []types.SelectorTerm{{}, {}},
+	}
+	out := formatAppliesTo(spec)
+	for _, want := range []string{
+		"component.aggrega.ai/type=server",
+		"compliance.aggrega.ai/tier=pci-dss",
+		"appliesToExpressions[1]",
+		"appliesToAnyOf[2]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("formatAppliesTo output missing %q; got: %s", want, out)
+		}
+	}
+}

@@ -1298,3 +1298,154 @@ func TestIRBuilder_StructuredAnnotation_PerSubkeyProvenance(t *testing.T) {
 	// provenance already does the right thing by uniform attribution
 	// to the single annotation source.
 }
+
+// TestParseBoundaryFeature_TypedMapForm pins the *types.OrderedMap[any]
+// branch of the boundary-feature parser. Release boundary YAML decodes
+// into the typed OrderedMap; the parser must extract the type field
+// and the infra OrderedMap unchanged.
+func TestParseBoundaryFeature_TypedMapForm(t *testing.T) {
+	t.Parallel()
+	infra := types.OrderedMap[any]{}
+	infra.Set("upstream", "host.example.com")
+	m := types.OrderedMap[any]{}
+	m.Set("type", "feature.myco/rewrite-host")
+	m.Set("infra", &infra)
+	got := parseBoundaryFeature(&m)
+	if got.Type != "feature.myco/rewrite-host" {
+		t.Errorf("Type = %q; want feature.myco/rewrite-host", got.Type)
+	}
+	if v, ok := got.Infra.Get("upstream"); !ok || v != "host.example.com" {
+		t.Errorf("Infra.upstream = (%v, %v); want (host.example.com, true)", v, ok)
+	}
+}
+
+// TestParseBoundaryFeature_PlainMapForm pins the map[string]any branch
+// of the parser — boundary YAML payloads that decode via the
+// alternative untyped map path. The parser must still extract type and
+// infra correctly, sorting the converted infra keys for determinism.
+func TestParseBoundaryFeature_PlainMapForm(t *testing.T) {
+	t.Parallel()
+	raw := map[string]any{
+		"type": "feature.myco/rewrite-host",
+		"infra": map[string]any{
+			"upstream":   "host.example.com",
+			"alt_target": "fallback.example.com",
+		},
+	}
+	got := parseBoundaryFeature(raw)
+	if got.Type != "feature.myco/rewrite-host" {
+		t.Errorf("Type = %q; want feature.myco/rewrite-host", got.Type)
+	}
+	if v, ok := got.Infra.Get("upstream"); !ok || v != "host.example.com" {
+		t.Errorf("Infra.upstream = (%v, %v); want (host.example.com, true)", v, ok)
+	}
+}
+
+// TestParseBoundaryFeature_NilAndUnknownReturnZero pins the defensive
+// branches: nil typed-map pointer and unrecognised raw shape both
+// produce the zero-value BoundaryFeature.
+func TestParseBoundaryFeature_NilAndUnknownReturnZero(t *testing.T) {
+	t.Parallel()
+	var nilMap *types.OrderedMap[any]
+	if got := parseBoundaryFeature(nilMap); got.Type != "" {
+		t.Errorf("nil typed-map: Type = %q; want zero", got.Type)
+	}
+	if got := parseBoundaryFeature("unrelated string"); got.Type != "" {
+		t.Errorf("unknown shape: Type = %q; want zero", got.Type)
+	}
+}
+
+// TestBuildCatalogMetadata_NilLookupReturnsNil pins the early-return
+// guard: a CatalogLookup with no Component function returns nil rather
+// than panic on the nil function pointer.
+func TestBuildCatalogMetadata_NilLookupReturnsNil(t *testing.T) {
+	t.Parallel()
+	if got := buildCatalogMetadata("anything", resolver.CatalogLookup{}); got != nil {
+		t.Errorf("nil lookup should return nil; got %+v", got)
+	}
+}
+
+// TestBuildCatalogMetadata_LookupMissReturnsNil pins the not-found
+// branch: a Component not present in the catalog produces nil rather
+// than a zero-value CatalogMetadata.
+func TestBuildCatalogMetadata_LookupMissReturnsNil(t *testing.T) {
+	t.Parallel()
+	cl := resolver.CatalogLookup{
+		Component: func(string) (types.Component, bool) { return types.Component{}, false },
+	}
+	if got := buildCatalogMetadata("not/in/catalog", cl); got != nil {
+		t.Errorf("lookup miss should return nil; got %+v", got)
+	}
+}
+
+// TestBuildCatalogMetadata_EmptyContentReturnsNil pins the all-fields-
+// empty branch: a Component whose metadata carries no license, no
+// repo, no home, no keywords, not-deprecated, no maintainers collapses
+// to nil so the IR's CatalogMetadata pointer stays unset and the
+// `omitempty` JSON tag suppresses the field entirely.
+func TestBuildCatalogMetadata_EmptyContentReturnsNil(t *testing.T) {
+	t.Parallel()
+	cl := resolver.CatalogLookup{
+		Component: func(string) (types.Component, bool) {
+			return types.Component{Metadata: types.ComponentMetadata{Name: "x"}}, true
+		},
+	}
+	if got := buildCatalogMetadata("x", cl); got != nil {
+		t.Errorf("empty metadata should return nil; got %+v", got)
+	}
+}
+
+// TestBuildCatalogMetadata_PopulatedReturnsAllFields pins the happy-path
+// branch where every metadata field carries content. Asserts each
+// surviving field round-trips into the result.
+func TestBuildCatalogMetadata_PopulatedReturnsAllFields(t *testing.T) {
+	t.Parallel()
+	cl := resolver.CatalogLookup{
+		Component: func(string) (types.Component, bool) {
+			return types.Component{
+				Metadata: types.ComponentMetadata{
+					Name:        "x",
+					License:     "Apache-2.0",
+					Repository:  "https://example.com/repo",
+					Home:        "https://example.com",
+					Keywords:    []string{"k1", "k2"},
+					Deprecated:  true,
+					Maintainers: []types.Maintainer{{Name: "alice"}},
+				},
+			}, true
+		},
+	}
+	got := buildCatalogMetadata("x", cl)
+	if got == nil {
+		t.Fatal("populated metadata should not return nil")
+	}
+	if got.License != "Apache-2.0" || got.Repository == "" || got.Home == "" {
+		t.Errorf("scalar fields not propagated: %+v", got)
+	}
+	if !got.Deprecated || len(got.Keywords) != 2 || len(got.Maintainers) != 1 {
+		t.Errorf("multi-shape fields not propagated: %+v", got)
+	}
+}
+
+// TestIsCredential_NilFeatureLookupReturnsFalse pins the nil-Feature
+// guard. Without a Feature lookup function the discriminator returns
+// false rather than panic.
+func TestIsCredential_NilFeatureLookupReturnsFalse(t *testing.T) {
+	t.Parallel()
+	if isCredential("anything", resolver.CatalogLookup{}) {
+		t.Errorf("nil Feature lookup should return false")
+	}
+}
+
+// TestIsCredential_LookupMissReturnsFalse pins the not-found branch.
+// A Feature URI absent from the catalog returns false (treating the
+// missing Feature as non-credential).
+func TestIsCredential_LookupMissReturnsFalse(t *testing.T) {
+	t.Parallel()
+	cl := resolver.CatalogLookup{
+		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
+	}
+	if isCredential("not/in/catalog", cl) {
+		t.Errorf("lookup miss should return false")
+	}
+}
