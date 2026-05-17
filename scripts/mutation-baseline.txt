@@ -1,0 +1,39 @@
+# Per-package mutation-score baseline.
+#
+# Established by the in-repo mutation-baseline binary at
+# aggrega-cli/cmd/mutation-baseline/. Run with:
+#
+#     go run ./cmd/mutation-baseline --output PATH
+#
+# Score = killed / (killed + survived). Equivalent mutants (mutations
+# that produced invalid Go and didn't represent detectable behavior
+# changes) are excluded from both numerator and denominator.
+#
+# This file is informational, not gated. The line-coverage gate at
+# scripts/coverage-gate.sh enforces the per-package coverage floor;
+# the mutation baseline below measures the substance of those tests
+# against operator-flip mutations.
+#
+# Mutation outcomes have run-to-run variability (~5% of sites in
+# repeated runs against the same code, due to pre-existing test-suite
+# order-sensitivity under -count=1). Re-derive these numbers on
+# each authoritative baseline pass; don't strictly enforce them as
+# fixed thresholds. The per-tier classification (top/mid/bottom)
+# is stable across runs.
+#
+# Format: <package-import-path>  <score>%  (<killed>K <survived>S <equivalent>E)
+# Date: 2026-05-17
+
+github.com/cognitio/aggrega-cli/pkg/resolver                       98.9%  (267K 3S 37E)
+github.com/cognitio/aggrega-cli/internal/compiler/renderer         93.9%  (480K 31S 29E)
+github.com/cognitio/aggrega-cli/pkg/types                          92.0%  (253K 22S 3E)
+github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm    81.6%  (120K 27S 1E)
+github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart  78.1%  (25K 7S 0E)
+github.com/cognitio/aggrega-cli/pkg/catalog                        77.9%  (53K 15S 0E)
+github.com/cognitio/aggrega-cli/pkg/validator                      75.0%  (105K 35S 0E)
+github.com/cognitio/aggrega-cli/internal/compiler/ir               71.7%  (76K 30S 1E)
+github.com/cognitio/aggrega-cli/internal/compiler/topology         69.2%  (18K 8S 0E)
+github.com/cognitio/aggrega-cli/pkg/validator/jsonschema           63.7%  (114K 65S 2E)
+github.com/cognitio/aggrega-cli/internal/compiler/analyzer         55.6%  (15K 12S 0E)
+
+# Overall: 1854 mutants, 1526 killed, 255 survived, 73 equivalent — 85.7% score

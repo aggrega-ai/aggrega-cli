@@ -51,3 +51,29 @@ github.com/cognitio/aggrega-cli/pkg/selector                90
 #     analyzer, renderer). The downstream packages' own coverage
 #     pins their failure modes; the wrapping is mechanical.
 github.com/cognitio/aggrega-cli/cmd/aggrega                 82
+
+# cmd/mutation-baseline: 64% achieved + Phase 5 exclusion-list
+# carve-outs. The package's residual gap below 90% is:
+#   - main() — CLI bootstrap that translates flags and triggers the
+#     run. Behavior verified by binary-level smoke test (the binary's
+#     --smoke-only invocation is part of every full baseline run).
+#   - findAggregaCliRoot, commitHash — filesystem + subprocess
+#     primitives whose unit testability would require faking the
+#     filesystem/exec layer. Cost exceeds value at the carve-out
+#     site.
+#   - goTestRunner.RunTests — `go test` subprocess invocation. The
+#     fakeRunner-based RunMutations tests already cover the
+#     classification logic; the wrapping over exec.Command is
+#     mechanical.
+#   - runSmoke, runSingleMutation — orchestration wrappers over the
+#     tested RunMutations + FindMutations building blocks. Behavior
+#     verified by --smoke-only invocation as part of every run.
+github.com/cognitio/aggrega-cli/cmd/mutation-baseline       64
+
+# cmd/mutation-baseline/smokeprobe: 50% achieved by deliberate design.
+# The package carries one tested function (probe.go:TrueAlways) and one
+# untested function (uncovered.go:UncoveredFunc) so the mutation-baseline
+# binary's --smoke-only check has stable known-killed and known-survived
+# targets. Adding a test for UncoveredFunc defeats the smoke check's
+# purpose. The 50% floor locks in this intentional shape.
+github.com/cognitio/aggrega-cli/cmd/mutation-baseline/smokeprobe  50
