@@ -101,6 +101,42 @@ func (m AnnotationBindingMaps) Len() int {
 	return len(m.Infra) + len(m.Values)
 }
 
+// Lookup returns the pillar ("infra" or "values") that contains the
+// given dotted-path string and a found flag. Annotation expansion uses
+// this for per-subkey routing of structured annotation values: each
+// subkey in a Structured AnnotationValue resolves through Lookup to
+// the binding-declared pillar, and the side-vs-pillar enforcement
+// gates whether the authoring side can fire that subkey.
+//
+// Returns ("", false) when the path appears in neither pillar list —
+// signals "this subkey isn't declared in the binding map" to the
+// caller's collect-and-emit-all error chain.
+//
+// Tie-breaking on duplicate paths. When a path appears in BOTH
+// pillar lists (an authoring anti-pattern: declaring "this subkey
+// routes through both pillars" is incoherent — annotation subkeys
+// fire one pillar's contribution per side), Lookup returns "infra"
+// deterministically. The Aggregate side then fails side-vs-pillar
+// on every such subkey, making the path Aggregate-inaccessible
+// despite its Values declaration. A future lint at catalog load can
+// surface this anti-pattern (parallel to the schema-pillar-overlap
+// lint that catches the same-name overlap on the Feature schema
+// side); today the deterministic tie-breaking + side-vs-pillar
+// halting surfaces the inaccessibility at expansion time.
+func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
+	for _, p := range m.Infra {
+		if p == path {
+			return "infra", true
+		}
+	}
+	for _, p := range m.Values {
+		if p == path {
+			return "values", true
+		}
+	}
+	return "", false
+}
+
 // ManifestMetadata carries identity for a Manifest entity.
 type ManifestMetadata struct {
 	Name        string       `json:"name" yaml:"name"`

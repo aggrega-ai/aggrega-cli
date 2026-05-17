@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -76,7 +77,7 @@ spec:
           description: worker comp
 `
 	rr := &ResolveResult{Manifest: loadTestManifest(t), Release: loadTestRelease(t, src)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -124,7 +125,7 @@ spec:
             feature.myco/rewrite-host: "override.example.com"
 `
 	rr := &ResolveResult{Manifest: loadTestManifest(t), Release: loadTestRelease(t, src)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -161,7 +162,7 @@ spec:
             feature.myco/rewrite-host: "scalar.example.com"
 `
 	rr := &ResolveResult{Manifest: loadTestManifest(t), Release: loadTestRelease(t, src)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -224,7 +225,7 @@ spec:
 		t.Fatalf("manifest unmarshal: %v", err)
 	}
 	rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -285,7 +286,7 @@ spec:
                   description: leaf comp
 `
 	rr := &ResolveResult{Manifest: loadTestManifest(t), Release: loadTestRelease(t, src)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	outer, _ := rr.Release.Spec.Boundaries.Get("outer")
@@ -351,7 +352,7 @@ spec:
 		t.Fatalf("manifest unmarshal: %v", err)
 	}
 	rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
-	err := ExpandAnnotations(rr)
+	err := ExpandAnnotations(rr, CatalogLookup{})
 	if err == nil {
 		t.Fatalf("expected OPS_ERROR on ambiguous routing; got nil")
 	}
@@ -398,7 +399,7 @@ spec:
 		t.Fatalf("manifest unmarshal: %v", err)
 	}
 	rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -435,7 +436,7 @@ spec:
             feature.myco/rewrite-host: "scalar.example.com"
 `
 	rr := &ResolveResult{Manifest: loadTestManifest(t), Release: loadTestRelease(t, src)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -498,7 +499,7 @@ spec:
 		t.Fatalf("manifest unmarshal: %v", err)
 	}
 	rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -538,7 +539,7 @@ spec:
               description: explicit
 `
 	rr := &ResolveResult{Manifest: loadTestManifest(t), Release: loadTestRelease(t, src)}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -574,7 +575,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	key := AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")
@@ -615,7 +616,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	rec, ok := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")]
@@ -656,7 +657,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	apiRec, _ := rr.AnnotationProvenance[AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host")]
@@ -697,7 +698,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -746,7 +747,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -814,7 +815,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
@@ -914,7 +915,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
@@ -960,7 +961,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr)
+	err := ExpandAnnotations(rr, CatalogLookup{})
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error; got nil")
 	}
@@ -1006,7 +1007,7 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr)
+	err := ExpandAnnotations(rr, CatalogLookup{})
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error; got nil")
 	}
@@ -1071,7 +1072,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	api, _ := rr.Aggregate.Spec.Components.Get("api")
@@ -1126,7 +1127,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
@@ -1176,7 +1177,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
@@ -1213,7 +1214,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	api, _ := rr.Aggregate.Spec.Components.Get("api")
@@ -1262,7 +1263,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	provKey := AnnotationProvenanceKey("subsystems.data.components.api", "", "feature.myco/db-pool")
@@ -1310,7 +1311,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 	outer, _ := rr.Aggregate.Spec.Subsystems.Get("outer")
@@ -1383,7 +1384,7 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	if err := ExpandAnnotations(rr); err != nil {
+	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
 
@@ -1417,5 +1418,433 @@ spec:
 				t.Errorf("path %q: walker reports key %q but expansion did not synthesize a Feature", path, key)
 			}
 		}
+	}
+}
+
+// Structured-annotation expansion coverage. Structured annotation
+// values route per-subkey through binding.Maps, with per-subkey
+// side-vs-pillar enforcement, per-subkey Feature schema type
+// validation, and collect-and-emit-all error wrapping. The tests
+// below pin each of these contracts end-to-end through
+// ExpandAnnotations.
+
+const structuredManifestYAML = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/db-pool: db-pool-helm:1.0.0
+      annotations:
+        feature.myco/db-pool:
+          feature: core/db-pool:1.0.0
+          maps:
+            values:
+              - db_name
+              - read_replicas
+            infra:
+              - pool_size
+              - max_connections
+`
+
+func structuredManifest(t *testing.T) *types.Manifest {
+	t.Helper()
+	var m types.Manifest
+	if err := yaml.Unmarshal([]byte(structuredManifestYAML), &m); err != nil {
+		t.Fatalf("manifest unmarshal: %v", err)
+	}
+	return &m
+}
+
+func structuredFeatureCatalog(t *testing.T) CatalogLookup {
+	t.Helper()
+	return mockCatalogLookup(map[string]types.Feature{
+		"core/db-pool:1.0.0": featureWithSchema(t, "core/db-pool", `
+values:
+  db_name:
+    type: string
+  read_replicas:
+    type: integer
+infra:
+  pool_size:
+    type: integer
+  max_connections:
+    type: integer
+`),
+	})
+}
+
+func TestExpand_StructuredAggregateSide_RoutesAllValuesSubkeys(t *testing.T) {
+	t.Parallel()
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          db_name: "prod-db"
+          read_replicas: 5
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr, structuredFeatureCatalog(t)); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
+	api, _ := data.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatal("api missing synthetic Feature attachment")
+	}
+	if dbName, _ := feat.Values.Get("db_name"); dbName != "prod-db" {
+		t.Errorf("Values.db_name = %v, want prod-db", dbName)
+	}
+	if replicas, _ := feat.Values.Get("read_replicas"); replicas != 5 {
+		t.Errorf("Values.read_replicas = %v, want 5", replicas)
+	}
+}
+
+func TestExpand_StructuredReleaseSide_RoutesAllInfraSubkeys(t *testing.T) {
+	t.Parallel()
+	releaseSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/db-pool:
+          pool_size: 20
+          max_connections: 100
+      components:
+        api:
+          description: api comp
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Release:              loadTestRelease(t, releaseSrc),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr, structuredFeatureCatalog(t)); err != nil {
+		t.Fatalf("ExpandAnnotations: %v", err)
+	}
+	prod, _ := rr.Release.Spec.Boundaries.Get("prod")
+	api, _ := prod.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatal("api missing synthetic BoundaryFeature attachment")
+	}
+	if poolSize, _ := feat.Infra.Get("pool_size"); poolSize != 20 {
+		t.Errorf("Infra.pool_size = %v, want 20", poolSize)
+	}
+	if maxConn, _ := feat.Infra.Get("max_connections"); maxConn != 100 {
+		t.Errorf("Infra.max_connections = %v, want 100", maxConn)
+	}
+}
+
+func TestExpand_StructuredCrossSidePartition_AggregateOnlyValuesSubkeysFire(t *testing.T) {
+	t.Parallel()
+	// Aggregate-side annotation declares both values-pillar AND
+	// infra-pillar subkeys. The infra-pillar subkeys fail
+	// side-vs-pillar and accumulate to the collect-and-emit-all
+	// error list; the build halts with the composed error so the IR
+	// layer never sees the partial contribution.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          db_name: "prod-db"
+          pool_size: 20
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	if err == nil {
+		t.Fatal("expected side-vs-pillar mismatch error for the infra-pillar subkey on the Aggregate side; got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "pool_size") {
+		t.Errorf("error should name the offending subkey (pool_size); got: %s", msg)
+	}
+	if !strings.Contains(msg, "aggregate") || !strings.Contains(msg, "infra") {
+		t.Errorf("error should name the authoring side (aggregate) and the routed pillar (infra); got: %s", msg)
+	}
+}
+
+func TestExpand_StructuredSubkeyNotInBindingMap_Errors(t *testing.T) {
+	t.Parallel()
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          unknown_subkey: "value"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	if err == nil {
+		t.Fatal("expected error for subkey not declared in binding map; got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "unknown_subkey") {
+		t.Errorf("error should name the unknown subkey; got: %s", msg)
+	}
+	if !strings.Contains(msg, "not declared in binding map") {
+		t.Errorf("error should explain the binding-map declaration requirement; got: %s", msg)
+	}
+}
+
+func TestExpand_StructuredSubkeyValueMismatchesFeatureSchemaType_Errors(t *testing.T) {
+	t.Parallel()
+	// db_name is declared as string; passing an integer fails type
+	// validation. read_replicas is declared as integer; passing a
+	// string fails too. Both errors accumulate per collect-and-emit-all.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          db_name: 42
+          read_replicas: "not-an-integer"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	if err == nil {
+		t.Fatal("expected type-mismatch errors; got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "db_name") {
+		t.Errorf("error should name db_name (declared type string, got integer); got: %s", msg)
+	}
+	if !strings.Contains(msg, "read_replicas") {
+		t.Errorf("error should name read_replicas (declared type integer, got string); got: %s", msg)
+	}
+}
+
+func TestExpand_StructuredCollectAllErrors_NotOnlyFirst(t *testing.T) {
+	t.Parallel()
+	// Three concurrent failures on one annotation: one unknown subkey,
+	// one side-vs-pillar mismatch (infra subkey on Aggregate side),
+	// one type mismatch. All three accumulate to the returned error
+	// chain; the orchestrator's error printer renders each on its own
+	// line via Unwrap() []error.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          unknown: "x"
+          pool_size: 20
+          db_name: 42
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	if err == nil {
+		t.Fatal("expected three collected errors; got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{"unknown", "pool_size", "db_name"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("collect-and-emit-all dropped %q; got: %s", want, msg)
+		}
+	}
+}
+
+func TestExpand_StructuredScalarValueRoutesCompatibly(t *testing.T) {
+	t.Parallel()
+	// Regression: after the AnnotationValue type lift, scalar values
+	// continue to route through the scalar path correctly.
+	manifestSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/db-pool: db-pool-helm:1.0.0
+      annotations:
+        feature.myco/db-pool:
+          feature: core/db-pool:1.0.0
+          maps:
+            values:
+              - db_name
+`
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool: "scalar-db"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	var m types.Manifest
+	if err := yaml.Unmarshal([]byte(manifestSrc), &m); err != nil {
+		t.Fatalf("manifest unmarshal: %v", err)
+	}
+	rr := &ResolveResult{
+		Manifest:             &m,
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	if err := ExpandAnnotations(rr, structuredFeatureCatalog(t)); err != nil {
+		t.Fatalf("scalar regression failed: %v", err)
+	}
+	data, _ := rr.Aggregate.Spec.Subsystems.Get("data")
+	api, _ := data.Components.Get("api")
+	feat, ok := api.Features.Get("feature.myco/db-pool")
+	if !ok {
+		t.Fatal("api missing synthetic Feature attachment")
+	}
+	if dbName, _ := feat.Values.Get("db_name"); dbName != "scalar-db" {
+		t.Errorf("Values.db_name = %v, want scalar-db", dbName)
+	}
+}
+
+func TestExpand_StructuredErrorsImplementUnwrapSlice_OrchestratorRendersEachLine(t *testing.T) {
+	t.Parallel()
+	// Verifies the error chain returned by ExpandAnnotations
+	// implements the Unwrap() []error interface so the orchestrator's
+	// error printer (cmd/aggrega/error_format.go) renders each
+	// constituent on its own line. The structural assertion via
+	// errors.As pins the contract independently of surface
+	// formatting — a future refactor that replaced errors.Join with
+	// a string-concatenating wrapper would pass a substring check
+	// but fail this assertion.
+	aggSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        feature.myco/db-pool:
+          unknown_a: "x"
+          unknown_b: "y"
+      components:
+        api:
+          type: core/server:1.0.0
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Aggregate:            loadTestAggregate(t, aggSrc),
+		AggregatePath:        "aggregate.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	if err == nil {
+		t.Fatal("expected collected errors; got nil")
+	}
+
+	// Structural assertion: the composed error must walk through to
+	// the errors.Join'd inner chain and expose its multi-error
+	// constituents via the Unwrap() []error interface. The
+	// orchestrator's error printer relies on this exact contract.
+	type unwrapMulti interface{ Unwrap() []error }
+	var um unwrapMulti
+	if !errors.As(err, &um) {
+		t.Fatalf("composed error must implement Unwrap() []error somewhere in its chain; got: %T (%v)", err, err)
+	}
+	constituents := um.Unwrap()
+	if len(constituents) < 2 {
+		t.Errorf("expected >= 2 constituent errors (one per failed subkey); got %d: %v", len(constituents), constituents)
+	}
+
+	// Surface check (regression backstop): both subkeys should
+	// appear in the rendered error text.
+	msg := err.Error()
+	if !strings.Contains(msg, "unknown_a") || !strings.Contains(msg, "unknown_b") {
+		t.Errorf("composed error should carry both subkeys in rendered text; got: %s", msg)
 	}
 }

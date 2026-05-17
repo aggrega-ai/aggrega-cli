@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -72,7 +73,7 @@ const (
 // injection time and do not produce synthetic Feature attachments.
 // Sibling components in the same boundary that did not opt out still
 // receive the inherited binding.
-func ExpandAnnotations(rr *ResolveResult) error {
+func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 	if rr == nil {
 		return nil
 	}
@@ -86,7 +87,7 @@ func ExpandAnnotations(rr *ResolveResult) error {
 
 	if rr.Release != nil {
 		for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, rr); err != nil {
+			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, rr); err != nil {
 				return err
 			}
 		}
@@ -94,12 +95,12 @@ func ExpandAnnotations(rr *ResolveResult) error {
 
 	if rr.Aggregate != nil {
 		for compName, comp := range rr.Aggregate.Spec.Components.All() {
-			if err := expandAggregateTopLevelComponent(compName, comp, registry, rr); err != nil {
+			if err := expandAggregateTopLevelComponent(compName, comp, registry, catalogLookup, rr); err != nil {
 				return err
 			}
 		}
 		for subName, sub := range rr.Aggregate.Spec.Subsystems.All() {
-			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, rr); err != nil {
+			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, rr); err != nil {
 				return err
 			}
 		}
@@ -123,6 +124,7 @@ func expandBoundary(
 	parentAnnotations types.OrderedMap[*types.AnnotationValue],
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
+	catalogLookup CatalogLookup,
 	rr *ResolveResult,
 ) error {
 	currentPath := name
@@ -155,29 +157,13 @@ func expandBoundary(
 				// key on this component; no provenance record.
 				continue
 			}
-			if value.IsStructured() {
-				// Structured-value routing through binding.Maps lands
-				// in a follow-on iteration. The current scalar-only
-				// path emits a clear error so authoring a structured
-				// value today surfaces explicitly rather than
-				// silently dropping the contribution.
-				return wrapAnnotationOpsError(currentPath, compName, key, "expansion",
-					errStructuredValueNotYetImplemented(key, effectiveSources[key]))
-			}
 			binding, ok := registry.Lookup(key)
 			if !ok {
 				continue
 			}
-			path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
-			if err != nil {
-				return wrapAnnotationOpsError(currentPath, compName, key, "parse", err)
-			}
-			if err := validateAnnotationSideCompatibility(sideRelease, key, path, pillar, effectiveSources[key]); err != nil {
-				return err
-			}
-			feature, err := expandBinding(key, *value.Scalar, binding, currentPath, compName)
-			if err != nil {
-				return err
+			feature, errs := expandBinding(key, value, binding, sideRelease, lookupFeature(catalogLookup, binding.Feature), currentPath, compName, effectiveSources[key])
+			if len(errs) > 0 {
+				return wrapAnnotationOpsError(currentPath, compName, key, "expansion", errors.Join(errs...))
 			}
 			if _, already := comp.Features.Get(key); already {
 				continue
@@ -193,25 +179,11 @@ func expandBoundary(
 	}
 
 	for childName, child := range b.Boundaries.All() {
-		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, mergedSources, registry, rr); err != nil {
+		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, mergedSources, registry, catalogLookup, rr); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// errStructuredValueNotYetImplemented formats the placeholder error
-// returned when the scalar-only expansion path encounters a Structured
-// AnnotationValue. The follow-on iteration that ships structured-value
-// routing through binding.Maps replaces this with the per-subkey
-// routing + side-vs-pillar + Feature schema type validation flow; the
-// placeholder makes the unimplemented state explicit at the authoring
-// surface rather than silently dropping the contribution.
-func errStructuredValueNotYetImplemented(key, sourceLocation string) error {
-	return fmt.Errorf(
-		"structured annotation value at %s on key %q is not yet implemented in expansion; the parse, cascade, and schema layers accept structured values, but per-subkey expansion routing is pending the follow-on iteration",
-		sourceLocation, key,
-	)
 }
 
 // annotationSourcePath formats the source location for an annotation
@@ -232,54 +204,272 @@ func annotationSourcePath(releasePath, boundaryPath, componentName, key string) 
 	return prefix + ":" + dotted + ".annotations." + key
 }
 
-// expandBinding consumes a scalar annotation value plus its binding and
+// expandBinding consumes an annotation value plus its binding and
 // produces the synthetic BoundaryFeature payload for injection on the
 // Release side. The binding's Maps groups dotted-path subkey routes by
-// target pillar (Maps.Infra, Maps.Values). For the Release-side cascade,
-// only paths in Maps.Infra fire; Maps.Values paths are inert here
-// (Aggregate-side expansion handles them in a parallel pass).
+// target pillar (Maps.Infra, Maps.Values); only Maps.Infra paths fire
+// on the Release side per the side-vs-pillar invariant.
 //
-// Annotation values are scalar in this layer. A scalar paired with a
-// binding declaring more than one path total (Maps.Infra plus Maps.Values)
-// is ambiguous routing and halts the build with an OPS_ERROR.
+// Scalar values route to the binding's single declared path (the
+// scalar-and-multi-map ambiguity check fires for bindings declaring
+// more than one path total). Structured values route per subkey: each
+// subkey looks up its target pillar via Maps.Lookup, gates through
+// side-vs-pillar enforcement (subkey routing to values pillar fails
+// on the Release side), validates the subvalue's Go type against the
+// target Feature's spec.schema at the routed path, and on success
+// writes the leaf value into the synthetic Feature's Infra pillar at
+// the dotted-path leaf.
 //
-// Scalar paired with a single-path binding whose declared path sits in
-// Maps.Infra routes the value into the synthetic Feature's Infra at the
-// dotted-path leaf — types.SetLeafAtPath navigates the path
-// components, creating intermediate OrderedMap nodes for nested
-// schema shapes.
+// Per-subkey errors compose via errors.Join (collect-and-emit-all);
+// the caller sees every authoring problem per build cycle rather
+// than fix-rebuild-fix-rebuild cycling. The orchestrator's error
+// printer walks Unwrap() []error to render each constituent on its
+// own line.
 //
-// An empty scalar populates no field; the synthetic Feature carries an
-// empty Infra pillar. FeatureRecipe rendering materializes any
-// target-Feature schema defaults downstream — the expansion layer
-// carries only the values the author actually populated through the
-// annotation.
+// An empty AnnotationValue (whole-value opt-out) reaches here only as
+// a defensive case — the cascade-flatten step filters opt-outs
+// upstream. The function returns an empty BoundaryFeature with no
+// pillar contributions in that case.
 //
-// Path-target validation against the target Feature's spec.schema (does
-// the routed path correspond to an actually-declared property?) runs at
-// the catalog cross-reference pass, not here. Expansion-time receives a
-// binding whose paths have already been schema-target validated.
-func expandBinding(key, value string, binding types.AnnotationBinding, boundaryPath, componentName string) (types.BoundaryFeature, error) {
+// Path-target validation against the target Feature's spec.schema
+// runs upstream at catalog load (ValidateAnnotationBindingTargets);
+// this function's per-subkey type validation is the defensive
+// expansion-time backstop for bindings whose paths the load-time
+// check soft-skipped (e.g., paths under a $ref subtree).
+func expandBinding(
+	key string,
+	value *types.AnnotationValue,
+	binding types.AnnotationBinding,
+	side string,
+	feature *types.Feature,
+	boundaryPath, componentName, sourceLocation string,
+) (types.BoundaryFeature, []error) {
+	out := types.BoundaryFeature{Type: binding.Feature}
+	if value.IsEmpty() {
+		return out, nil
+	}
+	if value.IsScalar() {
+		return expandBindingScalar(out, key, *value.Scalar, binding, side, feature, sourceLocation)
+	}
+	return expandBindingStructured(out, key, *value, binding, side, feature, sourceLocation)
+}
+
+// expandBindingScalar handles the single-path scalar branch. The
+// binding must declare exactly one path across both pillar lists;
+// the resolved path must route through the authoring side's pillar
+// (per validateAnnotationSideCompatibility); the scalar value must
+// match the target Feature's spec.schema declared type at the
+// routed path.
+func expandBindingScalar(
+	out types.BoundaryFeature,
+	key string,
+	value string,
+	binding types.AnnotationBinding,
+	side string,
+	feature *types.Feature,
+	sourceLocation string,
+) (types.BoundaryFeature, []error) {
 	path, pillar, err := resolveBindingTarget(binding, value)
 	if err != nil {
-		return types.BoundaryFeature{}, wrapAnnotationOpsError(boundaryPath, componentName, key, "parse", err)
+		return out, []error{wrapAnnotationOpsErrorStage(key, "parse", err)}
 	}
+	if err := validateAnnotationSideCompatibility(side, key, path, pillar, sourceLocation); err != nil {
+		return out, []error{err}
+	}
+	if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, path, value); err != nil {
+		return out, []error{err}
+	}
+	if value == "" {
+		return out, nil
+	}
+	if pillar == "infra" {
+		types.SetLeafAtPath(&out.Infra, path, value)
+	}
+	// Release-side bindings whose single path lives in Maps.Values
+	// fail side-vs-pillar above; the contribution is dropped.
+	return out, nil
+}
 
-	feature := types.BoundaryFeature{
-		Type: binding.Feature,
+// expandBindingStructured handles the structured-value branch. Each
+// subkey in the AnnotationValue routes per Maps.Lookup; per-subkey
+// errors collect across the iteration so the caller sees every
+// problem per build cycle. Subkeys that pass all checks fire their
+// pillar contribution; subkeys whose checks fail accumulate to the
+// returned error slice and the corresponding leaf does NOT fire.
+//
+// The successful subkeys still populate the contribution even when
+// other subkeys failed — partial contribution is preserved as the
+// best-effort diagnostic posture. The caller halts the build via
+// errors.Join when the error slice is non-empty; the partial
+// contribution never reaches the IR.
+//
+// Parallel structure: the body intentionally mirrors the structured
+// branch of [synthesizeAggregateFeatureFromAnnotation] (Aggregate
+// side) — same per-subkey iteration, same Maps.Lookup +
+// validateAnnotationSideCompatibility + validateSubkeyValueAgainstFeatureSchema
+// sequence, same collect-and-emit-all discipline. The two helpers
+// differ only in which pillar they write to (Infra vs Values), which
+// return-struct type wraps the contribution (BoundaryFeature vs
+// FeatureInstance), and the hardcoded side constant (sideRelease vs
+// sideAggregate). Future maintainers touching one MUST touch the
+// other in lockstep — divergence between sides silently breaks
+// cross-side composition.
+func expandBindingStructured(
+	out types.BoundaryFeature,
+	key string,
+	value types.AnnotationValue,
+	binding types.AnnotationBinding,
+	side string,
+	feature *types.Feature,
+	sourceLocation string,
+) (types.BoundaryFeature, []error) {
+	var errs []error
+	for subkey, subvalue := range value.Structured.All() {
+		pillar, found := binding.Maps.Lookup(subkey)
+		if !found {
+			declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
+			errs = append(errs, fmt.Errorf(
+				"OPS_ERROR: annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
+				subkey, key, sourceLocation, declared,
+			))
+			continue
+		}
+		if err := validateAnnotationSideCompatibility(side, key+"."+subkey, subkey, pillar, sourceLocation); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, subkey, subvalue); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if pillar == "infra" {
+			types.SetLeafAtPath(&out.Infra, subkey, subvalue)
+		}
+		// Release-side subkeys routing to values pillar are filtered
+		// by the side-vs-pillar check above; they accumulate to errs
+		// and don't fire. Aggregate-side handles the symmetric case
+		// through the same code path with side=sideAggregate.
 	}
-	// Release-side cascade processes only the infra-pillar routes from
-	// the binding's Maps. Paths in Maps.Values are inert on this side;
-	// the parallel Aggregate-side expansion handles values-pillar routes.
-	//
-	// Empty annotation value populates no field; the synthetic Feature
-	// attachment is produced with an empty pillar. FeatureRecipe
-	// rendering materializes any schema defaults uniformly across
-	// explicit and synthetic attachments downstream.
-	if pillar == "infra" && value != "" {
-		types.SetLeafAtPath(&feature.Infra, path, value)
+	return out, errs
+}
+
+// synthesizeAggregateFeatureFromAnnotation produces the synthetic
+// FeatureInstance for the Aggregate-side expansion path. Mirrors
+// expandBinding's responsibilities (per-subkey routing,
+// side-vs-pillar enforcement, type validation, collect-and-emit-all)
+// but produces a FeatureInstance and writes to its Values pillar.
+//
+// Scalar values route to the binding's single declared path through
+// the values pillar; Aggregate-side scalar annotations whose binding
+// declares only Maps.Infra paths fail the side-vs-pillar check and
+// the contribution is dropped. Structured values route per subkey;
+// per-subkey errors collect via the same discipline as the Release
+// side.
+//
+// Parallel structure: the structured branch below intentionally
+// mirrors [expandBindingStructured] (Release side) — same
+// per-subkey iteration, same Maps.Lookup +
+// validateAnnotationSideCompatibility + validateSubkeyValueAgainstFeatureSchema
+// sequence, same collect-and-emit-all discipline. The two helpers
+// differ only in which pillar they write to (Values vs Infra), which
+// return-struct type wraps the contribution (FeatureInstance vs
+// BoundaryFeature), and the hardcoded side constant (sideAggregate
+// vs sideRelease). Future maintainers touching one MUST touch the
+// other in lockstep — divergence between sides silently breaks
+// cross-side composition.
+func synthesizeAggregateFeatureFromAnnotation(
+	key string,
+	value types.AnnotationValue,
+	binding types.AnnotationBinding,
+	feature *types.Feature,
+	sourceLocation string,
+) (types.FeatureInstance, []error) {
+	out := types.FeatureInstance{Type: binding.Feature}
+	if value.IsScalar() {
+		path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
+		if err != nil {
+			return out, []error{wrapAnnotationOpsErrorStage(key, "parse", err)}
+		}
+		if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, sourceLocation); err != nil {
+			return out, []error{err}
+		}
+		if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, path, *value.Scalar); err != nil {
+			return out, []error{err}
+		}
+		if *value.Scalar != "" && pillar == "values" {
+			types.SetLeafAtPath(&out.Values, path, *value.Scalar)
+		}
+		return out, nil
 	}
-	return feature, nil
+	if value.IsStructured() {
+		var errs []error
+		for subkey, subvalue := range value.Structured.All() {
+			pillar, found := binding.Maps.Lookup(subkey)
+			if !found {
+				declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
+				errs = append(errs, fmt.Errorf(
+					"OPS_ERROR: annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
+					subkey, key, sourceLocation, declared,
+				))
+				continue
+			}
+			if err := validateAnnotationSideCompatibility(sideAggregate, key+"."+subkey, subkey, pillar, sourceLocation); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, subkey, subvalue); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if pillar == "values" {
+				types.SetLeafAtPath(&out.Values, subkey, subvalue)
+			}
+		}
+		return out, errs
+	}
+	return out, nil
+}
+
+// wrapAnnotationOpsErrorStage formats a per-annotation-key inner-stage
+// failure for collection through the errors.Join chain. The wrapper
+// does NOT carry the OPS_ERROR prefix — the outer scope-path wrap
+// (wrapAnnotationOpsError / wrapAggregateAnnotationOpsError) supplies
+// the OPS_ERROR prefix at the rendered-output boundary. Inner stage
+// errors composed through errors.Join therefore read as
+// "expansion <stage> failed at key %q: <reason>" while the outer
+// wrap renders as
+// "OPS_ERROR: annotation expansion at <scope> ...: <joined inner>".
+// Operators see exactly one OPS_ERROR prefix per diagnostic line.
+func wrapAnnotationOpsErrorStage(key, stage string, inner error) error {
+	return fmt.Errorf("annotation expansion %s failed at key %q: %w", stage, key, inner)
+}
+
+// lookupFeature returns the resolved Feature for a binding's target
+// type URI, or nil when the catalog lookup is unavailable (nil
+// Feature function field) or the Feature is not present in the
+// catalog. The per-subkey type validator and the
+// synthesize/expandBinding paths handle nil Feature defensively —
+// schema-type validation soft-skips on nil to preserve the
+// default-to-skip discipline established for the path-target
+// validator.
+//
+// The nil-tolerant lookup keeps the expansion phase exercisable in
+// catalog-less test scenarios (constructing ResolveResult fixtures
+// without spinning up a full catalog) and in the orchestrator's
+// pre-RunGuards path where the catalog is loaded but a binding's
+// target Feature may itself be missing — in which case the
+// load-time ValidateAnnotationBindingTargets has already halted the
+// build; reaching this fallback means tests are calling Expansion
+// directly.
+func lookupFeature(catalogLookup CatalogLookup, typeURI string) *types.Feature {
+	if catalogLookup.Feature == nil {
+		return nil
+	}
+	feat, found := catalogLookup.Feature(typeURI)
+	if !found {
+		return nil
+	}
+	return &feat
 }
 
 // resolveBindingTarget reads a binding's Maps and returns the dotted-path
@@ -423,32 +613,24 @@ func allowedPillarFor(side string) string {
 // declared directly on the component. The canonical path is
 // "components.<name>". The function mirrors the per-component body of
 // expandAggregateSubsystem.
-func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, rr *ResolveResult) error {
+func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, catalogLookup CatalogLookup, rr *ResolveResult) error {
 	componentPath := "components." + name
 	for key, value := range comp.Annotations.All() {
 		if value.IsEmpty() {
 			continue
 		}
-		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
-		if value.IsStructured() {
-			return wrapAggregateAnnotationOpsError(componentPath, key, "expansion",
-				errStructuredValueNotYetImplemented(key, sourceLoc))
-		}
 		binding, ok := registry.Lookup(key)
 		if !ok {
 			continue
 		}
-		path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
-		if err != nil {
-			return wrapAggregateAnnotationOpsError(componentPath, key, "parse", err)
-		}
-		if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, sourceLoc); err != nil {
-			return err
-		}
 		if _, already := comp.Features.Get(key); already {
 			continue
 		}
-		feature := synthesizeAggregateFeature(binding, *value.Scalar, path, pillar)
+		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
+		feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), sourceLoc)
+		if len(errs) > 0 {
+			return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
+		}
 		comp.Features.Set(key, feature)
 		rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
 			AnnotationKey:    key,
@@ -489,6 +671,7 @@ func expandAggregateSubsystem(
 	parentAnnotations types.OrderedMap[*types.AnnotationValue],
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
+	catalogLookup CatalogLookup,
 	rr *ResolveResult,
 ) error {
 	currentPath := parentPath + "." + name
@@ -517,25 +700,17 @@ func expandAggregateSubsystem(
 			if value.IsEmpty() {
 				continue
 			}
-			if value.IsStructured() {
-				return wrapAggregateAnnotationOpsError(componentPath, key, "expansion",
-					errStructuredValueNotYetImplemented(key, effectiveSources[key]))
-			}
 			binding, ok := registry.Lookup(key)
 			if !ok {
 				continue
 			}
-			path, pillar, err := resolveBindingTarget(binding, *value.Scalar)
-			if err != nil {
-				return wrapAggregateAnnotationOpsError(componentPath, key, "parse", err)
-			}
-			if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, effectiveSources[key]); err != nil {
-				return err
-			}
 			if _, already := comp.Features.Get(key); already {
 				continue
 			}
-			feature := synthesizeAggregateFeature(binding, *value.Scalar, path, pillar)
+			feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), effectiveSources[key])
+			if len(errs) > 0 {
+				return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
+			}
 			comp.Features.Set(key, feature)
 			rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
 				AnnotationKey:    key,
@@ -546,35 +721,11 @@ func expandAggregateSubsystem(
 	}
 
 	for childName, child := range s.Subsystems.All() {
-		if err := expandAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, mergedSources, registry, rr); err != nil {
+		if err := expandAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, mergedSources, registry, catalogLookup, rr); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// synthesizeAggregateFeature builds the FeatureInstance payload for an
-// Aggregate-side synthetic attachment. Aggregate-side expansion routes
-// only through values-pillar paths; the synthesized FeatureInstance
-// carries the value at the named values leaf via setPillarLeaf, which
-// navigates the dotted path through nested OrderedMap intermediates and
-// creates the intermediate nodes as needed.
-//
-// An empty scalar produces a FeatureInstance with an empty Values
-// pillar; FeatureRecipe rendering materializes any schema defaults
-// uniformly across explicit and synthetic attachments downstream.
-//
-// The function trusts the caller to have validated side-vs-pillar
-// compatibility upstream (see validateAnnotationSideCompatibility);
-// receiving a non-values pillar here is a programming error rather than
-// a user-error and the function returns a FeatureInstance with the
-// declared Type and empty pillars.
-func synthesizeAggregateFeature(binding types.AnnotationBinding, value, path, pillar string) types.FeatureInstance {
-	feature := types.FeatureInstance{Type: binding.Feature}
-	if pillar == "values" && value != "" {
-		types.SetLeafAtPath(&feature.Values, path, value)
-	}
-	return feature
 }
 
 // aggregateAnnotationSourcePath formats the source location for an

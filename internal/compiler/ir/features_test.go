@@ -1073,3 +1073,228 @@ func TestIRBuilder_LeavesLastWins_SameOrigin_ProvenanceRefreshes(t *testing.T) {
 		t.Error("same-origin merge should not populate OverridesAnnotation")
 	}
 }
+
+// Structured-annotation IR builder coverage. The IR builder consumes
+// structured-annotation contributions transparently through the same
+// per-leaf merge already in place — each subkey of a structured
+// annotation lands as its own leaf in the contribution's pillar
+// OrderedMap. The tests below pin (a) values-pillar leaves populating
+// from an Aggregate-side structured annotation; (b) infra-pillar
+// leaves populating from a Release-side structured annotation;
+// (c) cross-side composition into one IRFeatureEntry with both pillars
+// populated; (d) the "same annotation → same source → all leaves
+// uniform" provenance expectation when one structured annotation
+// produces multiple leaves.
+
+func TestIRBuilder_StructuredAggregateAnnotation_FillsValuesFromSubkeys(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api", SubsystemPath: "data"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "feature.myco/db-pool", Feature: types.FeatureInstance{
+					Type:   "core/db-pool:1.0.0",
+					Values: valuesMap("db_name", "prod-db", "read_replicas", 5),
+				}},
+			},
+		},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{
+			resolver.AnnotationProvenanceKey("subsystems.data.components.api", "", "feature.myco/db-pool"): {
+				AnnotationKey:    "feature.myco/db-pool",
+				AnnotationSource: "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool",
+			},
+		},
+	}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	feat, _ := result.Features.Get("feature.myco/db-pool")
+	if dbName, _ := feat.Values.Get("db_name"); dbName != "prod-db" {
+		t.Errorf("Values.db_name = %v, want prod-db", dbName)
+	}
+	if replicas, _ := feat.Values.Get("read_replicas"); replicas != 5 {
+		t.Errorf("Values.read_replicas = %v, want 5", replicas)
+	}
+}
+
+func TestIRBuilder_StructuredReleaseAnnotation_FillsInfraFromSubkeys(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api", BoundaryPath: "prod"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{Nodes: nodes}
+
+	comp := types.BoundaryComponent{}
+	bf := types.BoundaryFeature{
+		Type:  "core/db-pool:1.0.0",
+		Infra: valuesMap("pool_size", 20, "max_connections", 100),
+	}
+	comp.Features.Set("feature.myco/db-pool", bf)
+	prod := types.Boundary{}
+	prod.Components.Set("api", comp)
+	release := &types.Release{}
+	release.Spec.Boundaries.Set("prod", prod)
+
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		Release:   release,
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{
+			resolver.AnnotationProvenanceKey("prod", "api", "feature.myco/db-pool"): {
+				AnnotationKey:    "feature.myco/db-pool",
+				AnnotationSource: "release.yaml:boundaries.prod.annotations.feature.myco/db-pool",
+			},
+		},
+	}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	feat, _ := result.Features.Get("feature.myco/db-pool")
+	if poolSize, _ := feat.Infra.Get("pool_size"); poolSize != 20 {
+		t.Errorf("Infra.pool_size = %v, want 20", poolSize)
+	}
+	if maxConn, _ := feat.Infra.Get("max_connections"); maxConn != 100 {
+		t.Errorf("Infra.max_connections = %v, want 100", maxConn)
+	}
+}
+
+func TestIRBuilder_StructuredCrossSide_ComposesBothPillars(t *testing.T) {
+	t.Parallel()
+	// Aggregate-side structured annotation contributes two
+	// values-pillar leaves; Release-side structured annotation
+	// contributes two infra-pillar leaves on the same Feature key.
+	// The IR builder composes both into one IRFeatureEntry with all
+	// four pillar fields populated and the top-level Origin derives
+	// to "mixed" (cross-side composition).
+	apiNode := &topology.TopologyNode{InstanceID: "api", BoundaryPath: "prod"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+
+	comp := types.BoundaryComponent{}
+	bf := types.BoundaryFeature{
+		Type:  "core/db-pool:1.0.0",
+		Infra: valuesMap("pool_size", 20, "max_connections", 100),
+	}
+	comp.Features.Set("feature.myco/db-pool", bf)
+	prod := types.Boundary{}
+	prod.Components.Set("api", comp)
+	release := &types.Release{}
+	release.Spec.Boundaries.Set("prod", prod)
+
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "feature.myco/db-pool", Feature: types.FeatureInstance{
+					Type:   "core/db-pool:1.0.0",
+					Values: valuesMap("db_name", "prod-db", "read_replicas", 5),
+				}},
+			},
+		},
+	}
+
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		Release:   release,
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{
+			resolver.AnnotationProvenanceKey("components.api", "", "feature.myco/db-pool"): {
+				AnnotationKey:    "feature.myco/db-pool",
+				AnnotationSource: "aggregate.yaml:components.api.annotations.feature.myco/db-pool",
+			},
+			resolver.AnnotationProvenanceKey("prod", "api", "feature.myco/db-pool"): {
+				AnnotationKey:    "feature.myco/db-pool",
+				AnnotationSource: "release.yaml:boundaries.prod.annotations.feature.myco/db-pool",
+			},
+		},
+	}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	feat, _ := result.Features.Get("feature.myco/db-pool")
+
+	// All four leaves populated.
+	if dbName, _ := feat.Values.Get("db_name"); dbName != "prod-db" {
+		t.Errorf("Values.db_name = %v, want prod-db", dbName)
+	}
+	if replicas, _ := feat.Values.Get("read_replicas"); replicas != 5 {
+		t.Errorf("Values.read_replicas = %v, want 5", replicas)
+	}
+	if poolSize, _ := feat.Infra.Get("pool_size"); poolSize != 20 {
+		t.Errorf("Infra.pool_size = %v, want 20", poolSize)
+	}
+	if maxConn, _ := feat.Infra.Get("max_connections"); maxConn != 100 {
+		t.Errorf("Infra.max_connections = %v, want 100", maxConn)
+	}
+	if feat.Origin != "mixed" {
+		t.Errorf("top-level Origin = %q, want mixed (cross-side composition)", feat.Origin)
+	}
+}
+
+func TestIRBuilder_StructuredAnnotation_PerSubkeyProvenance(t *testing.T) {
+	t.Parallel()
+	// One structured annotation produces multiple leaves in one
+	// pillar. The side-table records ONE entry per
+	// (componentPath, "", featureKey) — both leaves derive from the
+	// same annotation source. The IR builder's Tier 1/2/5 lookup
+	// hits the side-table entry once and stamps the same
+	// AnnotationKey + AnnotationSource onto every leaf produced by
+	// the contribution. This pins the "same annotation → same
+	// source → all leaves uniform" expectation.
+	apiNode := &topology.TopologyNode{InstanceID: "api", SubsystemPath: "data"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "feature.myco/db-pool", Feature: types.FeatureInstance{
+					Type:   "core/db-pool:1.0.0",
+					Values: valuesMap("db_name", "prod-db", "read_replicas", 5),
+				}},
+			},
+		},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		AnnotationProvenance: map[string]resolver.AnnotationProvenance{
+			resolver.AnnotationProvenanceKey("subsystems.data.components.api", "", "feature.myco/db-pool"): {
+				AnnotationKey:    "feature.myco/db-pool",
+				AnnotationSource: "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool",
+			},
+		},
+	}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	feat, _ := result.Features.Get("feature.myco/db-pool")
+
+	dbNameProv, _ := feat.ValuesProvenance.Get("db_name")
+	replicasProv, _ := feat.ValuesProvenance.Get("read_replicas")
+
+	// All subkey leaves carry the SAME AnnotationKey + AnnotationSource.
+	if dbNameProv.AnnotationKey != replicasProv.AnnotationKey {
+		t.Errorf("db_name key=%q vs read_replicas key=%q — both leaves should share the same annotation key",
+			dbNameProv.AnnotationKey, replicasProv.AnnotationKey)
+	}
+	if dbNameProv.AnnotationSource != replicasProv.AnnotationSource {
+		t.Errorf("db_name source=%q vs read_replicas source=%q — both leaves should share the same annotation source",
+			dbNameProv.AnnotationSource, replicasProv.AnnotationSource)
+	}
+	// All carry the same Side.
+	if dbNameProv.Side != replicasProv.Side || dbNameProv.Side != "aggregate" {
+		t.Errorf("Side differs or wrong: db_name=%q replicas=%q (want both aggregate)",
+			dbNameProv.Side, replicasProv.Side)
+	}
+	// Per-subkey provenance differentiation is NOT expected: per-leaf
+	// provenance already does the right thing by uniform attribution
+	// to the single annotation source.
+}

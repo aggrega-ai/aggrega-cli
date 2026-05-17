@@ -150,7 +150,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// Annotation-driven Feature expansion runs between the mechanical
 	// resolver and the guards pass so synthetic Feature attachments are
 	// visible to RunGuards' requiredFeatures completeness check.
-	if err := resolver.ExpandAnnotations(resolveResult); err != nil {
+	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
 		return fmt.Errorf("Step 1 (annotation expansion): %w", err)
 	}
 
