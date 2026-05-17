@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cognitio/aggrega-cli/pkg/compactform"
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
@@ -22,6 +23,108 @@ const (
 	sideAggregate = "aggregate"
 	sideRelease   = "release"
 )
+
+// featureSchemaCache memoizes compactform.Compile output for each
+// distinct target Feature observed during one ExpandAnnotations
+// invocation. The annotation expansion pass invokes
+// validateSubkeyValueAgainstFeatureSchema once per (component,
+// annotation, subkey) tuple; without caching, the same Feature
+// schema body re-compiles N times where N is the per-Feature subkey
+// fan-out. The cache collapses N compiles into one.
+//
+// Scope. Per-call lifetime — ExpandAnnotations constructs the cache
+// at entry and discards it on return. No cross-build state, no
+// process-wide singleton, no on-disk persistence; subsequent build
+// invocations populate fresh caches. The discipline avoids the
+// staleness window an inter-build cache would open if a Feature
+// schema changes between builds.
+//
+// Key. The versioned Feature URI form
+// (Metadata.Name + ":" + Metadata.Version, or bare Metadata.Name
+// when Version is empty) via [versionedName]. Keying on the
+// versioned URI matches the Manifest binding declaration shape
+// (binding.Feature carries the versioned URI today) and stays
+// correct if multi-version coexistence per Feature name lands in
+// the catalog layer later — distinct versions would compile and
+// cache separately rather than collide on a shared bare-name key.
+//
+// Negative caching. A compactform.Compile failure caches as
+// (zero, false); subsequent requests for the same Feature return
+// the cached negative without re-attempting the compile. The
+// validator's soft-skip-on-compile-error path treats a cached
+// negative identically to a fresh negative, so author behavior is
+// unchanged.
+//
+// Test observability. hits and misses count cache lookups; tests
+// inspect the counters directly to assert one-compile-per-feature
+// without instrumenting compactform.Compile.
+type featureSchemaCache struct {
+	entries map[string]featureSchemaCacheEntry
+	hits    int
+	misses  int
+}
+
+// featureSchemaCacheEntry is the per-Feature cached compile output.
+// ok=true carries a successful compile in compiled; ok=false carries
+// a cached compile failure (compiled is the zero compactform.Schema).
+type featureSchemaCacheEntry struct {
+	compiled compactform.Schema
+	ok       bool
+}
+
+// newFeatureSchemaCache returns an empty cache ready for use across
+// one ExpandAnnotations invocation.
+func newFeatureSchemaCache() *featureSchemaCache {
+	return &featureSchemaCache{entries: map[string]featureSchemaCacheEntry{}}
+}
+
+// schemaFor returns the compiled JSON Schema 2020-12 form of the
+// Feature's spec.schema, compiling lazily on the first request and
+// returning the cached result on subsequent requests for the same
+// versioned Feature URI. Returns (compiled, true) when the schema
+// compiled cleanly; (zero, false) when the compile failed.
+//
+// Nil-safe. A nil receiver falls through to direct
+// compactform.Compile with no memoization, preserving the
+// uncached behavior for any future caller that wires
+// validateSubkeyValueAgainstFeatureSchema without constructing a
+// cache. The expansion paths created in this package always pass
+// a non-nil cache.
+//
+// A nil feature returns (zero, false) and increments no counter —
+// the validator handles nil feature defensively elsewhere.
+func (c *featureSchemaCache) schemaFor(feature *types.Feature) (compactform.Schema, bool) {
+	if feature == nil {
+		return nil, false
+	}
+	if c == nil {
+		compiled, err := compactform.Compile(&feature.Spec.Schema)
+		return compiled, err == nil
+	}
+	key := versionedName(feature)
+	if entry, has := c.entries[key]; has {
+		c.hits++
+		return entry.compiled, entry.ok
+	}
+	c.misses++
+	compiled, err := compactform.Compile(&feature.Spec.Schema)
+	entry := featureSchemaCacheEntry{compiled: compiled, ok: err == nil}
+	c.entries[key] = entry
+	return entry.compiled, entry.ok
+}
+
+// versionedName returns the canonical versioned Feature URI string
+// used as the featureSchemaCache key. Format: "<name>:<version>"
+// when Metadata.Version is non-empty, bare "<name>" otherwise.
+// The form matches the Manifest binding.Feature URI convention and
+// differentiates distinct versions of a Feature should the catalog
+// later support multi-version coexistence per name.
+func versionedName(feature *types.Feature) string {
+	if feature.Metadata.Version == "" {
+		return feature.Metadata.Name
+	}
+	return feature.Metadata.Name + ":" + feature.Metadata.Version
+}
 
 // ExpandAnnotations runs the annotation-driven Feature expansion pass.
 // The pass reads the resolved Manifest's flat features.annotations
@@ -84,10 +187,11 @@ func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 	if rr.AnnotationProvenance == nil {
 		rr.AnnotationProvenance = map[string]AnnotationProvenance{}
 	}
+	cache := newFeatureSchemaCache()
 
 	if rr.Release != nil {
 		for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, rr); err != nil {
+			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, cache, rr); err != nil {
 				return err
 			}
 		}
@@ -95,12 +199,12 @@ func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 
 	if rr.Aggregate != nil {
 		for compName, comp := range rr.Aggregate.Spec.Components.All() {
-			if err := expandAggregateTopLevelComponent(compName, comp, registry, catalogLookup, rr); err != nil {
+			if err := expandAggregateTopLevelComponent(compName, comp, registry, catalogLookup, cache, rr); err != nil {
 				return err
 			}
 		}
 		for subName, sub := range rr.Aggregate.Spec.Subsystems.All() {
-			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, rr); err != nil {
+			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, cache, rr); err != nil {
 				return err
 			}
 		}
@@ -125,6 +229,7 @@ func expandBoundary(
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
 	catalogLookup CatalogLookup,
+	cache *featureSchemaCache,
 	rr *ResolveResult,
 ) error {
 	currentPath := name
@@ -161,7 +266,7 @@ func expandBoundary(
 			if !ok {
 				continue
 			}
-			feature, errs := expandBinding(key, value, binding, sideRelease, lookupFeature(catalogLookup, binding.Feature), currentPath, compName, effectiveSources[key])
+			feature, errs := expandBinding(key, value, binding, sideRelease, lookupFeature(catalogLookup, binding.Feature), cache, currentPath, compName, effectiveSources[key])
 			if len(errs) > 0 {
 				return wrapAnnotationOpsError(currentPath, compName, key, "expansion", errors.Join(errs...))
 			}
@@ -179,7 +284,7 @@ func expandBoundary(
 	}
 
 	for childName, child := range b.Boundaries.All() {
-		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, mergedSources, registry, catalogLookup, rr); err != nil {
+		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, mergedSources, registry, catalogLookup, cache, rr); err != nil {
 			return err
 		}
 	}
@@ -242,6 +347,7 @@ func expandBinding(
 	binding types.AnnotationBinding,
 	side string,
 	feature *types.Feature,
+	cache *featureSchemaCache,
 	boundaryPath, componentName, sourceLocation string,
 ) (types.BoundaryFeature, []error) {
 	out := types.BoundaryFeature{Type: binding.Feature}
@@ -249,9 +355,9 @@ func expandBinding(
 		return out, nil
 	}
 	if value.IsScalar() {
-		return expandBindingScalar(out, key, *value.Scalar, binding, side, feature, sourceLocation)
+		return expandBindingScalar(out, key, *value.Scalar, binding, side, feature, cache, sourceLocation)
 	}
-	return expandBindingStructured(out, key, *value, binding, side, feature, sourceLocation)
+	return expandBindingStructured(out, key, *value, binding, side, feature, cache, sourceLocation)
 }
 
 // expandBindingScalar handles the single-path scalar branch. The
@@ -267,6 +373,7 @@ func expandBindingScalar(
 	binding types.AnnotationBinding,
 	side string,
 	feature *types.Feature,
+	cache *featureSchemaCache,
 	sourceLocation string,
 ) (types.BoundaryFeature, []error) {
 	path, pillar, err := resolveBindingTarget(binding, value)
@@ -276,7 +383,7 @@ func expandBindingScalar(
 	if err := validateAnnotationSideCompatibility(side, key, path, pillar, sourceLocation); err != nil {
 		return out, []error{err}
 	}
-	if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, path, value); err != nil {
+	if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, path, value); err != nil {
 		return out, []error{err}
 	}
 	if value == "" {
@@ -321,6 +428,7 @@ func expandBindingStructured(
 	binding types.AnnotationBinding,
 	side string,
 	feature *types.Feature,
+	cache *featureSchemaCache,
 	sourceLocation string,
 ) (types.BoundaryFeature, []error) {
 	var errs []error
@@ -338,7 +446,7 @@ func expandBindingStructured(
 			errs = append(errs, err)
 			continue
 		}
-		if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, subkey, subvalue); err != nil {
+		if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, subkey, subvalue); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -382,6 +490,7 @@ func synthesizeAggregateFeatureFromAnnotation(
 	value types.AnnotationValue,
 	binding types.AnnotationBinding,
 	feature *types.Feature,
+	cache *featureSchemaCache,
 	sourceLocation string,
 ) (types.FeatureInstance, []error) {
 	out := types.FeatureInstance{Type: binding.Feature}
@@ -393,7 +502,7 @@ func synthesizeAggregateFeatureFromAnnotation(
 		if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, sourceLocation); err != nil {
 			return out, []error{err}
 		}
-		if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, path, *value.Scalar); err != nil {
+		if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, path, *value.Scalar); err != nil {
 			return out, []error{err}
 		}
 		if *value.Scalar != "" && pillar == "values" {
@@ -417,7 +526,7 @@ func synthesizeAggregateFeatureFromAnnotation(
 				errs = append(errs, err)
 				continue
 			}
-			if err := validateSubkeyValueAgainstFeatureSchema(feature, pillar, subkey, subvalue); err != nil {
+			if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, subkey, subvalue); err != nil {
 				errs = append(errs, err)
 				continue
 			}
@@ -613,7 +722,7 @@ func allowedPillarFor(side string) string {
 // declared directly on the component. The canonical path is
 // "components.<name>". The function mirrors the per-component body of
 // expandAggregateSubsystem.
-func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, catalogLookup CatalogLookup, rr *ResolveResult) error {
+func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, catalogLookup CatalogLookup, cache *featureSchemaCache, rr *ResolveResult) error {
 	componentPath := "components." + name
 	for key, value := range comp.Annotations.All() {
 		if value.IsEmpty() {
@@ -627,7 +736,7 @@ func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance,
 			continue
 		}
 		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
-		feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), sourceLoc)
+		feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, sourceLoc)
 		if len(errs) > 0 {
 			return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
 		}
@@ -672,6 +781,7 @@ func expandAggregateSubsystem(
 	parentSources map[string]string,
 	registry *AnnotationRegistry,
 	catalogLookup CatalogLookup,
+	cache *featureSchemaCache,
 	rr *ResolveResult,
 ) error {
 	currentPath := parentPath + "." + name
@@ -707,7 +817,7 @@ func expandAggregateSubsystem(
 			if _, already := comp.Features.Get(key); already {
 				continue
 			}
-			feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), effectiveSources[key])
+			feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, effectiveSources[key])
 			if len(errs) > 0 {
 				return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
 			}
@@ -721,7 +831,7 @@ func expandAggregateSubsystem(
 	}
 
 	for childName, child := range s.Subsystems.All() {
-		if err := expandAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, mergedSources, registry, catalogLookup, rr); err != nil {
+		if err := expandAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, mergedSources, registry, catalogLookup, cache, rr); err != nil {
 			return err
 		}
 	}

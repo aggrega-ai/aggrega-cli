@@ -118,11 +118,13 @@ func (m AnnotationBindingMaps) Len() int {
 // fire one pillar's contribution per side), Lookup returns "infra"
 // deterministically. The Aggregate side then fails side-vs-pillar
 // on every such subkey, making the path Aggregate-inaccessible
-// despite its Values declaration. A future lint at catalog load can
-// surface this anti-pattern (parallel to the schema-pillar-overlap
-// lint that catches the same-name overlap on the Feature schema
-// side); today the deterministic tie-breaking + side-vs-pillar
-// halting surfaces the inaccessibility at expansion time.
+// despite its Values declaration. Manifest binding-map overlap is
+// surfaced by resolver.LintAnnotationBindingMaps, which runs after
+// Resolve and emits one advisory warning per duplicated path
+// (parallel to the schema-pillar-overlap lint that catches same-
+// name overlap on the Feature schema side). The deterministic tie-
+// breaking + side-vs-pillar halt remain the runtime safety net for
+// authors who run with the warning ignored.
 func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
 	for _, p := range m.Infra {
 		if p == path {

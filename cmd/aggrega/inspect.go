@@ -277,6 +277,9 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 	defer resolver.PurgeParameters(&resolveResult.Parameters)
 
 	catalogLookup := cat.CatalogLookup()
+	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
 	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
 		return fmt.Errorf("Step 1 (annotation expansion): %w", err)
 	}

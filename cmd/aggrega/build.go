@@ -147,6 +147,15 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Step 1 (annotation binding validation): %w", err)
 	}
 
+	// Surface non-fatal Manifest binding-map lint warnings (same-path
+	// overlap across Maps.Infra and Maps.Values). The runtime
+	// deterministic tie-break + side-vs-pillar halt remains the load-
+	// bearing safety net; this lint previews which subkeys the tie-
+	// break will silently route to infra.
+	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+
 	// Annotation-driven Feature expansion runs between the mechanical
 	// resolver and the guards pass so synthetic Feature attachments are
 	// visible to RunGuards' requiredFeatures completeness check.

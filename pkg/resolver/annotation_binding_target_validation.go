@@ -216,20 +216,23 @@ func hasEscapeHatch(node map[string]any) bool {
 	return false
 }
 
-// validateSubkeyValueAgainstFeatureSchema compiles the target Feature's
-// spec.schema and verifies that a subkey value's runtime Go type
-// matches the schema's declared type at the routed pillar+path.
-// Annotation values arrive from YAML decode as primitives (string,
-// int, float64, bool) or composite types (map, slice); the
-// validator checks each against the schema's `type` field.
+// validateSubkeyValueAgainstFeatureSchema verifies that a subkey
+// value's runtime Go type matches the target Feature's spec.schema
+// declared type at the routed pillar+path. Annotation values arrive
+// from YAML decode as primitives (string, int, float64, bool) or
+// composite types (map, slice); the validator checks each against
+// the schema's `type` field.
 //
-// Performance note: compiles feature.Spec.Schema on every call.
-// Resolver-context-level caching (one compile per Feature per build)
-// is a future optimization deferred until profiling shows expansion-
-// time growth; the godoc records the deferral so the optimization
-// opportunity stays visible. The test-report.md notes any test
-// scenario that surfaces noticeable expansion-time growth so the
-// deferral can be revisited promptly.
+// Compile caching. The compiled JSON Schema 2020-12 form of
+// feature.Spec.Schema arrives via the [featureSchemaCache] supplied
+// by the caller. The cache memoizes one compile per versioned
+// Feature URI per [ExpandAnnotations] invocation, collapsing the
+// fan-out of (component × annotation × subkey) lookups against the
+// same Feature into a single compactform.Compile call. A nil cache
+// receiver falls through to a direct compactform.Compile per call,
+// preserving the uncached behavior for callers that wire the
+// validator without constructing a cache; the in-tree expansion
+// paths always pass a non-nil cache.
 //
 // Returns nil when the value's type matches the schema declaration,
 // when the schema-walker reaches an escape-hatch branch ($ref,
@@ -262,14 +265,15 @@ func hasEscapeHatch(node map[string]any) bool {
 // Authoring docs surface this trade-off explicitly so operators
 // understand that strict type validation is opt-in at the schema
 // authoring site, not the validator's default.
-func validateSubkeyValueAgainstFeatureSchema(feature *types.Feature, pillar, subkey string, value any) error {
+func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature *types.Feature, pillar, subkey string, value any) error {
 	if feature == nil {
 		return nil
 	}
-	compiled, err := compactform.Compile(&feature.Spec.Schema)
-	if err != nil {
+	compiled, ok := cache.schemaFor(feature)
+	if !ok {
 		// Compile errors surface upstream at catalog load; defensive
-		// pass-through here.
+		// soft-skip here matches the path-target validator's
+		// default-to-skip discipline.
 		return nil
 	}
 	declaredType, found, skippable := schemaPropertyType(compiled, pillar, subkey)
