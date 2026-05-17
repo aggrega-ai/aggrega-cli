@@ -14,9 +14,9 @@ spec:
       main:
         image: web-ui:latest
         ports:
-          web: {{ .values.port }}
+          web: {{ .values.port | default 3000 }}
         variables:
-          PORT: "{{ .values.port }}"
+          PORT: "{{ .values.port | default 3000 }}"
           {{- range $k, $v := .context.inject.env }}
           {{ $k }}: "{{ $v }}"
           {{- end }}
@@ -24,4 +24,4 @@ spec:
       web:
         type: ClusterIP
         ports:
-          web: {{ .values.port }}
+          web: {{ .values.port | default 3000 }}

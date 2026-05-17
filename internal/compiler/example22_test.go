@@ -113,6 +113,19 @@ func runExample22Variant(t *testing.T, fx variantFixture) *example22Result {
 
 	catalogLookup := cat.CatalogLookup()
 
+	// Mirror the production Step 1 pipeline order from cmd/aggrega/build.go:
+	// validate annotation binding targets against catalog Feature schemas,
+	// then run annotation-driven Feature expansion before guards. The two
+	// calls are no-ops for fixtures with no annotation bindings (empty
+	// registry); they are load-bearing for fixtures declaring annotation
+	// bindings.
+	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
+		t.Fatalf("Step 1 (annotation binding validation): %v", err)
+	}
+	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
+		t.Fatalf("Step 1 (annotation expansion): %v", err)
+	}
+
 	// Step 1a: Guards — MUST pass for the end-to-end proof.
 	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
 	if len(guardErrs) > 0 {

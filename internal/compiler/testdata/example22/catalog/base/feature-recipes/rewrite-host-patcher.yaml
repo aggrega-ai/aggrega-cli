@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: rewrite-host-patcher
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: "feature.myco/rewrite-host"
+  injectMapping: |
+    {"env": {"UPSTREAM_HOST": "{{ .infra.upstream }}"}}

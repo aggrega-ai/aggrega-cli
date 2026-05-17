@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: annotation-cross-side-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        db-pool:
+          feature: "feature.myco/db-pool"
+          maps:
+            infra:
+              - pool_size
+            values:
+              - db_name

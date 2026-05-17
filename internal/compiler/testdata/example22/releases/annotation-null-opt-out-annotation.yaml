@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: annotation-null-opt-out-annotation
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-release-side
+  manifest: ../manifests/annotation-rewrite-host
+  boundaries:
+    web-ns:
+      directory: ./dist/web
+      annotations:
+        aggrega.ai/namespace: "web-zone"
+        feature.myco/rewrite-host: "shared.example.com"
+      components:
+        app1: {}
+        app2:
+          annotations:
+            feature.myco/rewrite-host: null

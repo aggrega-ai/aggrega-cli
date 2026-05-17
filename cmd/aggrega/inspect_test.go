@@ -13,6 +13,82 @@ import (
 	"github.com/cognitio/aggrega-cli/pkg/types"
 )
 
+// example22InspectCatalog is the catalog tree the annotation-driven
+// inspect-output assertions point at. Recursive walk covers base
+// entities + per-variant recipes; the helm-synthesized variant supplies
+// the Component recipes the example22 IR builder consumes.
+const example22InspectCatalog = "../../internal/compiler/testdata/example22/catalog"
+
+// runInspectCaptured wires the captureStdout helper to a runInspect
+// call against a Release file with the example22 catalog set. The
+// returned string is the per-component Feature-attachment block the
+// inspect command emits.
+func runInspectCaptured(t *testing.T, releasePath string) string {
+	t.Helper()
+	prior := inspectCatalogDir
+	inspectCatalogDir = example22InspectCatalog
+	defer func() { inspectCatalogDir = prior }()
+	out, err := captureStdout(func() error {
+		return runInspect(nil, []string{releasePath})
+	})
+	if err != nil {
+		t.Fatalf("runInspect(%q): %v", releasePath, err)
+	}
+	return out
+}
+
+func TestInspect_AnnotationBoundary_Explicit_UniformBracket(t *testing.T) {
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-boundary-explicit.yaml")
+	if !strings.Contains(out, "feature.myco/rewrite-host") {
+		t.Errorf("inspect output missing rewrite-host Feature; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[explicit]") {
+		t.Errorf("inspect output missing [explicit] bracket on explicit pair; got:\n%s", out)
+	}
+}
+
+func TestInspect_AnnotationBoundary_Annotation_UniformBracket(t *testing.T) {
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-boundary-annotation.yaml")
+	if !strings.Contains(out, "feature.myco/rewrite-host") {
+		t.Errorf("inspect output missing rewrite-host Feature; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[annotation: feature.myco/rewrite-host from") {
+		t.Errorf("inspect output missing [annotation: ...] bracket on annotation pair; got:\n%s", out)
+	}
+}
+
+func TestInspect_AnnotationCrossSide_Explicit_PerLeafBrackets(t *testing.T) {
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-cross-side-explicit.yaml")
+	// Explicit cross-side: both pillars contributed explicitly; per-leaf
+	// brackets render [explicit] on every leaf rather than the compact
+	// per-attachment marker.
+	if !strings.Contains(out, "db-pool") {
+		t.Errorf("inspect output missing db-pool Feature; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[explicit]") {
+		t.Errorf("inspect output missing [explicit] bracket on explicit cross-side; got:\n%s", out)
+	}
+}
+
+func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing.T) {
+	out := runInspectCaptured(t, "../../internal/compiler/testdata/example22/releases/annotation-cross-side-annotation.yaml")
+	// Annotation cross-side: per-leaf brackets attribute each pillar's
+	// authoring side. Values pillar leaf carries an aggregate-sourced
+	// annotation; infra pillar leaf carries a release-sourced annotation.
+	if !strings.Contains(out, "db-pool") {
+		t.Errorf("inspect output missing db-pool Feature; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[annotation: db-pool from") {
+		t.Errorf("inspect output missing [annotation: db-pool from ...] bracket on cross-side annotation pair; got:\n%s", out)
+	}
+	if !strings.Contains(out, "aggregate") {
+		t.Errorf("inspect output should mention aggregate source for the values-pillar leaf; got:\n%s", out)
+	}
+	if !strings.Contains(out, "release") {
+		t.Errorf("inspect output should mention release source for the infra-pillar leaf; got:\n%s", out)
+	}
+}
+
 // TestInspect_OciUri_ReturnsNotImplemented pins the OCI-URI branch's
 // not-yet-implemented error message. The branch returns a
 // forward-compatible error rather than silently falling through to

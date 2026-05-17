@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: db-pool-patcher
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: "feature.myco/db-pool"
+  injectMapping: |
+    {"env": {
+      "DB_NAME": "{{ .values.db_name }}",
+      "POOL_SIZE": "{{ .infra.pool_size }}",
+      "MAX_CONNECTIONS": "{{ .infra.max_connections }}",
+      "READ_REPLICAS": "{{ .values.read_replicas }}"
+    }}

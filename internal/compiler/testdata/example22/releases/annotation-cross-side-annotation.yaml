@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: annotation-cross-side-annotation
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-cross-side-annotation
+  manifest: ../manifests/annotation-cross-side
+  boundaries:
+    db-ns:
+      directory: ./dist/db
+      annotations:
+        aggrega.ai/namespace: "db-zone"
+      components:
+        dbclient:
+          annotations:
+            db-pool:
+              pool_size: 20

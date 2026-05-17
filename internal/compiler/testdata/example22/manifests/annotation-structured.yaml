@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: annotation-structured-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/db-pool:
+          feature: "feature.myco/db-pool"
+          maps:
+            infra:
+              - pool_size
+              - max_connections

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: example22-annotation-aggregate-subsystem
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        db-pool: "subsystem-db"
+      components:
+        reader:
+          type: core/server/web-ui
+        writer:
+          type: core/server/web-ui

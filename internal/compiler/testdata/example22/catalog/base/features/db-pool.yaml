@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.myco/db-pool
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      pool_size: { type: integer }
+      max_connections: { type: integer }
+    values:
+      db_name: { type: string }
+      read_replicas: { type: integer }

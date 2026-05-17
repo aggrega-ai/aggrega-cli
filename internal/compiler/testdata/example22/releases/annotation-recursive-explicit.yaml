@@ -1,0 +1,39 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: annotation-recursive-explicit
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-recursive-boundary
+  manifest: ../manifests/annotation-rewrite-host
+  boundaries:
+    outer-ns:
+      directory: ./dist/outer
+      annotations:
+        aggrega.ai/namespace: "outer-zone"
+      components:
+        edge:
+          features:
+            feature.myco/rewrite-host:
+              type: feature.myco/rewrite-host
+              infra:
+                upstream: "outer.example.com"
+      boundaries:
+        inner-ns:
+          directory: ./dist/inner
+          annotations:
+            aggrega.ai/namespace: "inner-zone"
+          components:
+            mid:
+              features:
+                feature.myco/rewrite-host:
+                  type: feature.myco/rewrite-host
+                  infra:
+                    upstream: "outer.example.com"
+            core:
+              features:
+                feature.myco/rewrite-host:
+                  type: feature.myco/rewrite-host
+                  infra:
+                    upstream: "outer.example.com"

@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: example22-annotation-values-binding
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      annotations:
+        db-pool: "values-only-db"
+      components:
+        dbclient:
+          type: core/server/web-ui

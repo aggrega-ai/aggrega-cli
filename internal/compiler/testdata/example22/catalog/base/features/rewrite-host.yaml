@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.myco/rewrite-host
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      upstream: { type: string }

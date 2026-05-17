@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: example22-annotation-aggregate-override
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      components:
+        reader:
+          type: core/server/web-ui
+          features:
+            db-pool:
+              type: feature.myco/db-pool
+              values:
+                db_name: "shared-db"
+        writer:
+          type: core/server/web-ui
+          features:
+            db-pool:
+              type: feature.myco/db-pool
+              values:
+                db_name: "shared-db"
+        admin:
+          type: core/server/web-ui
+          features:
+            db-pool:
+              type: feature.myco/db-pool
+              values:
+                db_name: "admin-db"

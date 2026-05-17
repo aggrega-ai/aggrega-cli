@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: annotation-override-explicit
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-release-side
+  manifest: ../manifests/annotation-rewrite-host
+  boundaries:
+    web-ns:
+      directory: ./dist/web
+      annotations:
+        aggrega.ai/namespace: "web-zone"
+      components:
+        app1:
+          features:
+            feature.myco/rewrite-host:
+              type: feature.myco/rewrite-host
+              infra:
+                upstream: "shared.example.com"
+        app2:
+          features:
+            feature.myco/rewrite-host:
+              type: feature.myco/rewrite-host
+              infra:
+                upstream: "override.example.com"

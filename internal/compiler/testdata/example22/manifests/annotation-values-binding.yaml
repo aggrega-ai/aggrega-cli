@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: annotation-values-binding-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        db-pool:
+          feature: "feature.myco/db-pool"
+          maps:
+            values:
+              - db_name

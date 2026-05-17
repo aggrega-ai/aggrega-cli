@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: annotation-rewrite-host-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/rewrite-host:
+          feature: "feature.myco/rewrite-host"
+          maps:
+            infra:
+              - upstream
