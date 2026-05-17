@@ -20,3 +20,7 @@ github.com/cognitio/aggrega-cli/pkg/validator               90
 github.com/cognitio/aggrega-cli/pkg/resolver                90
 github.com/cognitio/aggrega-cli/internal/compiler/topology  90
 github.com/cognitio/aggrega-cli/pkg/validator/jsonschema    83
+github.com/cognitio/aggrega-cli/pkg/types                   81
+github.com/cognitio/aggrega-cli/internal/compiler/renderer  78
+github.com/cognitio/aggrega-cli/internal/compiler/renderer/compose  81
+github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm     71
