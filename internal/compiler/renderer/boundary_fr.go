@@ -45,8 +45,6 @@ import (
 	"strings"
 	"text/template"
 
-	sprig "github.com/Masterminds/sprig/v3"
-
 	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
 	"github.com/cognitio/aggrega-cli/pkg/labels"
 	"github.com/cognitio/aggrega-cli/pkg/types"
@@ -168,7 +166,7 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 		}
 	}
 	for _, t := range tmpls {
-		t2, err := template.New("fr-validate").Funcs(sprig.FuncMap()).Parse(t.text)
+		t2, err := template.New("fr-validate").Funcs(aggregaFuncMap()).Parse(t.text)
 		if err != nil {
 			// Parse errors at the FR template surface as CATALOG_ERROR
 			// elsewhere; this validator skips on parse failure rather than

@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: optional-discriminator-three
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: optional-discriminator
+  manifest: optional-discriminator-manifest
+  boundaries:
+    default:
+      directory: ./dist/default
+      components:
+        worker:
+          infra:
+            replicas: 3

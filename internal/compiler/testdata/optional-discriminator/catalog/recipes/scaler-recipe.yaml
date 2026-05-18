@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: scaler-recipe
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: local/scaler
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: scaler:1.0
+        variables:
+          REPLICA_COUNT: "{{ optional .infra `replicas` 1 }}"

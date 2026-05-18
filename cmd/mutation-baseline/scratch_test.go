@@ -148,6 +148,79 @@ func TestSetupScratch_CreatesFakeHome(t *testing.T) {
 	}
 }
 
+// TestCopyFile_ErrorsOnMissingSrc pins copyFile's open-failure path:
+// when the source file does not exist, copyFile returns an error
+// rather than silently emitting an empty destination. The behavior
+// matters because copyTree dispatches through copyFile for every
+// regular file in the source tree; a silent failure here would
+// produce a scratch root with partial content.
+func TestCopyFile_ErrorsOnMissingSrc(t *testing.T) {
+	t.Parallel()
+	dst := filepath.Join(t.TempDir(), "out.txt")
+	err := copyFile("/nonexistent-path/missing.txt", dst, 0o644)
+	if err == nil {
+		t.Fatalf("copyFile succeeded on missing source; want failure")
+	}
+}
+
+// TestCopyFile_ErrorsOnUnopenableDst pins copyFile's destination-open
+// failure path: when the destination directory does not exist (so the
+// dst can't be opened for write), copyFile returns an error. The
+// failure mode matters because copyTree creates intermediate
+// directories before calling copyFile; if a race or external delete
+// removes a directory mid-copy, copyFile must surface the failure
+// rather than silently drop the file.
+func TestCopyFile_ErrorsOnUnopenableDst(t *testing.T) {
+	t.Parallel()
+	src := filepath.Join(t.TempDir(), "src.txt")
+	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	// Destination directory does not exist.
+	dst := filepath.Join(t.TempDir(), "nonexistent-subdir", "out.txt")
+	err := copyFile(src, dst, 0o644)
+	if err == nil {
+		t.Fatalf("copyFile succeeded with missing dst dir; want failure")
+	}
+}
+
+// TestSetupScratch_PropagatesSymlinkFailure pins that setupScratch
+// surfaces copyTree's symlink-rejection error (rather than leaving a
+// half-populated scratch root). copyTree's symlink fail-fast is the
+// boundary that prevents mutations from escaping the scratch root via
+// a symbolic link in the source tree; setupScratch must propagate that
+// failure to the caller so the mutator does not proceed against an
+// inconsistent scratch.
+func TestSetupScratch_PropagatesSymlinkFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test requires unix-style filesystem semantics")
+	}
+	t.Parallel()
+	src := t.TempDir()
+	target := filepath.Join(src, "real.txt")
+	if err := os.WriteFile(target, []byte("real"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(src, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	scratch, err := setupScratch(src)
+	if err == nil {
+		// On failure, setupScratch should also have cleaned up the scratch
+		// it allocated. Best-effort verification: if scratch is non-empty,
+		// remove it so this test doesn't leak.
+		if scratch != "" {
+			_ = os.RemoveAll(scratch)
+		}
+		t.Fatalf("setupScratch succeeded; want failure on symlink in src tree")
+	}
+	if !strings.Contains(err.Error(), "scratch") && !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("error does not mention scratch or symlink: %v", err)
+	}
+}
+
 // TestGoTestEnv_OverridesHomeAndGoflags pins that goTestEnv injects the
 // scratch-local HOME and read-only GOFLAGS, regardless of what the
 // parent process inherited.

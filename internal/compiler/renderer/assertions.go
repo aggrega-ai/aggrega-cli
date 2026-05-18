@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"text/template"
-
-	"github.com/Masterminds/sprig/v3"
 )
 
 // AssertionContext is the template data bound to one assertion-evaluation
@@ -60,7 +58,7 @@ type AssertionRecipeContext struct {
 // template-engine error on parse/execute failures (e.g., missingkey=error
 // halts surface here).
 func EvaluateAssertion(name, body string, ctx AssertionContext) error {
-	funcs := sprig.FuncMap()
+	funcs := aggregaFuncMap()
 	funcs["fail"] = func(msg string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrAssertionFailed, msg)
 	}

@@ -239,6 +239,34 @@ func TestPackageRelPath_AndRelativeFile(t *testing.T) {
 	if got := packageRelPath("/elsewhere/file.go", root); got != "/elsewhere/file.go" {
 		t.Errorf("outside root: got %q", got)
 	}
+	// relativeFile's outside-root branch — returns the file as-is when
+	// root is not a prefix of file. Pairs with packageRelPath above so
+	// both helpers' outside-root behaviour is pinned.
+	if got := relativeFile("/elsewhere/file.go", root); got != "/elsewhere/file.go" {
+		t.Errorf("relativeFile outside root: got %q", got)
+	}
+}
+
+// TestPackageImportPathForFile pins the two branches of
+// packageImportPathForFile: a file inside the root produces a Go-style
+// `./pkg/...` import path; a file outside the root degrades to `./...`
+// (the safe top-level fallback). Both branches matter — the inside-root
+// case is the hot path for catalog-rooted mutator runs; the outside-root
+// fallback is what keeps the runner from blowing up when mutator inputs
+// come from outside the conventional layout.
+func TestPackageImportPathForFile(t *testing.T) {
+	t.Parallel()
+	root := "/home/dev/aggrega-cli"
+
+	if got := packageImportPathForFile(root+"/pkg/resolver/main.go", root); got != "./pkg/resolver" {
+		t.Errorf("inside-root: packageImportPathForFile = %q; want ./pkg/resolver", got)
+	}
+	if got := packageImportPathForFile(root+"/cmd/aggrega/build.go", root); got != "./cmd/aggrega" {
+		t.Errorf("inside-root cmd subtree: packageImportPathForFile = %q; want ./cmd/aggrega", got)
+	}
+	if got := packageImportPathForFile("/elsewhere/file.go", root); got != "./..." {
+		t.Errorf("outside-root: packageImportPathForFile = %q; want ./...", got)
+	}
 }
 
 // TestAggregateByPackage pins the per-package aggregation.

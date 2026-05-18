@@ -52,7 +52,7 @@ func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDel
 	t, err := template.New(name).
 		Option("missingkey=zero").
 		Delims(leftDelim, rightDelim).
-		Funcs(sprig.FuncMap()).
+		Funcs(aggregaFuncMap()).
 		Parse(tmplText)
 	if err != nil {
 		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q parse", name))
