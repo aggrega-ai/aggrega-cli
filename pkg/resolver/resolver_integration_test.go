@@ -256,6 +256,99 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 	}
 }
 
+// TestResolve_ParameterDefaultBackfill_E2E exercises the three-case
+// semantic for nested-object parameters through the full Resolve
+// pipeline (parameter merge → default-fill → contract validation →
+// template interpolation). Three Release variants share the same
+// Aggregate (declaring `database` as `type: object` with child
+// defaults plus a flat-scalar default for `timeout_seconds`):
+//
+//   - release-omit-parent: Release omits `database` entirely. Case 1
+//     synthesizes the parent and fills children's defaults; the
+//     interpolated `db_host` resolves to "localhost".
+//
+//   - release-empty-parent: Release authors `database: {}`. Case 2
+//     preserves the empty parent; children's defaults are NOT
+//     filled; `.parameters.database.host` is absent at interpolation
+//     time, so under missingkey=zero it renders as the empty string.
+//     The empty-parent case is counterintuitive for users coming
+//     from ecosystems where `{}` is equivalent to omission — see
+//     the LDR Evolution note and parameters-context.md for the
+//     design rationale.
+//
+//   - release-partial-parent: Release authors `database: { host:
+//     "db.prod.example.com" }`. Case 3 merges the Release-authored
+//     `host` with the contract's default for sibling fields; the
+//     interpolated `db_host` resolves to "db.prod.example.com".
+//
+// All three variants additionally exercise the flat-scalar default
+// case via `timeout_seconds: { type: integer, default: 30 }` which
+// every Release omits — `.values.timeout` resolves to "30" across
+// the variants.
+func TestResolve_ParameterDefaultBackfill_E2E(t *testing.T) {
+	cases := []struct {
+		name         string
+		releaseFile  string
+		wantTimeout  string
+		wantDBHost   string
+		dbHostNote   string
+	}{
+		{
+			name:        "case1_omit_parent_synthesizes_and_fills",
+			releaseFile: "release-omit-parent.yaml",
+			wantTimeout: "30",
+			wantDBHost:  "localhost",
+			dbHostNote:  "fills from contract default",
+		},
+		{
+			name:        "case2_empty_parent_suppresses_children_defaults",
+			releaseFile: "release-empty-parent.yaml",
+			wantTimeout: "30",
+			// Explicit `database: {}` opts out of the children's
+			// defaults; .parameters.database.host is absent at
+			// interpolation time → missingkey=zero renders empty.
+			wantDBHost: "<no value>",
+			dbHostNote: "empty parent opts out of defaults",
+		},
+		{
+			name:        "case3_partial_parent_merges_release_and_defaults",
+			releaseFile: "release-partial-parent.yaml",
+			wantTimeout: "30",
+			wantDBHost:  "db.prod.example.com",
+			dbHostNote:  "Release-authored host wins; siblings fill from default",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := ResolveConfig{
+				AggregatePath: filepath.Join("testdata", "params", "defaults", "aggregate.yaml"),
+				ReleasePath:   filepath.Join("testdata", "params", "defaults", tc.releaseFile),
+				ManifestPath:  filepath.Join("testdata", "params", "defaults", "manifest.yaml"),
+			}
+			result, err := Resolve(cfg)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+
+			comp, ok := result.Aggregate.Spec.Components.Get("api")
+			if !ok {
+				t.Fatalf("component api missing from resolved Aggregate")
+			}
+
+			gotTimeout, _ := comp.Values.Get("timeout")
+			if fmt.Sprint(gotTimeout) != tc.wantTimeout {
+				t.Errorf("timeout: got %q; want %q", fmt.Sprint(gotTimeout), tc.wantTimeout)
+			}
+
+			gotDBHost, _ := comp.Values.Get("db_host")
+			if fmt.Sprint(gotDBHost) != tc.wantDBHost {
+				t.Errorf("db_host (%s): got %q; want %q", tc.dbHostNote, fmt.Sprint(gotDBHost), tc.wantDBHost)
+			}
+		})
+	}
+}
+
 func TestResolve_SprigDefaultFallback(t *testing.T) {
 	// Test that Sprig default function works when parameter is missing
 	dir := t.TempDir()

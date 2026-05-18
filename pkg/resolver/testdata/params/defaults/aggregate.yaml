@@ -1,0 +1,34 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: defaults-app
+  version: "1.0.0"
+spec:
+  parameters:
+    timeout_seconds:
+      type: integer
+      default: 30
+    database:
+      type: object
+      properties:
+        host:
+          type: string
+          default: "localhost"
+        port:
+          type: integer
+          default: 5432
+        connection:
+          type: object
+          properties:
+            timeout:
+              type: integer
+              default: 30
+            retries:
+              type: integer
+              default: 3
+  components:
+    api:
+      type: core/server
+      values:
+        timeout: "{{ .parameters.timeout_seconds }}"
+        db_host: "{{ .parameters.database.host }}"

@@ -98,6 +98,98 @@ func aggregateParameterViolations(verrs []*ResolverError) *ResolverError {
 	}
 }
 
+// ApplyParameterDefaults walks the Aggregate's parameter contract and
+// inserts the declared default value into the merged-parameters map for
+// every slot the Release did not supply. Runs between MergeParameters
+// and ValidateParametersAgainstContract so the contract validator sees
+// resolved values rather than absent slots.
+//
+// The fill preserves the declared type — integer defaults arrive as
+// integers, boolean defaults as booleans, object defaults as maps,
+// array defaults as slices. Type coercion is not attempted; a default
+// authored at the wrong type fails the contract validator downstream
+// with a clear per-slot error.
+//
+// Release-supplied values take precedence: when params[key] already
+// has a value, the function leaves the top-level value untouched and
+// recurses into nested properties as described below.
+//
+// Three-case semantic for nested-object parameters:
+//
+//  1. Parent slot absent from the Release: if the parent's contract
+//     declares Properties whose children carry defaults, the parent is
+//     synthesized as a map and children's defaults fill into it. This
+//     makes "omit the slot to get the contract's defaults" work at
+//     every nesting level. Synthesis fires only when at least one
+//     child has a default — synthesizing an empty parent map with no
+//     useful content would add clutter rather than value.
+//
+//  2. Parent slot supplied as an empty map (e.g., `database: {}`):
+//     the empty map is a deliberate opt-out signal. Children's
+//     defaults are NOT filled; the slot remains empty. This mirrors
+//     how Aggrega treats explicit null in annotations — an explicit
+//     terminal value is distinct from omission.
+//
+//  3. Parent slot supplied as a non-empty map (e.g.,
+//     `database: { host: "x" }`): the recursion fills children the
+//     Release did not supply. Release-authored children win.
+//
+// Mutates params in place. Returns the same map for caller
+// convenience. A nil params argument allocates a fresh map.
+func ApplyParameterDefaults(contract types.OrderedMap[any], params map[string]any) map[string]any {
+	if params == nil {
+		params = make(map[string]any)
+	}
+	for _, key := range contract.Keys() {
+		entry, _ := contract.Get(key)
+		pc, derr := types.DecodeParameterContract(entry)
+		if derr != nil {
+			// Decode failures surface at ValidateParametersAgainstContract
+			// with a per-slot ResolverError; quietly proceeding here
+			// keeps that validator's diagnostic as the user's first
+			// signal rather than introducing a competing failure mode.
+			continue
+		}
+
+		if _, releaseHas := params[key]; !releaseHas {
+			// Case 1 — parent absent from Release.
+			if pc.Default != nil {
+				params[key] = pc.Default
+			} else if pc.Properties.Len() > 0 {
+				synthesized := applyNestedDefaults(pc.Properties, map[string]any{})
+				if len(synthesized) > 0 {
+					params[key] = synthesized
+				}
+			}
+		} else if pc.Properties.Len() > 0 {
+			// Parent present in Release; recurse only when the value
+			// is itself a map (Case 2 / Case 3 below). A non-map value
+			// here is a type-mismatch; the contract validator surfaces
+			// it with ErrParameterContractViolation. The default-fill
+			// must not silently correct type errors.
+			if sub, ok := params[key].(map[string]any); ok {
+				if len(sub) > 0 {
+					// Case 3 — parent supplied non-empty: recurse to
+					// fill children the Release did not override.
+					params[key] = applyNestedDefaults(pc.Properties, sub)
+				}
+				// Case 2 — parent supplied as empty map: leave it
+				// empty. The explicit empty is a deliberate opt-out
+				// from children's defaults.
+			}
+		}
+	}
+	return params
+}
+
+// applyNestedDefaults is a thin wrapper that calls ApplyParameterDefaults
+// recursively. The wrapper exists to make the call sites at
+// parent-dispatch points read naturally; the underlying recursion is
+// the same three-case dispatch applied at depth N+1.
+func applyNestedDefaults(properties types.OrderedMap[any], sub map[string]any) map[string]any {
+	return ApplyParameterDefaults(properties, sub)
+}
+
 // ValidateParametersAgainstContract checks every Release-supplied parameter
 // value against the Aggregate's typed parameter contract. Runs at Step 1a —
 // after Release parameter load (inline OR $import:), before parameter

@@ -150,6 +150,12 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Apply contract-declared defaults to slots the Release omitted, so
+	// the contract validator and downstream template interpolation see
+	// the resolved values. Three-case semantic for nested-object
+	// parameters: omitted parent synthesizes children; explicit empty
+	// parent suppresses children's defaults; partial parent merges.
+	params = ApplyParameterDefaults(contract, params)
 	if verrs := ValidateParametersAgainstContract(contract, params, cfg.AggregatePath); len(verrs) > 0 {
 		return nil, aggregateParameterViolations(verrs)
 	}

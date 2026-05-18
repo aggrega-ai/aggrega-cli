@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: defaults-empty-parent
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: defaults-app
+  manifest: defaults-manifest
+  parameters:
+    database: {}
+  boundaries:
+    default:
+      directory: ./dist/default
+      components:
+        api: {}
