@@ -18,7 +18,7 @@ spec:
   valuesMapping: |
     {
       "image": "web-ui:latest",
-      "replicas": {{ .infra.replicas | default 1 }},
+      "replicas": {{ optional .infra `replicas` 1 }},
       "ports": ["{{ .infra.port }}:{{ .infra.port }}"],
       "environment": {
         "PORT": "{{ .infra.port }}"

@@ -8,20 +8,20 @@ spec:
   implements: core/database/mariadb
   provides:
     host: "{{ .context.instance_id }}"
-    port: "{{ .infra.port | default 3306 }}"
+    port: "{{ optional .infra `port` 3306 }}"
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
-    replicas: {{ .infra.replicas | default 1 }}
+    replicas: {{ optional .infra `replicas` 1 }}
     containers:
       main:
         image: mariadb:11
         ports:
-          db: {{ .infra.port | default 3306 }}
+          db: {{ optional .infra `port` 3306 }}
         variables:
           MARIADB_DATABASE: "{{ .values.database }}"
     services:
       db:
         type: ClusterIP
         ports:
-          db: {{ .infra.port | default 3306 }}
+          db: {{ optional .infra `port` 3306 }}

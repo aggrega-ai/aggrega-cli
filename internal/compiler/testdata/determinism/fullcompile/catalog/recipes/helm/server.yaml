@@ -9,14 +9,14 @@ spec:
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
-    replicas: {{ .infra.replicas | default 1 }}
+    replicas: {{ optional .infra `replicas` 1 }}
     containers:
       server:
         image: test-server:latest
         ports:
-          web: {{ .infra.port | default 8080 }}
+          web: {{ optional .infra `port` 8080 }}
     services:
       svc:
         type: ClusterIP
         ports:
-          web: {{ .infra.port | default 8080 }}
+          web: {{ optional .infra `port` 8080 }}

@@ -9,7 +9,7 @@ spec:
   source: ./sources/db.yaml
   provides:
     host: "{{ .context.instance_id }}"
-    port: "{{ .infra.port | default 3306 }}"
+    port: "{{ optional .infra `port` 3306 }}"
   valuesMapping: |
     {
       "services": {

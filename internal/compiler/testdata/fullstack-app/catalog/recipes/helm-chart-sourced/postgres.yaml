@@ -15,6 +15,6 @@ spec:
   valuesMapping: |
     {
       "image": "postgres:15",
-      "replicas": {{ .infra.replicas | default 1 }},
+      "replicas": {{ optional .infra `replicas` 1 }},
       "ports": ["5432:5432"]
     }

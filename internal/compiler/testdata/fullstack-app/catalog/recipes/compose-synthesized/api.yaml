@@ -8,18 +8,18 @@ spec:
   implements: core/server/api-server
   provides:
     host: "{{ .context.instance_id }}"
-    service_port: "{{ .infra.port | default 8080 }}"
+    service_port: "{{ optional .infra `port` 8080 }}"
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
-    replicas: {{ .infra.replicas | default 1 }}
+    replicas: {{ optional .infra `replicas` 1 }}
     containers:
       main:
         image: api-server:latest
         ports:
-          web: {{ .infra.port | default 8080 }}
+          web: {{ optional .infra `port` 8080 }}
         variables:
-          PORT: "{{ .infra.port | default 8080 }}"
+          PORT: "{{ optional .infra `port` 8080 }}"
           {{- range $k, $v := .context.inject.env }}
           {{ $k }}: "{{ $v }}"
           {{- end }}
@@ -27,4 +27,4 @@ spec:
       api:
         type: ClusterIP
         ports:
-          web: {{ .infra.port | default 8080 }}
+          web: {{ optional .infra `port` 8080 }}

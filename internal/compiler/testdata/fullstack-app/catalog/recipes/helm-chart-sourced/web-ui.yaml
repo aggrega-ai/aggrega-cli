@@ -9,16 +9,16 @@ spec:
   source: ./charts/web-ui
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
-    service_port: "{{ .infra.port | default 3000 }}"
+    service_port: "{{ optional .infra `port` 3000 }}"
   locals:
     primary_compute: web
   valuesMapping: |
     {
       "image": "web-ui:latest",
-      "replicas": {{ .infra.replicas | default 1 }},
-      "ports": ["{{ .infra.port | default 3000 }}:{{ .infra.port | default 3000 }}"],
+      "replicas": {{ optional .infra `replicas` 1 }},
+      "ports": ["{{ optional .infra `port` 3000 }}:{{ optional .infra `port` 3000 }}"],
       "environment": {
-        "PORT": "{{ .infra.port | default 3000 }}"
+        "PORT": "{{ optional .infra `port` 3000 }}"
         {{- if .context.inject.env.API_HOST }},
         "API_HOST": "{{ .context.inject.env.API_HOST }}"
         {{- end }}

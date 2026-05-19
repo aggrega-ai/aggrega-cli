@@ -9,14 +9,14 @@ spec:
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
-    replicas: {{ .infra.replicas | default 1 }}
+    replicas: {{ optional .infra `replicas` 1 }}
     containers:
       main:
         image: web-ui:latest
         ports:
-          web: {{ .infra.port | default 3000 }}
+          web: {{ optional .infra `port` 3000 }}
         variables:
-          PORT: "{{ .infra.port | default 3000 }}"
+          PORT: "{{ optional .infra `port` 3000 }}"
           {{- range $k, $v := .context.inject.env }}
           {{ $k }}: "{{ $v }}"
           {{- end }}
@@ -24,4 +24,4 @@ spec:
       web:
         type: ClusterIP
         ports:
-          web: {{ .infra.port | default 3000 }}
+          web: {{ optional .infra `port` 3000 }}

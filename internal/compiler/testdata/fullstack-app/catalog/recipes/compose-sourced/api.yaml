@@ -9,13 +9,13 @@ spec:
   source: ./sources/api.yaml
   provides:
     host: "{{ .context.instance_id }}"
-    service_port: "{{ .infra.port | default 8080 }}"
+    service_port: "{{ optional .infra `port` 8080 }}"
   valuesMapping: |
     {
       "services": {
         "api": {
           "environment": {
-            "PORT": "{{ .infra.port | default 8080 }}"
+            "PORT": "{{ optional .infra `port` 8080 }}"
             {{- range $k, $v := .context.inject.env }},
             "{{ $k }}": "{{ $v }}"
             {{- end }}

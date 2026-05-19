@@ -9,9 +9,9 @@ spec:
   source: ./charts/api
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
-    service_port: "{{ .infra.port | default 8080 }}"
+    service_port: "{{ optional .infra `port` 8080 }}"
   valuesMapping: |
     {
       "image": "api-server:1.0.0",
-      "replicas": {{ .infra.replicas | default 1 }}
+      "replicas": {{ optional .infra `replicas` 1 }}
     }
