@@ -158,57 +158,64 @@ func TestStep1a_DefaultsSatisfyRequired(t *testing.T) {
 	}
 }
 
-// TestStep1a_SimpleFormPreserved pins Q2a simple-shorthand acceptance.
-// A bare-scalar Aggregate parameter accepts a matching Release value.
-func TestStep1a_SimpleFormPreserved(t *testing.T) {
+// TestStep1a_ShorthandRejected pins the post-shorthand-drop behavior:
+// bare-scalar Aggregate parameter entries produce
+// ErrParameterContractViolation with a directed message at parse time.
+func TestStep1a_ShorthandRejected(t *testing.T) {
 	t.Parallel()
-	contract := buildContract(t,
-		"api_port", 8080,
-		"db_host", "localhost",
-	)
-	params := map[string]any{
-		"api_port": 9090,
-		"db_host":  "remote-db",
+	scalars := map[string]any{
+		"int_shorthand":    8080,
+		"string_shorthand": "localhost",
+		"bool_shorthand":   true,
 	}
-	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
-	if len(errs) != 0 {
-		t.Errorf("expected no errors; got %v", errs)
-	}
-}
-
-// TestStep1a_SimpleFormRejectsTypeMismatch pins that simple-shorthand
-// inferred-type still enforces type compatibility — string-quoted "8080"
-// against integer-shorthand 8080 is a type mismatch.
-func TestStep1a_SimpleFormRejectsTypeMismatch(t *testing.T) {
-	t.Parallel()
-	contract := buildContract(t,
-		"api_port", 8080, // integer simple shorthand
-	)
-	params := map[string]any{"api_port": "9090"} // string supplied
-	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
-	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterContractViolation) {
-		t.Errorf("expected type-mismatch error; got %v", errs)
+	for name, scalar := range scalars {
+		t.Run(name, func(t *testing.T) {
+			contract := buildContract(t, "field", scalar)
+			params := map[string]any{"field": scalar}
+			errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
+			if len(errs) == 0 {
+				t.Fatalf("expected shorthand-rejection error; got none")
+			}
+			if !errors.Is(errs[0], ErrParameterContractViolation) {
+				t.Errorf("expected ErrParameterContractViolation; got %v", errs[0])
+			}
+			if !strings.Contains(errs[0].Message, "typed-contract form") {
+				t.Errorf("expected 'typed-contract form' in error message; got: %s", errs[0].Message)
+			}
+		})
 	}
 }
 
-// TestStep1a_MixedFormDispatch pins per-entry dispatch when the Aggregate
-// mixes simple-form and typed-form parameters.
-func TestStep1a_MixedFormDispatch(t *testing.T) {
+// TestStep1a_MixedFormRejectedWhenShorthandPresent pins that mixing
+// shorthand and typed-form entries surfaces the shorthand-rejection
+// even when other entries decode cleanly. Per-entry dispatch isolates
+// the failure to the shorthand slot.
+func TestStep1a_MixedFormRejectedWhenShorthandPresent(t *testing.T) {
 	t.Parallel()
 	contract := buildContract(t,
-		"simple_port", 8080,
-		"typed_host", map[string]any{
+		"shorthand_port", 8080, // shorthand — rejected
+		"typed_host", map[string]any{ // typed — accepted
 			"type":    "string",
 			"pattern": "^[a-z]+$",
 		},
 	)
 	params := map[string]any{
-		"simple_port": 9090,
-		"typed_host":  "localhost",
+		"shorthand_port": 9090,
+		"typed_host":     "localhost",
 	}
 	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
-	if len(errs) != 0 {
-		t.Errorf("expected no errors; got %v", errs)
+	if len(errs) == 0 {
+		t.Fatalf("expected shorthand-rejection error for shorthand_port; got none")
+	}
+	// The shorthand slot must be named in the failure path.
+	foundShorthand := false
+	for _, e := range errs {
+		if strings.Contains(e.Field, "shorthand_port") {
+			foundShorthand = true
+		}
+	}
+	if !foundShorthand {
+		t.Errorf("expected one error to name shorthand_port; got %v", errs)
 	}
 }
 
@@ -365,7 +372,9 @@ spec:
     port:
       type: integer
       default: 8080
-    host: localhost
+    host:
+      type: string
+      default: localhost
   components:
     web:
       type: core/server:1.0.0
@@ -577,4 +586,3 @@ func TestValidateParametersAgainstContract_ValuesType_OpenObject_NoUnknownKeyRej
 		t.Errorf("expected no unknown-key rejection; got %d errors: %v", len(errs), errs)
 	}
 }
-

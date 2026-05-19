@@ -34,17 +34,18 @@ func aggregateEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	return v
 }
 
-// TestAggregateEnvelope_AcceptsSimpleShorthandParameters pins the Q2a
-// preservation path: bare-scalar parameter entries (the simple shorthand)
-// remain accepted by the envelope.
-func TestAggregateEnvelope_AcceptsSimpleShorthandParameters(t *testing.T) {
+// TestAggregateEnvelope_RejectsShorthandParameters pins the post-shorthand-drop
+// behavior at the envelope: bare-scalar parameter entries are rejected by
+// the schema's `additionalProperties` constraint (which requires the
+// typed-contract object shape).
+func TestAggregateEnvelope_RejectsShorthandParameters(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
 	src := `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
-  name: simple-params
+  name: shorthand-params
   version: "1.0.0"
 spec:
   parameters:
@@ -56,9 +57,8 @@ spec:
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(rpt.Findings) != 0 {
-		t.Errorf("expected envelope acceptance of simple-shorthand parameters; got %d findings: %v",
-			len(rpt.Findings), rpt.Findings)
+	if len(rpt.Findings) == 0 {
+		t.Fatal("expected envelope rejection of shorthand parameters; got no findings")
 	}
 }
 
@@ -127,10 +127,11 @@ spec:
 	}
 }
 
-// TestAggregateEnvelope_AcceptsMixedForms pins per-entry dispatch at the
-// envelope level: a single parameters block may carry simple-shorthand
-// AND typed-contract entries side by side.
-func TestAggregateEnvelope_AcceptsMixedForms(t *testing.T) {
+// TestAggregateEnvelope_RejectsMixedForms pins post-shorthand-drop behavior:
+// a parameters block mixing shorthand with typed-form entries fails
+// envelope validation on the shorthand slot. Per-entry dispatch isolates
+// the failure to the shorthand entry; the typed-form entry passes.
+func TestAggregateEnvelope_RejectsMixedForms(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
@@ -151,9 +152,8 @@ spec:
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(rpt.Findings) != 0 {
-		t.Errorf("expected envelope acceptance of mixed-form parameters; got %d findings: %v",
-			len(rpt.Findings), rpt.Findings)
+	if len(rpt.Findings) == 0 {
+		t.Fatal("expected envelope rejection on shorthand slot in mixed-form parameters; got no findings")
 	}
 }
 

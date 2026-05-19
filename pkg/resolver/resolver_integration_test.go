@@ -49,7 +49,7 @@ func TestResolve_Integration(t *testing.T) {
 		},
 		{
 			name:     "parameter interpolation resolves template expressions",
-			fixtures: "params",
+			fixtures: "parameter-merge-and-fallback",
 			wantErr:  nil,
 			validate: func(t *testing.T, result *ResolveResult) {
 				t.Helper()
@@ -123,20 +123,6 @@ func TestResolve_Integration(t *testing.T) {
 			fixtures: "typed-params-fail",
 			wantErr:  ErrParameterContractViolation,
 		},
-		{
-			name:     "mixed simple + typed parameters dispatch per-entry",
-			fixtures: "typed-params-mixed",
-			wantErr:  nil,
-			validate: func(t *testing.T, result *ResolveResult) {
-				t.Helper()
-				if result.Parameters["cache_ttl_seconds"] != 9090 {
-					t.Errorf("cache_ttl_seconds = %v; want 9090", result.Parameters["cache_ttl_seconds"])
-				}
-				if result.Parameters["env"] != "staging" {
-					t.Errorf("env = %v; want staging", result.Parameters["env"])
-				}
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -189,7 +175,7 @@ func TestResolve_ParametersImportFromFile(t *testing.T) {
 	// vocabulary unification; multi-source layering migrates to
 	// Release extends: chains. This test exercises the post-migration
 	// single-source $import: dispatch path.
-	base := filepath.Join("testdata", "params")
+	base := filepath.Join("testdata", "parameter-merge-and-fallback")
 
 	dir := t.TempDir()
 	releaseYAML := `apiVersion: aggrega.ai/v1alpha1
@@ -234,9 +220,9 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 	// We verify indirectly: the result should not contain raw parameter values
 	// in the Aggregate (they should be interpolated, not template expressions).
 	cfg := ResolveConfig{
-		AggregatePath: filepath.Join("testdata", "params", "aggregate.yaml"),
-		ReleasePath:   filepath.Join("testdata", "params", "release.yaml"),
-		ManifestPath:  filepath.Join("testdata", "params", "manifest.yaml"),
+		AggregatePath: filepath.Join("testdata", "parameter-merge-and-fallback", "aggregate.yaml"),
+		ReleasePath:   filepath.Join("testdata", "parameter-merge-and-fallback", "release.yaml"),
+		ManifestPath:  filepath.Join("testdata", "parameter-merge-and-fallback", "manifest.yaml"),
 	}
 
 	result, err := Resolve(cfg)
@@ -322,9 +308,9 @@ func TestResolve_ParameterDefaultBackfill_E2E(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := ResolveConfig{
-				AggregatePath: filepath.Join("testdata", "params", "defaults", "aggregate.yaml"),
-				ReleasePath:   filepath.Join("testdata", "params", "defaults", tc.releaseFile),
-				ManifestPath:  filepath.Join("testdata", "params", "defaults", "manifest.yaml"),
+				AggregatePath: filepath.Join("testdata", "parameter-defaults", "aggregate.yaml"),
+				ReleasePath:   filepath.Join("testdata", "parameter-defaults", tc.releaseFile),
+				ManifestPath:  filepath.Join("testdata", "parameter-defaults", "manifest.yaml"),
 			}
 			result, err := Resolve(cfg)
 			if err != nil {
@@ -374,9 +360,9 @@ spec:
 	os.WriteFile(relPath, []byte(releaseYAML), 0644)
 
 	cfg := ResolveConfig{
-		AggregatePath: filepath.Join("testdata", "params", "aggregate.yaml"),
+		AggregatePath: filepath.Join("testdata", "parameter-merge-and-fallback", "aggregate.yaml"),
 		ReleasePath:   relPath,
-		ManifestPath:  filepath.Join("testdata", "params", "manifest.yaml"),
+		ManifestPath:  filepath.Join("testdata", "parameter-merge-and-fallback", "manifest.yaml"),
 	}
 
 	result, err := Resolve(cfg)

@@ -205,9 +205,9 @@ func applyNestedDefaults(properties types.OrderedMap[any], sub map[string]any) m
 // supply neither an Aggregate default nor a Release value produce
 // ErrParameterMissing.
 //
-// Per-entry dispatch: scalar Aggregate parameter values produce a
-// SimpleParameterContract (type inferred from scalar kind, no constraints);
-// map values decode as typed-form contracts via DecodeParameterContract.
+// Per-entry dispatch: each contract entry must be a typed-form map
+// decoded via DecodeParameterContract; bare-scalar shorthand is
+// rejected at parse time with a directed error.
 //
 // Nested object recursion is lazy: when a typed parameter declares
 // type: object with Properties, the validator descends into each child

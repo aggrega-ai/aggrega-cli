@@ -4,6 +4,7 @@
 package types
 
 import (
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -116,54 +117,28 @@ validateMessage: replicas must be positive
 	}
 }
 
-// TestSimpleParameterContract_ScalarTypeInference pins the YAML-scalar-kind
-// type inference dispatch for SimpleParameterContract. Edge cases per the
-// approval-gate notes: integer vs string ("8080" vs 8080), empty string vs
-// null, untyped nil.
-func TestSimpleParameterContract_ScalarTypeInference(t *testing.T) {
+// TestDecodeParameterContract_RejectsShorthand pins the post-shorthand-drop
+// behavior: bare-scalar entries return a directed error pointing the author
+// at the typed-contract syntax.
+func TestDecodeParameterContract_RejectsShorthand(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		name     string
-		scalar   any
-		wantType string
-	}{
-		{"integer", 8080, "integer"},
-		{"string-quoted-integer", "8080", "string"},
-		{"empty-string", "", "string"},
-		{"null", nil, ""},
-		{"boolean-true", true, "boolean"},
-		{"boolean-false", false, "boolean"},
-		{"float", 1.5, "number"},
-		{"int64", int64(1024), "integer"},
-		{"float64", float64(3.14), "number"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			pc := SimpleParameterContract(tc.scalar)
-			if pc.Type != tc.wantType {
-				t.Errorf("SimpleParameterContract(%v).Type = %q; want %q", tc.scalar, pc.Type, tc.wantType)
-			}
-			if pc.Default != tc.scalar {
-				t.Errorf("Default = %v; want %v", pc.Default, tc.scalar)
-			}
-		})
+	scalars := []any{8080, "string-value", true, false, 1.5, int64(1024), nil}
+	for _, s := range scalars {
+		_, err := DecodeParameterContract(s)
+		if err == nil {
+			t.Errorf("DecodeParameterContract(%v) returned no error; expected shorthand-rejection", s)
+			continue
+		}
+		if !strings.Contains(err.Error(), "typed-contract form") {
+			t.Errorf("DecodeParameterContract(%v) error should name 'typed-contract form'; got: %v", s, err)
+		}
 	}
 }
 
-// TestDecodeParameterContract_DispatchesSimpleVsTyped pins the per-entry
-// dispatch: scalars produce SimpleParameterContract; maps decode as typed
-// contracts via the marshal+unmarshal round-trip.
-func TestDecodeParameterContract_DispatchesSimpleVsTyped(t *testing.T) {
+// TestDecodeParameterContract_AcceptsTypedForm pins the surviving path: a
+// typed-contract map decodes correctly into a ParameterContract.
+func TestDecodeParameterContract_AcceptsTypedForm(t *testing.T) {
 	t.Parallel()
-
-	scalarPC, err := DecodeParameterContract(8080)
-	if err != nil {
-		t.Fatalf("DecodeParameterContract(scalar): %v", err)
-	}
-	if scalarPC.Type != "integer" || scalarPC.Default != 8080 {
-		t.Errorf("scalar dispatch: Type=%q Default=%v", scalarPC.Type, scalarPC.Default)
-	}
-
 	typedMap := map[string]any{
 		"type":        "string",
 		"description": "Hostname",
@@ -182,8 +157,8 @@ func TestDecodeParameterContract_DispatchesSimpleVsTyped(t *testing.T) {
 
 // TestParameterContract_NestedProperties pins typed-form nested object
 // shape: a parameter with type: object carries Properties as an
-// OrderedMap[any] of child entries (each itself simple OR typed). Validates
-// the per-WI risk R13 — OrderedMap fidelity for the new consumer.
+// OrderedMap[any] of child entries (each itself simple OR typed). Pins
+// OrderedMap key-ordering fidelity for the typed-contract decoder.
 func TestParameterContract_NestedProperties(t *testing.T) {
 	t.Parallel()
 	src := `type: object

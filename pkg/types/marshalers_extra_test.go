@@ -726,43 +726,13 @@ func TestParametersBlock_IsEmpty(t *testing.T) {
 	}
 }
 
-// TestSimpleParameterContract_TypeInference pins the per-scalar-kind
-// inference: string / bool / int / float; nil stays untyped.
-func TestSimpleParameterContract_TypeInference(t *testing.T) {
+// TestDecodeParameterContract_EveryMapEntryShape pins the dispatch in
+// DecodeParameterContract for typed-form map entries: map[string]any,
+// *OrderedMap[any], and value-form OrderedMap[any] all decode to a
+// populated ParameterContract. Scalar entries are rejected (see
+// TestDecodeParameterContract_RejectsShorthand in parameter_contract_test.go).
+func TestDecodeParameterContract_EveryMapEntryShape(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		in       any
-		wantType string
-	}{
-		{"abc", "string"},
-		{true, "boolean"},
-		{int(5), "integer"},
-		{int64(7), "integer"},
-		{float64(1.5), "number"},
-		{nil, ""},
-		{[]int{1}, ""}, // non-recognised kind stays untyped.
-	}
-	for _, tc := range cases {
-		pc := SimpleParameterContract(tc.in)
-		if pc.Type != tc.wantType {
-			t.Errorf("Simple(%v).Type = %q; want %q", tc.in, pc.Type, tc.wantType)
-		}
-	}
-}
-
-// TestDecodeParameterContract_EveryEntryShape pins the dispatch in
-// DecodeParameterContract: scalar → SimpleParameterContract; map-typed
-// → decodeTypedContract; *OrderedMap[any] → typed via isParameterMap.
-func TestDecodeParameterContract_EveryEntryShape(t *testing.T) {
-	t.Parallel()
-	// Scalar dispatch.
-	pc, err := DecodeParameterContract("hello")
-	if err != nil {
-		t.Fatalf("scalar: %v", err)
-	}
-	if pc.Type != "string" {
-		t.Errorf("scalar Type = %q; want string", pc.Type)
-	}
 
 	// map[string]any typed entry.
 	mEntry := map[string]any{
@@ -771,7 +741,7 @@ func TestDecodeParameterContract_EveryEntryShape(t *testing.T) {
 		"min":         1,
 		"max":         65535,
 	}
-	pc, err = DecodeParameterContract(mEntry)
+	pc, err := DecodeParameterContract(mEntry)
 	if err != nil {
 		t.Fatalf("map: %v", err)
 	}

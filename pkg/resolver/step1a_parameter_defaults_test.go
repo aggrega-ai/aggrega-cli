@@ -17,8 +17,9 @@ import (
 //   - Release-override-wins precedence at every depth.
 //   - Required-marker interaction (with-default satisfies, without-default
 //     stays an error surface).
-//   - Shorthand-form authoring (bare scalar → SimpleParameterContract)
-//     inheriting the same fill semantics as typed-form.
+//   - All parameter authoring uses the typed-contract form (the
+//     bare-scalar shorthand was retired; `DecodeParameterContract`
+//     rejects scalars at parse time).
 //   - The three-case semantic for nested-object parameters: omitted
 //     parent synthesizes children's defaults; explicit empty parent
 //     preserves the empty and suppresses children's defaults;
@@ -81,12 +82,6 @@ func TestApplyParameterDefaults(t *testing.T) {
 			contract: contractFrom("optional_x", typedMap("type", "string")),
 			params:   map[string]any{},
 			want:     map[string]any{},
-		},
-		{
-			name:     "shorthand_scalar_fills_too",
-			contract: contractFrom("app_name", "my-app"),
-			params:   map[string]any{},
-			want:     map[string]any{"app_name": "my-app"},
 		},
 		{
 			name: "multiple_slots_dispatch_independently",
@@ -256,7 +251,7 @@ func TestApplyParameterDefaults_PreservesRequiredMarker(t *testing.T) {
 
 // contractFrom builds a single-entry OrderedMap[any] for fixture
 // construction. The Aggregate's `spec.parameters` is an OrderedMap[any]
-// where each value is either a scalar (shorthand) or a map (typed-form).
+// where each value is a typed-form map authoring the compact-form vocabulary.
 func contractFrom(key string, value any) types.OrderedMap[any] {
 	c := types.OrderedMap[any]{}
 	c.Set(key, value)

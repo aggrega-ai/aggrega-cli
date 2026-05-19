@@ -100,7 +100,9 @@ spec:
       type: string
       pattern: "^[a-z0-9.-]+$"
       required: true
-    simple: "literal-default"
+    display_name:
+      type: string
+      default: "literal-default"
 `
 	path := filepath.Join(tmp, "aggregate.yaml")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {

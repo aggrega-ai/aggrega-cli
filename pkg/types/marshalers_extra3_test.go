@@ -186,16 +186,6 @@ func TestDecodeTypedContract_Direct(t *testing.T) {
 	}
 }
 
-// TestSimpleParameterContract_NilStaysUntyped pins the nil-receiver
-// no-inference branch.
-func TestSimpleParameterContract_NilStaysUntyped(t *testing.T) {
-	t.Parallel()
-	pc := SimpleParameterContract(nil)
-	if pc.Type != "" {
-		t.Errorf("nil should remain untyped; got Type=%q", pc.Type)
-	}
-}
-
 // TestSchemaLibrary_TemplateEntry_RoundTrip pins the round-trip for
 // TemplateEntry through SchemaLibrary's templates map.
 func TestSchemaLibrary_TemplateEntry_RoundTrip(t *testing.T) {
