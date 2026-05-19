@@ -85,6 +85,14 @@ func init() {
 // and the rendered files are written to dist/. A summary line writes
 // to stdout.
 func runBuild(cmd *cobra.Command, args []string) error {
+	return dispatchBuild(releasePath, catalogDir, traceEnabled)
+}
+
+// dispatchBuild executes a build invocation with the configuration
+// supplied as parameters. runBuild is the cobra-bound thin wrapper that
+// reads the flag-bound package globals; tests call dispatchBuild
+// directly to avoid racing on those globals under t.Parallel.
+func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// Load catalog from directory
 	cat, err := catalog.Load(catalogDir)
 	if err != nil {

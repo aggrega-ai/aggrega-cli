@@ -248,10 +248,10 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 // TestStep5b_RecipeMetadataProviderAvailable test above. Verifies the
 // FeatureRecipe assertion evaluation surfaces `.Recipe.Metadata.provider`
 // from the FeatureRecipe's Spec.Provider — exercising the FR code-path
-// at assertions_step5b.go:109-127 specifically. Closes the test-coverage
-// gap that the WI 06 follow-up 3 entry-state finding identified
-// (code-side symmetry was already resolved at the time of this run; the
-// test-side was asymmetric — only the Recipe side pinned).
+// at assertions_step5b.go:109-127 specifically. Pins the FR-side
+// symmetry that was previously implicit: code-side symmetry was
+// already resolved; the test-side was asymmetric — only the Recipe
+// side was pinned.
 func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 	t.Parallel()
 	graph := step5bGraph(t, "web", omAny(t), omAny(t))

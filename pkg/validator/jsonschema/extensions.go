@@ -198,9 +198,9 @@ nextValidate:
 // descends into each child rather than letting the library iterate
 // internally.
 //
-// Per-key dispatch follows the WI 05b precedence rule: Properties >
-// PatternProperties > AdditionalProperties. A key declared in
-// Properties validates against the Property's sub-schema. A key
+// Per-key dispatch follows the precedence rule the walker enforces:
+// Properties > PatternProperties > AdditionalProperties. A key declared
+// in Properties validates against the Property's sub-schema. A key
 // matching one or more patternProperties validates against each
 // matching pattern's sub-schema via walkBranch. A key in neither falls
 // through to additionalProperties (if declared as a schema; the
@@ -241,7 +241,7 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 		}
 		sort.Strings(keys)
 
-		// Per-key dispatch with WI 05b precedence rule:
+		// Per-key dispatch with the walker's precedence rule:
 		// Properties > PatternProperties > AdditionalProperties.
 		for _, k := range keys {
 			subPath := k

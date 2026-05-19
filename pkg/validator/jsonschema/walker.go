@@ -370,11 +370,12 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		}
 	}
 
-	// WI 05b indexing for the seven walker-completeness gap constructs.
-	// AdditionalProperties / oneOf / allOf / anyOf / not / patternProperties /
-	// dependentSchemas all populate branchIndex structures via
-	// buildBranchIndex which recursively constructs the branch-local
-	// validation state for deterministic walkBranch evaluation.
+	// Branch-index population for the seven composition / extension
+	// keywords the walker covers: additionalProperties, oneOf, allOf,
+	// anyOf, not, patternProperties, dependentSchemas. Each populates a
+	// branchIndex via buildBranchIndex, which recursively constructs the
+	// branch-local validation state for deterministic walkBranch
+	// evaluation.
 
 	// additionalProperties: <schema> — promoted to branchIndex per
 	// Decision 3 so nested-Properties additionalProperties walk

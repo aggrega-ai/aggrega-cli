@@ -183,19 +183,17 @@ func canonicalJSON(t *testing.T, v any) string {
 	return strings.TrimSpace(string(b))
 }
 
-// TestValidateParameterContractEnvelope_Determinism is the load-bearing
-// acceptance signal for WI 05b's Step D migration: after retiring the
-// library-direct Resolved.Validate bypass in favor of the
-// pkg/validator/jsonschema wrapper, multi-violation envelope errors
-// must produce byte-identical content across runs (the property the
-// wrapper was designed to deliver, restored at this code-path by the
-// Option α recursive branch-walking extension at WI 05b).
+// TestValidateParameterContractEnvelope_Determinism pins the
+// deterministic-output contract for multi-violation envelope errors:
+// the pkg/validator/jsonschema wrapper's recursive branch-walking
+// extension produces byte-identical content across runs, regardless of
+// hash-randomised map iteration in the underlying schema library.
 //
 // Test runs the envelope validator 10× in the same process on a
 // malformed contract producing multiple violations and asserts
-// byte-identical error.Error() output. Pre-WI-05b (library-direct
-// bypass), the equivalent assertion would have failed because the
-// library's randomised Properties iteration produced variable
+// byte-identical error.Error() output. Without the wrapper's
+// deterministic walker, the equivalent assertion would fail because
+// the library's randomised Properties iteration produces variable
 // error-string content across runs.
 func TestValidateParameterContractEnvelope_Determinism(t *testing.T) {
 	t.Parallel()

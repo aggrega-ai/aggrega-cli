@@ -71,15 +71,10 @@ var (
 
 // loadParameterContractValidator lazily compiles parameterContractSchemaJSON
 // into a jsonvalidator.Validator via the pkg/validator/jsonschema wrapper.
-//
-// At WI 05 Step C this code-path bypassed the wrapper and called the
-// google/jsonschema-go library directly because the wrapper's
-// deterministic walker did not cover root-level `oneOf` or
-// `additionalProperties: <schema>` — both of which the
-// parameter-contract sub-schema uses. WI 05b extended the walker to
-// cover all seven documented walker-completeness gaps; the wrapper
-// now provides full coverage with deterministic finding emission, so
-// the bypass was retired here.
+// The wrapper's deterministic walker covers the schema shapes the
+// parameter-contract sub-schema uses (root-level `additionalProperties:
+// <schema>` with `additionalProperties: false` on the inner typed-form
+// object), emitting findings deterministically across runs.
 //
 // Compilation happens once per process; subsequent calls return the
 // cached validator. Returns the compilation error if the literal
@@ -113,10 +108,10 @@ func loadParameterContractValidator() (jsonvalidator.Validator, error) {
 // MarshalJSON preserves key order and produces standard JSON; the
 // re-unmarshal lands in map[string]any).
 //
-// Per-Finding ResolverErrors aggregate via aggregateParameterViolations
-// for consistency with the contract-validation multi-violation path
-// (Step A of WI 05). Envelope-level failures carry ErrYAMLLoad as the
-// sentinel (workspace-load issues, not contract violations).
+// Per-finding ResolverErrors aggregate via aggregateParameterViolations
+// for consistency with the contract-validation multi-violation path.
+// Envelope-level failures carry ErrYAMLLoad as the sentinel
+// (workspace-load issues, not contract violations).
 //
 // Returns nil if the contract passes envelope validation.
 func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregatePath string) *ResolverError {

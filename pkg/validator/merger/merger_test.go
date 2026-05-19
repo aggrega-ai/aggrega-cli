@@ -1390,9 +1390,9 @@ func itoaTest(n int) string {
 
 // assertDeterministicMerge runs Merge(schemas) the given number of
 // trials and asserts every merged result marshals to the same JSON
-// bytes. The analogue of WI 02b's assertDeterministicValidation for
-// the merger; small duplication accepted, shared-helper extraction
-// is a possible cleanup if a third determinism-helper appears.
+// bytes. Parallels assertDeterministicValidation in the validator
+// package; small duplication accepted, shared-helper extraction is a
+// possible cleanup if a third determinism-helper appears.
 func assertDeterministicMerge(t *testing.T, schemas []*Schema, trials int) {
 	t.Helper()
 	var first string

@@ -606,7 +606,7 @@ func emitInDocumentReference(node *yaml.Node, path string, ctx *compileCtx) (Sch
 //     deduplicated); consumer description wins if present.
 //  5. Inject `additionalProperties: false` on the merged shape so the
 //     inferred-form-mandatory rule survives the architecture change —
-//     the closure semantic established at WI 02 Run 1 is preserved
+//     the closure semantic the compact form establishes is preserved
 //     through compile-time expansion.
 //  6. Annotate library-sourced properties with x-aggrega-source values
 //     identifying the originating library + entry. The annotation lands

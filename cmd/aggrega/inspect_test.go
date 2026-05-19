@@ -19,20 +19,17 @@ import (
 // the Component recipes the fullstack-app IR builder consumes.
 const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-app/catalog"
 
-// runInspectCaptured wires the captureStdout helper to a runInspect
+// runInspectCaptured wires the captureStdout helper to a dispatchInspect
 // call against a Release file with the fullstack-app catalog set. The
 // returned string is the per-component Feature-attachment block the
 // inspect command emits.
 func runInspectCaptured(t *testing.T, releasePath string) string {
 	t.Helper()
-	prior := inspectCatalogDir
-	inspectCatalogDir = fullstackAppInspectCatalog
-	defer func() { inspectCatalogDir = prior }()
 	out, err := captureStdout(func() error {
-		return runInspect(nil, []string{releasePath})
+		return dispatchInspect(releasePath, fullstackAppInspectCatalog)
 	})
 	if err != nil {
-		t.Fatalf("runInspect(%q): %v", releasePath, err)
+		t.Fatalf("dispatchInspect(%q): %v", releasePath, err)
 	}
 	return out
 }
@@ -96,7 +93,7 @@ func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing
 // inspect is deferred.
 func TestInspect_OciUri_ReturnsNotImplemented(t *testing.T) {
 	t.Parallel()
-	err := runInspect(nil, []string{"oci://registry.example.com/components/api:1.0.0"})
+	err := dispatchInspect("oci://registry.example.com/components/api:1.0.0", "")
 	if err == nil {
 		t.Fatal("expected not-implemented error for oci:// argument; got nil")
 	}
@@ -125,7 +122,7 @@ spec:
       type:
         core/server: server-recipe:1.0.0
 `)
-	err := runInspect(nil, []string{manifestPath})
+	err := dispatchInspect(manifestPath, "")
 	if err == nil {
 		t.Fatal("expected not-implemented-for-kind error for Manifest input; got nil")
 	}
@@ -148,7 +145,7 @@ func TestInspect_MissingKind_ReturnsError(t *testing.T) {
 	writeFixture(t, bogusPath, `some_field: value
 another_field: 42
 `)
-	err := runInspect(nil, []string{bogusPath})
+	err := dispatchInspect(bogusPath, "")
 	if err == nil {
 		t.Fatal("expected error on missing-kind file; got nil")
 	}
@@ -176,7 +173,7 @@ spec:
 `)
 
 	out, err := captureStdout(func() error {
-		return runInspect(nil, []string{compPath})
+		return dispatchInspect(compPath, "")
 	})
 	if err != nil {
 		t.Fatalf("Component file path should inspect cleanly; got: %v", err)

@@ -34,7 +34,14 @@ func init() {
 	rootCmd.AddCommand(inspectCmd)
 }
 
-// runInspect dispatches by the input form:
+// runInspect reads the cobra-bound --catalog flag and delegates to
+// dispatchInspect. Tests exercise dispatchInspect directly to avoid
+// racing on the package-level flag variable under t.Parallel.
+func runInspect(cmd *cobra.Command, args []string) error {
+	return dispatchInspect(args[0], inspectCatalogDir)
+}
+
+// dispatchInspect routes the inspect command by the input form:
 //
 //   - Path-shaped argument (starts with ./, ../, /, or ends with .yaml /
 //     .yml) → load the file, peek at kind:, dispatch to the appropriate
@@ -46,20 +53,18 @@ func init() {
 //   - Anything else → treated as a catalog Component name, dispatched to
 //     the legacy schema-rendering branch.
 //
-// The --catalog flag supplies the catalog directory for both the
-// catalog-name branch and the Release branch's pipeline. Default `.`.
-func runInspect(cmd *cobra.Command, args []string) error {
-	identifier := args[0]
-
+// catalogDir supplies the catalog directory for both the catalog-name
+// branch and the Release branch's pipeline.
+func dispatchInspect(identifier, catalogDir string) error {
 	if strings.HasPrefix(identifier, "oci://") {
 		return fmt.Errorf("inspect for OCI URIs not yet implemented; resolve to a local path or use a catalog name")
 	}
 
 	if isPathInput(identifier) {
-		return inspectPath(identifier, inspectCatalogDir)
+		return inspectPath(identifier, catalogDir)
 	}
 
-	return inspectCatalogComponent(identifier, inspectCatalogDir)
+	return inspectCatalogComponent(identifier, catalogDir)
 }
 
 // isPathInput returns true when the identifier names a filesystem path

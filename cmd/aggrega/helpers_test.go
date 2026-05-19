@@ -273,15 +273,7 @@ spec:
 // TestRunBuild_MissingCatalog pins the catalog-load error path.
 func TestRunBuild_MissingCatalog(t *testing.T) {
 	t.Parallel()
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = "/nonexistent/release.yaml"
-	catalogDir = "/nonexistent/catalog"
-	traceEnabled = false
-
-	err := runBuild(nil, nil)
+	err := dispatchBuild("/nonexistent/release.yaml", "/nonexistent/catalog", false)
 	if err == nil {
 		t.Errorf("missing catalog should error")
 	}
@@ -290,16 +282,7 @@ func TestRunBuild_MissingCatalog(t *testing.T) {
 // TestRunBuild_MissingRelease pins the release-load error path.
 func TestRunBuild_MissingRelease(t *testing.T) {
 	t.Parallel()
-	tmp := t.TempDir()
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = "/nonexistent/release.yaml"
-	catalogDir = tmp
-	traceEnabled = false
-
-	err := runBuild(nil, nil)
+	err := dispatchBuild("/nonexistent/release.yaml", t.TempDir(), false)
 	if err == nil {
 		t.Errorf("missing release should error")
 	}
@@ -308,7 +291,7 @@ func TestRunBuild_MissingRelease(t *testing.T) {
 // TestRunInspect_OCI pins the OCI not-implemented branch.
 func TestRunInspect_OCI(t *testing.T) {
 	t.Parallel()
-	err := runInspect(nil, []string{"oci://hub/lib@1#/schemas/X"})
+	err := dispatchInspect("oci://hub/lib@1#/schemas/X", "")
 	if err == nil {
 		t.Errorf("OCI URI should error")
 	}
@@ -321,10 +304,7 @@ func TestRunInspect_OCI(t *testing.T) {
 // path (non-path input + non-OCI input).
 func TestRunInspect_CatalogComponentBranch(t *testing.T) {
 	t.Parallel()
-	prev := inspectCatalogDir
-	t.Cleanup(func() { inspectCatalogDir = prev })
-	inspectCatalogDir = t.TempDir()
-	err := runInspect(nil, []string{"absent-component"})
+	err := dispatchInspect("absent-component", t.TempDir())
 	if err == nil {
 		t.Errorf("absent component should error")
 	}
@@ -338,10 +318,7 @@ func TestRunInspect_PathBranch(t *testing.T) {
 	if err := os.WriteFile(path, []byte("apiVersion: x\nkind: Manifest\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	prev := inspectCatalogDir
-	t.Cleanup(func() { inspectCatalogDir = prev })
-	inspectCatalogDir = tmp
-	err := runInspect(nil, []string{path})
+	err := dispatchInspect(path, tmp)
 	// Manifest → not-yet-implemented; surfaces as error.
 	if err == nil {
 		t.Errorf("manifest dispatch should error")

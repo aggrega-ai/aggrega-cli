@@ -51,8 +51,8 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 // IR-level direct construction (matching boundary_fr_proof_test.go pattern)
 // because this test focuses on Recipe authoring correctness, not on full
 // Aggregate→Release→IR pipeline. Aggregate-level requires (the mariadb
-// Component declares root_password.required) belong in WI 08's E2E proof,
-// not here.
+// Component declares root_password.required) belong in the end-to-end
+// proof matrix, not here.
 func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
 
@@ -154,5 +154,5 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	// probe→healthcheck translation is not yet exercised by this test surface
 	// (the existing compose tests do not declare probes; whether
 	// mysqladmin / tcp probes round-trip into a compose healthcheck block is
-	// a separate verification scope tracked in WI 08's E2E proof matrix).
+	// a separate verification scope tracked in the end-to-end proof matrix).
 }

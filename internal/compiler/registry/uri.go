@@ -130,8 +130,8 @@ var coreFeatures = map[string]struct{}{
 // ("component" → "component-recipes"; "feature" → "feature-recipes"); rawURI
 // is the shorthand the manifest authored.
 //
-// Routing decision (the "scenario" terminology mirrors the source FIRE work
-// item):
+// Routing decision (the "scenario" terminology distinguishes the per-shape
+// dispatch paths below):
 //
 //   - Scenario A — first slash-separated segment is in the recipe-kind's core
 //     map (coreComponents for "component", coreFeatures for "feature"). The
