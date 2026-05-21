@@ -32,18 +32,12 @@ func loadFixturePlugin(t *testing.T, fixtureName string) (*wasm.Plugin, func()) 
 	return plugin, func() { _ = plugin.Close(context.Background()) }
 }
 
-// TestPluginRoundTrip_MutatorGo loads the Go fixture mutator plugin
-// and exercises the loader end-to-end. The fixture appends a known
-// label to every input node; the test asserts the output parses as a
-// list of JSON Patch documents and carries one patch per input node
-// containing the fixture's label.
-func TestPluginRoundTrip_MutatorGo(t *testing.T) {
-	plugin, cleanup := loadFixturePlugin(t, "mutator-go.wasm")
-	defer cleanup()
-
-	// Input shape mirrors the wasm-mutator JSON Schema's MutatorInput
-	// definition. The fixture iterates Graph.Nodes; one node here keeps
-	// the assertion simple.
+// mutatorFixtureInput is the canonical mutator input shared across the
+// per-language mutator round-trip tests. Shape mirrors the
+// wasm-mutator JSON Schema's MutatorInput definition; one node keeps
+// the per-language assertion simple.
+func mutatorFixtureInput(t *testing.T) []byte {
+	t.Helper()
 	input := map[string]any{
 		"compilation_context": map[string]any{
 			"release_destination": "aws-prod/eks-main",
@@ -64,12 +58,18 @@ func TestPluginRoundTrip_MutatorGo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal input: %v", err)
 	}
+	return inputBytes
+}
 
-	outputBytes, err := plugin.Call(context.Background(), "mutate", inputBytes)
-	if err != nil {
-		t.Fatalf("plugin.Call mutate: %v", err)
-	}
-
+// assertMutatorOutput parses the mutator plugin's output bytes,
+// asserts there is exactly one patch (one input node), and that the
+// patch carries the fixture's label key plus the per-language value.
+// Substring matching rather than full JSON Patch parsing keeps the
+// assertion focused on the fixture's behavioural contract — emit one
+// patch per node with the known label key + language tag — not the
+// exact JSON Patch envelope.
+func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
+	t.Helper()
 	var out struct {
 		Patches []json.RawMessage `json:"patches"`
 	}
@@ -79,34 +79,20 @@ func TestPluginRoundTrip_MutatorGo(t *testing.T) {
 	if len(out.Patches) != 1 {
 		t.Fatalf("expected exactly one patch for the one-node input; got %d", len(out.Patches))
 	}
-
-	// The fixture's patch carries fixtureLabelKey/value. We verify the
-	// substring rather than parsing the patch JSON: the fixture's
-	// contract is the label-and-value pair, not the exact JSON Patch
-	// envelope.
 	if !strings.Contains(string(out.Patches[0]), "fixture.aggrega-pdk/touched") {
 		t.Errorf("patch does not contain expected fixture label key; got %s", string(out.Patches[0]))
 	}
-	if !strings.Contains(string(out.Patches[0]), "mutator-go") {
-		t.Errorf("patch does not identify the Go-language fixture; got %s", string(out.Patches[0]))
+	if !strings.Contains(string(out.Patches[0]), langSuffix) {
+		t.Errorf("patch does not identify the %s fixture; got %s", langSuffix, string(out.Patches[0]))
 	}
 }
 
-// TestPluginRoundTrip_PolicyValidatorGo loads the Go fixture
-// policy-validator plugin and exercises the loader end-to-end. The
-// fixture emits a constant two-result output (one pass, one fail);
-// the test asserts the output shape and the verdict pattern.
-func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
-	plugin, cleanup := loadFixturePlugin(t, "policy-validator-go.wasm")
-	defer cleanup()
-
-	// The fixture does not inspect its input; an empty object suffices.
-	inputBytes := []byte(`{}`)
-	outputBytes, err := plugin.Call(context.Background(), "validate", inputBytes)
-	if err != nil {
-		t.Fatalf("plugin.Call validate: %v", err)
-	}
-
+// assertPolicyValidatorOutput parses the policy-validator plugin's
+// output bytes, asserts there are exactly two results, and that the
+// verdict pattern is one-pass-one-fail in that order. The fixture's
+// contract is constant across languages; the assertion is shared.
+func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
+	t.Helper()
 	var out struct {
 		Results []struct {
 			Pass    bool   `json:"pass"`
@@ -125,4 +111,61 @@ func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
 	if out.Results[1].Pass {
 		t.Errorf("expected results[1].pass=false; got true (message: %s)", out.Results[1].Message)
 	}
+}
+
+// TestPluginRoundTrip_MutatorGo loads the Go fixture mutator plugin
+// and exercises the loader end-to-end against the canonical input.
+func TestPluginRoundTrip_MutatorGo(t *testing.T) {
+	plugin, cleanup := loadFixturePlugin(t, "mutator-go.wasm")
+	defer cleanup()
+
+	outputBytes, err := plugin.Call(context.Background(), "mutate", mutatorFixtureInput(t))
+	if err != nil {
+		t.Fatalf("plugin.Call mutate: %v", err)
+	}
+	assertMutatorOutput(t, outputBytes, "mutator-go")
+}
+
+// TestPluginRoundTrip_MutatorRust loads the Rust fixture mutator
+// plugin and exercises the loader end-to-end against the same
+// canonical input as the Go counterpart. Cross-language fixture
+// parity: identical input must produce a patch carrying the Rust
+// fixture's label tag.
+func TestPluginRoundTrip_MutatorRust(t *testing.T) {
+	plugin, cleanup := loadFixturePlugin(t, "mutator-rust.wasm")
+	defer cleanup()
+
+	outputBytes, err := plugin.Call(context.Background(), "mutate", mutatorFixtureInput(t))
+	if err != nil {
+		t.Fatalf("plugin.Call mutate: %v", err)
+	}
+	assertMutatorOutput(t, outputBytes, "mutator-rust")
+}
+
+// TestPluginRoundTrip_PolicyValidatorGo loads the Go fixture
+// policy-validator plugin and asserts the constant two-result output.
+func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
+	plugin, cleanup := loadFixturePlugin(t, "policy-validator-go.wasm")
+	defer cleanup()
+
+	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("plugin.Call validate: %v", err)
+	}
+	assertPolicyValidatorOutput(t, outputBytes)
+}
+
+// TestPluginRoundTrip_PolicyValidatorRust loads the Rust fixture
+// policy-validator plugin and asserts the same constant two-result
+// output. Cross-language fixture parity: identical input must produce
+// the identical verdict pattern.
+func TestPluginRoundTrip_PolicyValidatorRust(t *testing.T) {
+	plugin, cleanup := loadFixturePlugin(t, "policy-validator-rust.wasm")
+	defer cleanup()
+
+	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("plugin.Call validate: %v", err)
+	}
+	assertPolicyValidatorOutput(t, outputBytes)
 }
