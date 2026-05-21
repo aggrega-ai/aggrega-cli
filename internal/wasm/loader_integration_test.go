@@ -6,6 +6,7 @@ package wasm_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -168,6 +169,175 @@ func TestPluginRoundTrip_PolicyValidatorRust(t *testing.T) {
 		t.Fatalf("plugin.Call validate: %v", err)
 	}
 	assertPolicyValidatorOutput(t, outputBytes)
+}
+
+// TestPluginRoundTrip_MutatorTypescript loads the TypeScript fixture
+// mutator plugin (built via extism-js, with QuickJS runtime emitting
+// WASI runtime-init imports that the stubbed-subset firewall accepts)
+// and exercises the loader end-to-end against the same canonical
+// input as the Go and Rust counterparts.
+func TestPluginRoundTrip_MutatorTypescript(t *testing.T) {
+	plugin, cleanup := loadFixturePlugin(t, "mutator-typescript.wasm")
+	defer cleanup()
+
+	outputBytes, err := plugin.Call(context.Background(), "mutate", mutatorFixtureInput(t))
+	if err != nil {
+		t.Fatalf("plugin.Call mutate: %v", err)
+	}
+	assertMutatorOutput(t, outputBytes, "mutator-typescript")
+}
+
+// TestPluginRoundTrip_PolicyValidatorTypescript loads the TypeScript
+// fixture policy-validator plugin and asserts the constant
+// two-result output, completing the three-language matrix for both
+// sockets.
+func TestPluginRoundTrip_PolicyValidatorTypescript(t *testing.T) {
+	plugin, cleanup := loadFixturePlugin(t, "policy-validator-typescript.wasm")
+	defer cleanup()
+
+	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("plugin.Call validate: %v", err)
+	}
+	assertPolicyValidatorOutput(t, outputBytes)
+}
+
+// crossLanguageFixtureLangs enumerates the three source languages for
+// the parity tests. Each subtest's outputs are decoded into a Go
+// shape and compared via reflect.DeepEqual rather than asserting
+// byte-identical encoded bytes — JSON encoders may legitimately
+// differ in whitespace or key ordering even when the wire shape is
+// structurally equivalent. Structural equivalence is the invariant
+// the parity discipline asserts.
+var crossLanguageFixtureLangs = []string{"go", "rust", "typescript"}
+
+// TestCrossLanguageFixtureParity_PolicyValidator loads all three
+// policy-validator fixtures, calls each with the same input, and
+// asserts the decoded outputs are structurally equivalent across
+// languages. The policy-validator fixture's contract is constant
+// across languages so the output shapes should match exactly.
+//
+// Each language's plugin is loaded, called, and closed inside an
+// inner-function scope so the deferred cleanup fires at end of
+// iteration rather than at end of test. Holding all three QuickJS
+// plugins open simultaneously would pin ~7 MB of Wazero state for
+// the duration of the test; per-iteration release keeps memory
+// pressure bounded to one plugin at a time.
+func TestCrossLanguageFixtureParity_PolicyValidator(t *testing.T) {
+	type result struct {
+		Pass    bool   `json:"pass"`
+		Message string `json:"message"`
+	}
+	type output struct {
+		Results []result `json:"results"`
+	}
+
+	var decoded []output
+	for _, lang := range crossLanguageFixtureLangs {
+		func() {
+			plugin, cleanup := loadFixturePlugin(t, "policy-validator-"+lang+".wasm")
+			defer cleanup()
+
+			outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+			if err != nil {
+				t.Fatalf("plugin.Call validate (%s): %v", lang, err)
+			}
+			var o output
+			if err := json.Unmarshal(outputBytes, &o); err != nil {
+				t.Fatalf("unmarshal %s output: %v (output: %s)", lang, err, outputBytes)
+			}
+			decoded = append(decoded, o)
+		}()
+	}
+
+	for i := 1; i < len(decoded); i++ {
+		if !reflect.DeepEqual(decoded[0], decoded[i]) {
+			t.Errorf("cross-language parity broken between %s and %s:\n  %s: %+v\n  %s: %+v",
+				crossLanguageFixtureLangs[0], crossLanguageFixtureLangs[i],
+				crossLanguageFixtureLangs[0], decoded[0],
+				crossLanguageFixtureLangs[i], decoded[i])
+		}
+	}
+}
+
+// TestCrossLanguageFixtureParity_Mutator loads all three mutator
+// fixtures, calls each with the same input, and asserts the decoded
+// outputs are structurally equivalent modulo the per-language label
+// tag. The mutator's output shape is "one JSON Patch per node, each
+// patch is an array of one add operation"; the only language-
+// dependent value is the label value (mutator-go vs mutator-rust vs
+// mutator-typescript). The test asserts:
+//
+//   - All three outputs have the same number of patches.
+//   - Each patch is a single-op array with op="add" and a path that
+//     is identical across languages (the same input → the same node
+//     IDs → the same paths).
+//   - The value field matches the expected per-language tag.
+func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
+	type patchOp struct {
+		Op    string `json:"op"`
+		Path  string `json:"path"`
+		Value string `json:"value"`
+	}
+	type output struct {
+		Patches [][]patchOp `json:"patches"`
+	}
+
+	// Per-iteration IIFE scopes the deferred cleanup so each plugin
+	// closes before the next one loads. See the policy-validator
+	// parity test for the memory-pressure rationale.
+	decodedByLang := map[string]output{}
+	for _, lang := range crossLanguageFixtureLangs {
+		func() {
+			plugin, cleanup := loadFixturePlugin(t, "mutator-"+lang+".wasm")
+			defer cleanup()
+
+			outputBytes, err := plugin.Call(context.Background(), "mutate", mutatorFixtureInput(t))
+			if err != nil {
+				t.Fatalf("plugin.Call mutate (%s): %v", lang, err)
+			}
+			var o output
+			if err := json.Unmarshal(outputBytes, &o); err != nil {
+				t.Fatalf("unmarshal %s output: %v (output: %s)", lang, err, outputBytes)
+			}
+			decodedByLang[lang] = o
+		}()
+	}
+
+	// Patch count parity.
+	patchCount := len(decodedByLang["go"].Patches)
+	for _, lang := range crossLanguageFixtureLangs[1:] {
+		if got := len(decodedByLang[lang].Patches); got != patchCount {
+			t.Errorf("patch count mismatch: go=%d %s=%d", patchCount, lang, got)
+		}
+	}
+
+	// Per-patch parity: each language's i-th patch has the same path
+	// + op as Go's i-th patch; value matches the language-specific tag.
+	for i, goPatchArr := range decodedByLang["go"].Patches {
+		if len(goPatchArr) != 1 {
+			t.Fatalf("go patch[%d] expected length 1, got %d", i, len(goPatchArr))
+		}
+		goOp := goPatchArr[0]
+		for _, lang := range crossLanguageFixtureLangs[1:] {
+			langPatchArr := decodedByLang[lang].Patches[i]
+			if len(langPatchArr) != 1 {
+				t.Errorf("%s patch[%d] expected length 1, got %d", lang, i, len(langPatchArr))
+				continue
+			}
+			langOp := langPatchArr[0]
+			if langOp.Op != goOp.Op {
+				t.Errorf("patch[%d] op mismatch: go=%q %s=%q", i, goOp.Op, lang, langOp.Op)
+			}
+			if langOp.Path != goOp.Path {
+				t.Errorf("patch[%d] path mismatch: go=%q %s=%q", i, goOp.Path, lang, langOp.Path)
+			}
+			expectedTag := "mutator-" + lang
+			if langOp.Value != expectedTag {
+				t.Errorf("patch[%d] value mismatch: %s=%q want %q", i, lang, langOp.Value, expectedTag)
+			}
+		}
+	}
 }
 
 // TestPluginRoundTrip_WasiProbeRust loads the WASI-importing probe

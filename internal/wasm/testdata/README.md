@@ -33,12 +33,19 @@ host-side deterministic stubs — `clock_time_get` returns zero;
 the plugin with an `ErrWasmPluginExited`-wrapped error without
 affecting the host process.
 
-The `wasi-probe-rust` fixture exercises this surface end-to-end. The
-mutator and policy-validator fixtures emit zero WASI imports (their
-TinyGo `-target=wasm-unknown` and Cargo `wasm32-unknown-unknown`
-targets are WASI-free); they continue to load identically under the
-stubbed-subset firewall. The `wasi-probe-rust` fixture is the only
-fixture in this directory that emits real WASI imports.
+Two classes of fixture exercise the stubbed-subset firewall:
+
+- **WASI-free fixtures** — `mutator-go.wasm`, `policy-validator-go.wasm`
+  (TinyGo `-target=wasm-unknown`), `mutator-rust.wasm`,
+  `policy-validator-rust.wasm` (Cargo `wasm32-unknown-unknown`). These
+  emit zero WASI imports and load identically with or without the
+  firewall.
+- **WASI-importing fixtures** — `mutator-typescript.wasm`,
+  `policy-validator-typescript.wasm` (extism-js + QuickJS runtime),
+  `wasi-probe-rust.wasm` (Cargo `wasm32-wasip1`). The QuickJS runtime
+  imports 12 WASI runtime-init functions (`fd_*`, `clock_time_get`,
+  `random_get`, `environ_*`, `proc_exit`); the stubbed-subset firewall
+  is the load-bearing component accepting these imports.
 
 ## Toolchain dependencies
 
