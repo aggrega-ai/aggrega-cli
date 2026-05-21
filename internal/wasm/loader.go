@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	extism "github.com/extism/go-sdk"
 )
@@ -49,9 +50,65 @@ type Loader struct {
 
 // Plugin wraps an Extism plugin handle with Aggrega-specific lifecycle
 // and call-boundary behaviour. Constructed only by Loader.Load.
+//
+// Plugin accumulates structured warnings emitted by the guest via the
+// aggrega_emit_warning host function across the lifetime of a single
+// Plugin instance. Concurrent host-function invocations on the same
+// Plugin are race-free under warningsMu; the warnings slice is
+// retrievable via Warnings (defensive copy, no clear) or
+// DrainWarnings (returns + atomic clear). The warning channel
+// surfaces guest-side diagnostics the host's build-time validator
+// converts into user-visible warnings.
 type Plugin struct {
-	name   string
-	plugin *extism.Plugin
+	name       string
+	plugin     *extism.Plugin
+	warningsMu sync.Mutex
+	warnings   []string
+}
+
+// Warnings returns a defensive copy of the warnings accumulated by
+// guest-side aggrega_emit_warning invocations. The returned slice is
+// safe to mutate; subsequent calls to Warnings or DrainWarnings
+// observe internal state unaffected by mutations of a prior return.
+// Callers that want to surface warnings repeatedly (without taking
+// ownership) use this; callers that surface each warning once use
+// DrainWarnings.
+func (p *Plugin) Warnings() []string {
+	p.warningsMu.Lock()
+	defer p.warningsMu.Unlock()
+	if len(p.warnings) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.warnings))
+	copy(out, p.warnings)
+	return out
+}
+
+// DrainWarnings returns the warnings accumulated since the last drain
+// (or since the Plugin was constructed) and atomically clears
+// internal state. The returned slice's ownership transfers to the
+// caller; the Plugin sees no further trace of those warnings. Callers
+// that surface each warning exactly once across a long-lived Plugin
+// use DrainWarnings to avoid double-surfacing.
+func (p *Plugin) DrainWarnings() []string {
+	p.warningsMu.Lock()
+	defer p.warningsMu.Unlock()
+	if len(p.warnings) == 0 {
+		return nil
+	}
+	out := p.warnings
+	p.warnings = nil
+	return out
+}
+
+// appendWarning records a formatted warning string under warningsMu.
+// Called by the aggrega_emit_warning host function body; extracted as
+// a method so concurrent-append tests can exercise the locked-append
+// path without reaching into struct internals.
+func (p *Plugin) appendWarning(formatted string) {
+	p.warningsMu.Lock()
+	p.warnings = append(p.warnings, formatted)
+	p.warningsMu.Unlock()
 }
 
 // Load constructs a Plugin from a PluginSpec. The flow:
@@ -99,7 +156,13 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 		extism.WasmData{Data: wasmBytes, Name: spec.Name},
 	}
 
-	functions := selectAllowlistedHostFunctions(spec.DeclaredHostFunctions)
+	// Allocate the wrapper before constructing the Extism plugin so
+	// the per-plugin host-function closures can capture *Plugin and
+	// thread guest-emitted warnings into the warnings slice. The
+	// Extism plugin handle is attached to p after NewPlugin returns.
+	p := &Plugin{name: spec.Name}
+
+	functions := p.hostFunctionsForDeclared(spec.DeclaredHostFunctions)
 	functions = append(functions, buildWasiStubHostFunctions()...)
 
 	config := extism.PluginConfig{
@@ -113,12 +176,13 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 		// bundled WASI module.
 	}
 
-	plugin, err := extism.NewPlugin(ctx, manifest, config, functions)
+	extismPlugin, err := extism.NewPlugin(ctx, manifest, config, functions)
 	if err != nil {
 		return nil, fmt.Errorf("wasm: load plugin %q: %w", spec.Name, err)
 	}
 
-	return &Plugin{name: spec.Name, plugin: plugin}, nil
+	p.plugin = extismPlugin
+	return p, nil
 }
 
 // Name returns the plugin's diagnostic identifier (the Name field of

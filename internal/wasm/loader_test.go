@@ -4,9 +4,12 @@
 package wasm
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
 	"testing"
 
 	extism "github.com/extism/go-sdk"
@@ -184,3 +187,238 @@ func TestCallWithPanicRecoveryPassesNormalErrors(t *testing.T) {
 	}
 }
 
+
+// --- Host-function-body tests ----------------------------------------
+
+// fakeMemoryReader is a pluginMemoryReader test double the host-
+// function body tests use in place of *extism.CurrentPlugin. The SDK
+// exposes no public constructor or test double for *CurrentPlugin;
+// the bodies are tested via the interface abstraction in hostfuncs.go
+// so the read-format-emit path is exercisable in isolation.
+type fakeMemoryReader struct {
+	// stringsByOffset returns the string the body should observe at a
+	// given stack offset. Missing entries cause ReadString to return
+	// an error simulating an OOB or invalid-pointer read.
+	stringsByOffset map[uint64]string
+	// errOnOffset, if non-zero, forces ReadString to fail at that
+	// specific offset even if stringsByOffset has an entry for it.
+	// Used to exercise the "one of three reads failed" branches of
+	// handleAggregaEmitWarning.
+	errOnOffset uint64
+}
+
+func (f *fakeMemoryReader) ReadString(offset uint64) (string, error) {
+	if f.errOnOffset != 0 && offset == f.errOnOffset {
+		return "", fmt.Errorf("simulated read failure at offset %d", offset)
+	}
+	s, ok := f.stringsByOffset[offset]
+	if !ok {
+		return "", fmt.Errorf("no string fixture at offset %d", offset)
+	}
+	return s, nil
+}
+
+// captureLogOutput redirects log.Default()'s destination to a buffer
+// for the duration of the test, restoring the prior destination via
+// t.Cleanup. Tests that consume the captured output are NOT marked
+// t.Parallel — log.SetOutput modifies process-wide state and parallel
+// tests would interfere.
+func captureLogOutput(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	prev := log.Writer()
+	prevFlags := log.Flags()
+	buf := &bytes.Buffer{}
+	log.SetOutput(buf)
+	log.SetFlags(0) // strip timestamp prefix for predictable assertions
+	t.Cleanup(func() {
+		log.SetOutput(prev)
+		log.SetFlags(prevFlags)
+	})
+	return buf
+}
+
+func TestPluginWarningsReturnsDefensiveCopy(t *testing.T) {
+	t.Parallel()
+	p := &Plugin{name: "test-plugin"}
+	p.appendWarning("first warning")
+	p.appendWarning("second warning")
+
+	got := p.Warnings()
+	if len(got) != 2 {
+		t.Fatalf("Warnings: want 2 entries; got %d", len(got))
+	}
+	// Mutate the returned slice; the second call must observe
+	// internal state unaffected.
+	got[0] = "mutated"
+
+	again := p.Warnings()
+	if again[0] != "first warning" {
+		t.Errorf("Warnings returned non-defensive copy: caller mutation visible (%q)", again[0])
+	}
+}
+
+func TestPluginDrainWarningsReturnsAndClears(t *testing.T) {
+	t.Parallel()
+	p := &Plugin{name: "test-plugin"}
+	p.appendWarning("alpha")
+	p.appendWarning("beta")
+
+	drained := p.DrainWarnings()
+	if len(drained) != 2 || drained[0] != "alpha" || drained[1] != "beta" {
+		t.Errorf("DrainWarnings: want [alpha beta]; got %v", drained)
+	}
+
+	if got := p.Warnings(); len(got) != 0 {
+		t.Errorf("Warnings after drain: want empty; got %v", got)
+	}
+
+	// Post-drain accumulation works.
+	p.appendWarning("gamma")
+	if got := p.Warnings(); len(got) != 1 || got[0] != "gamma" {
+		t.Errorf("post-drain Warnings: want [gamma]; got %v", got)
+	}
+}
+
+func TestPluginWarningsRaceUnderConcurrentAppend(t *testing.T) {
+	t.Parallel()
+	p := &Plugin{name: "race-plugin"}
+
+	// 100 goroutines each invoking the handleAggregaEmitWarning path
+	// (the real append-under-lock path the host-function body uses)
+	// via a fake reader that yields three distinct strings. Under
+	// `go test -race` any unsynchronised access would surface.
+	const concurrency = 100
+	reader := &fakeMemoryReader{
+		stringsByOffset: map[uint64]string{
+			10: "code-id",
+			20: "warning text",
+			30: "components.x",
+		},
+	}
+	stack := []uint64{10, 20, 30}
+
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.handleAggregaEmitWarning(reader, stack)
+		}()
+	}
+	wg.Wait()
+
+	if got := len(p.Warnings()); got != concurrency {
+		t.Errorf("concurrent append final count: want %d; got %d", concurrency, got)
+	}
+}
+
+func TestHostFunctionAggregaLogWritesToLogger(t *testing.T) {
+	// NOT t.Parallel — captureLogOutput modifies process-wide log state.
+	buf := captureLogOutput(t)
+
+	p := &Plugin{name: "log-test-plugin"}
+	reader := &fakeMemoryReader{
+		stringsByOffset: map[uint64]string{42: "hello from guest"},
+	}
+	p.handleAggregaLog(reader, []uint64{2, 42}) // level=2 (info), msg at offset 42
+
+	out := buf.String()
+	if !strings.Contains(out, `"log-test-plugin"`) {
+		t.Errorf("log output missing plugin name: %q", out)
+	}
+	if !strings.Contains(out, "[info]") {
+		t.Errorf("log output missing level label: %q", out)
+	}
+	if !strings.Contains(out, "hello from guest") {
+		t.Errorf("log output missing message: %q", out)
+	}
+}
+
+func TestHostFunctionAggregaLogHandlesMemoryReadFailure(t *testing.T) {
+	// NOT t.Parallel — captureLogOutput modifies process-wide log state.
+	buf := captureLogOutput(t)
+
+	p := &Plugin{name: "fail-test-plugin"}
+	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{}} // empty → read fails
+	// Must not panic.
+	p.handleAggregaLog(reader, []uint64{2, 99})
+
+	out := buf.String()
+	if !strings.Contains(out, "aggrega_log: memory read failed") {
+		t.Errorf("log output missing memory-read-failure diagnostic: %q", out)
+	}
+	if !strings.Contains(out, `"fail-test-plugin"`) {
+		t.Errorf("log output missing plugin name in diagnostic: %q", out)
+	}
+}
+
+func TestHostFunctionAggregaEmitWarningAppendsFormattedString(t *testing.T) {
+	t.Parallel()
+	p := &Plugin{name: "warn-test-plugin"}
+	reader := &fakeMemoryReader{
+		stringsByOffset: map[uint64]string{
+			100: "TFM-001",
+			200: "missing required field",
+			300: "components.my-app.values.api_port",
+		},
+	}
+	p.handleAggregaEmitWarning(reader, []uint64{100, 200, 300})
+
+	got := p.Warnings()
+	if len(got) != 1 {
+		t.Fatalf("Warnings: want 1 entry; got %d", len(got))
+	}
+	for _, want := range []string{"warn-test-plugin", "missing required field", "code=TFM-001", "path=components.my-app.values.api_port"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("formatted warning missing %q: %s", want, got[0])
+		}
+	}
+}
+
+func TestHostFunctionAggregaEmitWarningHandlesMemoryReadFailure(t *testing.T) {
+	// NOT t.Parallel — captureLogOutput modifies process-wide log state.
+	buf := captureLogOutput(t)
+
+	p := &Plugin{name: "warn-fail-plugin"}
+	reader := &fakeMemoryReader{
+		stringsByOffset: map[uint64]string{
+			100: "TFM-001",
+			// 200 deliberately missing → second ReadString fails
+			300: "components.x",
+		},
+	}
+	p.handleAggregaEmitWarning(reader, []uint64{100, 200, 300})
+
+	if got := p.Warnings(); len(got) != 0 {
+		t.Errorf("memory read failure must not record warning; got %v", got)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "aggrega_emit_warning: memory read failed at message") {
+		t.Errorf("log output missing per-parameter diagnostic: %q", out)
+	}
+}
+
+func TestLevelLabelMapping(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		level uint64
+		want  string
+	}{
+		{0, "trace"},
+		{1, "debug"},
+		{2, "info"},
+		{3, "warn"},
+		{4, "error"},
+		{7, "level=7"},
+		{1000, "level=1000"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
+			if got := levelLabel(tc.level); got != tc.want {
+				t.Errorf("levelLabel(%d): want %q; got %q", tc.level, tc.want, got)
+			}
+		})
+	}
+}
