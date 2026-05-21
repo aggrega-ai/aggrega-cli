@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
-	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
-	"github.com/cognitio/aggrega-cli/pkg/catalog"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 // TestRunBuild_Step4bAssertionFailureHaltsCLI pins the CLI-level

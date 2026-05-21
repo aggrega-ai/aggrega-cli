@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/pkg/compactform"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 

@@ -4,7 +4,7 @@
 package renderer
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // AssembleEnrichedUses builds the enriched topological edge map for a node.

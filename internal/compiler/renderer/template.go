@@ -13,7 +13,7 @@ import (
 
 	sprig "github.com/Masterminds/sprig/v3"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // EvalTemplate evaluates a Go template string with the default `{{ }}`

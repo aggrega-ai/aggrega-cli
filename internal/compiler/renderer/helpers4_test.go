@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestPhaseB0_NilRecipe pins phaseB0's early-return when state.Recipe

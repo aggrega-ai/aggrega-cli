@@ -4,8 +4,8 @@
 package renderer
 
 import (
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // AssembleNodeContext builds the full TemplateContext for one node,

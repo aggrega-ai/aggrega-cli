@@ -7,8 +7,8 @@ import (
 	stderrors "errors"
 	"testing"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // TestResolverError_ToCompilerError_AggregateRoutesToDeveloper verifies

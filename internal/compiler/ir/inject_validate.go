@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ErrInjectEntryAmbiguous reports a verbose-form inject entry that

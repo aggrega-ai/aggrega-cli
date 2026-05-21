@@ -6,7 +6,7 @@ package resolver
 import (
 	"fmt"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // guardRequiredFeatures verifies that every type in a Component's

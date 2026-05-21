@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // WorkloadSynthesizer is the optional interface a provider engine implements

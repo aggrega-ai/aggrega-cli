@@ -4,7 +4,7 @@
 package renderer
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ExecutePhaseB is the legacy entry point for Phase B's valuesMapping

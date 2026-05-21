@@ -6,7 +6,7 @@ package resolver
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestGuardInjectKeys_NilInputsReturnNil verifies boundary behavior.

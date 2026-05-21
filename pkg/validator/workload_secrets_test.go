@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 func slotsWith(entries ...struct {

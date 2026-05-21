@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // EvaluateRecipeSource renders Go templates inside a Recipe's source field with

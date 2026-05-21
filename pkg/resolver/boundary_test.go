@@ -6,8 +6,8 @@ package resolver_test
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // scalarAnnotation returns an AnnotationValue wrapping a scalar string,

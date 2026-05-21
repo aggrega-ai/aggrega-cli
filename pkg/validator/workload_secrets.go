@@ -6,7 +6,7 @@ package validator
 import (
 	"fmt"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ValidateWorkloadSecrets enforces the cross-wave secretsSchema check: every

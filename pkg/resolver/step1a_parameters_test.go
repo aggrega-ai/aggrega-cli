@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // helper builds a contract OrderedMap from a series of (key, value) pairs.

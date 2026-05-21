@@ -3,7 +3,7 @@
 
 package analyzer
 
-import "github.com/cognitio/aggrega-cli/pkg/types"
+import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 // PolicyValidatorInput is the JSON payload Step 4 hands to the
 // policy-validator.wasm socket described in

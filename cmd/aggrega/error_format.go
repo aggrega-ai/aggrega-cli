@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // formatCompilerError renders a CompilerError in the documented multi-line

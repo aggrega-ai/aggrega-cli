@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestTrace_NonBlockingContract_50Nodes verifies the trace writer's design

@@ -6,7 +6,7 @@ package validator
 import (
 	"fmt"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ValidateRecipeProviderBinding enforces rule 4 from chapter 16: a Recipe

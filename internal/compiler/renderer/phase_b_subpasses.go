@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
-	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // phaseB0 evaluates Recipe.Spec.Locals and Recipe.Spec.Source as Go templates

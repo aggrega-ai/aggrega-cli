@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // fakeRecipe builds a Recipe with metadata.name URI and a spec.implements.

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // compactUses constructs an OrderedMap[UsesSocketValue] with one socket

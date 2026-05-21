@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Explicit-overrides-annotation lint tests. Each test constructs an

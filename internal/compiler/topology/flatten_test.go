@@ -38,7 +38,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 func TestFlattenAggregate_SimpleComponents(t *testing.T) {

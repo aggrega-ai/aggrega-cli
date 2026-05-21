@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // expectedInjectBlockFields lists every TypeName.FieldName path in
@@ -191,5 +191,5 @@ func scanInjectBlockFields(t reflect.Type, found map[string]struct{}, visited ma
 // false-positive matches on any similarly-named type from another
 // package.
 func isTypesInjectBlock(t reflect.Type) bool {
-	return t.PkgPath() == "github.com/cognitio/aggrega-cli/pkg/types" && t.Name() == "InjectBlock"
+	return t.PkgPath() == "github.com/aggrega-ai/aggrega-cli/pkg/types" && t.Name() == "InjectBlock"
 }

@@ -19,26 +19,26 @@
 #
 # Format: <package-import-path> <floor>
 
-github.com/cognitio/aggrega-cli/internal/compiler/registry  90
-github.com/cognitio/aggrega-cli/internal/compiler/analyzer  90
-github.com/cognitio/aggrega-cli/internal/compiler/trace     90
-github.com/cognitio/aggrega-cli/internal/compiler/ir        90
-github.com/cognitio/aggrega-cli/internal/compiler/parse     90
-github.com/cognitio/aggrega-cli/pkg/validator               90
-github.com/cognitio/aggrega-cli/pkg/validator/merger        90
-github.com/cognitio/aggrega-cli/pkg/resolver                90
-github.com/cognitio/aggrega-cli/internal/compiler/topology  90
-github.com/cognitio/aggrega-cli/pkg/validator/jsonschema    90
-github.com/cognitio/aggrega-cli/pkg/types                   90
-github.com/cognitio/aggrega-cli/internal/compiler/renderer  90
-github.com/cognitio/aggrega-cli/internal/compiler/renderer/compose  90
-github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm     90
-github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart  90
-github.com/cognitio/aggrega-cli/pkg/catalog                 90
-github.com/cognitio/aggrega-cli/pkg/compactform             90
-github.com/cognitio/aggrega-cli/pkg/errors                  90
-github.com/cognitio/aggrega-cli/pkg/labels                  90
-github.com/cognitio/aggrega-cli/pkg/selector                90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/registry  90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer  90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/trace     90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/ir        90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/parse     90
+github.com/aggrega-ai/aggrega-cli/pkg/validator               90
+github.com/aggrega-ai/aggrega-cli/pkg/validator/merger        90
+github.com/aggrega-ai/aggrega-cli/pkg/resolver                90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/topology  90
+github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema    90
+github.com/aggrega-ai/aggrega-cli/pkg/types                   90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer  90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose  90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm     90
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart  90
+github.com/aggrega-ai/aggrega-cli/pkg/catalog                 90
+github.com/aggrega-ai/aggrega-cli/pkg/compactform             90
+github.com/aggrega-ai/aggrega-cli/pkg/errors                  90
+github.com/aggrega-ai/aggrega-cli/pkg/labels                  90
+github.com/aggrega-ai/aggrega-cli/pkg/selector                90
 
 # cmd/aggrega: 82% achieved + Phase 5 exclusion-list carve-outs.
 # The package's residual gap below 90% is:
@@ -50,7 +50,7 @@ github.com/cognitio/aggrega-cli/pkg/selector                90
 #     wraps a downstream package's error (resolver, topology, ir,
 #     analyzer, renderer). The downstream packages' own coverage
 #     pins their failure modes; the wrapping is mechanical.
-github.com/cognitio/aggrega-cli/cmd/aggrega                 82
+github.com/aggrega-ai/aggrega-cli/cmd/aggrega                 82
 
 # cmd/mutation-baseline: 64% achieved + Phase 5 exclusion-list
 # carve-outs. The package's residual gap below 90% is:
@@ -68,7 +68,7 @@ github.com/cognitio/aggrega-cli/cmd/aggrega                 82
 #   - runSmoke, runSingleMutation — orchestration wrappers over the
 #     tested RunMutations + FindMutations building blocks. Behavior
 #     verified by --smoke-only invocation as part of every run.
-github.com/cognitio/aggrega-cli/cmd/mutation-baseline       64
+github.com/aggrega-ai/aggrega-cli/cmd/mutation-baseline       64
 
 # cmd/mutation-baseline/smokeprobe: 50% achieved by deliberate design.
 # The package carries one tested function (probe.go:TrueAlways) and one
@@ -76,4 +76,4 @@ github.com/cognitio/aggrega-cli/cmd/mutation-baseline       64
 # binary's --smoke-only check has stable known-killed and known-survived
 # targets. Adding a test for UncoveredFunc defeats the smoke check's
 # purpose. The 50% floor locks in this intentional shape.
-github.com/cognitio/aggrega-cli/cmd/mutation-baseline/smokeprobe  50
+github.com/aggrega-ai/aggrega-cli/cmd/mutation-baseline/smokeprobe  50

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // minimalCtx returns a TemplateContext with the minimum non-nil substructure

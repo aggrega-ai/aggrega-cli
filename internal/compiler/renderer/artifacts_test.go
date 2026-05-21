@@ -13,8 +13,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // stubEngine is a no-op Engine used for tests that do not need real

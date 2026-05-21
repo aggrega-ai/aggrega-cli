@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // joinErrorChain walks the Unwrap chain (single-error and multi-error

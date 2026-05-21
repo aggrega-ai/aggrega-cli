@@ -6,9 +6,9 @@ package analyzer
 import (
 	"fmt"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // AnalysisResult is the bundled output of [Analyze]. The three fields

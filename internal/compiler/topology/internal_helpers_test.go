@@ -6,8 +6,8 @@ package topology
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestFindComponent_TopLevel pins the top-level branch of the

@@ -6,7 +6,7 @@ package compose
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestPickPrimaryProbe_EveryBranch pins the probe-selection precedence:

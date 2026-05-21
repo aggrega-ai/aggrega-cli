@@ -9,7 +9,7 @@ import (
 	"text/template"
 	"text/template/parse"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // CollectTemplateFieldAccesses parses a Go template source with the

@@ -4,7 +4,7 @@
 package validator
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ComponentLookup resolves a component name URI to the raw catalog Component.

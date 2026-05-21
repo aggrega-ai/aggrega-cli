@@ -15,12 +15,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/cognitio/aggrega-cli/internal/compiler/renderer/compose"
-	"github.com/cognitio/aggrega-cli/pkg/catalog"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestMariaDBRecipes_LoadCleanly is the smoke test for all four in-repo

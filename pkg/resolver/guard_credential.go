@@ -6,7 +6,7 @@ package resolver
 import (
 	"fmt"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // guardCredentialPartition enforces a bidirectional partition between

@@ -6,7 +6,7 @@ package renderer
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // mkMech builds a nested OrderedMap[OrderedMap[string]] from mechanism→key→value

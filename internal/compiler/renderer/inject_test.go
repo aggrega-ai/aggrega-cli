@@ -6,7 +6,7 @@ package renderer
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // omStrInject builds an OrderedMap[string] from key-value pairs.

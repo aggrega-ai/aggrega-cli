@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Number-shape regression tests for the json.Unmarshal → yaml.Unmarshal switch.

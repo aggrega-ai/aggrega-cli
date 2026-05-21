@@ -12,7 +12,7 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
-	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // recipeEnvelopeValidator loads the shipped Recipe JSON Schema from the

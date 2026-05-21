@@ -33,7 +33,7 @@ package topology
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // mkCompactUses builds a types.OrderedMap[UsesSocketValue] with one

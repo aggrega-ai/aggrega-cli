@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // TestAnalysisError_Error_FormatsSelectorViolation verifies that a

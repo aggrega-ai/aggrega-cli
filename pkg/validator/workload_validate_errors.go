@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // Workload-validation sentinels. Two are surfaced today: the CUE-unification

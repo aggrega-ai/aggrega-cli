@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // TestRecipeValidationError_ToCompilerError_RoutesToCatalog verifies that

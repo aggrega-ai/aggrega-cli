@@ -6,7 +6,7 @@ package resolver
 import (
 	"sort"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // instancePair pairs a developer-chosen instance name with the authored

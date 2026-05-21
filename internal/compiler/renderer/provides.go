@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // forbiddenProvidesRefs matches template actions referencing cross-node data.

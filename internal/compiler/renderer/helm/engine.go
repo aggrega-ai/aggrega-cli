@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // HelmEngine produces flat rendered Kubernetes YAML.

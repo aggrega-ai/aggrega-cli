@@ -6,7 +6,7 @@ package renderer
 import (
 	"sort"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // BuildInjectPipe constructs the dual-state injection context for a node.

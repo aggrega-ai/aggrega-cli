@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"

@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // ComposeEngine is the compose provider rendering engine. It implements:

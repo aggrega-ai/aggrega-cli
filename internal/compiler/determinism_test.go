@@ -13,14 +13,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
-	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
-	"github.com/cognitio/aggrega-cli/pkg/catalog"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // determinismCompileResult bundles the IR graph and rendered files from one

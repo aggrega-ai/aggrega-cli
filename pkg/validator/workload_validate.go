@@ -8,9 +8,9 @@ import (
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
-	jsonschemas "github.com/cognitio/aggrega-cli/pkg/schemas/jsonschema"
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
+	jsonschemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // ValidateWorkload validates a parsed Workload against the embedded

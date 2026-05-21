@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // Sentinel errors for errors.Is matching. Every ResolverError wraps one of

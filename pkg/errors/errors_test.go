@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 func TestCompilerError_Error_FormatWithSource(t *testing.T) {

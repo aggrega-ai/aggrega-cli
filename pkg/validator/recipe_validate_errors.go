@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // Recipe-validation sentinels. The seven rules are general Recipe shape rules

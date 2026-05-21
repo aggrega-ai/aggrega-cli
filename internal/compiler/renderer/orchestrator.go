@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
-	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // RenderResult is the output of the full Step 5 rendering pipeline.

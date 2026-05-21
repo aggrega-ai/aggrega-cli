@@ -11,7 +11,7 @@ import (
 	"testing"
 	"text/template/parse"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestNormalizeInjectMechanism_AllShapes pins each documented dispatch

@@ -4,7 +4,7 @@
 package selector
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // MatchLabels evaluates a matchLabels map (AND logic) against the provided

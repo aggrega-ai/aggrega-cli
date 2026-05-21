@@ -6,8 +6,8 @@ package compose
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestBuildAggregaLabels_Compose_EveryConditional pins each optional-

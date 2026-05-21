@@ -1,4 +1,4 @@
-module github.com/cognitio/aggrega-cli
+module github.com/aggrega-ai/aggrega-cli
 
 go 1.26.0
 

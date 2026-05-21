@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 
-	"github.com/cognitio/aggrega-cli/pkg/validator/merger"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/merger"
 )
 
 // maxInheritanceDepth prevents unbounded chains.

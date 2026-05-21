@@ -4,7 +4,7 @@
 package topology
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // normalizeUses converts the typed `uses` block authored on a Component

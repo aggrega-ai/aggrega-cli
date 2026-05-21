@@ -4,7 +4,7 @@
 package resolver
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // AnnotationRegistry holds the flat annotation-binding registry derived

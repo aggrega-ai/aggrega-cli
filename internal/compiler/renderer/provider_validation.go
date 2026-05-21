@@ -11,10 +11,10 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
-	"github.com/cognitio/aggrega-cli/pkg/compactform"
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // ProviderLookup resolves a provider by name (e.g. "helm", "helm-chart").

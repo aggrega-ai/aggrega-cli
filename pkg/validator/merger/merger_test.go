@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 
-	validator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
+	validator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // TestMerge_EmptyChainErrors verifies Merge rejects an empty input

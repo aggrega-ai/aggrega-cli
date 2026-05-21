@@ -45,9 +45,9 @@ import (
 	"strings"
 	"text/template"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
-	"github.com/cognitio/aggrega-cli/pkg/labels"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // boundaryFRKey identifies a (boundary_path, FR-instance) tuple for

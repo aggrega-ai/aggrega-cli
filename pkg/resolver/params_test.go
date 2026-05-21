@@ -11,7 +11,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 func TestInterpolateParameters_ValidTemplate(t *testing.T) {

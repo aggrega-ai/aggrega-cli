@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // WriteOutput writes rendered files to disk under the given base directory.

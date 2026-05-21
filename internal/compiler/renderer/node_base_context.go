@@ -4,8 +4,8 @@
 package renderer
 
 import (
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // NodeBaseContext is the pre-render per-node IR data shared between the

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 // buildAggregaLabels produces the aggrega.ai/* resource labels for K8s manifests.

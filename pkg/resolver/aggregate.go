@@ -4,7 +4,7 @@
 package resolver
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // WireAggregateAnnotations walks the Aggregate's subsystem and

@@ -4,8 +4,8 @@
 package renderer
 
 import (
-	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // PhaseBState is the accumulator threaded through Phase B sub-passes B.0

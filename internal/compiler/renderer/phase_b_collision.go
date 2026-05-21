@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // detectFilenameCollisions walks state.EmittedFiles and groups by Name.

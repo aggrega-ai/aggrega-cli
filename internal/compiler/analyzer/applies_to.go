@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/selector"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // validateAppliesTo performs the second of the two label-matching

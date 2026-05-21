@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	cerrors "github.com/cognitio/aggrega-cli/pkg/errors"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 

@@ -6,7 +6,7 @@ package parse_test
 import (
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 )
 
 // TestTemplateOutput_AcceptsYAMLComments verifies the template-output decoder

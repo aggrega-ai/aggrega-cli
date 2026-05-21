@@ -4,7 +4,7 @@
 package resolver
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // CatalogLookup is the resolver-side adapter to catalog reads. The two

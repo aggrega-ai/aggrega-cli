@@ -6,7 +6,7 @@ package compose
 import (
 	"strconv"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 // injectAggregaLabelsIntoServices walks the services: map of a YAML-

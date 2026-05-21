@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/parse"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // DeepMergeInject merges an overlay flat map over the base inject pipe.

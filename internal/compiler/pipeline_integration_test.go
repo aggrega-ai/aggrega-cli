@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
-	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Shared catalog for integration tests.

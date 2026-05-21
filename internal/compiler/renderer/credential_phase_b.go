@@ -4,7 +4,7 @@
 package renderer
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // buildSecretInject constructs the top-level TemplateContext.Inject for a

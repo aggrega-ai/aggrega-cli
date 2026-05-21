@@ -4,7 +4,7 @@
 package resolver
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // guardInjectKeys is a placeholder for the inject-from-key validator

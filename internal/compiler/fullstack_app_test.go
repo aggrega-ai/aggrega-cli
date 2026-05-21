@@ -11,16 +11,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/analyzer"
-	"github.com/cognitio/aggrega-cli/internal/compiler/ir"
-	"github.com/cognitio/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/cognitio/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm"
-	renderHelmChart "github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart"
-	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
-	"github.com/cognitio/aggrega-cli/internal/compiler/trace"
-	"github.com/cognitio/aggrega-cli/pkg/catalog"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
+	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
+	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // FullstackApp drives the end-to-end proof across the 4-variant provider matrix:

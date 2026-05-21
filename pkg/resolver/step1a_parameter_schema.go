@@ -10,8 +10,8 @@ import (
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
-	"github.com/cognitio/aggrega-cli/pkg/types"
-	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // parameterContractSchemaJSON is the hardcoded map-level sub-schema for

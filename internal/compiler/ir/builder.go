@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/cognitio/aggrega-cli/internal/compiler/topology"
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // BuildIRConfig is the input bundle for BuildIR. The four fields are all

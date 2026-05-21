@@ -24,16 +24,16 @@
 # Format: <package-import-path>  <score>%  (<killed>K <survived>S <equivalent>E)
 # Date: 2026-05-17
 
-github.com/cognitio/aggrega-cli/pkg/resolver                       98.9%  (267K 3S 37E)
-github.com/cognitio/aggrega-cli/internal/compiler/renderer         93.9%  (480K 31S 29E)
-github.com/cognitio/aggrega-cli/pkg/types                          92.0%  (253K 22S 3E)
-github.com/cognitio/aggrega-cli/internal/compiler/renderer/helm    81.6%  (120K 27S 1E)
-github.com/cognitio/aggrega-cli/internal/compiler/renderer/helmchart  78.1%  (25K 7S 0E)
-github.com/cognitio/aggrega-cli/pkg/catalog                        77.9%  (53K 15S 0E)
-github.com/cognitio/aggrega-cli/pkg/validator                      75.0%  (105K 35S 0E)
-github.com/cognitio/aggrega-cli/internal/compiler/ir               71.7%  (76K 30S 1E)
-github.com/cognitio/aggrega-cli/internal/compiler/topology         69.2%  (18K 8S 0E)
-github.com/cognitio/aggrega-cli/pkg/validator/jsonschema           63.7%  (114K 65S 2E)
-github.com/cognitio/aggrega-cli/internal/compiler/analyzer         55.6%  (15K 12S 0E)
+github.com/aggrega-ai/aggrega-cli/pkg/resolver                       98.9%  (267K 3S 37E)
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer         93.9%  (480K 31S 29E)
+github.com/aggrega-ai/aggrega-cli/pkg/types                          92.0%  (253K 22S 3E)
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm    81.6%  (120K 27S 1E)
+github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart  78.1%  (25K 7S 0E)
+github.com/aggrega-ai/aggrega-cli/pkg/catalog                        77.9%  (53K 15S 0E)
+github.com/aggrega-ai/aggrega-cli/pkg/validator                      75.0%  (105K 35S 0E)
+github.com/aggrega-ai/aggrega-cli/internal/compiler/ir               71.7%  (76K 30S 1E)
+github.com/aggrega-ai/aggrega-cli/internal/compiler/topology         69.2%  (18K 8S 0E)
+github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema           63.7%  (114K 65S 2E)
+github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer         55.6%  (15K 12S 0E)
 
 # Overall: 1854 mutants, 1526 killed, 255 survived, 73 equivalent — 85.7% score

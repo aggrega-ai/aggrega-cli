@@ -4,7 +4,7 @@
 package trace
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // PillarSnapshot returns the projection of a TemplateContext appropriate

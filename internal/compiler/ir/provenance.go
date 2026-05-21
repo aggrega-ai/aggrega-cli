@@ -4,8 +4,8 @@
 package ir
 
 import (
-	"github.com/cognitio/aggrega-cli/pkg/resolver"
-	"github.com/cognitio/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // buildProvenance assembles the IRGraph.Spec.Provenance block — the audit

@@ -11,7 +11,7 @@ import (
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
-	jsonvalidator "github.com/cognitio/aggrega-cli/pkg/validator/jsonschema"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // releaseEnvelopeValidator loads the shipped Release JSON Schema from the
