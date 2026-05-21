@@ -28,6 +28,7 @@ package wasm
 import (
 	"context"
 	"fmt"
+	"os"
 
 	extism "github.com/extism/go-sdk"
 )
@@ -56,30 +57,60 @@ type Plugin struct {
 // Load constructs a Plugin from a PluginSpec. The flow:
 //
 //  1. Translate the spec into an Extism manifest and run the
-//     AOT-purity firewall.
-//  2. Select the host functions the spec declares from the curated
-//     allowlist.
-//  3. Construct the underlying extism.Plugin with EnableWasi: false
-//     (no WASI stdio passthrough) and no custom ModuleConfig (no
-//     wall-time or env access).
+//     AOT-purity firewall against the manifest fields.
+//  2. Read the plugin Wasm bytes from spec.Path once into memory.
+//  3. Walk the bytes' import section and apply the WASI per-import
+//     firewall: stubbed-subset names are allowed; capability-
+//     granting names are rejected with ErrWasmManifestRejected.
+//  4. Select the curated host functions the spec declares plus the
+//     deterministic WASI stubs the firewall promises.
+//  5. Construct the underlying extism.Plugin from the same in-memory
+//     byte slice (via extism.WasmData), with EnableWasi: false. The
+//     WASI stub HostFunction values bind under the
+//     wasi_snapshot_preview1 namespace at plugin instantiation; the
+//     plugin's WASI imports resolve to the host stubs rather than
+//     to a real WASI runtime.
 //
-// Returns an error wrapping ErrWasmManifestRejected if the firewall
-// rejects the manifest; returns the Extism SDK's error otherwise (for
-// example, a missing .wasm file at the spec's Path).
+// Reading the bytes once and threading the same slice through both
+// firewall inspection and Extism instantiation eliminates the
+// TOCTOU window between validation and execution. Returns an error
+// wrapping ErrWasmManifestRejected if the firewall rejects the
+// manifest or any import; returns the Extism SDK's error otherwise.
 func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	manifest, err := translateToManifest(spec)
 	if err != nil {
 		return nil, err
 	}
 
+	wasmBytes, err := os.ReadFile(spec.Path)
+	if err != nil {
+		return nil, fmt.Errorf("wasm: read plugin %q from %s: %w", spec.Name, spec.Path, err)
+	}
+
+	if err := validateWasiImports(spec.Name, wasmBytes); err != nil {
+		return nil, err
+	}
+
+	// Replace the manifest's WasmFile entry (which would have Extism
+	// re-read from disk) with WasmData carrying the already-read
+	// bytes. The firewall validated these specific bytes; Extism
+	// will compile and instantiate the same bytes.
+	manifest.Wasm = []extism.Wasm{
+		extism.WasmData{Data: wasmBytes, Name: spec.Name},
+	}
+
 	functions := selectAllowlistedHostFunctions(spec.DeclaredHostFunctions)
+	functions = append(functions, buildWasiStubHostFunctions()...)
 
 	config := extism.PluginConfig{
 		EnableWasi: false,
 		// ModuleConfig deliberately left nil: no wall-time, no env
 		// passthrough, no stdio passthrough. The Extism runtime uses
 		// its own zero-config default which is what Aggrega's
-		// AOT-purity guarantee depends on.
+		// AOT-purity guarantee depends on. The wasi_snapshot_preview1
+		// import slots the firewall permits are satisfied by the
+		// stub HostFunction values appended above — not by Extism's
+		// bundled WASI module.
 	}
 
 	plugin, err := extism.NewPlugin(ctx, manifest, config, functions)
@@ -121,19 +152,35 @@ func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byt
 	})
 }
 
-// callWithPanicRecovery invokes f and converts any panic into an
-// ErrWasmGuestPanic-wrapped error. Extracted from Plugin.Call so that
-// the panic-recovery wrap is independently testable without needing a
-// real Wasm-side panic source — the test passes a function that
-// panics directly. The wrap's shape is the contract: any panic the
-// guest causes returns to the caller as an error satisfying
-// errors.Is(err, ErrWasmGuestPanic).
+// callWithPanicRecovery invokes f and converts any panic into a
+// wrapped error. The wrap distinguishes two panic shapes:
+//
+//   - wasiProcExitTrap (panicked by the stubbed proc_exit host
+//     function): the plugin invoked WASI's proc_exit during the
+//     call. The recovered value carries the exit code; the returned
+//     error satisfies errors.Is(err, ErrWasmPluginExited) and
+//     records the code in its message.
+//   - any other panic: a Go-side panic that escaped Extism's normal
+//     error envelope. The returned error satisfies
+//     errors.Is(err, ErrWasmGuestPanic).
+//
+// Extracted from Plugin.Call so that both wrap shapes are
+// independently testable without needing a real Wasm-side panic
+// source — tests pass a function that panics with the relevant
+// typed value directly.
 func callWithPanicRecovery(pluginName, funcName string, f func() ([]byte, error)) (output []byte, err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("wasm: guest plugin %q panicked in %s: %v: %w",
-				pluginName, funcName, r, ErrWasmGuestPanic)
+		r := recover()
+		if r == nil {
+			return
 		}
+		if trap, ok := r.(wasiProcExitTrap); ok {
+			err = fmt.Errorf("wasm: plugin %q invoked proc_exit(%d) in %s: %w",
+				pluginName, trap.code, funcName, ErrWasmPluginExited)
+			return
+		}
+		err = fmt.Errorf("wasm: guest plugin %q panicked in %s: %v: %w",
+			pluginName, funcName, r, ErrWasmGuestPanic)
 	}()
 	return f()
 }

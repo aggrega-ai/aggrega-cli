@@ -21,6 +21,25 @@ For each requested artifact:
 The cache lives per `go test` process; multiple tests sharing a
 fixture build it once. A fresh CI checkout always rebuilds.
 
+## WASI imports and the stubbed-subset firewall
+
+The loader's AOT-purity firewall accepts a curated allowlist of
+`wasi_snapshot_preview1` runtime-init imports (e.g. `fd_write`,
+`clock_time_get`, `random_get`, `proc_exit`, `environ_*`, `args_*`,
+`fd_*`) and rejects capability-granting imports (`path_*`, `sock_*`,
+`fd_readdir`, `poll_oneoff`). The allowed imports are satisfied by
+host-side deterministic stubs — `clock_time_get` returns zero;
+`random_get` zero-fills; `fd_write` discards bytes; `proc_exit` traps
+the plugin with an `ErrWasmPluginExited`-wrapped error without
+affecting the host process.
+
+The `wasi-probe-rust` fixture exercises this surface end-to-end. The
+mutator and policy-validator fixtures emit zero WASI imports (their
+TinyGo `-target=wasm-unknown` and Cargo `wasm32-unknown-unknown`
+targets are WASI-free); they continue to load identically under the
+stubbed-subset firewall. The `wasi-probe-rust` fixture is the only
+fixture in this directory that emits real WASI imports.
+
 ## Toolchain dependencies
 
 Each fixture's `build.sh` invokes its source language's Wasm build
@@ -30,6 +49,10 @@ chain:
 - Rust (`cargo build --release --target wasm32-unknown-unknown`) —
   `cargo` + the `wasm32-unknown-unknown` target. (Ships with the
   Rust PDK.)
+- Rust WASI (`cargo build --release --target wasm32-wasip1`) —
+  `cargo` + the `wasm32-wasip1` target. (Only the wasi-probe
+  fixture uses this; the fixture's build.sh runs `rustup target
+  add wasm32-wasip1` idempotently.)
 - TypeScript (Extism JS PDK build) — `node` + the Extism JS PDK
   tooling. (Ships with the TypeScript PDK.)
 
