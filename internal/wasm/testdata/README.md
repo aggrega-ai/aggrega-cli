@@ -1,102 +1,58 @@
 # Wasm loader test fixtures
 
-This directory is a placeholder for hand-authored `.wasm` test fixtures
-that the loader's tests will consume once a Wasm authoring toolchain is
-available to a contributor working on this package.
+This directory holds `.wasm` fixtures the loader's integration tests
+in `loader_integration_test.go` consume. The artifacts are built on
+demand from their source in the sibling `aggrega-pdk/` submodule and
+gitignored — nothing binary is committed here.
 
-## What lives here today
+## How the fixtures are built
 
-Nothing yet. The current test surface (`loader_test.go`) covers the
-loader's Go-side contract — translation, firewall, host-function
-allowlist, panic-recovery wrap — without any real `.wasm` artifact.
+`testdata_build_test.go` defines `ensureFixtureBuilt(t, "<name>")`.
+For each requested artifact:
 
-## What would live here
+1. Parse the artifact name as `<socket>-<lang>.wasm`.
+2. Locate the source at `aggrega-pdk/<lang>/examples/<socket>/`.
+3. If the `.wasm` is missing or older than any source file, invoke
+   the fixture's `build.sh` to rebuild it into this directory.
+4. If the per-language PDK source is not present, or the toolchain
+   the fixture needs is not on `PATH`, `t.Skipf` cleanly with a
+   diagnostic pointing at `scripts/setup-workspace.sh`.
 
-A small set of hand-authored `.wasm` fixtures exercising the loader's
-Wasm-side surface end-to-end. The fixtures most useful to add:
+The cache lives per `go test` process; multiple tests sharing a
+fixture build it once. A fresh CI checkout always rebuilds.
 
-- `panic.wasm` — a tiny plugin whose exported function executes the
-  `unreachable` Wasm instruction (or otherwise traps). Lets the
-  panic-recovery test exercise the full Wasm-trap-propagation path
-  through Extism, not just the Go-side recover wrap.
-- `noop.wasm` — a tiny plugin whose exported function returns
-  successfully with empty output. Lets `Load` + `Plugin.Call` exercise
-  the happy path end-to-end against a real plugin.
+## Toolchain dependencies
 
-## How to author the fixtures
+Each fixture's `build.sh` invokes its source language's Wasm build
+chain:
 
-Three toolchain options. Pick whichever is most convenient for the
-contributor.
+- Go (TinyGo `wasm-unknown`) — `tinygo`.
+- Rust (`cargo build --release --target wasm32-unknown-unknown`) —
+  `cargo` + the `wasm32-unknown-unknown` target. (Ships with the
+  Rust PDK.)
+- TypeScript (Extism JS PDK build) — `node` + the Extism JS PDK
+  tooling. (Ships with the TypeScript PDK.)
 
-### Option 1 — Rust (recommended for Extism plugins)
+The workspace setup script (`scripts/setup-workspace.sh` from the
+umbrella root) installs all required toolchains user-locally.
 
-Install the Rust toolchain and add the `wasm32-unknown-unknown`
-target:
+## Naming convention
 
-```sh
-rustup target add wasm32-unknown-unknown
-```
+`<socket>-<lang>.wasm` — for example `mutator-go.wasm`,
+`policy-validator-rust.wasm`. The helper relies on this convention
+to resolve the source directory from the artifact name.
 
-Author a small Rust crate that uses the `extism-pdk` crate to declare
-exported functions, then build with:
-
-```sh
-cargo build --release --target wasm32-unknown-unknown
-```
-
-Copy the resulting `.wasm` file from
-`target/wasm32-unknown-unknown/release/<crate-name>.wasm` to this
-directory.
-
-### Option 2 — TinyGo
-
-Install TinyGo and build a small Go program for `wasm-unknown`:
-
-```sh
-tinygo build -o panic.wasm -target wasm-unknown ./panic.go
-```
-
-### Option 3 — hand-authored WebAssembly Text format
-
-Install `wabt` (provides `wat2wasm`). Author a `.wat` file using the
-WebAssembly Text format, then compile:
-
-```sh
-wat2wasm panic.wat -o panic.wasm
-```
-
-The smallest panic-producing module in `.wat` is about a dozen lines:
-a single module with one exported function whose body is the
-`unreachable` instruction.
-
-## How the test would consume a fixture
-
-Once a fixture lands here, `loader_test.go` can add an end-to-end test
-along the lines of:
+## Test consumption shape
 
 ```go
-func TestPluginCallPropagatesGuestPanic(t *testing.T) {
-    loader := &Loader{}
-    spec := PluginSpec{
-        Name: "panic-fixture",
-        Path: "testdata/panic.wasm",
-    }
-    p, err := loader.Load(context.Background(), spec)
-    if err != nil {
-        t.Fatalf("load: %v", err)
-    }
-    defer p.Close(context.Background())
-
-    _, err = p.Call(context.Background(), "panic_function", nil)
-    // The expected result depends on how Extism translates the trap:
-    // either an error from the SDK (most common), or a panic the wrap
-    // converts to ErrWasmGuestPanic.
-    if err == nil {
-        t.Fatalf("expected error from panicking guest, got nil")
-    }
+func TestPluginRoundTrip_MutatorGo(t *testing.T) {
+    plugin, cleanup := loadFixturePlugin(t, "mutator-go.wasm")
+    defer cleanup()
+    // ... call plugin.Call(...) and assert on the output
 }
 ```
 
-Until the fixture lands, the Go-side panic-recovery wrap is exercised
-via `TestCallWithPanicRecoveryWrapsPanic` in `loader_test.go`, which
-documents the coverage gap this README would close.
+`loadFixturePlugin` invokes `ensureFixtureBuilt` then constructs the
+`Plugin` via the package's `Loader.Load`. Test bodies remain focused
+on input/output behaviour; the build orchestration is encapsulated
+in the helper.
