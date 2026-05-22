@@ -5,7 +5,6 @@ package lockfile
 
 import (
 	"encoding/json"
-	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -14,25 +13,9 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
-
-// The local copy of the lockfile JSON Schema kept in sync with the
-// canonical copy in aggrega-schemas/json-schemas/ via the
-// `go:generate` directive below. Editing the canonical schema is the
-// authoring path; `go generate ./pkg/lockfile/...` refreshes the
-// local copy that //go:embed binds into the aggrega-cli binary.
-//
-// Why the local copy: //go:embed cannot reach across module
-// boundaries, and aggrega-schemas/ is a sibling submodule (own Go
-// module). The local copy lets aggrega-cli ship as a self-contained
-// binary without a runtime path dependency on the schemas
-// submodule's working tree.
-//
-//go:generate cp ../../../aggrega-schemas/json-schemas/lockfile-v1alpha1.schema.json lockfile-v1alpha1.schema.json
-
-//go:embed lockfile-v1alpha1.schema.json
-var schemaJSON []byte
 
 // ErrLockfileInvalid wraps every structural-validation failure
 // raised by LoadLockfile. Errors satisfying
@@ -250,15 +233,17 @@ func libraryConsumerDiagnostics(root map[string]any, section string) []Diagnosti
 	return out
 }
 
-// newValidator compiles the embedded schema bytes into a Validator.
-// The schema is small (~300 LOC of JSON) and compiles in
-// microseconds; per-call compilation keeps the package import graph
-// small. Callers loading multiple lockfiles in a hot loop would
-// cache the validator; the current expected call shape is once per
-// build invocation.
+// newValidator compiles the lockfile schema bytes into a Validator.
+// The schema source lives in the aggrega-schemas Go module
+// (schemas.LockfileV1alpha1); aggrega-cli imports it rather than
+// carrying a local JSON copy. The schema is small (~300 LOC of
+// JSON) and compiles in microseconds; per-call compilation keeps
+// the package import graph small. Callers loading multiple
+// lockfiles in a hot loop would cache the validator; the current
+// expected call shape is once per build invocation.
 func newValidator() (jsonvalidator.Validator, error) {
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaJSON, schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.LockfileV1alpha1), schema); err != nil {
 		return nil, fmt.Errorf("decode embedded schema: %w", err)
 	}
 	v, err := jsonvalidator.New(schema)
