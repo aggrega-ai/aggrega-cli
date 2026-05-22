@@ -14,7 +14,7 @@ import (
 // CachePath returns the cache slot for the given URI + version under
 // the workspace's configured cache directory. The slot path is
 //
-//	<workspaceRoot>/<cacheDir>/oci-cache/<URI-encoded>/<version>/
+//	<workspaceRoot>/<cacheDir>/cache/<URI-encoded>/<version>/
 //
 // URI encoding replaces filesystem-unsafe characters (the path
 // separator `/`, the scheme separator `://`, the version-pin `:`,
@@ -24,13 +24,13 @@ import (
 // byte-identical paths.
 //
 // The current layout is flat. A future implementation will refactor the root
-// into the two-subtree shape `<cacheDir>/oci-cache/entities/<…>` and
-// `<cacheDir>/oci-cache/source-artifacts/<…>` per the source-
+// into the two-subtree shape `<cacheDir>/cache/entities/<…>` and
+// `<cacheDir>/cache/source-artifacts/<…>` per the source-
 // resolution amendment; the flat layout shipped here is the
 // migration source.
 func CachePath(workspaceRoot, cacheDir, uri, version string) string {
 	encoded := encodeURI(uri)
-	return filepath.Join(workspaceRoot, cacheDir, "oci-cache", encoded, version)
+	return filepath.Join(workspaceRoot, cacheDir, "cache", encoded, version)
 }
 
 // ReadCached returns the bytes previously stored at the cache slot

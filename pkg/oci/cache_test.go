@@ -18,8 +18,8 @@ func TestCachePathDeterministic(t *testing.T) {
 	if a != b {
 		t.Errorf("two CachePath invocations returned different paths:\n  a: %s\n  b: %s", a, b)
 	}
-	if !strings.Contains(a, "oci-cache") {
-		t.Errorf("path should contain oci-cache; got %s", a)
+	if !strings.Contains(a, "cache") {
+		t.Errorf("path should contain cache; got %s", a)
 	}
 	if !strings.Contains(a, "1.0.0") {
 		t.Errorf("path should contain the version; got %s", a)

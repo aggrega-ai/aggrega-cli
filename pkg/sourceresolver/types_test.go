@@ -25,8 +25,8 @@ func TestResolvedSourceYAMLRoundTrip(t *testing.T) {
 			URL:            "oci://hub.aggrega.ai/charts/mariadb",
 			PinnedVersion:  "25.0.8",
 			Digest:         "sha256:abcd",
-			CachePath:      "/ws/.aggrega/oci-cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/blob.tar.gz",
-			ExtractedPath:  "/ws/.aggrega/oci-cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/extracted/",
+			CachePath:      "/ws/.aggrega/cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/blob.tar.gz",
+			ExtractedPath:  "/ws/.aggrega/cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/extracted/",
 			OriginalSource: "oci://hub.aggrega.ai/charts/mariadb:25.0.8",
 		}
 
@@ -50,8 +50,8 @@ func TestResolvedSourceYAMLRoundTrip(t *testing.T) {
 			URL:           "oci://hub.aggrega.ai/charts/mariadb",
 			PinnedVersion: "25.0.8",
 			Digest:        "sha256:abcd",
-			CachePath:     "/ws/.aggrega/oci-cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/blob.tar.gz",
-			ExtractedPath: "/ws/.aggrega/oci-cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/extracted/",
+			CachePath:     "/ws/.aggrega/cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/blob.tar.gz",
+			ExtractedPath: "/ws/.aggrega/cache/helm-oci-chart/hub.aggrega.ai/charts/mariadb/25.0.8/abcd/extracted/",
 			OriginalSource: map[string]any{
 				"kind":    "helm-oci-chart",
 				"url":     "oci://hub.aggrega.ai/charts",
