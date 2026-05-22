@@ -175,9 +175,9 @@ workspace:
 		t.Errorf("Workspace.DefaultRegistry: want %q (Default); got %q",
 			"hub.aggrega.ai", got.Workspace.DefaultRegistry)
 	}
-	if got.Workspace.CacheDir != ".aggrega" {
+	if got.Workspace.CacheDir != ".aggrega/cache" {
 		t.Errorf("Workspace.CacheDir: want %q (Default); got %q",
-			".aggrega", got.Workspace.CacheDir)
+			".aggrega/cache", got.Workspace.CacheDir)
 	}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default); got %q",
@@ -269,7 +269,7 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	if d.Workspace.DefaultRegistry != "hub.aggrega.ai" {
 		t.Errorf("Default().Workspace.DefaultRegistry: %q", d.Workspace.DefaultRegistry)
 	}
-	if d.Workspace.CacheDir != ".aggrega" {
+	if d.Workspace.CacheDir != ".aggrega/cache" {
 		t.Errorf("Default().Workspace.CacheDir: %q", d.Workspace.CacheDir)
 	}
 	if d.Workspace.Offline {
@@ -384,9 +384,9 @@ lint: {}
 		t.Errorf("Workspace.DefaultRegistry: want %q (Default preserved); got %q",
 			"hub.aggrega.ai", got.Workspace.DefaultRegistry)
 	}
-	if got.Workspace.CacheDir != ".aggrega" {
+	if got.Workspace.CacheDir != ".aggrega/cache" {
 		t.Errorf("Workspace.CacheDir: want %q (Default preserved); got %q",
-			".aggrega", got.Workspace.CacheDir)
+			".aggrega/cache", got.Workspace.CacheDir)
 	}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default preserved); got %q",

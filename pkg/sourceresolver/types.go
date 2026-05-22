@@ -42,6 +42,15 @@ package sourceresolver
 // case. The framework preserves both shapes faithfully through
 // round-trip; consumers reading OriginalSource type-assert against
 // the expected shape per their context.
+//
+// WorkspaceRoot and CacheDir name the workspace-side context the
+// adapter needs to compute the cache slot path. WorkspaceRoot is
+// the absolute path of the workspace root (the directory containing
+// the aggregate manifest); CacheDir is the workspace's configured
+// cache directory (typically ".aggrega/cache", per
+// workspaceconfig.Default). Both are caller-populated at Resolve
+// time and live on the spec rather than on the Adapter struct so
+// adapters remain stateless across workspace contexts.
 type SourceSpec struct {
 	Kind           string
 	URL            string
@@ -49,6 +58,8 @@ type SourceSpec struct {
 	Chart          string
 	ModuleSubdir   string
 	Ref            string
+	WorkspaceRoot  string
+	CacheDir       string
 	OriginalSource any
 }
 

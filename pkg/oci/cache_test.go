@@ -13,8 +13,8 @@ import (
 
 func TestCachePathDeterministic(t *testing.T) {
 	t.Parallel()
-	a := oci.CachePath("/ws", ".aggrega", "hub.aggrega.ai/component/core/api-server", "1.0.0")
-	b := oci.CachePath("/ws", ".aggrega", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	a := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	b := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
 	if a != b {
 		t.Errorf("two CachePath invocations returned different paths:\n  a: %s\n  b: %s", a, b)
 	}
@@ -32,7 +32,7 @@ func TestCachePathDeterministic(t *testing.T) {
 func TestReadCachedMissReturnsErrFetchNotFound(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	_, err := oci.ReadCached(dir, ".aggrega", "hub.aggrega.ai/component/foo", "1.0.0")
+	_, err := oci.ReadCached(dir, ".aggrega/cache", "hub.aggrega.ai/component/foo", "1.0.0")
 	if err == nil {
 		t.Fatal("expected cache miss error; got nil")
 	}
@@ -45,10 +45,10 @@ func TestWriteReadCachedRoundTrip(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	want := []byte("bundled-bytes-payload")
-	if err := oci.WriteCached(dir, ".aggrega", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0", want); err != nil {
+	if err := oci.WriteCached(dir, ".aggrega/cache", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0", want); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	got, err := oci.ReadCached(dir, ".aggrega", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0")
+	got, err := oci.ReadCached(dir, ".aggrega/cache", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0")
 	if err != nil {
 		t.Fatalf("ReadCached: %v", err)
 	}

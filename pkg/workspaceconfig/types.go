@@ -15,7 +15,7 @@
 // aggrega-schemas/json-schemas/.
 //
 // Several documented defaults are NOT the Go zero-value:
-// default_registry = "hub.aggrega.ai", cache_dir = ".aggrega",
+// default_registry = "hub.aggrega.ai", cache_dir = ".aggrega/cache",
 // halt_on_deprecated_severity = "error", enforce_monotonic_narrowing
 // = true, and enforce_immutability = true. Callers obtain a Config
 // seeded with those defaults via Default(); the loader's overlay
@@ -141,7 +141,7 @@ type NarrowingExemption struct {
 // Default returns a Config populated with the documented defaults.
 // Five documented defaults are NOT the Go zero-value and are seeded
 // explicitly: Workspace.DefaultRegistry = "hub.aggrega.ai",
-// Workspace.CacheDir = ".aggrega",
+// Workspace.CacheDir = ".aggrega/cache",
 // Build.HaltOnDeprecatedSeverity = "error",
 // Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true, and
 // Lint.PublishingDiscipline.EnforceImmutability = true.
@@ -156,7 +156,7 @@ func Default() Config {
 	return Config{
 		Workspace: WorkspaceConfig{
 			DefaultRegistry: "hub.aggrega.ai",
-			CacheDir:        ".aggrega",
+			CacheDir:        ".aggrega/cache",
 		},
 		Build: BuildConfig{
 			HaltOnDeprecatedSeverity: "error",
