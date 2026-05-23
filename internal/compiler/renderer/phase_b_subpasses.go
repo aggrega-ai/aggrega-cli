@@ -197,7 +197,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // phaseB3 evaluates Recipe.Spec.Artifacts — each entry is either inline
 // content or a file referenced by its `$import:` directive — the third
 // input kind per chapter 16. Each emitted file carries its own EmitOrigin
-// tag (artifacts-inline / artifacts-from-file) so the Phase B.5
+// tag (artifacts-inline / artifacts-import) so the Phase B.5
 // cross-origin collision detector can name every contributor on a clash.
 //
 // The provider's engine governs file routing: BoundaryAssembler engines
@@ -227,7 +227,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	// site of slot 10's per-file trace.
 	if state.Trace != nil {
 		for _, f := range files {
-			if f.Origin != EmitOriginArtifactsInline && f.Origin != EmitOriginArtifactsFromFile {
+			if f.Origin != EmitOriginArtifactsInline && f.Origin != EmitOriginArtifactsImport {
 				continue
 			}
 			_ = state.Trace.Write(trace.PassPhaseB3, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB3))

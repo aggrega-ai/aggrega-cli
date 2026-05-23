@@ -168,8 +168,8 @@ spec:
 	if got.Name != "policy.yaml" {
 		t.Errorf("Name = %q, want policy.yaml (basename)", got.Name)
 	}
-	if got.Origin != EmitOriginArtifactsFromFile {
-		t.Errorf("Origin = %v, want EmitOriginArtifactsFromFile", got.Origin)
+	if got.Origin != EmitOriginArtifactsImport {
+		t.Errorf("Origin = %v, want EmitOriginArtifactsImport", got.Origin)
 	}
 }
 
@@ -207,8 +207,8 @@ metadata:
 	if files[0].Origin != EmitOriginArtifactsInline {
 		t.Errorf("first emission Origin = %v, want EmitOriginArtifactsInline (declaration order: inline first)", files[0].Origin)
 	}
-	if files[1].Origin != EmitOriginArtifactsFromFile {
-		t.Errorf("second emission Origin = %v, want EmitOriginArtifactsFromFile", files[1].Origin)
+	if files[1].Origin != EmitOriginArtifactsImport {
+		t.Errorf("second emission Origin = %v, want EmitOriginArtifactsImport", files[1].Origin)
 	}
 }
 
@@ -541,7 +541,7 @@ metadata:
 
 // ----- Test 11b (rewrite): ExternalArtifactsHandler $import: entries emit at templates/<basename> -----
 
-func TestEvaluateArtifacts_HelmChartProviderArtifactsFromInjects(t *testing.T) {
+func TestEvaluateArtifacts_HelmChartProviderArtifactsImportInjects(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	state.Recipe.Spec.Provider = "helm-chart"
@@ -571,8 +571,8 @@ data:
 	if got.Name != "templates/api-config.yaml" {
 		t.Errorf("Name = %q, want templates/api-config.yaml (engine PathForArtifact placement)", got.Name)
 	}
-	if got.Origin != EmitOriginArtifactsFromFile {
-		t.Errorf("Origin = %v, want EmitOriginArtifactsFromFile", got.Origin)
+	if got.Origin != EmitOriginArtifactsImport {
+		t.Errorf("Origin = %v, want EmitOriginArtifactsImport", got.Origin)
 	}
 	labels := readDocLabels(t, got.Body)
 	if labels["aggrega.ai/component-id"] != "api" {

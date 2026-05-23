@@ -60,7 +60,7 @@ func TestValidateRecipeProviderBinding_WorkloadWithSchema_Passes(t *testing.T) {
 	}
 }
 
-func TestValidateRecipeProviderBinding_WorkloadFromWithSchema_Passes(t *testing.T) {
+func TestValidateRecipeProviderBinding_WorkloadImportWithSchema_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Workload = types.WorkloadTemplate{Import: "./workload.yaml"}

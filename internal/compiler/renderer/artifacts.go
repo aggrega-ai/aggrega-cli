@@ -166,7 +166,7 @@ func evaluateArtifacts(
 			}
 			out = append(out, EmittedFile{
 				Name:         pathFn(nodeCtx, basename),
-				Origin:       EmitOriginArtifactsFromFile,
+				Origin:       EmitOriginArtifactsImport,
 				Body:         body,
 				Intermediate: false,
 			})
@@ -194,7 +194,7 @@ func evaluateArtifacts(
 		// convention requires basename-from-path).
 		origin := EmitOriginArtifactsInline
 		if entry.Import != "" {
-			origin = EmitOriginArtifactsFromFile
+			origin = EmitOriginArtifactsImport
 		}
 		body, err := evaluateOneArtifact(tmplCtx, state, nodeCtx, filename, tmplText, fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, filename))
 		if err != nil {

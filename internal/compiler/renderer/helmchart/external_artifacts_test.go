@@ -39,7 +39,7 @@ var (
 	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
 )
 
-// TestHelmChartArtifactsFrom_EndToEnd is the integration anchor for
+// TestHelmChartArtifactsImport_EndToEnd is the integration anchor for
 // helm-chart pre-template artifact injection. It stands up a minimal
 // sub-chart skeleton under t.TempDir(), constructs an IRGraph with one
 // node whose Recipe declares `provider: helm-chart`, `source: <chart-dir>`,
@@ -54,7 +54,7 @@ var (
 //     also land in the per-node tree alongside the injected crd.yaml.
 //
 // Acceptance criterion 6 in the WI front-matter.
-func TestHelmChartArtifactsFrom_EndToEnd(t *testing.T) {
+func TestHelmChartArtifactsImport_EndToEnd(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()

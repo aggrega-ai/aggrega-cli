@@ -26,10 +26,10 @@ const (
 	// (Phase B.3 is a stub today).
 	EmitOriginArtifactsInline
 
-	// EmitOriginArtifactsFromFile — the file originated from an artifacts:
+	// EmitOriginArtifactsImport — the file originated from an artifacts:
 	// entry authored with $import: (file path). Reserved for the artifacts
 	// render path.
-	EmitOriginArtifactsFromFile
+	EmitOriginArtifactsImport
 )
 
 // String returns a human-readable origin tag suitable for inclusion in
@@ -42,8 +42,8 @@ func (o EmitOrigin) String() string {
 		return "workload"
 	case EmitOriginArtifactsInline:
 		return "artifacts-inline"
-	case EmitOriginArtifactsFromFile:
-		return "artifacts-from-file"
+	case EmitOriginArtifactsImport:
+		return "artifacts-import"
 	default:
 		return "unknown"
 	}

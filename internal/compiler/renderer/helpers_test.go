@@ -63,7 +63,7 @@ func TestEmitOriginString_EveryBranch(t *testing.T) {
 		{EmitOriginSource, "source"},
 		{EmitOriginWorkload, "workload"},
 		{EmitOriginArtifactsInline, "artifacts-inline"},
-		{EmitOriginArtifactsFromFile, "artifacts-from-file"},
+		{EmitOriginArtifactsImport, "artifacts-import"},
 		{EmitOrigin(99), "unknown"},
 	}
 	for _, tc := range cases {

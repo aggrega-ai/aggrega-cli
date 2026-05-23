@@ -305,7 +305,7 @@ func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info rendere
 // through BoundaryInfo. The grouping is exercised end-to-end (RenderAll entry
 // through AssembleBoundary's input); the assertion verifies that the routing
 // is Origin-agnostic — both EmitOriginArtifactsInline and
-// EmitOriginArtifactsFromFile EmittedFiles reach AssembleBoundary just like
+// EmitOriginArtifactsImport EmittedFiles reach AssembleBoundary just like
 // engine.Render's EmitOriginSource output does.
 func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) {
 	t.Parallel()
@@ -345,7 +345,7 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 				artifacts.Set("from-file-services.yaml", types.ArtifactEntry{Import: p})
 				return types.RecipeSpec{Provider: "compose", Artifacts: artifacts}
 			},
-			wantOrigin: renderer.EmitOriginArtifactsFromFile,
+			wantOrigin: renderer.EmitOriginArtifactsImport,
 		},
 	}
 
