@@ -32,7 +32,7 @@ import (
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"oras.land/oras-go/v2"
 )
 

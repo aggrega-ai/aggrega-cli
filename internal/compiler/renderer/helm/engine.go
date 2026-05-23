@@ -49,9 +49,16 @@ func (e *HelmEngine) Render(
 		}
 		return renderSourced(ctx, s, values, nodeCtx)
 	default:
-		// Structured source objects (e.g. {repo: ..., chart: ..., version: ...}) are
-		// reserved for future registry integration; the helm provider supports
-		// only filesystem paths today.
-		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: structured source not supported", nodeCtx.NodeID), nil, nil)
+		// Structured source objects arriving at this engine indicate the
+		// orchestrator did not run the source-artifact resolver before
+		// dispatch (or its lockfile lookup returned a non-string value).
+		// The orchestrator's resolveSourceForNode is the authoritative
+		// resolver; reaching this arm is a defensive guard against
+		// orchestrator regressions. Error references the OriginalSource
+		// (operator-authored) rather than the unresolved cache shape.
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("helm: node %q: internal error — orchestrator should have resolved spec.source to a filesystem path; received %T (source: %s)",
+				nodeCtx.NodeID, nodeCtx.Source, renderer.SourceForDiagnostic(nodeCtx)),
+			nil, nil)
 	}
 }

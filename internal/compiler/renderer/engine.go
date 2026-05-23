@@ -3,7 +3,10 @@
 
 package renderer
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Engine renders one node's values dictionary into on-disk-style artifacts.
 // Keys are relative paths (e.g., "Chart.yaml", "templates/deployment.yaml");
@@ -110,9 +113,26 @@ type NodeRenderContext struct {
 	SyncWave        int // deployment wave from the containing boundary's syncWave (signed integer; default 0)
 	ResolvedVersion string
 	Component       string
-	Source          any    // forwarded from recipe.spec.source (nil / string path / structured)
-	RecipeName      string // recipe metadata.name; empty when no Recipe selected for this node
-	RecipeVersion   string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
+	// Source is what engines actually consume (via loader.Load or
+	// equivalent): the resolved filesystem path for remote sources
+	// (extracted directory under the source-artifact cache slot),
+	// the verbatim path for local sources (Tier-1 filesystem paths,
+	// Tier-2 workspace-relative paths), or nil for sourceless
+	// Recipes. The orchestrator populates this before dispatch;
+	// engines that receive a non-string value here treat it as an
+	// orchestrator bug rather than authoring drift.
+	Source any
+	// OriginalSource carries the verbatim Recipe spec.source as
+	// authored, regardless of whether Source was resolved through
+	// the cache. Engines reference OriginalSource for human-readable
+	// diagnostics ("chart load failed for oci://...") so error
+	// messages match the operator's source code rather than the
+	// opaque cache path. Engines NEVER call loader.Load on
+	// OriginalSource — Source is the load-bearing path; the helper
+	// sourceForDiagnostic centralises the diagnostic formatting.
+	OriginalSource any
+	RecipeName     string // recipe metadata.name; empty when no Recipe selected for this node
+	RecipeVersion  string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
 	// LabelComponentID, when non-empty, overrides NodeID as the value of the
 	// app.kubernetes.io/name and aggrega.ai/component-id labels. Used by FR-
 	// emitted resources whose internal NodeID carries marker syntax
@@ -130,4 +150,30 @@ type ProvenanceContext struct {
 	AggregateVersion string
 	ReleaseName      string
 	Environment      string
+}
+
+// SourceForDiagnostic returns a human-readable string identifying
+// nodeCtx's source for use in engine error messages. Prefers
+// OriginalSource (the verbatim Recipe spec.source — what the
+// operator authored, e.g. "oci://hub.aggrega.ai/charts/mariadb")
+// over Source (the resolved cache path, opaque to operators).
+// Falls back to Source when OriginalSource is unset (sourceless
+// recipes, local-path recipes, legacy code paths).
+//
+// Returns "<sourceless>" when both fields are nil so error
+// messages stay self-describing.
+func SourceForDiagnostic(nodeCtx NodeRenderContext) string {
+	if nodeCtx.OriginalSource != nil {
+		if s, ok := nodeCtx.OriginalSource.(string); ok {
+			return s
+		}
+		return fmt.Sprintf("%+v", nodeCtx.OriginalSource)
+	}
+	if nodeCtx.Source != nil {
+		if s, ok := nodeCtx.Source.(string); ok {
+			return s
+		}
+		return fmt.Sprintf("%+v", nodeCtx.Source)
+	}
+	return "<sourceless>"
 }

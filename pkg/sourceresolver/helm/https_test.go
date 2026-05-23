@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"helm.sh/helm/v3/pkg/getter"
 )
 

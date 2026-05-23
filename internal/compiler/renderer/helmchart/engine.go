@@ -71,7 +71,10 @@ func (e *HelmEngine) ArtifactDelimiters() (string, string) {
 func (e *HelmEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	s, ok := nodeCtx.Source.(string)
 	if !ok || s == "" {
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helmchart: node %q: source is required (helm-chart provider supports sourced mode only; for synthesised K8s manifests use the helm provider with workload:)", nodeCtx.NodeID), nil, nil)
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("helmchart: node %q: source is required (got %s); helm-chart provider supports sourced mode only — for synthesised K8s manifests use the helm provider with workload:",
+				nodeCtx.NodeID, renderer.SourceForDiagnostic(nodeCtx)),
+			nil, nil)
 	}
 	return copySourcedChart(s)
 }

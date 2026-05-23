@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
 
 func TestRoundTrip(t *testing.T) {

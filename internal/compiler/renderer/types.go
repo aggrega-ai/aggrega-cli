@@ -6,6 +6,7 @@ package renderer
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -17,6 +18,20 @@ type RendererInput struct {
 	ResolveResult  *resolver.ResolveResult
 	CatalogLookup  resolver.CatalogLookup
 	ProviderLookup ProviderLookup // Optional: enables baseSchema validation in sourceless mode
+
+	// Lockfile, WorkspaceRoot, and CacheDir together enable orchestrator-
+	// side source-artifact resolution. When all three are set, the
+	// orchestrator looks up each Recipe's spec.source against
+	// Lockfile.SourceArtifacts, verifies the cached archive's full
+	// digest, and populates NodeRenderContext.Source with the extracted
+	// path. When any of the three is unset, the orchestrator falls back
+	// to forwarding recipe.Spec.Source verbatim — preserving the
+	// sourceless and local-path code paths exercised by existing tests.
+	// Production callers populate all three from the loaded lockfile,
+	// the workspace's root directory, and workspaceconfig.CacheDir.
+	Lockfile      *lockfile.Lockfile
+	WorkspaceRoot string
+	CacheDir      string
 
 	// Trace, when non-nil, captures per-pass intermediate state under
 	// .trace/ (sibling to dist/) for the --trace debug surface. nil

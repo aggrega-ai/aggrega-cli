@@ -12,7 +12,7 @@ import (
 
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 )

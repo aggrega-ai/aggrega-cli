@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/cacheslot"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
 
 func TestSlotShape(t *testing.T) {

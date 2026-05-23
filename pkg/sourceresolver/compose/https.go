@@ -26,7 +26,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 )
 
 // Kind names the compose-https-fragment source kind.

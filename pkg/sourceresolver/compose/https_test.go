@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
 
 func TestComposeResolveHappyPath(t *testing.T) {

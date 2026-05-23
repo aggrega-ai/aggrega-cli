@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
 
 // DigestPrefixLen is the number of hex characters of the digest used

@@ -155,6 +155,40 @@ func DescendRecipeSources(
 	return out, nil
 }
 
+// EvaluateSourceSpec is the build-time-orchestrator entry point for
+// source-template evaluation. Assembles infra from the Release,
+// extracts spec.source + spec.locals from the Recipe, and delegates
+// to the same buildSourceSpec used at lock time so the two evaluation
+// passes produce identical results against the same Release.
+//
+// Returns a SourceSpec carrying the identity triple
+// {Kind, URL, Version} plus optional side-knobs (Chart, Ref,
+// ModuleSubdir) and OriginalSource. The orchestrator uses
+// {Kind, URL, Version} to look up the lockfile's `source_artifacts:`
+// entry; mismatch halts with ErrFetchIntegrity.
+//
+// Returns (nil, nil) when recipe.Spec.Source is nil (sourceless
+// Recipe — orchestrator skips resolution). Returns
+// ErrSourceTemplateAtLockTime on .provides references, ambiguous
+// kind classification, or missing keys.
+//
+// The lock-time descent path (DescendRecipeSources) does NOT call
+// this wrapper — it calls buildSourceSpec directly with infra
+// assembled once per descent pass. The wrapper exists for the
+// orchestrator's per-node call shape, where infra is consumed per
+// Recipe rather than batched.
+func EvaluateSourceSpec(release *types.Release, recipe *types.Recipe) (*SourceSpec, error) {
+	if recipe == nil || recipe.Spec.Source == nil {
+		return nil, nil
+	}
+	infra := assembleInfra(release)
+	recipeURI := recipe.Metadata.Name
+	if recipe.Metadata.Version != "" {
+		recipeURI = recipeURI + ":" + recipe.Metadata.Version
+	}
+	return buildSourceSpec(recipe.Spec.Source, infra, recipe.Spec.Locals, recipeURI)
+}
+
 // buildSourceSpec normalises a Recipe spec.source field (which is
 // typed `any` — string URI or structured map) into a SourceSpec
 // ready to feed into the SourceResolver. Templated fields

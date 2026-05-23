@@ -167,3 +167,28 @@ func keys(m map[string][]byte) []string {
 	}
 	return out
 }
+
+// TestHelmEngine_StructuredSourceTriggersDefensiveError pins the
+// orchestrator-bug defence: when nodeCtx.Source is non-nil and
+// non-string (e.g., a structured map that the orchestrator failed
+// to resolve), the helm engine MUST halt with an explicit "internal
+// error" message rather than silently passing the unresolved value
+// downstream.
+func TestHelmEngine_StructuredSourceTriggersDefensiveError(t *testing.T) {
+	t.Parallel()
+	eng := &helm.HelmEngine{}
+	structured := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://r/c",
+		"version": "1.0.0",
+	}
+	ctx := nodeCtx("api", structured)
+	ctx.OriginalSource = structured
+	_, err := eng.Render(context.Background(), map[string]any{}, ctx)
+	if err == nil {
+		t.Fatal("expected defensive error; got nil")
+	}
+	if !strings.Contains(err.Error(), "internal error") {
+		t.Errorf("error should reference the defensive contract; got %v", err)
+	}
+}

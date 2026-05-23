@@ -1,0 +1,263 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package renderer
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
+
+func TestResolveSourceForNodeSourcelessRecipeBypassesResolver(t *testing.T) {
+	t.Parallel()
+	nodeCtx := NodeRenderContext{}
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "r", Version: "1.0.0"},
+		Spec:     types.RecipeSpec{Source: nil},
+	}
+	if err := resolveSourceForNode(RendererInput{}, recipe, &nodeCtx); err != nil {
+		t.Fatalf("sourceless recipe should not error: %v", err)
+	}
+	if nodeCtx.Source != nil {
+		t.Errorf("Source should stay nil; got %v", nodeCtx.Source)
+	}
+	if nodeCtx.OriginalSource != nil {
+		t.Errorf("OriginalSource should stay nil; got %v", nodeCtx.OriginalSource)
+	}
+}
+
+func TestResolveSourceForNodeNilRecipeBypassesResolver(t *testing.T) {
+	t.Parallel()
+	nodeCtx := NodeRenderContext{}
+	if err := resolveSourceForNode(RendererInput{}, nil, &nodeCtx); err != nil {
+		t.Fatalf("nil recipe should not error: %v", err)
+	}
+	if nodeCtx.Source != nil || nodeCtx.OriginalSource != nil {
+		t.Errorf("both fields should stay nil; got Source=%v, OriginalSource=%v",
+			nodeCtx.Source, nodeCtx.OriginalSource)
+	}
+}
+
+func TestResolveSourceForNodeLocalSourceBypassesResolver(t *testing.T) {
+	t.Parallel()
+	nodeCtx := NodeRenderContext{}
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "r", Version: "1.0.0"},
+		Spec:     types.RecipeSpec{Source: "./local-chart"},
+	}
+	// Even with a fully-configured RendererInput, a local source must
+	// pass through verbatim — no lockfile lookup, no extract.
+	input := RendererInput{
+		Lockfile:      &lockfile.Lockfile{Version: 1},
+		WorkspaceRoot: "/ws",
+		CacheDir:      ".aggrega/cache",
+	}
+	if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
+		t.Fatalf("local source should not error: %v", err)
+	}
+	if got, _ := nodeCtx.Source.(string); got != "./local-chart" {
+		t.Errorf("Source = %v; want './local-chart' (verbatim)", nodeCtx.Source)
+	}
+	if got, _ := nodeCtx.OriginalSource.(string); got != "./local-chart" {
+		t.Errorf("OriginalSource = %v; want './local-chart' (verbatim)", nodeCtx.OriginalSource)
+	}
+}
+
+func TestResolveSourceForNodeFallsBackWhenLockfileNil(t *testing.T) {
+	t.Parallel()
+	nodeCtx := NodeRenderContext{}
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "r", Version: "1.0.0"},
+		Spec:     types.RecipeSpec{Source: "oci://hub.aggrega.ai/charts/mariadb"},
+	}
+	// Lockfile is nil — orchestrator falls back to verbatim forwarding.
+	if err := resolveSourceForNode(RendererInput{}, recipe, &nodeCtx); err != nil {
+		t.Fatalf("nil lockfile should fall back, not error: %v", err)
+	}
+	if got, _ := nodeCtx.Source.(string); got != "oci://hub.aggrega.ai/charts/mariadb" {
+		t.Errorf("Source = %v; want verbatim under nil-Lockfile fallback", nodeCtx.Source)
+	}
+	if got, _ := nodeCtx.OriginalSource.(string); got != "oci://hub.aggrega.ai/charts/mariadb" {
+		t.Errorf("OriginalSource = %v; want verbatim under nil-Lockfile fallback", nodeCtx.OriginalSource)
+	}
+}
+
+func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZForResolveTest(t, map[string]string{
+		"Chart.yaml": "apiVersion: v2\nname: mariadb\nversion: 25.0.8\n",
+	})
+	digest := digestOfBytes(blob)
+	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
+		"oci://hub.aggrega.ai/charts/mariadb", "25.0.8", digest)
+	mustMkdirAll(t, slot)
+	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
+		Kind:      "helm-oci-chart",
+		URL:       "oci://hub.aggrega.ai/charts/mariadb",
+		Version:   "25.0.8",
+		Digest:    digest,
+		Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+		PulledAt:  time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC),
+	})
+
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "mariadb-bitnami", Version: "1.0.0"},
+		Spec: types.RecipeSpec{
+			Source: map[string]any{
+				"kind":    "helm-oci-chart",
+				"url":     "oci://hub.aggrega.ai/charts/mariadb",
+				"version": "25.0.8",
+			},
+		},
+	}
+	input := RendererInput{
+		Lockfile: &lockfile.Lockfile{
+			Version:     1,
+			Release:     "./r.yaml",
+			GeneratedAt: "2026-05-22T10:00:00Z",
+			SourceArtifacts: []lockfile.SourceArtifact{{
+				Kind:          "helm-oci-chart",
+				URL:           "oci://hub.aggrega.ai/charts/mariadb",
+				PinnedVersion: "25.0.8",
+				Digest:        digest,
+				Mediatype:     "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+				ReferencedBy: []lockfile.SourceArtifactReference{
+					{Entity: "recipe", URI: "mariadb-bitnami:1.0.0", Field: "spec.source"},
+				},
+			}},
+		},
+		WorkspaceRoot: root,
+		CacheDir:      ".aggrega/cache",
+	}
+
+	nodeCtx := NodeRenderContext{}
+	if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
+		t.Fatalf("resolveSourceForNode: %v", err)
+	}
+	resolvedPath, _ := nodeCtx.Source.(string)
+	if resolvedPath == "" {
+		t.Fatalf("Source should be a non-empty path; got %v", nodeCtx.Source)
+	}
+	if _, err := os.Stat(filepath.Join(resolvedPath, "Chart.yaml")); err != nil {
+		t.Errorf("Chart.yaml missing in resolved Source path: %v", err)
+	}
+	if m, ok := nodeCtx.OriginalSource.(map[string]any); !ok || m["kind"] != "helm-oci-chart" {
+		t.Errorf("OriginalSource should be the verbatim structured map; got %T %v",
+			nodeCtx.OriginalSource, nodeCtx.OriginalSource)
+	}
+}
+
+func TestResolveSourceForNodeHaltsOnMissingLockfileEntry(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "missing", Version: "1.0.0"},
+		Spec: types.RecipeSpec{
+			Source: map[string]any{
+				"kind":    "helm-oci-chart",
+				"url":     "oci://nonexistent/chart",
+				"version": "9.9.9",
+			},
+		},
+	}
+	input := RendererInput{
+		Lockfile:      &lockfile.Lockfile{Version: 1, Release: "./r.yaml", GeneratedAt: "x"},
+		WorkspaceRoot: root,
+		CacheDir:      ".aggrega/cache",
+	}
+	err := resolveSourceForNode(input, recipe, &NodeRenderContext{})
+	if !errors.Is(err, sourcecache.ErrFetchNotFound) {
+		t.Errorf("missing lockfile entry should wrap ErrFetchNotFound; got %v", err)
+	}
+}
+
+func TestSourceForDiagnosticPrefersOriginalSource(t *testing.T) {
+	t.Parallel()
+	nodeCtx := NodeRenderContext{
+		Source:         "/tmp/cache/extracted",
+		OriginalSource: "oci://hub.aggrega.ai/charts/mariadb:25.0.8",
+	}
+	got := SourceForDiagnostic(nodeCtx)
+	if got != "oci://hub.aggrega.ai/charts/mariadb:25.0.8" {
+		t.Errorf("SourceForDiagnostic = %q; want OriginalSource over Source", got)
+	}
+}
+
+func TestSourceForDiagnosticFallsBackToSource(t *testing.T) {
+	t.Parallel()
+	nodeCtx := NodeRenderContext{Source: "/local/chart"}
+	if got := SourceForDiagnostic(nodeCtx); got != "/local/chart" {
+		t.Errorf("SourceForDiagnostic = %q; want Source fallback", got)
+	}
+}
+
+func TestSourceForDiagnosticReturnsSourcelessSentinel(t *testing.T) {
+	t.Parallel()
+	if got := SourceForDiagnostic(NodeRenderContext{}); got != "<sourceless>" {
+		t.Errorf("SourceForDiagnostic = %q; want <sourceless>", got)
+	}
+}
+
+func buildTGZForResolveTest(t *testing.T, entries map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, body := range entries {
+		hdr := &tar.Header{
+			Name: name, Mode: 0o644, Size: int64(len(body)),
+			Typeflag: tar.TypeReg, ModTime: time.Unix(0, 0).UTC(),
+			Format: tar.FormatPAX,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = tw.Close()
+	_ = gz.Close()
+	return buf.Bytes()
+}
+
+func digestOfBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return fmt.Sprintf("sha256:%x", sum[:])
+}
+
+func mustMkdirAll(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustWriteFile(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustWriteMetadata(t *testing.T, path string, m metadata.CacheMetadata) {
+	t.Helper()
+	if err := metadata.Write(path, m); err != nil {
+		t.Fatal(err)
+	}
+}

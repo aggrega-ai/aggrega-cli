@@ -70,6 +70,12 @@ func (e *ComposeEngine) Render(
 		}
 		return renderSourced(s, values, nodeCtx)
 	default:
-		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: structured source not supported", nodeCtx.NodeID), nil, nil)
+		// Defensive arm: a non-string Source here means the orchestrator
+		// did not resolve spec.source via resolveSourceForNode before
+		// dispatch. Engines do not consume structured sources directly.
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("compose: node %q: internal error — orchestrator should have resolved spec.source to a filesystem path; received %T (source: %s)",
+				nodeCtx.NodeID, nodeCtx.Source, renderer.SourceForDiagnostic(nodeCtx)),
+			nil, nil)
 	}
 }

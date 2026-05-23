@@ -307,9 +307,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// when a Recipe declares both source and workload.
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		if recipe != nil {
-			nodeCtx.Source = recipe.Spec.Source
 			nodeCtx.RecipeName = recipe.Metadata.Name
 			nodeCtx.RecipeVersion = recipe.Metadata.Version
+		}
+		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError,
+				cerrors.SourceLocation{File: nodeID},
+				fmt.Sprintf("Step 5 node %q source resolution", nodeID))
 		}
 		sourceEmpty := nodeCtx.Source == nil
 		if s, ok := nodeCtx.Source.(string); ok && s == "" {
