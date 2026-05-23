@@ -49,6 +49,7 @@ type Lockfile struct {
 	MappingLibraries []MappingLibrary `yaml:"mapping_libraries"`
 	Release          string           `yaml:"release"`
 	SchemaLibraries  []SchemaLibrary  `yaml:"schema_libraries"`
+	SourceArtifacts  []SourceArtifact `yaml:"source_artifacts"`
 	Version          int              `yaml:"version"`
 	WasmPlugins      []WasmPlugin     `yaml:"wasm_plugins"`
 }
@@ -113,6 +114,48 @@ type MappingLibrary struct {
 type LibraryConsumer struct {
 	ConsumerURI string   `yaml:"consumer_uri"`
 	Fragments   []string `yaml:"fragments"`
+}
+
+// SourceArtifact carries a source-artifact pin produced from a Recipe
+// or FeatureRecipe `spec.source` resolution. Identity is the triple
+// {Kind, URL, PinnedVersion}; the lockfile dedupes multiple Recipes
+// pinning the same artifact into one entry with multiple ReferencedBy
+// records. Digest verifies the cached archive; Mediatype carries the
+// canonical type the registry advertised.
+//
+// PinnedVersion semantics vary by Kind:
+//
+//   - helm-oci-chart, helm-https-chart, compose-https-fragment:
+//     PinnedVersion is the user-authored version (the resolver does
+//     not transform it).
+//   - terraform-module-git: PinnedVersion is the resolved commit
+//     SHA. When the user authored a tag or branch ref, the original
+//     string is preserved on each ReferencedBy entry's RequestedRef
+//     field; for unambiguous SHA refs RequestedRef is empty.
+//   - terraform-module-oci: reserved for the future terraform
+//     provider; no adapter ships in the current implementation.
+type SourceArtifact struct {
+	Kind          string                    `yaml:"kind"`
+	URL           string                    `yaml:"url"`
+	PinnedVersion string                    `yaml:"pinned_version"`
+	Digest        string                    `yaml:"digest"`
+	Mediatype     string                    `yaml:"mediatype"`
+	ReferencedBy  []SourceArtifactReference `yaml:"referenced_by"`
+}
+
+// SourceArtifactReference is a single back-pointer from a catalog
+// entity (Recipe or FeatureRecipe) to a source-artifact entry.
+// Entity + URI together identify the catalog entity; Field names the
+// source-side path inside the entity's spec (always "spec.source" in the
+// current implementation). RequestedRef preserves the user-authored ref
+// string when the resolved PinnedVersion is a transformed value
+// (terraform-module-git tags/branches → commit SHA); empty for
+// kinds where PinnedVersion IS the authored version.
+type SourceArtifactReference struct {
+	Entity       string `yaml:"entity"`
+	URI          string `yaml:"uri"`
+	Field        string `yaml:"field"`
+	RequestedRef string `yaml:"requested_ref,omitempty"`
 }
 
 // WasmPlugin carries a Wasm-plugin pin. ReferencedFrom records the

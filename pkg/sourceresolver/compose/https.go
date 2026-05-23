@@ -109,6 +109,7 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 		URL:            spec.URL,
 		PinnedVersion:  spec.Version,
 		Digest:         digest,
+		Mediatype:      MediatypeYAML,
 		CachePath:      slot + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,
 	}, nil

@@ -21,10 +21,10 @@ import (
 // the behaviour of a fully wired Lookup composed of *catalog.Catalog
 // + *oci.Client without requiring either to be present.
 type fakeLookup struct {
-	entities       map[string]closure.Resolution
-	wasmPlugins    map[string]closure.Resolution
-	schemaLibs     map[string]closure.LibraryResolution
-	mappingLibs    map[string]closure.LibraryResolution
+	entities    map[string]closure.Resolution
+	wasmPlugins map[string]closure.Resolution
+	schemaLibs  map[string]closure.LibraryResolution
+	mappingLibs map[string]closure.LibraryResolution
 }
 
 func (f *fakeLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
@@ -163,14 +163,14 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 
 	lookup := &fakeLookup{
 		entities: map[string]closure.Resolution{
-			"hub.aggrega.ai/aggregate/example/app:1.0.0":              resolutionOK("1.0.0", "sha256:aaa", "tier3-registry"),
-			"hub.aggrega.ai/manifest/example/app:1.0.0":               resolutionOK("1.0.0", "sha256:bbb", "tier3-registry"),
-			"hub.aggrega.ai/component/core/api-server":                resolutionOK("1.0.0", "sha256:ccc", "tier3-registry"),
-			"hub.aggrega.ai/component/core/datastore":                 resolutionOK("1.0.0", "sha256:ddd", "tier3-registry"),
-			"hub.aggrega.ai/feature/core/ingress:1.0.0":               resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
-			"hub.aggrega.ai/feature/core/ingress":                     resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
-			"hub.aggrega.ai/recipe/core/helm/api-server:1.2.0":        resolutionOK("1.2.0", "sha256:fff", "tier3-registry"),
-			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":          resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
+			"hub.aggrega.ai/aggregate/example/app:1.0.0":                  resolutionOK("1.0.0", "sha256:aaa", "tier3-registry"),
+			"hub.aggrega.ai/manifest/example/app:1.0.0":                   resolutionOK("1.0.0", "sha256:bbb", "tier3-registry"),
+			"hub.aggrega.ai/component/core/api-server":                    resolutionOK("1.0.0", "sha256:ccc", "tier3-registry"),
+			"hub.aggrega.ai/component/core/datastore":                     resolutionOK("1.0.0", "sha256:ddd", "tier3-registry"),
+			"hub.aggrega.ai/feature/core/ingress:1.0.0":                   resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
+			"hub.aggrega.ai/feature/core/ingress":                         resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
+			"hub.aggrega.ai/recipe/core/helm/api-server:1.2.0":            resolutionOK("1.2.0", "sha256:fff", "tier3-registry"),
+			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":              resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
 			"hub.aggrega.ai/feature-recipe/core/helm/ingress-nginx:1.0.0": resolutionOK("1.0.0", "sha256:hhh", "tier3-registry"),
 		},
 		wasmPlugins: map[string]closure.Resolution{
@@ -449,14 +449,14 @@ func mustParse(t *testing.T, src string) *yaml.Node {
 func newBaseLookup() *fakeLookup {
 	return &fakeLookup{
 		entities: map[string]closure.Resolution{
-			"hub.aggrega.ai/aggregate/example/app:1.0.0":              resolutionOK("1.0.0", "sha256:aaa", "tier3-registry"),
-			"hub.aggrega.ai/manifest/example/app:1.0.0":               resolutionOK("1.0.0", "sha256:bbb", "tier3-registry"),
-			"hub.aggrega.ai/component/core/api-server":                resolutionOK("1.0.0", "sha256:ccc", "tier3-registry"),
-			"hub.aggrega.ai/component/core/datastore":                 resolutionOK("1.0.0", "sha256:ddd", "tier3-registry"),
-			"hub.aggrega.ai/feature/core/ingress:1.0.0":               resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
-			"hub.aggrega.ai/feature/core/ingress":                     resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
-			"hub.aggrega.ai/recipe/core/helm/api-server:1.2.0":        resolutionOK("1.2.0", "sha256:fff", "tier3-registry"),
-			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":          resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
+			"hub.aggrega.ai/aggregate/example/app:1.0.0":                  resolutionOK("1.0.0", "sha256:aaa", "tier3-registry"),
+			"hub.aggrega.ai/manifest/example/app:1.0.0":                   resolutionOK("1.0.0", "sha256:bbb", "tier3-registry"),
+			"hub.aggrega.ai/component/core/api-server":                    resolutionOK("1.0.0", "sha256:ccc", "tier3-registry"),
+			"hub.aggrega.ai/component/core/datastore":                     resolutionOK("1.0.0", "sha256:ddd", "tier3-registry"),
+			"hub.aggrega.ai/feature/core/ingress:1.0.0":                   resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
+			"hub.aggrega.ai/feature/core/ingress":                         resolutionOK("1.0.0", "sha256:eee", "tier3-registry"),
+			"hub.aggrega.ai/recipe/core/helm/api-server:1.2.0":            resolutionOK("1.2.0", "sha256:fff", "tier3-registry"),
+			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":              resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
 			"hub.aggrega.ai/feature-recipe/core/helm/ingress-nginx:1.0.0": resolutionOK("1.0.0", "sha256:hhh", "tier3-registry"),
 		},
 		wasmPlugins: map[string]closure.Resolution{},
@@ -464,4 +464,3 @@ func newBaseLookup() *fakeLookup {
 		mappingLibs: map[string]closure.LibraryResolution{},
 	}
 }
-

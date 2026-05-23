@@ -85,11 +85,21 @@ type SourceSpec struct {
 // downstream diagnostics surface the author-time declaration
 // alongside the resolved form, which is load-bearing for the
 // "structured-source rejection retired" workflow at render time.
+//
+// Mediatype is the canonical media-type for the kind (e.g.,
+// "application/vnd.cncf.helm.chart.content.v1.tar+gzip" for helm
+// charts, "application/x-yaml" for compose fragments,
+// "application/gzip" for terraform-git archives). The adapter
+// populates this from its kind-specific constant or from the
+// upstream registry's manifest mediatype when available. The
+// lockfile writer copies the field verbatim into the lockfile's
+// `source_artifacts[].mediatype` slot.
 type ResolvedSource struct {
 	Kind           string `yaml:"kind"`
 	URL            string `yaml:"url"`
 	PinnedVersion  string `yaml:"pinned_version"`
 	Digest         string `yaml:"digest"`
+	Mediatype      string `yaml:"mediatype"`
 	CachePath      string `yaml:"cache_path,omitempty"`
 	ExtractedPath  string `yaml:"extracted_path,omitempty"`
 	OriginalSource any    `yaml:"original_source,omitempty"`

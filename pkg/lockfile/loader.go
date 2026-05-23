@@ -13,8 +13,8 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
-	schemas "github.com/aggrega-ai/aggrega-schemas"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
 // ErrLockfileInvalid wraps every structural-validation failure
@@ -173,6 +173,13 @@ func walkDiagnostics(instance any) []Diagnostic {
 			Message:  "section absent from the document; treating as empty library closure",
 		})
 	}
+	if _, present := root["source_artifacts"]; !present {
+		out = append(out, Diagnostic{
+			Severity: DiagnosticSoft,
+			Field:    "source_artifacts",
+			Message:  "section absent from the document; treating as empty source-artifact closure",
+		})
+	}
 
 	if cueModules, ok := root["cue_modules"].([]any); ok {
 		for i, entry := range cueModules {
@@ -261,6 +268,7 @@ func newValidator() (jsonvalidator.Validator, error) {
 //     map[string]any directly for keys that are all strings, but
 //     legacy paths or mixed-key documents may return the broader
 //     map type which the validator's walker does not consume.
+//
 //   - time.Time → RFC 3339 string. yaml.v3 auto-detects ISO-8601
 //     timestamp literals and produces time.Time values when
 //     unmarshalling into `any`. The schema declares the

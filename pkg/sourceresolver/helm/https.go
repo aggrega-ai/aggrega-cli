@@ -124,6 +124,7 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 		URL:            resolvedURL,
 		PinnedVersion:  spec.Version,
 		Digest:         digest,
+		Mediatype:      MediatypeHelmChart,
 		CachePath:      slot + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,
 	}, nil

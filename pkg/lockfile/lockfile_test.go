@@ -78,6 +78,17 @@ mapping_libraries:
         fragments:
           - "#/mappings/SimpleValues"
 
+source_artifacts:
+  - kind: helm-oci-chart
+    url: oci://hub.aggrega.ai/charts/mariadb
+    pinned_version: "25.0.8"
+    digest: sha256:abc123def
+    mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    referenced_by:
+      - entity: recipe
+        uri: hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0
+        field: spec.source
+
 wasm_plugins:
   - uri: hub.aggrega.ai/wasm/aggrega-security-baseline
     resolved_version: 1.2.5
@@ -298,9 +309,9 @@ func TestWriteCanonicalIsDeterministic(t *testing.T) {
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{
-				URI: "hub.aggrega.ai/schema-library/core/base-types",
+				URI:             "hub.aggrega.ai/schema-library/core/base-types",
 				ResolvedVersion: "1.0.0",
-				Digest: "sha256:v2w3x4",
+				Digest:          "sha256:v2w3x4",
 				Consumers: []lockfile.LibraryConsumer{
 					{ConsumerURI: "hub.aggrega.ai/component/core/z-late", Fragments: []string{"#/schemas/Z", "#/schemas/A"}},
 					{ConsumerURI: "hub.aggrega.ai/component/core/a-early", Fragments: []string{"#/schemas/B"}},
@@ -354,18 +365,18 @@ func TestWriteSortsSlicesByCanonicalKey(t *testing.T) {
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{
-				URI: "hub.aggrega.ai/schema-library/core/z-lib",
+				URI:             "hub.aggrega.ai/schema-library/core/z-lib",
 				ResolvedVersion: "1.0.0",
-				Digest: "sha256:zlib",
+				Digest:          "sha256:zlib",
 				Consumers: []lockfile.LibraryConsumer{
 					{ConsumerURI: "hub.aggrega.ai/component/core/z-late", Fragments: []string{"#/schemas/Z", "#/schemas/A"}},
 					{ConsumerURI: "hub.aggrega.ai/component/core/a-early", Fragments: []string{"#/schemas/B"}},
 				},
 			},
 			{
-				URI: "hub.aggrega.ai/schema-library/core/a-lib",
+				URI:             "hub.aggrega.ai/schema-library/core/a-lib",
 				ResolvedVersion: "1.0.0",
-				Digest: "sha256:alib",
+				Digest:          "sha256:alib",
 			},
 		},
 	}
@@ -515,5 +526,292 @@ mapping_libraries: []
 		if d.Field == "schema_libraries" || d.Field == "mapping_libraries" {
 			t.Errorf("explicit empty list should not emit diagnostic; got %+v", d)
 		}
+	}
+}
+
+// fullPopulationFixture's source_artifacts entry exercises the
+// single-Recipe shape. Tests that need multi-Recipe dedupe or
+// multi-kind canonical-ordering coverage write their own fixtures.
+
+func TestLoadParsesSourceArtifactsSection(t *testing.T) {
+	t.Parallel()
+	path := writeFixture(t, fullPopulationFixture)
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("LoadLockfile: %v", err)
+	}
+	if len(lf.SourceArtifacts) != 1 {
+		t.Fatalf("SourceArtifacts len: %d; want 1", len(lf.SourceArtifacts))
+	}
+	sa := lf.SourceArtifacts[0]
+	if sa.Kind != "helm-oci-chart" {
+		t.Errorf("Kind = %q; want helm-oci-chart", sa.Kind)
+	}
+	if sa.URL != "oci://hub.aggrega.ai/charts/mariadb" {
+		t.Errorf("URL = %q", sa.URL)
+	}
+	if sa.PinnedVersion != "25.0.8" {
+		t.Errorf("PinnedVersion = %q", sa.PinnedVersion)
+	}
+	if sa.Digest != "sha256:abc123def" {
+		t.Errorf("Digest = %q", sa.Digest)
+	}
+	if sa.Mediatype != "application/vnd.cncf.helm.chart.content.v1.tar+gzip" {
+		t.Errorf("Mediatype = %q", sa.Mediatype)
+	}
+	if len(sa.ReferencedBy) != 1 {
+		t.Fatalf("ReferencedBy len: %d; want 1", len(sa.ReferencedBy))
+	}
+	ref := sa.ReferencedBy[0]
+	if ref.Entity != "recipe" || ref.URI != "hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0" || ref.Field != "spec.source" {
+		t.Errorf("ReferencedBy[0] = %+v", ref)
+	}
+}
+
+func TestLoadEmitsSoftDiagnosticForMissingSourceArtifacts(t *testing.T) {
+	t.Parallel()
+	content := `version: 1
+release: ./release-prod.yaml
+generated_at: 2026-05-22T10:23:14Z
+cue_registry:
+  default: hub.aggrega.ai
+entities: []
+schema_libraries: []
+mapping_libraries: []
+wasm_plugins: []
+`
+	path := writeFixture(t, content)
+	_, diagnostics, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("LoadLockfile: %v", err)
+	}
+	found := false
+	for _, d := range diagnostics {
+		if d.Field == "source_artifacts" && d.Severity == lockfile.DiagnosticSoft {
+			found = true
+			if !strings.Contains(d.Message, "source-artifact closure") {
+				t.Errorf("message: %q", d.Message)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected soft diagnostic for missing source_artifacts; got %+v", diagnostics)
+	}
+}
+
+func TestLoadDoesNotEmitDiagnosticForExplicitlyEmptySourceArtifacts(t *testing.T) {
+	t.Parallel()
+	content := `version: 1
+release: ./release-prod.yaml
+generated_at: 2026-05-22T10:23:14Z
+cue_registry:
+  default: hub.aggrega.ai
+entities: []
+schema_libraries: []
+mapping_libraries: []
+source_artifacts: []
+wasm_plugins: []
+`
+	path := writeFixture(t, content)
+	_, diagnostics, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("LoadLockfile: %v", err)
+	}
+	for _, d := range diagnostics {
+		if d.Field == "source_artifacts" {
+			t.Errorf("explicit empty list should not emit diagnostic; got %+v", d)
+		}
+	}
+}
+
+func TestWriteSourceArtifactsCanonicalOrdering(t *testing.T) {
+	t.Parallel()
+	lf := &lockfile.Lockfile{
+		Version:     1,
+		Release:     "./r.yaml",
+		GeneratedAt: "2026-05-22T10:23:14Z",
+		SourceArtifacts: []lockfile.SourceArtifact{
+			{Kind: "terraform-module-git", URL: "https://example.com/mod.git", PinnedVersion: "abc123", Digest: "sha256:1", Mediatype: "application/gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u1", Field: "spec.source"}}},
+			{Kind: "helm-oci-chart", URL: "oci://r/c", PinnedVersion: "26.0.0", Digest: "sha256:2", Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u2", Field: "spec.source"}}},
+			{Kind: "helm-oci-chart", URL: "oci://r/c", PinnedVersion: "25.0.0", Digest: "sha256:3", Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u3", Field: "spec.source"}}},
+			{Kind: "compose-https-fragment", URL: "https://example.com/a.yaml", PinnedVersion: "1.0.0", Digest: "sha256:4", Mediatype: "application/x-yaml", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u4", Field: "spec.source"}}},
+		},
+	}
+	path := filepath.Join(t.TempDir(), "out.lock")
+	if err := lockfile.WriteLockfile(path, lf); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	// Expected order by (Kind, URL, PinnedVersion):
+	//   compose-https-fragment / https://example.com/a.yaml / 1.0.0
+	//   helm-oci-chart / oci://r/c / 25.0.0
+	//   helm-oci-chart / oci://r/c / 26.0.0
+	//   terraform-module-git / https://example.com/mod.git / abc123
+	composeIdx := strings.Index(string(out), "compose-https-fragment")
+	helmIdx := strings.Index(string(out), "helm-oci-chart")
+	tfIdx := strings.Index(string(out), "terraform-module-git")
+	helm25Idx := strings.Index(string(out), "25.0.0")
+	helm26Idx := strings.Index(string(out), "26.0.0")
+	if !(composeIdx < helmIdx && helmIdx < tfIdx) {
+		t.Errorf("SourceArtifacts not sorted by Kind: compose=%d helm=%d tf=%d", composeIdx, helmIdx, tfIdx)
+	}
+	if !(helm25Idx < helm26Idx) {
+		t.Errorf("within same Kind+URL, PinnedVersion should sort lexicographically: 25.0.0@%d 26.0.0@%d", helm25Idx, helm26Idx)
+	}
+}
+
+func TestWriteSourceArtifactsReferencedByDeterministic(t *testing.T) {
+	t.Parallel()
+	lf := &lockfile.Lockfile{
+		Version:     1,
+		Release:     "./r.yaml",
+		GeneratedAt: "2026-05-22T10:23:14Z",
+		SourceArtifacts: []lockfile.SourceArtifact{
+			{
+				Kind: "helm-oci-chart", URL: "oci://r/c", PinnedVersion: "1.0.0",
+				Digest: "sha256:x", Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+				ReferencedBy: []lockfile.SourceArtifactReference{
+					{Entity: "recipe", URI: "z-uri", Field: "spec.source"},
+					{Entity: "recipe", URI: "a-uri", Field: "spec.source"},
+					{Entity: "feature_recipe", URI: "m-uri", Field: "spec.source"},
+				},
+			},
+		},
+	}
+	path := filepath.Join(t.TempDir(), "out.lock")
+	if err := lockfile.WriteLockfile(path, lf); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	aIdx := strings.Index(string(out), "a-uri")
+	mIdx := strings.Index(string(out), "m-uri")
+	zIdx := strings.Index(string(out), "z-uri")
+	if !(aIdx < mIdx && mIdx < zIdx) {
+		t.Errorf("ReferencedBy not sorted by URI: a=%d m=%d z=%d", aIdx, mIdx, zIdx)
+	}
+}
+
+func TestRoundTripPreservesSourceArtifacts(t *testing.T) {
+	t.Parallel()
+	path := writeFixture(t, fullPopulationFixture)
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("LoadLockfile: %v", err)
+	}
+	outPath := filepath.Join(t.TempDir(), "out.lock")
+	if err := lockfile.WriteLockfile(outPath, lf); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+	lf2, _, err := lockfile.LoadLockfile(outPath)
+	if err != nil {
+		t.Fatalf("LoadLockfile (round-trip): %v", err)
+	}
+	if len(lf2.SourceArtifacts) != len(lf.SourceArtifacts) {
+		t.Fatalf("SourceArtifacts len mismatch: got %d want %d",
+			len(lf2.SourceArtifacts), len(lf.SourceArtifacts))
+	}
+	a, b := lf.SourceArtifacts[0], lf2.SourceArtifacts[0]
+	if a.Kind != b.Kind || a.URL != b.URL || a.PinnedVersion != b.PinnedVersion ||
+		a.Digest != b.Digest || a.Mediatype != b.Mediatype {
+		t.Errorf("SourceArtifact scalar fields differ:\n  got  %+v\n  want %+v", b, a)
+	}
+	if len(a.ReferencedBy) != len(b.ReferencedBy) {
+		t.Fatalf("ReferencedBy len: got %d want %d", len(b.ReferencedBy), len(a.ReferencedBy))
+	}
+	for i := range a.ReferencedBy {
+		if a.ReferencedBy[i] != b.ReferencedBy[i] {
+			t.Errorf("ReferencedBy[%d] differs:\n  got  %+v\n  want %+v",
+				i, b.ReferencedBy[i], a.ReferencedBy[i])
+		}
+	}
+}
+
+func TestSchemaRejectsUnknownEntity(t *testing.T) {
+	t.Parallel()
+	content := `version: 1
+release: ./r.yaml
+generated_at: 2026-05-22T10:23:14Z
+cue_registry: { default: x }
+entities: []
+schema_libraries: []
+mapping_libraries: []
+source_artifacts:
+  - kind: helm-oci-chart
+    url: oci://r/c
+    pinned_version: 1.0.0
+    digest: sha256:x
+    mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    referenced_by:
+      - entity: aggregate
+        uri: u
+        field: spec.source
+wasm_plugins: []
+`
+	path := writeFixture(t, content)
+	_, _, err := lockfile.LoadLockfile(path)
+	if err == nil {
+		t.Fatal("expected schema rejection for unknown entity")
+	}
+	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
+	}
+}
+
+func TestSchemaRejectsUnknownKind(t *testing.T) {
+	t.Parallel()
+	content := `version: 1
+release: ./r.yaml
+generated_at: 2026-05-22T10:23:14Z
+cue_registry: { default: x }
+entities: []
+schema_libraries: []
+mapping_libraries: []
+source_artifacts:
+  - kind: made-up-kind
+    url: x://r/c
+    pinned_version: 1.0.0
+    digest: sha256:x
+    mediatype: x
+    referenced_by:
+      - entity: recipe
+        uri: u
+        field: spec.source
+wasm_plugins: []
+`
+	path := writeFixture(t, content)
+	_, _, err := lockfile.LoadLockfile(path)
+	if err == nil {
+		t.Fatal("expected schema rejection for unknown kind")
+	}
+	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
+	}
+}
+
+func TestSchemaRequiresAtLeastOneReferencedBy(t *testing.T) {
+	t.Parallel()
+	content := `version: 1
+release: ./r.yaml
+generated_at: 2026-05-22T10:23:14Z
+cue_registry: { default: x }
+entities: []
+schema_libraries: []
+mapping_libraries: []
+source_artifacts:
+  - kind: helm-oci-chart
+    url: oci://r/c
+    pinned_version: 1.0.0
+    digest: sha256:x
+    mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    referenced_by: []
+wasm_plugins: []
+`
+	path := writeFixture(t, content)
+	_, _, err := lockfile.LoadLockfile(path)
+	if err == nil {
+		t.Fatal("expected schema rejection for empty referenced_by")
+	}
+	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 	}
 }

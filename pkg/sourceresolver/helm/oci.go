@@ -118,6 +118,7 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 		URL:            spec.URL,
 		PinnedVersion:  spec.Version,
 		Digest:         digest,
+		Mediatype:      mediatype,
 		CachePath:      slot + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,
 	}, nil

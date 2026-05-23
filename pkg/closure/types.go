@@ -35,6 +35,17 @@ import (
 // Closure field-by-field when materialising the lockfile.
 //
 // Field declaration order is alphabetical for predictability.
+//
+// SourceArtifacts is populated by DescendRecipeSources, NOT by
+// ComputeClosure. The two passes run sequentially at orchestrator
+// integration time: ComputeClosure produces the Entities + library
+// + plugin axes; DescendRecipeSources reads the Recipe and
+// FeatureRecipe URIs from Entities, evaluates each spec.source
+// against the Release's resolved infra, and emits the
+// SourceArtifacts axis. Keeping the two passes separate keeps
+// ComputeClosure's existing surface (and test suite) untouched and
+// confines source-descent's dependencies (RecipeLoader,
+// SourceResolver) to the new function.
 type Closure struct {
 	// CueModules is reserved for third-party / enterprise catalogs
 	// whose Components still depend on legacy CUE modules. The
@@ -45,8 +56,102 @@ type Closure struct {
 	Entities         []ResolvedRef
 	MappingLibraries []ResolvedLibrary
 	SchemaLibraries  []ResolvedLibrary
+	SourceArtifacts  []SourceArtifact
 	WasmPlugins      []ResolvedRef
 }
+
+// SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
+// the lockfile writer copies the closure value into the lockfile
+// type at orchestrator integration time. Identity is the triple
+// {Kind, URL, PinnedVersion}; multiple Recipes pinning the same
+// artifact dedupe to one SourceArtifact with multiple ReferencedBy
+// records.
+type SourceArtifact struct {
+	Kind          string
+	URL           string
+	PinnedVersion string
+	Digest        string
+	Mediatype     string
+	ReferencedBy  []SourceArtifactReference
+}
+
+// SourceArtifactReference is the closure-side back-pointer mirror
+// of lockfile.SourceArtifactReference. Entity + URI identify the
+// catalog entity that resolved to the artifact; Field names the
+// source-side path inside the entity's spec (always "spec.source"
+// in the current implementation). RequestedRef preserves the
+// user-authored ref string when the resolved PinnedVersion is a
+// transformed value (terraform-module-git tag/branch → commit SHA);
+// empty otherwise.
+type SourceArtifactReference struct {
+	Entity       string
+	URI          string
+	Field        string
+	RequestedRef string
+}
+
+// RecipeLoader loads parsed Recipe / FeatureRecipe bodies by URI.
+// The walker's existing Lookup interface returns only
+// version/digest/path tuples; DescendRecipeSources needs the
+// parsed spec.source / spec.locals fields, which live on the
+// body. Production wiring implements LoadRecipe + LoadFeatureRecipe
+// over the catalog filesystem + OCI cache surfaces; tests inject
+// in-memory implementations seeded with fixture bodies.
+type RecipeLoader interface {
+	LoadRecipe(uri string) (*types.Recipe, error)
+	LoadFeatureRecipe(uri string) (*types.FeatureRecipe, error)
+}
+
+// SourceResolver matches the contract of sourceresolver.Resolve
+// without importing the package. The closure walker stays decoupled
+// from the per-kind adapter pull machinery; tests inject a
+// static-result implementation. Production wiring lives at the
+// orchestrator (WI 06e) which composes a SourceResolver from the
+// shipped sourceresolver package via a small type-conversion shim.
+type SourceResolver interface {
+	Resolve(spec SourceSpec) (*ResolvedSource, error)
+}
+
+// SourceSpec mirrors sourceresolver.SourceSpec field-for-field.
+// The two structs are deliberately identical in shape; the
+// orchestrator's wiring shim performs a mechanical field-copy
+// across the package boundary.
+type SourceSpec struct {
+	Kind           string
+	URL            string
+	Version        string
+	Chart          string
+	ModuleSubdir   string
+	Ref            string
+	WorkspaceRoot  string
+	CacheDir       string
+	OriginalSource any
+}
+
+// ResolvedSource mirrors sourceresolver.ResolvedSource field-for-field.
+// The Mediatype field carries through to the lockfile's
+// SourceArtifact.Mediatype slot at the orchestrator's lockfile-
+// writer call.
+type ResolvedSource struct {
+	Kind           string
+	URL            string
+	PinnedVersion  string
+	Digest         string
+	Mediatype      string
+	CachePath      string
+	OriginalSource any
+}
+
+// ErrSourceTemplateAtLockTime wraps every lock-time source-template
+// evaluation failure: .provides references (forbidden — Phase 1 of
+// Step 5 Render has not run at lock time), ambiguous kind
+// classification (scalar source URL without recognised scheme + no
+// explicit kind), missing .infra/.locals keys, template parse
+// errors, and any other condition that surfaces during
+// DescendRecipeSources's lock-time evaluation pass. The build-time
+// counterpart (lockfile-vs-actual drift) wraps ErrFetchIntegrity at
+// the orchestrator, not this sentinel.
+var ErrSourceTemplateAtLockTime = errors.New("closure: source-template evaluation failure at lock time")
 
 // ResolvedRef captures a single catalog-entity / CUE-module /
 // Wasm-plugin resolution result. Mirrors the lockfile package's

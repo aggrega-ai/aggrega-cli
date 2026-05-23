@@ -17,12 +17,15 @@ import (
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, WasmPlugins by URI;
-//     CueModules by Module; CueRegistry.Overrides by Prefix.
+//     CueModules by Module; CueRegistry.Overrides by Prefix;
+//     SourceArtifacts by the composite (Kind, URL, PinnedVersion).
 //   - Inside each Entity / CueModule / WasmPlugin: ReferencedFrom
 //     sorted lexicographically.
 //   - Inside each SchemaLibrary / MappingLibrary: Consumers sorted by
 //     ConsumerURI; within each LibraryConsumer, Fragments sorted
 //     lexicographically.
+//   - Inside each SourceArtifact: ReferencedBy sorted by the
+//     composite (URI, Field).
 //
 // Determinism scope: two independent WriteLockfile invocations
 // against the same in-memory *Lockfile produce byte-identical bytes.
@@ -118,6 +121,23 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return out.MappingLibraries[i].URI < out.MappingLibraries[j].URI
 	})
 
+	out.SourceArtifacts = make([]SourceArtifact, len(lf.SourceArtifacts))
+	for i, sa := range lf.SourceArtifacts {
+		entryCopy := sa
+		entryCopy.ReferencedBy = canonicaliseReferencedBy(sa.ReferencedBy)
+		out.SourceArtifacts[i] = entryCopy
+	}
+	sort.Slice(out.SourceArtifacts, func(i, j int) bool {
+		a, b := out.SourceArtifacts[i], out.SourceArtifacts[j]
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.URL != b.URL {
+			return a.URL < b.URL
+		}
+		return a.PinnedVersion < b.PinnedVersion
+	})
+
 	out.WasmPlugins = make([]WasmPlugin, len(lf.WasmPlugins))
 	for i, p := range lf.WasmPlugins {
 		entryCopy := p
@@ -128,6 +148,23 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return out.WasmPlugins[i].URI < out.WasmPlugins[j].URI
 	})
 
+	return out
+}
+
+// canonicaliseReferencedBy returns a fresh slice of
+// SourceArtifactReference values sorted by the composite (URI,
+// Field). Two independent invocations against the same input produce
+// byte-identical output.
+func canonicaliseReferencedBy(in []SourceArtifactReference) []SourceArtifactReference {
+	out := make([]SourceArtifactReference, len(in))
+	copy(out, in)
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.URI != b.URI {
+			return a.URI < b.URI
+		}
+		return a.Field < b.Field
+	})
 	return out
 }
 
