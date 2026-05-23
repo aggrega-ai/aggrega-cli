@@ -12,9 +12,17 @@ import (
 )
 
 // CachePath returns the cache slot for the given URI + version under
-// the workspace's configured cache directory. The slot path is
+// the workspace's configured cache directory's `entities/` subtree:
 //
-//	<workspaceRoot>/<cacheDir>/<URI-encoded>/<version>/
+//	<workspaceRoot>/<cacheDir>/entities/<URI-encoded>/<version>/
+//
+// The `entities/` segment partitions the cache root from the
+// sibling `<cacheDir>/source-artifacts/<kind>/<host>/<path>/<version>/<digest-prefix>/`
+// subtree the source-resolver populates. Catalog pulls and source-
+// artifact pulls live in parallel sibling directories so cache
+// inspection by hand surfaces a clean two-subtree structure and
+// the future `aggrega pull` invocation populates both axes
+// uniformly.
 //
 // URI encoding replaces filesystem-unsafe characters (the path
 // separator `/`, the scheme separator `://`, the version-pin `:`,
@@ -22,15 +30,9 @@ import (
 // is a stable, single-segment directory across operating systems.
 // Two CachePath invocations with the same inputs produce
 // byte-identical paths.
-//
-// The current layout is flat. A future implementation will refactor the root
-// into the two-subtree shape `<cacheDir>/entities/<…>` and
-// `<cacheDir>/source-artifacts/<…>` per the source-
-// resolution amendment; the flat layout shipped here is the
-// migration source.
 func CachePath(workspaceRoot, cacheDir, uri, version string) string {
 	encoded := encodeURI(uri)
-	return filepath.Join(workspaceRoot, cacheDir, encoded, version)
+	return filepath.Join(workspaceRoot, cacheDir, "entities", encoded, version)
 }
 
 // ReadCached returns the bytes previously stored at the cache slot

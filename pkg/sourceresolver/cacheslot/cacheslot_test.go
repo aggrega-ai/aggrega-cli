@@ -81,7 +81,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	slot, err := cacheslot.Slot(root, ".aggrega/cache", "compose-https-fragment",
-		"https://example.com/fragment.yaml", "1.0.0", "sha256:deadbeefcafe")
+		"https://example.com/fragment.yaml", "1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead")
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	body := []byte("archive-bytes-here")
 	if err := cacheslot.WriteBlobAndMetadata(slot, body,
 		"compose-https-fragment", "https://example.com/fragment.yaml",
-		"1.0.0", "sha256:deadbeefcafe", "application/x-yaml"); err != nil {
+		"1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead", "application/x-yaml"); err != nil {
 		t.Fatalf("WriteBlobAndMetadata: %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	if m.URL != "https://example.com/fragment.yaml" {
 		t.Errorf("URL = %q", m.URL)
 	}
-	if m.Digest != "sha256:deadbeefcafe" {
+	if m.Digest != "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead" {
 		t.Errorf("Digest = %q", m.Digest)
 	}
 	if m.PulledAt.IsZero() {

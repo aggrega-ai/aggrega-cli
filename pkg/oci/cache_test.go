@@ -27,6 +27,9 @@ func TestCachePathDeterministic(t *testing.T) {
 	if strings.Contains(a, "/component/core/") {
 		t.Errorf("URI separators should be percent-encoded inside the path segment; got %s", a)
 	}
+	if !strings.Contains(a, "/entities/") {
+		t.Errorf("path should contain the entities subtree segment; got %s", a)
+	}
 }
 
 func TestReadCachedMissReturnsErrFetchNotFound(t *testing.T) {

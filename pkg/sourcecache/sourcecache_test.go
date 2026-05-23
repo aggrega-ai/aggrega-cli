@@ -166,7 +166,7 @@ func TestLookupAndExtractMetadataMismatchWrapsIntegrity(t *testing.T) {
 
 	// Seed cache slot with the CORRECT blob but a metadata.yaml
 	// recording a DIFFERENT digest.
-	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, "sha256:different")
+	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", blobDigest)
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
