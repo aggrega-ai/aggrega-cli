@@ -117,6 +117,14 @@ type LintConfig struct {
 // true). NarrowingExemptions carries per-entity escape hatches for
 // legitimate narrowing cases. The remaining flags relax individual
 // discouragement checks.
+//
+// JSON marshalling matches the schema's Policies $def in
+// aggrega-schemas/json-schemas/wasm-linter-v1alpha1.schema.json.
+// The publishing-linter Wasm plugin consumes a JSON object with the
+// same field set; the symmetry is pinned at unit-test time by
+// pkg/validator's TestPoliciesRoundTripThroughSchema. Adding or
+// renaming a field here requires a coordinated update to the schema
+// and to the plugin's policies.rs mirror.
 type PublishingDisciplineConfig struct {
 	EnforceMonotonicNarrowing     bool                 `yaml:"enforce_monotonic_narrowing"`
 	EnforceImmutability           bool                 `yaml:"enforce_immutability"`

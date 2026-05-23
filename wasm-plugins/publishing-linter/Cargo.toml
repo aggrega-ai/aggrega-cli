@@ -1,0 +1,17 @@
+[package]
+name = "publishing-linter"
+version = "0.1.0"
+edition = "2021"
+description = "Aggrega publishing-linter Wasm plugin: schema-evolution + per-rule structural rules."
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+aggrega-pdk-rust = { path = "../../../aggrega-pdk/rust" }
+extism-pdk = "1.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

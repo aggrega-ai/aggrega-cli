@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/api-server
+  version: 1.0.0
+spec:
+  schema:
+    values:
+      type: object
+      properties:
+        port:
+          type: integer
+        host:
+          type: string
