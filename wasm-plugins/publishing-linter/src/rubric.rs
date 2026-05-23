@@ -257,7 +257,6 @@ fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (Lint
         "spec.pipeline",
         "spec.source",
         "spec.workload",
-        "spec.workloadFrom",
         "spec.artifacts",
     ];
     let mut changed: Vec<String> = vec![];

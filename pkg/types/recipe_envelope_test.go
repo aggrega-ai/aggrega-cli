@@ -17,14 +17,8 @@ import (
 
 // recipeEnvelopeValidator loads the shipped Recipe JSON Schema from the
 // sibling aggrega-schemas repo and constructs a Validator over it.
-// Tests use the validator to assert envelope-level rejection of the
-// retired triple-collapse fields (valuesMappingFile, valuesMappingJsonnet)
-// at workspace-load time. The triple's retirement at the renderer surface
-// is covered by tests in pkg/validator and internal/compiler/renderer;
-// the envelope-load surface is the JSON Schema's responsibility and
-// gets pinned here so a future regression that reintroduces the fields
-// surfaces immediately as an envelope-validation failure rather than
-// flowing through to render time.
+// Tests use the validator to assert envelope-level acceptance of the
+// supported authoring shapes at workspace-load time.
 //
 // Path is stable within the umbrella workspace: from
 // aggrega-cli/pkg/types/, the schema sits at
@@ -102,68 +96,6 @@ func normaliseYAML(v any) any {
 	}
 }
 
-// TestRecipeEnvelope_RejectsValuesMappingJsonnet pins the envelope-load
-// rejection of the retired valuesMappingJsonnet: field. A Recipe
-// authored with the legacy field fails envelope validation before
-// reaching the renderer; the rejection home migrated from renderer-time
-// (pre-WI: ErrJsonnetNotSupported sentinel) to envelope-load time (this
-// WI's collapse of the triple to a single valuesMapping: field with
-// additionalProperties: false on spec).
-func TestRecipeEnvelope_RejectsValuesMappingJsonnet(t *testing.T) {
-	t.Parallel()
-	v := recipeEnvelopeValidator(t)
-
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: Recipe
-metadata:
-  name: legacy-jsonnet
-  version: 1.0.0
-spec:
-  provider: helm
-  implements: core/server
-  source: ./chart
-  valuesMappingJsonnet: |
-    { x: 1 }
-  locals: {}
-`
-	rpt, err := v.Validate(yamlInstance(t, src), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on retired valuesMappingJsonnet: field; got no findings")
-	}
-}
-
-// TestRecipeEnvelope_RejectsValuesMappingFile pins the envelope-load
-// rejection of the retired valuesMappingFile: field. The file-import
-// capability relocates into valuesMapping: { $import: ... } (mode 2);
-// the legacy sibling key has no coherent existence post-collapse.
-func TestRecipeEnvelope_RejectsValuesMappingFile(t *testing.T) {
-	t.Parallel()
-	v := recipeEnvelopeValidator(t)
-
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: Recipe
-metadata:
-  name: legacy-file
-  version: 1.0.0
-spec:
-  provider: helm
-  implements: core/server
-  source: ./chart
-  valuesMappingFile: ./mappings/values.tmpl
-  locals: {}
-`
-	rpt, err := v.Validate(yamlInstance(t, src), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on retired valuesMappingFile: field; got no findings")
-	}
-}
-
 // TestRecipeEnvelope_AcceptsInlineValuesMapping verifies the positive
 // path: a Recipe with mode-1 inline valuesMapping passes envelope
 // validation.
@@ -220,57 +152,6 @@ spec:
 	}
 	if len(rpt.Findings) != 0 {
 		t.Errorf("expected envelope acceptance of $import valuesMapping; got %d findings:\n  %v", len(rpt.Findings), rpt.Findings)
-	}
-}
-
-// TestFeatureRecipeEnvelope_RejectsValuesMappingJsonnet pins the
-// FeatureRecipe-side envelope rejection of the retired Jsonnet field.
-func TestFeatureRecipeEnvelope_RejectsValuesMappingJsonnet(t *testing.T) {
-	t.Parallel()
-	v := featureRecipeEnvelopeValidator(t)
-
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: FeatureRecipe
-metadata:
-  name: legacy-fr-jsonnet
-  version: 1.0.0
-spec:
-  provider: helm
-  implements: core/feature
-  valuesMappingJsonnet: |
-    { x: 1 }
-`
-	rpt, err := v.Validate(yamlInstance(t, src), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on retired valuesMappingJsonnet: field; got no findings")
-	}
-}
-
-// TestFeatureRecipeEnvelope_RejectsValuesMappingFile pins the
-// FeatureRecipe-side envelope rejection of the retired File field.
-func TestFeatureRecipeEnvelope_RejectsValuesMappingFile(t *testing.T) {
-	t.Parallel()
-	v := featureRecipeEnvelopeValidator(t)
-
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: FeatureRecipe
-metadata:
-  name: legacy-fr-file
-  version: 1.0.0
-spec:
-  provider: helm
-  implements: core/feature
-  valuesMappingFile: ./mappings/v.tmpl
-`
-	rpt, err := v.Validate(yamlInstance(t, src), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on retired valuesMappingFile: field; got no findings")
 	}
 }
 
