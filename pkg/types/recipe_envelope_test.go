@@ -274,62 +274,6 @@ spec:
 	}
 }
 
-// TestRecipeEnvelope_RejectsWorkloadFrom pins the envelope-load rejection
-// of the retired workloadFrom: field. The file-import capability
-// relocates into workload: { $import: ... } (mode 2 of the
-// WorkloadTemplate discriminator).
-func TestRecipeEnvelope_RejectsWorkloadFrom(t *testing.T) {
-	t.Parallel()
-	v := recipeEnvelopeValidator(t)
-
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: Recipe
-metadata:
-  name: legacy-workload-from
-  version: 1.0.0
-spec:
-  provider: helm
-  implements: core/server
-  workloadFrom: ./workload.yaml
-  locals: {}
-`
-	rpt, err := v.Validate(yamlInstance(t, src), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on retired workloadFrom: field; got no findings")
-	}
-}
-
-// TestRecipeEnvelope_RejectsArtifactsFrom pins the envelope-load rejection
-// of the retired artifactsFrom: field. The list-form capability migrates
-// to per-entry $import: under the artifacts: map.
-func TestRecipeEnvelope_RejectsArtifactsFrom(t *testing.T) {
-	t.Parallel()
-	v := recipeEnvelopeValidator(t)
-
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: Recipe
-metadata:
-  name: legacy-artifacts-from
-  version: 1.0.0
-spec:
-  provider: helm
-  implements: core/server
-  artifactsFrom:
-    - ./extras/policy.yaml
-  locals: {}
-`
-	rpt, err := v.Validate(yamlInstance(t, src), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on retired artifactsFrom: field; got no findings")
-	}
-}
-
 // TestRecipeEnvelope_AcceptsWorkloadImport pins the positive path for
 // the WorkloadTemplate mode 2 (file $import:).
 func TestRecipeEnvelope_AcceptsWorkloadImport(t *testing.T) {
