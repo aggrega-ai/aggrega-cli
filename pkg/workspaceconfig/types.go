@@ -133,6 +133,7 @@ type PublishingDisciplineConfig struct {
 	AllowIDOverrides              bool                 `yaml:"allow_id_overrides"`
 	AllowNonPascalSchemaNames     bool                 `yaml:"allow_non_pascal_schema_names"`
 	AllowDirectXAggregaExtensions bool                 `yaml:"allow_direct_x_aggrega_extensions"`
+	AllowAggregaAIPrefix          bool                 `yaml:"allow_aggrega_ai_prefix"`
 	AllowNonstandardNames         bool                 `yaml:"allow_nonstandard_names"`
 }
 

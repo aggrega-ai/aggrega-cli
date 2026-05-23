@@ -210,6 +210,23 @@ workspace:
 	}
 }
 
+func TestLoadHonoursAllowAggregaAIPrefixOverride(t *testing.T) {
+	t.Parallel()
+	content := `
+lint:
+  publishing_discipline:
+    allow_aggrega_ai_prefix: true
+`
+	path := writeFixture(t, content)
+	got, err := workspaceconfig.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !got.Lint.PublishingDiscipline.AllowAggregaAIPrefix {
+		t.Errorf("Lint.PublishingDiscipline.AllowAggregaAIPrefix: want true (overridden); got false")
+	}
+}
+
 func TestLoadEmptyFileReturnsDefaults(t *testing.T) {
 	t.Parallel()
 	path := writeFixture(t, "")

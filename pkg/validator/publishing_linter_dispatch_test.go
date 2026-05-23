@@ -215,6 +215,7 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 		"allow_id_overrides": true,
 		"allow_non_pascal_schema_names": true,
 		"allow_direct_x_aggrega_extensions": true,
+		"allow_aggrega_ai_prefix": true,
 		"allow_nonstandard_names": true
 	}`)
 
@@ -238,5 +239,69 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].Classification != "PATCH" {
 		t.Errorf("expected PATCH finding with Policies present; got %+v", findings)
+	}
+}
+
+// TestDispatchAnnotationPrefixViolation pins the reserved-prefix
+// rule end-to-end through the actual .wasm: a Component carrying a
+// bare aggrega.ai/ annotation key surfaces as an annotation-prefix
+// finding with severity "error".
+func TestDispatchAnnotationPrefixViolation(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {
+			"name": "core/compute/api-server",
+			"annotations": {"aggrega.ai/custom-flag": "x"}
+		}
+	}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "annotation-prefix",
+		EntityKind: "Component",
+		Proposed:   proposed,
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding; got %d", len(findings))
+	}
+	if findings[0].RuleID != "annotation-prefix" {
+		t.Errorf("rule_id: got %q; want annotation-prefix", findings[0].RuleID)
+	}
+	if findings[0].Severity != "error" {
+		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	}
+	if !strings.Contains(findings[0].Message, "aggrega.ai/custom-flag") {
+		t.Errorf("message should name the offending key; got %q", findings[0].Message)
+	}
+}
+
+// TestDispatchNameShapeViolation pins the per-kind name-shape rule
+// end-to-end through the actual .wasm: a Component with a name that
+// does not match the three-segment kebab-case pattern surfaces as a
+// name-shape finding with severity "error".
+func TestDispatchNameShapeViolation(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {"name": "BadName"}
+	}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "name-shape",
+		EntityKind: "Component",
+		Proposed:   proposed,
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding; got %d", len(findings))
+	}
+	if findings[0].RuleID != "name-shape" {
+		t.Errorf("rule_id: got %q; want name-shape", findings[0].RuleID)
+	}
+	if !strings.Contains(findings[0].Message, "BadName") {
+		t.Errorf("message should name the offending entity name; got %q", findings[0].Message)
 	}
 }

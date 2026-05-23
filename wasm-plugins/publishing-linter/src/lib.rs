@@ -14,6 +14,7 @@ use extism_pdk::{plugin_fn, FnResult, Json};
 
 pub mod policies;
 pub mod rubric;
+pub mod rules;
 
 /// `lint` is the plugin's single exported entry point. Dispatches on
 /// `LinterInput.rule_id` to the appropriate rule's classifier and
@@ -27,6 +28,8 @@ pub fn lint(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
     let input = input.0;
     let findings = match input.rule_id.as_str() {
         "schema-evolution" => rubric::classify(&input),
+        "annotation-prefix" => rules::annotation_prefix::classify(&input),
+        "name-shape" => rules::name_shape::classify(&input),
         other => vec![LinterFinding {
             rule_id: "unknown_rule".to_string(),
             severity: LinterSeverity::Error,
