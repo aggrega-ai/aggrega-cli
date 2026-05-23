@@ -18,6 +18,7 @@ fn fixture(kind: &str, previous: serde_json::Value, proposed: serde_json::Value)
         entity_kind: kind.to_string(),
         proposed,
         previous: Some(previous),
+        parent: None,
         policies: None,
     }
 }
@@ -269,6 +270,7 @@ fn first_publication_classifies_patch() {
         entity_kind: "Component".to_string(),
         proposed: json!({"kind": "Component"}),
         previous: None,
+        parent: None,
         policies: None,
     };
     assert_eq!(classify_once(&input), LinterClassification::Patch);

@@ -26,8 +26,17 @@ type LinterInput struct {
 	RuleID     string          `json:"rule_id"`
 	EntityKind string          `json:"entity_kind"`
 	Proposed   json.RawMessage `json:"proposed"`
-	Previous   json.RawMessage `json:"previous,omitempty"`
-	Policies   json.RawMessage `json:"policies,omitempty"`
+	// Previous carries the parsed prior-version entity for rules
+	// that perform pairwise comparison (schema-evolution). Empty
+	// when the rule does not need a previous-version reference.
+	Previous json.RawMessage `json:"previous,omitempty"`
+	// Parent carries the parsed resolved-parent entity for rules
+	// that perform child-vs-parent comparison (narrowing). The
+	// caller resolves the entity's spec.extends URI before
+	// invocation. Empty when no parent exists or the rule does not
+	// need parent context.
+	Parent   json.RawMessage `json:"parent,omitempty"`
+	Policies json.RawMessage `json:"policies,omitempty"`
 }
 
 // LinterOutput is the JSON response shape the plugin emits per the

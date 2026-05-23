@@ -213,7 +213,6 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 		],
 		"allow_dynamic_refs": true,
 		"allow_id_overrides": true,
-		"allow_non_pascal_schema_names": true,
 		"allow_direct_x_aggrega_extensions": true,
 		"allow_aggrega_ai_prefix": true,
 		"allow_nonstandard_names": true
@@ -303,5 +302,100 @@ func TestDispatchNameShapeViolation(t *testing.T) {
 	}
 	if !strings.Contains(findings[0].Message, "BadName") {
 		t.Errorf("message should name the offending entity name; got %q", findings[0].Message)
+	}
+}
+
+// TestDispatchDynamicRefsViolation pins the dynamic-refs rule
+// end-to-end: a SchemaLibrary entry containing $dynamicAnchor
+// surfaces as a dynamic-refs finding with severity "error".
+func TestDispatchDynamicRefsViolation(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "SchemaLibrary",
+		"metadata": {"name": "Probes", "version": "1.0.0"},
+		"spec": {"schemas": {"Polymorphic": {"$dynamicAnchor": "node", "type": "object"}}}
+	}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "dynamic-refs",
+		EntityKind: "SchemaLibrary",
+		Proposed:   proposed,
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding; got %d", len(findings))
+	}
+	if findings[0].RuleID != "dynamic-refs" {
+		t.Errorf("rule_id: got %q; want dynamic-refs", findings[0].RuleID)
+	}
+	if findings[0].Severity != "error" {
+		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	}
+}
+
+// TestDispatchIdOverridesViolation pins the id-overrides rule
+// end-to-end: a SchemaLibrary entry with an explicit $id surfaces
+// as an id-overrides finding.
+func TestDispatchIdOverridesViolation(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "SchemaLibrary",
+		"metadata": {"name": "Probes", "version": "1.0.0"},
+		"spec": {"schemas": {"Custom": {"$id": "https://example.com/x", "type": "object"}}}
+	}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "id-overrides",
+		EntityKind: "SchemaLibrary",
+		Proposed:   proposed,
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding; got %d", len(findings))
+	}
+	if findings[0].RuleID != "id-overrides" {
+		t.Errorf("rule_id: got %q; want id-overrides", findings[0].RuleID)
+	}
+}
+
+// TestDispatchNarrowingViolation pins the narrowing rule
+// end-to-end. Default Policies has enforce_monotonic_narrowing
+// false, so the rule passes silently; the test explicitly enables
+// enforcement via Policies, supplies a parent, and asserts the
+// broadening child produces a narrowing finding. Pins the
+// LinterInput.Parent field's end-to-end wiring.
+func TestDispatchNarrowingViolation(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {"name": "x"},
+		"spec": {"schema": {"values": {"a": 1, "b": 2}}, "extends": "base"}
+	}`)
+	parent := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {"name": "base"},
+		"spec": {"schema": {"values": {"a": 1}}}
+	}`)
+	policies := json.RawMessage(`{"enforce_monotonic_narrowing": true}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "narrowing",
+		EntityKind: "Component",
+		Proposed:   proposed,
+		Parent:     parent,
+		Policies:   policies,
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding; got %d", len(findings))
+	}
+	if findings[0].RuleID != "narrowing" {
+		t.Errorf("rule_id: got %q; want narrowing", findings[0].RuleID)
+	}
+	if !strings.Contains(findings[0].Message, "narrowing violation") {
+		t.Errorf("message should describe a narrowing violation; got %q", findings[0].Message)
 	}
 }

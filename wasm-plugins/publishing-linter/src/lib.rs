@@ -30,6 +30,9 @@ pub fn lint(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "schema-evolution" => rubric::classify(&input),
         "annotation-prefix" => rules::annotation_prefix::classify(&input),
         "name-shape" => rules::name_shape::classify(&input),
+        "narrowing" => rules::narrowing::classify(&input),
+        "dynamic-refs" => rules::dynamic_refs::classify(&input),
+        "id-overrides" => rules::id_overrides::classify(&input),
         other => vec![LinterFinding {
             rule_id: "unknown_rule".to_string(),
             severity: LinterSeverity::Error,

@@ -68,7 +68,6 @@ lint:
         reason: "Single-region deployment; secondary replicas not provisioned."
     allow_dynamic_refs: true
     allow_id_overrides: true
-    allow_non_pascal_schema_names: true
     allow_direct_x_aggrega_extensions: true
     allow_nonstandard_names: true
 `
@@ -145,7 +144,7 @@ lint:
 	if ex.Reason == "" {
 		t.Errorf("exemption.Reason should be non-empty")
 	}
-	if !pd.AllowDynamicRefs || !pd.AllowIDOverrides || !pd.AllowNonPascalSchemaNames ||
+	if !pd.AllowDynamicRefs || !pd.AllowIDOverrides ||
 		!pd.AllowDirectXAggregaExtensions || !pd.AllowNonstandardNames {
 		t.Errorf("one or more allow_* flags failed to round-trip: %+v", pd)
 	}
@@ -324,7 +323,7 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	if !pd.EnforceImmutability {
 		t.Errorf("Default().Lint.PublishingDiscipline.EnforceImmutability should be true")
 	}
-	if pd.AllowDynamicRefs || pd.AllowIDOverrides || pd.AllowNonPascalSchemaNames ||
+	if pd.AllowDynamicRefs || pd.AllowIDOverrides ||
 		pd.AllowDirectXAggregaExtensions || pd.AllowNonstandardNames {
 		t.Errorf("Default() allow_* flags must all be false; got %+v", pd)
 	}

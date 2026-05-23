@@ -12,4 +12,8 @@
 //! in the dispatcher's match.
 
 pub mod annotation_prefix;
+pub mod dynamic_refs;
+pub mod id_overrides;
 pub mod name_shape;
+pub mod narrowing;
+pub mod schema_library_walker;

@@ -22,6 +22,7 @@ fn fixture(kind: &str, annotations: serde_json::Value, policies: Option<Policies
             },
         }),
         previous: None,
+        parent: None,
         policies,
     }
 }
@@ -132,6 +133,7 @@ fn annotation_prefix_no_annotations_no_findings() {
         entity_kind: "Component".to_string(),
         proposed: json!({"kind": "Component", "metadata": {"name": "x"}}),
         previous: None,
+        parent: None,
         policies: None,
     };
     let findings = annotation_prefix::classify(&input);

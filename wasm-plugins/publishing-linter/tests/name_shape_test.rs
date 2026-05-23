@@ -18,6 +18,7 @@ fn fixture(kind: &str, name: &str, policies: Option<Policies>) -> LinterInput {
             "metadata": {"name": name},
         }),
         previous: None,
+        parent: None,
         policies,
     }
 }
@@ -145,6 +146,7 @@ fn name_shape_missing_name_no_finding() {
         entity_kind: "Component".to_string(),
         proposed: json!({"kind": "Component", "metadata": {}}),
         previous: None,
+        parent: None,
         policies: None,
     };
     let findings = name_shape::classify(&input);
