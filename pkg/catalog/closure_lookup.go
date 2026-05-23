@@ -261,7 +261,7 @@ func (l *catalogLookup) tier3CatalogEntity(uri string) (closure.Resolution, erro
 	if l.ociPuller == nil {
 		return closure.Resolution{NotFound: true}, nil
 	}
-	reference, tag, ok := splitURIForOCI(uri)
+	reference, tag, ok := SplitURIForOCI(uri)
 	if !ok {
 		return closure.Resolution{NotFound: true}, nil
 	}
@@ -286,7 +286,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	if l.ociPuller == nil {
 		return closure.Resolution{NotFound: true}, nil
 	}
-	reference, tag, ok := splitURIForOCI(uri)
+	reference, tag, ok := SplitURIForOCI(uri)
 	if !ok {
 		return closure.Resolution{NotFound: true}, nil
 	}
@@ -357,12 +357,21 @@ func entityBytesKey(kind, identifier string) string {
 	return kind + ":" + identifier
 }
 
-// splitURIForOCI splits a canonical entity URI into the (repository
+// SplitURIForOCI splits a canonical entity URI into the (repository
 // reference, tag) pair pkg/oci.Pull consumes. The reference is the
 // URI with any trailing ":<version>" stripped; the tag is the
 // version. Returns ok=false when no version is present (OCI pull
 // requires a tag).
-func splitURIForOCI(uri string) (reference, tag string, ok bool) {
+//
+// Exported so it serves both the closure walker's Tier-3 dispatch
+// AND the inverse of the publish-side reference construction the
+// push CLI verb performs. The two sides MUST agree on URI shape:
+// publish constructs <registry>/<kindLower>/<metadata.name>:<version>;
+// SplitURIForOCI parses it back to (<registry>/<kindLower>/<metadata.name>,
+// <version>). A round-trip unit test in the push verb's test suite
+// pins this symmetry at code-review time so any future divergence
+// surfaces before it becomes an end-to-end runtime mismatch.
+func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
 	base, version, hasV := splitVersionedURI(uri)
 	if !hasV || version == "" {
 		return "", "", false
