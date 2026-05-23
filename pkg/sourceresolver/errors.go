@@ -6,6 +6,8 @@ package sourceresolver
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
@@ -55,10 +57,48 @@ var ErrUnknownKind = errors.New("sourceresolver: no adapter registered for sourc
 // include the `docker login <registry>` command). The signature
 // stays stable; the additional context lands inside the function.
 func Wrap(spec SourceSpec, sentinel error, cause error) error {
+	host := hostFromURL(spec.URL)
+	remediation := oci.RemediationFor(sentinel, host)
 	if cause == nil {
-		return fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w",
+		base := fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w",
 			spec.Kind, spec.URL, spec.Version, sentinel)
+		if remediation != "" {
+			return fmt.Errorf("%w; %s", base, remediation)
+		}
+		return base
 	}
-	return fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w (cause: %s)",
+	base := fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w (cause: %s)",
 		spec.Kind, spec.URL, spec.Version, sentinel, cause)
+	if remediation != "" {
+		return fmt.Errorf("%w; %s", base, remediation)
+	}
+	return base
+}
+
+// hostFromURL extracts the registry host segment from a SourceSpec
+// URL. Handles standard URL schemes via net/url.Parse and the
+// non-standard oci:// scheme via a manual prefix-strip fallback.
+// Returns the empty string when no host segment is derivable;
+// oci.RemediationFor substitutes the literal "<registry>"
+// placeholder in that case.
+func hostFromURL(s string) string {
+	if s == "" {
+		return ""
+	}
+	if u, err := url.Parse(s); err == nil && u.Host != "" {
+		return u.Host
+	}
+	// oci:// and similar schemes that net/url doesn't recognise as
+	// "absolute" — strip the scheme prefix and read the first
+	// path-separator-delimited segment.
+	for _, prefix := range []string{"oci://", "git+ssh://", "git://", "ssh://"} {
+		if strings.HasPrefix(s, prefix) {
+			rest := strings.TrimPrefix(s, prefix)
+			if idx := strings.Index(rest, "/"); idx > 0 {
+				return rest[:idx]
+			}
+			return rest
+		}
+	}
+	return ""
 }

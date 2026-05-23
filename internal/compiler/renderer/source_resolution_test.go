@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -259,5 +261,58 @@ func mustWriteMetadata(t *testing.T, path string, m metadata.CacheMetadata) {
 	t.Helper()
 	if err := metadata.Write(path, m); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMatchFetchSentinelDetectsEachSentinel(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		sent error
+	}{
+		{"NotFound", oci.ErrFetchNotFound},
+		{"Unauthorized", oci.ErrFetchUnauthorized},
+		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable},
+		{"Integrity", oci.ErrFetchIntegrity},
+	}
+	for _, tc := range cases {
+		wrapped := fmt.Errorf("outer wrap: %w", tc.sent)
+		got, ok := matchFetchSentinel(wrapped)
+		if !ok {
+			t.Errorf("%s: matchFetchSentinel should return ok=true for wrapped sentinel", tc.name)
+			continue
+		}
+		if got != tc.sent {
+			t.Errorf("%s: matchFetchSentinel returned %v; want %v", tc.name, got, tc.sent)
+		}
+	}
+}
+
+func TestMatchFetchSentinelReturnsFalseForNonFetchErrors(t *testing.T) {
+	t.Parallel()
+	got, ok := matchFetchSentinel(fmt.Errorf("some unrelated error"))
+	if ok || got != nil {
+		t.Errorf("non-fetch error should return (nil, false); got (%v, %v)", got, ok)
+	}
+	if g, ok := matchFetchSentinel(closure.ErrSourceTemplateAtLockTime); ok {
+		t.Errorf("ErrSourceTemplateAtLockTime is not a fetch sentinel; got (%v, ok=true)", g)
+	}
+}
+
+func TestHostFromSourceErrParsesURLFromWrappedMessage(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("sourceresolver: kind=helm-oci-chart url=oci://hub.aggrega.ai/charts/mariadb version=25.0.8: pull failed")
+	if got := hostFromSourceErr(err); got != "hub.aggrega.ai" {
+		t.Errorf("hostFromSourceErr = %q; want hub.aggrega.ai", got)
+	}
+}
+
+func TestHostFromSourceErrReturnsEmptyForCacheError(t *testing.T) {
+	t.Parallel()
+	// pkg/sourcecache errors don't carry "url=" — orchestrator's
+	// fallback to "<registry>" placeholder is correct.
+	err := fmt.Errorf("sourcecache: blob digest mismatch")
+	if got := hostFromSourceErr(err); got != "" {
+		t.Errorf("hostFromSourceErr should return empty for cache error; got %q", got)
 	}
 }

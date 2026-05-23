@@ -42,3 +42,42 @@ var ErrUnknownEntityKind = errors.New("oci: unknown entity kind for mediatype di
 // entity's metadata.version field. Call sites wrap this sentinel
 // with both values for the operator's diagnostic.
 var ErrLibraryVersionMismatch = errors.New("oci: library per-version subdirectory mismatch")
+
+// RemediationFor returns the operator-actionable remediation hint
+// for a fetch-sentinel error. The registryHost substring substitutes
+// into auth/network messages; pass an empty string when the host is
+// not derivable and the literal `<registry>` placeholder remains in
+// the message.
+//
+// Returns the empty string for non-sentinel errors (or when sentinel
+// is nil), so callers can decide whether to fall back to a generic
+// message or omit the remediation entirely. The function uses
+// errors.Is to traverse wrapped chains, so callers may pass either
+// the bare sentinel or any error that wraps one.
+//
+// Co-located with the sentinel declarations so both the lock-time
+// pull pipeline (`pkg/sourceresolver.Wrap`) and the build-time read
+// pipeline (the orchestrator's fetch-error branch) call the same
+// mapping — keeping the operator-facing remediation strings DRY
+// across both axes.
+func RemediationFor(sentinel error, registryHost string) string {
+	if sentinel == nil {
+		return ""
+	}
+	host := registryHost
+	if host == "" {
+		host = "<registry>"
+	}
+	switch {
+	case errors.Is(sentinel, ErrFetchNotFound):
+		return "remediation: verify the URL and version are correct; for cache misses with offline mode set, disable offline or rerun aggrega pull"
+	case errors.Is(sentinel, ErrFetchUnauthorized):
+		return "remediation: docker login " + host + " (or helm registry login " + host + " for Helm-specific OCI) before re-running aggrega pull"
+	case errors.Is(sentinel, ErrFetchNetworkUnreachable):
+		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
+	case errors.Is(sentinel, ErrFetchIntegrity):
+		return "remediation: run aggrega pull --regenerate <release> to refresh the lockfile and cache"
+	default:
+		return ""
+	}
+}

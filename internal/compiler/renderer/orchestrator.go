@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	ociPkg "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -311,9 +312,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			nodeCtx.RecipeVersion = recipe.Metadata.Version
 		}
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError,
-				cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("Step 5 node %q source resolution", nodeID))
+			category := cerrors.TranslationError
+			message := fmt.Sprintf("Step 5 node %q source resolution", nodeID)
+			if sentinel, ok := matchFetchSentinel(err); ok {
+				category = cerrors.FetchError
+				if !strings.Contains(err.Error(), "remediation:") {
+					if rem := ociPkg.RemediationFor(sentinel, hostFromSourceErr(err)); rem != "" {
+						message = message + "; " + rem
+					}
+				}
+			}
+			return nil, cerrors.Wrap(err, category,
+				cerrors.SourceLocation{File: nodeID}, message)
 		}
 		sourceEmpty := nodeCtx.Source == nil
 		if s, ok := nodeCtx.Source.(string); ok && s == "" {

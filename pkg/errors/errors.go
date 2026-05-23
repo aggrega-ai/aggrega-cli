@@ -6,19 +6,28 @@ package errors
 import "fmt"
 
 // Category names which authoring artifact is at fault for a given
-// CompilerError. The four values partition the compiler's error surface
+// CompilerError. The five values partition the compiler's error surface
 // by who edits the offending file: developer (Aggregate), operator
 // (Release), catalog author (Recipe / Component / Feature / FeatureRecipe
-// / Provider / Manifest), or provider engine (translation cannot express
-// the requested output).
+// / Provider / Manifest), provider engine (translation cannot express
+// the requested output), or the remote registry / network layer (a
+// fetch of a pinned artifact failed at lock or build time).
 type Category string
 
-// The four error categories.
+// The five error categories.
 const (
 	DeveloperError   Category = "DEVELOPER_ERROR"
 	OpsError         Category = "OPS_ERROR"
 	CatalogError     Category = "CATALOG_ERROR"
 	TranslationError Category = "TRANSLATION_ERROR"
+	// FetchError surfaces failures from the remote-acquisition layer
+	// (registry fetch, network transport, content-digest verification)
+	// at both lock time (`aggrega pull`) and build time (cache read
+	// with integrity verification). Distinct from CatalogError because
+	// the catalog author has no edit that fixes a 502 from a remote
+	// registry; the remediation is operational (auth setup, network
+	// connectivity, lockfile regeneration) rather than authoring.
+	FetchError Category = "FETCH_ERROR"
 )
 
 // SourceLocation points at a position in the authoring artifact at fault.

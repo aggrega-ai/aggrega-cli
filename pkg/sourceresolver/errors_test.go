@@ -125,3 +125,86 @@ func TestWrapAcceptsArbitrarySentinel(t *testing.T) {
 		t.Errorf("Wrap should pass through arbitrary sentinels; errors.Is returned false")
 	}
 }
+
+func TestWrapAppendsRemediationPerSentinel(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{
+		Kind:    "helm-oci-chart",
+		URL:     "oci://hub.aggrega.ai/charts/mariadb",
+		Version: "25.0.8",
+	}
+	cases := []struct {
+		name     string
+		sentinel error
+		want     string
+	}{
+		{"NotFound", sourceresolver.ErrFetchNotFound, "remediation: verify the URL and version"},
+		{"Unauthorized", sourceresolver.ErrFetchUnauthorized, "docker login hub.aggrega.ai"},
+		{"NetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable, "check network connectivity to hub.aggrega.ai"},
+		{"Integrity", sourceresolver.ErrFetchIntegrity, "aggrega pull --regenerate"},
+	}
+	for _, tc := range cases {
+		err := sourceresolver.Wrap(spec, tc.sentinel, fmt.Errorf("underlying"))
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Wrap message = %q; want substring %q", tc.name, err.Error(), tc.want)
+		}
+		if !errors.Is(err, tc.sentinel) {
+			t.Errorf("%s: errors.Is should still pass through after remediation append", tc.name)
+		}
+	}
+}
+
+func TestWrapHostExtractionFromOCIScheme(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{
+		Kind:    "helm-oci-chart",
+		URL:     "oci://hub.aggrega.ai/charts/mariadb",
+		Version: "1.0.0",
+	}
+	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, nil)
+	if !strings.Contains(err.Error(), "hub.aggrega.ai") {
+		t.Errorf("host extraction failed for oci:// URL; got %q", err.Error())
+	}
+}
+
+func TestWrapHostExtractionFromHTTPSScheme(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{
+		Kind:    "helm-https-chart",
+		URL:     "https://charts.bitnami.com/bitnami/mariadb-25.0.8.tgz",
+		Version: "25.0.8",
+	}
+	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, nil)
+	if !strings.Contains(err.Error(), "charts.bitnami.com") {
+		t.Errorf("host extraction failed for https:// URL; got %q", err.Error())
+	}
+}
+
+func TestWrapHostExtractionFromGitScheme(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{
+		Kind:    "terraform-module-git",
+		URL:     "git+ssh://git@github.com/example/module.git",
+		Version: "abc123",
+	}
+	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, nil)
+	if !strings.Contains(err.Error(), "git@github.com") {
+		t.Errorf("host extraction failed for git+ssh:// URL; got %q", err.Error())
+	}
+}
+
+func TestWrapSkipsRemediationForNonFetchSentinel(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{
+		Kind:    "helm-oci-chart",
+		URL:     "oci://r/c",
+		Version: "1.0.0",
+	}
+	customSentinel := errors.New("custom test sentinel")
+	err := sourceresolver.Wrap(spec, customSentinel, nil)
+	if strings.Contains(err.Error(), "remediation:") {
+		t.Errorf("non-fetch sentinel should not get remediation appendix; got %q", err.Error())
+	}
+}
+
+var _ = oci.ErrFetchIntegrity // keep oci import healthy if test set shrinks

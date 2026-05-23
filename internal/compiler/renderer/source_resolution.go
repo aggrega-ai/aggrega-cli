@@ -4,10 +4,12 @@
 package renderer
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -131,4 +133,67 @@ func isLocalURL(s string) bool {
 // literal version pins that don't need infra resolution.
 func buildReleaseForInfra(input RendererInput) *types.Release {
 	return nil
+}
+
+// matchFetchSentinel walks the error chain via errors.Is against each
+// of the four fetch sentinels declared at pkg/oci/errors.go. Returns
+// the matched sentinel + true on first hit; returns (nil, false)
+// when the chain carries no fetch sentinel.
+//
+// The orchestrator uses the matched sentinel to (1) route the
+// CompilerError through cerrors.FetchError instead of
+// cerrors.TranslationError and (2) call oci.RemediationFor to append
+// the operator-actionable remediation when the underlying chain
+// doesn't already carry one (e.g., build-time errors from
+// pkg/sourcecache that didn't pass through sourceresolver.Wrap).
+func matchFetchSentinel(err error) (error, bool) {
+	switch {
+	case errors.Is(err, oci.ErrFetchNotFound):
+		return oci.ErrFetchNotFound, true
+	case errors.Is(err, oci.ErrFetchUnauthorized):
+		return oci.ErrFetchUnauthorized, true
+	case errors.Is(err, oci.ErrFetchNetworkUnreachable):
+		return oci.ErrFetchNetworkUnreachable, true
+	case errors.Is(err, oci.ErrFetchIntegrity):
+		return oci.ErrFetchIntegrity, true
+	default:
+		return nil, false
+	}
+}
+
+// hostFromSourceErr is a best-effort extractor for the registry
+// host substring inside a source-resolution error chain. The
+// orchestrator passes it to oci.RemediationFor for build-time
+// errors that didn't pass through sourceresolver.Wrap (which would
+// otherwise have done the extraction at the lock-time side).
+//
+// The current implementation scans the error message for a
+// "url=<URL>" segment (the format sourceresolver.Wrap emits) and
+// returns the host portion of the matched URL. When no URL segment
+// is found — typical of pure sourcecache errors — returns "" so
+// RemediationFor uses the placeholder.
+func hostFromSourceErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	idx := strings.Index(msg, "url=")
+	if idx < 0 {
+		return ""
+	}
+	rest := msg[idx+len("url="):]
+	end := strings.IndexAny(rest, " \t")
+	if end > 0 {
+		rest = rest[:end]
+	}
+	for _, scheme := range []string{"oci://", "https://", "http://", "git+ssh://", "git://", "ssh://"} {
+		if strings.HasPrefix(rest, scheme) {
+			body := strings.TrimPrefix(rest, scheme)
+			if slash := strings.Index(body, "/"); slash > 0 {
+				return body[:slash]
+			}
+			return body
+		}
+	}
+	return ""
 }
