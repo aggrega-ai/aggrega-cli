@@ -26,10 +26,9 @@ var ErrParametersShape = errors.New("parameters: shape must be an inline object 
 //     <local-path>` pointing at a single YAML file supplying the
 //     parameter values.
 //
-// Single-source-only at this site: the pre-migration array form
-// (`parametersFrom: [a, b, c]`) retires; multi-file layering migrates
-// to Release `extends:` chains where the parent supplies base
-// parameters and the child overrides via the entity-envelope
+// Single-source-only at this site. Multi-file layering is the
+// province of Release `extends:` chains: the parent Release supplies
+// base parameters; the child overrides via the entity-envelope
 // inheritance machinery.
 //
 // The discriminator is not symmetric with WorkloadTemplate /

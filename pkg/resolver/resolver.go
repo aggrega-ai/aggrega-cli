@@ -81,7 +81,7 @@ type ResolveResult struct {
 //  1. Load Release.
 //  2. Load Manifest.
 //  3. Load Release.spec.parameters.$import: target if present (single-
-//     source file; the pre-migration parametersFrom list-form retires).
+//     source file; multi-source layering uses Release extends: chains).
 //  4. Merge the loaded values with Release.spec.parameters inline content
 //     when both are populated; in the current single-source-only design
 //     exactly one mode is populated per Release.

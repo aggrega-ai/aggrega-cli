@@ -80,10 +80,9 @@ func TestValidateRecipe_Rule2_SourceWithoutValuesMapping_Fails(t *testing.T) {
 	}
 }
 
-// Rule 3 (workload + workloadFrom mutex) retired with the file-import
-// vocabulary unification: WorkloadTemplate's content-shape dispatch
-// admits either inline content or {$import:} at the type level, not
-// both. The pre-migration mutex is encoded in the type's structure.
+// Rule 3 is encoded structurally in WorkloadTemplate's content-shape
+// dispatch: the type admits either inline content or {$import:},
+// never both. No load-time rule check is needed.
 
 // ----- Rule 5: at least one input kind -----
 
@@ -126,13 +125,12 @@ func TestValidateRecipe_Rule5_NoInputKind_Fails(t *testing.T) {
 	}
 }
 
-// Rule 6 (artifacts <-> artifactsFrom basename collision) retired with
-// the artifactsFrom list-form retirement. Artifacts is a single
-// OrderedMap keyed by output filename; cross-key collisions are
-// impossible at load (yaml.v3's OrderedMap unmarshal collapses
-// duplicates last-wins). The Rule 6 call site stays declared in
-// validator/recipe_validate.go for future collision classes (e.g.,
-// source-output basename vs artifacts entry names).
+// Rule 6 (artifact basename collision) is structurally impossible at
+// load: Artifacts is a single OrderedMap keyed by output filename, and
+// yaml.v3's OrderedMap unmarshal collapses duplicates last-wins. The
+// Rule 6 call site stays declared in validator/recipe_validate.go for
+// future collision classes (e.g., source-output basename vs artifacts
+// entry names).
 
 // ----- Helm-chart provider: inline artifacts forbidden -----
 

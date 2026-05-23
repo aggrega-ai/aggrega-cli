@@ -36,14 +36,14 @@ var (
 
 	// ErrRecipeHelmChartInlineArtifacts: provider helm-chart with inline
 	// artifacts: declared. Helm-chart emits an umbrella chart structure;
-	// the artifacts input kind contributes via physical files (declared
-	// under artifactsFrom:) that the engine injects into the chart's
-	// templates/ directory pre-render. Authors declare artifactsFrom:
-	// instead of inline artifacts:. The descriptive sentinel name (rather
-	// than continuing the ErrRecipeRule<N> sequence used for the
-	// cross-provider shape rules 1-7) reflects that this is a
-	// provider-specific constraint, not a member of chapter 16's numbered
-	// rule list.
+	// the artifacts input kind contributes via physical files (each
+	// artifacts: entry uses { $import: <path> }) that the engine injects
+	// into the chart's templates/ directory pre-render. Inline-string
+	// artifacts entries are rejected for helm-chart. The descriptive
+	// sentinel name (rather than continuing the ErrRecipeRule<N> sequence
+	// used for the cross-provider shape rules 1-7) reflects that this is
+	// a provider-specific constraint, not a member of chapter 16's
+	// numbered rule list.
 	ErrRecipeHelmChartInlineArtifacts = errors.New("recipe helm-chart provider does not support inline artifacts:")
 
 	// ErrRecipeRule7: emission-time filename collision across input-kind
@@ -56,9 +56,9 @@ var (
 
 	// ErrRecipeEvalProviderConstraint: the eval provider executes formatting
 	// in-memory and has no rendering surface; declaring source/workload/
-	// workloadFrom/artifacts/artifactsFrom on an eval Recipe is rejected.
-	// The eval carve-out also exempts the Recipe from rule 5 — eval Recipes
-	// legitimately declare only `provides:` and have zero input kinds.
+	// artifacts on an eval Recipe is rejected. The eval carve-out also
+	// exempts the Recipe from rule 5 — eval Recipes legitimately declare
+	// only `provides:` and have zero input kinds.
 	ErrRecipeEvalProviderConstraint = errors.New("recipe eval-provider constraint: input-kind fields are forbidden when provider is eval")
 )
 

@@ -328,8 +328,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
 		}
 		// Load-time shape rules (chapter 16): valuesMapping ⇔ source pairing,
-		// workload/workloadFrom mutex, at-least-one-input-kind, artifacts
-		// basename collision, eval-provider input-kind ban. Returns a
+		// at-least-one-input-kind, eval-provider input-kind ban. Returns a
 		// CATALOG_ERROR-shaped error on violation.
 		if err := validator.ValidateRecipe(&e, path); err != nil {
 			return err

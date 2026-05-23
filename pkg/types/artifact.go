@@ -28,9 +28,8 @@ var ErrArtifactEntryShape = errors.New("artifacts entry: shape must be a string 
 // constraint on the `$import:` value.
 //
 // The owning Recipe.Spec.Artifacts is an OrderedMap[ArtifactEntry]
-// keyed by output filename. Per chapter 07 §"The *From: family
-// retires", the pre-migration artifactsFrom: []string list-form
-// migrates by deriving entry names from each path's basename.
+// keyed by output filename. File-loaded entries derive their map-key
+// name from the input path's basename.
 type ArtifactEntry struct {
 	Inline string `json:"-" yaml:"-"`
 	Import string `json:"-" yaml:"-"`

@@ -29,10 +29,9 @@ type ProviderMetadata struct {
 // baseSchema used to validate valuesMapping output in sourceless mode, and
 // the workloadSchema declaring how this provider materialises a Workload.
 //
-// A Provider that declares a non-empty WorkloadSchema supports Recipes that
-// use the synthesized input kind (`workload:` or `workloadFrom:`). A
-// Provider that omits WorkloadSchema rejects synthesized-mode Recipes at
-// load time.
+// A Provider that declares a non-empty WorkloadSchema supports Recipes
+// that use the synthesized input kind (the `workload:` block). A Provider
+// that omits WorkloadSchema rejects synthesized-mode Recipes at load time.
 type ProviderSpec struct {
 	Plugin         string `json:"plugin,omitempty" yaml:"plugin,omitempty"`
 	BaseSchema     string `json:"baseSchema,omitempty" yaml:"baseSchema,omitempty"`         // JSON Schema 2020-12 for sourceless-mode valuesMapping validation

@@ -54,11 +54,9 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 
 // LoadParametersImport reads a single parameter YAML file from the
 // path supplied at Release.spec.parameters.$import: and returns its
-// decoded map. The pre-migration LoadParametersFrom (deep-merge over
-// a list of paths) retired with the *From: family retirement; the
-// multi-source layering use case migrates to Release extends: chains
-// where the parent Release carries base parameters and the child
-// extends + overrides.
+// decoded map. Single-source-only at this site; multi-source layering
+// is the province of Release extends: chains where the parent Release
+// carries base parameters and the child extends + overrides.
 //
 // Read or unmarshal errors are wrapped as ResolverError with
 // ErrParametersImportLoad and the offending path attached.

@@ -137,7 +137,7 @@ data:
 	}
 }
 
-// ----- Test 2: artifactsFrom-only -----
+// ----- Test 2: file-imported artifacts only -----
 
 func TestEvaluateArtifacts_FromFileOnly(t *testing.T) {
 	t.Parallel()
@@ -173,7 +173,7 @@ spec:
 	}
 }
 
-// ----- Test 3: mixed inline + artifactsFrom -----
+// ----- Test 3: mixed inline + file-imported artifacts -----
 
 func TestEvaluateArtifacts_MixedInlineAndFromFile(t *testing.T) {
 	t.Parallel()
@@ -539,7 +539,7 @@ metadata:
 	}
 }
 
-// ----- Test 11b (rewrite): ExternalArtifactsHandler artifactsFrom emits at templates/<basename> -----
+// ----- Test 11b (rewrite): ExternalArtifactsHandler $import: entries emit at templates/<basename> -----
 
 func TestEvaluateArtifacts_HelmChartProviderArtifactsFromInjects(t *testing.T) {
 	t.Parallel()
@@ -658,7 +658,7 @@ metadata:
 	}()
 	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
 	if err != nil {
-		t.Fatalf("expected no error for unparseable helm-chart artifactsFrom, got %v", err)
+		t.Fatalf("expected no error for unparseable helm-chart imported artifact, got %v", err)
 	}
 	got := findEmitted(t, files, "templates/with-include.yaml")
 	if !strings.Contains(string(got.Body), `{{- include "common.labels" . | nindent 4 }}`) {
@@ -680,7 +680,7 @@ metadata:
 	}
 }
 
-// ----- Test 14: helm-chart artifactsFrom collision at Phase B.5 -----
+// ----- Test 14: helm-chart artifact-import collision at Phase B.5 -----
 
 func TestEvaluateArtifacts_HelmChartCollisionAtPhaseB5(t *testing.T) {
 	t.Parallel()
@@ -689,9 +689,9 @@ func TestEvaluateArtifacts_HelmChartCollisionAtPhaseB5(t *testing.T) {
 
 	// Pre-seed state.EmittedFiles with a templates/<basename>-tagged source
 	// emission to simulate the helm-chart engine's Render output containing
-	// the same filename. Phase B.3's artifactsFrom emission below uses
-	// the same templates/<basename> path, so B.5's rule-7 collision detector
-	// should fire.
+	// the same filename. Phase B.3's file-imported artifact emission below
+	// uses the same templates/<basename> path, so B.5's rule-7 collision
+	// detector should fire.
 	state.EmittedFiles = append(state.EmittedFiles, EmittedFile{
 		Name:   "templates/conflicting.yaml",
 		Origin: EmitOriginSource,

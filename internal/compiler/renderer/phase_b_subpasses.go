@@ -131,8 +131,8 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	return nil
 }
 
-// phaseB2 evaluates Recipe.Spec.Workload (inline) or reads + evaluates
-// Recipe.Spec.WorkloadFrom (file), parses the rendered output via
+// phaseB2 evaluates Recipe.Spec.Workload — inline content or the file
+// referenced by its `$import:` directive — parses the rendered output via
 // yaml.Unmarshal into a *types.Workload, then runs the two validators in
 // order:
 //
@@ -194,11 +194,11 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	return nil
 }
 
-// phaseB3 evaluates Recipe.Spec.Artifacts (inline) and
-// Recipe.Spec.ArtifactsFrom (file-loaded), the third input kind per
-// chapter 16. Each emitted file carries its own EmitOrigin tag
-// (artifacts-inline / artifacts-from-file) so the Phase B.5 cross-origin
-// collision detector can name every contributor on a clash.
+// phaseB3 evaluates Recipe.Spec.Artifacts — each entry is either inline
+// content or a file referenced by its `$import:` directive — the third
+// input kind per chapter 16. Each emitted file carries its own EmitOrigin
+// tag (artifacts-inline / artifacts-from-file) so the Phase B.5
+// cross-origin collision detector can name every contributor on a clash.
 //
 // The provider's engine governs file routing: BoundaryAssembler engines
 // (compose, helm-chart) receive intermediates that AssembleBoundary merges

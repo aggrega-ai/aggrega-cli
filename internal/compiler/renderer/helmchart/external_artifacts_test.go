@@ -25,8 +25,8 @@ import (
 // here rather than as a silent dispatch fall-through in evaluateArtifacts.
 //
 // ExternalArtifactsHandler — opts the engine into the external-handler
-// branch (inline artifacts: rejected; artifactsFrom: routed via the
-// capability interfaces).
+// branch (inline artifacts: rejected; file-imported artifact entries
+// routed via the capability interfaces).
 //
 // ArtifactsPathProvider — declares per-artifact path placement
 // (templates/<basename>).
@@ -43,8 +43,9 @@ var (
 // helm-chart pre-template artifact injection. It stands up a minimal
 // sub-chart skeleton under t.TempDir(), constructs an IRGraph with one
 // node whose Recipe declares `provider: helm-chart`, `source: <chart-dir>`,
-// and `artifactsFrom: [<crd.yaml-path>]`, then runs renderer.RenderAll
-// with the helm-chart engine factory. The asserted output:
+// and an `artifacts:` entry pointing at `<crd.yaml-path>` via `$import:`,
+// then runs renderer.RenderAll with the helm-chart engine factory. The
+// asserted output:
 //
 //   - boundaries/<bp>/charts/<nodeID>/templates/crd.yaml exists.
 //   - Its body parses as YAML.

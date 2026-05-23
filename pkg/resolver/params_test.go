@@ -105,10 +105,8 @@ func TestLoadParametersImport_SingleFile(t *testing.T) {
 }
 
 // TestLoadParametersImport_FileNotFound verifies the error path: a
-// non-existent path produces ErrParametersImportLoad. The pre-migration
-// deep-merge-over-list test (TestLoadParametersFrom_DeepMerge) retires
-// alongside the list-form retirement; multi-source layering migrates
-// to Release extends: chains, which are exercised by their own tests.
+// non-existent path produces ErrParametersImportLoad. Multi-source
+// layering is exercised by the Release extends: chain tests.
 func TestLoadParametersImport_FileNotFound(t *testing.T) {
 	_, err := LoadParametersImport("/nonexistent/params.yaml")
 	if err == nil {

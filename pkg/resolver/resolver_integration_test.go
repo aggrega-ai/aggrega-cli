@@ -170,10 +170,8 @@ func TestResolve_Integration(t *testing.T) {
 
 func TestResolve_ParametersImportFromFile(t *testing.T) {
 	// Test that Release.spec.parameters.$import loads parameter values
-	// from the referenced single-source file. The pre-migration list-
-	// form (parametersFrom: [a, b, ...]) retires with the file-import
-	// vocabulary unification; multi-source layering migrates to
-	// Release extends: chains. This test exercises the post-migration
+	// from the referenced single-source file. Multi-source layering
+	// uses Release extends: chains; this test exercises the
 	// single-source $import: dispatch path.
 	base := filepath.Join("testdata", "parameter-merge-and-fallback")
 

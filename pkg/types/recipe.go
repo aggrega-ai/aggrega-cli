@@ -42,8 +42,8 @@ type RecipeMetadata struct {
 //
 //   - Artifacts mode: Artifacts (OrderedMap[ArtifactEntry] keyed by output
 //     filename). Each entry's value carries one of two modes (inline Go template
-//     OR file $import:). The pre-migration ArtifactsFrom []string list-form
-//     retires; basename-derived entry names replace it.
+//     OR file $import:). File-loaded entries derive their map-key name from the
+//     input path's basename.
 type RecipeSpec struct {
 	Provider      string                    `json:"provider" yaml:"provider"`
 	Implements    string                    `json:"implements" yaml:"implements"`

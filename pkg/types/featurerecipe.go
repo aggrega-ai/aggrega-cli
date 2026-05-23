@@ -28,10 +28,9 @@ type FeatureRecipeMetadata struct {
 // FeatureRecipeSpec defines the provider binding, mapping, and pipeline
 // for a FeatureRecipe. Compared to [RecipeSpec], FeatureRecipes support
 // only the sourced input kind (Source + ValuesMapping); the synthesized
-// (Workload / WorkloadFrom) and artifacts (Artifacts / ArtifactsFrom)
-// modes are Recipe-only. ValuesMapping carries one of three modes per
-// its own type documentation (inline Go template, file $import:, or
-// library $import:).
+// (Workload) and artifacts (Artifacts) modes are Recipe-only.
+// ValuesMapping carries one of three modes per its own type
+// documentation (inline Go template, file $import:, or library $import:).
 //
 // InjectMapping is unique to FeatureRecipes and carries the templated
 // string that maps Aggrega's typed inject block to the provider's
