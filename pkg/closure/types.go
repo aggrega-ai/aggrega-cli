@@ -106,7 +106,7 @@ type RecipeLoader interface {
 // without importing the package. The closure walker stays decoupled
 // from the per-kind adapter pull machinery; tests inject a
 // static-result implementation. Production wiring lives at the
-// orchestrator (WI 06e) which composes a SourceResolver from the
+// orchestrator at build time which composes a SourceResolver from the
 // shipped sourceresolver package via a small type-conversion shim.
 type SourceResolver interface {
 	Resolve(spec SourceSpec) (*ResolvedSource, error)

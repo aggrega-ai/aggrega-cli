@@ -58,7 +58,7 @@ func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 // WriteCached stores bytes at the cache slot for uri@version,
 // creating parent directories as needed. The blob filename is
 // "blob"; callers wanting a multi-file layout should use the
-// directory-aware variants that future milestones introduce.
+// directory-aware variants that future implementations introduce.
 func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) error {
 	dir := CachePath(workspaceRoot, cacheDir, uri, version)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

@@ -482,11 +482,10 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 }
 
 // assembleInfra produces the lock-time .infra map from the Release.
-// At this WI, the implementation walks Release.Spec.Boundaries and
-// flattens every BoundaryComponent.Infra into a single map. The
-// orchestrator at WI 06e replaces this with the cascade-resolved
-// per-component view; tests use the helper directly with
-// pre-assembled maps.
+// The current implementation walks Release.Spec.Boundaries and
+// flattens every BoundaryComponent.Infra into a single map. A future
+// implementation replaces this with the cascade-resolved per-component
+// view; tests use the helper directly with pre-assembled maps.
 func assembleInfra(release *types.Release) map[string]any {
 	out := map[string]any{}
 	if release == nil {

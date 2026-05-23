@@ -126,9 +126,9 @@ func isLocalURL(s string) bool {
 // A future implementation will thread the loaded Release into
 // RendererInput so .infra-referencing templates evaluate against
 // the same Release that produced the lockfile. The current shape
-// supports the WI 06e acceptance criteria via fixture Releases that
-// don't reference .infra; the criterion-5 tests use literal
-// version pins that don't need infra resolution.
+// supports the structured-source acceptance walk via fixture
+// Releases that don't reference .infra; the existing tests use
+// literal version pins that don't need infra resolution.
 func buildReleaseForInfra(input RendererInput) *types.Release {
 	return nil
 }

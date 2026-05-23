@@ -28,10 +28,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// These three tests cover the WI 06e criterion-5 requirement:
-// "Given previously-rejected structured-source fixtures (one each
-// for helm, helm-chart, compose), when aggrega build runs, then
-// each MUST build successfully."
+// These three tests cover the structured-source successful-build
+// requirement: given previously-rejected structured-source fixtures
+// (one each for helm, helm-chart, compose), aggrega build MUST
+// produce successful render output.
 //
 // Each test exercises the full orchestrator path through RenderAll:
 // fixture lockfile + pre-populated cache slot + Recipe with
