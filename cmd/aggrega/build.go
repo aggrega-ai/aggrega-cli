@@ -20,8 +20,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
 )
@@ -97,6 +101,16 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	cat, err := catalog.Load(catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
+	}
+
+	// Lockfile verification + auto-pull integration. Runs after catalog
+	// load and before Step 1 so closure walking consults the in-memory
+	// catalog directly. The hermetic-build invariant (no network at
+	// build time) is preserved by injecting a nil OCIPuller into the
+	// ClosureLookup — Tier 3 returns NotFound on cache miss, which
+	// surfaces as ErrUnresolvableURI through the closure walker.
+	if err := verifyOrAutoPullLockfile(releasePath, catalogDir, cat); err != nil {
+		return err
 	}
 
 	// Resolve extends inheritance for every Component and Feature so downstream
@@ -310,6 +324,118 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	}
 
 	fmt.Printf("Build complete: %d files written to %s/\n", len(renderResult.Files), outDir)
+	return nil
+}
+
+// verifyOrAutoPullLockfile handles the pre-build lockfile flow:
+//
+//   - If the per-Release lockfile exists, the function loads it, computes
+//     the current closure (Tier 3 disabled — see below), and runs
+//     lockfile.Verify against the result. Drift halts with ErrLockfileDrift
+//     wrapped with the documented `aggrega pull --regenerate` remediation.
+//   - If the lockfile is missing AND workspace.auto_pull is true (default),
+//     the function invokes pullRun in-process, populating the lockfile
+//     and cache for subsequent steps.
+//   - If the lockfile is missing AND auto_pull is false, the function
+//     halts with a diagnostic naming the explicit `aggrega pull` step.
+//   - If workspace.offline is true, missing lockfile halts with an
+//     air-gap diagnostic (auto_pull is ignored under offline because
+//     the pull itself would need network access).
+//
+// Workspace configuration is loaded from .aggrega-config.yaml when
+// present, or the documented defaults are applied when absent (see
+// workspaceconfig.Default — auto_pull defaults to true, offline
+// defaults to false). The lockfile flow engages uniformly across
+// both cases; a workspace without an explicit config file behaves
+// the same as one whose config carries only the default values.
+//
+// Hermetic-build discipline: the ClosureLookup passed to ComputeClosure
+// here receives a nil OCIPuller. Tier 3 never fires at build time — any
+// catalog-entity URI not in the in-memory catalog or the local cache
+// surfaces as a closure walk failure instead of an out-of-band network
+// fetch. Source-artifact reads at render time go through
+// pkg/sourcecache.LookupAndExtract's cache gate, which carries its own
+// digest verification against the lockfile-supplied digest.
+func verifyOrAutoPullLockfile(releasePath, catalogDir string, cat *catalog.Catalog) error {
+	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+	lockfilePath := lockfilePathFor(releasePath)
+
+	_, statErr := os.Stat(lockfilePath)
+	switch {
+	case statErr == nil:
+		return verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath, wsCfg, cat)
+	case stderrors.Is(statErr, os.ErrNotExist):
+		// fall through to auto-pull / halt decision below
+	default:
+		return fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
+	}
+
+	if wsCfg.Workspace.Offline {
+		return fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull %s` from a connected environment first: %w",
+			lockfilePath, releasePath, oci.ErrFetchNotFound)
+	}
+	if !wsCfg.Workspace.AutoPull {
+		return fmt.Errorf("aggrega build: lockfile %s missing and auto_pull is false; run `aggrega pull %s` first",
+			lockfilePath, releasePath)
+	}
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+		return fmt.Errorf("auto-pull: %w", err)
+	}
+	return nil
+}
+
+// verifyLockfileAgainstClosure loads the per-Release lockfile and
+// compares it to a freshly-computed closure (Tier-1 + Tier-2 only —
+// the injected OCIPuller is nil so Tier 3 never runs).
+func verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath string, wsCfg workspaceconfig.Config, cat *catalog.Catalog) error {
+	lf, diags, err := lockfile.LoadLockfile(lockfilePath)
+	if err != nil {
+		return fmt.Errorf("load lockfile %s: %w", lockfilePath, err)
+	}
+	for _, d := range diags {
+		fmt.Fprintf(os.Stderr, "  lockfile: %s\n", d.Message)
+	}
+
+	releaseDir := filepath.Dir(releasePath)
+	rel, err := resolver.LoadRelease(releasePath)
+	if err != nil {
+		return fmt.Errorf("load release: %w", err)
+	}
+	manifest, err := resolver.LoadManifest(filepath.Join(releaseDir, rel.Spec.Manifest+".yaml"))
+	if err != nil {
+		return fmt.Errorf("load manifest: %w", err)
+	}
+	aggregate, err := resolver.LoadAggregate(filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"))
+	if err != nil {
+		return fmt.Errorf("load aggregate: %w", err)
+	}
+
+	workspaceRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("workspace root: %w", err)
+	}
+	cacheDir := wsCfg.Workspace.CacheDir
+	if cacheDir == "" {
+		cacheDir = ".aggrega/cache"
+	}
+
+	externals := loadExternalEntities(rel,
+		filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"),
+		filepath.Join(releaseDir, rel.Spec.Manifest+".yaml"))
+	lookup := cat.ClosureLookupWithExternals(nil, workspaceRoot, cacheDir, externals)
+	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
+	if err != nil {
+		return fmt.Errorf("closure: %w", err)
+	}
+
+	if err := lockfile.Verify(lf, cl); err != nil {
+		return fmt.Errorf("%w; run `aggrega pull --regenerate %s` to refresh the lockfile against current catalog state",
+			err, releasePath)
+	}
 	return nil
 }
 

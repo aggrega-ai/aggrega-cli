@@ -50,6 +50,7 @@ type WorkspaceConfig struct {
 	CatalogDirs     []string          `yaml:"catalog_dirs"`
 	CacheDir        string            `yaml:"cache_dir"`
 	Offline         bool              `yaml:"offline"`
+	AutoPull        bool              `yaml:"auto_pull"`
 	CueRegistry     CueRegistryConfig `yaml:"cue_registry"`
 }
 
@@ -139,9 +140,9 @@ type NarrowingExemption struct {
 }
 
 // Default returns a Config populated with the documented defaults.
-// Five documented defaults are NOT the Go zero-value and are seeded
+// Six documented defaults are NOT the Go zero-value and are seeded
 // explicitly: Workspace.DefaultRegistry = "hub.aggrega.ai",
-// Workspace.CacheDir = ".aggrega/cache",
+// Workspace.CacheDir = ".aggrega/cache", Workspace.AutoPull = true,
 // Build.HaltOnDeprecatedSeverity = "error",
 // Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true, and
 // Lint.PublishingDiscipline.EnforceImmutability = true.
@@ -157,6 +158,7 @@ func Default() Config {
 		Workspace: WorkspaceConfig{
 			DefaultRegistry: "hub.aggrega.ai",
 			CacheDir:        ".aggrega/cache",
+			AutoPull:        true,
 		},
 		Build: BuildConfig{
 			HaltOnDeprecatedSeverity: "error",

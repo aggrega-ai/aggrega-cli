@@ -68,6 +68,17 @@ type Catalog struct {
 	// LintWarnings() and print them to stderr alongside
 	// DeprecationWarnings.
 	lintWarnings []string
+
+	// entityBytes records the raw YAML bytes each entity was loaded
+	// from, keyed by "<kind>:<identifier>" where identifier matches
+	// the typed-map key (metadata.name for Component/Feature/
+	// Provider/Aggregate/SchemaLibrary/MappingLibrary, spec.implements
+	// for Recipe/FeatureRecipe). ClosureLookup hashes these bytes to
+	// produce the content-digest the lockfile pins for Tier-1 hits.
+	// Populated lazily during indexFile; unset for entity kinds the
+	// closure walker does not resolve (currently none — every kind
+	// the walker traverses is recorded here).
+	entityBytes map[string][]byte
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -135,6 +146,7 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 		componentSources: make(map[string]string),
 		featureSources:   make(map[string]string),
 		providerSources:  make(map[string]string),
+		entityBytes:      make(map[string][]byte),
 	}
 	for _, dir := range dirs {
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -281,6 +293,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		return nil // skip non-entity YAML files silently
 	}
+	if c.entityBytes == nil {
+		c.entityBytes = make(map[string][]byte)
+	}
 
 	switch header.Kind {
 	case "Component":
@@ -297,6 +312,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Components[e.Metadata.Name] = e
 		c.componentSources[e.Metadata.Name] = path
+		c.entityBytes[entityBytesKey("Component", e.Metadata.Name)] = data
 	case "Feature":
 		var e types.Feature
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -305,6 +321,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Features[e.Metadata.Name] = e
 		c.featureSources[e.Metadata.Name] = path
+		c.entityBytes[entityBytesKey("Feature", e.Metadata.Name)] = data
 	case "Recipe":
 		var e types.Recipe
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -344,6 +361,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			e.Spec.Artifacts.Set(name, entry)
 		}
 		c.Recipes[e.Spec.Implements] = e
+		c.entityBytes[entityBytesKey("Recipe", e.Metadata.Name)] = data
 	case "FeatureRecipe":
 		var e types.FeatureRecipe
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -361,12 +379,14 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			e.Spec.Source = abs
 		}
 		c.FeatureRecipes[e.Spec.Implements] = e
+		c.entityBytes[entityBytesKey("FeatureRecipe", e.Metadata.Name)] = data
 	case "Aggregate":
 		var e types.Aggregate
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
 		c.Aggregates[e.Metadata.Name] = e
+		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
 	case "Provider":
 		var e types.Provider
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -374,6 +394,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Providers[e.Metadata.Name] = e
 		c.providerSources[e.Metadata.Name] = path
+		c.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
 	case "SchemaLibrary":
 		var e types.SchemaLibrary
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -397,6 +418,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			}
 		}
 		c.SchemaLibraries[e.Metadata.Name] = e
+		c.entityBytes[entityBytesKey("SchemaLibrary", e.Metadata.Name)] = data
 	case "MappingLibrary":
 		var e types.MappingLibrary
 		if err := yaml.Unmarshal(data, &e); err != nil {
@@ -409,6 +431,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		// $import: references) resolve at Recipe / FeatureRecipe render
 		// time via the Go template engine.
 		c.MappingLibraries[e.Metadata.Name] = e
+		c.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil

@@ -418,6 +418,7 @@ func makeEmptyCatalog() *Catalog {
 		componentSources: map[string]string{},
 		featureSources:   map[string]string{},
 		providerSources:  map[string]string{},
+		entityBytes:      map[string][]byte{},
 	}
 }
 

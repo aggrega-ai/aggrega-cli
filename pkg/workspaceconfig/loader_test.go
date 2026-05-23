@@ -155,7 +155,7 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	t.Parallel()
 	// Fixture sets workspace.offline only; every other field omitted.
 	// The overlay-on-Default pattern preserves the documented defaults
-	// for absent keys: DefaultRegistry, CacheDir,
+	// for absent keys: DefaultRegistry, CacheDir, AutoPull,
 	// HaltOnDeprecatedSeverity, EnforceMonotonicNarrowing, and
 	// EnforceImmutability.
 	content := `
@@ -179,6 +179,9 @@ workspace:
 		t.Errorf("Workspace.CacheDir: want %q (Default); got %q",
 			".aggrega/cache", got.Workspace.CacheDir)
 	}
+	if !got.Workspace.AutoPull {
+		t.Errorf("Workspace.AutoPull: want true (Default); got false")
+	}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default); got %q",
 			"error", got.Build.HaltOnDeprecatedSeverity)
@@ -188,6 +191,22 @@ workspace:
 	}
 	if !got.Lint.PublishingDiscipline.EnforceImmutability {
 		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default); got false")
+	}
+}
+
+func TestLoadHonoursAutoPullFalseOverride(t *testing.T) {
+	t.Parallel()
+	content := `
+workspace:
+  auto_pull: false
+`
+	path := writeFixture(t, content)
+	got, err := workspaceconfig.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Workspace.AutoPull {
+		t.Errorf("Workspace.AutoPull: want false (overridden); got true")
 	}
 }
 
