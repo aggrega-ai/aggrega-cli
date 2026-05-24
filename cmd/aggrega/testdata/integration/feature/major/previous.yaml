@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/feature-major
+  version: 1.0.0
+spec:
+  schema: {}
+  extends: base/feature

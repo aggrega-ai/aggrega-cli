@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-server-helm
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  workload: 'kind: Workload'

@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: ingress-nginx
+  version: 1.0.0
+spec:
+  provider: compose
+  implements: core/ingress

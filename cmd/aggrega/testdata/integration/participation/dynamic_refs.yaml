@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: WithDynamicRef
+  version: 1.0.0
+spec:
+  schemas:
+    Polymorphic:
+      type: object
+      properties:
+        child:
+          $dynamicRef: '#node'

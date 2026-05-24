@@ -108,38 +108,25 @@ func sortFindings(findings []xAggregaFinding) {
 // canonical wire shape).
 func loadEntityAndSchemaJSON(t *testing.T, yamlBytes []byte) (string, *yaml.Node, json.RawMessage) {
 	t.Helper()
-	var doc yaml.Node
-	if err := yaml.Unmarshal(yamlBytes, &doc); err != nil {
-		t.Fatalf("yaml unmarshal: %v", err)
-	}
-	var header struct {
+	// Unmarshal into a typed envelope: name as string; schema as a
+	// *yaml.Node so we can hand it to the Go walker directly AND
+	// re-decode it to a generic value for JSON marshalling.
+	var envelope struct {
 		Metadata struct {
 			Name string `yaml:"name"`
 		} `yaml:"metadata"`
+		Spec struct {
+			Schema yaml.Node `yaml:"schema"`
+		} `yaml:"spec"`
 	}
-	if err := yaml.Unmarshal(yamlBytes, &header); err != nil {
-		t.Fatalf("yaml header unmarshal: %v", err)
+	if err := yaml.Unmarshal(yamlBytes, &envelope); err != nil {
+		t.Fatalf("yaml unmarshal: %v", err)
 	}
 
-	// Locate spec.schema node in the document tree.
 	var schemaNode *yaml.Node
-	if len(doc.Content) > 0 && doc.Content[0].Kind == yaml.MappingNode {
-		root := doc.Content[0]
-		for i := 0; i+1 < len(root.Content); i += 2 {
-			if root.Content[i].Value == "spec" && root.Content[i+1].Kind == yaml.MappingNode {
-				spec := root.Content[i+1]
-				for j := 0; j+1 < len(spec.Content); j += 2 {
-					if spec.Content[j].Value == "schema" {
-						schemaNode = spec.Content[j+1]
-					}
-				}
-			}
-		}
-	}
-
-	// Convert spec.schema to JSON via Decode → marshal.
 	var schemaAny interface{}
-	if schemaNode != nil {
+	if envelope.Spec.Schema.Kind != 0 {
+		schemaNode = &envelope.Spec.Schema
 		if err := schemaNode.Decode(&schemaAny); err != nil {
 			t.Fatalf("schema decode: %v", err)
 		}
@@ -149,7 +136,7 @@ func loadEntityAndSchemaJSON(t *testing.T, yamlBytes []byte) (string, *yaml.Node
 	if err != nil {
 		t.Fatalf("schema marshal: %v", err)
 	}
-	return header.Metadata.Name, schemaNode, schemaJSON
+	return envelope.Metadata.Name, schemaNode, schemaJSON
 }
 
 // convertYAMLMapsForJSON recursively converts map[interface{}]interface{}

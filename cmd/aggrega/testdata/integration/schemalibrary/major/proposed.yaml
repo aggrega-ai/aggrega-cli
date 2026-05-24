@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Probes
+  version: 1.0.0
+spec:
+  schemas:
+    Probe:
+      type: object
