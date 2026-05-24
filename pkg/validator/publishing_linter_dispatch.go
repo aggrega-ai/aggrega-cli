@@ -103,3 +103,44 @@ func DispatchPublishingLinter(pluginPath string, input LinterInput) ([]LinterFin
 	}
 	return output.Findings, nil
 }
+
+// DispatchPublishingLinterBatch invokes the publishing-linter Wasm
+// plugin once per input, loading the plugin a single time at batch
+// open. The returned slice carries one []LinterFinding per input,
+// in input order. Errors from any individual call short-circuit the
+// batch.
+//
+// The batch dispatcher exists because `aggrega lint` invokes the
+// plugin once per rule per entity — 6 rules in default mode, 7 with
+// --pre-publish. Loading the plugin once amortises the Extism
+// instantiation cost across the rule iteration.
+func DispatchPublishingLinterBatch(pluginPath string, inputs []LinterInput) ([][]LinterFinding, error) {
+	loader := &wasm.Loader{}
+	ctx := context.Background()
+	plugin, err := loader.Load(ctx, wasm.PluginSpec{
+		Name: "publishing-linter",
+		Path: pluginPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("publishing_linter: load %s: %w", pluginPath, err)
+	}
+	defer plugin.Close(ctx)
+
+	results := make([][]LinterFinding, 0, len(inputs))
+	for i, input := range inputs {
+		payload, err := json.Marshal(input)
+		if err != nil {
+			return nil, fmt.Errorf("publishing_linter: marshal input[%d]: %w", i, err)
+		}
+		out, err := plugin.Call(ctx, "lint", payload)
+		if err != nil {
+			return nil, fmt.Errorf("publishing_linter: call lint input[%d]: %w", i, err)
+		}
+		var output LinterOutput
+		if err := json.Unmarshal(out, &output); err != nil {
+			return nil, fmt.Errorf("publishing_linter: unmarshal output[%d]: %w", i, err)
+		}
+		results = append(results, output.Findings)
+	}
+	return results, nil
+}

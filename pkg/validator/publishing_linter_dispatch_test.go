@@ -466,3 +466,43 @@ func TestDispatchCategoryViolationSuppressedByPolicy(t *testing.T) {
 		t.Errorf("expected 0 findings (workspace flag suppresses); got %d: %+v", len(findings), findings)
 	}
 }
+
+// TestDispatchPublishingLinterBatch pins the batch dispatcher added
+// at WI 14: a single plugin load + N rule invocations. Each input
+// returns its own []LinterFinding in input order.
+func TestDispatchPublishingLinterBatch(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {
+			"name": "core/datastore/foo",
+			"labels": {"component.aggrega.ai/category": "compute"}
+		}
+	}`)
+	inputs := []validator.LinterInput{
+		{
+			RuleID:     "category-matches-directory",
+			EntityKind: "Component",
+			Proposed:   proposed,
+			SourcePath: "aggrega-hub/aggrega-catalog/component/core/datastore/foo/foo.yaml",
+		},
+		{
+			RuleID:     "name-shape",
+			EntityKind: "Component",
+			Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"BadName"}}`),
+		},
+	}
+	results, err := validator.DispatchPublishingLinterBatch(pluginPath, inputs)
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinterBatch: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 result slices; got %d", len(results))
+	}
+	if len(results[0]) != 1 || results[0][0].RuleID != "category-matches-directory" {
+		t.Errorf("input[0] result: got %+v", results[0])
+	}
+	if len(results[1]) != 1 || results[1][0].RuleID != "name-shape" {
+		t.Errorf("input[1] result: got %+v", results[1])
+	}
+}

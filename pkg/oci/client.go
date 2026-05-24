@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/Masterminds/semver/v3"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/errdef"
+	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
@@ -189,4 +191,69 @@ func descriptorFromManifest(manifestBytes []byte) (ocispec.Descriptor, string, e
 func computeDigest(content []byte) string {
 	sum := sha256.Sum256(content)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// ListTags returns every tag the registry has for the target, fully
+// materialized via registry.Tags paged iteration. For in-memory test
+// targets (memory.Store) the returned set follows the store's
+// internal order; for remote.Repository targets pagination is
+// transparent. The target must implement registry.TagLister; a
+// typed error names the missing capability when it does not.
+//
+// Returns an empty slice (not nil) when the target has zero tags.
+func ListTags(ctx context.Context, target oras.ReadOnlyTarget) ([]string, error) {
+	lister, ok := target.(registry.TagLister)
+	if !ok {
+		return nil, fmt.Errorf("oci: target does not support tag listing: %T", target)
+	}
+	tags, err := registry.Tags(ctx, lister)
+	if err != nil {
+		return nil, fmt.Errorf("oci: list tags: %w", err)
+	}
+	if tags == nil {
+		return []string{}, nil
+	}
+	return tags, nil
+}
+
+// LatestNonPreRelease parses each tag as semver, filters out tags
+// with pre-release components (e.g., "1.0.0-rc.1"), and returns the
+// highest remaining tag verbatim (preserving any "v" prefix the tag
+// originally carried). Returns an empty string when no qualifying
+// semver tag is present. Tags that fail semver parsing are silently
+// skipped — the registry may carry non-semver tags (e.g., "latest");
+// callers of aggrega push only write semver tags but operators may
+// push manually. The function does not fail (all skip-or-include
+// decisions are made silently); no error return.
+func LatestNonPreRelease(tags []string) string {
+	var highest *semver.Version
+	var highestOrig string
+	for _, t := range tags {
+		v, err := semver.NewVersion(t)
+		if err != nil {
+			continue
+		}
+		if v.Prerelease() != "" {
+			continue
+		}
+		if highest == nil || v.GreaterThan(highest) {
+			highest = v
+			highestOrig = t
+		}
+	}
+	return highestOrig
+}
+
+// HasAnySemverTag returns true when at least one tag in the input
+// parses as semver (regardless of pre-release status). Used by the
+// CLI to distinguish "no previous version exists" (true first
+// publication) from "previous versions exist but all are pre-
+// release" (different diagnostic).
+func HasAnySemverTag(tags []string) bool {
+	for _, t := range tags {
+		if _, err := semver.NewVersion(t); err == nil {
+			return true
+		}
+	}
+	return false
 }
