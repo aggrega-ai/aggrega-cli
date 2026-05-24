@@ -102,3 +102,137 @@ fn dynamic_refs_passes_when_not_schemalibrary() {
     let findings = dynamic_refs::classify(&input);
     assert_eq!(findings.len(), 0);
 }
+
+#[test]
+fn dynamic_refs_rejects_nested_dynamicref_in_items() {
+    let input = fixture(
+        json!({
+            "Polymorphic": {
+                "type": "array",
+                "items": {
+                    "$dynamicRef": "#node"
+                }
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("at /items"));
+}
+
+#[test]
+fn dynamic_refs_rejects_nested_dynamicref_in_anyof() {
+    let input = fixture(
+        json!({
+            "Polymorphic": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"$dynamicRef": "#node"}
+                ]
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("at /anyOf/1"));
+}
+
+#[test]
+fn dynamic_refs_rejects_nested_dynamicref_in_allof() {
+    let input = fixture(
+        json!({
+            "Polymorphic": {
+                "allOf": [
+                    {"$dynamicAnchor": "node"},
+                    {"type": "object"}
+                ]
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("at /allOf/0"));
+}
+
+#[test]
+fn dynamic_refs_rejects_nested_dynamicref_in_properties_items() {
+    let input = fixture(
+        json!({
+            "Polymorphic": {
+                "type": "object",
+                "properties": {
+                    "children": {
+                        "type": "array",
+                        "items": {
+                            "$dynamicRef": "#node"
+                        }
+                    }
+                }
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("at /properties/children/items"));
+}
+
+#[test]
+fn dynamic_refs_does_not_flag_inside_examples_annotation() {
+    // Contract narrowing: a $dynamicRef parked inside an
+    // examples annotation is NOT a sub-schema position and MUST NOT
+    // be flagged.
+    let input = fixture(
+        json!({
+            "Probe": {
+                "type": "object",
+                "examples": [
+                    {"$dynamicRef": "#node"}
+                ]
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 0, "examples is annotation, not sub-schema; got {:?}", findings);
+}
+
+#[test]
+fn dynamic_refs_does_not_flag_inside_const_or_default() {
+    // Same as above for const + default.
+    let input = fixture(
+        json!({
+            "Probe": {
+                "type": "object",
+                "const": {"$dynamicRef": "#x"},
+                "default": {"$dynamicAnchor": "y"}
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 0, "const and default are annotation; got {:?}", findings);
+}
+
+#[test]
+fn dynamic_refs_message_includes_json_pointer() {
+    let input = fixture(
+        json!({
+            "Probe": {
+                "$defs": {
+                    "Inner": {
+                        "$dynamicRef": "#x"
+                    }
+                }
+            }
+        }),
+        None,
+    );
+    let findings = dynamic_refs::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains(" at /$defs/Inner"),
+        "message should include RFC 6901 pointer; got {:?}", findings[0].message);
+}

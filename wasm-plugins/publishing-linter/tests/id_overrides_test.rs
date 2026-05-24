@@ -75,3 +75,70 @@ fn id_overrides_flags_one_finding_per_offending_entry() {
     let findings = id_overrides::classify(&input);
     assert_eq!(findings.len(), 2);
 }
+
+#[test]
+fn id_overrides_rejects_nested_id_in_properties() {
+    // $id at a sub-schema position under properties.someField MUST
+    // be flagged (any-depth scope).
+    let input = fixture(
+        json!({
+            "Probe": {
+                "type": "object",
+                "properties": {
+                    "someField": {
+                        "$id": "https://example.com/inner",
+                        "type": "string"
+                    }
+                }
+            }
+        }),
+        None,
+    );
+    let findings = id_overrides::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule_id, "id-overrides");
+    assert!(findings[0].message.contains("at /properties/someField"));
+}
+
+#[test]
+fn id_overrides_rejects_nested_id_in_anyof() {
+    let input = fixture(
+        json!({
+            "Probe": {
+                "anyOf": [
+                    {"type": "object"},
+                    {
+                        "$id": "https://example.com/branch",
+                        "type": "string"
+                    }
+                ]
+            }
+        }),
+        None,
+    );
+    let findings = id_overrides::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("at /anyOf/1"));
+}
+
+#[test]
+fn id_overrides_message_includes_json_pointer() {
+    // Nested $id finding message MUST carry the RFC 6901 pointer.
+    let input = fixture(
+        json!({
+            "Probe": {
+                "$defs": {
+                    "Helper": {
+                        "$id": "https://example.com/helper",
+                        "type": "object"
+                    }
+                }
+            }
+        }),
+        None,
+    );
+    let findings = id_overrides::classify(&input);
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains(" at /$defs/Helper"),
+        "message should include RFC 6901 pointer; got {:?}", findings[0].message);
+}
