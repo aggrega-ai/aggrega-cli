@@ -158,7 +158,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 
 	cfg := workspaceconfig.Default()
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
-		{URI: "oci://hub.aggrega.ai/wasm/aggrega-security-baseline:1.0.0"},
+		{URI: "oci://hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline:1.0.0"},
 	}
 
 	lookup := &fakeLookup{
@@ -174,7 +174,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 			"hub.aggrega.ai/feature-recipe/core/helm/ingress-nginx:1.0.0": resolutionOK("1.0.0", "sha256:hhh", "tier3-registry"),
 		},
 		wasmPlugins: map[string]closure.Resolution{
-			"oci://hub.aggrega.ai/wasm/aggrega-security-baseline:1.0.0": resolutionOK("1.0.0", "sha256:wasm", "tier3-registry"),
+			"oci://hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline:1.0.0": resolutionOK("1.0.0", "sha256:wasm", "tier3-registry"),
 		},
 	}
 
@@ -209,7 +209,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 
 	if len(c.WasmPlugins) != 1 {
 		t.Errorf("wasm plugins: got %d; want 1", len(c.WasmPlugins))
-	} else if c.WasmPlugins[0].URI != "oci://hub.aggrega.ai/wasm/aggrega-security-baseline:1.0.0" {
+	} else if c.WasmPlugins[0].URI != "oci://hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline:1.0.0" {
 		t.Errorf("wasm plugin URI: %q", c.WasmPlugins[0].URI)
 	}
 

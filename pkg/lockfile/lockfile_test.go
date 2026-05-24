@@ -90,7 +90,7 @@ source_artifacts:
         field: spec.source
 
 wasm_plugins:
-  - uri: hub.aggrega.ai/wasm/aggrega-security-baseline
+  - uri: hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline
     resolved_version: 1.2.5
     digest: sha256:s9t0u1
     resolution_path: tier3-registry

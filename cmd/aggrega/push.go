@@ -165,17 +165,40 @@ func pushRun(cfg pushConfig) error {
 }
 
 // buildPushReference composes the canonical OCI repository reference
-// for a catalog entity: <registry>/<kindLower>/<metadata.name>. The
-// kind segment is lowercase per the mediatype convention
-// (application/vnd.aggrega.<kindLower>.v1...); metadata.name may
-// itself contain "/" separators (e.g., "core/server",
-// "core/compute/api-server") and is preserved verbatim.
+// for a catalog entity: <registry>/<kindPathSegment>/<metadata.name>.
+// For most kinds the path segment is the lowercased kind name
+// (Component → component, Feature → feature, etc.) per the mediatype
+// convention (application/vnd.aggrega.<kindLower>.v1...);
+// metadata.name may itself contain "/" separators (e.g.,
+// "core/server", "core/compute/api-server") and is preserved verbatim.
+//
+// Wasm-plugin kinds are special: the path segment is the canonical
+// `wasm` (not `wasmplugin`), and the plugin's metadata.name path-
+// encodes the socket — e.g., metadata.name="linter/aggrega-publishing-linter"
+// produces <registry>/wasm/linter/aggrega-publishing-linter. The
+// socket segment is part of the plugin's identity (same name in
+// different sockets is a different plugin); embedding it in the
+// metadata.name keeps the URI symmetric with the catalog filesystem
+// layout `aggrega-hub/aggrega-catalog/plugin/<socket>/<name>.wasm`.
 //
 // The push-side construction here MUST agree with the consume-side
 // catalog.SplitURIForOCI which parses URIs back into their
 // (reference, tag) pair at the closure walker's Tier-3 dispatch.
 // TestPushReferenceRoundTripsThroughSplitURIForOCI pins the
-// symmetry across all seven publishable catalog kinds.
+// symmetry across all publishable catalog kinds.
 func buildPushReference(registry, kind, metadataName string) string {
-	return registry + "/" + strings.ToLower(kind) + "/" + metadataName
+	return registry + "/" + kindPathSegment(kind) + "/" + metadataName
+}
+
+// kindPathSegment maps an entity kind to its OCI repository path
+// segment. Default behavior is `strings.ToLower(kind)`; the Wasm-
+// plugin kind aliases to the canonical `wasm` path prefix per the
+// plugin URI convention (`<registry>/wasm/<socket>/<name>`).
+func kindPathSegment(kind string) string {
+	switch kind {
+	case "WasmPlugin", "Wasm":
+		return "wasm"
+	default:
+		return strings.ToLower(kind)
+	}
 }
