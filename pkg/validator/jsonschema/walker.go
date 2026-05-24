@@ -377,9 +377,8 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	// branch-local validation state for deterministic walkBranch
 	// evaluation.
 
-	// additionalProperties: <schema> — promoted to branchIndex per
-	// Decision 3 so nested-Properties additionalProperties walk
-	// deterministically.
+	// additionalProperties: <schema> — promoted to branchIndex, so
+	// nested-Properties additionalProperties walk deterministically.
 	if s.AdditionalProperties != nil {
 		if bi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient); bi != nil {
 			a.additionalPropsBranch[path] = bi

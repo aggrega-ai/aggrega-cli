@@ -28,7 +28,7 @@ var (
 	lintPrePublish bool
 	lintPluginPath string
 
-	// Tri-state policy override flags. Decision 10 amended: both
+	// Tri-state policy override flags. Both
 	// `allow_*` (6) and `enforce_*` (2) families get paired CLI
 	// flags. resolvePolicy decides effective value per cobra
 	// Flags().Changed() state.
@@ -98,7 +98,7 @@ func init() {
 	lintCmd.Flags().BoolVar(&lintAllowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
 	lintCmd.Flags().BoolVar(&lintNoAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
 
-	// Tri-state enforce_* flags (Decision 10 amendment)
+	// Tri-state enforce_* flags
 	lintCmd.Flags().BoolVar(&lintEnforceMonotonicNarrowing, "enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=true")
 	lintCmd.Flags().BoolVar(&lintNoEnforceMonotonic, "no-enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=false")
 	lintCmd.Flags().BoolVar(&lintEnforceImmutability, "enforce-immutability", false, "Force enforce_immutability=true")
@@ -121,8 +121,8 @@ type lintConfig struct {
 }
 
 // makeResolverFromCobra returns a closure that decides effective
-// policy values per cobra Flags().Changed() state. Decision 10's
-// precedence: explicit --no-X > explicit --X > workspace value.
+// policy values per cobra Flags().Changed() state. Precedence:
+// explicit --no-X > explicit --X > workspace value.
 func makeResolverFromCobra(cmd *cobra.Command) func(string, bool) bool {
 	return func(flagBase string, wsValue bool) bool {
 		if cmd.Flags().Changed("no-" + flagBase) {
@@ -166,6 +166,7 @@ func defaultRuleIDs(prePublish bool) []string {
 		"dynamic-refs",
 		"id-overrides",
 		"category-matches-directory",
+		"x-aggrega-discouragement",
 	}
 	if prePublish {
 		return append([]string{"schema-evolution"}, rules...)
@@ -287,7 +288,7 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 	return out
 }
 
-// resolvePluginPath implements Decision 17's three-tier resolution.
+// resolvePluginPath implements three-tier resolution.
 // --plugin > workspace plugins.linter[0].uri > loud diagnostic.
 // No implicit dev fallback.
 //
@@ -339,7 +340,7 @@ func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, er
 // root, falls back to CWD (preserving prior behaviour for the
 // no-marker case).
 //
-// Per Decision 17's resolution discipline: relative plugin paths
+// Resolution discipline: relative plugin paths
 // resolve against the workspace root rather than the invocation
 // CWD. Operators running `aggrega lint ../other-workspace/entity.yaml`
 // from a sub-directory get the correct plugin path lookup.
@@ -429,7 +430,7 @@ func convertYAMLMaps(v interface{}) interface{} {
 
 // effectivePolicies merges workspace policy values with CLI tri-state
 // overrides. resolver is called per flag-base name to determine
-// effective value (Decision 10).
+// effective value.
 func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve func(string, bool) bool) json.RawMessage {
 	exemptions := ws.NarrowingExemptions
 	if exemptions == nil {
@@ -453,7 +454,7 @@ func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve fu
 // fetchPreviousRegistryVersion lists tags on the entity's registry
 // reference, picks the latest non-pre-release, and pulls its bytes.
 // Returns ("", "", nil) when no qualifying tag exists (first
-// publication; Decision 16).
+// publication.
 func fetchPreviousRegistryVersion(
 	ctx context.Context,
 	overrideTarget oras.ReadOnlyTarget,
@@ -475,9 +476,8 @@ func fetchPreviousRegistryVersion(
 	}
 	latest := oci.LatestNonPreRelease(tags)
 	if latest == "" {
-		// Decision 16 risk (Observation 4 fix): distinguish "no
-		// previous version exists" (true first publication) from
-		// "tags exist but all are pre-release" (different shape;
+		// Distinguish "no previous version exists" (true first publication)
+		// from "tags exist but all are pre-release" (different shape;
 		// operator should know).
 		if oci.HasAnySemverTag(tags) {
 			fmt.Fprintf(os.Stderr,
@@ -499,7 +499,7 @@ func fetchPreviousRegistryVersion(
 }
 
 // resolveParent walks workspace catalog_dirs to find the parent
-// entity named in header.Spec.Extends. Decision 9: only catalog-dir
+// entity named in header.Spec.Extends. Only catalog-dir
 // resolution at this WI; OCI parent fetch defers. Returns nil
 // silently when extends is empty or the parent isn't locally
 // resolvable — the narrowing rule short-circuits on nil parent.
@@ -596,7 +596,7 @@ func downgradeToWarning(findings []validator.LinterFinding) []validator.LinterFi
 
 // downgradeFirstPublicationToWarning maps the schema-evolution
 // rule's classification finding to warning severity for the first-
-// publication case (Decision 16). Other rules' findings stay at
+// publication case. Other rules' findings stay at
 // whatever severity they had.
 func downgradeFirstPublicationToWarning(findings []validator.LinterFinding) []validator.LinterFinding {
 	out := make([]validator.LinterFinding, len(findings))

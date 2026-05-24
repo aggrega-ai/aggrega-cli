@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/duplicate-keys
+spec:
+  schema:
+    type: object
+    properties:
+      left:
+        x-aggrega-selector: 'a'
+      right:
+        x-aggrega-selector: 'b'

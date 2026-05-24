@@ -300,7 +300,7 @@ spec:
 	}
 }
 
-// TestPushRejectsNonCatalogKinds pins WI 09 Decision 7: the seven
+// TestPushRejectsNonCatalogKinds: the seven
 // catalog kinds are the publish allowlist; Aggregate / Release /
 // Manifest are deployment-side and uniformly rejected with a wrapped
 // ErrUnknownEntityKind.

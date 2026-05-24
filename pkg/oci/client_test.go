@@ -195,8 +195,8 @@ func TestLatestNonPreReleaseEmptyAndFirstPublication(t *testing.T) {
 	if got := oci.LatestNonPreRelease(nil); got != "" {
 		t.Errorf("empty input: got %q; want \"\"", got)
 	}
-	// Only-pre-release case also returns empty string (Decision 16
-	// risk: distinguished via HasAnySemverTag — see test below).
+	// Only-pre-release case also returns empty string
+	// (risk: distinguished via HasAnySemverTag — see test below).
 	if got := oci.LatestNonPreRelease([]string{"1.0.0-alpha.1", "1.0.0-rc.1"}); got != "" {
 		t.Errorf("all-pre-release: got %q; want \"\"", got)
 	}

@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/clean-api
+spec:
+  schema:
+    type: object
+    properties:
+      port:
+        type: integer
+      host:
+        type: string

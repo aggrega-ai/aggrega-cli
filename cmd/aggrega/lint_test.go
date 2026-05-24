@@ -80,8 +80,8 @@ func writeEntityFile(t *testing.T, baseYAML []byte, proposedVersion string) stri
 // TestLintPrePublishMatrixComponent exercises the 9-cell matrix for
 // the Component kind. Per acceptance criterion 3 of WI 14, the
 // matrix asserts HALT/PASS per (change category, proposed bump)
-// cell. Remaining 7 kinds defer to WI 19 (close-out integration
-// test) per Decision 6.
+// cell. Remaining 7 kinds defer to future implementation
+// (close-out integration test).
 func TestLintPrePublishMatrixComponent(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
 
@@ -138,7 +138,7 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 
 // TestLintDefaultModeEmitsWarnings pins the default-mode disposition:
 // no --pre-publish, no registry consultation, every rule's finding
-// downgraded to warning severity (Decision 7).
+// downgraded to warning severity.
 func TestLintDefaultModeEmitsWarnings(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
 	yaml := []byte(`apiVersion: aggrega.ai/v1alpha1
@@ -168,7 +168,7 @@ spec:
 	}
 }
 
-// TestLintFirstPublicationPassesWithoutPrevious pins Decision 16:
+// TestLintFirstPublicationPassesWithoutPrevious:
 // when no previous registry tag exists, the CLI does NOT apply the
 // bump-vs-classification check; the schema-evolution finding
 // surfaces as informational.
@@ -210,8 +210,8 @@ spec:
 	}
 }
 
-// TestResolvePluginPathDirect pins Decision 17's --plugin flag
-// resolution: filesystem-absolute path used verbatim.
+// TestResolvePluginPathDirect: --plugin flag
+// resolution, filesystem-absolute path used verbatim.
 func TestResolvePluginPathDirect(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	path, err := resolvePluginPath("/abs/path/to/plugin.wasm", wsCfg)
@@ -223,7 +223,7 @@ func TestResolvePluginPathDirect(t *testing.T) {
 	}
 }
 
-// TestResolvePluginPathRejectsOCIURI pins Decision 17's loud-error
+// TestResolvePluginPathRejectsOCIURI: loud-error
 // behavior when the workspace config carries an OCI URI rather than
 // a filesystem path.
 func TestResolvePluginPathRejectsOCIURI(t *testing.T) {
@@ -240,7 +240,7 @@ func TestResolvePluginPathRejectsOCIURI(t *testing.T) {
 	}
 }
 
-// TestResolvePluginPathDiagnosticOnUnset pins Decision 17's
+// TestResolvePluginPathDiagnosticOnUnset:
 // loud-error behavior when neither --plugin nor workspace config
 // provides a path.
 func TestResolvePluginPathDiagnosticOnUnset(t *testing.T) {
@@ -274,7 +274,7 @@ func TestLooksLikeOCIURI(t *testing.T) {
 	}
 }
 
-// TestEffectivePoliciesTriState pins Decision 10's tri-state
+// TestEffectivePoliciesTriState: tri-state
 // precedence across all 8 workspace flags (6 allow_* + 2 enforce_*).
 // Per-flag: 3 cells (no override; --<flag>; --no-<flag>) × 8 flags
 // = 24 cells.
@@ -392,7 +392,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 	defaultRules := defaultRuleIDs(false)
 	prePublishRules := defaultRuleIDs(true)
 
-	wantDefault := []string{"annotation-prefix", "name-shape", "narrowing", "dynamic-refs", "id-overrides", "category-matches-directory"}
+	wantDefault := []string{"annotation-prefix", "name-shape", "narrowing", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement"}
 	if len(defaultRules) != len(wantDefault) {
 		t.Fatalf("default mode rule count: got %d; want %d", len(defaultRules), len(wantDefault))
 	}

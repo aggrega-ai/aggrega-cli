@@ -18,3 +18,4 @@ pub mod id_overrides;
 pub mod name_shape;
 pub mod narrowing;
 pub mod schema_library_walker;
+pub mod x_aggrega_discouragement;

@@ -34,6 +34,7 @@ pub fn lint(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "dynamic-refs" => rules::dynamic_refs::classify(&input),
         "id-overrides" => rules::id_overrides::classify(&input),
         "category-matches-directory" => rules::category_vs_directory::classify(&input),
+        "x-aggrega-discouragement" => rules::x_aggrega_discouragement::classify(&input),
         other => vec![LinterFinding {
             rule_id: "unknown_rule".to_string(),
             severity: LinterSeverity::Error,

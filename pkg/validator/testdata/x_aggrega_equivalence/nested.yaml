@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/nested-selector
+spec:
+  schema:
+    type: object
+    properties:
+      someField:
+        type: array
+        items:
+          type: object
+          properties:
+            detail:
+              x-aggrega-selector: 'nested-deep'

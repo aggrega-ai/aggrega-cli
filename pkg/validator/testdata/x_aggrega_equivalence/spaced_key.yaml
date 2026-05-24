@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/spaced-key
+spec:
+  schema:
+    type: object
+    properties:
+      "my field":
+        x-aggrega-selector: 'foo'

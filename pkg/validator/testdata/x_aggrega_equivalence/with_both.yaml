@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/with-both
+spec:
+  schema:
+    type: object
+    x-aggrega-selector: 'component.aggrega.ai/type=stateful-server'
+    x-aggrega-inject:
+      username: connection.user
+    properties:
+      port:
+        type: integer

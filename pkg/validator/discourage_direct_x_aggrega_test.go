@@ -43,6 +43,9 @@ func TestDiscourageDirectXAggregaInSchema_FiresOnSelector(t *testing.T) {
 	if !strings.Contains(out, "usesSchema") {
 		t.Errorf("expected warning to name the recommended path (usesSchema); got %q", out)
 	}
+	if !strings.Contains(out, "at </") {
+		t.Errorf("expected warning to include the RFC 6901 JSON Pointer (bracketed form `at <...>`); got %q", out)
+	}
 }
 
 // TestDiscourageDirectXAggregaInSchema_FiresOnInject verifies the walk

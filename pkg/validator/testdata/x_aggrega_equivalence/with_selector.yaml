@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/with-selector
+spec:
+  schema:
+    type: object
+    x-aggrega-selector: 'component.aggrega.ai/type=stateful-server'
+    properties:
+      port:
+        type: integer
