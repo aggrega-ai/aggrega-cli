@@ -215,7 +215,8 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 		"allow_id_overrides": true,
 		"allow_direct_x_aggrega_extensions": true,
 		"allow_aggrega_ai_prefix": true,
-		"allow_nonstandard_names": true
+		"allow_nonstandard_names": true,
+		"allow_category_mismatches": true
 	}`)
 
 	// Plugin accepts the policies-bearing input without rejecting
@@ -397,5 +398,71 @@ func TestDispatchNarrowingViolation(t *testing.T) {
 	}
 	if !strings.Contains(findings[0].Message, "narrowing violation") {
 		t.Errorf("message should describe a narrowing violation; got %q", findings[0].Message)
+	}
+}
+
+// TestDispatchCategoryViolation pins the category-matches-directory
+// rule end-to-end: a Component whose path under core/<category>/
+// disagrees with its component.aggrega.ai/category label surfaces as
+// a category-matches-directory finding with severity "error".
+func TestDispatchCategoryViolation(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {
+			"name": "core/datastore/foo",
+			"labels": {"component.aggrega.ai/category": "compute"}
+		}
+	}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "category-matches-directory",
+		EntityKind: "Component",
+		Proposed:   proposed,
+		SourcePath: "aggrega-hub/aggrega-catalog/component/core/datastore/foo/foo.yaml",
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding; got %d", len(findings))
+	}
+	if findings[0].RuleID != "category-matches-directory" {
+		t.Errorf("rule_id: got %q; want category-matches-directory", findings[0].RuleID)
+	}
+	if findings[0].Severity != "error" {
+		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	}
+	if !strings.Contains(findings[0].Message, "compute") ||
+		!strings.Contains(findings[0].Message, "datastore") {
+		t.Errorf("message should name both the path-derived and label values; got %q", findings[0].Message)
+	}
+}
+
+// TestDispatchCategoryViolationSuppressedByPolicy pins the
+// workspace-level allow_category_mismatches flag end-to-end: the
+// flag suppresses every finding from the rule, including unknown-
+// segment violations.
+func TestDispatchCategoryViolationSuppressedByPolicy(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	proposed := json.RawMessage(`{
+		"kind": "Component",
+		"metadata": {
+			"name": "core/datastore/foo",
+			"labels": {"component.aggrega.ai/category": "compute"}
+		}
+	}`)
+	policies := json.RawMessage(`{"allow_category_mismatches": true}`)
+	findings, err := validator.DispatchPublishingLinter(pluginPath, validator.LinterInput{
+		RuleID:     "category-matches-directory",
+		EntityKind: "Component",
+		Proposed:   proposed,
+		SourcePath: "aggrega-hub/aggrega-catalog/component/core/datastore/foo/foo.yaml",
+		Policies:   policies,
+	})
+	if err != nil {
+		t.Fatalf("DispatchPublishingLinter: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings (workspace flag suppresses); got %d: %+v", len(findings), findings)
 	}
 }

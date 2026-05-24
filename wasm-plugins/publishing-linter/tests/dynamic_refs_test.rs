@@ -4,23 +4,19 @@
 //! Unit tests for the dynamic-refs rule. Fixtures are inline
 //! serde_json::json! literals exercising classify() directly.
 
+mod common;
+
 use aggrega_pdk_rust::{LinterInput, Policies};
 use publishing_linter::rules::dynamic_refs;
 use serde_json::json;
 
 fn fixture(schemas: serde_json::Value, policies: Option<Policies>) -> LinterInput {
-    LinterInput {
-        rule_id: "dynamic-refs".to_string(),
-        entity_kind: "SchemaLibrary".to_string(),
-        proposed: json!({
-            "kind": "SchemaLibrary",
-            "metadata": {"name": "Probes", "version": "1.0.0"},
-            "spec": {"schemas": schemas},
-        }),
-        previous: None,
-        parent: None,
-        policies,
-    }
+    let proposed = json!({
+        "kind": "SchemaLibrary",
+        "metadata": {"name": "Probes", "version": "1.0.0"},
+        "spec": {"schemas": schemas},
+    });
+    common::fixture("SchemaLibrary", proposed, None, policies, None)
 }
 
 #[test]
@@ -93,17 +89,16 @@ fn dynamic_refs_policy_flag_suppresses() {
 fn dynamic_refs_passes_when_not_schemalibrary() {
     // Component with a misleading metadata.name; walker is
     // entity-kind gated so this should yield nothing.
-    let input = LinterInput {
-        rule_id: "dynamic-refs".to_string(),
-        entity_kind: "Component".to_string(),
-        proposed: json!({
+    let input = common::fixture(
+        "Component",
+        json!({
             "kind": "Component",
             "spec": {"schemas": {"X": {"$dynamicAnchor": "x"}}}
         }),
-        previous: None,
-        parent: None,
-        policies: None,
-    };
+        None,
+        None,
+        None,
+    );
     let findings = dynamic_refs::classify(&input);
     assert_eq!(findings.len(), 0);
 }

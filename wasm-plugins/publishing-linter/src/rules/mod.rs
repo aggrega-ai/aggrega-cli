@@ -12,6 +12,7 @@
 //! in the dispatcher's match.
 
 pub mod annotation_prefix;
+pub mod category_vs_directory;
 pub mod dynamic_refs;
 pub mod id_overrides;
 pub mod name_shape;

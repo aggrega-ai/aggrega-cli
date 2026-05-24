@@ -12,6 +12,8 @@
 //!   - narrowing_exemptions[] suppresses specific paths while
 //!     other violations continue to flag.
 
+mod common;
+
 use aggrega_pdk_rust::{LinterInput, NarrowingExemption, Policies};
 use publishing_linter::rules::narrowing;
 use serde_json::json;
@@ -30,23 +32,21 @@ fn fixture(
     policies: Option<Policies>,
     name: &str,
 ) -> LinterInput {
-    LinterInput {
-        rule_id: "narrowing".to_string(),
-        entity_kind: kind.to_string(),
-        proposed: json!({
-            "kind": kind,
-            "metadata": {"name": name},
-            "spec": {"schema": child_schema, "extends": "base/component"}
-        }),
-        previous: None,
-        parent: parent_schema.map(|s| {
-            json!({
+    let proposed = json!({
+        "kind": kind,
+        "metadata": {"name": name},
+        "spec": {"schema": child_schema, "extends": "base/component"}
+    });
+    match parent_schema {
+        Some(s) => {
+            let parent = json!({
                 "kind": kind,
                 "metadata": {"name": "base/component"},
                 "spec": {"schema": s}
-            })
-        }),
-        policies,
+            });
+            common::fixture_with_parent(kind, proposed, parent, policies)
+        }
+        None => common::fixture(kind, proposed, None, policies, None),
     }
 }
 

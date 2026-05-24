@@ -3,23 +3,19 @@
 
 //! Unit tests for the id-overrides rule.
 
+mod common;
+
 use aggrega_pdk_rust::{LinterInput, Policies};
 use publishing_linter::rules::id_overrides;
 use serde_json::json;
 
 fn fixture(schemas: serde_json::Value, policies: Option<Policies>) -> LinterInput {
-    LinterInput {
-        rule_id: "id-overrides".to_string(),
-        entity_kind: "SchemaLibrary".to_string(),
-        proposed: json!({
-            "kind": "SchemaLibrary",
-            "metadata": {"name": "Probes", "version": "1.0.0"},
-            "spec": {"schemas": schemas},
-        }),
-        previous: None,
-        parent: None,
-        policies,
-    }
+    let proposed = json!({
+        "kind": "SchemaLibrary",
+        "metadata": {"name": "Probes", "version": "1.0.0"},
+        "spec": {"schemas": schemas},
+    });
+    common::fixture("SchemaLibrary", proposed, None, policies, None)
 }
 
 #[test]

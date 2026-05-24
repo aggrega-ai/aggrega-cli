@@ -35,8 +35,14 @@ type LinterInput struct {
 	// caller resolves the entity's spec.extends URI before
 	// invocation. Empty when no parent exists or the rule does not
 	// need parent context.
-	Parent   json.RawMessage `json:"parent,omitempty"`
-	Policies json.RawMessage `json:"policies,omitempty"`
+	Parent json.RawMessage `json:"parent,omitempty"`
+	// SourcePath carries the filesystem path the entity was loaded
+	// from. Populated by host callers walking the catalog
+	// filesystem; consumed by path-aware rules (e.g.,
+	// category-matches-directory). Empty when the caller has no path
+	// context.
+	SourcePath string          `json:"source_path,omitempty"`
+	Policies   json.RawMessage `json:"policies,omitempty"`
 }
 
 // LinterOutput is the JSON response shape the plugin emits per the

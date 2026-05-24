@@ -5,22 +5,18 @@
 //! cover each catalog kind's documented pattern + at least one
 //! negative case + the per-workspace opt-out.
 
+mod common;
+
 use aggrega_pdk_rust::{LinterInput, Policies};
 use publishing_linter::rules::name_shape;
 use serde_json::json;
 
 fn fixture(kind: &str, name: &str, policies: Option<Policies>) -> LinterInput {
-    LinterInput {
-        rule_id: "name-shape".to_string(),
-        entity_kind: kind.to_string(),
-        proposed: json!({
-            "kind": kind,
-            "metadata": {"name": name},
-        }),
-        previous: None,
-        parent: None,
-        policies,
-    }
+    let proposed = json!({
+        "kind": kind,
+        "metadata": {"name": name},
+    });
+    common::fixture(kind, proposed, None, policies, None)
 }
 
 fn passes(kind: &str, name: &str) {
@@ -141,14 +137,13 @@ fn name_shape_unknown_kind_no_finding() {
 
 #[test]
 fn name_shape_missing_name_no_finding() {
-    let input = LinterInput {
-        rule_id: "name-shape".to_string(),
-        entity_kind: "Component".to_string(),
-        proposed: json!({"kind": "Component", "metadata": {}}),
-        previous: None,
-        parent: None,
-        policies: None,
-    };
+    let input = common::fixture(
+        "Component",
+        json!({"kind": "Component", "metadata": {}}),
+        None,
+        None,
+        None,
+    );
     let findings = name_shape::classify(&input);
     assert_eq!(findings.len(), 0);
 }

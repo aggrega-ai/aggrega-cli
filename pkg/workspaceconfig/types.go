@@ -134,6 +134,7 @@ type PublishingDisciplineConfig struct {
 	AllowDirectXAggregaExtensions bool                 `yaml:"allow_direct_x_aggrega_extensions"`
 	AllowAggregaAIPrefix          bool                 `yaml:"allow_aggrega_ai_prefix"`
 	AllowNonstandardNames         bool                 `yaml:"allow_nonstandard_names"`
+	AllowCategoryMismatches       bool                 `yaml:"allow_category_mismatches"`
 }
 
 // NarrowingExemption documents a per-entity exemption from the

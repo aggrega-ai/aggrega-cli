@@ -70,6 +70,7 @@ lint:
     allow_id_overrides: true
     allow_direct_x_aggrega_extensions: true
     allow_nonstandard_names: true
+    allow_category_mismatches: true
 `
 	path := writeFixture(t, content)
 	got, err := workspaceconfig.Load(path)
@@ -145,7 +146,8 @@ lint:
 		t.Errorf("exemption.Reason should be non-empty")
 	}
 	if !pd.AllowDynamicRefs || !pd.AllowIDOverrides ||
-		!pd.AllowDirectXAggregaExtensions || !pd.AllowNonstandardNames {
+		!pd.AllowDirectXAggregaExtensions || !pd.AllowNonstandardNames ||
+		!pd.AllowCategoryMismatches {
 		t.Errorf("one or more allow_* flags failed to round-trip: %+v", pd)
 	}
 }
@@ -324,7 +326,8 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 		t.Errorf("Default().Lint.PublishingDiscipline.EnforceImmutability should be true")
 	}
 	if pd.AllowDynamicRefs || pd.AllowIDOverrides ||
-		pd.AllowDirectXAggregaExtensions || pd.AllowNonstandardNames {
+		pd.AllowDirectXAggregaExtensions || pd.AllowNonstandardNames ||
+		pd.AllowCategoryMismatches {
 		t.Errorf("Default() allow_* flags must all be false; got %+v", pd)
 	}
 	if len(pd.NarrowingExemptions) != 0 {

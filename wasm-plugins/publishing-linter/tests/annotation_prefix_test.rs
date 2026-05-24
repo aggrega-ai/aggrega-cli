@@ -6,25 +6,21 @@
 //! function directly. Test names follow user-visible voice — they
 //! describe the behaviour the rule enforces.
 
+mod common;
+
 use aggrega_pdk_rust::{LinterInput, Policies};
 use publishing_linter::rules::annotation_prefix;
 use serde_json::json;
 
 fn fixture(kind: &str, annotations: serde_json::Value, policies: Option<Policies>) -> LinterInput {
-    LinterInput {
-        rule_id: "annotation-prefix".to_string(),
-        entity_kind: kind.to_string(),
-        proposed: json!({
-            "kind": kind,
-            "metadata": {
-                "name": "x",
-                "annotations": annotations,
-            },
-        }),
-        previous: None,
-        parent: None,
-        policies,
-    }
+    let proposed = json!({
+        "kind": kind,
+        "metadata": {
+            "name": "x",
+            "annotations": annotations,
+        },
+    });
+    common::fixture(kind, proposed, None, policies, None)
 }
 
 #[test]
@@ -128,14 +124,13 @@ fn annotation_prefix_well_known_keys_exempted() {
 
 #[test]
 fn annotation_prefix_no_annotations_no_findings() {
-    let input = LinterInput {
-        rule_id: "annotation-prefix".to_string(),
-        entity_kind: "Component".to_string(),
-        proposed: json!({"kind": "Component", "metadata": {"name": "x"}}),
-        previous: None,
-        parent: None,
-        policies: None,
-    };
+    let input = common::fixture(
+        "Component",
+        json!({"kind": "Component", "metadata": {"name": "x"}}),
+        None,
+        None,
+        None,
+    );
     let findings = annotation_prefix::classify(&input);
     assert_eq!(findings.len(), 0);
 }

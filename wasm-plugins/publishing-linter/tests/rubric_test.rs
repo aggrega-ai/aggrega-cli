@@ -8,19 +8,14 @@
 //! YAML to JSON before invoking the plugin; these tests bypass the
 //! Extism boundary and call rubric::classify directly).
 
+mod common;
+
 use aggrega_pdk_rust::{LinterClassification, LinterInput};
 use publishing_linter::rubric;
 use serde_json::json;
 
 fn fixture(kind: &str, previous: serde_json::Value, proposed: serde_json::Value) -> LinterInput {
-    LinterInput {
-        rule_id: "schema-evolution".to_string(),
-        entity_kind: kind.to_string(),
-        proposed,
-        previous: Some(previous),
-        parent: None,
-        policies: None,
-    }
+    common::fixture(kind, proposed, Some(previous), None, None)
 }
 
 fn classify_once(input: &LinterInput) -> LinterClassification {
@@ -265,13 +260,12 @@ fn first_publication_classifies_patch() {
     // No previous version supplied → PATCH per the first-publication
     // convention (v1.0.0 is itself the first version; no bump
     // pressure).
-    let input = LinterInput {
-        rule_id: "schema-evolution".to_string(),
-        entity_kind: "Component".to_string(),
-        proposed: json!({"kind": "Component"}),
-        previous: None,
-        parent: None,
-        policies: None,
-    };
+    let input = common::fixture(
+        "Component",
+        json!({"kind": "Component"}),
+        None,
+        None,
+        None,
+    );
     assert_eq!(classify_once(&input), LinterClassification::Patch);
 }
