@@ -21,6 +21,25 @@ type ResolveConfig struct {
 	ManifestPath  string // path to Manifest YAML file
 }
 
+// ResolveInputs configures the Step 1 resolver pipeline against caller-
+// supplied in-memory inputs. Use this entry point when the Release and
+// Manifest have already been parsed and the raw Aggregate YAML is held
+// as a byte slice — the long-running daemon (which holds parse caches)
+// and the internal/compiler/pipeline package take this shape. CLI callers
+// hold paths and use the ResolveConfig surface instead.
+//
+// AggregatePath identifies the source location of AggregateRawBytes for
+// error provenance and downstream source-location strings (Annotation
+// expansion records the Aggregate's path in AnnotationProvenance entries).
+// ResolveFromInputs performs no filesystem operations against
+// AggregatePath; it is a label only.
+type ResolveInputs struct {
+	Release           *types.Release
+	Manifest          *types.Manifest
+	AggregateRawBytes []byte
+	AggregatePath     string // source-location label only; no I/O
+}
+
 // ResolveResult carries the artifacts produced by Step 1. The result is
 // passed by pointer through topology, IR, and renderer; mutations after
 // Resolve returns are not expected.
@@ -36,9 +55,9 @@ type ResolveConfig struct {
 // valuesMapping) do NOT receive `.parameters` — that pillar is reserved
 // for path templates per the documented carve-out.
 type ResolveResult struct {
-	Aggregate           *types.Aggregate
-	Release             *types.Release
-	Manifest            *types.Manifest
+	Aggregate     *types.Aggregate
+	Release       *types.Release
+	Manifest      *types.Manifest
 	BoundaryInfra map[string]*BoundaryInfra // per-component boundary context
 
 	// BoundaryAnnotations carries the renderer-facing Scalar
@@ -55,8 +74,8 @@ type ResolveResult struct {
 	BoundaryAnnotations map[string]types.OrderedMap[string]
 
 	Parameters    map[string]any // merged parameter map (alive through end-of-pipeline)
-	AggregatePath       string                              // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
-	ReleasePath         string                              // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
+	AggregatePath string         // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
+	ReleasePath   string         // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
 
 	// AnnotationProvenance records, for every synthetic Feature
 	// attachment produced by ExpandAnnotations, the annotation key
@@ -117,50 +136,14 @@ type ResolveResult struct {
 // wiring depends on the Release; the parameter purge must run after every
 // step that consumes parameters.
 func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
-	// 1. Load Release
 	release, err := LoadRelease(cfg.ReleasePath)
 	if err != nil {
 		return nil, err
 	}
-
-	// 1b. Load Manifest
 	manifest, err := LoadManifest(cfg.ManifestPath)
 	if err != nil {
 		return nil, err
 	}
-
-	// 2. Load parameters' $import: target if present (mode 2). Inline
-	// content (mode 1) flows through MergeParameters directly.
-	var externalParams map[string]any
-	if release.Spec.Parameters.Import != "" {
-		externalParams, err = LoadParametersImport(release.Spec.Parameters.Import)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// 3. Merge parameters
-	params := MergeParameters(release.Spec.Parameters, externalParams)
-
-	// 3a. Step 1a: validate merged parameter map against the Aggregate's
-	// typed contract before interpolation. The contract is extracted via a
-	// shallow parse of the raw Aggregate YAML (the contract block is static
-	// authoring data and does not require template interpolation).
-	contract, err := LoadAggregateParameterContract(cfg.AggregatePath)
-	if err != nil {
-		return nil, err
-	}
-	// Apply contract-declared defaults to slots the Release omitted, so
-	// the contract validator and downstream template interpolation see
-	// the resolved values. Three-case semantic for nested-object
-	// parameters: omitted parent synthesizes children; explicit empty
-	// parent suppresses children's defaults; partial parent merges.
-	params = ApplyParameterDefaults(contract, params)
-	if verrs := ValidateParametersAgainstContract(contract, params, cfg.AggregatePath); len(verrs) > 0 {
-		return nil, aggregateParameterViolations(verrs)
-	}
-
-	// 4. Read raw Aggregate YAML and interpolate
 	rawAgg, err := os.ReadFile(cfg.AggregatePath)
 	if err != nil {
 		return nil, &ResolverError{
@@ -170,37 +153,96 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
+	result, err := ResolveFromInputs(ResolveInputs{
+		Release:           release,
+		Manifest:          manifest,
+		AggregateRawBytes: rawAgg,
+		AggregatePath:     cfg.AggregatePath,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result.ReleasePath = cfg.ReleasePath
+	return result, nil
+}
 
-	interpolated, err := InterpolateParameters(rawAgg, params)
+// ResolveFromInputs executes the Step 1 pipeline against caller-supplied
+// in-memory inputs. The contract mirrors Resolve except that the caller
+// supplies pre-parsed Release + Manifest and raw Aggregate YAML bytes.
+// AggregatePath on the input struct is a source-location label only — no
+// filesystem operations target it.
+//
+// ResolveResult.ReleasePath is left empty by this entry point because
+// the caller already knows where the Release came from; Resolve fills it
+// after delegation. Callers needing source-location strings for Release-
+// authored annotations set ResolveResult.ReleasePath themselves after
+// the call returns.
+func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
+	release := in.Release
+	manifest := in.Manifest
+
+	// Load parameters' $import: target if present (mode 2). Inline
+	// content (mode 1) flows through MergeParameters directly.
+	var externalParams map[string]any
+	if release.Spec.Parameters.Import != "" {
+		var err error
+		externalParams, err = LoadParametersImport(release.Spec.Parameters.Import)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Merge parameters
+	params := MergeParameters(release.Spec.Parameters, externalParams)
+
+	// Step 1a: validate merged parameter map against the Aggregate's
+	// typed contract before interpolation. Shallow-parse the contract
+	// from raw bytes; no I/O against in.AggregatePath.
+	contract, err := LoadAggregateParameterContractFromBytes(in.AggregateRawBytes, in.AggregatePath)
+	if err != nil {
+		return nil, err
+	}
+	// Apply contract-declared defaults to slots the Release omitted, so
+	// the contract validator and downstream template interpolation see
+	// the resolved values. Three-case semantic for nested-object
+	// parameters: omitted parent synthesizes children; explicit empty
+	// parent suppresses children's defaults; partial parent merges.
+	params = ApplyParameterDefaults(contract, params)
+	if verrs := ValidateParametersAgainstContract(contract, params, in.AggregatePath); len(verrs) > 0 {
+		return nil, aggregateParameterViolations(verrs)
+	}
+
+	// Interpolate the raw Aggregate bytes with the merged parameter map.
+	interpolated, err := InterpolateParameters(in.AggregateRawBytes, params)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. Unmarshal interpolated Aggregate
+	// Unmarshal interpolated Aggregate
 	var agg types.Aggregate
 	if err := yaml.Unmarshal(interpolated, &agg); err != nil {
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
-			Field:   cfg.AggregatePath,
+			Field:   in.AggregatePath,
 			Message: fmt.Sprintf("failed to unmarshal interpolated YAML: %v", err),
 			Err:     ErrYAMLLoad,
 		}
 	}
 
-	// 6. Validate instance names
+	// Validate instance names
 	nameErrs := ValidateInstanceNames(&agg)
 	if len(nameErrs) > 0 {
-		return nil, nameErrs[0] // return first violation
+		return nil, nameErrs[0]
 	}
 
-	// 7. Wire boundary infra (per-component) plus per-boundary annotations cascade
+	// Wire boundary infra (per-component) plus per-boundary annotations cascade
 	boundaryInfra, boundaryAnnotations := WireBoundaryInfra(release)
 
-	// 8. Parameter map flows through to the renderer via ResolveResult.Parameters.
-	//    Active-purge runs at end-of-pipeline in cmd/aggrega/build.go (deferred
-	//    after this call) so that orchestrator-time path-template evaluation
-	//    can read .parameters.<key> from the live map.
-
+	// Parameter map flows through to the renderer via ResolveResult.Parameters.
+	// Active-purge runs at end-of-pipeline. Callers using pipeline.RunPipeline
+	// inherit the purge via its internal defer; direct Resolve(cfg) callers
+	// (e.g., cmd/aggrega/inspect.go: inspectReleaseFile) carry their own
+	// defer resolver.PurgeParameters call.
 	return &ResolveResult{
 		Aggregate:            &agg,
 		Release:              release,
@@ -208,8 +250,7 @@ func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
 		BoundaryInfra:        boundaryInfra,
 		BoundaryAnnotations:  boundaryAnnotations,
 		Parameters:           params,
-		AggregatePath:        cfg.AggregatePath,
-		ReleasePath:          cfg.ReleasePath,
+		AggregatePath:        in.AggregatePath,
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}, nil
 }

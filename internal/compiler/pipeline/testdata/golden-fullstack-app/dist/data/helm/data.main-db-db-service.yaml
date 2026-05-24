@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+    name: data.main-db-db
+    namespace: database-zone
+    labels:
+        aggrega.ai/aggregate-name: fullstack-app
+        aggrega.ai/boundary-path: data-ns
+        aggrega.ai/compiler-version: 0.1.0
+        aggrega.ai/component-id: data.main-db
+        aggrega.ai/environment: production
+        aggrega.ai/recipe-uri: helm-postgres-synthesized-with-artifacts:1.0.0
+        app: data.main-db
+        app.kubernetes.io/name: data.main-db
+spec:
+    type: ClusterIP
+    selector:
+        app: data.main-db
+    ports:
+        - name: db
+          port: 5432
+          targetPort: db

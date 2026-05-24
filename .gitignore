@@ -17,6 +17,13 @@ bin/
 out/
 dist/
 
+# Exception: the pipeline test's golden tree stores pre-refactor build
+# output as committed fixture data. The mirrored `dist/` subdirectory is
+# intentional — it keeps the golden key shape identical to the renderer's
+# emitted artifact map keys so the test compares like-for-like.
+!internal/compiler/pipeline/testdata/golden-fullstack-app/dist/
+!internal/compiler/pipeline/testdata/golden-fullstack-app/dist/**
+
 # Dependency directories (if you vendor)
 vendor/
 

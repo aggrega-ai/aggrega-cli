@@ -264,3 +264,65 @@ func TestIsPhaseB0OrLater_DiscriminatesPasses(t *testing.T) {
 		}
 	}
 }
+
+// TestMemoryWriter_CollectsEntriesUnderRelativePaths verifies that the
+// memory writer stores per-event payloads keyed by the same relative path
+// the filesystem writer would produce. The relative-path identity is the
+// load-bearing guarantee the pipeline package relies on when writing the
+// collected map to .trace/ from the CLI wrapper.
+func TestMemoryWriter_CollectsEntriesUnderRelativePaths(t *testing.T) {
+	t.Parallel()
+	w := NewMemory()
+	if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("Write PassPhaseA: %v", err)
+	}
+	if err := w.Write(PassEmission, "api", "default", "", "log content"); err != nil {
+		t.Fatalf("Write PassEmission: %v", err)
+	}
+	if err := w.Write(PassPhaseB3, "api", "default", "deployment.yaml", "stuff"); err != nil {
+		t.Fatalf("Write PassPhaseB3 with suffix: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	got := w.Entries()
+	wantPaths := []string{
+		filepath.Join("boundaries", "default", "api", string(PassPhaseA)+".yaml"),
+		filepath.Join("boundaries", "default", "api", string(PassEmission)+".log"),
+		filepath.Join("boundaries", "default", "api", string(PassPhaseB3), "deployment.yaml"),
+	}
+	for _, p := range wantPaths {
+		if _, ok := got[p]; !ok {
+			t.Errorf("missing key %q in memory writer entries; got keys: %v", p, keys(got))
+		}
+	}
+	if len(got) != len(wantPaths) {
+		t.Errorf("entries count = %d, want %d", len(got), len(wantPaths))
+	}
+}
+
+// TestMemoryWriter_EntriesReturnsIndependentCopy verifies the returned
+// map is independent of the writer's internal state: subsequent Write
+// calls should NOT mutate a previously-returned Entries() snapshot.
+func TestMemoryWriter_EntriesReturnsIndependentCopy(t *testing.T) {
+	t.Parallel()
+	w := NewMemory()
+	if err := w.Write(PassPhaseA, "api", "default", "", "a"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	snap := w.Entries()
+	if err := w.Write(PassPhaseA, "api2", "default", "", "b"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if len(snap) != 1 {
+		t.Errorf("first snapshot mutated after subsequent Write; len = %d, want 1", len(snap))
+	}
+}
+
+func keys(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

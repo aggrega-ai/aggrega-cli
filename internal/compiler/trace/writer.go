@@ -52,6 +52,69 @@ type noopWriter struct{}
 func (noopWriter) Write(_ Pass, _, _, _ string, _ any) error { return nil }
 func (noopWriter) Close() error                              { return nil }
 
+// MemoryWriter collects trace events into an in-memory map keyed by the
+// same relative path the filesystem writer would write to. Used by the
+// pipeline package to surface Result.Trace as map[string][]byte without
+// touching the filesystem; the CLI wrapper then writes the map to .trace/
+// while the long-running daemon discards it.
+type MemoryWriter interface {
+	Writer
+	// Entries returns a snapshot of collected entries keyed by relative path
+	// (boundaries/<boundaryPath>/<nodeID>/...). The returned map is owned by
+	// the caller; subsequent Write calls on the writer do not mutate it.
+	Entries() map[string][]byte
+}
+
+type memoryWriter struct {
+	mu      sync.Mutex
+	entries map[string][]byte
+	closed  bool
+}
+
+// NewMemory returns a Writer that collects per-event YAML payloads into
+// an in-memory map. Callers retrieve the map via Entries() after the
+// renderer finishes; Close is a no-op because there is no I/O to drain.
+func NewMemory() MemoryWriter {
+	return &memoryWriter{entries: map[string][]byte{}}
+}
+
+func (m *memoryWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data any) error {
+	body, err := yaml.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("trace: marshal %s/%s: %w", boundaryPath, nodeID, err)
+	}
+	rel := eventPath(event{
+		pass:         pass,
+		nodeID:       nodeID,
+		boundaryPath: boundaryPath,
+		fileSuffix:   fileSuffix,
+	})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil
+	}
+	m.entries[rel] = body
+	return nil
+}
+
+func (m *memoryWriter) Close() error {
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *memoryWriter) Entries() map[string][]byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string][]byte, len(m.entries))
+	for k, v := range m.entries {
+		out[k] = v
+	}
+	return out
+}
+
 type event struct {
 	pass         Pass
 	nodeID       string
@@ -215,28 +278,40 @@ func (w *fsWriter) consume() {
 }
 
 func (w *fsWriter) persist(ev event) error {
-	dir := filepath.Join(w.root, "boundaries", ev.boundaryPath, ev.nodeID)
+	rel := eventPath(ev)
+	full := filepath.Join(w.root, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return fmt.Errorf("trace: mkdir %q: %w", filepath.Dir(full), err)
+	}
+	return os.WriteFile(full, ev.body, 0o644)
+}
+
+// eventPath computes the per-event relative path used by both the
+// filesystem writer (which prepends its root directory) and the memory
+// writer (which uses the relative path as its map key). The two writers
+// produce identical paths for the same event — that identity is the
+// contract callers rely on when comparing in-memory traces to on-disk
+// .trace/ output.
+//
+// Layout:
+//
+//   - Base directory: boundaries/<boundaryPath>/<nodeID>
+//   - When fileSuffix is empty: <base>/<pass>.<ext>
+//     where <ext> is .log for PassEmission and PassLabels, .yaml otherwise.
+//   - When fileSuffix is non-empty (per-file pass like PhaseB3 artifacts):
+//     <base>/<pass>/<fileSuffix>. The fileSuffix already carries its own
+//     extension (e.g. "deployment.yaml") so no default extension is appended.
+func eventPath(ev event) string {
+	dir := filepath.Join("boundaries", ev.boundaryPath, ev.nodeID)
 	name := string(ev.pass)
-	addExt := true
 	if ev.fileSuffix != "" {
 		dir = filepath.Join(dir, name)
-		name = ev.fileSuffix
-		// The fileSuffix is a per-artifact filename supplied by the caller
-		// and already carries its own extension (e.g. "deployment.yaml").
-		// The pass-level default extension does not apply.
-		addExt = false
+		return filepath.Join(dir, ev.fileSuffix)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("trace: mkdir %q: %w", dir, err)
+	ext := ".yaml"
+	switch ev.pass {
+	case PassEmission, PassLabels:
+		ext = ".log"
 	}
-	if addExt {
-		ext := ".yaml"
-		switch ev.pass {
-		case PassEmission, PassLabels:
-			ext = ".log"
-		}
-		name += ext
-	}
-	path := filepath.Join(dir, name)
-	return os.WriteFile(path, ev.body, 0o644)
+	return filepath.Join(dir, name+ext)
 }

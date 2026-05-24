@@ -18,17 +18,11 @@ import (
 )
 
 // LoadAggregateParameterContract reads the raw Aggregate YAML at path and
-// extracts the spec.parameters: block into a per-key contract map. The
-// extraction is shallow: it does not run template interpolation, so the
-// contract is available BEFORE InterpolateParameters runs. Returns an empty
-// map when the Aggregate carries no spec.parameters: block.
-//
-// The shallow parse is correct because contract values (type, enum, pattern,
-// etc.) are static authoring data; they do not reference Release-supplied
-// parameter values. Default-value derivation across parameters is not
-// supported at v3 (the conditional-default and parameter-dependency
-// alternatives were rejected; cross-parameter constraints
-// land in the separate assertions: block).
+// extracts the spec.parameters: block into a per-key contract map. Thin
+// wrapper around LoadAggregateParameterContractFromBytes — reads the file,
+// delegates. Callers that already hold raw bytes (the lsp daemon +
+// the pipeline package) call LoadAggregateParameterContractFromBytes
+// directly with the bytes and a source-path string for error provenance.
 func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -39,6 +33,26 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 			Err:     ErrYAMLLoad,
 		}
 	}
+	return LoadAggregateParameterContractFromBytes(data, path)
+}
+
+// LoadAggregateParameterContractFromBytes parses an Aggregate YAML byte
+// slice and extracts the spec.parameters: block into a per-key contract
+// map. The extraction is shallow: it does not run template interpolation,
+// so the contract is available BEFORE InterpolateParameters runs. Returns
+// an empty map when the Aggregate carries no spec.parameters: block.
+//
+// The shallow parse is correct because contract values (type, enum, pattern,
+// etc.) are static authoring data; they do not reference Release-supplied
+// parameter values. Default-value derivation across parameters is not
+// supported at v3 (the conditional-default and parameter-dependency
+// alternatives were rejected; cross-parameter constraints
+// land in the separate assertions: block).
+//
+// sourcePath is used only for ResolverError.Field provenance — it identifies
+// where the bytes came from for error display, but the function performs no
+// filesystem operations against it.
+func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (types.OrderedMap[any], error) {
 	var shell struct {
 		Spec struct {
 			Parameters types.OrderedMap[any] `yaml:"parameters"`
@@ -47,7 +61,7 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 	if err := yaml.Unmarshal(data, &shell); err != nil {
 		return types.OrderedMap[any]{}, &ResolverError{
 			Entity:  "Aggregate",
-			Field:   path,
+			Field:   sourcePath,
 			Message: fmt.Sprintf("failed to unmarshal contract shell: %v", err),
 			Err:     ErrYAMLLoad,
 		}
@@ -56,7 +70,7 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 	// against the canonical aggregate-v1alpha1 sub-schema. Catches malformed
 	// contracts (wrong type for min:, invalid enum shape, etc.) at workspace
 	// load rather than as contract-violation failures at Step 1a validation.
-	if envErr := validateParameterContractEnvelope(shell.Spec.Parameters, path); envErr != nil {
+	if envErr := validateParameterContractEnvelope(shell.Spec.Parameters, sourcePath); envErr != nil {
 		return types.OrderedMap[any]{}, envErr
 	}
 	return shell.Spec.Parameters, nil
