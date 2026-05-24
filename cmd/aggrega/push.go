@@ -174,8 +174,8 @@ func pushRun(cfg pushConfig) error {
 //
 // Wasm-plugin kinds are special: the path segment is the canonical
 // `wasm` (not `wasmplugin`), and the plugin's metadata.name path-
-// encodes the socket — e.g., metadata.name="linter/aggrega-publishing-linter"
-// produces <registry>/wasm/linter/aggrega-publishing-linter. The
+// encodes the socket — e.g., metadata.name="linter/aggrega-publishing"
+// produces <registry>/wasm/linter/aggrega-publishing. The
 // socket segment is part of the plugin's identity (same name in
 // different sockets is a different plugin); embedding it in the
 // metadata.name keeps the URI symmetric with the catalog filesystem
