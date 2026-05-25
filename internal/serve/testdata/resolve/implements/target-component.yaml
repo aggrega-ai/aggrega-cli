@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/cache
+  version: 1.0.0
+spec:
+  schema:
+    properties:
+      memory:
+        type: string

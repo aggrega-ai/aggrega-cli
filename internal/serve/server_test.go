@@ -17,6 +17,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // newTestServer constructs a Server suitable for in-memory unit
@@ -383,57 +384,79 @@ func TestServeAggregaDiagnosticsReturns1001WhenMtimeNewer(t *testing.T) {
 	}
 }
 
-func TestServeAggregaResolveReturnsNullStub(t *testing.T) {
+func TestServeAggregaResolveReturns1001WhenFileNotValidated(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)
 	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/resolve", resolveParams{URI: "file:///x.yaml"}))
+	in.Write(framedRequest(1, "aggrega/resolve", resolveParams{URI: "file:///never-validated.yaml"}))
 	resp := runOneRequest(t, srv, &in, &out)
-	if resp.Error != nil {
-		t.Fatalf("stub resolve returned error: %+v", resp.Error)
+	if resp.Error == nil {
+		t.Fatal("resolve on un-validated file should return error envelope; got result")
 	}
-	var result resolveResult
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if result.Location != nil {
-		t.Errorf("resolve stub should return Location: nil; got %+v", result.Location)
+	if resp.Error.Code != errFileNotValidated {
+		t.Errorf("error code = %d; want %d (file-not-validated)", resp.Error.Code, errFileNotValidated)
 	}
 }
 
-func TestServeAggregaFindReferencesReturnsEmptyStub(t *testing.T) {
+func TestServeAggregaFindReferencesReturnsEmptyWhenCursorNotOnMetadataName(t *testing.T) {
 	t.Parallel()
-	srv := newTestServer(t, t.TempDir(), nil, nil)
-	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/findReferences", resolveParams{URI: "file:///x.yaml"}))
-	resp := runOneRequest(t, srv, &in, &out)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "comp.yaml")
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: my-comp\nspec:\n  extends: parent-comp\n"
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	srv := newTestServer(t, dir, nil, nil)
+	var in1, out1 bytes.Buffer
+	in1.Write(framedRequest(1, "aggrega/validate", validateParams{File: file, Content: content}))
+	runOneRequest(t, srv, &in1, &out1)
+	var in2, out2 bytes.Buffer
+	in2.Write(framedRequest(2, "aggrega/findReferences", findReferencesParams{
+		URI: file,
+		// Cursor on spec.extends value — NOT a metadata.name. Result
+		// should be empty (LSP convention: no error, empty list).
+		Position: yamlpos.Position{Line: 5, Character: 13},
+	}))
+	resp := runOneRequest(t, srv, &in2, &out2)
 	if resp.Error != nil {
-		t.Fatalf("stub findReferences returned error: %+v", resp.Error)
+		t.Fatalf("findReferences returned error: %+v", resp.Error)
 	}
 	var result findReferencesResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(result.Locations) != 0 {
-		t.Errorf("findReferences stub should return empty Locations; got %d entries", len(result.Locations))
+		t.Errorf("findReferences with cursor not on metadata.name should return empty Locations; got %d", len(result.Locations))
 	}
 }
 
-func TestServeAggregaFindImplementationsReturnsEmptyStub(t *testing.T) {
+func TestServeAggregaFindImplementationsReturnsEmptyWhenCursorNotOnMetadataName(t *testing.T) {
 	t.Parallel()
-	srv := newTestServer(t, t.TempDir(), nil, nil)
-	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/findImplementations", resolveParams{URI: "file:///x.yaml"}))
-	resp := runOneRequest(t, srv, &in, &out)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "comp.yaml")
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: my-comp\nspec:\n  extends: parent-comp\n"
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	srv := newTestServer(t, dir, nil, nil)
+	var in1, out1 bytes.Buffer
+	in1.Write(framedRequest(1, "aggrega/validate", validateParams{File: file, Content: content}))
+	runOneRequest(t, srv, &in1, &out1)
+	var in2, out2 bytes.Buffer
+	in2.Write(framedRequest(2, "aggrega/findImplementations", findImplementationsParams{
+		URI:      file,
+		Position: yamlpos.Position{Line: 5, Character: 13},
+	}))
+	resp := runOneRequest(t, srv, &in2, &out2)
 	if resp.Error != nil {
-		t.Fatalf("stub findImplementations returned error: %+v", resp.Error)
+		t.Fatalf("findImplementations returned error: %+v", resp.Error)
 	}
 	var result findImplementationsResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(result.Locations) != 0 {
-		t.Errorf("findImplementations stub should return empty Locations; got %d entries", len(result.Locations))
+		t.Errorf("findImplementations with cursor not on metadata.name should return empty Locations; got %d", len(result.Locations))
 	}
 }
 

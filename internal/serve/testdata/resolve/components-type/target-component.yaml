@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/postgres
+  version: 1.0.0
+spec:
+  schema:
+    properties:
+      version:
+        type: string

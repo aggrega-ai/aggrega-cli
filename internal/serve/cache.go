@@ -10,12 +10,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// cachedEntry holds a parsed YAML document alongside the timestamp the
-// parse completed at. The cachedAt timestamp is compared against the
-// file's on-disk mtime on every Get; entries with mtime newer than
-// cachedAt are evicted and reported as misses.
+// cachedEntry holds a parsed YAML document alongside the raw bytes
+// the parse consumed and the timestamp the parse completed at. The
+// cachedAt timestamp is compared against the file's on-disk mtime on
+// every Get; entries with mtime newer than cachedAt are evicted and
+// reported as misses.
+//
+// The raw content is retained so position-conversion helpers (LSP
+// UTF-16 character ↔ yaml.v3 byte column) can run without re-reading
+// the file. Editor-supplied content (validate's params.Content) and
+// on-disk bytes (workspace-walk reads) flow through the same cache
+// shape; both populate content at Put time.
 type cachedEntry struct {
 	node     *yaml.Node
+	content  []byte
 	cachedAt time.Time
 }
 
@@ -58,12 +66,13 @@ func (c *cache) Get(file string) (*cachedEntry, bool) {
 }
 
 // Put inserts or replaces the cache entry for file with the supplied
-// parsed node. The cachedAt timestamp is captured as time.Now(); the
-// subsequent Get's mtime comparison uses this value as the staleness
-// boundary.
-func (c *cache) Put(file string, node *yaml.Node) {
+// parsed node and the raw bytes that produced it. The cachedAt
+// timestamp is captured as time.Now(); the subsequent Get's mtime
+// comparison uses this value as the staleness boundary.
+func (c *cache) Put(file string, node *yaml.Node, content []byte) {
 	c.entries[file] = &cachedEntry{
 		node:     node,
+		content:  content,
 		cachedAt: time.Now(),
 	}
 }

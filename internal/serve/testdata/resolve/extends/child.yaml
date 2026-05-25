@@ -1,0 +1,7 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: app/api-server
+  version: 1.0.0
+spec:
+  extends: core/web-server

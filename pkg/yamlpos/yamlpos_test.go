@@ -1,0 +1,400 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package yamlpos
+
+import (
+	"errors"
+	"reflect"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+func TestLineIndexLSPCharToByteASCII(t *testing.T) {
+	t.Parallel()
+	idx := BuildLineIndex([]byte("hello\nworld\n"))
+	cases := []struct {
+		line, char int
+		wantByte   int
+	}{
+		{0, 0, 0},
+		{0, 5, 5},
+		{0, 1, 1},
+		{1, 3, 3},
+	}
+	for _, c := range cases {
+		got, err := idx.LSPCharToByte(c.line, c.char)
+		if err != nil {
+			t.Errorf("LSPCharToByte(%d, %d): unexpected err %v", c.line, c.char, err)
+			continue
+		}
+		if got != c.wantByte {
+			t.Errorf("LSPCharToByte(%d, %d) = %d; want %d", c.line, c.char, got, c.wantByte)
+		}
+	}
+}
+
+func TestLineIndexLSPCharToByteUTF8BMP(t *testing.T) {
+	t.Parallel()
+	// "name: サーバー" — each Japanese rune is 3 bytes UTF-8 / 1 UTF-16 unit.
+	idx := BuildLineIndex([]byte("name: サーバー\n"))
+	// Cursor at the start of サ: LSP char = 6, byte = 6.
+	got, err := idx.LSPCharToByte(0, 6)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 6 {
+		t.Errorf("LSPCharToByte(0, 6) = %d; want 6 (after 'name: ')", got)
+	}
+	// Cursor after サ: LSP char = 7 (one UTF-16 unit past), byte = 9 (3 bytes per rune).
+	got, err = idx.LSPCharToByte(0, 7)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 9 {
+		t.Errorf("LSPCharToByte(0, 7) = %d; want 9 (after first multibyte rune)", got)
+	}
+	// Cursor at the end of サーバー (4 runes, 12 bytes): LSP char = 10, byte = 18.
+	got, err = idx.LSPCharToByte(0, 10)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 18 {
+		t.Errorf("LSPCharToByte(0, 10) = %d; want 18", got)
+	}
+}
+
+func TestLineIndexLSPCharToByteSupplementary(t *testing.T) {
+	t.Parallel()
+	// "emoji: 🎉" — 🎉 is U+1F389 (supplementary plane), 4 bytes UTF-8,
+	// 2 UTF-16 code units (surrogate pair).
+	idx := BuildLineIndex([]byte("emoji: 🎉\n"))
+	// Cursor immediately before 🎉: LSP char = 7, byte = 7.
+	got, err := idx.LSPCharToByte(0, 7)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 7 {
+		t.Errorf("LSPCharToByte(0, 7) = %d; want 7", got)
+	}
+	// Cursor immediately after 🎉: LSP char = 9 (7 + 2 UTF-16 units),
+	// byte = 11 (7 + 4 UTF-8 bytes).
+	got, err = idx.LSPCharToByte(0, 9)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 11 {
+		t.Errorf("LSPCharToByte(0, 9) = %d; want 11 (4 bytes per supplementary rune)", got)
+	}
+}
+
+func TestLineIndexLSPCharToByteCRLF(t *testing.T) {
+	t.Parallel()
+	idx := BuildLineIndex([]byte("ab\r\ncd\r\n"))
+	if idx.LineCount() != 3 {
+		t.Fatalf("LineCount = %d; want 3 (two lines + trailing empty)", idx.LineCount())
+	}
+	got, err := idx.LSPCharToByte(1, 1)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 1 {
+		t.Errorf("LSPCharToByte(1, 1) = %d; want 1 (CRLF terminator excluded from line bytes)", got)
+	}
+}
+
+func TestLineIndexByteToLSPCharRoundtrip(t *testing.T) {
+	t.Parallel()
+	content := []byte("name: サーバー 🎉 end\n")
+	idx := BuildLineIndex(content)
+	// Roundtrip holds at rune boundaries. Char 12 splits the 🎉
+	// surrogate pair (high surrogate); LSPCharToByte snaps past the
+	// full rune, so the roundtrip is not identity for that position.
+	// The boundary positions for this content: 0..11 then 13..16.
+	for _, char := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16} {
+		byteOff, err := idx.LSPCharToByte(0, char)
+		if err != nil {
+			t.Fatalf("LSPCharToByte(0, %d): %v", char, err)
+		}
+		back := idx.ByteToLSPChar(0, byteOff)
+		if back != char {
+			t.Errorf("roundtrip LSP→byte→LSP at char %d: got %d (via byte %d)", char, back, byteOff)
+		}
+	}
+}
+
+func TestLineIndexLSPCharToByteSurrogateSplitSnapsForward(t *testing.T) {
+	t.Parallel()
+	content := []byte("emoji: 🎉 end\n")
+	idx := BuildLineIndex(content)
+	// char = 8 splits the surrogate pair (🎉 starts at char 7 and
+	// occupies 2 UTF-16 units). Per the snap-forward convention,
+	// LSPCharToByte returns the byte position after the full rune.
+	got, err := idx.LSPCharToByte(0, 8)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	want := 11
+	if got != want {
+		t.Errorf("LSPCharToByte(0, 8) (surrogate split) = %d; want %d (snap past full rune)", got, want)
+	}
+}
+
+func TestLineIndexScalarEndASCII(t *testing.T) {
+	t.Parallel()
+	content := []byte("name: hello\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	// Find the "hello" value node.
+	mapping := doc.Content[0]
+	valueNode := mapping.Content[1]
+	end := idx.ScalarEnd(valueNode)
+	want := Position{Line: 0, Character: 11}
+	if end != want {
+		t.Errorf("ScalarEnd ASCII = %+v; want %+v", end, want)
+	}
+}
+
+func TestLineIndexScalarEndDoubleQuoted(t *testing.T) {
+	t.Parallel()
+	content := []byte("name: \"hello\"\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	valueNode := doc.Content[0].Content[1]
+	if valueNode.Style != yaml.DoubleQuotedStyle {
+		t.Fatalf("fixture precondition: expected DoubleQuotedStyle; got %v", valueNode.Style)
+	}
+	end := idx.ScalarEnd(valueNode)
+	// Value text "hello" is 5 UTF-16 units; +2 for the surrounding
+	// quote pair. Start column 6 (after "name: "); end column 13.
+	want := Position{Line: 0, Character: 13}
+	if end != want {
+		t.Errorf("ScalarEnd double-quoted = %+v; want %+v (value + 2 quote bytes)", end, want)
+	}
+}
+
+func TestLineIndexScalarEndSingleQuoted(t *testing.T) {
+	t.Parallel()
+	content := []byte("name: 'hello'\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	valueNode := doc.Content[0].Content[1]
+	if valueNode.Style != yaml.SingleQuotedStyle {
+		t.Fatalf("fixture precondition: expected SingleQuotedStyle; got %v", valueNode.Style)
+	}
+	end := idx.ScalarEnd(valueNode)
+	want := Position{Line: 0, Character: 13}
+	if end != want {
+		t.Errorf("ScalarEnd single-quoted = %+v; want %+v (value + 2 quote bytes)", end, want)
+	}
+}
+
+func TestLineIndexScalarEndMultibyte(t *testing.T) {
+	t.Parallel()
+	content := []byte("name: サーバー\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	valueNode := doc.Content[0].Content[1]
+	end := idx.ScalarEnd(valueNode)
+	want := Position{Line: 0, Character: 10}
+	if end != want {
+		t.Errorf("ScalarEnd multibyte = %+v; want %+v (6-char ASCII prefix + 4 BMP runes)", end, want)
+	}
+}
+
+func TestLookupReturnsScalarNodeAtCursor(t *testing.T) {
+	t.Parallel()
+	content := []byte("metadata:\n  name: my-component\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	// Cursor at line 1, char 8 — middle of "my-component" (which starts
+	// at LSP char 8 of line 1).
+	node, err := Lookup(&doc, idx, Position{Line: 1, Character: 10})
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if node == nil {
+		t.Fatal("Lookup returned nil node")
+	}
+	if node.Value != "my-component" {
+		t.Errorf("Lookup returned node with Value = %q; want %q", node.Value, "my-component")
+	}
+}
+
+func TestLookupReturnsErrorOnOutOfRangePosition(t *testing.T) {
+	t.Parallel()
+	content := []byte("name: hello\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	_ = yaml.Unmarshal(content, &doc)
+	_, err := Lookup(&doc, idx, Position{Line: 999, Character: 0})
+	if !errors.Is(err, ErrPositionOutOfRange) {
+		t.Errorf("Lookup with out-of-range line: got err %v; want ErrPositionOutOfRange", err)
+	}
+}
+
+func classifyAtCursor(t *testing.T, content string, line, char int) Context {
+	t.Helper()
+	idx := BuildLineIndex([]byte(content))
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	ctx, err := Classify(&doc, idx, Position{Line: line, Character: char})
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	return ctx
+}
+
+func TestClassifyDetectsMetadataName(t *testing.T) {
+	t.Parallel()
+	ctx := classifyAtCursor(t, "metadata:\n  name: my-thing\n", 1, 10)
+	if ctx.Kind != ContextKindMetadataName {
+		t.Errorf("Kind = %d; want ContextKindMetadataName", ctx.Kind)
+	}
+	if !reflect.DeepEqual(ctx.Path, []string{"metadata", "name"}) {
+		t.Errorf("Path = %v; want [metadata name]", ctx.Path)
+	}
+	if ctx.Value != "my-thing" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "my-thing")
+	}
+}
+
+func TestClassifyDetectsExtendsValue(t *testing.T) {
+	t.Parallel()
+	ctx := classifyAtCursor(t, "spec:\n  extends: parent-name\n", 1, 13)
+	if ctx.Kind != ContextKindExtendsValue {
+		t.Errorf("Kind = %d; want ContextKindExtendsValue", ctx.Kind)
+	}
+	if ctx.Value != "parent-name" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "parent-name")
+	}
+}
+
+func TestClassifyDetectsComponentsTypeTopLevel(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  components:\n    api:\n      type: core/api\n"
+	ctx := classifyAtCursor(t, src, 3, 14)
+	if ctx.Kind != ContextKindComponentsType {
+		t.Errorf("Kind = %d; want ContextKindComponentsType", ctx.Kind)
+	}
+	if ctx.Value != "core/api" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "core/api")
+	}
+}
+
+func TestClassifyDetectsComponentsTypeWithSubsystemNesting(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  subsystems:\n    data:\n      components:\n        db:\n          type: core/postgres\n"
+	ctx := classifyAtCursor(t, src, 5, 18)
+	if ctx.Kind != ContextKindComponentsType {
+		t.Errorf("Kind = %d; want ContextKindComponentsType", ctx.Kind)
+	}
+	if ctx.Value != "core/postgres" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "core/postgres")
+	}
+}
+
+func TestClassifyDetectsComponentsTypeWithRecursiveSubsystemNesting(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  subsystems:\n    data:\n      subsystems:\n        cache:\n          components:\n            redis:\n              type: core/redis\n"
+	ctx := classifyAtCursor(t, src, 7, 22)
+	if ctx.Kind != ContextKindComponentsType {
+		t.Errorf("Kind = %d; want ContextKindComponentsType at recursive subsystem depth", ctx.Kind)
+	}
+	if ctx.Value != "core/redis" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "core/redis")
+	}
+}
+
+func TestClassifyDetectsFeaturesTypeComponentNested(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  components:\n    api:\n      type: core/api\n      features:\n        scaling:\n          type: feature/autoscaler\n"
+	ctx := classifyAtCursor(t, src, 6, 22)
+	if ctx.Kind != ContextKindFeaturesType {
+		t.Errorf("Kind = %d; want ContextKindFeaturesType", ctx.Kind)
+	}
+	if ctx.Value != "feature/autoscaler" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "feature/autoscaler")
+	}
+}
+
+func TestClassifyDetectsFeaturesTypeSubsystemDirectAttachment(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  subsystems:\n    data:\n      features:\n        replication:\n          type: feature/replication\n"
+	ctx := classifyAtCursor(t, src, 5, 18)
+	if ctx.Kind != ContextKindFeaturesType {
+		t.Errorf("Kind = %d; want ContextKindFeaturesType for subsystem-direct feature attachment", ctx.Kind)
+	}
+	if ctx.Value != "feature/replication" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "feature/replication")
+	}
+}
+
+func TestClassifyDetectsFeaturesTypeWithSubsystemNestedComponent(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  subsystems:\n    data:\n      components:\n        db:\n          type: core/postgres\n          features:\n            scaling:\n              type: feature/autoscaler\n"
+	ctx := classifyAtCursor(t, src, 8, 22)
+	if ctx.Kind != ContextKindFeaturesType {
+		t.Errorf("Kind = %d; want ContextKindFeaturesType for subsystem-nested component feature", ctx.Kind)
+	}
+}
+
+func TestClassifyDetectsRecipeImplements(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  implements: core/api\n"
+	ctx := classifyAtCursor(t, src, 1, 17)
+	if ctx.Kind != ContextKindRecipeImplements {
+		t.Errorf("Kind = %d; want ContextKindRecipeImplements", ctx.Kind)
+	}
+	if ctx.Value != "core/api" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "core/api")
+	}
+}
+
+func TestClassifyDetectsSchemaProperty(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  schema:\n    properties:\n      size:\n        type: string\n"
+	ctx := classifyAtCursor(t, src, 4, 15)
+	if ctx.Kind != ContextKindSchemaProperty {
+		t.Errorf("Kind = %d; want ContextKindSchemaProperty", ctx.Kind)
+	}
+}
+
+func TestClassifyRejectsBareFeaturesTypeAtTopOfSpec(t *testing.T) {
+	t.Parallel()
+	// The guard: spec.features.<feat>.type at the top of spec (no
+	// subsystem-pair stripped) returns ContextKindUnknown because the
+	// path is structurally invalid against AggregateSpec.
+	src := "spec:\n  features:\n    foo:\n      type: feature/bar\n"
+	ctx := classifyAtCursor(t, src, 3, 14)
+	if ctx.Kind != ContextKindUnknown {
+		t.Errorf("Kind = %d; want ContextKindUnknown for top-of-spec features.<feat>.type (path does not exist on AggregateSpec)", ctx.Kind)
+	}
+}
+
+func TestClassifyReturnsUnknownForUnrecognizedPosition(t *testing.T) {
+	t.Parallel()
+	src := "metadata:\n  version: 1.0.0\n"
+	ctx := classifyAtCursor(t, src, 1, 13)
+	if ctx.Kind != ContextKindUnknown {
+		t.Errorf("Kind = %d; want ContextKindUnknown for metadata.version", ctx.Kind)
+	}
+}

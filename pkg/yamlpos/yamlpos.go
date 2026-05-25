@@ -1,0 +1,460 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+// Package yamlpos carries LSP-shape Position / Range / Location types
+// alongside helpers that map LSP cursor positions to yaml.v3 nodes and
+// classify the structural location a cursor sits in.
+//
+// LSP Position.Character is 0-based UTF-16 code units. yaml.v3 Node
+// coordinates are 1-based UTF-8 bytes. LineIndex bridges the two with
+// rune-by-rune conversion via unicode/utf8 + unicode/utf16; both
+// directions are supported with no ASCII-only approximation.
+//
+// The package is consumed by the daemon's navigation handlers (Lookup)
+// and by the hover + completion handlers (Classify).
+package yamlpos
+
+import (
+	"errors"
+	"strconv"
+	"unicode/utf16"
+	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ErrPositionOutOfRange is returned when a Position addresses a line
+// outside the document or when conversion against an empty LineIndex
+// is attempted.
+var ErrPositionOutOfRange = errors.New("position out of range")
+
+// Position matches the LSP shape: 0-based line + 0-based character
+// offset measured in UTF-16 code units.
+type Position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+// Range matches the LSP shape.
+type Range struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
+
+// Location matches the LSP shape: file URI (workspace-relative path)
+// plus a position range.
+type Location struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
+}
+
+// ContextKind categorizes the structural shape a cursor lies in.
+// Navigation handlers consume Kind to decide which reference shape
+// (if any) applies; completion handlers consume Kind plus Path to
+// decide which candidate set to offer.
+type ContextKind int
+
+const (
+	// ContextKindUnknown is returned when no recognized structural shape
+	// matches the cursor's path.
+	ContextKindUnknown ContextKind = iota
+
+	// ContextKindMetadataName matches a cursor on the value of
+	// metadata.name (any entity kind).
+	ContextKindMetadataName
+
+	// ContextKindExtendsValue matches a cursor on spec.extends (the
+	// scalar value naming the parent entity URI). Applies to
+	// Component, Feature, and any entity with extends.
+	ContextKindExtendsValue
+
+	// ContextKindComponentsType matches a cursor on a Component URI at
+	// the suffix "components/<name>/type", after stripping a leading
+	// "spec" and any number of "subsystems/<key>" pairs.
+	ContextKindComponentsType
+
+	// ContextKindFeaturesType matches a cursor on a Feature URI at
+	// either "components/<comp>/features/<feat>/type" (Feature
+	// attached to a Component) or "features/<feat>/type" (Feature
+	// attached directly to a Subsystem; reachable only when at least
+	// one "subsystems/<key>" pair was stripped).
+	ContextKindFeaturesType
+
+	// ContextKindRecipeImplements matches a cursor on spec.implements
+	// (the scalar value naming the Component URI a Recipe or
+	// FeatureRecipe implements).
+	ContextKindRecipeImplements
+
+	// ContextKindSchemaProperty matches a cursor anywhere under
+	// spec.schema.properties.<field>. Consumed by completion +
+	// hover handlers; navigation does not act on it.
+	ContextKindSchemaProperty
+)
+
+// Context describes what the cursor is pointing at.
+//
+// Path is the YAML structural breadcrumb from the document root to the
+// node at the cursor; each element is a mapping key or a sequence index
+// rendered as a decimal string.
+//
+// Kind is the categorical classification of Path (see ContextKind).
+//
+// Value is the raw scalar text of the node at the cursor, when the
+// cursor resolves to a scalar; empty otherwise. For navigation, Value
+// IS the referenced URI when Kind is ExtendsValue, ComponentsType,
+// FeaturesType, or RecipeImplements.
+type Context struct {
+	Path  []string
+	Kind  ContextKind
+	Value string
+}
+
+// LineIndex provides UTF-16 ↔ UTF-8-byte conversion for a single
+// document's raw bytes. Constructed once per document via
+// BuildLineIndex and reused across Lookup, Classify, and Location
+// emission. The index handles LF, CRLF, and lone-CR line endings.
+type LineIndex struct {
+	lineStarts []int
+	content    []byte
+}
+
+// BuildLineIndex precomputes the byte offset of each line's start in
+// the supplied content. Line endings are detected as one of:
+//
+//   - "\n" (LF, the Unix convention)
+//   - "\r\n" (CRLF, the Windows convention; the CR and LF are
+//     consumed together)
+//   - "\r" (lone CR, the legacy Mac convention; rare in practice)
+//
+// lineStarts has one entry per line. lineStarts[i] is the byte offset
+// of the first byte of line i; lineStarts[0] is always 0.
+func BuildLineIndex(content []byte) LineIndex {
+	idx := LineIndex{content: content, lineStarts: []int{0}}
+	for i := 0; i < len(content); i++ {
+		switch content[i] {
+		case '\n':
+			idx.lineStarts = append(idx.lineStarts, i+1)
+		case '\r':
+			if i+1 < len(content) && content[i+1] == '\n' {
+				idx.lineStarts = append(idx.lineStarts, i+2)
+				i++
+			} else {
+				idx.lineStarts = append(idx.lineStarts, i+1)
+			}
+		}
+	}
+	return idx
+}
+
+// LineCount returns the number of lines in the indexed content. An
+// empty document has line count 1 (one empty line).
+func (idx LineIndex) LineCount() int {
+	return len(idx.lineStarts)
+}
+
+// lineBytes returns the bytes of line line (0-based), excluding the
+// trailing line terminator. Returns ErrPositionOutOfRange when line is
+// outside the document.
+func (idx LineIndex) lineBytes(line int) ([]byte, error) {
+	if line < 0 || line >= len(idx.lineStarts) {
+		return nil, ErrPositionOutOfRange
+	}
+	start := idx.lineStarts[line]
+	var end int
+	if line+1 < len(idx.lineStarts) {
+		end = idx.lineStarts[line+1]
+		for end > start && (idx.content[end-1] == '\n' || idx.content[end-1] == '\r') {
+			end--
+		}
+	} else {
+		end = len(idx.content)
+	}
+	return idx.content[start:end], nil
+}
+
+// LSPCharToByte converts an LSP UTF-16 character offset within line
+// (0-based line) to a 0-based byte offset within that line's bytes
+// (line terminator excluded).
+//
+// When char exceeds the number of UTF-16 code units on the line, the
+// byte offset is clamped to the line's byte length — matching the
+// LSP convention that an end-of-line position addresses one past the
+// last character. When char splits a surrogate pair (lands inside a
+// supplementary-plane rune's UTF-16 encoding), the byte offset snaps
+// to the byte position after the full rune.
+func (idx LineIndex) LSPCharToByte(line, char int) (int, error) {
+	bytes, err := idx.lineBytes(line)
+	if err != nil {
+		return 0, err
+	}
+	if char <= 0 {
+		return 0, nil
+	}
+	var u16 int
+	var pos int
+	for pos < len(bytes) {
+		r, size := utf8.DecodeRune(bytes[pos:])
+		u16 += utf16.RuneLen(r)
+		pos += size
+		if u16 >= char {
+			return pos, nil
+		}
+	}
+	return len(bytes), nil
+}
+
+// ByteToLSPChar inverts LSPCharToByte: converts a 0-based byte offset
+// within line (0-based line) to an LSP UTF-16 character offset.
+// byteOffset is clamped to the line's byte length.
+func (idx LineIndex) ByteToLSPChar(line, byteOffset int) int {
+	bytes, err := idx.lineBytes(line)
+	if err != nil {
+		return 0
+	}
+	if byteOffset <= 0 {
+		return 0
+	}
+	if byteOffset > len(bytes) {
+		byteOffset = len(bytes)
+	}
+	var u16 int
+	var pos int
+	for pos < byteOffset {
+		r, size := utf8.DecodeRune(bytes[pos:])
+		u16 += utf16.RuneLen(r)
+		pos += size
+	}
+	return u16
+}
+
+// PositionToNodeCoords converts an LSP Position (0-based line,
+// 0-based UTF-16 char) to yaml.v3 coordinates (1-based line, 1-based
+// UTF-8 byte column).
+func (idx LineIndex) PositionToNodeCoords(pos Position) (line, col int, err error) {
+	byteOff, err := idx.LSPCharToByte(pos.Line, pos.Character)
+	if err != nil {
+		return 0, 0, err
+	}
+	return pos.Line + 1, byteOff + 1, nil
+}
+
+// NodeToPosition converts a yaml.Node's start coordinates (1-based
+// line, 1-based byte column) to an LSP Position (0-based line,
+// 0-based UTF-16 char). A nil node returns the zero Position.
+func (idx LineIndex) NodeToPosition(n *yaml.Node) Position {
+	if n == nil {
+		return Position{}
+	}
+	line := n.Line - 1
+	if line < 0 {
+		line = 0
+	}
+	col := n.Column - 1
+	if col < 0 {
+		col = 0
+	}
+	return Position{Line: line, Character: idx.ByteToLSPChar(line, col)}
+}
+
+// ScalarEnd returns the LSP Position one past the last UTF-16 code
+// unit of n's Value. Single-line scalars only; multi-line scalar end
+// positions are not currently computed.
+//
+// Quoted-style scalars (single- or double-quoted) have their closing
+// quote at one byte past n.Value's end; ScalarEnd accounts for the
+// surrounding quote bytes when n.Style indicates a quoted style.
+func (idx LineIndex) ScalarEnd(n *yaml.Node) Position {
+	start := idx.NodeToPosition(n)
+	if n == nil {
+		return start
+	}
+	var u16 int
+	for _, r := range n.Value {
+		u16 += utf16.RuneLen(r)
+	}
+	if n.Style == yaml.DoubleQuotedStyle || n.Style == yaml.SingleQuotedStyle {
+		u16 += 2
+	}
+	return Position{Line: start.Line, Character: start.Character + u16}
+}
+
+// Lookup returns the deepest yaml.Node containing the supplied
+// Position. Returns nil with no error when the position lies outside
+// any node (whitespace, comments, document margins). Returns
+// ErrPositionOutOfRange when the position addresses a line outside
+// the document.
+func Lookup(doc *yaml.Node, idx LineIndex, pos Position) (*yaml.Node, error) {
+	yamlLine, yamlCol, err := idx.PositionToNodeCoords(pos)
+	if err != nil {
+		return nil, err
+	}
+	root := doc
+	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = root.Content[0]
+	}
+	n, _ := descend(root, yamlLine, yamlCol, nil)
+	return n, nil
+}
+
+// Classify returns the Context for the cursor's structural location.
+// When no node contains the cursor, returns a Context with empty Path
+// and ContextKindUnknown — never an error (the LSP convention is
+// "no result" rather than "error").
+func Classify(doc *yaml.Node, idx LineIndex, pos Position) (Context, error) {
+	yamlLine, yamlCol, err := idx.PositionToNodeCoords(pos)
+	if err != nil {
+		return Context{}, err
+	}
+	root := doc
+	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = root.Content[0]
+	}
+	node, path := descend(root, yamlLine, yamlCol, nil)
+	ctx := Context{Path: path}
+	if node != nil && node.Kind == yaml.ScalarNode {
+		ctx.Value = node.Value
+	}
+	ctx.Kind = ClassifyPath(path)
+	return ctx, nil
+}
+
+// descend walks the YAML subtree rooted at n looking for the deepest
+// node containing the cursor (line, col) in yaml.v3 1-based coords.
+// The walker tracks a breadcrumb path of mapping keys and sequence
+// indices; when the cursor lands on a mapping key, the key's text is
+// the final path element. When it lands on a mapping value, the
+// containing key's text is appended and the walker descends into the
+// value subtree.
+func descend(n *yaml.Node, line, col int, path []string) (*yaml.Node, []string) {
+	if n == nil {
+		return nil, path
+	}
+	switch n.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			keyNode := n.Content[i]
+			valNode := n.Content[i+1]
+			if nodeContains(keyNode, line, col) {
+				return keyNode, appendPath(path, keyNode.Value)
+			}
+			if containsRecursive(valNode, line, col) {
+				return descend(valNode, line, col, appendPath(path, keyNode.Value))
+			}
+		}
+		return nil, path
+	case yaml.SequenceNode:
+		for i, child := range n.Content {
+			if containsRecursive(child, line, col) {
+				return descend(child, line, col, appendPath(path, strconv.Itoa(i)))
+			}
+		}
+		return nil, path
+	case yaml.ScalarNode:
+		if nodeContains(n, line, col) {
+			return n, path
+		}
+		return nil, path
+	default:
+		return nil, path
+	}
+}
+
+func appendPath(path []string, elem string) []string {
+	out := make([]string, len(path)+1)
+	copy(out, path)
+	out[len(path)] = elem
+	return out
+}
+
+// nodeContains reports whether (line, col) (1-based yaml.v3 coords)
+// falls within the scalar span of n. Used for leaf decisions only;
+// container coverage is computed via containsRecursive.
+func nodeContains(n *yaml.Node, line, col int) bool {
+	if n == nil {
+		return false
+	}
+	if n.Kind != yaml.ScalarNode {
+		return false
+	}
+	if line != n.Line {
+		return false
+	}
+	startCol := n.Column
+	endCol := startCol + len(n.Value)
+	if n.Style == yaml.DoubleQuotedStyle || n.Style == yaml.SingleQuotedStyle {
+		endCol += 2
+	}
+	return col >= startCol && col <= endCol
+}
+
+// containsRecursive reports whether (line, col) falls anywhere inside
+// the subtree rooted at n. For scalar nodes this reduces to
+// nodeContains; for mappings and sequences it recurses to find any
+// child whose span covers the cursor.
+func containsRecursive(n *yaml.Node, line, col int) bool {
+	if n == nil {
+		return false
+	}
+	if n.Kind == yaml.ScalarNode {
+		return nodeContains(n, line, col)
+	}
+	for _, child := range n.Content {
+		if containsRecursive(child, line, col) {
+			return true
+		}
+	}
+	return false
+}
+
+// ClassifyPath inspects the structural breadcrumb and returns the
+// matching ContextKind. The classifier strips a leading "spec" and
+// then zero or more "subsystems"/"<key>" pairs greedily before
+// suffix-matching the recognized shapes.
+//
+// The bare "features/<feat>/type" suffix requires the strip to have
+// consumed at least one subsystem-pair — otherwise it would match
+// a non-existent "spec.features.<feat>.type" path at the top of an
+// AggregateSpec. The strip-count guard returns ContextKindUnknown
+// for that shape.
+//
+// Exposed as a pure function so external callers — the daemon's
+// reference-shape detector in particular — share one canonical
+// implementation. A new ContextKind added here must also be considered
+// by every caller that switches on the result.
+func ClassifyPath(path []string) ContextKind {
+	if len(path) == 2 && path[0] == "metadata" && path[1] == "name" {
+		return ContextKindMetadataName
+	}
+	if len(path) == 0 || path[0] != "spec" {
+		return ContextKindUnknown
+	}
+	rest := path[1:]
+
+	if len(rest) == 1 && rest[0] == "extends" {
+		return ContextKindExtendsValue
+	}
+	if len(rest) == 1 && rest[0] == "implements" {
+		return ContextKindRecipeImplements
+	}
+	if len(rest) >= 3 && rest[0] == "schema" && rest[1] == "properties" {
+		return ContextKindSchemaProperty
+	}
+
+	stripped := 0
+	for len(rest) >= 2 && rest[0] == "subsystems" {
+		rest = rest[2:]
+		stripped++
+	}
+
+	if len(rest) == 3 && rest[0] == "components" && rest[2] == "type" {
+		return ContextKindComponentsType
+	}
+	if len(rest) == 5 && rest[0] == "components" && rest[2] == "features" && rest[4] == "type" {
+		return ContextKindFeaturesType
+	}
+	if len(rest) == 3 && rest[0] == "features" && rest[2] == "type" && stripped >= 1 {
+		return ContextKindFeaturesType
+	}
+
+	return ContextKindUnknown
+}

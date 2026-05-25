@@ -19,6 +19,7 @@ import (
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // validateParams is the request shape for `aggrega/validate`. Content
@@ -64,7 +65,7 @@ func (s *Server) handleValidate(params validateParams) (validateResult, *jsonRPC
 		s.parseCache.Drop(params.File)
 		return validateResult{Diagnostics: []Diagnostic{diag}}, nil
 	}
-	s.parseCache.Put(params.File, &doc)
+	s.parseCache.Put(params.File, &doc, []byte(params.Content))
 	var diags []Diagnostic
 	if s.activeRelease != nil {
 		// Tier 4: full resolver + semantic checks via the pipeline path.
@@ -283,26 +284,6 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 	return irGraphResult{Graph: graphBytes}, nil
 }
 
-// Position matches the LSP shape: line + character (UTF-16 code units),
-// both 0-based.
-type Position struct {
-	Line      int `json:"line"`
-	Character int `json:"character"`
-}
-
-// Range matches the LSP shape.
-type Range struct {
-	Start Position `json:"start"`
-	End   Position `json:"end"`
-}
-
-// Location matches the LSP shape: workspace-relative URI + position
-// range.
-type Location struct {
-	URI   string `json:"uri"`
-	Range Range  `json:"range"`
-}
-
 // MarkupContent matches the LSP shape for hover content.
 type MarkupContent struct {
 	Kind  string `json:"kind"`
@@ -321,46 +302,93 @@ type CompletionItem struct {
 // resolveParams is the request shape for `aggrega/resolve`. The
 // cursor position references a YAML node in the file at uri.
 type resolveParams struct {
-	URI      string   `json:"uri"`
-	Position Position `json:"position"`
+	URI      string           `json:"uri"`
+	Position yamlpos.Position `json:"position"`
 }
 
 // resolveResult is the response shape for `aggrega/resolve`. Location
 // is null when no definition site is found.
 type resolveResult struct {
-	Location *Location `json:"location"`
+	Location *yamlpos.Location `json:"location"`
 }
 
-// dispatchResolve is the stub handler for `aggrega/resolve`. Returns
-// a structurally-valid empty response; the full implementation lands
-// when the resolve-family navigation handlers ship.
+// dispatchResolve unmarshals params and invokes resolveDefinitionSite.
+// File-not-validated produces a 1001 error envelope; every other
+// outcome (definition found, definition not found, cursor on a
+// non-reference position) produces a result envelope with a possibly-
+// nil Location.
 func (s *Server) dispatchResolve(req *jsonRPCRequest) error {
-	return s.writeResult(req.ID, resolveResult{Location: nil})
+	var params resolveParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	loc, errEnvelope := s.resolveDefinitionSite(params.URI, params.Position)
+	if errEnvelope != nil {
+		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+	}
+	return s.writeResult(req.ID, resolveResult{Location: loc})
+}
+
+// findReferencesParams is the request shape for
+// `aggrega/findReferences`. The cursor position must address a
+// metadata.name scalar for the result to be non-empty.
+type findReferencesParams struct {
+	URI      string           `json:"uri"`
+	Position yamlpos.Position `json:"position"`
 }
 
 // findReferencesResult is the response shape for `aggrega/findReferences`.
 type findReferencesResult struct {
-	Locations []Location `json:"locations"`
+	Locations []yamlpos.Location `json:"locations"`
 }
 
-// dispatchFindReferences is the stub handler for `aggrega/findReferences`.
-// Returns an empty location list; the full implementation lands with
-// the resolve-family navigation handlers.
+// dispatchFindReferences unmarshals params and invokes
+// findReferencesAcrossWorkspace. File-not-validated produces 1001;
+// every other outcome (matches found, no matches, cursor not on
+// metadata.name) produces a result envelope.
 func (s *Server) dispatchFindReferences(req *jsonRPCRequest) error {
-	return s.writeResult(req.ID, findReferencesResult{Locations: []Location{}})
+	var params findReferencesParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	locs, errEnvelope := s.findReferencesAcrossWorkspace(params.URI, params.Position)
+	if errEnvelope != nil {
+		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+	}
+	if locs == nil {
+		locs = []yamlpos.Location{}
+	}
+	return s.writeResult(req.ID, findReferencesResult{Locations: locs})
+}
+
+// findImplementationsParams is the request shape for
+// `aggrega/findImplementations`.
+type findImplementationsParams struct {
+	URI      string           `json:"uri"`
+	Position yamlpos.Position `json:"position"`
 }
 
 // findImplementationsResult is the response shape for
 // `aggrega/findImplementations`.
 type findImplementationsResult struct {
-	Locations []Location `json:"locations"`
+	Locations []yamlpos.Location `json:"locations"`
 }
 
-// dispatchFindImplementations is the stub handler. Returns an empty
-// location list; the full implementation lands with the resolve-family
-// navigation handlers.
+// dispatchFindImplementations unmarshals params and invokes
+// findImplementationsAcrossWorkspace.
 func (s *Server) dispatchFindImplementations(req *jsonRPCRequest) error {
-	return s.writeResult(req.ID, findImplementationsResult{Locations: []Location{}})
+	var params findImplementationsParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	locs, errEnvelope := s.findImplementationsAcrossWorkspace(params.URI, params.Position)
+	if errEnvelope != nil {
+		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+	}
+	if locs == nil {
+		locs = []yamlpos.Location{}
+	}
+	return s.writeResult(req.ID, findImplementationsResult{Locations: locs})
 }
 
 // hoverResult is the response shape for `aggrega/hover`. Contents is
