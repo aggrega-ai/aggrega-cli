@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -27,11 +28,17 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 	return &Server{
 		workspaceRoot: workspaceRoot,
 		wsConfig:      workspaceconfig.Default(),
-		parseCache:    newCache(),
-		diagnostics:   map[string][]Diagnostic{},
-		in:            bufio.NewReader(stdin),
-		out:           stdout,
-		stderr:        io.Discard,
+		// lazyCatalog is populated with empty configuration so
+		// handleInvalidate's Reset() call doesn't panic on a nil
+		// pointer. Tests that exercise lazy-lookup behavior populate
+		// their own configured instance; this default suffices for
+		// every test that doesn't touch the lookup directly.
+		lazyCatalog: catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
+		parseCache:  newCache(),
+		diagnostics: map[string][]Diagnostic{},
+		in:          bufio.NewReader(stdin),
+		out:         stdout,
+		stderr:      io.Discard,
 	}
 }
 
@@ -182,6 +189,151 @@ func TestServeAggregaInvalidateDropsCacheEntry(t *testing.T) {
 	}
 	if _, ok := srv.parseCache.Get(file); ok {
 		t.Errorf("parse cache entry still present after invalidate")
+	}
+}
+
+// TestServeAggregaInvalidateWithGranularityFileFallsThroughToCoarse
+// verifies that a non-default Granularity value is accepted without
+// error and produces the coarse-default workspace-level invalidation.
+// At this WI, only the workspace mode is implemented; the field is
+// forward-compatible reservation for future per-file / per-entity
+// modes.
+func TestServeAggregaInvalidateWithGranularityFileFallsThroughToCoarse(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	srv := newTestServer(t, tmp, nil, nil)
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/invalidate", invalidateParams{
+		File:        "anything.yaml",
+		Granularity: "file",
+	}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("invalidate with granularity=file returned error: %+v", resp.Error)
+	}
+	var result invalidateResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !result.Invalidated {
+		t.Errorf("invalidated should be true regardless of granularity field")
+	}
+}
+
+// TestServeAggregaInvalidateDropsRecipeCatalog verifies the
+// workspace-level recipeCatalog field is cleared on invalidate. The
+// test pre-populates the field directly (bypassing the lazy-load
+// path) and asserts it is nil after invalidate. Subsequent
+// aggrega/irGraph would re-load via resolveRecipeCatalog (covered
+// transitively by existing irGraph tests; this test pins only the
+// drop-on-invalidate behavior).
+func TestServeAggregaInvalidateDropsRecipeCatalog(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	srv := newTestServer(t, tmp, nil, nil)
+	// Pre-populate recipeCatalog with a non-nil sentinel. An empty
+	// *catalog.Catalog is a valid value for nil-vs-non-nil checks
+	// without needing the real catalog walker.
+	srv.recipeCatalog = &catalog.Catalog{}
+	if srv.recipeCatalog == nil {
+		t.Fatalf("test setup: recipeCatalog should be non-nil before invalidate")
+	}
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/invalidate", invalidateParams{File: "any.yaml"}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("invalidate returned error: %+v", resp.Error)
+	}
+	if srv.recipeCatalog != nil {
+		t.Errorf("recipeCatalog should be nil after invalidate; got non-nil")
+	}
+}
+
+// TestServeAggregaInvalidateResetsLazyCatalog verifies the lazy
+// lookup's hot cache is cleared on invalidate. The test populates
+// the hot cache via a Tier-1 walk against a fixture, removes the
+// underlying file, calls invalidate, then asserts the subsequent
+// Component(uri) misses — proving the cache was reset (otherwise
+// the cached entity would have survived the file removal).
+func TestServeAggregaInvalidateResetsLazyCatalog(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	catalogDir := filepath.Join(tmp, "catalog")
+	componentDir := filepath.Join(catalogDir, "component")
+	if err := os.MkdirAll(componentDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	yamlBody := `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: invalidate-test/comp
+  version: "1.0.0"
+spec: {}
+`
+	yamlPath := filepath.Join(componentDir, "comp.yaml")
+	if err := os.WriteFile(yamlPath, []byte(yamlBody), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	srv := newTestServer(t, tmp, nil, nil)
+	// Replace the default empty lazyCatalog with one configured
+	// against the fixture catalog dir.
+	srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{catalogDir}, nil)
+	lookup := srv.lazyCatalog.AsCatalogLookup()
+
+	// Populate the hot cache via Tier-1 walk.
+	if _, ok := lookup.Component("invalidate-test/comp"); !ok {
+		t.Fatalf("initial Component lookup missed; fixture wiring broken")
+	}
+	// Remove the underlying file; without invalidate the hot cache
+	// would still serve the cached entity.
+	if err := os.Remove(yamlPath); err != nil {
+		t.Fatalf("remove fixture: %v", err)
+	}
+
+	// Invalidate.
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/invalidate", invalidateParams{File: yamlPath}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("invalidate returned error: %+v", resp.Error)
+	}
+
+	// After invalidate + file removal, the next lookup must miss.
+	if _, ok := lookup.Component("invalidate-test/comp"); ok {
+		t.Errorf("Component should miss after invalidate + file removal; hot cache stale")
+	}
+}
+
+// TestServeAggregaInvalidateBackToBackIdempotent verifies that two
+// sequential invalidate calls both succeed without error and leave
+// the daemon in the same state. Sequential dispatch + idempotent
+// drop primitives mean the second call is a no-op in observable
+// terms; "no thrashing" at the call boundary.
+func TestServeAggregaInvalidateBackToBackIdempotent(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	srv := newTestServer(t, tmp, nil, nil)
+	srv.recipeCatalog = &catalog.Catalog{} // sentinel
+
+	for i := 1; i <= 2; i++ {
+		var in, out bytes.Buffer
+		in.Write(framedRequest(i, "aggrega/invalidate", invalidateParams{File: "any.yaml"}))
+		resp := runOneRequest(t, srv, &in, &out)
+		if resp.Error != nil {
+			t.Fatalf("invalidate call %d returned error: %+v", i, resp.Error)
+		}
+		var result invalidateResult
+		if err := json.Unmarshal(resp.Result, &result); err != nil {
+			t.Fatalf("call %d unmarshal: %v", i, err)
+		}
+		if !result.Invalidated {
+			t.Errorf("call %d: invalidated should be true", i)
+		}
+	}
+	// After both calls, state matches what a single call produces:
+	// recipeCatalog nil.
+	if srv.recipeCatalog != nil {
+		t.Errorf("recipeCatalog should be nil after back-to-back invalidates")
 	}
 }
 

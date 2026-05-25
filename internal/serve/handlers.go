@@ -110,34 +110,6 @@ func yamlErrorToDiagnostic(err error) Diagnostic {
 	}
 }
 
-// invalidateParams is the request shape for `aggrega/invalidate`.
-type invalidateParams struct {
-	File string `json:"file"`
-}
-
-// invalidateResult is the response shape for `aggrega/invalidate`.
-type invalidateResult struct {
-	Invalidated bool `json:"invalidated"`
-}
-
-func (s *Server) dispatchInvalidate(req *jsonRPCRequest) error {
-	var params invalidateParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
-	}
-	result := s.handleInvalidate(params)
-	return s.writeResult(req.ID, result)
-}
-
-// handleInvalidate drops the parse-cache and diagnostic-cache entries
-// for the named file. Reports invalidated: true unconditionally —
-// dropping an entry that does not exist is a no-op, not an error.
-func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
-	s.parseCache.Drop(params.File)
-	delete(s.diagnostics, params.File)
-	return invalidateResult{Invalidated: true}
-}
-
 // diagnosticsParams is the request shape for `aggrega/diagnostics`.
 type diagnosticsParams struct {
 	File string `json:"file"`

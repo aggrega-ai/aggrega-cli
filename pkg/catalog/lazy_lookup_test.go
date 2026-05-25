@@ -294,3 +294,61 @@ spec: {}
 		t.Errorf("Metadata.Name = %q; want %q", feat.Metadata.Name, "test/health-check")
 	}
 }
+
+// TestLazyLookupResetClearsHotCachesAndIndexes verifies that Reset
+// returns the lookup to its post-construction shape: subsequent
+// Component lookups re-walk the cascade rather than returning
+// cached results. The test populates the lookup via a Tier-1
+// filesystem walk, removes the underlying file, then calls Reset.
+// A subsequent Component(uri) call misses (the file is gone) —
+// proving the cache was cleared (otherwise the cached entity would
+// have returned even after the file's removal).
+func TestLazyLookupResetClearsHotCachesAndIndexes(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	catalogDir := filepath.Join(tmp, "catalog")
+	componentDir := filepath.Join(catalogDir, "component")
+	if err := os.MkdirAll(componentDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	yamlPath := filepath.Join(componentDir, "reset-target.yaml")
+	if err := os.WriteFile(yamlPath, []byte(fullstackComponentYAML()), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	primer := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller())
+	lookup := primer.AsCatalogLookup()
+
+	// First lookup populates the hot cache.
+	if _, ok := lookup.Component("test/api-server"); !ok {
+		t.Fatalf("initial Component lookup missed")
+	}
+
+	// Remove the underlying file so a re-walk would not find it.
+	if err := os.Remove(yamlPath); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	// Without Reset, the hot cache would still serve the cached
+	// entity. Call Reset; the next lookup must re-walk and miss.
+	primer.Reset()
+	if _, ok := lookup.Component("test/api-server"); ok {
+		t.Errorf("Component should miss after Reset + file-removal; hot cache stale")
+	}
+}
+
+// TestLazyLookupResetIsIdempotent verifies two back-to-back Reset
+// calls leave the lookup in the empty state without panicking.
+func TestLazyLookupResetIsIdempotent(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	primer := catalog.NewLazyLookup(tmp, "", nil, newMockPuller())
+
+	primer.Reset()
+	primer.Reset() // second call must not panic
+
+	// Lookup against the (still empty) state — should miss cleanly.
+	lookup := primer.AsCatalogLookup()
+	if _, ok := lookup.Component("test/whatever"); ok {
+		t.Errorf("Component should miss on empty lookup; got hit")
+	}
+}

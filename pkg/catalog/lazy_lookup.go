@@ -80,6 +80,33 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 	}
 }
 
+// Reset clears the hot caches, negative caches, and per-kind index
+// state, returning the lookup to its post-construction shape.
+// Subsequent Component / Feature calls re-walk the cascade.
+//
+// Reset does NOT touch the workspaceRoot / cacheDir / catalogDirs /
+// puller configuration — those came from NewLazyLookup and stay
+// stable across the session. Reset is the right operation when the
+// workspace's filesystem state changed (a file was added, removed,
+// or modified) and the lookup's cached resolutions could be stale.
+//
+// Thread-safety: the lazy lookup is not concurrency-safe; the
+// daemon's sequential dispatch loop is the only intended caller.
+//
+// Idempotent: calling Reset twice in a row leaves the state empty;
+// the second call re-allocates the maps but observes no state to
+// clear.
+func (l *LazyLookup) Reset() {
+	l.components = map[string]types.Component{}
+	l.features = map[string]types.Feature{}
+	l.componentMisses = map[string]struct{}{}
+	l.featureMisses = map[string]struct{}{}
+	l.componentIndex = map[string]string{}
+	l.componentIndexBuilt = false
+	l.featureIndex = map[string]string{}
+	l.featureIndexBuilt = false
+}
+
 // Prime copies the supplied catalog's already-merged Components and
 // Features into the lazy lookup's hot caches. After Prime, calls to
 // Component(uri) or Feature(uri) for URIs in the supplied catalog
