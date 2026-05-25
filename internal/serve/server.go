@@ -22,7 +22,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -59,12 +58,30 @@ type Server struct {
 	workspaceRoot string
 	wsConfig      workspaceconfig.Config
 
-	// catalog is the lazy-on-first-use catalog handle. Loaded from
-	// wsConfig.Workspace.CatalogDirs (or workspace root fallback) the
-	// first time an operation needs it; reused across subsequent
-	// requests in the session. A per-URI Tier-1/2/3 lookup cascade is
-	// a future refinement.
-	catalog *catalog.Catalog
+	// lazyCatalog is the per-URI Tier-1/2/3 cascade for Component +
+	// Feature URIs. Constructed once at startup via
+	// catalog.NewLazyLookup; no per-request reconstruction. The
+	// struct carries its own session-scoped hot cache + negative
+	// cache; downstream consumers obtain the resolver.CatalogLookup
+	// surface via AsCatalogLookup().
+	//
+	// The hot cache is primed from recipeCatalog the first time
+	// resolveRecipeCatalog runs (via lazyCatalog.Prime(recipeCat)),
+	// so the first aggrega/irGraph call pays one walk over
+	// catalog_dirs (eager catalog.LoadAll inside resolveRecipeCatalog),
+	// not two — the lazy lookup's Tier-1 index walk is short-circuited
+	// because Prime sets the per-kind built flags.
+	lazyCatalog *catalog.LazyLookup
+
+	// recipeCatalog is the eager-on-first-use catalog handle that
+	// serves Recipe + FeatureRecipe + SubAggregateLoader. Implements-
+	// keyed lookup with three-form version precedence is a separate
+	// design problem that the lazy primitive does not address; the
+	// eager catalog continues to carry those surfaces. Loaded from
+	// wsConfig.Workspace.CatalogDirs (or workspace root fallback)
+	// the first time aggrega/irGraph (or another Recipe-needing
+	// operation) runs.
+	recipeCatalog *catalog.Catalog
 
 	// activeRelease is nil in this scaffold; populated when the
 	// multi-Manifest disambiguation cascade ships.
@@ -109,9 +126,17 @@ func Run(cfg RunConfig) error {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	puller := catalog.NewDefaultOCIPuller(wsCfg)
+	lazyCatalog := catalog.NewLazyLookup(
+		root,
+		wsCfg.Workspace.CacheDir,
+		wsCfg.Workspace.CatalogDirs,
+		puller,
+	)
 	srv := &Server{
 		workspaceRoot: root,
 		wsConfig:      wsCfg,
+		lazyCatalog:   lazyCatalog,
 		parseCache:    newCache(),
 		diagnostics:   map[string][]Diagnostic{},
 		in:            bufio.NewReader(cfg.Stdin),
@@ -149,8 +174,12 @@ func discoverWorkspaceRoot(start string) (root, configPath string, err error) {
 	}
 }
 
-// resolveCatalog loads the catalog lazily on first use and caches the
-// result in s.catalog. Subsequent calls reuse the cached handle.
+// resolveRecipeCatalog loads the catalog lazily on first use and
+// caches the result in s.recipeCatalog. Subsequent calls reuse the
+// cached handle. Used for Recipe + FeatureRecipe + SubAggregateLoader
+// surfaces, which the lazy per-URI lookup does not currently support
+// (implements-keyed lookup with three-form version precedence is a
+// separate design problem).
 //
 // Loading targets wsConfig.Workspace.CatalogDirs when populated;
 // otherwise falls back to a single-directory load against the
@@ -158,11 +187,12 @@ func discoverWorkspaceRoot(start string) (root, configPath string, err error) {
 // downstream pipeline calls see fully-merged entities.
 //
 // On load or extends-resolution error, the error is returned and
-// s.catalog stays nil — subsequent calls retry. Deprecation and lint
-// warnings produced during load are emitted to s.stderr inline.
-func (s *Server) resolveCatalog() (*catalog.Catalog, error) {
-	if s.catalog != nil {
-		return s.catalog, nil
+// s.recipeCatalog stays nil — subsequent calls retry. Deprecation
+// and lint warnings produced during load are emitted to s.stderr
+// inline.
+func (s *Server) resolveRecipeCatalog() (*catalog.Catalog, error) {
+	if s.recipeCatalog != nil {
+		return s.recipeCatalog, nil
 	}
 	dirs := s.wsConfig.Workspace.CatalogDirs
 	var cat *catalog.Catalog
@@ -187,20 +217,11 @@ func (s *Server) resolveCatalog() (*catalog.Catalog, error) {
 	for _, w := range cat.LintWarnings() {
 		fmt.Fprintf(s.stderr, "  %s\n", w)
 	}
-	s.catalog = cat
+	s.recipeCatalog = cat
+	// Prime the lazy lookup's hot caches from the already-merged
+	// entities in the eager catalog. Eliminates the redundant
+	// Tier-1 header-walk the lazy lookup would otherwise perform on
+	// first Component/Feature access in this session.
+	s.lazyCatalog.Prime(cat)
 	return cat, nil
-}
-
-// catalogLookup returns the resolver.CatalogLookup struct for the
-// daemon's session. Triggers lazy catalog load on first use via
-// resolveCatalog. Returns the zero-value lookup struct on load
-// failure — handlers calling this MUST check the err return and
-// surface it as an error envelope rather than passing a zero lookup
-// to the pipeline.
-func (s *Server) catalogLookup() (resolver.CatalogLookup, error) {
-	cat, err := s.resolveCatalog()
-	if err != nil {
-		return resolver.CatalogLookup{}, err
-	}
-	return cat.CatalogLookup(), nil
 }

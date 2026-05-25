@@ -4,7 +4,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +17,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -120,7 +118,7 @@ func pullRun(cfg pullConfig) error {
 	}
 
 	externals := loadExternalEntities(rel, aggPath, manifestPath)
-	lookup := cat.ClosureLookupWithExternals(newDefaultOCIPuller(wsCfg), workspaceRoot, cacheDir, externals)
+	lookup := cat.ClosureLookupWithExternals(catalog.NewDefaultOCIPuller(wsCfg), workspaceRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return fmt.Errorf("closure: %w", err)
@@ -280,25 +278,4 @@ func copyConsumers(in []closure.LibraryConsumer) []lockfile.LibraryConsumer {
 		})
 	}
 	return out
-}
-
-// newDefaultOCIPuller returns the production catalog.OCIPuller backed
-// by pkg/oci.NewRemoteRepository per Pull-call. Returns nil when the
-// workspace is configured offline, so closure_lookup's Tier-3 path
-// returns NotFound without attempting any network access.
-func newDefaultOCIPuller(wsCfg workspaceconfig.Config) catalog.OCIPuller {
-	if wsCfg.Workspace.Offline {
-		return nil
-	}
-	return defaultOCIPuller{}
-}
-
-type defaultOCIPuller struct{}
-
-func (defaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
-	repo, err := oci.NewRemoteRepository(reference)
-	if err != nil {
-		return nil, err
-	}
-	return oci.Pull(ctx, repo, tag)
 }

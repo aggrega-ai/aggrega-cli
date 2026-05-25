@@ -232,3 +232,123 @@ func TestServeExitsWhenNoWorkspaceConfig(t *testing.T) {
 		t.Errorf("expected output mentioning workspace; got: %s", output)
 	}
 }
+
+// TestServeAggregaIrGraphEndToEnd exercises the daemon's live
+// aggrega/irGraph flow against the fullstack-app fixture. The
+// subprocess goes through Run's full startup wiring — workspace-root
+// discovery, workspace-config load, OCIPuller construction via
+// catalog.NewDefaultOCIPuller, lazy lookup construction via
+// catalog.NewLazyLookup. The handler reads s.lazyCatalog.AsCatalogLookup()
+// and passes it to pipeline.RunPipeline.
+//
+// This is the end-to-end pin for the wiring: the existing in-package
+// stub tests construct Server directly via newTestServer, bypassing
+// Run's startup wiring. Without this subprocess test, the wired-up
+// lazy-lookup flow has only compile + vet coverage. With this test,
+// the round-trip — catalog walk → IR construction → JSON serialisation
+// — is verified end-to-end against a real workspace.
+func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
+	bin := buildServeBinary(t)
+	ws := t.TempDir()
+
+	// Resolve absolute paths to the fullstack-app fixture. The test
+	// runs from cmd/aggrega/; the module root is two dirs up.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	moduleRoot := filepath.Dir(filepath.Dir(cwd))
+	fixtureDir := filepath.Join(moduleRoot, "internal", "compiler", "testdata", "fullstack-app")
+	catalogDir := filepath.Join(fixtureDir, "catalog")
+	releasePath := filepath.Join(fixtureDir, "release.yaml")
+
+	// Workspace config points at the fullstack-app catalog by
+	// absolute path. The daemon's handleIrGraph joins
+	// params.Release with workspaceRoot via filepath.Join, which
+	// concatenates rather than discarding absolute paths — so
+	// params.Release must stay workspace-relative. Copy the three
+	// fixture YAMLs (release / manifest / aggregate) into the
+	// workspace at the top level; reference release.yaml relatively.
+	configBody := fmt.Sprintf("workspace:\n  catalog_dirs:\n    - %s\n", catalogDir)
+	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"), []byte(configBody), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	for _, name := range []string{"release.yaml", "manifest.yaml", "aggregate.yaml"} {
+		src := filepath.Join(fixtureDir, name)
+		dst := filepath.Join(ws, name)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", name, err)
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+	}
+	// Suppress the unused-variable warning for releasePath now that
+	// params.Release is workspace-relative.
+	_ = releasePath
+
+	cmd := exec.Command(bin, "serve")
+	cmd.Dir = ws
+	cmd.Stderr = os.Stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	})
+
+	// Send aggrega/irGraph with the workspace-relative Release path.
+	if _, err := stdin.Write(framed(1, "aggrega/irGraph", map[string]any{
+		"release": "release.yaml",
+	})); err != nil {
+		t.Fatalf("write irGraph request: %v", err)
+	}
+	resp := readOneResponse(t, stdout, 30*time.Second)
+	if errEnv, ok := resp["error"]; ok {
+		t.Fatalf("aggrega/irGraph returned error envelope: %+v", errEnv)
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("aggrega/irGraph response missing result field; got %+v", resp)
+	}
+	graph, ok := result["graph"]
+	if !ok {
+		t.Fatalf("aggrega/irGraph result missing graph field; got %+v", result)
+	}
+	// The graph should decode as a non-empty types.IRGraph carrying
+	// a Kubernetes-style envelope (apiVersion + kind + metadata +
+	// spec). Assert structural shape without importing pkg/types:
+	// the four canonical top-level keys must be present, and the
+	// kind field should declare the document type.
+	graphMap, ok := graph.(map[string]any)
+	if !ok {
+		t.Fatalf("aggrega/irGraph graph field should decode as JSON object; got %T", graph)
+	}
+	for _, key := range []string{"apiVersion", "kind", "metadata", "spec"} {
+		if _, has := graphMap[key]; !has {
+			t.Errorf("aggrega/irGraph graph missing expected top-level %q key; got keys: %v", key, mapKeys(graphMap))
+		}
+	}
+	if kind, _ := graphMap["kind"].(string); kind == "" {
+		t.Errorf("aggrega/irGraph graph kind field should be a non-empty string; got %v", graphMap["kind"])
+	}
+}
+
+// mapKeys is a small helper for diagnostic error messages.
+func mapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

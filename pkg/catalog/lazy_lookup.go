@@ -16,8 +16,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
-// NewLazyLookup returns a resolver.CatalogLookup that lazily resolves
-// Component and Feature URIs through the Tier-1 → Tier-2 → Tier-3
+// NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
+// produces a resolver.CatalogLookup. The returned *LazyLookup carries
+// a Prime method that primes the hot caches from an already-loaded
+// *Catalog, eliminating the redundant first-Tier-1 walk on sessions
+// where the eager catalog has already been built for other purposes
+// (e.g., for Recipe + FeatureRecipe + SubAggregateLoader).
+//
+// The lazy lookup resolves Component and Feature URIs through the
+// Tier-1 → Tier-2 → Tier-3
 // cascade. Tier-1 walks the configured catalog directories once per
 // session (header-only YAML parse) and builds an in-memory index
 // keyed by metadata.name; subsequent Tier-1 calls hit the index in
@@ -47,8 +54,8 @@ import (
 // use catalog.Load + (*Catalog).CatalogLookup, which loads every
 // entity upfront. The lazy primitive is for long-running consumers
 // where most catalog entities are never referenced.
-func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller) resolver.CatalogLookup {
-	l := &lazyLookup{
+func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller) *LazyLookup {
+	return &LazyLookup{
 		workspaceRoot:   workspaceRoot,
 		cacheDir:        cacheDir,
 		catalogDirs:     catalogDirs,
@@ -60,13 +67,61 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		componentIndex:  map[string]string{},
 		featureIndex:    map[string]string{},
 	}
+}
+
+// AsCatalogLookup returns the resolver.CatalogLookup view of the lazy
+// lookup. Both Component and Feature fields close over the underlying
+// *LazyLookup, so the same hot caches + negative caches + indexes
+// serve every consumer.
+func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: l.Component,
 		Feature:   l.Feature,
 	}
 }
 
-type lazyLookup struct {
+// Prime copies the supplied catalog's already-merged Components and
+// Features into the lazy lookup's hot caches. After Prime, calls to
+// Component(uri) or Feature(uri) for URIs in the supplied catalog
+// return cache hits without walking Tier-1.
+//
+// The catalog MUST have completed extends resolution (via
+// (*Catalog).ResolveAllExtends) before Prime is called — the entries
+// in cat.Components and cat.Features are copied verbatim into the
+// hot caches under the assumption they are already merged.
+//
+// Prime also flips componentIndexBuilt + featureIndexBuilt to true so
+// subsequent Tier-1 walks are skipped. URIs not present in the
+// supplied catalog fall through to Tier-2 (workspace cache) and
+// Tier-3 (OCI puller) per the documented cascade — the eager
+// catalog.Load is presumed to be authoritative over the catalog
+// directories, so a URI not found there is presumed to live in cache
+// or registry.
+//
+// Order matters for the optimisation. Prime eliminates the redundant
+// Tier-1 walk only when it runs BEFORE any Component / Feature
+// lookup triggers the cascade. If a caller invokes the lookup first
+// and Prime second, the cascade already walked Tier-1 to build its
+// index; Prime then overlays already-merged entries on top of
+// cascade-resolved entries (semantically equivalent — both produce
+// the same shape — but the walk-elimination payoff is lost).
+// Consumers wanting the optimisation should call Prime before
+// exposing the lookup to operations that may resolve URIs.
+//
+// Idempotent: calling Prime twice with the same catalog has no
+// additional effect.
+func (l *LazyLookup) Prime(cat *Catalog) {
+	for uri, comp := range cat.Components {
+		l.components[uri] = comp
+	}
+	for uri, feat := range cat.Features {
+		l.features[uri] = feat
+	}
+	l.componentIndexBuilt = true
+	l.featureIndexBuilt = true
+}
+
+type LazyLookup struct {
 	workspaceRoot string
 	cacheDir      string
 	catalogDirs   []string
@@ -116,7 +171,7 @@ type fileHeader struct {
 // downstream consumers can proceed; the operator sees the warning
 // in the daemon's stderr stream. This mirrors how dispatchBuild
 // surfaces catalog deprecation + binding-lint warnings.
-func (l *lazyLookup) Component(uri string) (types.Component, bool) {
+func (l *LazyLookup) Component(uri string) (types.Component, bool) {
 	if c, ok := l.components[uri]; ok {
 		return c, true
 	}
@@ -138,7 +193,7 @@ func (l *lazyLookup) Component(uri string) (types.Component, bool) {
 
 // Feature mirrors Component for the Feature surface. Extends-resolution
 // errors surface to os.Stderr per the same convention.
-func (l *lazyLookup) Feature(uri string) (types.Feature, bool) {
+func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 	if f, ok := l.features[uri]; ok {
 		return f, true
 	}
@@ -171,7 +226,7 @@ func (l *lazyLookup) Feature(uri string) (types.Feature, bool) {
 // next tier, and the lookup ultimately reports miss if no tier
 // produces a Component-kind result. This matches catalog.Load's
 // kind-routing semantic (indexFile dispatches by hdr.Kind).
-func (l *lazyLookup) resolveComponent(uri string) (types.Component, bool) {
+func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true
 	}
@@ -194,7 +249,7 @@ func (l *lazyLookup) resolveComponent(uri string) (types.Component, bool) {
 // resolveFeature mirrors resolveComponent for the Feature surface.
 // The same kind-check guards Tier-2 + Tier-3 unmarshal paths against
 // non-Feature bytes arriving from the cache or registry.
-func (l *lazyLookup) resolveFeature(uri string) (types.Feature, bool) {
+func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return feat, true
 	}
@@ -217,7 +272,7 @@ func (l *lazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 // tier1ReadComponent looks up the URI in the (lazily-built) component
 // index and reads + full-unmarshals the indexed file. Returns the
 // unmerged Component on hit.
-func (l *lazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
+func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 	l.buildComponentIndex()
 	lookupName := lookupNameFromURI(uri)
 	path, ok := l.componentIndex[lookupName]
@@ -236,7 +291,7 @@ func (l *lazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 }
 
 // tier1ReadFeature mirrors tier1ReadComponent for the Feature surface.
-func (l *lazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
+func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	l.buildFeatureIndex()
 	lookupName := lookupNameFromURI(uri)
 	path, ok := l.featureIndex[lookupName]
@@ -259,7 +314,7 @@ func (l *lazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 // filesystem path mappings for every Component-kind YAML found.
 // Idempotent: a second call is a no-op once componentIndexBuilt is
 // true.
-func (l *lazyLookup) buildComponentIndex() {
+func (l *LazyLookup) buildComponentIndex() {
 	if l.componentIndexBuilt {
 		return
 	}
@@ -268,7 +323,7 @@ func (l *lazyLookup) buildComponentIndex() {
 }
 
 // buildFeatureIndex mirrors buildComponentIndex for the Feature surface.
-func (l *lazyLookup) buildFeatureIndex() {
+func (l *LazyLookup) buildFeatureIndex() {
 	if l.featureIndexBuilt {
 		return
 	}
@@ -285,7 +340,7 @@ func (l *lazyLookup) buildFeatureIndex() {
 // the lazy lookup's contract is "find what you can"; broken files
 // surface at full-unmarshal time when a specific URI is requested,
 // not during the index walk.
-func (l *lazyLookup) walkAndIndex(targetKind string, index map[string]string) {
+func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 	for _, dir := range l.catalogDirs {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {

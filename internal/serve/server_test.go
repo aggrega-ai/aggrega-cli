@@ -267,6 +267,24 @@ func TestServeAggregaFindReferencesReturnsEmptyStub(t *testing.T) {
 	}
 }
 
+func TestServeAggregaFindImplementationsReturnsEmptyStub(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, t.TempDir(), nil, nil)
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/findImplementations", resolveParams{URI: "file:///x.yaml"}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("stub findImplementations returned error: %+v", resp.Error)
+	}
+	var result findImplementationsResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(result.Locations) != 0 {
+		t.Errorf("findImplementations stub should return empty Locations; got %d entries", len(result.Locations))
+	}
+}
+
 func TestServeAggregaHoverReturnsNullStub(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)

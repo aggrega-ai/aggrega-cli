@@ -75,7 +75,7 @@ func TestLazyLookupComponentTier1HitFromCatalogDir(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 	puller := newMockPuller()
-	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, puller)
+	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, puller).AsCatalogLookup()
 	comp, ok := lookup.Component("test/api-server")
 	if !ok {
 		t.Fatalf("Component(\"test/api-server\") not found at Tier-1")
@@ -105,7 +105,7 @@ func TestLazyLookupComponentTier1HitFromNonStrictLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(catalogDir, "whatever.yaml"), []byte(fullstackComponentYAML()), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller())
+	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller()).AsCatalogLookup()
 	comp, ok := lookup.Component("test/api-server")
 	if !ok {
 		t.Fatalf("Component(\"test/api-server\") not found at Tier-1 for non-strict layout — layout-agnostic invariant violated")
@@ -132,7 +132,7 @@ spec: {}
 		t.Fatalf("WriteCached: %v", err)
 	}
 	puller := newMockPuller()
-	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
+	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller).AsCatalogLookup()
 	comp, ok := lookup.Component(uri)
 	if !ok {
 		t.Fatalf("Component(%q) not found at Tier-2", uri)
@@ -160,7 +160,7 @@ spec: {}
 	puller := newMockPuller()
 	puller.bytesByURI[uri] = []byte(yamlBody)
 
-	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
+	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller).AsCatalogLookup()
 	comp, ok := lookup.Component(uri)
 	if !ok {
 		t.Fatalf("Component(%q) not found at Tier-3", uri)
@@ -206,7 +206,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(componentDir, "derived.yaml"), []byte(child), 0o644); err != nil {
 		t.Fatalf("write child: %v", err)
 	}
-	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller())
+	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller()).AsCatalogLookup()
 	comp, ok := lookup.Component("test/derived")
 	if !ok {
 		t.Fatalf("Component(\"test/derived\") not found")
@@ -236,7 +236,7 @@ spec: {}
 	puller := newMockPuller()
 	puller.bytesByURI[uri] = []byte(yamlBody)
 
-	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
+	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller).AsCatalogLookup()
 	if _, ok := lookup.Component(uri); !ok {
 		t.Fatalf("first Component(%q) call missed", uri)
 	}
@@ -252,7 +252,7 @@ func TestLazyLookupComponentCascadeExhaustedReturnsFalse(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	puller := newMockPuller() // no fixtures; Pull always returns ErrFetchNotFound
-	lookup := catalog.NewLazyLookup(tmp, ".aggrega/cache", nil, puller)
+	lookup := catalog.NewLazyLookup(tmp, ".aggrega/cache", nil, puller).AsCatalogLookup()
 	uri := "test/missing-component:1.0.0"
 	if _, ok := lookup.Component(uri); ok {
 		t.Fatalf("Component(%q) should miss but reported hit", uri)
@@ -285,7 +285,7 @@ spec: {}
 	if err := os.WriteFile(filepath.Join(featureDir, "health-check.yaml"), []byte(featureYAML), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller())
+	lookup := catalog.NewLazyLookup(tmp, "", []string{catalogDir}, newMockPuller()).AsCatalogLookup()
 	feat, ok := lookup.Feature("test/health-check")
 	if !ok {
 		t.Fatalf("Feature(\"test/health-check\") not found")

@@ -229,6 +229,23 @@ func daemonEngineFactory(providerName string) (renderer.Engine, error) {
 // daemon's workspace root. Subsequent filesystem reads (Manifest,
 // Aggregate, lockfile data when the lockfile machinery ships)
 // resolve against the Release's containing directory.
+//
+// Catalog lookup asymmetry: the resolver.CatalogLookup argument
+// (Component + Feature) comes from the session-scoped lazy lookup
+// constructed at daemon startup — per-URI cascade through Tier-1
+// (filesystem) → Tier-2 (workspace cache) → Tier-3 (OCI registry).
+// The renderer.RecipeLookup + topology.SubAggregateLoader arguments
+// come from an eager *catalog.Catalog loaded on first use; implements-
+// keyed Recipe lookup with three-form version precedence is a
+// separate design problem that the lazy primitive does not address.
+//
+// End-to-end fixture-driven coverage lives in
+// cmd/aggrega/serve_test.go: TestServeAggregaIrGraphEndToEnd, which
+// spawns the daemon binary against a workspace pointing at the
+// fullstack-app fixture and asserts the round-trip produces a
+// well-formed IRGraph envelope. Per-handler dispatch is additionally
+// unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
+// the pipeline.RunPipeline call is covered by pipeline's own tests.
 func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCError) {
 	releasePath := filepath.Join(s.workspaceRoot, params.Release)
 	rel, err := resolver.LoadRelease(releasePath)
@@ -255,7 +272,7 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 			Message: fmt.Sprintf("read aggregate %s: %v", aggPath, err),
 		}
 	}
-	cat, err := s.resolveCatalog()
+	recipeCat, err := s.resolveRecipeCatalog()
 	if err != nil {
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
@@ -271,9 +288,9 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 			AggregatePath:     aggPath,
 			WorkspaceConfig:   s.wsConfig,
 		},
-		cat.CatalogLookup(),
-		cat.RecipeLookup(),
-		cat.SubAggregateLoader(),
+		s.lazyCatalog.AsCatalogLookup(),
+		recipeCat.RecipeLookup(),
+		recipeCat.SubAggregateLoader(),
 		daemonEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
