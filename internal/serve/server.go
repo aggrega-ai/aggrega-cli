@@ -83,9 +83,36 @@ type Server struct {
 	// operation) runs.
 	recipeCatalog *catalog.Catalog
 
-	// activeRelease is nil in this scaffold; populated when the
-	// multi-Manifest disambiguation cascade ships.
+	// activeRelease is the workspace's session-scoped active Release,
+	// resolved by the four-step disambiguation cascade at Run
+	// startup. nil when the cascade exhausted into Step 4 fallback
+	// (no authoring_release config, not exactly one Release file,
+	// no .aggrega/active-release marker). Operations needing Release
+	// context consult cascadeAttempt + cascadeDiagnosticMessage to
+	// construct error-envelope text when activeRelease is nil.
+	//
+	// Subprocess-test coverage of the cascade-via-Run wiring is
+	// deferred: no operation currently reads activeRelease and
+	// surfaces it through a wire response, so an external observer
+	// cannot assert "the cascade populated this field correctly".
+	// The cascade's correctness is pinned by direct unit tests on
+	// runManifestCascade in manifest_cascade_test.go; the Run-time
+	// invocation itself is covered only by compile + vet plus the
+	// implicit panic-free-startup behavior the existing subprocess
+	// tests exercise. When a future operation reads activeRelease
+	// and surfaces it (Tier-4 validate's execution path, or a
+	// dedicated query like aggrega/activeRelease), add a subprocess
+	// test that constructs a workspace matching each cascade step's
+	// win condition and asserts the operation's response carries the
+	// expected Release. The pickup point is here when a consumer
+	// lands.
 	activeRelease *types.Release
+
+	// cascadeAttempt records what the disambiguation cascade tried
+	// and which step (if any) selected activeRelease. Populated
+	// alongside activeRelease at Run startup; immutable for the
+	// daemon's session lifetime.
+	cascadeAttempt cascadeAttempt
 
 	// lockfile is nil in this scaffold; populated per active Release
 	// when the lockfile machinery ships.
@@ -133,15 +160,18 @@ func Run(cfg RunConfig) error {
 		wsCfg.Workspace.CatalogDirs,
 		puller,
 	)
+	activeRelease, attempt := runManifestCascade(root, wsCfg, stderr)
 	srv := &Server{
-		workspaceRoot: root,
-		wsConfig:      wsCfg,
-		lazyCatalog:   lazyCatalog,
-		parseCache:    newCache(),
-		diagnostics:   map[string][]Diagnostic{},
-		in:            bufio.NewReader(cfg.Stdin),
-		out:           cfg.Stdout,
-		stderr:        stderr,
+		workspaceRoot:  root,
+		wsConfig:       wsCfg,
+		lazyCatalog:    lazyCatalog,
+		activeRelease:  activeRelease,
+		cascadeAttempt: attempt,
+		parseCache:     newCache(),
+		diagnostics:    map[string][]Diagnostic{},
+		in:             bufio.NewReader(cfg.Stdin),
+		out:            cfg.Stdout,
+		stderr:         stderr,
 	}
 	return srv.dispatchLoop()
 }
