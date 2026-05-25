@@ -40,8 +40,7 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 	}
 	entry := CatalogEntry{URI: comp.Metadata.Name, Extends: comp.Spec.Extends}
 
-	result := ResolveInheritance(entry, catalogLookup)
-	if len(result.Errors) > 0 {
+	if result := ResolveInheritance(entry, catalogLookup); len(result.Errors) > 0 {
 		return comp, result.Errors
 	}
 
@@ -56,8 +55,6 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 	for i := len(chain) - 2; i >= 0; i-- {
 		merged = mergeComponent(merged, chain[i])
 	}
-
-	_ = result
 	return merged, nil
 }
 
@@ -76,8 +73,7 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 	}
 	entry := CatalogEntry{URI: feat.Metadata.Name, Extends: feat.Spec.Extends}
 
-	result := ResolveInheritance(entry, catalogLookup)
-	if len(result.Errors) > 0 {
+	if result := ResolveInheritance(entry, catalogLookup); len(result.Errors) > 0 {
 		return feat, result.Errors
 	}
 
@@ -90,7 +86,6 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 	for i := len(chain) - 2; i >= 0; i-- {
 		merged = mergeFeature(merged, chain[i])
 	}
-	_ = result
 	return merged, nil
 }
 

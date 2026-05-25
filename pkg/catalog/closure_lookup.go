@@ -107,10 +107,11 @@ func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, er
 	if res, ok := l.tier1CatalogEntity(uri); ok {
 		return res, nil
 	}
-	if res, ok := l.tier2(uri); ok {
+	if _, res, ok := l.tier2(uri); ok {
 		return res, nil
 	}
-	return l.tier3CatalogEntity(uri)
+	_, res, err := l.tier3CatalogEntity(uri)
+	return res, err
 }
 
 func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
@@ -130,7 +131,7 @@ func (l *catalogLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolut
 	if res, entries, ok := l.tier1SchemaLibrary(uri); ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
-	if res, ok := l.tier2(uri); ok {
+	if _, res, ok := l.tier2(uri); ok {
 		return closure.LibraryResolution{Resolution: res}, nil
 	}
 	res, err := l.tier3Library(uri, "SchemaLibrary")
@@ -141,7 +142,7 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 	if res, entries, ok := l.tier1MappingLibrary(uri); ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
-	if res, ok := l.tier2(uri); ok {
+	if _, res, ok := l.tier2(uri); ok {
 		return closure.LibraryResolution{Resolution: res}, nil
 	}
 	res, err := l.tier3Library(uri, "MappingLibrary")
@@ -149,10 +150,11 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 }
 
 func (l *catalogLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
-	if res, ok := l.tier2(uri); ok {
+	if _, res, ok := l.tier2(uri); ok {
 		return res, nil
 	}
-	return l.tier3CatalogEntity(uri)
+	_, res, err := l.tier3CatalogEntity(uri)
+	return res, err
 }
 
 func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool) {
@@ -237,45 +239,73 @@ func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requested
 	}
 }
 
-func (l *catalogLookup) tier2(uri string) (closure.Resolution, bool) {
-	if l.cacheDir == "" {
-		return closure.Resolution{}, false
+func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
+	return tier2ReadBytes(l.workspaceRoot, l.cacheDir, uri)
+}
+
+func (l *catalogLookup) tier3CatalogEntity(uri string) ([]byte, closure.Resolution, error) {
+	return tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+}
+
+// tier2ReadBytes is the package-level Tier-2 cache primitive. Reads
+// the cached entity bytes for a versioned URI from the workspace
+// cache directory. Returns the bytes plus the standard
+// closure.Resolution descriptor. The lazy lookup (NewLazyLookup)
+// consumes the bytes to parse typed entities; the existing
+// catalogLookup discards bytes and uses only the Resolution.
+//
+// Returns (nil, Resolution{}, false) when the cache directory is
+// unset, when the URI carries no version pin, or when the cache slot
+// is empty or unreadable.
+func tier2ReadBytes(workspaceRoot, cacheDir, uri string) ([]byte, closure.Resolution, bool) {
+	if cacheDir == "" {
+		return nil, closure.Resolution{}, false
 	}
 	_, version, hasV := splitVersionedURI(uri)
 	if !hasV || version == "" {
-		return closure.Resolution{}, false
+		return nil, closure.Resolution{}, false
 	}
-	slot := oci.CachePath(l.workspaceRoot, l.cacheDir, uri, version)
+	slot := oci.CachePath(workspaceRoot, cacheDir, uri, version)
 	bytes, err := readCacheSlotBytes(slot)
 	if err != nil {
-		return closure.Resolution{}, false
+		return nil, closure.Resolution{}, false
 	}
-	return closure.Resolution{
+	return bytes, closure.Resolution{
 		ResolvedVersion: version,
 		Digest:          contentDigest(bytes),
 		ResolutionPath:  "tier-2-cache",
 	}, true
 }
 
-func (l *catalogLookup) tier3CatalogEntity(uri string) (closure.Resolution, error) {
-	if l.ociPuller == nil {
-		return closure.Resolution{NotFound: true}, nil
+// tier3PullCatalogEntity is the package-level Tier-3 OCI pull
+// primitive. Pulls the catalog entity at uri from the registry via
+// the supplied OCIPuller and writes the pulled bytes to the
+// workspace cache slot. Returns the bytes plus the standard
+// closure.Resolution descriptor.
+//
+// Returns (nil, Resolution{NotFound: true}, nil) when the puller is
+// nil (hermetic-build path) or when the URI cannot be split into a
+// valid OCI reference + tag. Returns a wrapped error on pull or
+// cache-write failure.
+func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, uri string) ([]byte, closure.Resolution, error) {
+	if puller == nil {
+		return nil, closure.Resolution{NotFound: true}, nil
 	}
 	reference, tag, ok := SplitURIForOCI(uri)
 	if !ok {
-		return closure.Resolution{NotFound: true}, nil
+		return nil, closure.Resolution{NotFound: true}, nil
 	}
-	result, err := l.ociPuller.Pull(context.Background(), reference, tag)
+	result, err := puller.Pull(context.Background(), reference, tag)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound) {
-			return closure.Resolution{NotFound: true}, nil
+			return nil, closure.Resolution{NotFound: true}, nil
 		}
-		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
+		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
 	}
-	if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, uri, tag, result); err != nil {
-		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
+	if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, tag, result); err != nil {
+		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
 	}
-	return closure.Resolution{
+	return result.Bytes, closure.Resolution{
 		ResolvedVersion: tag,
 		Digest:          contentDigest(result.Bytes),
 		ResolutionPath:  "tier-3-pull",
