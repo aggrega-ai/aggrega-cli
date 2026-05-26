@@ -483,16 +483,34 @@ func (s *Server) dispatchFindImplementations(req *jsonRPCRequest) error {
 	return s.writeResult(req.ID, findImplementationsResult{Locations: locs})
 }
 
+// hoverParams is the request shape for `aggrega/hover`. The cursor
+// position references a YAML node in the file at uri.
+type hoverParams struct {
+	URI      string           `json:"uri"`
+	Position yamlpos.Position `json:"position"`
+}
+
 // hoverResult is the response shape for `aggrega/hover`. Contents is
 // null when the cursor position has no hover-eligible target.
 type hoverResult struct {
 	Contents *MarkupContent `json:"contents"`
 }
 
-// dispatchHover is the stub handler. Returns null contents; the full
-// implementation lands when the hover + completion handlers ship.
+// dispatchHover unmarshals params, resolves the target entity at the
+// cursor, dispatches to the appropriate per-kind renderer, and writes
+// the response envelope. File-not-validated produces a 1001 error
+// envelope; every other outcome produces a result envelope with a
+// possibly-nil Contents.
 func (s *Server) dispatchHover(req *jsonRPCRequest) error {
-	return s.writeResult(req.ID, hoverResult{Contents: nil})
+	var params hoverParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	contents, errEnvelope := s.handleHover(params)
+	if errEnvelope != nil {
+		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+	}
+	return s.writeResult(req.ID, hoverResult{Contents: contents})
 }
 
 // completionResult is the response shape for `aggrega/completion`.

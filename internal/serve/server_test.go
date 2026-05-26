@@ -461,21 +461,17 @@ func TestServeAggregaFindImplementationsReturnsEmptyWhenCursorNotOnMetadataName(
 	}
 }
 
-func TestServeAggregaHoverReturnsNullStub(t *testing.T) {
+func TestServeAggregaHoverReturns1001WhenFileNotValidated(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)
 	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/hover", resolveParams{URI: "file:///x.yaml"}))
+	in.Write(framedRequest(1, "aggrega/hover", hoverParams{URI: "file:///never-validated.yaml"}))
 	resp := runOneRequest(t, srv, &in, &out)
-	if resp.Error != nil {
-		t.Fatalf("stub hover returned error: %+v", resp.Error)
+	if resp.Error == nil {
+		t.Fatal("hover on un-validated file should return error envelope; got result")
 	}
-	var result hoverResult
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if result.Contents != nil {
-		t.Errorf("hover stub should return Contents: nil; got %+v", result.Contents)
+	if resp.Error.Code != errFileNotValidated {
+		t.Errorf("error code = %d; want %d (file-not-validated)", resp.Error.Code, errFileNotValidated)
 	}
 }
 
