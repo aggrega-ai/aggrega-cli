@@ -34,12 +34,13 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 		// pointer. Tests that exercise lazy-lookup behavior populate
 		// their own configured instance; this default suffices for
 		// every test that doesn't touch the lookup directly.
-		lazyCatalog: catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
-		parseCache:  newCache(),
-		diagnostics: map[string][]Diagnostic{},
-		in:          bufio.NewReader(stdin),
-		out:         stdout,
-		stderr:      io.Discard,
+		lazyCatalog:      catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
+		parseCache:       newCache(),
+		diagnostics:      map[string][]Diagnostic{},
+		in:               bufio.NewReader(stdin),
+		out:              stdout,
+		stderr:           io.Discard,
+		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 }
 
@@ -533,5 +534,114 @@ func TestServeUnknownMethodReturnsMethodNotFound(t *testing.T) {
 	}
 	if resp.Error.Code != jsonRPCMethodNotFound {
 		t.Errorf("error code = %d; want %d (method-not-found)", resp.Error.Code, jsonRPCMethodNotFound)
+	}
+}
+
+func TestServeAggregaInitializeSelectsUTF8WhenOffered(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, t.TempDir(), nil, nil)
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/initialize", initializeParams{
+		Capabilities: clientCapabilities{
+			General: &generalCapabilities{
+				PositionEncodings: []string{"utf-16", "utf-8"},
+			},
+		},
+	}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("initialize returned error: %+v", resp.Error)
+	}
+	var result initializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Capabilities.PositionEncoding != "utf-8" {
+		t.Errorf("PositionEncoding = %q; want utf-8 (server-preference)", result.Capabilities.PositionEncoding)
+	}
+	if srv.positionEncoding != yamlpos.PositionEncodingUTF8 {
+		t.Errorf("srv.positionEncoding = %q; want utf-8 (persisted on Server)", srv.positionEncoding)
+	}
+}
+
+func TestServeAggregaInitializeDefaultsToUTF16WhenNoNegotiation(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, t.TempDir(), nil, nil)
+	var in, out bytes.Buffer
+	// No general capability — daemon defaults to UTF-16.
+	in.Write(framedRequest(1, "aggrega/initialize", initializeParams{}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("initialize returned error: %+v", resp.Error)
+	}
+	var result initializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Capabilities.PositionEncoding != "utf-16" {
+		t.Errorf("PositionEncoding = %q; want utf-16 (default when no negotiation)", result.Capabilities.PositionEncoding)
+	}
+}
+
+func TestServeAggregaInitializeSelectsUTF32WhenOnlyOption(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, t.TempDir(), nil, nil)
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/initialize", initializeParams{
+		Capabilities: clientCapabilities{
+			General: &generalCapabilities{
+				PositionEncodings: []string{"utf-32"},
+			},
+		},
+	}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("initialize returned error: %+v", resp.Error)
+	}
+	var result initializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Capabilities.PositionEncoding != "utf-32" {
+		t.Errorf("PositionEncoding = %q; want utf-32", result.Capabilities.PositionEncoding)
+	}
+	if srv.positionEncoding != yamlpos.PositionEncodingUTF32 {
+		t.Errorf("srv.positionEncoding = %q; want utf-32", srv.positionEncoding)
+	}
+}
+
+func TestServeAggregaInitializeUpdatesEncodingForSubsequentValidate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	srv := newTestServer(t, dir, nil, nil)
+	// Initialize negotiates UTF-8.
+	var in1, out1 bytes.Buffer
+	in1.Write(framedRequest(1, "aggrega/initialize", initializeParams{
+		Capabilities: clientCapabilities{
+			General: &generalCapabilities{
+				PositionEncodings: []string{"utf-8"},
+			},
+		},
+	}))
+	runOneRequest(t, srv, &in1, &out1)
+	if srv.positionEncoding != yamlpos.PositionEncodingUTF8 {
+		t.Fatalf("post-initialize srv.positionEncoding = %q; want utf-8", srv.positionEncoding)
+	}
+	// Subsequent validate succeeds — the encoding is now bound on the
+	// Server and threaded through resolve.go's BuildLineIndexWithEncoding
+	// calls. (Validate itself doesn't build a LineIndex; the assertion
+	// is on Server state, which subsequent resolve operations consume.)
+	file := filepath.Join(dir, "x.yaml")
+	if err := os.WriteFile(file, []byte("kind: Foo\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	var in2, out2 bytes.Buffer
+	in2.Write(framedRequest(2, "aggrega/validate", validateParams{File: file, Content: "kind: Foo\n"}))
+	resp := runOneRequest(t, srv, &in2, &out2)
+	if resp.Error != nil {
+		t.Fatalf("validate returned error after initialize: %+v", resp.Error)
+	}
+	if srv.positionEncoding != yamlpos.PositionEncodingUTF8 {
+		t.Errorf("srv.positionEncoding mutated by validate; got %q; want utf-8", srv.positionEncoding)
 	}
 }

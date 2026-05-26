@@ -978,3 +978,58 @@ func TestFindReferencesEmitsDuplicateNameWarning(t *testing.T) {
 		t.Errorf("stderr = %q; want 'duplicate metadata.name' warning at findReferences", stderrBuf.String())
 	}
 }
+
+// TestResolveReleasePathFallsBackToDocumentStartWhenMetadataNameAbsent
+// pins the document-start fallback behavior of resolveReleasePath when
+// the target file has no metadata.name. The fallback was shipped in
+// the prior resolve-family work; this test makes it load-bearing so
+// future refactors catch any regression.
+func TestResolveReleasePathFallsBackToDocumentStartWhenMetadataNameAbsent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Release fixture referencing a target Aggregate that lacks
+	// metadata.name (a degenerate but valid YAML).
+	releaseContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod-release\n  version: 1.0.0\nspec:\n  aggregate: nameless\n"
+	releasePath := filepath.Join(dir, "release.yaml")
+	if err := os.WriteFile(releasePath, []byte(releaseContent), 0o644); err != nil {
+		t.Fatalf("write release: %v", err)
+	}
+	// Target file has spec but no metadata.name.
+	namelessContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nspec: {}\n"
+	namelessPath := filepath.Join(dir, "nameless.yaml")
+	if err := os.WriteFile(namelessPath, []byte(namelessContent), 0o644); err != nil {
+		t.Fatalf("write nameless: %v", err)
+	}
+
+	srv := newTestServer(t, dir, nil, nil)
+	srv.stderr = drainStderr()
+	validateFile(t, srv, releasePath, releaseContent)
+
+	// Cursor on "nameless" path value: line 6 (0-based), char 14.
+	var in, out bytes.Buffer
+	in.Write(framedRequest(2, "aggrega/resolve", resolveParams{
+		URI:      releasePath,
+		Position: yamlpos.Position{Line: 6, Character: 14},
+	}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("resolve returned error: %+v", resp.Error)
+	}
+	var result resolveResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Location == nil {
+		t.Fatal("Location nil; want document-start Location at target path")
+	}
+	if result.Location.URI != namelessPath {
+		t.Errorf("Location.URI = %q; want %q", result.Location.URI, namelessPath)
+	}
+	zero := yamlpos.Position{Line: 0, Character: 0}
+	if result.Location.Range.Start != zero {
+		t.Errorf("Range.Start = %+v; want %+v (document-start fallback)", result.Location.Range.Start, zero)
+	}
+	if result.Location.Range.End != zero {
+		t.Errorf("Range.End = %+v; want %+v (document-start fallback)", result.Location.Range.End, zero)
+	}
+}

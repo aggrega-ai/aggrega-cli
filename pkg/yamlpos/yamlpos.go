@@ -172,27 +172,54 @@ type Context struct {
 	Side ContextSide
 }
 
-// LineIndex provides UTF-16 ↔ UTF-8-byte conversion for a single
-// document's raw bytes. Constructed once per document via
-// BuildLineIndex and reused across Lookup, Classify, and Location
-// emission. The index handles LF, CRLF, and lone-CR line endings.
+// PositionEncoding names one of the three LSP 3.17 position
+// encodings. UTF-16 is the protocol default; UTF-8 and UTF-32 are
+// negotiated via general.positionEncodings at initialize time.
+type PositionEncoding string
+
+const (
+	// PositionEncodingUTF8 reports positions in UTF-8 code units —
+	// equivalent to UTF-8 byte offsets within a line. Native to
+	// yaml.v3's storage; zero per-rune conversion cost.
+	PositionEncodingUTF8 PositionEncoding = "utf-8"
+
+	// PositionEncodingUTF16 reports positions in UTF-16 code units.
+	// LSP 3.17 default. Requires per-rune decoding (utf16.RuneLen
+	// returns 1 for BMP, 2 for supplementary plane).
+	PositionEncodingUTF16 PositionEncoding = "utf-16"
+
+	// PositionEncodingUTF32 reports positions in UTF-32 code units —
+	// equivalent to Unicode code points (one unit per rune).
+	PositionEncodingUTF32 PositionEncoding = "utf-32"
+)
+
+// LineIndex provides position-encoding ↔ UTF-8-byte conversion for a
+// single document's raw bytes. Constructed once per document via
+// BuildLineIndex (UTF-16 default for backward compatibility) or
+// BuildLineIndexWithEncoding, and reused across Lookup, Classify, and
+// Location emission. The index handles LF, CRLF, and lone-CR line
+// endings.
 type LineIndex struct {
 	lineStarts []int
 	content    []byte
+	encoding   PositionEncoding
 }
 
-// BuildLineIndex precomputes the byte offset of each line's start in
-// the supplied content. Line endings are detected as one of:
-//
-//   - "\n" (LF, the Unix convention)
-//   - "\r\n" (CRLF, the Windows convention; the CR and LF are
-//     consumed together)
-//   - "\r" (lone CR, the legacy Mac convention; rare in practice)
+// BuildLineIndex constructs a LineIndex with the default UTF-16
+// encoding (LSP 3.17 default; matches existing callers that predate
+// position-encoding negotiation).
+func BuildLineIndex(content []byte) LineIndex {
+	return BuildLineIndexWithEncoding(content, PositionEncodingUTF16)
+}
+
+// BuildLineIndexWithEncoding constructs a LineIndex pinned to the
+// supplied position encoding. Used by the daemon after the
+// aggrega/initialize handshake selects an encoding.
 //
 // lineStarts has one entry per line. lineStarts[i] is the byte offset
 // of the first byte of line i; lineStarts[0] is always 0.
-func BuildLineIndex(content []byte) LineIndex {
-	idx := LineIndex{content: content, lineStarts: []int{0}}
+func BuildLineIndexWithEncoding(content []byte, encoding PositionEncoding) LineIndex {
+	idx := LineIndex{content: content, lineStarts: []int{0}, encoding: encoding}
 	for i := 0; i < len(content); i++ {
 		switch content[i] {
 		case '\n':
@@ -215,6 +242,35 @@ func (idx LineIndex) LineCount() int {
 	return len(idx.lineStarts)
 }
 
+// Encoding returns the position encoding the index was built with.
+// Empty string is treated as UTF-16 for backward compatibility with
+// zero-value LineIndex values constructed outside BuildLineIndex.
+func (idx LineIndex) Encoding() PositionEncoding {
+	if idx.encoding == "" {
+		return PositionEncodingUTF16
+	}
+	return idx.encoding
+}
+
+// runeUnits returns the per-encoding unit cost of a rune:
+//
+//   - UTF-8: utf8.RuneLen(r) (1..4 bytes per rune)
+//   - UTF-16: utf16.RuneLen(r) (1 for BMP, 2 for supplementary plane)
+//   - UTF-32: 1 (one code point per rune)
+//
+// Used by both the byte/char converters and ScalarEnd's multi-line
+// walk to dispatch per the index's bound encoding.
+func (idx LineIndex) runeUnits(r rune) int {
+	switch idx.Encoding() {
+	case PositionEncodingUTF8:
+		return utf8.RuneLen(r)
+	case PositionEncodingUTF32:
+		return 1
+	default:
+		return utf16.RuneLen(r)
+	}
+}
+
 // lineBytes returns the bytes of line line (0-based), excluding the
 // trailing line terminator. Returns ErrPositionOutOfRange when line is
 // outside the document.
@@ -235,14 +291,15 @@ func (idx LineIndex) lineBytes(line int) ([]byte, error) {
 	return idx.content[start:end], nil
 }
 
-// LSPCharToByte converts an LSP UTF-16 character offset within line
-// (0-based line) to a 0-based byte offset within that line's bytes
-// (line terminator excluded).
+// LSPCharToByte converts an LSP character offset within line (0-based
+// line) to a 0-based byte offset within that line's bytes (line
+// terminator excluded). The character offset is interpreted per the
+// index's bound encoding (UTF-8 / UTF-16 / UTF-32).
 //
-// When char exceeds the number of UTF-16 code units on the line, the
-// byte offset is clamped to the line's byte length — matching the
-// LSP convention that an end-of-line position addresses one past the
-// last character. When char splits a surrogate pair (lands inside a
+// When char exceeds the number of code units on the line, the byte
+// offset is clamped to the line's byte length — matching the LSP
+// convention that an end-of-line position addresses one past the last
+// character. When char splits a UTF-16 surrogate pair (lands inside a
 // supplementary-plane rune's UTF-16 encoding), the byte offset snaps
 // to the byte position after the full rune.
 func (idx LineIndex) LSPCharToByte(line, char int) (int, error) {
@@ -253,13 +310,20 @@ func (idx LineIndex) LSPCharToByte(line, char int) (int, error) {
 	if char <= 0 {
 		return 0, nil
 	}
-	var u16 int
+	// UTF-8: char offset == byte offset (zero conversion cost).
+	if idx.Encoding() == PositionEncodingUTF8 {
+		if char > len(bytes) {
+			return len(bytes), nil
+		}
+		return char, nil
+	}
+	var units int
 	var pos int
 	for pos < len(bytes) {
 		r, size := utf8.DecodeRune(bytes[pos:])
-		u16 += utf16.RuneLen(r)
+		units += idx.runeUnits(r)
 		pos += size
-		if u16 >= char {
+		if units >= char {
 			return pos, nil
 		}
 	}
@@ -267,8 +331,9 @@ func (idx LineIndex) LSPCharToByte(line, char int) (int, error) {
 }
 
 // ByteToLSPChar inverts LSPCharToByte: converts a 0-based byte offset
-// within line (0-based line) to an LSP UTF-16 character offset.
-// byteOffset is clamped to the line's byte length.
+// within line (0-based line) to an LSP character offset interpreted
+// per the index's bound encoding. byteOffset is clamped to the
+// line's byte length.
 func (idx LineIndex) ByteToLSPChar(line, byteOffset int) int {
 	bytes, err := idx.lineBytes(line)
 	if err != nil {
@@ -280,14 +345,18 @@ func (idx LineIndex) ByteToLSPChar(line, byteOffset int) int {
 	if byteOffset > len(bytes) {
 		byteOffset = len(bytes)
 	}
-	var u16 int
+	// UTF-8: byte offset == char offset.
+	if idx.Encoding() == PositionEncodingUTF8 {
+		return byteOffset
+	}
+	var units int
 	var pos int
 	for pos < byteOffset {
 		r, size := utf8.DecodeRune(bytes[pos:])
-		u16 += utf16.RuneLen(r)
+		units += idx.runeUnits(r)
 		pos += size
 	}
-	return u16
+	return units
 }
 
 // PositionToNodeCoords converts an LSP Position (0-based line,
@@ -319,26 +388,50 @@ func (idx LineIndex) NodeToPosition(n *yaml.Node) Position {
 	return Position{Line: line, Character: idx.ByteToLSPChar(line, col)}
 }
 
-// ScalarEnd returns the LSP Position one past the last UTF-16 code
-// unit of n's Value. Single-line scalars only; multi-line scalar end
-// positions are not currently computed.
+// ScalarEnd returns the end position of the scalar value. The
+// position is computed against yaml.v3's normalized Value (folded
+// scalars' content folded into a single logical string; indentation
+// stripped from block scalars; quoted-content unwrapped via the +=2
+// adjustment for surrounding quote bytes). For block scalars (literal
+// `|` or folded `>`), the returned position reflects the normalized
+// content's structure, NOT the raw source file's indentation or line
+// breaks. Callers that need raw-source-range semantics — typically
+// for IDE hover ranges spanning multi-line authoring — must compute
+// the position themselves by walking the source bytes between the
+// scalar's start node and the next sibling's start.
 //
-// Quoted-style scalars (single- or double-quoted) have their closing
-// quote at one byte past n.Value's end; ScalarEnd accounts for the
-// surrounding quote bytes when n.Style indicates a quoted style.
+// For inline scalars (the dominant case for reference targets:
+// URIs, names, type values), the returned position points to the
+// source file's true scalar end.
+//
+// Multi-line literal scalars (n.Value containing '\n') advance Line
+// per newline encountered and reset Character to 0; single-line
+// scalars (including folded `>` blocks whose content has no embedded
+// newlines after folding) stay on the start line.
+//
+// Per-rune unit cost is dispatched through the index's encoding
+// (UTF-8 / UTF-16 / UTF-32). Quoted-style scalars add 2 to Character
+// regardless of encoding — ASCII quote characters (`"` and `'`) are
+// 1 code unit in every encoding.
 func (idx LineIndex) ScalarEnd(n *yaml.Node) Position {
 	start := idx.NodeToPosition(n)
 	if n == nil {
 		return start
 	}
-	var u16 int
+	line := start.Line
+	char := start.Character
 	for _, r := range n.Value {
-		u16 += utf16.RuneLen(r)
+		if r == '\n' {
+			line++
+			char = 0
+			continue
+		}
+		char += idx.runeUnits(r)
 	}
 	if n.Style == yaml.DoubleQuotedStyle || n.Style == yaml.SingleQuotedStyle {
-		u16 += 2
+		char += 2
 	}
-	return Position{Line: start.Line, Character: start.Character + u16}
+	return Position{Line: line, Character: char}
 }
 
 // Lookup returns the deepest yaml.Node containing the supplied

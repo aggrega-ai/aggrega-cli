@@ -24,6 +24,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // RunConfig carries the I/O streams the daemon reads from and writes
@@ -124,6 +125,15 @@ type Server struct {
 	in     *bufio.Reader
 	out    io.Writer
 	stderr io.Writer
+
+	// positionEncoding selects how Position.Character offsets are
+	// interpreted in JSON-RPC requests + responses. Defaults to
+	// UTF-16 (LSP 3.17 protocol default). The aggrega/initialize
+	// handler may overwrite this when the client negotiates a
+	// different encoding via general.positionEncodings capability.
+	// Subsequent LineIndex constructions in the daemon read this
+	// field via BuildLineIndexWithEncoding.
+	positionEncoding yamlpos.PositionEncoding
 }
 
 // Run discovers the workspace root from the daemon's current working
@@ -162,16 +172,17 @@ func Run(cfg RunConfig) error {
 	)
 	activeRelease, attempt := runManifestCascade(root, wsCfg, stderr)
 	srv := &Server{
-		workspaceRoot:  root,
-		wsConfig:       wsCfg,
-		lazyCatalog:    lazyCatalog,
-		activeRelease:  activeRelease,
-		cascadeAttempt: attempt,
-		parseCache:     newCache(),
-		diagnostics:    map[string][]Diagnostic{},
-		in:             bufio.NewReader(cfg.Stdin),
-		out:            cfg.Stdout,
-		stderr:         stderr,
+		workspaceRoot:    root,
+		wsConfig:         wsCfg,
+		lazyCatalog:      lazyCatalog,
+		activeRelease:    activeRelease,
+		cascadeAttempt:   attempt,
+		parseCache:       newCache(),
+		diagnostics:      map[string][]Diagnostic{},
+		in:               bufio.NewReader(cfg.Stdin),
+		out:              cfg.Stdout,
+		stderr:           stderr,
+		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	return srv.dispatchLoop()
 }

@@ -22,6 +22,98 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
+// initializeParams is the request shape for `aggrega/initialize`. The
+// daemon reads positionEncodings off the client's capabilities; other
+// LSP initialize fields are accepted but ignored at this WI.
+type initializeParams struct {
+	Capabilities clientCapabilities `json:"capabilities"`
+}
+
+// clientCapabilities mirrors a tiny slice of LSP's client capabilities
+// shape — only the position-encoding negotiation surface.
+type clientCapabilities struct {
+	General *generalCapabilities `json:"general,omitempty"`
+}
+
+// generalCapabilities carries LSP 3.17's general capability bag. The
+// daemon consumes positionEncodings; everything else is ignored.
+type generalCapabilities struct {
+	PositionEncodings []string `json:"positionEncodings,omitempty"`
+}
+
+// serverCapabilities is the daemon's reply on initialize. The wire
+// shape is intentionally compact — only the position-encoding
+// negotiation result. Future capabilities extend this struct without
+// breaking existing clients.
+type serverCapabilities struct {
+	PositionEncoding string `json:"positionEncoding"`
+}
+
+// initializeResult is the response shape for `aggrega/initialize`.
+type initializeResult struct {
+	Capabilities serverCapabilities `json:"capabilities"`
+}
+
+// dispatchInitialize selects a position encoding from the client's
+// offered list using SERVER preference order: UTF-8 > UTF-16 > UTF-32.
+//
+// Server-preference (rather than client-preference) because UTF-8 is
+// yaml.v3's native byte representation — every reference target the
+// resolve family handles lands in UTF-8 bytes already, so UTF-8
+// position math is a no-op per scalar lookup, whereas UTF-16 / UTF-32
+// require per-rune decoding. The performance asymmetry between
+// encodings is one-sided enough that the client's preference does
+// not change the optimal choice for THIS server.
+//
+// UTF-16 is the LSP 3.17 default and remains the fallback when no
+// negotiation occurs (s.positionEncoding is initialized to UTF-16
+// in Run before dispatchInitialize ever runs). Unknown encoding
+// strings in the client's list are ignored.
+func (s *Server) dispatchInitialize(req *jsonRPCRequest) error {
+	var params initializeParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	selected := selectPositionEncoding(params.Capabilities)
+	s.positionEncoding = selected
+	return s.writeResult(req.ID, initializeResult{
+		Capabilities: serverCapabilities{
+			PositionEncoding: string(selected),
+		},
+	})
+}
+
+// selectPositionEncoding applies the server-preference dispatch over
+// the client's offered list. Returns UTF-16 when the client offers
+// nothing usable (no general capability, no positionEncodings field,
+// or only unrecognized values).
+func selectPositionEncoding(caps clientCapabilities) yamlpos.PositionEncoding {
+	if caps.General == nil || len(caps.General.PositionEncodings) == 0 {
+		return yamlpos.PositionEncodingUTF16
+	}
+	offered := map[yamlpos.PositionEncoding]bool{}
+	for _, raw := range caps.General.PositionEncodings {
+		switch yamlpos.PositionEncoding(raw) {
+		case yamlpos.PositionEncodingUTF8:
+			offered[yamlpos.PositionEncodingUTF8] = true
+		case yamlpos.PositionEncodingUTF16:
+			offered[yamlpos.PositionEncodingUTF16] = true
+		case yamlpos.PositionEncodingUTF32:
+			offered[yamlpos.PositionEncodingUTF32] = true
+		}
+	}
+	for _, candidate := range []yamlpos.PositionEncoding{
+		yamlpos.PositionEncodingUTF8,
+		yamlpos.PositionEncodingUTF16,
+		yamlpos.PositionEncodingUTF32,
+	} {
+		if offered[candidate] {
+			return candidate
+		}
+	}
+	return yamlpos.PositionEncodingUTF16
+}
+
 // validateParams is the request shape for `aggrega/validate`. Content
 // carries the in-memory bytes the IDE editor holds for the file (which
 // may differ from on-disk bytes during active editing).

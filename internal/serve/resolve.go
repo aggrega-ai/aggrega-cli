@@ -46,7 +46,7 @@ func (s *Server) resolveDefinitionSite(uri string, pos yamlpos.Position) (*yamlp
 			Message: fmt.Sprintf("file not validated: %s", uri),
 		}
 	}
-	idx := yamlpos.BuildLineIndex(entry.content)
+	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
 	ctx, err := yamlpos.Classify(entry.node, idx, pos)
 	if err != nil {
 		return nil, nil
@@ -128,7 +128,7 @@ func (s *Server) findDefinitionByURI(name, expectedVersion string) (*yamlpos.Loc
 			continue
 		}
 		entityVersion := scalarValueAtPath(entry.node, []string{"metadata", "version"})
-		idx := yamlpos.BuildLineIndex(entry.content)
+		idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
 		matches = append(matches, match{
 			path:     path,
 			version:  entityVersion,
@@ -158,7 +158,7 @@ func (s *Server) findDefinitionByURI(name, expectedVersion string) (*yamlpos.Loc
 			return nil
 		}
 		entityVersion := scalarValueAtPath(&doc, []string{"metadata", "version"})
-		idx := yamlpos.BuildLineIndex(content)
+		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
 		matches = append(matches, match{
 			path:     path,
 			version:  entityVersion,
@@ -259,7 +259,7 @@ func (s *Server) resolveReleasePath(relativePath string) *yamlpos.Location {
 		fmt.Fprintf(s.stderr, "  release-path parse: %s: %v\n", full, unErr)
 		return nil
 	}
-	idx := yamlpos.BuildLineIndex(content)
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
 	if _, nameNode := metadataNameOf(&doc); nameNode != nil {
 		loc := nodeToLocation(full, idx, nameNode)
 		return &loc
@@ -326,7 +326,7 @@ func (s *Server) findReferencesAcrossWorkspace(uri string, pos yamlpos.Position)
 			fmt.Fprintf(s.stderr, "  workspace-walk parse: %s: %v\n", path, unErr)
 			return nil
 		}
-		idx := yamlpos.BuildLineIndex(content)
+		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
 		root := documentRoot(&doc)
 		// Track files whose own metadata.name matches the search target. When more than one such file exists,
 		// emit a stderr warning at walk-end. This is symmetric to the duplicate-name warning emitted by
@@ -399,7 +399,7 @@ func (s *Server) findImplementationsAcrossWorkspace(uri string, pos yamlpos.Posi
 		if nameNode == nil {
 			return nil
 		}
-		idx := yamlpos.BuildLineIndex(content)
+		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
 		out = append(out, nodeToLocation(path, idx, nameNode))
 		return nil
 	})
@@ -422,7 +422,7 @@ func (s *Server) uriAtMetadataName(uri string, pos yamlpos.Position) (string, *j
 			Message: fmt.Sprintf("file not validated: %s", uri),
 		}
 	}
-	idx := yamlpos.BuildLineIndex(entry.content)
+	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
 	ctx, err := yamlpos.Classify(entry.node, idx, pos)
 	if err != nil {
 		return "", nil

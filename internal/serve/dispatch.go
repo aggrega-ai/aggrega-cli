@@ -153,6 +153,8 @@ func (s *Server) dispatchLoop() error {
 // case here.
 func (s *Server) handle(req *jsonRPCRequest) error {
 	switch req.Method {
+	case "aggrega/initialize":
+		return s.dispatchInitialize(req)
 	case "aggrega/validate":
 		return s.dispatchValidate(req)
 	case "aggrega/invalidate":

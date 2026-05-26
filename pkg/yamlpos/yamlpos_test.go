@@ -538,3 +538,133 @@ func TestClassifySideKeyVsValueOnSimpleMappingPair(t *testing.T) {
 		t.Errorf("Side on value = %d; want ContextSideValue", valCtx.Side)
 	}
 }
+
+func TestScalarEndLiteralBlockAdvancesLine(t *testing.T) {
+	t.Parallel()
+	content := []byte("key: |\n  line one\n  line two\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	valueNode := doc.Content[0].Content[1]
+	if valueNode.Style != yaml.LiteralStyle {
+		t.Fatalf("fixture precondition: expected LiteralStyle; got %v", valueNode.Style)
+	}
+	// yaml.v3 reports Value as "line one\nline two\n" with the trailing
+	// newline preserved (default clip chomping). The walk:
+	//   - "line one"  → Character += 8 (in UTF-16; one unit per ASCII rune)
+	//   - "\n"        → Line++, Character = 0
+	//   - "line two"  → Character += 8
+	//   - "\n"        → Line++, Character = 0
+	// So end.Line = startLine + 2 and end.Character = 0.
+	end := idx.ScalarEnd(valueNode)
+	start := idx.NodeToPosition(valueNode)
+	if end.Line != start.Line+2 {
+		t.Errorf("ScalarEnd literal block end.Line = %d; want %d (two newlines walked)", end.Line, start.Line+2)
+	}
+	if end.Character != 0 {
+		t.Errorf("ScalarEnd literal block end.Character = %d; want 0 (Character reset after final \\n)", end.Character)
+	}
+}
+
+func TestScalarEndFoldedBlockStaysSingleLine(t *testing.T) {
+	t.Parallel()
+	content := []byte("key: >-\n  word one\n  word two\n")
+	idx := BuildLineIndex(content)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	valueNode := doc.Content[0].Content[1]
+	if valueNode.Style != yaml.FoldedStyle {
+		t.Fatalf("fixture precondition: expected FoldedStyle; got %v", valueNode.Style)
+	}
+	end := idx.ScalarEnd(valueNode)
+	startLine := idx.NodeToPosition(valueNode).Line
+	// Folded-block Value = "word one word two" (no embedded newlines).
+	if end.Line != startLine {
+		t.Errorf("ScalarEnd folded block end.Line = %d; want %d (folded content is single-line)", end.Line, startLine)
+	}
+}
+
+func TestPositionEncodingUTF8RoundtripASCII(t *testing.T) {
+	t.Parallel()
+	content := []byte("hello world\n")
+	idx := BuildLineIndexWithEncoding(content, PositionEncodingUTF8)
+	// UTF-8: char offset == byte offset across ASCII.
+	for char := 0; char <= 11; char++ {
+		got, err := idx.LSPCharToByte(0, char)
+		if err != nil {
+			t.Fatalf("LSPCharToByte(%d): %v", char, err)
+		}
+		if got != char {
+			t.Errorf("LSPCharToByte(0, %d) UTF-8 = %d; want %d (char==byte)", char, got, char)
+		}
+		back := idx.ByteToLSPChar(0, got)
+		if back != char {
+			t.Errorf("ByteToLSPChar roundtrip at %d failed: got %d", char, back)
+		}
+	}
+}
+
+func TestPositionEncodingUTF8MultibyteUsesByteOffsets(t *testing.T) {
+	t.Parallel()
+	// "サ" — 3 bytes UTF-8.
+	content := []byte("サ end\n")
+	idx := BuildLineIndexWithEncoding(content, PositionEncodingUTF8)
+	// UTF-8 char offset 3 = byte offset 3 = position right after サ.
+	got, err := idx.LSPCharToByte(0, 3)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("LSPCharToByte(0, 3) UTF-8 = %d; want 3", got)
+	}
+}
+
+func TestPositionEncodingUTF32RoundtripBMP(t *testing.T) {
+	t.Parallel()
+	// "サーバー" — 4 BMP runes, 12 bytes UTF-8, 4 UTF-16 units, 4 UTF-32 units.
+	content := []byte("サーバー\n")
+	idx := BuildLineIndexWithEncoding(content, PositionEncodingUTF32)
+	// UTF-32 char 4 = byte 12 (4 runes × 3 bytes/rune).
+	got, err := idx.LSPCharToByte(0, 4)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 12 {
+		t.Errorf("LSPCharToByte(0, 4) UTF-32 = %d; want 12", got)
+	}
+	back := idx.ByteToLSPChar(0, 12)
+	if back != 4 {
+		t.Errorf("ByteToLSPChar roundtrip UTF-32 = %d; want 4", back)
+	}
+}
+
+func TestPositionEncodingUTF32SupplementaryCountsAsOne(t *testing.T) {
+	t.Parallel()
+	// "🎉" — supplementary plane: 1 rune, 4 bytes UTF-8, 2 UTF-16 units, 1 UTF-32 unit.
+	content := []byte("🎉 end\n")
+	idx := BuildLineIndexWithEncoding(content, PositionEncodingUTF32)
+	// UTF-32 char 1 = byte 4 (right after the 4-byte emoji).
+	got, err := idx.LSPCharToByte(0, 1)
+	if err != nil {
+		t.Fatalf("LSPCharToByte: %v", err)
+	}
+	if got != 4 {
+		t.Errorf("LSPCharToByte(0, 1) UTF-32 supplementary = %d; want 4 (one UTF-32 unit per rune)", got)
+	}
+}
+
+func TestBuildLineIndexWithEncodingPropagates(t *testing.T) {
+	t.Parallel()
+	idx := BuildLineIndexWithEncoding([]byte("x\n"), PositionEncodingUTF8)
+	if idx.Encoding() != PositionEncodingUTF8 {
+		t.Errorf("Encoding() = %q; want %q", idx.Encoding(), PositionEncodingUTF8)
+	}
+	defaultIdx := BuildLineIndex([]byte("x\n"))
+	if defaultIdx.Encoding() != PositionEncodingUTF16 {
+		t.Errorf("BuildLineIndex (default) Encoding() = %q; want %q", defaultIdx.Encoding(), PositionEncodingUTF16)
+	}
+}
