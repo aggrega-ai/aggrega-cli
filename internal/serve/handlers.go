@@ -513,14 +513,45 @@ func (s *Server) dispatchHover(req *jsonRPCRequest) error {
 	return s.writeResult(req.ID, hoverResult{Contents: contents})
 }
 
+// completionParams is the request shape for `aggrega/completion`.
+// The optional Context carries the LSP CompletionContext (triggerKind
+// + triggerCharacter) for trigger-character-aware narrowing.
+type completionParams struct {
+	URI      string             `json:"uri"`
+	Position yamlpos.Position   `json:"position"`
+	Context  *completionContext `json:"context,omitempty"`
+}
+
+// completionContext mirrors a slice of LSP's CompletionContext shape.
+// triggerKind per LSP: 1 = Invoked (no trigger character), 2 =
+// TriggerCharacter, 3 = TriggerForIncompleteCompletions. Only
+// triggerCharacter is consumed at this WI; other fields are accepted
+// and ignored for forward-compatibility.
+type completionContext struct {
+	TriggerKind      int    `json:"triggerKind"`
+	TriggerCharacter string `json:"triggerCharacter,omitempty"`
+}
+
 // completionResult is the response shape for `aggrega/completion`.
 type completionResult struct {
 	Items []CompletionItem `json:"items"`
 }
 
-// dispatchCompletion is the stub handler. Returns an empty candidate
-// list; the full implementation lands when the hover + completion
-// handlers ship.
+// dispatchCompletion unmarshals params, invokes handleCompletion,
+// writes the response envelope. File-not-validated produces 1001;
+// all other outcomes produce a result envelope with a possibly-empty
+// Items slice.
 func (s *Server) dispatchCompletion(req *jsonRPCRequest) error {
-	return s.writeResult(req.ID, completionResult{Items: []CompletionItem{}})
+	var params completionParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+	items, errEnvelope := s.handleCompletion(params)
+	if errEnvelope != nil {
+		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+	}
+	if items == nil {
+		items = []CompletionItem{}
+	}
+	return s.writeResult(req.ID, completionResult{Items: items})
 }
