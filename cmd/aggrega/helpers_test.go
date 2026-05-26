@@ -17,8 +17,8 @@ func TestWriteArtifacts_HappyPath(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	files := map[string][]byte{
-		"a/b/c.yaml":   []byte("c-content"),
-		"top.txt":      []byte("top-content"),
+		"a/b/c.yaml":    []byte("c-content"),
+		"top.txt":       []byte("top-content"),
 		"e/nested.json": []byte("e-content"),
 	}
 	if err := writeArtifacts(tmp, files); err != nil {
