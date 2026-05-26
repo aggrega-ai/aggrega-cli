@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release
+  version: 1.0.0
+spec:
+  aggregate: app
+  manifest: app-manifest

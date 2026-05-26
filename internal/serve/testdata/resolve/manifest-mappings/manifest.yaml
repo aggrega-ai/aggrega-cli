@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: prod-manifest
+  version: 1.0.0
+spec:
+  mappings:
+    components:
+      type:
+        core/server: recipes/helm-server

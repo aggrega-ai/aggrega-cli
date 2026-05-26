@@ -89,6 +89,64 @@ const (
 	// spec.schema.properties.<field>. Consumed by completion +
 	// hover handlers; navigation does not act on it.
 	ContextKindSchemaProperty
+
+	// ContextKindUsesTarget matches a cursor on the value of a uses-
+	// target reference inside an Aggregate. Three YAML shapes resolve
+	// to this Kind:
+	//
+	//   - Verbose alias-map: uses.<socket>.<alias>.target: <name>
+	//   - Simple list: uses.<socket>.<idx>: <name> (index is decimal)
+	//   - Verbose bare-string shorthand: uses.<socket>.<alias>: <name>
+	//     (alias is non-numeric AND not "target"; cursor Side == Value)
+	//
+	// The target value is a LOCAL Component name within the same
+	// Aggregate (not a catalog URI). Resolution stays intra-document.
+	ContextKindUsesTarget
+
+	// ContextKindManifestRecipeReference matches a cursor on the VALUE
+	// side of a Manifest mapping pair under spec.mappings — a Recipe
+	// URI reference. Eight Manifest mapping paths classify to this
+	// Kind (flat vs legacy provider-keyed × components vs features ×
+	// type vs name). Key-side cursor on the same mappings is NOT
+	// classified at this Kind (the key carries a Component / Feature
+	// URI with different resolution semantics).
+	ContextKindManifestRecipeReference
+
+	// ContextKindReleaseAggregatePath matches a cursor on the value of
+	// spec.aggregate inside a Release. The value is a workspace-
+	// relative path (without .yaml suffix) — not a catalog URI.
+	ContextKindReleaseAggregatePath
+
+	// ContextKindReleaseManifestPath matches a cursor on the value of
+	// spec.manifest inside a Release. Same path-reference semantic as
+	// ContextKindReleaseAggregatePath.
+	ContextKindReleaseManifestPath
+)
+
+// ContextSide reports whether the cursor landed on a mapping key
+// scalar or a mapping value scalar (or, for leaves outside a mapping
+// pair, the structurally meaningful side, defaulting to Value).
+//
+// The distinction matters when a single YAML breadcrumb path can be
+// reached from either side — Manifest mapping pairs are the canonical
+// case where the key holds one URI shape and the value holds another,
+// and the classifier must dispatch on Side to disambiguate.
+type ContextSide int
+
+const (
+	// ContextSideUnknown is returned when the cursor did not land on a
+	// scalar inside a mapping pair (e.g., cursor in whitespace, or on
+	// a sequence element).
+	ContextSideUnknown ContextSide = iota
+
+	// ContextSideKey marks the cursor as landing on a mapping key
+	// scalar.
+	ContextSideKey
+
+	// ContextSideValue marks the cursor as landing on a mapping value
+	// scalar, OR on a leaf scalar reachable through a sequence index
+	// (where there is no key/value pair — the leaf IS the value).
+	ContextSideValue
 )
 
 // Context describes what the cursor is pointing at.
@@ -107,6 +165,11 @@ type Context struct {
 	Path  []string
 	Kind  ContextKind
 	Value string
+	// Side reports whether the cursor's leaf scalar is a mapping key
+	// or value (or unknown, for non-mapping leaves). Set by descend
+	// when it walks into a child node; consumed by classifyPath to
+	// dispatch shapes that can be reached from either side.
+	Side ContextSide
 }
 
 // LineIndex provides UTF-16 ↔ UTF-8-byte conversion for a single
@@ -292,7 +355,7 @@ func Lookup(doc *yaml.Node, idx LineIndex, pos Position) (*yaml.Node, error) {
 	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
 		root = root.Content[0]
 	}
-	n, _ := descend(root, yamlLine, yamlCol, nil)
+	n, _, _ := descend(root, yamlLine, yamlCol, nil)
 	return n, nil
 }
 
@@ -309,12 +372,12 @@ func Classify(doc *yaml.Node, idx LineIndex, pos Position) (Context, error) {
 	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
 		root = root.Content[0]
 	}
-	node, path := descend(root, yamlLine, yamlCol, nil)
-	ctx := Context{Path: path}
+	node, path, side := descend(root, yamlLine, yamlCol, nil)
+	ctx := Context{Path: path, Side: side}
 	if node != nil && node.Kind == yaml.ScalarNode {
 		ctx.Value = node.Value
 	}
-	ctx.Kind = ClassifyPath(path)
+	ctx.Kind = classifyContext(path, side)
 	return ctx, nil
 }
 
@@ -324,10 +387,13 @@ func Classify(doc *yaml.Node, idx LineIndex, pos Position) (Context, error) {
 // indices; when the cursor lands on a mapping key, the key's text is
 // the final path element. When it lands on a mapping value, the
 // containing key's text is appended and the walker descends into the
-// value subtree.
-func descend(n *yaml.Node, line, col int, path []string) (*yaml.Node, []string) {
+// value subtree. The third return value carries the structural side
+// of the leaf — Key when the cursor landed on a mapping key scalar,
+// Value when on a mapping value scalar or a sequence-indexed leaf,
+// Unknown when no scalar matched.
+func descend(n *yaml.Node, line, col int, path []string) (*yaml.Node, []string, ContextSide) {
 	if n == nil {
-		return nil, path
+		return nil, path, ContextSideUnknown
 	}
 	switch n.Kind {
 	case yaml.MappingNode:
@@ -335,27 +401,42 @@ func descend(n *yaml.Node, line, col int, path []string) (*yaml.Node, []string) 
 			keyNode := n.Content[i]
 			valNode := n.Content[i+1]
 			if nodeContains(keyNode, line, col) {
-				return keyNode, appendPath(path, keyNode.Value)
+				return keyNode, appendPath(path, keyNode.Value), ContextSideKey
 			}
 			if containsRecursive(valNode, line, col) {
-				return descend(valNode, line, col, appendPath(path, keyNode.Value))
+				childPath := appendPath(path, keyNode.Value)
+				// When the cursor's eventual leaf is the value scalar
+				// itself, the recursive descend lands on a ScalarNode and
+				// returns ContextSideUnknown; overwrite to Value for that
+				// case so callers can distinguish key-side vs value-side
+				// leaves on the same Path.
+				node, p, side := descend(valNode, line, col, childPath)
+				if side == ContextSideUnknown && valNode.Kind == yaml.ScalarNode && nodeContains(valNode, line, col) {
+					side = ContextSideValue
+				}
+				return node, p, side
 			}
 		}
-		return nil, path
+		return nil, path, ContextSideUnknown
 	case yaml.SequenceNode:
 		for i, child := range n.Content {
 			if containsRecursive(child, line, col) {
-				return descend(child, line, col, appendPath(path, strconv.Itoa(i)))
+				childPath := appendPath(path, strconv.Itoa(i))
+				node, p, side := descend(child, line, col, childPath)
+				if side == ContextSideUnknown && child.Kind == yaml.ScalarNode && nodeContains(child, line, col) {
+					side = ContextSideValue
+				}
+				return node, p, side
 			}
 		}
-		return nil, path
+		return nil, path, ContextSideUnknown
 	case yaml.ScalarNode:
 		if nodeContains(n, line, col) {
-			return n, path
+			return n, path, ContextSideUnknown
 		}
-		return nil, path
+		return nil, path, ContextSideUnknown
 	default:
-		return nil, path
+		return nil, path, ContextSideUnknown
 	}
 }
 
@@ -421,7 +502,19 @@ func containsRecursive(n *yaml.Node, line, col int) bool {
 // reference-shape detector in particular — share one canonical
 // implementation. A new ContextKind added here must also be considered
 // by every caller that switches on the result.
+//
+// ClassifyPath does not see ContextSide; for shapes that require side
+// dispatch (Manifest mapping pairs, verbose bare-string shorthand
+// uses-target), classifyContext is the side-aware wrapper. Path-only
+// callers consume the Path-derivable shapes only.
 func ClassifyPath(path []string) ContextKind {
+	return classifyContext(path, ContextSideValue)
+}
+
+// classifyContext is the internal side-aware classifier. ClassifyPath
+// is the path-only public surface; Classify drives this directly with
+// the side computed by descend.
+func classifyContext(path []string, side ContextSide) ContextKind {
 	if len(path) == 2 && path[0] == "metadata" && path[1] == "name" {
 		return ContextKindMetadataName
 	}
@@ -436,8 +529,18 @@ func ClassifyPath(path []string) ContextKind {
 	if len(rest) == 1 && rest[0] == "implements" {
 		return ContextKindRecipeImplements
 	}
+	if len(rest) == 1 && rest[0] == "aggregate" {
+		return ContextKindReleaseAggregatePath
+	}
+	if len(rest) == 1 && rest[0] == "manifest" {
+		return ContextKindReleaseManifestPath
+	}
 	if len(rest) >= 3 && rest[0] == "schema" && rest[1] == "properties" {
 		return ContextKindSchemaProperty
+	}
+
+	if kind := classifyManifestMapping(rest, side); kind != ContextKindUnknown {
+		return kind
 	}
 
 	stripped := 0
@@ -456,5 +559,109 @@ func ClassifyPath(path []string) ContextKind {
 		return ContextKindFeaturesType
 	}
 
+	if kind := classifyUsesTarget(rest, side); kind != ContextKindUnknown {
+		return kind
+	}
+
 	return ContextKindUnknown
+}
+
+// classifyManifestMapping recognizes the eight Manifest mapping
+// value-side suffixes (flat × type/name × components/features and
+// legacy provider-keyed × type/name × components/features). All eight
+// return ContextKindManifestRecipeReference because the cursor lands
+// on a Recipe URI.
+//
+// rest is the path after the leading "spec" has been stripped. The
+// match fires only when side == ContextSideValue.
+func classifyManifestMapping(rest []string, side ContextSide) ContextKind {
+	if side != ContextSideValue {
+		return ContextKindUnknown
+	}
+	if len(rest) < 4 || rest[0] != "mappings" {
+		return ContextKindUnknown
+	}
+	r := rest[1:]
+	// Flat shape: r = [components|features, type|name, <key>]
+	if len(r) == 3 && isCompOrFeat(r[0]) && isTypeOrName(r[1]) {
+		return ContextKindManifestRecipeReference
+	}
+	// Legacy shape: r = [<provider>, components|features, type|name, <key>]
+	if len(r) == 4 && r[0] != "components" && r[0] != "features" && isCompOrFeat(r[1]) && isTypeOrName(r[2]) {
+		return ContextKindManifestRecipeReference
+	}
+	return ContextKindUnknown
+}
+
+// classifyUsesTarget recognizes the three uses-target shapes after
+// stripping subsystem nesting prefixes. Returns ContextKindUsesTarget
+// when a match is found and the cursor is on the value side.
+//
+// rest is the path after the leading "spec" has been stripped.
+func classifyUsesTarget(rest []string, side ContextSide) ContextKind {
+	stripped := 0
+	for len(rest) >= 2 && rest[0] == "subsystems" {
+		rest = rest[2:]
+		stripped++
+	}
+
+	// Match prefixes ending at the "uses" boundary, then the
+	// per-shape suffix.
+	matchUsesSuffix := func(usesIdx int) ContextKind {
+		// uses[usesIdx+1] = <socket>, uses[usesIdx+2..] = shape suffix
+		after := rest[usesIdx+2:]
+		// Verbose alias-map: [<alias>, "target"]
+		if len(after) == 2 && after[1] == "target" {
+			return ContextKindUsesTarget
+		}
+		// Simple list: [<index>] (decimal-integer-only)
+		if len(after) == 1 && isNumericSegment(after[0]) {
+			return ContextKindUsesTarget
+		}
+		// Verbose bare-string shorthand: [<alias>] where alias is
+		// non-numeric AND not "target", AND cursor is on a value.
+		if len(after) == 1 && !isNumericSegment(after[0]) && after[0] != "target" && side == ContextSideValue {
+			return ContextKindUsesTarget
+		}
+		return ContextKindUnknown
+	}
+
+	// Component-level: [components, <comp>, uses, ...]
+	if len(rest) >= 4 && rest[0] == "components" && rest[2] == "uses" {
+		if kind := matchUsesSuffix(2); kind != ContextKindUnknown {
+			return kind
+		}
+	}
+	// Feature-instance under Component:
+	// [components, <comp>, features, <feat>, uses, ...]
+	if len(rest) >= 6 && rest[0] == "components" && rest[2] == "features" && rest[4] == "uses" {
+		if kind := matchUsesSuffix(4); kind != ContextKindUnknown {
+			return kind
+		}
+	}
+	// Subsystem-direct Feature: [features, <feat>, uses, ...] (stripped ≥ 1)
+	if len(rest) >= 4 && rest[0] == "features" && rest[2] == "uses" && stripped >= 1 {
+		if kind := matchUsesSuffix(2); kind != ContextKindUnknown {
+			return kind
+		}
+	}
+	return ContextKindUnknown
+}
+
+func isCompOrFeat(s string) bool { return s == "components" || s == "features" }
+func isTypeOrName(s string) bool { return s == "type" || s == "name" }
+
+// isNumericSegment reports whether s is a non-empty decimal-integer
+// string. Used to distinguish simple-list `uses` entries (whose Path
+// element is a sequence index) from verbose-shape mapping keys.
+func isNumericSegment(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: my-app
+  version: 1.0.0
+spec:
+  components:
+    api:
+      type: core/api
+      uses:
+        backend:
+          primary:
+            target: nonexistent-sibling

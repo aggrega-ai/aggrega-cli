@@ -398,3 +398,143 @@ func TestClassifyReturnsUnknownForUnrecognizedPosition(t *testing.T) {
 		t.Errorf("Kind = %d; want ContextKindUnknown for metadata.version", ctx.Kind)
 	}
 }
+
+func TestClassifyDetectsUsesTargetVerboseAliasMap(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  components:\n    api:\n      uses:\n        backend:\n          primary:\n            target: db\n"
+	ctx := classifyAtCursor(t, src, 6, 21)
+	if ctx.Kind != ContextKindUsesTarget {
+		t.Errorf("Kind = %d; want ContextKindUsesTarget (verbose alias-map)", ctx.Kind)
+	}
+	if ctx.Value != "db" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "db")
+	}
+	if ctx.Side != ContextSideValue {
+		t.Errorf("Side = %d; want ContextSideValue", ctx.Side)
+	}
+}
+
+func TestClassifyDetectsUsesTargetSimpleList(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  components:\n    api:\n      uses:\n        backend:\n          - db\n          - cache\n"
+	ctx := classifyAtCursor(t, src, 5, 13)
+	if ctx.Kind != ContextKindUsesTarget {
+		t.Errorf("Kind = %d; want ContextKindUsesTarget (simple list)", ctx.Kind)
+	}
+	if ctx.Value != "db" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "db")
+	}
+}
+
+func TestClassifyDetectsUsesTargetBareStringShorthand(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  components:\n    api:\n      uses:\n        backend:\n          hr-db: corporate-hr\n"
+	// Cursor on the VALUE "corporate-hr". Line 5, character 17 (after "          hr-db: ").
+	ctx := classifyAtCursor(t, src, 5, 17)
+	if ctx.Kind != ContextKindUsesTarget {
+		t.Errorf("Kind = %d; want ContextKindUsesTarget (bare-string shorthand)", ctx.Kind)
+	}
+	if ctx.Side != ContextSideValue {
+		t.Errorf("Side = %d; want ContextSideValue", ctx.Side)
+	}
+	if ctx.Value != "corporate-hr" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "corporate-hr")
+	}
+}
+
+func TestClassifyRejectsBareStringShorthandOnKey(t *testing.T) {
+	t.Parallel()
+	// Same fixture as the bare-string shorthand test, but cursor on the
+	// alias KEY "hr-db" (line 5, char 12 — start of "hr-db:"). The
+	// side-aware classifier returns Unknown because keys at this shape
+	// are aliases, not target component names.
+	src := "spec:\n  components:\n    api:\n      uses:\n        backend:\n          hr-db: corporate-hr\n"
+	ctx := classifyAtCursor(t, src, 5, 12)
+	if ctx.Kind == ContextKindUsesTarget {
+		t.Errorf("Kind = ContextKindUsesTarget for alias key; bare-string-shorthand requires Side == Value")
+	}
+	if ctx.Side != ContextSideKey {
+		t.Errorf("Side = %d; want ContextSideKey", ctx.Side)
+	}
+}
+
+func TestClassifyDetectsUsesTargetSubsystemNested(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  subsystems:\n    data:\n      components:\n        primary:\n          uses:\n            backend:\n              alias:\n                target: secondary\n"
+	ctx := classifyAtCursor(t, src, 8, 25)
+	if ctx.Kind != ContextKindUsesTarget {
+		t.Errorf("Kind = %d; want ContextKindUsesTarget under subsystem nesting", ctx.Kind)
+	}
+}
+
+func TestClassifyDetectsManifestRecipeReferenceFlat(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server:1.0.0\n"
+	ctx := classifyAtCursor(t, src, 4, 24)
+	if ctx.Kind != ContextKindManifestRecipeReference {
+		t.Errorf("Kind = %d; want ContextKindManifestRecipeReference (flat shape)", ctx.Kind)
+	}
+	if ctx.Side != ContextSideValue {
+		t.Errorf("Side = %d; want ContextSideValue", ctx.Side)
+	}
+	if ctx.Value != "recipes/helm-server:1.0.0" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "recipes/helm-server:1.0.0")
+	}
+}
+
+func TestClassifyDetectsManifestRecipeReferenceLegacy(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  mappings:\n    helm:\n      components:\n        type:\n          core/server: recipes/helm-server:1.0.0\n"
+	ctx := classifyAtCursor(t, src, 5, 26)
+	if ctx.Kind != ContextKindManifestRecipeReference {
+		t.Errorf("Kind = %d; want ContextKindManifestRecipeReference (legacy provider-keyed)", ctx.Kind)
+	}
+}
+
+func TestClassifyManifestKeySideReturnsUnknown(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server:1.0.0\n"
+	// Cursor on the KEY "core/server" (line 4, char 9 = start of value
+	// portion of the indented entry). Key-side cursor on Manifest
+	// mappings is intentionally NOT classified at this WI.
+	ctx := classifyAtCursor(t, src, 4, 9)
+	if ctx.Kind == ContextKindManifestRecipeReference {
+		t.Errorf("Kind = ContextKindManifestRecipeReference on the KEY side; should be Unknown at this WI")
+	}
+}
+
+func TestClassifyDetectsReleaseAggregatePath(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  aggregate: my-app\n"
+	ctx := classifyAtCursor(t, src, 1, 14)
+	if ctx.Kind != ContextKindReleaseAggregatePath {
+		t.Errorf("Kind = %d; want ContextKindReleaseAggregatePath", ctx.Kind)
+	}
+	if ctx.Value != "my-app" {
+		t.Errorf("Value = %q; want %q", ctx.Value, "my-app")
+	}
+}
+
+func TestClassifyDetectsReleaseManifestPath(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  manifest: my-manifest\n"
+	ctx := classifyAtCursor(t, src, 1, 13)
+	if ctx.Kind != ContextKindReleaseManifestPath {
+		t.Errorf("Kind = %d; want ContextKindReleaseManifestPath", ctx.Kind)
+	}
+}
+
+func TestClassifySideKeyVsValueOnSimpleMappingPair(t *testing.T) {
+	t.Parallel()
+	src := "spec:\n  components:\n    api:\n      type: core/api\n"
+	// Cursor on the KEY "type" — line 3, char 7.
+	keyCtx := classifyAtCursor(t, src, 3, 7)
+	if keyCtx.Side != ContextSideKey {
+		t.Errorf("Side on key = %d; want ContextSideKey", keyCtx.Side)
+	}
+	// Cursor on the VALUE "core/api" — line 3, char 14.
+	valCtx := classifyAtCursor(t, src, 3, 14)
+	if valCtx.Side != ContextSideValue {
+		t.Errorf("Side on value = %d; want ContextSideValue", valCtx.Side)
+	}
+}

@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: recipes/helm-server
+  version: 1.0.0
+spec:
+  implements: core/server
+  provider: helm
+  pipeline: []

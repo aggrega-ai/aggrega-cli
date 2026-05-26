@@ -352,3 +352,89 @@ func mapKeys(m map[string]any) []string {
 	}
 	return out
 }
+
+// TestServeAggregaResolveEndToEnd exercises the resolve handler over
+// the JSON-RPC wire. Mirrors TestServeAggregaIrGraphEndToEnd's
+// pattern: spawn the daemon, drive validate + resolve, assert the
+// Location response.
+//
+// Closes the deferred coverage observation from earlier daemon work —
+// resolve previously had only in-package unit-test coverage; the
+// full Run-wiring path (workspace-root discovery, parse-cache
+// population, workspace-walk traversal) is now end-to-end pinned.
+func TestServeAggregaResolveEndToEnd(t *testing.T) {
+	bin := buildServeBinary(t)
+	ws := t.TempDir()
+
+	// Minimal workspace config; the resolve family does not consume
+	// CatalogDirs at this WI.
+	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"), []byte("workspace: {}\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	// Parent Component fixture + child Component extending it.
+	parent := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n"
+	child := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/api-server\n  version: 1.0.0\nspec:\n  extends: core/web-server\n"
+	parentPath := filepath.Join(ws, "parent.yaml")
+	childPath := filepath.Join(ws, "child.yaml")
+	if err := os.WriteFile(parentPath, []byte(parent), 0o644); err != nil {
+		t.Fatalf("write parent: %v", err)
+	}
+	if err := os.WriteFile(childPath, []byte(child), 0o644); err != nil {
+		t.Fatalf("write child: %v", err)
+	}
+
+	cmd := exec.Command(bin, "serve")
+	cmd.Dir = ws
+	cmd.Stderr = os.Stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	})
+
+	// Validate the child file (seeds the parse cache).
+	if _, err := stdin.Write(framed(1, "aggrega/validate", map[string]any{
+		"file":    childPath,
+		"content": child,
+	})); err != nil {
+		t.Fatalf("write validate request: %v", err)
+	}
+	if resp := readOneResponse(t, stdout, 10*time.Second); resp["error"] != nil {
+		t.Fatalf("aggrega/validate returned error envelope: %+v", resp["error"])
+	}
+
+	// Resolve the cursor at the spec.extends value: line 6 (0-based),
+	// char 14 (mid "core/web-server").
+	if _, err := stdin.Write(framed(2, "aggrega/resolve", map[string]any{
+		"uri":      childPath,
+		"position": map[string]any{"line": 6, "character": 14},
+	})); err != nil {
+		t.Fatalf("write resolve request: %v", err)
+	}
+	resp := readOneResponse(t, stdout, 10*time.Second)
+	if errEnv, ok := resp["error"]; ok && errEnv != nil {
+		t.Fatalf("aggrega/resolve returned error envelope: %+v", errEnv)
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("aggrega/resolve response missing result field; got %+v", resp)
+	}
+	loc, ok := result["location"].(map[string]any)
+	if !ok || loc == nil {
+		t.Fatalf("aggrega/resolve result.location should decode as a non-nil object; got %+v", result)
+	}
+	if uri, _ := loc["uri"].(string); uri != parentPath {
+		t.Errorf("location.uri = %q; want %q (parent's path)", uri, parentPath)
+	}
+}
