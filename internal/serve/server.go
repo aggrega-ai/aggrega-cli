@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -27,14 +27,45 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
+// defaultDrainTimeout bounds how long the dispatch loop waits after
+// the reader goroutine observes an aggrega/shutdown notification
+// before returning. The timer starts at notification ARRIVAL (in the
+// reader), not at observation in the main loop — so worst-case exit
+// latency is max(in_flight_handler_runtime, defaultDrainTimeout).
+const defaultDrainTimeout = 2 * time.Second
+
 // RunConfig carries the I/O streams the daemon reads from and writes
-// to. The cobra-bound entry point passes cmd.InOrStdin / OutOrStdout /
-// ErrOrStderr; tests inject bytes.Buffer values to drive the dispatch
-// loop in-memory without spawning a subprocess.
+// to plus optional runtime overrides. The cobra-bound entry point
+// passes cmd.InOrStdin / OutOrStdout / ErrOrStderr and the
+// --workspace-root flag value; tests inject bytes.Buffer (or
+// io.Pipe) values to drive the dispatch loop in-memory without
+// spawning a subprocess.
 type RunConfig struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+
+	// WorkspaceRoot, when non-empty, bypasses parent-walk discovery
+	// and anchors the workspace at this absolute path. The cobra
+	// wiring validates the path exists and is a directory before
+	// passing it through; Run treats an empty string as "use
+	// discovery." Empty string is treated as unset (an operator
+	// running --workspace-root="" falls through to discovery as if
+	// the flag were not passed).
+	WorkspaceRoot string
+
+	// GlobalConfigPathOverride, when non-empty, replaces the
+	// GlobalConfigPath resolution entirely. Tests use this to point
+	// at fixture files without depending on $AGGREGA_CONFIG or
+	// $XDG_CONFIG_HOME. The cobra flag does not expose this surface.
+	GlobalConfigPathOverride string
+
+	// DrainTimeout sets the budget the dispatch loop waits after
+	// observing an aggrega/shutdown notification before returning.
+	// Zero value defaults to defaultDrainTimeout (2 seconds). Tests
+	// pass a short value (e.g., 50ms) so shutdown behavior exercises
+	// in subsecond wall time.
+	DrainTimeout time.Duration
 }
 
 // Diagnostic is the wire shape returned by `aggrega/validate` and
@@ -51,13 +82,28 @@ type Diagnostic struct {
 // after workspace-root discovery + workspace-config load; reused for
 // every JSON-RPC request the dispatch loop reads.
 //
-// No mutex: JSON-RPC over stdin/stdout is sequential. The dispatch loop
-// reads one request, dispatches to a handler, writes one response, then
-// reads the next. Concurrent access to Server's mutable state never
-// occurs by construction.
+// No mutex on Server's mutable state. The dispatch loop runs a reader
+// goroutine that consumes framed JSON-RPC messages from stdin and
+// pushes them onto a channel; the main goroutine selects on that
+// channel and runs handlers synchronously. Handlers — the only writers
+// of Server fields — execute in the main goroutine only. The reader
+// goroutine reads from stdin and writes to channels; it never touches
+// Server mutable state. The previous "single goroutine" architecture
+// served the same no-mutex invariant; the reader goroutine was
+// introduced so the aggrega/shutdown drain timer can start at
+// notification arrival rather than after the in-flight handler
+// returns.
 type Server struct {
 	workspaceRoot string
+	configSource  string
 	wsConfig      workspaceconfig.Config
+
+	// shuttingDown is set to true by dispatchShutdown after an
+	// aggrega/shutdown notification arrives. The drain-state
+	// pre-check in handle consults this flag to reject subsequent
+	// requests with errShuttingDown and drop subsequent
+	// notifications.
+	shuttingDown bool
 
 	// lazyCatalog is the per-URI Tier-1/2/3 cascade for Component +
 	// Feature URIs. Constructed once at startup via
@@ -134,31 +180,79 @@ type Server struct {
 	// Subsequent LineIndex constructions in the daemon read this
 	// field via BuildLineIndexWithEncoding.
 	positionEncoding yamlpos.PositionEncoding
+
+	// testInDispatchHook, when non-nil, runs at the top of handle()
+	// before per-method dispatch. The production setup never sets
+	// this field — it is the test seam tests use to inject
+	// controllable handler latency for timing-sensitive coverage
+	// (e.g., distinguishing arrival-based from observation-based
+	// drain-timer semantics). A nil hook is a no-op.
+	testInDispatchHook func()
 }
 
-// Run discovers the workspace root from the daemon's current working
-// directory, loads the workspace config, constructs a Server, and
-// enters the JSON-RPC dispatch loop. Returns when stdin reaches EOF or
-// an unrecoverable I/O error occurs.
+// Run anchors the workspace root, loads the merged workspace +
+// global config, constructs a Server, and enters the JSON-RPC
+// dispatch loop. Returns when stdin reaches EOF, the dispatch loop's
+// drain timer fires after an aggrega/shutdown notification, or an
+// unrecoverable I/O error occurs.
 //
-// On missing workspace config (no `.aggrega-config.yaml` discoverable
-// via parent-directory walk from the CWD), Run returns an error before
-// entering the dispatch loop. The cobra entry point surfaces that
-// error to the process exit code; the IDE client interprets non-zero
-// exit as a "language server failed to start" condition.
+// Workspace-root anchoring:
+//   - When cfg.WorkspaceRoot is non-empty, Run uses the explicit
+//     path as the root and skips discovery. The cobra wiring is
+//     expected to have validated the path; Run re-validates as
+//     defense-in-depth.
+//   - When cfg.WorkspaceRoot is empty, Run walks upward from the
+//     daemon's cwd looking for any of the five marker types per
+//     discoverWorkspaceRoot.
+//
+// Config loading uses the three-level precedence cascade per
+// workspaceconfig.LoadWithGlobal — workspace file > global file >
+// built-in defaults. The resolved Source is recorded on Server as
+// configSource and surfaced in the aggrega/initialize response.
+//
+// On unrecoverable startup failure (root not discoverable, config
+// malformed, explicit AGGREGA_CONFIG pointing at a missing file),
+// Run returns an error before entering the dispatch loop. The cobra
+// entry point surfaces that error to the process exit code; the IDE
+// client interprets non-zero exit as a "language server failed to
+// start" condition.
 func Run(cfg RunConfig) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getwd: %w", err)
+	var root string
+	var workspaceConfigPath string
+	if cfg.WorkspaceRoot != "" {
+		st, statErr := os.Stat(cfg.WorkspaceRoot)
+		if statErr != nil {
+			return fmt.Errorf("explicit workspace root %s: %w", cfg.WorkspaceRoot, statErr)
+		}
+		if !st.IsDir() {
+			return fmt.Errorf("explicit workspace root %s is not a directory", cfg.WorkspaceRoot)
+		}
+		root = cfg.WorkspaceRoot
+		// Best-effort: when an explicit root carries a config file,
+		// honor it as the workspace overlay; otherwise fall through
+		// to defaults+global only.
+		candidate := root + string(os.PathSeparator) + ".aggrega-config.yaml"
+		if _, err := os.Stat(candidate); err == nil {
+			workspaceConfigPath = candidate
+		}
+	} else {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("getwd: %w", err)
+		}
+		res, err := discoverWorkspaceRoot(cwd)
+		if err != nil {
+			return fmt.Errorf("workspace root not discoverable from %s: %w", cwd, err)
+		}
+		root = res.root
+		workspaceConfigPath = res.configPath
 	}
-	root, configPath, err := discoverWorkspaceRoot(cwd)
-	if err != nil {
-		return fmt.Errorf("workspace root not discoverable from %s: %w", cwd, err)
-	}
-	wsCfg, err := workspaceconfig.Load(configPath)
+
+	wsCfg, source, err := workspaceconfig.LoadWithGlobal(workspaceConfigPath, cfg.GlobalConfigPathOverride)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+
 	stderr := cfg.Stderr
 	if stderr == nil {
 		stderr = os.Stderr
@@ -173,6 +267,7 @@ func Run(cfg RunConfig) error {
 	activeRelease, attempt := runManifestCascade(root, wsCfg, stderr)
 	srv := &Server{
 		workspaceRoot:    root,
+		configSource:     source.String(),
 		wsConfig:         wsCfg,
 		lazyCatalog:      lazyCatalog,
 		activeRelease:    activeRelease,
@@ -184,35 +279,11 @@ func Run(cfg RunConfig) error {
 		stderr:           stderr,
 		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
-	return srv.dispatchLoop()
-}
-
-// discoverWorkspaceRoot walks upward from start looking for a directory
-// containing `.aggrega-config.yaml`. Returns the directory + the
-// config file's path. Returns os.ErrNotExist when the walk reaches the
-// filesystem root without a match.
-//
-// The walk uses lexical filepath.Dir traversal — same behavior as
-// git rev-parse. Symbolic-link edge cases are not specially handled;
-// a workspace mounted under a symlink resolves against the symlink's
-// lexical parent chain, not the real-path chain.
-func discoverWorkspaceRoot(start string) (root, configPath string, err error) {
-	abs, err := filepath.Abs(start)
-	if err != nil {
-		return "", "", err
+	drainTimeout := cfg.DrainTimeout
+	if drainTimeout == 0 {
+		drainTimeout = defaultDrainTimeout
 	}
-	dir := abs
-	for {
-		candidate := filepath.Join(dir, ".aggrega-config.yaml")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			return dir, candidate, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", "", os.ErrNotExist
-		}
-		dir = parent
-	}
+	return srv.dispatchLoop(drainTimeout)
 }
 
 // resolveRecipeCatalog loads the catalog lazily on first use and

@@ -68,35 +68,9 @@ func Load(path string) (Config, error) {
 		}
 		return Config{}, fmt.Errorf("workspaceconfig: read %s: %w", path, err)
 	}
-
-	var instance any
-	if err := yaml.Unmarshal(data, &instance); err != nil {
-		return Config{}, fmt.Errorf("workspaceconfig: parse %s: %w", path, err)
+	if err := validateBytes(data, path); err != nil {
+		return Config{}, err
 	}
-	if instance == nil {
-		// Empty file: every field at its documented default.
-		return Default(), nil
-	}
-	instance = normaliseYAML(instance)
-
-	v, err := newValidator()
-	if err != nil {
-		return Config{}, fmt.Errorf("workspaceconfig: schema build: %w", err)
-	}
-	report, err := v.Validate(instance, nil)
-	if err != nil {
-		return Config{}, fmt.Errorf("workspaceconfig: validate %s: %w", path, err)
-	}
-	if len(report.Findings) > 0 {
-		f := report.Findings[0]
-		fieldPath := f.FieldPath
-		if fieldPath == "" {
-			fieldPath = "(root)"
-		}
-		return Config{}, fmt.Errorf("workspaceconfig: %s: %s: %s: %w",
-			path, fieldPath, f.Message, ErrConfigInvalid)
-	}
-
 	p := Default()
 	if err := yaml.Unmarshal(data, &p); err != nil {
 		// Defensive: schema accepted the instance but typed unmarshal
@@ -106,6 +80,45 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("workspaceconfig: typed unmarshal %s: %w", path, err)
 	}
 	return p, nil
+}
+
+// validateBytes runs the schema-validation phase against an already-
+// read YAML document. Returns nil when the document is valid (or
+// empty); returns a wrapped ErrConfigInvalid when the schema rejects
+// it; returns a parse/build error for the underlying yaml / schema
+// failures. The path argument is decorative — it appears in error
+// messages to identify the offending file.
+//
+// Shared by Load and loadOverlayInto so each call site reads the
+// file once and validates once, instead of paying the YAML parse
+// cost twice when both validation and overlay-into-seed are needed.
+func validateBytes(data []byte, path string) error {
+	var instance any
+	if err := yaml.Unmarshal(data, &instance); err != nil {
+		return fmt.Errorf("workspaceconfig: parse %s: %w", path, err)
+	}
+	if instance == nil {
+		return nil
+	}
+	instance = normaliseYAML(instance)
+	v, err := newValidator()
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: schema build: %w", err)
+	}
+	report, err := v.Validate(instance, nil)
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: validate %s: %w", path, err)
+	}
+	if len(report.Findings) > 0 {
+		f := report.Findings[0]
+		fieldPath := f.FieldPath
+		if fieldPath == "" {
+			fieldPath = "(root)"
+		}
+		return fmt.Errorf("workspaceconfig: %s: %s: %s: %w",
+			path, fieldPath, f.Message, ErrConfigInvalid)
+	}
+	return nil
 }
 
 // newValidator compiles the aggrega-config schema bytes into a

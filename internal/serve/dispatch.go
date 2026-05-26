@@ -11,23 +11,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
-)
-
-// JSON-RPC 2.0 standard error codes.
-const (
-	jsonRPCParseError     = -32700
-	jsonRPCInvalidRequest = -32600
-	jsonRPCMethodNotFound = -32601
-	jsonRPCInvalidParams  = -32602
-	jsonRPCInternalError  = -32603
-)
-
-// Application-level error codes in the 1xxx range.
-const (
-	errFileNotValidated    = 1001
-	errReleaseNotResolved  = 1002
-	errLockfileAbsent      = 1003
-	errEntityNotResolvable = 1004
+	"time"
 )
 
 // jsonRPCRequest is the wire shape for an incoming request. ID is
@@ -110,9 +94,29 @@ func writeMessage(w io.Writer, body []byte) error {
 	return nil
 }
 
-// dispatchLoop reads requests, dispatches to handlers by method name,
-// and writes responses until stdin reaches EOF or an unrecoverable
-// I/O error occurs.
+// incomingMessage is the wire-frame payload the reader goroutine
+// forwards to the main loop. body is the JSON-RPC body verbatim;
+// err is non-nil only when the reader hit io.EOF or an
+// unrecoverable framing failure, at which point the channel closes.
+type incomingMessage struct {
+	body []byte
+	err  error
+}
+
+// dispatchLoop spawns a reader goroutine to consume stdin and runs a
+// select-driven dispatcher in the main goroutine. The reader peeks
+// at each message's method field: when it sees aggrega/shutdown it
+// creates a time.Timer for the drain budget and emits the timer's
+// channel onto drainTimerInstall (cap 1) so the main loop can begin
+// watching it. All messages — including the shutdown notification —
+// are also forwarded onto the message channel so dispatchShutdown
+// runs in the main goroutine and the no-mutex invariant holds.
+//
+// The drain timer is arrival-based: it starts when the reader parses
+// the shutdown notification, not when the main loop observes the
+// notification (which could be delayed by an in-flight handler).
+// Worst-case exit latency from the client's POV is
+// max(in_flight_handler_runtime, drainTimeout).
 //
 // Per-request error handling:
 //   - Header parse error (malformed framing): logged to stderr, loop
@@ -125,24 +129,71 @@ func writeMessage(w io.Writer, body []byte) error {
 //     loop continues.
 //   - Handler internal error: returns the -32603 internal-error
 //     envelope or an application-code envelope; loop continues.
-func (s *Server) dispatchLoop() error {
-	for {
-		body, err := readMessage(s.in)
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("read message: %w", err)
-		}
-		var req jsonRPCRequest
-		if jerr := json.Unmarshal(body, &req); jerr != nil {
-			if werr := s.writeError(nil, jsonRPCParseError, "parse error: "+jerr.Error()); werr != nil {
-				return werr
+func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
+	messages := make(chan incomingMessage)
+	drainTimerInstall := make(chan (<-chan time.Time), 1)
+
+	go func() {
+		defer close(messages)
+		// timerArmed is local to the reader goroutine and never read
+		// by any other goroutine; it gates the timer creation so
+		// only the FIRST aggrega/shutdown notification arms a drain
+		// timer. Subsequent shutdown notifications during the reader's
+		// lifetime are no-ops — no timer allocated, no resource leak,
+		// no race (the flag is reader-local). This protects against
+		// spaced-duplicate shutdowns where the main loop has already
+		// installed the first timer and would otherwise overwrite the
+		// drainCh with a second one, leaking the first timer's
+		// resources until it fires.
+		timerArmed := false
+		for {
+			body, err := readMessage(s.in)
+			if err != nil {
+				messages <- incomingMessage{err: err}
+				return
 			}
-			continue
+			// Peek the method before forwarding so the reader can
+			// arm the drain timer without waiting for the main
+			// goroutine to observe.
+			var peek struct {
+				Method string `json:"method"`
+			}
+			if jerr := json.Unmarshal(body, &peek); jerr == nil && peek.Method == "aggrega/shutdown" && !timerArmed {
+				timerArmed = true
+				timer := time.NewTimer(drainTimeout)
+				drainTimerInstall <- timer.C
+			}
+			messages <- incomingMessage{body: body}
 		}
-		if err := s.handle(&req); err != nil {
-			return err
+	}()
+
+	var drainCh <-chan time.Time
+	for {
+		select {
+		case d := <-drainTimerInstall:
+			drainCh = d
+		case msg, ok := <-messages:
+			if !ok {
+				return nil
+			}
+			if msg.err != nil {
+				if errors.Is(msg.err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("read message: %w", msg.err)
+			}
+			var req jsonRPCRequest
+			if jerr := json.Unmarshal(msg.body, &req); jerr != nil {
+				if werr := s.writeError(nil, jsonRPCParseError, "parse error: "+jerr.Error()); werr != nil {
+					return werr
+				}
+				continue
+			}
+			if err := s.handle(&req); err != nil {
+				return err
+			}
+		case <-drainCh:
+			return nil
 		}
 	}
 }
@@ -151,7 +202,27 @@ func (s *Server) dispatchLoop() error {
 // handler. The method routing table is the load-bearing surface for
 // the daemon's wire protocol: adding a new method means adding a
 // case here.
+//
+// Drain-state pre-check: when s.shuttingDown is set (an
+// aggrega/shutdown notification has already arrived), requests
+// receive an errShuttingDown envelope and notifications are
+// dropped. The pre-check fires before per-method dispatch so it
+// applies uniformly. aggrega/shutdown itself is exempt — receiving
+// a second shutdown notification during drain is a no-op (the flag
+// is already set).
 func (s *Server) handle(req *jsonRPCRequest) error {
+	if s.testInDispatchHook != nil {
+		s.testInDispatchHook()
+	}
+	if req.Method == "aggrega/shutdown" {
+		return s.dispatchShutdown(req)
+	}
+	if s.shuttingDown {
+		if isNotification(req) {
+			return nil
+		}
+		return s.writeError(req.ID, errShuttingDown, "daemon shutting down")
+	}
 	switch req.Method {
 	case "aggrega/initialize":
 		return s.dispatchInitialize(req)
@@ -176,6 +247,18 @@ func (s *Server) handle(req *jsonRPCRequest) error {
 	default:
 		return s.writeError(req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
 	}
+}
+
+// isNotification reports whether req is a JSON-RPC 2.0 notification
+// (id field absent). The wire-level encoding of "id omitted" varies:
+// a missing id field produces a nil RawMessage; an explicit
+// "id":null produces a four-byte "null" RawMessage. Both shapes
+// count as notifications for response-suppression purposes.
+func isNotification(req *jsonRPCRequest) bool {
+	if len(req.ID) == 0 {
+		return true
+	}
+	return string(req.ID) == "null"
 }
 
 // writeResult marshals result as the response Result field and writes

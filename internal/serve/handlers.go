@@ -49,9 +49,18 @@ type serverCapabilities struct {
 	PositionEncoding string `json:"positionEncoding"`
 }
 
-// initializeResult is the response shape for `aggrega/initialize`.
+// initializeResult is the response shape for aggrega/initialize.
+// Capabilities carries the negotiated position encoding. WorkspaceRoot
+// reports the absolute path the daemon resolved as the workspace
+// anchor (via discovery or explicit --workspace-root). ConfigSource
+// names the highest-precedence configuration layer that contributed
+// to the effective Config: "workspace" | "global" | "defaults".
+// Additive only: clients that read only Capabilities continue to
+// work; the new fields are opt-in for clients that surface them.
 type initializeResult struct {
-	Capabilities serverCapabilities `json:"capabilities"`
+	Capabilities  serverCapabilities `json:"capabilities"`
+	WorkspaceRoot string             `json:"workspaceRoot"`
+	ConfigSource  string             `json:"configSource"`
 }
 
 // dispatchInitialize selects a position encoding from the client's
@@ -80,6 +89,8 @@ func (s *Server) dispatchInitialize(req *jsonRPCRequest) error {
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
 		},
+		WorkspaceRoot: s.workspaceRoot,
+		ConfigSource:  s.configSource,
 	})
 }
 

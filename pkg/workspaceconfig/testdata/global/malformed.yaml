@@ -1,0 +1,2 @@
+workspace:
+  default_registry: 12345  # schema violation — string field
