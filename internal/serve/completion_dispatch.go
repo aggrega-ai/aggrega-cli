@@ -141,6 +141,8 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 		return completion.Provider(uris, prefix)
 	case completion.ContextKindSchemaKeyword:
 		return completion.SchemaKeyword()
+	case completion.ContextKindSchemaTypeValue:
+		return completion.SchemaTypeValue()
 	}
 	return nil
 }

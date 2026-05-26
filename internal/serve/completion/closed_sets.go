@@ -64,6 +64,25 @@ var JSONSchemaKeywords = []string{
 	"type",
 }
 
+// SchemaTypePrimitives enumerates the JSON Schema 2020-12 primitive
+// type names that appear as values of the `type:` keyword. Used by
+// the schema-VALUE completion handler for both scalar and array
+// forms of the type: keyword (e.g., `properties.<f>.type: <here>`,
+// `items.type: <here>`, `spec.schema.type: <here>`, AND array-form
+// `type: [<here>, ...]`).
+//
+// Order matches the JSON Schema spec's natural listing — `object` and
+// `string` (the two most common authoring choices) come first.
+var SchemaTypePrimitives = []string{
+	"object",
+	"string",
+	"integer",
+	"number",
+	"boolean",
+	"array",
+	"null",
+}
+
 // AggregaSchemaExtensions enumerates the x-aggrega-* schema extension
 // keywords Aggrega catalogs use. Sorted alphabetically; the
 // sortText prefix places them AFTER vanilla JSON Schema keywords so

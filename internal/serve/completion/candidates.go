@@ -101,6 +101,17 @@ func Provider(uris []string, prefix string) []CompletionItem {
 	return filterByPrefix(items, prefix)
 }
 
+// SchemaTypeValue returns the candidate list for cursors on the
+// VALUE side of a `type:` keyword inside spec.schema. Offers the JSON
+// Schema 2020-12 primitive type names — object, string, integer,
+// number, boolean, array, null. Order matches the SchemaTypePrimitives
+// slice (object / string first; the most common authoring choices).
+func SchemaTypeValue() []CompletionItem {
+	return orderedItems(SchemaTypePrimitives, KindEnum, func(label string) string {
+		return "JSON Schema primitive type"
+	})
+}
+
 // SchemaKeyword returns the candidate list for cursors inside the
 // spec.schema subtree. Combines vanilla JSON Schema 2020-12 keywords
 // (alphabetical, sorted first) with Aggrega x-aggrega-* extensions

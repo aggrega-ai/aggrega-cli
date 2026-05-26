@@ -37,10 +37,17 @@ const (
 	// or FeatureRecipe). Candidates: Provider URIs (workspace-walked).
 	ContextKindProvider
 
-	// ContextKindSchemaKeyword — cursor inside the spec.schema
-	// subtree at a position where a JSON Schema keyword is expected.
-	// Candidates: vanilla JSON Schema keywords + Aggrega extensions.
+	// ContextKindSchemaKeyword — cursor on the KEY side inside the
+	// spec.schema subtree (or on a value position that doesn't carry
+	// a more-specific candidate set). Candidates: vanilla JSON Schema
+	// keywords + Aggrega extensions.
 	ContextKindSchemaKeyword
+
+	// ContextKindSchemaTypeValue — cursor on the VALUE side of a
+	// `type:` keyword inside spec.schema (e.g., `properties.foo.type:
+	// <here>`, `items.type: <here>`). Candidates: the JSON Schema
+	// primitive type names (object, string, integer, etc.).
+	ContextKindSchemaTypeValue
 )
 
 // ClassifyForCompletion inspects the cursor's path + side and returns
@@ -98,14 +105,141 @@ func ClassifyForCompletion(path []string, side yamlpos.ContextSide) ContextKind 
 		return ContextKindProvider
 	}
 
-	// spec.schema.* — any cursor inside the schema subtree where a
-	// schema keyword is expected. The completion handler offers
-	// keyword candidates at the property-name position (mapping keys
-	// inside schema.properties.<f> or inside the schema object
-	// itself).
+	// spec.schema.* — sub-branches by cursor side + trailing path
+	// pattern:
+	//
+	//   - VALUE side AND the last path segment is "type":
+	//     scalar-form type cursor (e.g., `type: <here>`). Offer JSON
+	//     Schema primitive types. Parent-keyword check disambiguates:
+	//     when "type" is itself a user-named property under a
+	//     JSON Schema container keyword (properties, $defs, etc.),
+	//     primitives are semantically wrong and the classifier
+	//     returns Unknown.
+	//
+	//   - VALUE side AND the path ends with ["type", "<numeric>"]:
+	//     array-form type cursor (e.g., `type: [string, <here>]`).
+	//     Same primitives, same parent-keyword check.
+	//
+	//   - KEY side anywhere inside schema: keyword candidates
+	//     (vanilla JSON Schema 2020-12 + Aggrega x-aggrega-* extensions).
+	//
+	//   - VALUE side at any other key: deferred — no candidates yet
+	//     (free-form scalars like description, pattern, format do not
+	//     have a closed enumeration at this WI).
 	if len(rest) >= 2 && rest[0] == "schema" {
-		return ContextKindSchemaKeyword
+		if side == yamlpos.ContextSideValue {
+			// Scalar form: last segment is "type".
+			if rest[len(rest)-1] == "type" {
+				if !typeKeyIsUserNamedProperty(rest, len(rest)-1) {
+					return ContextKindSchemaTypeValue
+				}
+				return ContextKindUnknown
+			}
+			// Array form: path ends with ["type", "<numeric>"].
+			if len(rest) >= 2 && isNumericSegment(rest[len(rest)-1]) && rest[len(rest)-2] == "type" {
+				if !typeKeyIsUserNamedProperty(rest, len(rest)-2) {
+					return ContextKindSchemaTypeValue
+				}
+				return ContextKindUnknown
+			}
+		}
+		if side == yamlpos.ContextSideKey {
+			return ContextKindSchemaKeyword
+		}
+		return ContextKindUnknown
 	}
 
 	return ContextKindUnknown
+}
+
+// typeKeyIsUserNamedProperty reports whether the "type" segment at
+// rest[typeIdx] is a USER-NAMED property name rather than the JSON
+// Schema keyword. The check looks at the parent segment via
+// isActingAsContainer — when the parent is acting as a JSON Schema
+// container keyword (properties, $defs, definitions,
+// patternProperties), then "type" is a property NAME under that
+// container, and primitive-type candidates are semantically wrong
+// for the cursor.
+//
+// Disambiguates structurally-identical paths via the recursive
+// container check:
+//   - [schema, properties, port, type] — port is user-named (not a
+//     container); type is the JSON Schema keyword; primitives correct.
+//   - [schema, properties, type] — outer properties is the container;
+//     type is user-named under it; primitives wrong (Unknown).
+//   - [schema, properties, properties, type] — inner properties is
+//     itself a user-named property (its parent properties acts as
+//     container); type is the JSON Schema keyword of the user-named
+//     property; primitives correct.
+//   - [schema, properties, properties, properties, type] — chains
+//     further; the recursive check handles arbitrary nesting depth.
+//
+// Returns false (treat as JSON Schema keyword) when the preceding
+// segment cannot be inspected (typeIdx == 0).
+func typeKeyIsUserNamedProperty(rest []string, typeIdx int) bool {
+	if typeIdx <= 0 {
+		return false
+	}
+	return isActingAsContainer(rest, typeIdx-1)
+}
+
+// isActingAsContainer reports whether the segment at idx is acting
+// as a JSON Schema container keyword (rather than being a user-named
+// property whose name collides with a reserved keyword).
+//
+// A segment is acting as a container iff:
+//   - Its name is one of the JSON Schema container keywords
+//     (properties, $defs, definitions, patternProperties).
+//   - AND its parent is NOT itself acting as a container.
+//
+// The parent check chains recursively. A user-named property whose
+// value is a sub-schema introduces a fresh JSON-Schema-keyword
+// alternation — the user-named property's children are JSON Schema
+// keywords (which may again include reserved-name containers, which
+// in turn may host user-named properties again).
+//
+// Without the recursive parent check, a user who names a property
+// literally "properties" would have its inner properties (the
+// user-named property's OWN container) treated as a user-named
+// property too, producing wrong classifications at arbitrary
+// nesting depth.
+func isActingAsContainer(rest []string, idx int) bool {
+	if idx < 0 || idx >= len(rest) {
+		return false
+	}
+	if !isJSONSchemaContainerKeyword(rest[idx]) {
+		return false
+	}
+	if idx == 0 {
+		// No parent left in the path to inspect — segment has the
+		// reserved name and is at the top of rest; treat as container.
+		return true
+	}
+	return !isActingAsContainer(rest, idx-1)
+}
+
+// isJSONSchemaContainerKeyword reports whether s is one of the
+// JSON Schema keywords whose children are user-named properties /
+// definitions (rather than further JSON Schema keywords).
+func isJSONSchemaContainerKeyword(s string) bool {
+	switch s {
+	case "properties", "$defs", "definitions", "patternProperties":
+		return true
+	}
+	return false
+}
+
+// isNumericSegment reports whether s is a non-empty decimal-integer
+// string. Used to identify sequence-element path segments (yamlpos
+// represents sequence indices as decimal strings).
+func isNumericSegment(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

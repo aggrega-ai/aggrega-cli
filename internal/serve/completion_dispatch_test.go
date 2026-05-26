@@ -191,6 +191,73 @@ func TestCompletionDispatchSchemaKeywordCursor(t *testing.T) {
 	}
 }
 
+func TestCompletionDispatchSchemaTypeValueCursor(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n"
+	path := writeCompletionFixture(t, dir, "comp.yaml", content)
+	srv := newTestServer(t, dir, nil, nil)
+	srv.stderr = drainStderr()
+	validateFile(t, srv, path, content)
+
+	// Cursor on the VALUE "integer" at line 9, char 18 (mid-word).
+	// Expected: primitive-type candidates (object, string, integer, ...),
+	// NOT JSON Schema keywords.
+	result := completionRequest(t, srv, path, 9, 18)
+	if !hasLabel(result.Items, "object") {
+		t.Errorf("schema-type-value completion missing 'object'; got: %v", labelsList(result.Items))
+	}
+	if !hasLabel(result.Items, "string") {
+		t.Errorf("schema-type-value completion missing 'string'; got: %v", labelsList(result.Items))
+	}
+	// Confirm we got the primitive-type set, not the keyword set —
+	// "type" the keyword should NOT appear in primitive-type candidates.
+	if hasLabel(result.Items, "type") {
+		t.Errorf("schema-type-value completion incorrectly returned keyword 'type'; expected primitives only. got: %v", labelsList(result.Items))
+	}
+}
+
+func TestCompletionDispatchSchemaTypeAsArrayCursor(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Type-as-array: JSON Schema 2020-12 allows `type: [string, "null"]`.
+	// Cursor on the array element should still offer primitive-type candidates.
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type:\n          - integer\n"
+	path := writeCompletionFixture(t, dir, "comp.yaml", content)
+	srv := newTestServer(t, dir, nil, nil)
+	srv.stderr = drainStderr()
+	validateFile(t, srv, path, content)
+
+	// Cursor on "integer" array element at line 10, char 14.
+	result := completionRequest(t, srv, path, 10, 14)
+	if !hasLabel(result.Items, "object") {
+		t.Errorf("schema-type-as-array completion missing 'object'; got: %v", labelsList(result.Items))
+	}
+	if !hasLabel(result.Items, "null") {
+		t.Errorf("schema-type-as-array completion missing 'null'; got: %v", labelsList(result.Items))
+	}
+}
+
+func TestCompletionDispatchSchemaValueOfNonTypeKeyReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Cursor on the VALUE side of description: inside spec.schema.
+	// Per the deferred-value design, this returns empty candidates
+	// (no keyword candidates, no primitive candidates — schema-value
+	// completion is shipped only for type: keys at this WI).
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    description: A free-form description.\n"
+	path := writeCompletionFixture(t, dir, "comp.yaml", content)
+	srv := newTestServer(t, dir, nil, nil)
+	srv.stderr = drainStderr()
+	validateFile(t, srv, path, content)
+
+	// Cursor on "A free-form description." at line 7, char 25.
+	result := completionRequest(t, srv, path, 7, 25)
+	if len(result.Items) != 0 {
+		t.Errorf("schema-value-of-non-type returned %d items; want empty (deferred)", len(result.Items))
+	}
+}
+
 func TestCompletionDispatchProviderCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
