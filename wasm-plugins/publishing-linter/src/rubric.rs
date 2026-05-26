@@ -33,8 +33,6 @@
 //! - MappingLibrary: entry-key-level diff (opaque template strings).
 //! - Recipe / FeatureRecipe: load-bearing-field diff.
 //! - Aggregate: catalog-aggregate diff.
-//! - CueModule: conservative MAJOR default (legacy transitional
-//!   pathway).
 
 use aggrega_pdk_rust::{LinterClassification, LinterFinding, LinterInput, LinterSeverity};
 use serde_json::Value;
@@ -78,10 +76,6 @@ fn classify_one(input: &LinterInput) -> (LinterClassification, String) {
         "Recipe" => classify_recipe_like(previous, proposed, "Recipe"),
         "FeatureRecipe" => classify_recipe_like(previous, proposed, "FeatureRecipe"),
         "Aggregate" => classify_aggregate(previous, proposed),
-        "CueModule" => (
-            LinterClassification::Major,
-            "CueModule kind: legacy transitional pathway classifies any change as MAJOR".to_string(),
-        ),
         other => (
             LinterClassification::Major,
             format!("entity_kind {other:?} unrecognised; conservative MAJOR default"),

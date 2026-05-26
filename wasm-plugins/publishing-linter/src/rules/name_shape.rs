@@ -27,7 +27,7 @@ use crate::policies;
 /// `classify` returns at most one finding. Returns an empty vector
 /// when the name matches the per-kind pattern, when the rule is
 /// suppressed by `allow_nonstandard_names`, or when the entity kind
-/// has no documented pattern (e.g., CueModule legacy).
+/// has no documented pattern.
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
     let policies = policies::effective(input.policies.as_ref());
     if policies.allow_nonstandard_names {

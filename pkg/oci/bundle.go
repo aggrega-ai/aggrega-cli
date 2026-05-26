@@ -31,9 +31,6 @@ import (
 //     entries within the archive are sorted lexicographically and
 //     carry zeroed timestamps so two independent Bundle invocations
 //     against the same input produce byte-identical archives.
-//   - CueModule → whole-module tar.gz (legacy; matches the upstream
-//     `cue mod publish` format). No first-party Aggrega consumer
-//     today; retained for third-party catalogs.
 //
 // Aggregate is NOT a bundled kind (Aggregates live in the workspace's
 // source-control system, not as OCI-published catalog content);
@@ -71,13 +68,6 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 		archive, err := bundleTarGzDirectory(filepath.Dir(entityPath))
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle %s as tar.gz: %w", entityPath, err)
-		}
-		return archive, mediaType, nil
-
-	case "CueModule":
-		archive, err := bundleTarGzDirectory(filepath.Dir(entityPath))
-		if err != nil {
-			return nil, "", fmt.Errorf("oci: bundle legacy cue module %s: %w", entityPath, err)
 		}
 		return archive, mediaType, nil
 
@@ -129,9 +119,9 @@ func validateLibraryPerVersionSubdir(entityPath string) error {
 }
 
 // bundleTarGzDirectory walks dirPath (a Recipe / FeatureRecipe
-// directory or a legacy CUE module root) and returns the contents
-// packed into a deterministic tar.gz archive. Every non-hidden file
-// reachable from dirPath is included: the top-level YAML the
+// directory) and returns the contents packed into a deterministic
+// tar.gz archive. Every non-hidden file reachable from dirPath is
+// included: the top-level YAML the
 // directory is named for, plus any co-located source/, mappings/,
 // artifacts/ subtrees. The archive entries are sorted
 // lexicographically by their relative path; every entry carries a

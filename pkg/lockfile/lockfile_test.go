@@ -55,8 +55,6 @@ entities:
     referenced_from:
       - aggregate.spec.components.db.type
 
-cue_modules: []
-
 schema_libraries:
   - uri: hub.aggrega.ai/schema-library/core/base-types
     resolved_version: 1.0.0
@@ -183,38 +181,6 @@ schema_libraries: []
 	}
 	if !found {
 		t.Errorf("expected soft diagnostic for missing mapping_libraries; got %+v", diagnostics)
-	}
-}
-
-func TestLoadEmitsDeprecationDiagnosticForLegacyCueModules(t *testing.T) {
-	t.Parallel()
-	content := `version: 1
-release: ./release-prod.yaml
-generated_at: 2026-05-22T10:23:14Z
-schema_libraries: []
-mapping_libraries: []
-cue_modules:
-  - module: aggrega.ai/core@v1
-    resolved_version: v1.0.0
-    digest: sha256:p6q7r8
-    resolution_path: tier3-registry
-    registry: hub.aggrega.ai
-`
-	path := writeFixture(t, content)
-	_, diagnostics, err := lockfile.LoadLockfile(path)
-	if err != nil {
-		t.Fatalf("LoadLockfile: %v", err)
-	}
-	found := false
-	for _, d := range diagnostics {
-		if d.Severity == lockfile.DiagnosticDeprecation &&
-			strings.HasPrefix(d.Field, "cue_modules[") &&
-			strings.Contains(d.Message, "aggrega.ai/core@v1") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected deprecation diagnostic naming the cue_module; got %+v", diagnostics)
 	}
 }
 

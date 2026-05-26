@@ -342,8 +342,7 @@ func TestEmptyReleaseProducesEmptyClosure(t *testing.T) {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
 	if len(c.Entities) != 0 || len(c.WasmPlugins) != 0 ||
-		len(c.SchemaLibraries) != 0 || len(c.MappingLibraries) != 0 ||
-		len(c.CueModules) != 0 {
+		len(c.SchemaLibraries) != 0 || len(c.MappingLibraries) != 0 {
 		t.Errorf("expected empty closure; got %+v", c)
 	}
 }

@@ -17,10 +17,10 @@ import (
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, WasmPlugins by URI;
-//     CueModules by Module; CueRegistry.Overrides by Prefix;
-//     SourceArtifacts by the composite (Kind, URL, PinnedVersion).
-//   - Inside each Entity / CueModule / WasmPlugin: ReferencedFrom
-//     sorted lexicographically.
+//     CueRegistry.Overrides by Prefix; SourceArtifacts by the
+//     composite (Kind, URL, PinnedVersion).
+//   - Inside each Entity / WasmPlugin: ReferencedFrom sorted
+//     lexicographically.
 //   - Inside each SchemaLibrary / MappingLibrary: Consumers sorted by
 //     ConsumerURI; within each LibraryConsumer, Fragments sorted
 //     lexicographically.
@@ -57,30 +57,19 @@ func WriteLockfile(path string, lf *Lockfile) error {
 // (ReferencedFrom, Consumers, Fragments, CueRegistry.Overrides) is
 // also reallocated via sortedCopy or canonicaliseConsumers.
 //
-// Maintenance hazard: any new field added to Entity / CueModule /
-// SchemaLibrary / MappingLibrary / WasmPlugin / LibraryConsumer /
-// CueRegistry that holds a slice MUST be reallocated here. The
-// outer struct-copy via `entryCopy := m` clones scalar fields but
-// shares slice headers, so without explicit reallocation a
-// subsequent sort would mutate the caller's slice. The existing
-// sortedCopy helper covers []string; new shapes need analogous
-// deep-copy helpers.
+// Maintenance hazard: any new field added to Entity / SchemaLibrary
+// / MappingLibrary / WasmPlugin / LibraryConsumer / CueRegistry that
+// holds a slice MUST be reallocated here. The outer struct-copy via
+// `entryCopy := m` clones scalar fields but shares slice headers,
+// so without explicit reallocation a subsequent sort would mutate
+// the caller's slice. The existing sortedCopy helper covers
+// []string; new shapes need analogous deep-copy helpers.
 func canonicalise(lf *Lockfile) *Lockfile {
 	out := &Lockfile{
 		GeneratedAt: lf.GeneratedAt,
 		Release:     lf.Release,
 		Version:     lf.Version,
 	}
-
-	out.CueModules = make([]CueModule, len(lf.CueModules))
-	for i, m := range lf.CueModules {
-		entryCopy := m
-		entryCopy.ReferencedFrom = sortedCopy(m.ReferencedFrom)
-		out.CueModules[i] = entryCopy
-	}
-	sort.Slice(out.CueModules, func(i, j int) bool {
-		return out.CueModules[i].Module < out.CueModules[j].Module
-	})
 
 	out.CueRegistry = CueRegistry{
 		Default:   lf.CueRegistry.Default,

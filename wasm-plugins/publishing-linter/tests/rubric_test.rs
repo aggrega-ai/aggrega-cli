@@ -243,16 +243,6 @@ fn aggregate_major_component_removed() {
     assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), LinterClassification::Major);
 }
 
-// ----- CueModule -----
-
-#[test]
-fn cuemodule_major_default() {
-    // Legacy transitional pathway classifies ANY change as MAJOR.
-    let prev = json!({"kind": "CueModule", "spec": {"contents": "package x"}});
-    let prop = json!({"kind": "CueModule", "spec": {"contents": "package x\n// added comment\n"}});
-    assert_eq!(classify_once(&fixture("CueModule", prev, prop)), LinterClassification::Major);
-}
-
 // ----- First publication -----
 
 #[test]

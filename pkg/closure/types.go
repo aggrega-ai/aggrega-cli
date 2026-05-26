@@ -47,12 +47,6 @@ import (
 // confines source-descent's dependencies (RecipeLoader,
 // SourceResolver) to the new function.
 type Closure struct {
-	// CueModules is reserved for third-party / enterprise catalogs
-	// whose Components still depend on legacy CUE modules. The
-	// first-party walker never populates this slice; the field
-	// exists so the lockfile-section symmetry holds when a future
-	// catalog adapter writes CueModules from outside.
-	CueModules       []ResolvedRef
 	Entities         []ResolvedRef
 	MappingLibraries []ResolvedLibrary
 	SchemaLibraries  []ResolvedLibrary
@@ -153,10 +147,10 @@ type ResolvedSource struct {
 // the orchestrator, not this sentinel.
 var ErrSourceTemplateAtLockTime = errors.New("closure: source-template evaluation failure at lock time")
 
-// ResolvedRef captures a single catalog-entity / CUE-module /
-// Wasm-plugin resolution result. Mirrors the lockfile package's
-// Entity / CueModule / WasmPlugin wire shapes so the lockfile
-// writer can copy field-for-field.
+// ResolvedRef captures a single catalog-entity or Wasm-plugin
+// resolution result. Mirrors the lockfile package's Entity /
+// WasmPlugin wire shapes so the lockfile writer can copy
+// field-for-field.
 type ResolvedRef struct {
 	URI             string
 	ResolvedVersion string

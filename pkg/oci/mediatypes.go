@@ -19,10 +19,8 @@
 // implementation.
 package oci
 
-// Canonical OCI mediatypes for Aggrega catalog entities. Eight
-// declarations covering the seven first-party kinds plus the legacy
-// CUE-module form retained for third-party catalogs migrating to
-// SchemaLibrary / MappingLibrary.
+// Canonical OCI mediatypes for Aggrega catalog entities. Seven
+// declarations covering the seven first-party kinds.
 //
 // Aggregates are intentionally NOT registered as an OCI-published
 // kind: Aggregates are the developer's authoring surface, lived in
@@ -36,7 +34,6 @@ const (
 	MediaTypeProvider       = "application/vnd.aggrega.provider.v1alpha1+yaml"
 	MediaTypeSchemaLibrary  = "application/vnd.aggrega.schemalibrary.v1+json"
 	MediaTypeMappingLibrary = "application/vnd.aggrega.mappinglibrary.v1+json"
-	MediaTypeCueModule      = "application/vnd.aggrega.cuemodule.v1+tar+gz" // legacy
 )
 
 // kindMediaTypes maps the catalog entity kind string (matching the
@@ -51,16 +48,14 @@ var kindMediaTypes = map[string]string{
 	"Provider":       MediaTypeProvider,
 	"SchemaLibrary":  MediaTypeSchemaLibrary,
 	"MappingLibrary": MediaTypeMappingLibrary,
-	"CueModule":      MediaTypeCueModule,
 }
 
 // MediaTypeForKind returns the canonical OCI mediatype for the given
 // entity kind. The kind parameter matches the convention used in
 // pkg/catalog/catalog.go: plain string values "Component", "Feature",
 // "Recipe", "FeatureRecipe", "Provider", "SchemaLibrary",
-// "MappingLibrary", "CueModule" (legacy). Returns ErrUnknownEntityKind
-// for unrecognised values (a programming error, not a user-input
-// error).
+// "MappingLibrary". Returns ErrUnknownEntityKind for unrecognised
+// values (a programming error, not a user-input error).
 func MediaTypeForKind(kind string) (string, error) {
 	if mt, ok := kindMediaTypes[kind]; ok {
 		return mt, nil

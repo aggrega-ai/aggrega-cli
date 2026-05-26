@@ -129,9 +129,9 @@ fn name_shape_policy_flag_suppresses() {
 
 #[test]
 fn name_shape_unknown_kind_no_finding() {
-    // CueModule and any unrecognised kind have no documented pattern;
-    // the rule emits no finding.
-    let findings = name_shape::classify(&fixture("CueModule", "anything", None));
+    // Any unrecognised kind has no documented pattern; the rule
+    // emits no finding.
+    let findings = name_shape::classify(&fixture("UnknownKind", "anything", None));
     assert_eq!(findings.len(), 0);
 }
 

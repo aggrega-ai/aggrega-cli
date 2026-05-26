@@ -50,7 +50,6 @@ func TestMediaTypeForKindDispatchesAllKinds(t *testing.T) {
 		{"Provider", oci.MediaTypeProvider},
 		{"SchemaLibrary", oci.MediaTypeSchemaLibrary},
 		{"MappingLibrary", oci.MediaTypeMappingLibrary},
-		{"CueModule", oci.MediaTypeCueModule},
 	}
 	for _, tc := range cases {
 		tc := tc

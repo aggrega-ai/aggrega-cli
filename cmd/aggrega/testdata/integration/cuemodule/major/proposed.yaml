@@ -1,7 +1,0 @@
-apiVersion: aggrega.ai/v1alpha1
-kind: CueModule
-metadata:
-  name: legacy-helpers
-  version: 1.0.0
-spec:
-  module: 'package helpers // revised'

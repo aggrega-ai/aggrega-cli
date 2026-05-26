@@ -24,21 +24,18 @@ import (
 var ErrLockfileInvalid = errors.New("lockfile: file failed schema validation")
 
 // DiagnosticSeverity classifies a non-fatal observation surfaced by
-// LoadLockfile. Two values: "soft" for tolerant-load conditions
-// (missing optional sections, missing consumers lists), "deprecation"
-// for legacy content the loader accepts but flags for migration.
+// LoadLockfile. "soft" covers tolerant-load conditions (missing
+// optional sections, missing consumers lists).
 type DiagnosticSeverity string
 
 const (
-	DiagnosticSoft        DiagnosticSeverity = "soft"
-	DiagnosticDeprecation DiagnosticSeverity = "deprecation"
+	DiagnosticSoft DiagnosticSeverity = "soft"
 )
 
 // Diagnostic carries a non-fatal observation about the lockfile —
-// legacy shapes, missing optional sections, or deprecated content
-// the loader accepts but flags. Field names the offending or
-// observed location (dotted path into the document); Message is the
-// human-readable observation.
+// missing optional sections or other tolerant-load conditions. Field
+// names the offending or observed location (dotted path into the
+// document); Message is the human-readable observation.
 type Diagnostic struct {
 	Severity DiagnosticSeverity
 	Field    string
@@ -70,9 +67,6 @@ type Diagnostic struct {
 //   - schema_libraries section absent from the document → soft
 //     diagnostic ("treating as empty closure")
 //   - mapping_libraries section absent → soft diagnostic
-//   - cue_modules section populated → one deprecation diagnostic per
-//     entry (the section is retained for third-party / enterprise
-//     catalogs that have not migrated)
 //   - schema_libraries or mapping_libraries entry with empty or
 //     absent consumers list → one soft diagnostic per affected
 //     library entry naming its URI
@@ -179,20 +173,6 @@ func walkDiagnostics(instance any) []Diagnostic {
 			Field:    "source_artifacts",
 			Message:  "section absent from the document; treating as empty source-artifact closure",
 		})
-	}
-
-	if cueModules, ok := root["cue_modules"].([]any); ok {
-		for i, entry := range cueModules {
-			obj, _ := entry.(map[string]any)
-			module, _ := obj["module"].(string)
-			out = append(out, Diagnostic{
-				Severity: DiagnosticDeprecation,
-				Field:    fmt.Sprintf("cue_modules[%d]", i),
-				Message: fmt.Sprintf(
-					"CUE module %q is recorded under cue_modules; first-party Aggrega catalogs no longer ship CUE modules (migrated to SchemaLibrary / MappingLibrary entities). The section is retained for third-party / enterprise catalogs that have not migrated.",
-					module),
-			})
-		}
 	}
 
 	out = append(out, libraryConsumerDiagnostics(root, "schema_libraries")...)

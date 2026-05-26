@@ -678,16 +678,12 @@ func canonicaliseClosure(c *Closure) {
 	sort.Slice(c.WasmPlugins, func(i, j int) bool { return c.WasmPlugins[i].URI < c.WasmPlugins[j].URI })
 	sort.Slice(c.SchemaLibraries, func(i, j int) bool { return c.SchemaLibraries[i].URI < c.SchemaLibraries[j].URI })
 	sort.Slice(c.MappingLibraries, func(i, j int) bool { return c.MappingLibraries[i].URI < c.MappingLibraries[j].URI })
-	sort.Slice(c.CueModules, func(i, j int) bool { return c.CueModules[i].URI < c.CueModules[j].URI })
 
 	for i := range c.Entities {
 		sort.Strings(c.Entities[i].ReferencedFrom)
 	}
 	for i := range c.WasmPlugins {
 		sort.Strings(c.WasmPlugins[i].ReferencedFrom)
-	}
-	for i := range c.CueModules {
-		sort.Strings(c.CueModules[i].ReferencedFrom)
 	}
 	for i := range c.SchemaLibraries {
 		sortLibrary(&c.SchemaLibraries[i])

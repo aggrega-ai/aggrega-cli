@@ -10,10 +10,9 @@
 // relationships:
 //
 //   - referenced_from (list of strings, dotted authoring-site paths)
-//     appears on entities, cue_modules, and wasm_plugins. It records
-//     where in the Release / Aggregate / Manifest / .aggrega-config.yaml
-//     each URI was pulled in from — answers "why is this in the
-//     closure?".
+//     appears on entities and wasm_plugins. It records where in the
+//     Release / Aggregate / Manifest / .aggrega-config.yaml each URI
+//     was pulled in from — answers "why is this in the closure?".
 //   - consumers (list of {consumer_uri, fragments} records) appears on
 //     schema_libraries and mapping_libraries. It records which
 //     catalog entity references which <entry-name> fragments of the
@@ -21,11 +20,6 @@
 //     at which fragments?". The structured shape captures the
 //     library's fan-in (many consumers, each potentially at many
 //     fragments) cleanly.
-//
-// The cue_modules section is retained indefinitely for third-party
-// and enterprise catalogs that have not migrated to SchemaLibrary
-// and MappingLibrary entities; populated cue_modules entries surface
-// as deprecation diagnostics on Load but never auto-translate.
 //
 // The Lockfile struct field declaration order is alphabetical so
 // yaml.v3's marshaller (which emits struct fields in declaration
@@ -42,7 +36,6 @@ package lockfile
 // Field declaration order is alphabetical to drive yaml.v3's
 // canonical key emission.
 type Lockfile struct {
-	CueModules       []CueModule      `yaml:"cue_modules"`
 	CueRegistry      CueRegistry      `yaml:"cue_registry"`
 	Entities         []Entity         `yaml:"entities"`
 	GeneratedAt      string           `yaml:"generated_at"`
@@ -64,19 +57,6 @@ type Entity struct {
 	ResolvedVersion string   `yaml:"resolved_version"`
 	Digest          string   `yaml:"digest"`
 	ResolutionPath  string   `yaml:"resolution_path"`
-	ReferencedFrom  []string `yaml:"referenced_from"`
-}
-
-// CueModule carries a legacy CUE-module pin. Retained in the
-// lockfile schema indefinitely for third-party / enterprise catalogs
-// that have not migrated to SchemaLibrary / MappingLibrary entities;
-// populated entries surface as deprecation diagnostics on Load.
-type CueModule struct {
-	Module          string   `yaml:"module"`
-	ResolvedVersion string   `yaml:"resolved_version"`
-	Digest          string   `yaml:"digest"`
-	ResolutionPath  string   `yaml:"resolution_path"`
-	Registry        string   `yaml:"registry"`
 	ReferencedFrom  []string `yaml:"referenced_from"`
 }
 
