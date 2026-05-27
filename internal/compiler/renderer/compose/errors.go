@@ -17,7 +17,7 @@ var ErrEmptySource = errors.New("recipe source is empty string; use nil for synt
 var ErrTranslationProbeNoPort = errors.New("TRANSLATION_ERROR: probe http: requires at least one container port; container declares none")
 
 // ErrTranslationProbeShape is emitted when a ProbeSpec has no recognised shape
-// (no http, no tcp, no exec). Should never occur after CUE validation;
+// (no http, no tcp, no exec). Should never occur after schema validation;
 // defensive at synthesis time.
 var ErrTranslationProbeShape = errors.New("TRANSLATION_ERROR: probe declares no shape (http/tcp/exec)")
 

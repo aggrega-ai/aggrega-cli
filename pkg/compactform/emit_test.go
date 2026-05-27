@@ -14,8 +14,9 @@ import (
 
 // TestEmitCompactConstraint_TypeArray_LeafPosition verifies the
 // compactform `type:` handler accepts JSON Schema 2020-12 array-of-types
-// at a leaf-position node. The CUE pattern `[string]: string | int | bool`
-// translates to `additionalProperties: { type: [string, integer, boolean] }`;
+// at a leaf-position node. The pattern "a map of arbitrary keys whose
+// values are string-or-int-or-bool" translates to
+// `additionalProperties: { type: [string, integer, boolean] }`;
 // the inner `additionalProperties` value is a leaf-position node whose
 // `type:` value is a SequenceNode. Prior to the fix the SequenceNode value
 // was silently dropped because the `type:` handler accepted ScalarNode

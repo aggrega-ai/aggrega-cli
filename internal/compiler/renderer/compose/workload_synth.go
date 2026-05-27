@@ -242,7 +242,7 @@ func translateContainer(
 	for _, vm := range c.VolumeMounts {
 		spec, ok := w.Volumes.Get(vm.Name)
 		if !ok {
-			// Unknown mount target. CUE validation should reject this; the
+			// Unknown mount target. Schema validation should reject this; the
 			// synthesizer degrades to a bind-mount with an empty source
 			// (compose will fail at runtime).
 			svc.Volumes = append(svc.Volumes, ServiceVolume{
@@ -349,7 +349,7 @@ func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string
 			ReadOnly: vm.ReadOnly,
 		}
 	default:
-		// Unrecognised variant — defensive degradation. CUE validation
+		// Unrecognised variant — defensive degradation. Schema validation
 		// rejects this shape; the synthesizer emits an empty bind to surface
 		// at runtime.
 		return ServiceVolume{Type: "bind", Source: "", Target: vm.Path, ReadOnly: vm.ReadOnly}
@@ -564,7 +564,7 @@ func volumeName(nodeID, name string) string {
 
 // sanitizeServiceName produces a compose-safe service name from a Workload
 // container name. Compose service names are restricted to [a-zA-Z0-9._-];
-// existing CUE validation on Workload container names already enforces a
+// existing schema validation on Workload container names already enforces a
 // compatible subset, so this is a defensive identity for now.
 func sanitizeServiceName(name string) string {
 	return name

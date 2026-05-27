@@ -33,9 +33,9 @@ import (
 // Feature/Component check: Provider schemas are flat JSON Schema bodies
 // (not pillar-wrapped), so the shape check + pillar-key check from
 // ValidateSchemaPillars do not apply here. The compactform.Compile
-// gate alone catches CUE syntax, malformed YAML, unknown compact-form
-// keywords, and structural shape failures — sufficient at load time to
-// stop CUE-era legacy bodies from sneaking back into catalogs.
+// gate alone catches malformed YAML, unknown compact-form keywords,
+// and structural shape failures — sufficient at load time to keep
+// non-JSON-Schema-2020-12 bodies out of catalogs.
 //
 // The wiring exists so today's catalogs reach the same load-time
 // guardrail Components and Features enjoy.

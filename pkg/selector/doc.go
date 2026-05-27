@@ -8,17 +8,17 @@
 // The same engine serves both: changing label-matching semantics here affects
 // both code paths.
 //
-// Selector strings are carried in the synthesised `usesSchema` CUE as
-// `@selector()` attribute tags for traceability — inspection tooling can
-// see why a constraint exists from the CUE layer alone — while the actual
-// label matching runs in native Go where Kubernetes-style selector
-// semantics are well-defined and fast.
+// Selector strings are carried in the synthesised `usesSchema` JSON Schema
+// via `x-aggrega-selector:` extension keywords for traceability —
+// inspection tooling can see why a constraint exists from the schema layer
+// alone — while the actual label matching runs in native Go where
+// Kubernetes-style selector semantics are well-defined and fast.
 //
 // Two API styles cover the two authoring surfaces:
 //
 //   - String selectors: MatchString / Parse — used by `usesSchema.selector`
-//     entries and the CUE `@selector()` attribute tags they synthesise into.
-//     Syntax follows Kubernetes label-selector conventions: comma-separated
+//     entries and the `x-aggrega-selector:` extension keywords they
+//     synthesise into. Syntax follows Kubernetes label-selector conventions: comma-separated
 //     requirements (AND-combined), with `=`, `!=`, `in (...)`, `notin (...)`,
 //     bare key (Exists), and `!key` (DoesNotExist).
 //

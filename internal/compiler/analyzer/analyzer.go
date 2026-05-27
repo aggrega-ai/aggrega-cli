@@ -131,7 +131,7 @@ type PrecalculatedPath struct {
 // unconditionally; see the package doc Pipeline Integration
 // subsection for their downstream consumption status.
 func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *AnalysisResult {
-	// 1. Selector validation (edge @selector rules)
+	// 1. Selector validation (usesSchema selector rules)
 	errs := validateSelectors(graph, catalogLookup)
 
 	// 2. Feature appliesTo validation

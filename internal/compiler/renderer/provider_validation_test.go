@@ -43,30 +43,29 @@ func TestValidateValuesAgainstBaseSchema_Success(t *testing.T) {
 }
 
 // TestValidateValuesAgainstBaseSchema_RejectsMalformedYAML covers the
-// real-validator-rejects-legacy-CUE behaviour. A baseSchema body in CUE
-// syntax (no longer accepted after the language migration) surfaces as
-// a CATALOG_ERROR rather than silently passing.
+// compactform.Compile rejection path: a baseSchema body that fails YAML
+// parsing surfaces as a CATALOG_ERROR rather than silently passing.
 func TestValidateValuesAgainstBaseSchema_RejectsMalformedYAML(t *testing.T) {
 	t.Parallel()
 
 	lookup := func(name string) (types.Provider, bool) {
 		return types.Provider{
 			Spec: types.ProviderSpec{
-				BaseSchema: `image: string, replicas: int & >=1`,
+				BaseSchema: "type: object\n  properties: : invalid\n",
 			},
 		}, true
 	}
 
 	err := renderer.ValidateValuesAgainstBaseSchema(
-		"legacy-cue-provider",
+		"malformed-schema-provider",
 		lookup,
 		map[string]any{"image": "app:latest"},
 		"test-node",
 	)
 	if err == nil {
-		t.Fatal("expected rejection for CUE-syntax baseSchema; got nil")
+		t.Fatal("expected rejection for malformed baseSchema; got nil")
 	}
-	if !strings.Contains(err.Error(), "legacy-cue-provider") {
+	if !strings.Contains(err.Error(), "malformed-schema-provider") {
 		t.Errorf("error should name the offending provider; got: %v", err)
 	}
 }

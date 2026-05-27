@@ -11,13 +11,13 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// Workload-validation sentinels. Two are surfaced today: the CUE-unification
-// failure (rule violations on the embedded Workload schema) and the
-// cross-wave secretsSchema check (Workload secret references vs the
-// Component's secretsSchema slot declarations).
+// Workload-validation sentinels. Two are surfaced today: the schema-
+// validation failure (rule violations on the embedded Workload JSON
+// Schema) and the cross-wave secretsSchema check (Workload secret
+// references vs the Component's secretsSchema slot declarations).
 var (
-	// ErrWorkloadValidation: CUE-unification failure on the parsed Workload
-	// against the embedded #Workload schema.
+	// ErrWorkloadValidation: schema-validation failure on the parsed
+	// Workload against the embedded Workload JSON Schema.
 	ErrWorkloadValidation = errors.New("workload validation failed")
 
 	// ErrWorkloadSecretsSchema: cross-wave check failure between Workload
@@ -30,7 +30,7 @@ var (
 )
 
 // WorkloadValidationError carries the structured detail for a Workload
-// validation failure (CUE unification or secretsSchema cross-check). The
+// validation failure (schema validation or secretsSchema cross-check). The
 // Error() output uses the same CATALOG_ERROR-prefixed format as
 // RecipeValidationError so operator-facing messages are uniform across
 // load-time validation surfaces.
@@ -44,12 +44,13 @@ type WorkloadValidationError struct {
 	// RecipeVersion is the owning Recipe's metadata.version; empty when not
 	// available.
 	RecipeVersion string
-	// Stage is "schema" for CUE-unification failures; "secretsSchema" for
-	// cross-wave check failures.
+	// Stage is "schema" for schema-validation failures; "secretsSchema"
+	// for cross-wave check failures.
 	Stage string
 	// Findings lists per-field failures. Each entry is a path + reason +
-	// optional fix suggestion. CUE-unification produces one Finding per
-	// CUE error; secretsSchema produces one Finding per offending entry.
+	// optional fix suggestion. Schema validation produces one Finding
+	// per validator error; secretsSchema produces one Finding per
+	// offending entry.
 	Findings []WorkloadValidationFinding
 	// Err is the sentinel for errors.Is matching.
 	Err error

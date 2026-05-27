@@ -136,8 +136,8 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 // yaml.Unmarshal into a *types.Workload, then runs the two validators in
 // order:
 //
-//  1. validator.ValidateWorkload — schema unification against the embedded
-//     #Workload CUE.
+//  1. validator.ValidateWorkload — schema validation against the embedded
+//     Workload JSON Schema.
 //  2. validator.ValidateWorkloadSecrets — cross-wave check against the
 //     Component's secretsSchema slot allowlist.
 //

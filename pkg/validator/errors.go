@@ -20,7 +20,7 @@ var (
 
 // ValidationError is a structured validation failure with entity context, field path,
 // constraint description, actual value, and a human-readable suggestion.
-// Raw CUE error strings are never exposed — they are wrapped internally.
+// Raw validator-library error strings are never exposed — they are wrapped internally.
 type ValidationError struct {
 	Entity     string // e.g. "Component core/api-server:1.0.0"
 	FieldPath  string // e.g. ".values.port"
@@ -30,7 +30,7 @@ type ValidationError struct {
 	Err        error  // sentinel (ErrSchemaValidation | ErrInheritanceMerge | ErrUsesSchemaUnification)
 }
 
-// Error returns a formatted human-readable message. Never contains raw CUE output.
+// Error returns a formatted human-readable message. Never contains raw validator-library output.
 func (e *ValidationError) Error() string {
 	msg := fmt.Sprintf("%s: validation error at %s", e.Entity, e.FieldPath)
 	if e.Constraint != "" {
