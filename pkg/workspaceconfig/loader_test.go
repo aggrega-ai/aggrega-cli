@@ -36,11 +36,6 @@ workspace:
     - vendor/aggrega-catalog
   cache_dir: .aggrega-custom
   offline: true
-  cue_registry:
-    default: cue-registry.example.com
-    overrides:
-      - prefix: acme.com
-        registry: acme-registry.example.com
 
 build:
   authoring_release: prod-release.yaml
@@ -89,17 +84,6 @@ lint:
 	}
 	if !got.Workspace.Offline {
 		t.Errorf("Workspace.Offline should be true")
-	}
-	if got.Workspace.CueRegistry.Default != "cue-registry.example.com" {
-		t.Errorf("Workspace.CueRegistry.Default: %q", got.Workspace.CueRegistry.Default)
-	}
-	if len(got.Workspace.CueRegistry.Overrides) != 1 {
-		t.Errorf("Workspace.CueRegistry.Overrides len: %d", len(got.Workspace.CueRegistry.Overrides))
-	} else {
-		ov := got.Workspace.CueRegistry.Overrides[0]
-		if ov.Prefix != "acme.com" || ov.Registry != "acme-registry.example.com" {
-			t.Errorf("Workspace.CueRegistry.Overrides[0]: %+v", ov)
-		}
 	}
 
 	if got.Build.AuthoringRelease != "prod-release.yaml" {

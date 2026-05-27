@@ -43,30 +43,13 @@ type Config struct {
 
 // WorkspaceConfig groups workspace-level orientation: which registry
 // the build pushes to and pulls from, where the local artifact cache
-// lives, whether the build operates offline, and how CUE-module
-// imports resolve to registries.
+// lives, and whether the build operates offline.
 type WorkspaceConfig struct {
-	DefaultRegistry string            `yaml:"default_registry"`
-	CatalogDirs     []string          `yaml:"catalog_dirs"`
-	CacheDir        string            `yaml:"cache_dir"`
-	Offline         bool              `yaml:"offline"`
-	AutoPull        bool              `yaml:"auto_pull"`
-	CueRegistry     CueRegistryConfig `yaml:"cue_registry"`
-}
-
-// CueRegistryConfig routes CUE-module imports to registries.
-// Default is the registry host imports resolve through when no
-// override matches; Overrides applies per-prefix routing.
-type CueRegistryConfig struct {
-	Default   string                `yaml:"default"`
-	Overrides []CueRegistryOverride `yaml:"overrides"`
-}
-
-// CueRegistryOverride routes module imports under Prefix to the
-// named Registry host.
-type CueRegistryOverride struct {
-	Prefix   string `yaml:"prefix"`
-	Registry string `yaml:"registry"`
+	DefaultRegistry string   `yaml:"default_registry"`
+	CatalogDirs     []string `yaml:"catalog_dirs"`
+	CacheDir        string   `yaml:"cache_dir"`
+	Offline         bool     `yaml:"offline"`
+	AutoPull        bool     `yaml:"auto_pull"`
 }
 
 // BuildConfig groups build-time strictness dials and authoring

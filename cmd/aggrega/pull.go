@@ -292,13 +292,6 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 		})
 	}
 
-	lf.CueRegistry = lockfile.CueRegistry{
-		Default: wsCfg.Workspace.CueRegistry.Default,
-	}
-	for _, ov := range wsCfg.Workspace.CueRegistry.Overrides {
-		lf.CueRegistry.Overrides = append(lf.CueRegistry.Overrides,
-			lockfile.CueRegistryOverride{Prefix: ov.Prefix, Registry: ov.Registry})
-	}
 	return lf
 }
 

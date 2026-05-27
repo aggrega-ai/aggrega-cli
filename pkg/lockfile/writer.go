@@ -17,8 +17,7 @@ import (
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, WasmPlugins by URI;
-//     CueRegistry.Overrides by Prefix; SourceArtifacts by the
-//     composite (Kind, URL, PinnedVersion).
+//     SourceArtifacts by the composite (Kind, URL, PinnedVersion).
 //   - Inside each Entity / WasmPlugin: ReferencedFrom sorted
 //     lexicographically.
 //   - Inside each SchemaLibrary / MappingLibrary: Consumers sorted by
@@ -54,31 +53,22 @@ func WriteLockfile(path string, lf *Lockfile) error {
 // canonicalise returns a deep-copy of lf with every slice sorted by
 // its canonical key. The caller's value is not mutated — every
 // section slice is reallocated, and every slice field nested inside
-// (ReferencedFrom, Consumers, Fragments, CueRegistry.Overrides) is
-// also reallocated via sortedCopy or canonicaliseConsumers.
+// (ReferencedFrom, Consumers, Fragments) is also reallocated via
+// sortedCopy or canonicaliseConsumers.
 //
 // Maintenance hazard: any new field added to Entity / SchemaLibrary
-// / MappingLibrary / WasmPlugin / LibraryConsumer / CueRegistry that
-// holds a slice MUST be reallocated here. The outer struct-copy via
-// `entryCopy := m` clones scalar fields but shares slice headers,
-// so without explicit reallocation a subsequent sort would mutate
-// the caller's slice. The existing sortedCopy helper covers
-// []string; new shapes need analogous deep-copy helpers.
+// / MappingLibrary / WasmPlugin / LibraryConsumer that holds a slice
+// MUST be reallocated here. The outer struct-copy via `entryCopy := m`
+// clones scalar fields but shares slice headers, so without explicit
+// reallocation a subsequent sort would mutate the caller's slice. The
+// existing sortedCopy helper covers []string; new shapes need
+// analogous deep-copy helpers.
 func canonicalise(lf *Lockfile) *Lockfile {
 	out := &Lockfile{
 		GeneratedAt: lf.GeneratedAt,
 		Release:     lf.Release,
 		Version:     lf.Version,
 	}
-
-	out.CueRegistry = CueRegistry{
-		Default:   lf.CueRegistry.Default,
-		Overrides: make([]CueRegistryOverride, len(lf.CueRegistry.Overrides)),
-	}
-	copy(out.CueRegistry.Overrides, lf.CueRegistry.Overrides)
-	sort.Slice(out.CueRegistry.Overrides, func(i, j int) bool {
-		return out.CueRegistry.Overrides[i].Prefix < out.CueRegistry.Overrides[j].Prefix
-	})
 
 	out.Entities = make([]Entity, len(lf.Entities))
 	for i, e := range lf.Entities {

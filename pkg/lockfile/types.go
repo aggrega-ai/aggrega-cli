@@ -36,7 +36,6 @@ package lockfile
 // Field declaration order is alphabetical to drive yaml.v3's
 // canonical key emission.
 type Lockfile struct {
-	CueRegistry      CueRegistry      `yaml:"cue_registry"`
 	Entities         []Entity         `yaml:"entities"`
 	GeneratedAt      string           `yaml:"generated_at"`
 	MappingLibraries []MappingLibrary `yaml:"mapping_libraries"`
@@ -150,25 +149,3 @@ type WasmPlugin struct {
 	ReferencedFrom  []string `yaml:"referenced_from"`
 }
 
-// CueRegistry is the resolution-time snapshot of the workspace's
-// CUE-module registry routing at pull time. Build-time consumers
-// compare against the workspace's current `.aggrega-config.yaml`
-// `cue_registry:` to detect drift between pull and build.
-//
-// Declared independently of pkg/workspaceconfig's CueRegistryConfig:
-// the lockfile is a snapshot taken at pull time; coupling to the
-// workspaceconfig type would imply the snapshot moves whenever the
-// workspaceconfig type moves, which is the wrong dependency
-// direction. The shapes happen to coincide; the duplication is
-// intentional.
-type CueRegistry struct {
-	Default   string                `yaml:"default"`
-	Overrides []CueRegistryOverride `yaml:"overrides"`
-}
-
-// CueRegistryOverride routes CUE-module imports under Prefix to the
-// named Registry host.
-type CueRegistryOverride struct {
-	Prefix   string `yaml:"prefix"`
-	Registry string `yaml:"registry"`
-}

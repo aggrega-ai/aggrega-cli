@@ -35,12 +35,6 @@ const fullPopulationFixture = `version: 1
 release: ./release-prod.yaml
 generated_at: 2026-05-22T10:23:14Z
 
-cue_registry:
-  default: hub.aggrega.ai
-  overrides:
-    - prefix: acme.com
-      registry: aggrega-registry.acme.com
-
 entities:
   - uri: hub.aggrega.ai/component/core/compute/api-server
     resolved_version: 1.2.3
@@ -114,12 +108,6 @@ func TestLoadReturnsAllFiveSections(t *testing.T) {
 	}
 	if lf.GeneratedAt != "2026-05-22T10:23:14Z" {
 		t.Errorf("GeneratedAt: %q", lf.GeneratedAt)
-	}
-	if lf.CueRegistry.Default != "hub.aggrega.ai" {
-		t.Errorf("CueRegistry.Default: %q", lf.CueRegistry.Default)
-	}
-	if len(lf.CueRegistry.Overrides) != 1 {
-		t.Fatalf("CueRegistry.Overrides len: %d", len(lf.CueRegistry.Overrides))
 	}
 	if len(lf.Entities) != 2 {
 		t.Fatalf("Entities len: %d", len(lf.Entities))
@@ -539,8 +527,6 @@ func TestLoadEmitsSoftDiagnosticForMissingSourceArtifacts(t *testing.T) {
 	content := `version: 1
 release: ./release-prod.yaml
 generated_at: 2026-05-22T10:23:14Z
-cue_registry:
-  default: hub.aggrega.ai
 entities: []
 schema_libraries: []
 mapping_libraries: []
@@ -570,8 +556,6 @@ func TestLoadDoesNotEmitDiagnosticForExplicitlyEmptySourceArtifacts(t *testing.T
 	content := `version: 1
 release: ./release-prod.yaml
 generated_at: 2026-05-22T10:23:14Z
-cue_registry:
-  default: hub.aggrega.ai
 entities: []
 schema_libraries: []
 mapping_libraries: []
@@ -697,7 +681,6 @@ func TestSchemaRejectsUnknownEntity(t *testing.T) {
 	content := `version: 1
 release: ./r.yaml
 generated_at: 2026-05-22T10:23:14Z
-cue_registry: { default: x }
 entities: []
 schema_libraries: []
 mapping_libraries: []
@@ -728,7 +711,6 @@ func TestSchemaRejectsUnknownKind(t *testing.T) {
 	content := `version: 1
 release: ./r.yaml
 generated_at: 2026-05-22T10:23:14Z
-cue_registry: { default: x }
 entities: []
 schema_libraries: []
 mapping_libraries: []
@@ -759,7 +741,6 @@ func TestSchemaRequiresAtLeastOneReferencedBy(t *testing.T) {
 	content := `version: 1
 release: ./r.yaml
 generated_at: 2026-05-22T10:23:14Z
-cue_registry: { default: x }
 entities: []
 schema_libraries: []
 mapping_libraries: []
