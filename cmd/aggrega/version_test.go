@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+// TestVersionHumanFormat pins the human-readable line's structural
+// invariants: starts with the literal "aggrega ", contains "commit",
+// and contains "go1." (the Go version prefix every supported
+// runtime emits). Tolerant of whatever version value
+// debug.ReadBuildInfo returns at test time — typically "(devel)" in
+// source-tree go-test runs.
+func TestVersionHumanFormat(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runVersion(&buf, false); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(out, "aggrega ") {
+		t.Errorf("expected output to start with %q; got %q", "aggrega ", out)
+	}
+	if !strings.Contains(out, "commit") {
+		t.Errorf("expected output to contain 'commit'; got %q", out)
+	}
+	if !strings.Contains(out, "go1.") {
+		t.Errorf("expected output to contain a 'go1.' Go-version prefix; got %q", out)
+	}
+}
+
+// TestVersionJSONShape pins the wire contract the extension's
+// version-check helper consumes. Asserts the four camelCase fields
+// are present and non-empty.
+func TestVersionJSONShape(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runVersion(&buf, true); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
+	var info struct {
+		Version   string `json:"version"`
+		Commit    string `json:"commit"`
+		GoVersion string `json:"goVersion"`
+		Platform  string `json:"platform"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &info); err != nil {
+		t.Fatalf("unmarshal: %v (raw: %s)", err, buf.String())
+	}
+	if info.Version == "" {
+		t.Errorf("version field empty")
+	}
+	if info.GoVersion == "" {
+		t.Errorf("goVersion field empty")
+	}
+	if info.Platform == "" {
+		t.Errorf("platform field empty")
+	}
+	if !strings.Contains(info.Platform, "/") {
+		t.Errorf("platform should contain '/'; got %q", info.Platform)
+	}
+}
+
+// TestVersionJSONIsValidJSON guards against accidental shape drift
+// that would still be syntactically valid Go (e.g., a struct field
+// rename) but break the extension's parse. Decodes into a permissive
+// map and asserts no unexpected top-level keys appear.
+func TestVersionJSONIsValidJSON(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runVersion(&buf, true); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &generic); err != nil {
+		t.Fatalf("unmarshal generic: %v", err)
+	}
+	expected := map[string]bool{"version": true, "commit": true, "goVersion": true, "platform": true}
+	for k := range generic {
+		if !expected[k] {
+			t.Errorf("unexpected top-level key %q in version JSON", k)
+		}
+	}
+	for k := range expected {
+		if _, present := generic[k]; !present {
+			t.Errorf("missing expected key %q in version JSON", k)
+		}
+	}
+}
