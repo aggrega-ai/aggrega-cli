@@ -273,7 +273,7 @@ func (s *Server) dispatchIrGraph(req *jsonRPCRequest) error {
 	}
 	result, errEnvelope := s.handleIrGraph(params)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(req.ID, errEnvelope)
 	}
 	return s.writeResult(req.ID, result)
 }
@@ -329,6 +329,7 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: fmt.Sprintf("load release %s: %v", params.Release, err),
+			Data:    newErrorData(releasePath, 0, 0),
 		}
 	}
 	releaseDir := filepath.Dir(releasePath)
@@ -338,6 +339,7 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: fmt.Sprintf("load manifest %s: %v", manifestPath, err),
+			Data:    newErrorData(manifestPath, 0, 0),
 		}
 	}
 	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
@@ -346,10 +348,14 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: fmt.Sprintf("read aggregate %s: %v", aggPath, err),
+			Data:    newErrorData(aggPath, 0, 0),
 		}
 	}
 	recipeCat, err := s.resolveRecipeCatalog()
 	if err != nil {
+		// Catalog-load failure aggregates multiple source dirs; no
+		// single file is the source of the error. Data left nil so
+		// the client falls back to workspace-level positioning.
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: err.Error(),

@@ -37,10 +37,15 @@ type jsonRPCResponse struct {
 }
 
 // jsonRPCError carries the error envelope shape per JSON-RPC 2.0.
+// Data, when non-nil, carries structured source-location information
+// that the IDE client uses to position diagnostics at a precise
+// line/column. See errorData (errors_data.go) for the schema. When
+// nil, omitempty drops the field from the wire and the client falls
+// back to file-level positioning.
 type jsonRPCError struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data,omitempty"`
+	Code    int        `json:"code"`
+	Message string     `json:"message"`
+	Data    *errorData `json:"data,omitempty"`
 }
 
 // readMessage parses one Content-Length-framed JSON-RPC message from r.
@@ -281,12 +286,43 @@ func (s *Server) writeResult(id json.RawMessage, result any) error {
 }
 
 // writeError writes an error-envelope response with the supplied code
-// and message.
+// and message. Used by direct-emit callers (parse error, method not
+// found, invalid params) that do not carry structured source-location
+// data. The resulting envelope has no Data field.
+//
+// Callers that already hold a typed *jsonRPCError envelope from a
+// handler return — including envelopes carrying a populated Data
+// field — use writeErrorEnvelope instead so the Data reaches the
+// wire.
 func (s *Server) writeError(id json.RawMessage, code int, message string) error {
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
 		Error:   &jsonRPCError{Code: code, Message: message},
+	}
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("marshal error response: %w", err)
+	}
+	return writeMessage(s.out, respBytes)
+}
+
+// writeErrorEnvelope writes a pre-constructed error envelope to the
+// wire verbatim, preserving its Data field (when set). Used by
+// dispatcher wrappers that receive a *jsonRPCError from their
+// handler and want the envelope's optional Data payload to reach the
+// client. Direct-emit callers without source-location info continue
+// using writeError instead.
+//
+// Behavior on a Data-free envelope is identical to writeError —
+// omitempty drops the Data field from the JSON encoding, so the wire
+// is byte-identical to today for envelopes that did not populate
+// Data.
+func (s *Server) writeErrorEnvelope(id json.RawMessage, env *jsonRPCError) error {
+	resp := jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error:   env,
 	}
 	respBytes, err := json.Marshal(resp)
 	if err != nil {
