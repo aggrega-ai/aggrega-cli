@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -18,7 +19,6 @@ import (
 	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -85,13 +85,34 @@ func (s *Server) dispatchInitialize(req *jsonRPCRequest) error {
 	}
 	selected := selectPositionEncoding(params.Capabilities)
 	s.positionEncoding = selected
-	return s.writeResult(req.ID, initializeResult{
+	if err := s.writeResult(req.ID, initializeResult{
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
 		},
 		WorkspaceRoot: s.workspaceRoot,
 		ConfigSource:  s.configSource,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Post-response flush of pre-populated diagnostics. The
+	// at-startup drift check populates s.diagnostics before
+	// dispatchLoop runs; the LSP-canonical pattern is to push those
+	// diagnostics AFTER the initialize response so the client's
+	// handshake completes before unsolicited notifications start
+	// arriving. Sort keys for deterministic ordering across daemon
+	// runs (Go map iteration is randomized).
+	keys := make([]string, 0, len(s.diagnostics))
+	for k := range s.diagnostics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, file := range keys {
+		if err := s.publishDiagnostics(file); err != nil {
+			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
+		}
+	}
+	return nil
 }
 
 // selectPositionEncoding applies the server-preference dispatch over
@@ -324,49 +345,64 @@ func daemonEngineFactory(providerName string) (renderer.Engine, error) {
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
 func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCError) {
 	releasePath := filepath.Join(s.workspaceRoot, params.Release)
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
+
+	// 1. Lockfile-absent gate. Blocking — no IR graph produced
+	//    until the operator regenerates the lockfile (via the
+	//    extension's "Generate Lockfile" toast button, which runs
+	//    aggrega pull in a terminal, or by running aggrega pull
+	//    manually).
+	lockfilePath := daemonLockfilePath(releasePath)
+	if _, err := os.Stat(lockfilePath); err != nil {
+		if os.IsNotExist(err) {
+			return irGraphResult{}, &jsonRPCError{
+				Code:    errLockfileAbsent,
+				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, params.Release),
+				Data:    newErrorData(lockfilePath, 0, 0),
+			}
+		}
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load release %s: %v", params.Release, err),
-			Data:    newErrorData(releasePath, 0, 0),
+			Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
+			Data:    newErrorData(lockfilePath, 0, 0),
 		}
 	}
-	releaseDir := filepath.Dir(releasePath)
-	manifestPath := filepath.Join(releaseDir, rel.Spec.Manifest+".yaml")
-	manifest, err := resolver.LoadManifest(manifestPath)
-	if err != nil {
-		return irGraphResult{}, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load manifest %s: %v", manifestPath, err),
-			Data:    newErrorData(manifestPath, 0, 0),
-		}
+
+	// 2. Resolve closure (factored helper — used here AND by the
+	//    drift check at startup). Bundles Release + Manifest +
+	//    Aggregate + raw aggregate bytes + computed closure into a
+	//    single result struct; step 3 verifies and step 5 feeds the
+	//    pipeline.
+	resolved, envelope := s.resolveReleaseClosure(releasePath)
+	if envelope != nil {
+		return irGraphResult{}, envelope
 	}
-	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
-	aggBytes, err := os.ReadFile(aggPath)
-	if err != nil {
-		return irGraphResult{}, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("read aggregate %s: %v", aggPath, err),
-			Data:    newErrorData(aggPath, 0, 0),
-		}
-	}
+
+	// 3. Drift verify. Reuses the closure computed in step 2.
+	//    Loads the lockfile fresh (catches the case where the
+	//    operator re-pulled between calls). On drift, publishes a
+	//    Warning diagnostic on the lockfile path AND fires the
+	//    aggrega/publishDiagnostics notification. Non-blocking —
+	//    irGraph still produces the IR graph; drift is a
+	//    Problems-panel signal, not a halt.
+	s.verifyDriftAndPublish(lockfilePath, resolved.Closure)
+
+	// 4. Resolve the recipeCatalog for the pipeline call (the
+	//    closure path used the same primitive; this re-uses the
+	//    primed cache).
 	recipeCat, err := s.resolveRecipeCatalog()
 	if err != nil {
-		// Catalog-load failure aggregates multiple source dirs; no
-		// single file is the source of the error. Data left nil so
-		// the client falls back to workspace-level positioning.
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: err.Error(),
 		}
 	}
 
+	aggPath := filepath.Join(filepath.Dir(releasePath), resolved.Release.Spec.Aggregate+".yaml")
 	result, err := pipeline.RunPipeline(
 		pipeline.Inputs{
-			Release:           rel,
-			Manifest:          manifest,
-			AggregateRawBytes: aggBytes,
+			Release:           resolved.Release,
+			Manifest:          resolved.Manifest,
+			AggregateRawBytes: resolved.AggBytes,
 			AggregatePath:     aggPath,
 			WorkspaceConfig:   s.wsConfig,
 		},

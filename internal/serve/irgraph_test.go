@@ -6,9 +6,23 @@ package serve
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
+
+// writeStubLockfile creates an empty file at the conventional
+// lockfile path for the given Release path. Used by tests that need
+// to reach handleIrGraph's post-absent-gate code paths (the
+// resolveReleaseClosure call and downstream) without triggering the
+// 1003 lockfile-absent envelope.
+func writeStubLockfile(t *testing.T, releasePath string) {
+	t.Helper()
+	lockfilePath := daemonLockfilePath(releasePath)
+	if err := os.WriteFile(lockfilePath, []byte{}, 0o644); err != nil {
+		t.Fatalf("write stub lockfile %s: %v", lockfilePath, err)
+	}
+}
 
 // TestIrGraphReleaseLoadFailurePopulatesData exercises the
 // errEntityNotResolvable emission site in handleIrGraph when the
@@ -24,8 +38,11 @@ func TestIrGraphReleaseLoadFailurePopulatesData(t *testing.T) {
 	srv := newTestServer(t, tmp, nil, &out)
 
 	// Dispatch aggrega/irGraph with a Release path that does not
-	// exist. The handler's first emission site fires.
+	// exist. A stub lockfile at the conventional path lets the
+	// flow pass the lockfile-absent gate (1003) and reach the
+	// Release-load failure path inside resolveReleaseClosure.
 	missing := "release-not-here.yaml"
+	writeStubLockfile(t, filepath.Join(tmp, missing))
 	var in bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: missing}))
 	resp := runOneRequest(t, srv, &in, &out)
@@ -70,9 +87,14 @@ func TestIrGraphResponseWireShapePreservesData(t *testing.T) {
 
 	// Drive dispatch manually so the response bytes remain in `out`
 	// for inspection. runOneRequest consumes `out` via its inner
-	// decodeOneResponse call and would leave nothing to read.
+	// decodeOneResponse call and would leave nothing to read. The
+	// stub lockfile lets the flow reach resolveReleaseClosure's
+	// Release-load failure path (which populates Data.File via the
+	// structured error-data envelope).
+	missing := "missing.yaml"
+	writeStubLockfile(t, filepath.Join(tmp, missing))
 	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: "missing.yaml"}))
+	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: missing}))
 	srv := newTestServer(t, tmp, &in, &out)
 
 	body, err := readMessage(srv.in)

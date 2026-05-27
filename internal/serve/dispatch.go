@@ -330,3 +330,61 @@ func (s *Server) writeErrorEnvelope(id json.RawMessage, env *jsonRPCError) error
 	}
 	return writeMessage(s.out, respBytes)
 }
+
+// jsonRPCNotification is the wire shape for an outgoing JSON-RPC
+// 2.0 notification — a server-pushed message with no id field and
+// no expected response. The omitempty tag on every optional field
+// keeps the wire compact.
+type jsonRPCNotification struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
+// writeNotification emits a JSON-RPC 2.0 notification with the
+// supplied method and params. Used by server-push surfaces like
+// aggrega/publishDiagnostics where the daemon initiates a message
+// outside the request/response cycle.
+//
+// Concurrency: writes from the main dispatch goroutine. The reader
+// goroutine reads stdin and pushes onto channels; it never touches
+// s.out. No race.
+func (s *Server) writeNotification(method string, params any) error {
+	body, err := json.Marshal(jsonRPCNotification{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  params,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal notification: %w", err)
+	}
+	return writeMessage(s.out, body)
+}
+
+// publishDiagnosticsParams is the params shape for the
+// aggrega/publishDiagnostics server-push notification. The
+// diagnostics slice carries the daemon's per-file Diagnostic
+// values verbatim; an empty slice means "clear this file's
+// diagnostic-collection entry" — the standard JSON-RPC notification
+// idiom for state-change-driven publishing.
+type publishDiagnosticsParams struct {
+	File        string       `json:"file"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}
+
+// publishDiagnostics fires the aggrega/publishDiagnostics
+// notification carrying the current s.diagnostics[file] state.
+// Missing entries publish an empty diagnostics array (the standard
+// "clear" signal). Callers invoke this after every state mutation
+// to s.diagnostics so the extension's DiagnosticCollection stays
+// in sync with the daemon's cache.
+func (s *Server) publishDiagnostics(file string) error {
+	diags := s.diagnostics[file]
+	if diags == nil {
+		diags = []Diagnostic{}
+	}
+	return s.writeNotification("aggrega/publishDiagnostics", publishDiagnosticsParams{
+		File:        file,
+		Diagnostics: diags,
+	})
+}

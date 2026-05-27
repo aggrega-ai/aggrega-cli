@@ -77,7 +77,7 @@ type cascadeAttempt struct {
 // workspace with exactly one Release file and a marker pointing at
 // a different file wins Step 2 — the marker is consulted only when
 // Step 2's "exactly one" condition does not hold.
-func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stderr io.Writer) (*types.Release, cascadeAttempt) {
+func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stderr io.Writer) (*types.Release, string, cascadeAttempt) {
 	var attempt cascadeAttempt
 
 	// Step 1: config field
@@ -87,7 +87,7 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 		rel, err := resolver.LoadRelease(path)
 		if err == nil {
 			attempt.ResolvedStep = 1
-			return rel, attempt
+			return rel, path, attempt
 		}
 		attempt.AuthoringReleaseLoadError = err
 		fmt.Fprintf(stderr, "  cascade: step 1 authoring_release=%q failed to load: %v\n", path, err)
@@ -100,7 +100,7 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 		rel, err := resolver.LoadRelease(candidates[0])
 		if err == nil {
 			attempt.ResolvedStep = 2
-			return rel, attempt
+			return rel, candidates[0], attempt
 		}
 		fmt.Fprintf(stderr, "  cascade: step 2 single Release %q failed to load: %v\n", candidates[0], err)
 	}
@@ -116,16 +116,17 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 			rel, lerr := resolver.LoadRelease(resolved)
 			if lerr == nil {
 				attempt.ResolvedStep = 3
-				return rel, attempt
+				return rel, resolved, attempt
 			}
 			attempt.MarkerFileLoadError = lerr
 			fmt.Fprintf(stderr, "  cascade: step 3 marker target %q failed to load: %v\n", resolved, lerr)
 		}
 	}
 
-	// Step 4: fallback
+	// Step 4: fallback — Release path stays empty alongside the nil
+	// Release object.
 	attempt.ResolvedStep = 0
-	return nil, attempt
+	return nil, "", attempt
 }
 
 // resolveCascadePath joins a workspace-relative path with the root,

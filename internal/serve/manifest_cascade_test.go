@@ -52,7 +52,7 @@ func TestManifestCascadeStep1AuthoringReleaseWins(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Build.AuthoringRelease = "configured.yaml"
 
-	rel, attempt := runManifestCascade(ws, wsCfg, io.Discard)
+	rel, _, attempt := runManifestCascade(ws, wsCfg, io.Discard)
 	if rel == nil {
 		t.Fatalf("expected Step 1 to resolve a Release; got nil")
 	}
@@ -72,7 +72,7 @@ func TestManifestCascadeStep1AuthoringReleaseRelativeAndAbsolute(t *testing.T) {
 	// Relative path resolution
 	wsCfgRel := workspaceconfig.Default()
 	wsCfgRel.Build.AuthoringRelease = "abs-target.yaml"
-	rel, attempt := runManifestCascade(ws, wsCfgRel, io.Discard)
+	rel, _, attempt := runManifestCascade(ws, wsCfgRel, io.Discard)
 	if rel == nil || attempt.ResolvedStep != 1 {
 		t.Errorf("relative path: ResolvedStep = %d, rel = %v", attempt.ResolvedStep, rel)
 	}
@@ -80,7 +80,7 @@ func TestManifestCascadeStep1AuthoringReleaseRelativeAndAbsolute(t *testing.T) {
 	// Absolute path resolution
 	wsCfgAbs := workspaceconfig.Default()
 	wsCfgAbs.Build.AuthoringRelease = abs
-	rel2, attempt2 := runManifestCascade(ws, wsCfgAbs, io.Discard)
+	rel2, _, attempt2 := runManifestCascade(ws, wsCfgAbs, io.Discard)
 	if rel2 == nil || attempt2.ResolvedStep != 1 {
 		t.Errorf("absolute path: ResolvedStep = %d, rel = %v", attempt2.ResolvedStep, rel2)
 	}
@@ -94,7 +94,7 @@ func TestManifestCascadeStep1AuthoringReleaseFileMissingFallsThroughToStep2(t *t
 	wsCfg.Build.AuthoringRelease = "missing.yaml"
 
 	var stderr bytes.Buffer
-	rel, attempt := runManifestCascade(ws, wsCfg, &stderr)
+	rel, _, attempt := runManifestCascade(ws, wsCfg, &stderr)
 	if rel == nil {
 		t.Fatalf("expected fall-through to Step 2; got nil")
 	}
@@ -117,7 +117,7 @@ func TestManifestCascadeStep2SingleReleaseWins(t *testing.T) {
 	ws := t.TempDir()
 	writeRelease(t, ws, "releases/only.yaml", "release/single")
 
-	rel, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
+	rel, _, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
 	if rel == nil {
 		t.Fatalf("expected Step 2 to resolve; got nil")
 	}
@@ -142,7 +142,7 @@ func TestManifestCascadeStep2WalkExcludesIgnoredDirs(t *testing.T) {
 	// Single visible Release at top-level
 	writeRelease(t, ws, "visible.yaml", "release/visible")
 
-	rel, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
+	rel, _, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
 	if rel == nil {
 		t.Fatalf("expected the visible Release to resolve")
 	}
@@ -170,7 +170,7 @@ func TestManifestCascadeStep3MarkerFileWins(t *testing.T) {
 		t.Fatalf("write marker: %v", err)
 	}
 
-	rel, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
+	rel, _, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
 	if rel == nil {
 		t.Fatalf("expected Step 3 to resolve via marker")
 	}
@@ -202,7 +202,7 @@ func TestManifestCascadeStep3MarkerFileMissingTargetFallsThroughToStep4(t *testi
 	}
 
 	var stderr bytes.Buffer
-	rel, attempt := runManifestCascade(ws, workspaceconfig.Default(), &stderr)
+	rel, _, attempt := runManifestCascade(ws, workspaceconfig.Default(), &stderr)
 	if rel != nil {
 		t.Fatalf("expected fall-through to Step 4 (nil Release); got %v", rel)
 	}
@@ -224,7 +224,7 @@ func TestManifestCascadeStep4FallbackNilActiveRelease(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir() // empty workspace
 
-	rel, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
+	rel, _, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
 	if rel != nil {
 		t.Fatalf("expected nil Release on empty workspace; got %v", rel)
 	}
@@ -255,7 +255,7 @@ func TestManifestCascadePrecedenceStep1OverStep2AndStep3(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Build.AuthoringRelease = "configured.yaml"
 
-	rel, attempt := runManifestCascade(ws, wsCfg, io.Discard)
+	rel, _, attempt := runManifestCascade(ws, wsCfg, io.Discard)
 	if attempt.ResolvedStep != 1 {
 		t.Errorf("Step 1 should win over Step 2 + Step 3; ResolvedStep = %d", attempt.ResolvedStep)
 	}
@@ -286,7 +286,7 @@ func TestManifestCascadePrecedenceStep2OverStep3(t *testing.T) {
 		t.Fatalf("write marker: %v", err)
 	}
 
-	rel, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
+	rel, _, attempt := runManifestCascade(ws, workspaceconfig.Default(), io.Discard)
 	if attempt.ResolvedStep != 2 {
 		t.Errorf("Step 2 should win over Step 3; ResolvedStep = %d", attempt.ResolvedStep)
 	}

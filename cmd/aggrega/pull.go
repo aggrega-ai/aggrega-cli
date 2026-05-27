@@ -26,6 +26,7 @@ var (
 	pullReleasePath       string
 	pullCatalogDir        string
 	pullRegenerate        bool
+	pullVerify            bool
 	pullIncludePrerelease bool
 )
 
@@ -33,10 +34,14 @@ var pullCmd = &cobra.Command{
 	Use:   "pull",
 	Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if pullVerify && pullRegenerate {
+			return fmt.Errorf("--verify and --regenerate are mutually exclusive")
+		}
 		return pullRun(pullConfig{
 			ReleasePath:       pullReleasePath,
 			CatalogDir:        pullCatalogDir,
 			Regenerate:        pullRegenerate,
+			Verify:            pullVerify,
 			IncludePrerelease: pullIncludePrerelease,
 		})
 	},
@@ -46,6 +51,7 @@ func init() {
 	pullCmd.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
 	pullCmd.Flags().StringVar(&pullCatalogDir, "catalog", ".", "Directory containing catalog entities")
 	pullCmd.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and rebuild from current registry state")
+	pullCmd.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
 	pullCmd.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
 	if err := pullCmd.MarkFlagRequired("release"); err != nil {
 		panic(err)
@@ -60,6 +66,7 @@ type pullConfig struct {
 	ReleasePath       string
 	CatalogDir        string
 	Regenerate        bool
+	Verify            bool
 	IncludePrerelease bool
 }
 
@@ -107,6 +114,14 @@ func pullRun(cfg pullConfig) error {
 			return fmt.Errorf("regenerate: remove existing lockfile: %w", err)
 		}
 	}
+	if cfg.Verify {
+		// Verify-only: a missing lockfile is fatal — the flag
+		// presumes one exists. The no-lockfile case is what the
+		// default pull (no --verify) addresses.
+		if _, statErr := os.Stat(lockfilePath); statErr != nil {
+			return fmt.Errorf("verify: lockfile %s not found: %w", lockfilePath, statErr)
+		}
+	}
 
 	workspaceRoot, err := os.Getwd()
 	if err != nil {
@@ -122,6 +137,24 @@ func pullRun(cfg pullConfig) error {
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return fmt.Errorf("closure: %w", err)
+	}
+
+	if cfg.Verify {
+		// Verify-only path: load the existing lockfile and check
+		// drift against the freshly-computed closure. No disk writes.
+		// Source-artifact descent is skipped — lockfile.Verify covers
+		// the entity/library/plugin axes; source artifacts have their
+		// own digest gate at build-time read.
+		lf, _, lerr := lockfile.LoadLockfile(lockfilePath)
+		if lerr != nil {
+			return fmt.Errorf("verify: load lockfile %s: %w", lockfilePath, lerr)
+		}
+		if verr := lockfile.Verify(lf, cl); verr != nil {
+			return fmt.Errorf("verify: %w", verr)
+		}
+		fmt.Printf("Verify: lockfile %s matches current closure (entities=%d)\n",
+			lockfilePath, len(cl.Entities))
+		return nil
 	}
 
 	sourceArtifacts, err := closure.DescendRecipeSources(

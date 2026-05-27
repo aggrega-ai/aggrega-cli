@@ -284,6 +284,14 @@ func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
 			t.Fatalf("write fixture %s: %v", name, err)
 		}
 	}
+	// Write a stub lockfile so the daemon's lockfile-absent gate
+	// (1003) doesn't block irGraph. The drift check that runs after
+	// the gate loads the lockfile lazily and stderr-logs-and-skips
+	// on a malformed payload — non-blocking, so the pipeline path
+	// this test exercises is unaffected.
+	if err := os.WriteFile(filepath.Join(ws, "release.lock"), []byte{}, 0o644); err != nil {
+		t.Fatalf("write stub lockfile: %v", err)
+	}
 	// Suppress the unused-variable warning for releasePath now that
 	// params.Release is workspace-relative.
 	_ = releasePath
@@ -313,7 +321,26 @@ func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("write irGraph request: %v", err)
 	}
-	resp := readOneResponse(t, stdout, 30*time.Second)
+	// The daemon now emits an aggrega/publishDiagnostics
+	// notification (drift state for the lockfile path) alongside
+	// the irGraph response. Loop reading until we see a message
+	// with a result or error field (the response); skip notifications.
+	var resp map[string]any
+	for i := 0; i < 5; i++ {
+		msg := readOneResponse(t, stdout, 30*time.Second)
+		if _, hasResult := msg["result"]; hasResult {
+			resp = msg
+			break
+		}
+		if _, hasErr := msg["error"]; hasErr {
+			resp = msg
+			break
+		}
+		// Notification (no id, no result, no error) — keep reading.
+	}
+	if resp == nil {
+		t.Fatalf("did not receive an irGraph response after 5 messages")
+	}
 	if errEnv, ok := resp["error"]; ok {
 		t.Fatalf("aggrega/irGraph returned error envelope: %+v", errEnv)
 	}

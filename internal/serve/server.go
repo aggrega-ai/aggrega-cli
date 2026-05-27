@@ -155,6 +155,14 @@ type Server struct {
 	// lands.
 	activeRelease *types.Release
 
+	// activeReleasePath is the absolute filesystem path of the
+	// active Release the cascade resolved. Empty when activeRelease
+	// is nil. Tracked alongside the parsed Release object so the
+	// lockfile-path helper (daemonLockfilePath) and the at-startup
+	// drift check can derive the conventional lockfile location
+	// from it.
+	activeReleasePath string
+
 	// cascadeAttempt records what the disambiguation cascade tried
 	// and which step (if any) selected activeRelease. Populated
 	// alongside activeRelease at Run startup; immutable for the
@@ -264,21 +272,29 @@ func Run(cfg RunConfig) error {
 		wsCfg.Workspace.CatalogDirs,
 		puller,
 	)
-	activeRelease, attempt := runManifestCascade(root, wsCfg, stderr)
+	activeRelease, activeReleasePath, attempt := runManifestCascade(root, wsCfg, stderr)
 	srv := &Server{
-		workspaceRoot:    root,
-		configSource:     source.String(),
-		wsConfig:         wsCfg,
-		lazyCatalog:      lazyCatalog,
-		activeRelease:    activeRelease,
-		cascadeAttempt:   attempt,
-		parseCache:       newCache(),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(cfg.Stdin),
-		out:              cfg.Stdout,
-		stderr:           stderr,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
+		workspaceRoot:     root,
+		configSource:      source.String(),
+		wsConfig:          wsCfg,
+		lazyCatalog:       lazyCatalog,
+		activeRelease:     activeRelease,
+		activeReleasePath: activeReleasePath,
+		cascadeAttempt:    attempt,
+		parseCache:        newCache(),
+		diagnostics:       map[string][]Diagnostic{},
+		in:                bufio.NewReader(cfg.Stdin),
+		out:               cfg.Stdout,
+		stderr:            stderr,
+		positionEncoding:  yamlpos.PositionEncodingUTF16,
 	}
+
+	// At-startup lockfile load + drift check. Best-effort: silent
+	// no-op when there is no active Release; stderr-log-and-skip on
+	// lockfile load failure or closure-compute failure. The per-
+	// handleIrGraph check is the reliable path.
+	srv.loadAndCheckLockfileAtStartup()
+
 	drainTimeout := cfg.DrainTimeout
 	if drainTimeout == 0 {
 		drainTimeout = defaultDrainTimeout

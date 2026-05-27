@@ -5,10 +5,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // authoringFixture writes the minimal multi-file fixture every pull /
@@ -224,4 +227,132 @@ func stripGeneratedAt(data []byte) []byte {
 		out = append(out, '\n')
 	}
 	return out
+}
+
+// TestPullVerifyMatchingLockfileExits0 verifies that
+// `aggrega pull --verify` against a workspace where the existing
+// lockfile matches the freshly-computed closure returns nil
+// (cobra's RunE non-error → exit 0) and writes no disk side
+// effects.
+func TestPullVerifyMatchingLockfileExits0(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+
+	// First populate the lockfile via the default pull.
+	if err := pullRun(pullConfig{
+		ReleasePath: releasePath,
+		CatalogDir:  filepath.Join(root, "catalog"),
+	}); err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+
+	// Now --verify should succeed: lockfile matches the closure
+	// just used to produce it.
+	if err := pullRun(pullConfig{
+		ReleasePath: releasePath,
+		CatalogDir:  filepath.Join(root, "catalog"),
+		Verify:      true,
+	}); err != nil {
+		t.Errorf("pullRun --verify on matching lockfile: got error %v, want nil", err)
+	}
+}
+
+// TestPullVerifyDriftedLockfileReturnsErr verifies that
+// `aggrega pull --verify` against a workspace where the lockfile
+// has been mutated returns a wrapped lockfile.ErrLockfileDrift.
+func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+
+	// Seed lockfile.
+	if err := pullRun(pullConfig{
+		ReleasePath: releasePath,
+		CatalogDir:  filepath.Join(root, "catalog"),
+	}); err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+
+	// Mutate the lockfile to introduce drift: rewrite one of the
+	// recorded digests to a wrong value. Hex-replacing a known
+	// digest character flips the verification result.
+	lockfilePath := filepath.Join(root, "release.lock")
+	data, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
+	mutated := bytes.Replace(data, []byte("digest: sha256:"), []byte("digest: sha256:ff"), 1)
+	if bytes.Equal(mutated, data) {
+		t.Fatalf("could not locate a digest line to mutate in:\n%s", data)
+	}
+	if err := os.WriteFile(lockfilePath, mutated, 0o644); err != nil {
+		t.Fatalf("write mutated lockfile: %v", err)
+	}
+
+	err = pullRun(pullConfig{
+		ReleasePath: releasePath,
+		CatalogDir:  filepath.Join(root, "catalog"),
+		Verify:      true,
+	})
+	if err == nil {
+		t.Fatal("pullRun --verify on drifted lockfile: expected error, got nil")
+	}
+	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+		t.Errorf("expected ErrLockfileDrift in error chain; got: %v", err)
+	}
+}
+
+// TestPullVerifyMissingLockfileReturnsErr verifies that
+// `aggrega pull --verify` against a workspace with no lockfile is
+// a fatal error. The --verify flag presumes a lockfile exists; the
+// no-lockfile case is what plain `aggrega pull` addresses.
+func TestPullVerifyMissingLockfileReturnsErr(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+	// Deliberately do NOT seed the lockfile.
+
+	err := pullRun(pullConfig{
+		ReleasePath: releasePath,
+		CatalogDir:  filepath.Join(root, "catalog"),
+		Verify:      true,
+	})
+	if err == nil {
+		t.Fatal("pullRun --verify with no lockfile: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "verify: lockfile") {
+		t.Errorf("expected error to name the missing lockfile path; got: %v", err)
+	}
+}
+
+// TestPullVerifyAndRegenerateMutuallyExclusive covers the flag-
+// combination guard. Setting both --verify and --regenerate is a
+// configuration error.
+func TestPullVerifyAndRegenerateMutuallyExclusive(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+
+	// The mutual-exclusion check lives in the cobra RunE wrapper,
+	// not in pullRun itself, so this test exercises the cobra
+	// command-execution path. Set the flag globals directly.
+	pullReleasePath = releasePath
+	pullCatalogDir = filepath.Join(root, "catalog")
+	pullVerify = true
+	pullRegenerate = true
+	defer func() {
+		pullReleasePath = ""
+		pullCatalogDir = "."
+		pullVerify = false
+		pullRegenerate = false
+	}()
+
+	err := pullCmd.RunE(pullCmd, nil)
+	if err == nil {
+		t.Fatal("expected error for --verify + --regenerate combination, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected error to name the mutual-exclusion; got: %v", err)
+	}
 }
