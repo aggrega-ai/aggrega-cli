@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -93,7 +94,7 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 		}
 	}
 
-	externals := loadExternalEntitiesForDaemon(rel, aggPath, manifestPath)
+	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
 	cacheDir := s.wsConfig.Workspace.CacheDir
 	if cacheDir == "" {
 		cacheDir = ".aggrega/cache"
@@ -113,20 +114,4 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 		AggBytes:  aggBytes,
 		Closure:   cl,
 	}, nil
-}
-
-// loadExternalEntitiesForDaemon mirrors cmd/aggrega/pull.go's
-// loadExternalEntities helper, kept package-private here rather
-// than imported across the package boundary. Reads the Release's
-// referenced Aggregate and Manifest files as raw bytes for the
-// closure walker's "external" tier.
-func loadExternalEntitiesForDaemon(rel *types.Release, aggPath, manifestPath string) map[string][]byte {
-	out := map[string][]byte{}
-	if data, err := os.ReadFile(aggPath); err == nil {
-		out[rel.Spec.Aggregate] = data
-	}
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		out[rel.Spec.Manifest] = data
-	}
-	return out
 }

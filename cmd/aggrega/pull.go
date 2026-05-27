@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,7 +17,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -108,7 +106,7 @@ func pullRun(cfg pullConfig) error {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
-	lockfilePath := lockfilePathFor(cfg.ReleasePath)
+	lockfilePath := lockfile.PathFor(cfg.ReleasePath)
 	if cfg.Regenerate {
 		if err := os.Remove(lockfilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("regenerate: remove existing lockfile: %w", err)
@@ -132,7 +130,7 @@ func pullRun(cfg pullConfig) error {
 		cacheDir = ".aggrega/cache"
 	}
 
-	externals := loadExternalEntities(rel, aggPath, manifestPath)
+	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
 	lookup := cat.ClosureLookupWithExternals(catalog.NewDefaultOCIPuller(wsCfg), workspaceRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
@@ -181,41 +179,6 @@ func pullRun(cfg pullConfig) error {
 // Returns ".aggrega-config.yaml" — Load tolerates absence.
 func workspaceConfigPath() string {
 	return ".aggrega-config.yaml"
-}
-
-// loadExternalEntities reads the Release's referenced Aggregate and
-// Manifest files as raw bytes and returns them keyed by the URI the
-// closure walker uses to reference them (the Release's spec.aggregate
-// / spec.manifest values). The bytes are passed verbatim into
-// ClosureLookupWithExternals so the walker hits these URIs at the
-// "external" tier instead of falling through to Tier 3.
-//
-// Aggregate and Manifest are deployment-side entities (loaded by
-// resolver.LoadAggregate / resolver.LoadManifest) and are not part
-// of the in-memory catalog (catalog.Load silently skips Manifest
-// kinds). Reading the raw bytes here keeps the digest computation
-// consistent with the Tier-1 catalog path (sha256 over the on-disk
-// YAML).
-func loadExternalEntities(rel *types.Release, aggPath, manifestPath string) map[string][]byte {
-	out := map[string][]byte{}
-	if data, err := os.ReadFile(aggPath); err == nil {
-		out[rel.Spec.Aggregate] = data
-	}
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		out[rel.Spec.Manifest] = data
-	}
-	return out
-}
-
-// lockfilePathFor returns the conventional lockfile path for a given
-// Release file path. Replaces a trailing ".yaml" with ".lock"; falls
-// back to appending ".lock" when the stem is non-yaml.
-func lockfilePathFor(releasePath string) string {
-	ext := filepath.Ext(releasePath)
-	if ext == ".yaml" || ext == ".yml" {
-		return strings.TrimSuffix(releasePath, ext) + ".lock"
-	}
-	return releasePath + ".lock"
 }
 
 // buildLockfile materialises a *lockfile.Lockfile from the closure

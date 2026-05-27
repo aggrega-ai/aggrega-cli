@@ -13,6 +13,12 @@ import (
 // markerSource names the marker tier that anchored the workspace
 // root. Order encodes priority: lower values win when multiple
 // markers exist in the same directory.
+//
+// Two name forms: String() returns the marker's pathy form (the
+// literal filename or glob pattern) for use in operator-facing
+// diagnostics where the marker NAME is the load-bearing information.
+// WireName() returns a symbolic kebab-case enum value for protocol
+// consumption (the daemon's aggrega/initialize response).
 type markerSource int
 
 const (
@@ -40,6 +46,29 @@ func (m markerSource) String() string {
 		return "manifest*.yaml"
 	default:
 		return "(none)"
+	}
+}
+
+// WireName returns the symbolic kebab-case enum value for protocol
+// consumption. markerNone returns the empty string so the daemon's
+// initialize response can drop the field via the omitempty JSON tag
+// (preserving the zero-value invisibility convention). The values
+// are stable: extensions consume them programmatically for tooltips
+// and disambiguation.
+func (m markerSource) WireName() string {
+	switch m {
+	case markerConfigFile:
+		return "config"
+	case markerAggregaDir:
+		return "directory"
+	case markerAggregateGlob:
+		return "aggregate-glob"
+	case markerReleaseGlob:
+		return "release-glob"
+	case markerManifestGlob:
+		return "manifest-glob"
+	default:
+		return ""
 	}
 }
 

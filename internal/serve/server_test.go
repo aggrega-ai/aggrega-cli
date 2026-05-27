@@ -35,7 +35,7 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 		// their own configured instance; this default suffices for
 		// every test that doesn't touch the lookup directly.
 		lazyCatalog:      catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
-		parseCache:       newCache(),
+		parseCache:       newCache(0, 0),
 		diagnostics:      map[string][]Diagnostic{},
 		in:               bufio.NewReader(stdin),
 		out:              stdout,

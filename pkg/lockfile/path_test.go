@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package serve
+package lockfile
 
 import "testing"
 
-// TestDaemonLockfilePath pins the convention round-trip for the
-// daemon-side lockfile-path helper. Mirrors cmd/aggrega/pull.go's
-// lockfilePathFor behavior so daemon and CLI agree on where the
-// lockfile sits relative to the Release.
-func TestDaemonLockfilePath(t *testing.T) {
+func TestPathFor(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name        string
@@ -27,9 +23,9 @@ func TestDaemonLockfilePath(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := daemonLockfilePath(tc.releasePath)
+			got := PathFor(tc.releasePath)
 			if got != tc.want {
-				t.Errorf("daemonLockfilePath(%q): got %q, want %q", tc.releasePath, got, tc.want)
+				t.Errorf("PathFor(%q): got %q, want %q", tc.releasePath, got, tc.want)
 			}
 		})
 	}

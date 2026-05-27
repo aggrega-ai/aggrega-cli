@@ -12,8 +12,8 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
-	schemas "github.com/aggrega-ai/aggrega-schemas"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
 // ErrConfigInvalid wraps every structural-validation failure raised

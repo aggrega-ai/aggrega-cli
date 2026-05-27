@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // writeStubLockfile creates an empty file at the conventional
@@ -18,7 +20,7 @@ import (
 // 1003 lockfile-absent envelope.
 func writeStubLockfile(t *testing.T, releasePath string) {
 	t.Helper()
-	lockfilePath := daemonLockfilePath(releasePath)
+	lockfilePath := lockfile.PathFor(releasePath)
 	if err := os.WriteFile(lockfilePath, []byte{}, 0o644); err != nil {
 		t.Fatalf("write stub lockfile %s: %v", lockfilePath, err)
 	}

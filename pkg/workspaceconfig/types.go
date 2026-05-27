@@ -3,10 +3,11 @@
 
 // Package workspaceconfig parses and exposes the per-workspace
 // configuration file (`.aggrega-config.yaml`) that the aggrega CLI
-// consults at every build invocation. The file carries four
-// top-level blocks — workspace, build, plugins, lint — covering
-// registry routing, build-time strictness dials, workspace-level
-// Wasm plugin attachments, and per-rule lint gates.
+// consults at every build invocation. The file carries five
+// top-level blocks — workspace, build, plugins, lint, cache —
+// covering registry routing, build-time strictness dials,
+// workspace-level Wasm plugin attachments, per-rule lint gates, and
+// the daemon's parse-cache eviction caps.
 //
 // The workspace file is flat top-level (no apiVersion/kind/metadata
 // envelope), distinguishing it from catalog content which carries
@@ -17,11 +18,24 @@
 // Several documented defaults are NOT the Go zero-value:
 // default_registry = "hub.aggrega.ai", cache_dir = ".aggrega/cache",
 // halt_on_deprecated_severity = "error", enforce_monotonic_narrowing
-// = true, and enforce_immutability = true. Callers obtain a Config
-// seeded with those defaults via Default(); the loader's overlay
-// pattern (Load reads file → schema validates → yaml.Unmarshal into
-// a Default()-initialised value) preserves the documented defaults
+// = true, enforce_immutability = true, cache.max_entries = 1000, and
+// cache.max_bytes = 100_000_000. Callers obtain a Config seeded with
+// those defaults via Default(); the loader's overlay pattern (Load
+// reads file → schema validates → yaml.Unmarshal into a
+// Default()-initialised value) preserves the documented defaults
 // when the file omits a key.
+//
+// List-append escape hatches: six list-valued fields (catalog_dirs,
+// narrowing_exemptions, and the four plugin sockets mutator/policy/
+// linter/importer) carry a sibling `<field>_append` companion. At
+// each precedence layer, any entries in the `_append` companion are
+// concatenated onto the resolved base list — letting workspace and
+// global configs compose entries rather than shadow them. Same-layer
+// interaction: when both the base and its `_append` companion are
+// specified at one layer, the resolved value at that layer is the
+// base list followed by the append list. The `_append` fields are
+// merge-time-only: LoadWithGlobal zeroes them on the returned Config
+// so downstream consumers cannot accidentally read them.
 package workspaceconfig
 
 // Config carries the workspace's full configuration. Fields map to
@@ -39,17 +53,24 @@ type Config struct {
 	Build     BuildConfig     `yaml:"build"`
 	Plugins   PluginsConfig   `yaml:"plugins"`
 	Lint      LintConfig      `yaml:"lint"`
+	Cache     CacheConfig     `yaml:"cache"`
 }
 
 // WorkspaceConfig groups workspace-level orientation: which registry
 // the build pushes to and pulls from, where the local artifact cache
 // lives, and whether the build operates offline.
+//
+// CatalogDirsAppend is the merge-time companion for CatalogDirs: at
+// each precedence layer the entries here are concatenated onto the
+// resolved CatalogDirs list. LoadWithGlobal zeroes this field on the
+// returned Config.
 type WorkspaceConfig struct {
-	DefaultRegistry string   `yaml:"default_registry"`
-	CatalogDirs     []string `yaml:"catalog_dirs"`
-	CacheDir        string   `yaml:"cache_dir"`
-	Offline         bool     `yaml:"offline"`
-	AutoPull        bool     `yaml:"auto_pull"`
+	DefaultRegistry   string   `yaml:"default_registry"`
+	CatalogDirs       []string `yaml:"catalog_dirs"`
+	CatalogDirsAppend []string `yaml:"catalog_dirs_append"`
+	CacheDir          string   `yaml:"cache_dir"`
+	Offline           bool     `yaml:"offline"`
+	AutoPull          bool     `yaml:"auto_pull"`
 }
 
 // BuildConfig groups build-time strictness dials and authoring
@@ -68,11 +89,21 @@ type BuildConfig struct {
 // socket. Each socket invokes its plugins' documented entry function
 // per the socket contract; PluginRef.Function overrides the socket's
 // default when set.
+//
+// MutatorAppend / PolicyAppend / LinterAppend / ImporterAppend are
+// the merge-time companions for the four base sockets. At each
+// precedence layer the entries here are concatenated onto the
+// resolved base list for that socket. LoadWithGlobal zeroes these
+// fields on the returned Config.
 type PluginsConfig struct {
-	Mutator  []PluginRef `yaml:"mutator"`
-	Policy   []PluginRef `yaml:"policy"`
-	Linter   []PluginRef `yaml:"linter"`
-	Importer []PluginRef `yaml:"importer"`
+	Mutator        []PluginRef `yaml:"mutator"`
+	MutatorAppend  []PluginRef `yaml:"mutator_append"`
+	Policy         []PluginRef `yaml:"policy"`
+	PolicyAppend   []PluginRef `yaml:"policy_append"`
+	Linter         []PluginRef `yaml:"linter"`
+	LinterAppend   []PluginRef `yaml:"linter_append"`
+	Importer       []PluginRef `yaml:"importer"`
+	ImporterAppend []PluginRef `yaml:"importer_append"`
 }
 
 // PluginRef references a Wasm plugin attached at a workspace-level
@@ -101,6 +132,11 @@ type LintConfig struct {
 // legitimate narrowing cases. The remaining flags relax individual
 // discouragement checks.
 //
+// NarrowingExemptionsAppend is the merge-time companion for
+// NarrowingExemptions: at each precedence layer the entries here are
+// concatenated onto the resolved exemption list. LoadWithGlobal
+// zeroes this field on the returned Config.
+//
 // JSON marshalling matches the schema's Policies $def in
 // aggrega-schemas/json-schemas/wasm-linter-v1alpha1.schema.json.
 // The publishing-linter Wasm plugin consumes a JSON object with the
@@ -112,6 +148,7 @@ type PublishingDisciplineConfig struct {
 	EnforceMonotonicNarrowing     bool                 `yaml:"enforce_monotonic_narrowing"`
 	EnforceImmutability           bool                 `yaml:"enforce_immutability"`
 	NarrowingExemptions           []NarrowingExemption `yaml:"narrowing_exemptions"`
+	NarrowingExemptionsAppend     []NarrowingExemption `yaml:"narrowing_exemptions_append"`
 	AllowDynamicRefs              bool                 `yaml:"allow_dynamic_refs"`
 	AllowIDOverrides              bool                 `yaml:"allow_id_overrides"`
 	AllowDirectXAggregaExtensions bool                 `yaml:"allow_direct_x_aggrega_extensions"`
@@ -131,13 +168,29 @@ type NarrowingExemption struct {
 	Reason string   `yaml:"reason"`
 }
 
+// CacheConfig carries the daemon's parse-cache eviction caps. Both
+// caps apply simultaneously — the LRU eviction loop runs until both
+// the entry count and the byte total are within bounds. Either-zero
+// means "unbounded on that axis", which is useful for CI scenarios
+// where the cache lives only for one invocation.
+type CacheConfig struct {
+	// MaxEntries caps the number of cached parses. Default 1000;
+	// 0 = unbounded on the entry axis.
+	MaxEntries int `yaml:"max_entries"`
+	// MaxBytes caps the cumulative len(content) bytes the cache
+	// holds. Default 100_000_000 (100 MB); 0 = unbounded on the
+	// byte axis.
+	MaxBytes int `yaml:"max_bytes"`
+}
+
 // Default returns a Config populated with the documented defaults.
-// Six documented defaults are NOT the Go zero-value and are seeded
+// Eight documented defaults are NOT the Go zero-value and are seeded
 // explicitly: Workspace.DefaultRegistry = "hub.aggrega.ai",
 // Workspace.CacheDir = ".aggrega/cache", Workspace.AutoPull = true,
 // Build.HaltOnDeprecatedSeverity = "error",
-// Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true, and
-// Lint.PublishingDiscipline.EnforceImmutability = true.
+// Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true,
+// Lint.PublishingDiscipline.EnforceImmutability = true,
+// Cache.MaxEntries = 1000, and Cache.MaxBytes = 100_000_000.
 // Remaining fields stay at Go's zero-value (every Allow* flag false,
 // every list nil, every other string empty).
 //
@@ -160,6 +213,10 @@ func Default() Config {
 				EnforceMonotonicNarrowing: true,
 				EnforceImmutability:       true,
 			},
+		},
+		Cache: CacheConfig{
+			MaxEntries: 1000,
+			MaxBytes:   100_000_000,
 		},
 	}
 }

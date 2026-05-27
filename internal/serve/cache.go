@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"container/list"
 	"os"
 	"time"
 
@@ -21,10 +22,18 @@ import (
 // the file. Editor-supplied content (validate's params.Content) and
 // on-disk bytes (workspace-walk reads) flow through the same cache
 // shape; both populate content at Put time.
+//
+// lru is the back-pointer into the cache's recency list; the element
+// holds the file path as its Value so an LRU-back eviction can find
+// the entry to delete from the map. size mirrors len(content) so
+// totalBytes accounting on remove does not need a fresh sizeof of
+// already-released bytes.
 type cachedEntry struct {
 	node     *yaml.Node
 	content  []byte
 	cachedAt time.Time
+	lru      *list.Element
+	size     int
 }
 
 // cache is the daemon's parse cache. Get returns the cached parse when
@@ -33,21 +42,48 @@ type cachedEntry struct {
 // mutations (operator edits outside the IDE, branch switches, etc.)
 // invalidate the cache transparently — the daemon does not require
 // push-based invalidation from the IDE for correctness.
+//
+// LRU eviction policy: every Get on a hit refreshes the entry's
+// recency (move-to-front); every Put inserts/replaces at the front
+// and evicts least-recently-used entries from the back until both
+// caps are satisfied. Two caps apply simultaneously: maxEntries
+// bounds the count, maxBytes bounds the cumulative len(content)
+// byte total. Either-cap = 0 means "unbounded on that axis".
+//
+// Concurrency contract: the cache is NOT concurrency-safe. The
+// daemon's sequential dispatch loop is the only intended caller.
+// Both Get and Put mutate the LRU list, so any future move to a
+// concurrent dispatcher would need to add locking around all four
+// operations.
 type cache struct {
-	entries map[string]*cachedEntry
+	entries    map[string]*cachedEntry
+	lruList    *list.List
+	totalBytes int64
+	maxEntries int
+	maxBytes   int64
 }
 
-// newCache constructs an empty cache. The cache is not concurrency-
-// safe; the daemon's sequential dispatch loop is the only intended
-// caller.
-func newCache() *cache {
-	return &cache{entries: map[string]*cachedEntry{}}
+// newCache constructs an empty cache with the supplied caps. A
+// zero-valued cap on either axis disables eviction on that axis.
+// Callers pass 0/0 for an unbounded cache (the prior behavior before
+// LRU eviction shipped).
+func newCache(maxEntries int, maxBytes int) *cache {
+	return &cache{
+		entries:    map[string]*cachedEntry{},
+		lruList:    list.New(),
+		maxEntries: maxEntries,
+		maxBytes:   int64(maxBytes),
+	}
 }
 
 // Get returns the cached entry for file and true when the on-disk
 // mtime is older than or equal to the entry's cachedAt. Returns nil
 // and false on cache miss (either no entry, or entry evicted as
 // stale, or the file no longer exists).
+//
+// Hits refresh the entry's LRU recency (move to front). Misses
+// caused by mtime-staleness remove the entry from both the map and
+// the LRU list.
 func (c *cache) Get(file string) (*cachedEntry, bool) {
 	entry, ok := c.entries[file]
 	if !ok {
@@ -55,13 +91,14 @@ func (c *cache) Get(file string) (*cachedEntry, bool) {
 	}
 	stat, err := os.Stat(file)
 	if err != nil {
-		delete(c.entries, file)
+		c.remove(file, entry)
 		return nil, false
 	}
 	if stat.ModTime().After(entry.cachedAt) {
-		delete(c.entries, file)
+		c.remove(file, entry)
 		return nil, false
 	}
+	c.lruList.MoveToFront(entry.lru)
 	return entry, true
 }
 
@@ -69,16 +106,58 @@ func (c *cache) Get(file string) (*cachedEntry, bool) {
 // parsed node and the raw bytes that produced it. The cachedAt
 // timestamp is captured as time.Now(); the subsequent Get's mtime
 // comparison uses this value as the staleness boundary.
+//
+// After insertion, the eviction loop runs until both caps are
+// satisfied. Either-cap = 0 disables eviction on that axis.
 func (c *cache) Put(file string, node *yaml.Node, content []byte) {
-	c.entries[file] = &cachedEntry{
+	if existing, ok := c.entries[file]; ok {
+		c.remove(file, existing)
+	}
+	entry := &cachedEntry{
 		node:     node,
 		content:  content,
 		cachedAt: time.Now(),
+		size:     len(content),
 	}
+	entry.lru = c.lruList.PushFront(file)
+	c.entries[file] = entry
+	c.totalBytes += int64(entry.size)
+	c.evictUntilWithinCaps()
 }
 
 // Drop removes the cache entry for file if present. No-op when the
 // entry does not exist.
 func (c *cache) Drop(file string) {
+	if entry, ok := c.entries[file]; ok {
+		c.remove(file, entry)
+	}
+}
+
+// remove deletes entry from the map AND the LRU list, decrementing
+// totalBytes. Internal helper used by Get's mtime-stale eviction,
+// Put's replace-existing path, Drop, and the LRU-back eviction loop.
+func (c *cache) remove(file string, entry *cachedEntry) {
+	c.lruList.Remove(entry.lru)
 	delete(c.entries, file)
+	c.totalBytes -= int64(entry.size)
+}
+
+// evictUntilWithinCaps removes least-recently-used entries from the
+// back of the LRU list until both caps are satisfied. Either-cap = 0
+// disables that axis (the corresponding check is skipped).
+func (c *cache) evictUntilWithinCaps() {
+	for {
+		entriesExceeded := c.maxEntries > 0 && len(c.entries) > c.maxEntries
+		bytesExceeded := c.maxBytes > 0 && c.totalBytes > c.maxBytes
+		if !entriesExceeded && !bytesExceeded {
+			return
+		}
+		back := c.lruList.Back()
+		if back == nil {
+			return
+		}
+		file := back.Value.(string)
+		entry := c.entries[file]
+		c.remove(file, entry)
+	}
 }

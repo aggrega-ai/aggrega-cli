@@ -148,4 +148,3 @@ type WasmPlugin struct {
 	ResolutionPath  string   `yaml:"resolution_path"`
 	ReferencedFrom  []string `yaml:"referenced_from"`
 }
-

@@ -243,7 +243,7 @@ func verifyOrAutoPullLockfile(releasePath, catalogDir string, cat *catalog.Catal
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	lockfilePath := lockfilePathFor(releasePath)
+	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
 	switch {
@@ -305,7 +305,7 @@ func verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath string, 
 		cacheDir = ".aggrega/cache"
 	}
 
-	externals := loadExternalEntities(rel,
+	externals := lockfile.LoadExternalEntities(rel,
 		filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"),
 		filepath.Join(releaseDir, rel.Spec.Manifest+".yaml"))
 	lookup := cat.ClosureLookupWithExternals(nil, workspaceRoot, cacheDir, externals)

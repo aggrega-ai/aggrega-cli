@@ -142,3 +142,90 @@ func TestDispatchInitializeCapabilitiesFieldUnchanged(t *testing.T) {
 		t.Errorf("positionEncoding: got %q, want utf-16", pe)
 	}
 }
+
+// TestInitializeReportsWorkspaceMarkerAggregateGlob verifies that
+// the initialize response carries workspaceMarker = "aggregate-glob"
+// when the workspace was anchored by a `aggregate*.yaml` glob match.
+func TestInitializeReportsWorkspaceMarkerAggregateGlob(t *testing.T) {
+	out := &bytes.Buffer{}
+	srv := newTestServer(t, "/tmp/test-workspace", nil, out)
+	srv.workspaceMarker = markerAggregateGlob
+
+	req := framedRequest(1, "aggrega/initialize", map[string]any{
+		"capabilities": map[string]any{},
+	})
+	var reqBody jsonRPCRequest
+	bodyStart := bytes.Index(req, []byte("\r\n\r\n")) + 4
+	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if err := srv.dispatchInitialize(&reqBody); err != nil {
+		t.Fatalf("dispatchInitialize: %v", err)
+	}
+	resp := decodeOneResponse(t, out)
+	var result initializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.WorkspaceMarker != "aggregate-glob" {
+		t.Errorf("WorkspaceMarker: got %q, want aggregate-glob", result.WorkspaceMarker)
+	}
+}
+
+// TestInitializeReportsWorkspaceMarkerConfig verifies the symbolic
+// "config" enum value for the .aggrega-config.yaml marker tier.
+func TestInitializeReportsWorkspaceMarkerConfig(t *testing.T) {
+	out := &bytes.Buffer{}
+	srv := newTestServer(t, "/tmp/test-workspace", nil, out)
+	srv.workspaceMarker = markerConfigFile
+
+	req := framedRequest(1, "aggrega/initialize", map[string]any{
+		"capabilities": map[string]any{},
+	})
+	var reqBody jsonRPCRequest
+	bodyStart := bytes.Index(req, []byte("\r\n\r\n")) + 4
+	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if err := srv.dispatchInitialize(&reqBody); err != nil {
+		t.Fatalf("dispatchInitialize: %v", err)
+	}
+	resp := decodeOneResponse(t, out)
+	var result initializeResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.WorkspaceMarker != "config" {
+		t.Errorf("WorkspaceMarker: got %q, want config", result.WorkspaceMarker)
+	}
+}
+
+// TestInitializeOmitsWorkspaceMarkerWhenExplicitRoot verifies that
+// markerNone (the zero value, set when --workspace-root was used)
+// produces an omitted field on the wire — the omitempty JSON tag
+// keys off the empty-string WireName.
+func TestInitializeOmitsWorkspaceMarkerWhenExplicitRoot(t *testing.T) {
+	out := &bytes.Buffer{}
+	srv := newTestServer(t, "/tmp/test-workspace", nil, out)
+	// workspaceMarker left as markerNone (zero value).
+
+	req := framedRequest(1, "aggrega/initialize", map[string]any{
+		"capabilities": map[string]any{},
+	})
+	var reqBody jsonRPCRequest
+	bodyStart := bytes.Index(req, []byte("\r\n\r\n")) + 4
+	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if err := srv.dispatchInitialize(&reqBody); err != nil {
+		t.Fatalf("dispatchInitialize: %v", err)
+	}
+	resp := decodeOneResponse(t, out)
+	var generic map[string]any
+	if err := json.Unmarshal(resp.Result, &generic); err != nil {
+		t.Fatalf("unmarshal generic: %v", err)
+	}
+	if _, present := generic["workspaceMarker"]; present {
+		t.Errorf("workspaceMarker should be absent for explicit-root; got present: %v", generic)
+	}
+}

@@ -465,3 +465,100 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 		t.Errorf("location.uri = %q; want %q (parent's path)", uri, parentPath)
 	}
 }
+
+// TestValidateWorkspaceRootFlagEmptyTreatedAsUnset verifies that an
+// empty --workspace-root argument is treated as the unset signal —
+// the daemon falls through to its discovery flow rather than
+// rejecting empty as invalid.
+func TestValidateWorkspaceRootFlagEmptyTreatedAsUnset(t *testing.T) {
+	t.Parallel()
+	got, err := validateWorkspaceRootFlag("")
+	if err != nil {
+		t.Fatalf("unexpected error for empty value: %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected empty return for empty input; got %q", got)
+	}
+}
+
+// TestValidateWorkspaceRootFlagRelativePathResolves verifies that a
+// relative path is resolved to an absolute path before being
+// returned, since the daemon's downstream logic depends on
+// absolute-path canonical form.
+func TestValidateWorkspaceRootFlagRelativePathResolves(t *testing.T) {
+	dir := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(filepath.Dir(dir)); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	relative := filepath.Base(dir)
+	got, err := validateWorkspaceRootFlag(relative)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Errorf("expected absolute path; got %q", got)
+	}
+	if filepath.Base(got) != relative {
+		t.Errorf("expected base name %q; got %q", relative, got)
+	}
+}
+
+// TestValidateWorkspaceRootFlagMissingPathErrors verifies that a
+// path which does not exist on disk returns an error whose chain
+// includes the flag name in its prefix.
+func TestValidateWorkspaceRootFlagMissingPathErrors(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "no-such-subdir")
+	_, err := validateWorkspaceRootFlag(missing)
+	if err == nil {
+		t.Fatalf("expected error for missing path; got nil")
+	}
+	if !strings.Contains(err.Error(), "--workspace-root") {
+		t.Errorf("error should name the flag; got %q", err.Error())
+	}
+}
+
+// TestValidateWorkspaceRootFlagNonDirectoryErrors verifies that a
+// path pointing at a file (rather than a directory) returns an
+// error whose body identifies the directory-required violation.
+func TestValidateWorkspaceRootFlagNonDirectoryErrors(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "regular-file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	_, err := validateWorkspaceRootFlag(file)
+	if err == nil {
+		t.Fatalf("expected error for non-directory path; got nil")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("error should mention 'not a directory'; got %q", err.Error())
+	}
+}
+
+// TestServeCmdRejectsInvalidWorkspaceRoot drives the cobra harness
+// end-to-end: builds the aggrega binary and invokes it with a
+// --workspace-root pointing at a non-existent path. The process
+// must exit non-zero before reaching the dispatch loop, and its
+// stderr must surface the flag name.
+func TestServeCmdRejectsInvalidWorkspaceRoot(t *testing.T) {
+	t.Parallel()
+	bin := buildServeBinary(t)
+	missing := filepath.Join(t.TempDir(), "no-such-subdir")
+
+	cmd := exec.Command(bin, "serve", "--workspace-root", missing)
+	stderrBuf := &strings.Builder{}
+	cmd.Stderr = stderrBuf
+
+	if err := cmd.Run(); err == nil {
+		t.Fatalf("expected non-zero exit; binary returned nil error")
+	}
+	if !strings.Contains(stderrBuf.String(), "--workspace-root") {
+		t.Errorf("expected stderr to mention --workspace-root; got %q", stderrBuf.String())
+	}
+}

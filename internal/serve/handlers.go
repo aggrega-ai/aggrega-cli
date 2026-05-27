@@ -19,6 +19,7 @@ import (
 	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -55,12 +56,17 @@ type serverCapabilities struct {
 // anchor (via discovery or explicit --workspace-root). ConfigSource
 // names the highest-precedence configuration layer that contributed
 // to the effective Config: "workspace" | "global" | "defaults".
+// WorkspaceMarker names the marker tier that anchored the workspace
+// root: "config" | "directory" | "aggregate-glob" | "release-glob" |
+// "manifest-glob"; the field is omitted on the wire when the daemon
+// anchored via an explicit --workspace-root (no marker consulted).
 // Additive only: clients that read only Capabilities continue to
 // work; the new fields are opt-in for clients that surface them.
 type initializeResult struct {
-	Capabilities  serverCapabilities `json:"capabilities"`
-	WorkspaceRoot string             `json:"workspaceRoot"`
-	ConfigSource  string             `json:"configSource"`
+	Capabilities    serverCapabilities `json:"capabilities"`
+	WorkspaceRoot   string             `json:"workspaceRoot"`
+	ConfigSource    string             `json:"configSource"`
+	WorkspaceMarker string             `json:"workspaceMarker,omitempty"`
 }
 
 // dispatchInitialize selects a position encoding from the client's
@@ -89,8 +95,9 @@ func (s *Server) dispatchInitialize(req *jsonRPCRequest) error {
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
 		},
-		WorkspaceRoot: s.workspaceRoot,
-		ConfigSource:  s.configSource,
+		WorkspaceRoot:   s.workspaceRoot,
+		ConfigSource:    s.configSource,
+		WorkspaceMarker: s.workspaceMarker.WireName(),
 	}); err != nil {
 		return err
 	}
@@ -351,7 +358,7 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 	//    extension's "Generate Lockfile" toast button, which runs
 	//    aggrega pull in a terminal, or by running aggrega pull
 	//    manually).
-	lockfilePath := daemonLockfilePath(releasePath)
+	lockfilePath := lockfile.PathFor(releasePath)
 	if _, err := os.Stat(lockfilePath); err != nil {
 		if os.IsNotExist(err) {
 			return irGraphResult{}, &jsonRPCError{

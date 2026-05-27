@@ -96,7 +96,13 @@ type Diagnostic struct {
 type Server struct {
 	workspaceRoot string
 	configSource  string
-	wsConfig      workspaceconfig.Config
+	// workspaceMarker names the marker tier that anchored the
+	// workspace root via discovery. markerNone (the zero value)
+	// when --workspace-root was supplied explicitly, since no
+	// marker was consulted in that path. Surfaced on
+	// aggrega/initialize via WireName().
+	workspaceMarker markerSource
+	wsConfig        workspaceconfig.Config
 
 	// shuttingDown is set to true by dispatchShutdown after an
 	// aggrega/shutdown notification arrives. The drain-state
@@ -157,10 +163,9 @@ type Server struct {
 
 	// activeReleasePath is the absolute filesystem path of the
 	// active Release the cascade resolved. Empty when activeRelease
-	// is nil. Tracked alongside the parsed Release object so the
-	// lockfile-path helper (daemonLockfilePath) and the at-startup
-	// drift check can derive the conventional lockfile location
-	// from it.
+	// is nil. Tracked alongside the parsed Release object so
+	// lockfile.PathFor and the at-startup drift check can derive
+	// the conventional lockfile location from it.
 	activeReleasePath string
 
 	// cascadeAttempt records what the disambiguation cascade tried
@@ -227,6 +232,7 @@ type Server struct {
 func Run(cfg RunConfig) error {
 	var root string
 	var workspaceConfigPath string
+	var marker markerSource
 	if cfg.WorkspaceRoot != "" {
 		st, statErr := os.Stat(cfg.WorkspaceRoot)
 		if statErr != nil {
@@ -254,6 +260,7 @@ func Run(cfg RunConfig) error {
 		}
 		root = res.root
 		workspaceConfigPath = res.configPath
+		marker = res.source
 	}
 
 	wsCfg, source, err := workspaceconfig.LoadWithGlobal(workspaceConfigPath, cfg.GlobalConfigPathOverride)
@@ -276,12 +283,13 @@ func Run(cfg RunConfig) error {
 	srv := &Server{
 		workspaceRoot:     root,
 		configSource:      source.String(),
+		workspaceMarker:   marker,
 		wsConfig:          wsCfg,
 		lazyCatalog:       lazyCatalog,
 		activeRelease:     activeRelease,
 		activeReleasePath: activeReleasePath,
 		cascadeAttempt:    attempt,
-		parseCache:        newCache(),
+		parseCache:        newCache(wsCfg.Cache.MaxEntries, wsCfg.Cache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
 		in:                bufio.NewReader(cfg.Stdin),
 		out:               cfg.Stdout,

@@ -28,7 +28,7 @@ func (s *Server) loadAndCheckLockfileAtStartup() {
 	if s.activeRelease == nil || s.activeReleasePath == "" {
 		return
 	}
-	lockfilePath := daemonLockfilePath(s.activeReleasePath)
+	lockfilePath := lockfile.PathFor(s.activeReleasePath)
 	if _, err := os.Stat(lockfilePath); err != nil {
 		// No lockfile present, or stat failure. Either way, leave
 		// s.lockfile nil; the per-handleIrGraph absent-gate

@@ -148,12 +148,30 @@ func LoadGlobal(pathOverride string) (cfg Config, loaded bool, err error) {
 // → global config (if present at the resolved path) → workspace
 // config (if workspacePath is non-empty AND the file exists).
 //
-// The merge runs by repeated yaml-overlay-into-seeded-target: each
-// successive load reads the file's YAML into a target already
-// carrying the prior layer's values, so absent keys preserve the
-// prior layer. yaml.v3's semantics make this naturally per-field
-// for scalar and map fields. List-valued fields whole-replace at
-// the highest layer that supplies them.
+// The merge runs in two passes:
+//
+//  1. Base overlay. Repeated yaml-overlay-into-seeded-target: each
+//     successive load reads the file's YAML into a target already
+//     carrying the prior layer's values, so absent keys preserve
+//     the prior layer. yaml.v3 makes this naturally per-field for
+//     scalar and map fields; list-valued fields whole-replace at
+//     the highest layer that supplies them.
+//
+//  2. `_append` accumulation. The six list-valued fields that carry
+//     `<field>_append` companions (catalog_dirs, narrowing_exemptions,
+//     and the four plugin sockets) are extended by the `_append`
+//     slices captured from each layer's independent parse. At each
+//     layer the captured `_append` slice is concatenated onto the
+//     base-overlay result. Same-layer interaction: when one layer
+//     specifies both the base and its `_append` companion, the base
+//     whole-replaces the prior layer's value and the `_append`
+//     extends it within that layer. Cross-layer: an `_append` slice
+//     in a layer that omits the base survives through any subsequent
+//     base whole-replace only by being concatenated onto the final
+//     overlay result in precedence order.
+//
+// The returned Config's six `_append` fields are zeroed after pass 2
+// so downstream consumers cannot read them — they are merge-time-only.
 //
 // Returns the merged Config and the Source enum naming the highest
 // layer that contributed.
@@ -170,12 +188,23 @@ func LoadWithGlobal(workspacePath, globalPathOverride string) (Config, Source, e
 	merged := Default()
 	source := SourceDefaults
 
+	// _append accumulators: one slice per `_append` field, ordered by
+	// the precedence layers that contributed (defaults → global →
+	// workspace). Defaults never contribute because Default() leaves
+	// the `_append` fields nil; only global and workspace can populate.
+	var globalAppends, workspaceAppends appendSlices
+
 	// Layer 2: global, if present.
 	globalCfg, globalLoaded, err := LoadGlobal(globalPathOverride)
 	if err != nil {
 		return Config{}, SourceDefaults, err
 	}
 	if globalLoaded {
+		globalAppends = captureAppends(globalCfg)
+		// Strip the captured `_append` fields from the layer copy
+		// before promoting it to merged — the overlay pass should
+		// not have them already attached.
+		stripAppends(&globalCfg)
 		merged = globalCfg
 		source = SourceGlobal
 	}
@@ -183,20 +212,93 @@ func LoadWithGlobal(workspacePath, globalPathOverride string) (Config, Source, e
 	// Layer 3: workspace, if path provided AND the file exists.
 	if workspacePath != "" {
 		if _, statErr := os.Stat(workspacePath); statErr == nil {
-			// Re-load with the merged Config as the overlay target.
-			// Load() seeds Default() internally; we want the global-
-			// merged baseline instead. Reuse the lower-level loader
-			// via a dedicated helper that takes a seeded target.
+			// Parse the workspace file twice: once as a standalone
+			// Load() to capture the `_append` slices, once via
+			// loadOverlayInto to merge the base fields onto the
+			// running baseline. The duplicate parse is microseconds;
+			// keeps the merge logic simple.
+			wsRaw, err := Load(workspacePath)
+			if err != nil {
+				return Config{}, SourceDefaults, err
+			}
+			workspaceAppends = captureAppends(wsRaw)
+
 			wsCfg, err := loadOverlayInto(workspacePath, merged)
 			if err != nil {
 				return Config{}, SourceDefaults, err
 			}
+			// loadOverlayInto reads the workspace `_append` fields
+			// into the target as well — strip them so applyAppends
+			// is the sole source of truth for the resolved values.
+			stripAppends(&wsCfg)
 			merged = wsCfg
 			source = SourceWorkspace
 		}
 	}
 
+	// Pass 2: concatenate `_append` slices in precedence order.
+	applyAppends(&merged, globalAppends, workspaceAppends)
+
 	return merged, source, nil
+}
+
+// appendSlices captures one layer's six `_append` slices. Used by
+// LoadWithGlobal to defer concatenation until after the base overlay
+// completes, so the `_append` semantic composes correctly across
+// layers (each layer's `_append` extends the final merged base in
+// precedence order).
+type appendSlices struct {
+	CatalogDirs         []string
+	NarrowingExemptions []NarrowingExemption
+	Mutator             []PluginRef
+	Policy              []PluginRef
+	Linter              []PluginRef
+	Importer            []PluginRef
+}
+
+// captureAppends extracts the six `_append` slices from a freshly-
+// loaded layer Config. The captured slices share storage with the
+// source Config; callers that subsequently mutate cfg should not also
+// retain the captured value.
+func captureAppends(cfg Config) appendSlices {
+	return appendSlices{
+		CatalogDirs:         cfg.Workspace.CatalogDirsAppend,
+		NarrowingExemptions: cfg.Lint.PublishingDiscipline.NarrowingExemptionsAppend,
+		Mutator:             cfg.Plugins.MutatorAppend,
+		Policy:              cfg.Plugins.PolicyAppend,
+		Linter:              cfg.Plugins.LinterAppend,
+		Importer:            cfg.Plugins.ImporterAppend,
+	}
+}
+
+// stripAppends zeroes the six `_append` fields on cfg. Called on
+// every layer's Config before promoting it to merged (so the overlay
+// pass does not carry `_append` slices through), and on the final
+// merged Config (so downstream consumers see only the base fields
+// with `_append` already concatenated by applyAppends).
+func stripAppends(cfg *Config) {
+	cfg.Workspace.CatalogDirsAppend = nil
+	cfg.Lint.PublishingDiscipline.NarrowingExemptionsAppend = nil
+	cfg.Plugins.MutatorAppend = nil
+	cfg.Plugins.PolicyAppend = nil
+	cfg.Plugins.LinterAppend = nil
+	cfg.Plugins.ImporterAppend = nil
+}
+
+// applyAppends concatenates each layer's `_append` slices onto the
+// corresponding base fields of merged. Precedence ordering is global
+// then workspace; defaults never contribute (Default() leaves them
+// nil). The empty-base case falls out naturally — append onto a nil
+// slice produces the appended slice.
+func applyAppends(merged *Config, layers ...appendSlices) {
+	for _, layer := range layers {
+		merged.Workspace.CatalogDirs = append(merged.Workspace.CatalogDirs, layer.CatalogDirs...)
+		merged.Lint.PublishingDiscipline.NarrowingExemptions = append(merged.Lint.PublishingDiscipline.NarrowingExemptions, layer.NarrowingExemptions...)
+		merged.Plugins.Mutator = append(merged.Plugins.Mutator, layer.Mutator...)
+		merged.Plugins.Policy = append(merged.Plugins.Policy, layer.Policy...)
+		merged.Plugins.Linter = append(merged.Plugins.Linter, layer.Linter...)
+		merged.Plugins.Importer = append(merged.Plugins.Importer, layer.Importer...)
+	}
 }
 
 // loadOverlayInto loads a YAML config file at path, overlaying its
