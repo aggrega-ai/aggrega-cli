@@ -82,11 +82,12 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 		match, err := selector.MatchString(selectorStr, targetNode.Labels)
 		if err != nil {
 			errs = append(errs, AnalysisError{
-				Source:   edge.Source,
-				Target:   edge.Target,
-				Socket:   edge.Socket,
-				Selector: selectorStr,
-				Message:  fmt.Sprintf("selector parse error: %v", err),
+				Source:     edge.Source,
+				Target:     edge.Target,
+				Socket:     edge.Socket,
+				Selector:   selectorStr,
+				Message:    fmt.Sprintf("selector parse error: %v", err),
+				OriginFile: sourceFileFor(graph, edge.Source),
 			})
 			continue
 		}
@@ -101,6 +102,7 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 					"target %q labels %v do not match selector %q on socket %q",
 					edge.Target, targetNode.Labels, selectorStr, edge.Socket,
 				),
+				OriginFile: sourceFileFor(graph, edge.Source),
 			})
 		}
 	}

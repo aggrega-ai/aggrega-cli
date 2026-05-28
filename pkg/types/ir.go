@@ -87,6 +87,16 @@ type IRNode struct {
 	AggregateAnnotations OrderedMap[string] `json:"aggregate_annotations,omitempty,omitzero"`
 
 	SelfInject *InjectBlock `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
+
+	// SourceFile is the filesystem path of the Aggregate file where this
+	// node was authored. Root-tier nodes carry the root Aggregate's path;
+	// sub-aggregate nodes carry the imported Aggregate's file path. Empty
+	// when topology cannot resolve a source file (synthetic test IR,
+	// loaders returning empty paths). Consumers that filter diagnostics
+	// per file (the daemon's analyzer-error-to-diagnostic conversion)
+	// drop entries whose SourceFile names a file other than the one
+	// being validated, and backfill empty values to the validated file.
+	SourceFile string `json:"source_file,omitempty"`
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.

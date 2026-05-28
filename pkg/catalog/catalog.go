@@ -60,6 +60,13 @@ type Catalog struct {
 	featureSources   map[string]string
 	providerSources  map[string]string
 
+	// aggregateSources records the file path each Aggregate entity was
+	// loaded from. Populated by Pass 1 (indexFile) and exposed by
+	// AggregateSourceFile so consumers — notably the topology builder's
+	// SubAggregateLoader callback — can attach source-file provenance
+	// to per-node IR records for per-file diagnostic filtering.
+	aggregateSources map[string]string
+
 	// lintWarnings accumulates non-fatal advisory diagnostics raised
 	// during catalog load — currently the schema-pillar-overlap
 	// lint, which warns when a Component or Feature declares the
@@ -146,6 +153,7 @@ func LoadAll(dirs ...string) (*Catalog, error) {
 		componentSources: make(map[string]string),
 		featureSources:   make(map[string]string),
 		providerSources:  make(map[string]string),
+		aggregateSources: make(map[string]string),
 		entityBytes:      make(map[string][]byte),
 	}
 	for _, dir := range dirs {
@@ -385,6 +393,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
 		c.Aggregates[e.Metadata.Name] = e
+		c.aggregateSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
 	case "Provider":
 		var e types.Provider
@@ -661,24 +670,37 @@ func (c *Catalog) RecipeLookup() renderer.RecipeLookup {
 	}
 }
 
+// AggregateSourceFile returns the filesystem path the Aggregate entity
+// named name was loaded from. Returns ("", false) when the catalog
+// carries no Aggregate by that name. The topology builder's
+// SubAggregateLoader callback uses this to attach source-file
+// provenance to flattened nodes so the analyzer's per-file diagnostic
+// filtering operates on real file paths.
+func (c *Catalog) AggregateSourceFile(name string) (string, bool) {
+	path, ok := c.aggregateSources[name]
+	return path, ok
+}
+
 // SubAggregateLoader returns a topology.SubAggregateLoader closure that the
 // topology builder calls when it encounters a sub-aggregate reference
 // during graph construction. The closure looks up the named Aggregate in
-// this catalog's Aggregates map.
+// this catalog's Aggregates map and returns the entity together with the
+// filesystem path it was loaded from.
 //
-// The signature here returns `(*types.Aggregate, error)` rather than the
+// The signature returns `(*types.Aggregate, string, error)` rather than the
 // `(value, bool)` shape used by CatalogLookup / RecipeLookup / ProviderLookup
 // because the topology package treats a sub-aggregate miss as a fatal
 // graph-construction failure (the parent Aggregate references a
 // sub-aggregate that does not exist; the build cannot continue). The
 // error carries the missing type name so callers can surface it without
-// needing to recompose the diagnostic.
+// needing to recompose the diagnostic. The path return threads source-file
+// provenance through flatten so per-node IR records can carry it.
 func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
-	return func(typeName string) (*types.Aggregate, error) {
+	return func(typeName string) (*types.Aggregate, string, error) {
 		agg, ok := c.Aggregates[typeName]
 		if !ok {
-			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
+			return nil, "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
 		}
-		return &agg, nil
+		return &agg, c.aggregateSources[typeName], nil
 	}
 }

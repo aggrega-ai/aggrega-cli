@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -670,6 +671,201 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 	// revised to match.
 	if containsSubstring(d.Message, "catalog load:") {
 		t.Errorf("expected resolveReleaseClosure-envelope Tier-D branch (absence of \"catalog load:\" substring); got %q", d.Message)
+	}
+}
+
+// TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile
+// pins the daemon's per-file diagnostic filter against a fixture that
+// produces analyzer violations originating in two different Aggregate
+// files. The fixture's root Aggregate attaches a Feature that fails
+// appliesTo on a root-tier Component; the same fixture's sub-Aggregate
+// (imported via spec.aggregates) attaches the same Feature on a
+// sub-tier Component, producing a second appliesTo violation with a
+// different OriginFile.
+//
+// Two-validation falsifiability pattern.
+//
+//	1. Drive the daemon's aggrega/validate against the root Aggregate
+//	   file. Capture the diagnostic set.
+//	2. Independently run the same pipeline inputs through
+//	   pipeline.RunTier4Pipeline and inspect the analyzer's unfiltered
+//	   Errors slice. The slice must carry at least one entry whose
+//	   OriginFile names the root file AND at least one whose OriginFile
+//	   names a different file (the sub-aggregate's path).
+//	3. Assert the daemon's response carries only the root-origin
+//	   violations — the sub-origin entries must NOT appear in the
+//	   daemon's response (filtered) yet MUST appear in the pipeline's
+//	   raw output (proving they were produced and not silently dropped
+//	   upstream).
+//
+// If the fixture stops producing cross-file violations (catalog or
+// schema change), step 2 fails on disjointness. If the daemon's
+// filter becomes a no-op, step 3's "no sub-origin entry in response"
+// assertion fails — the test cannot pass by luck.
+func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	fixtureDir := filepath.Join(cwd, "testdata", "tier4", "cross-file-analyzer-violations")
+
+	// Copy top-level fixture files.
+	for _, name := range []string{"release.yaml", "manifest.yaml", "aggregate.yaml", ".aggrega-config.yaml"} {
+		src := filepath.Join(fixtureDir, name)
+		dst := filepath.Join(tmp, name)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", name, err)
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+	}
+
+	// Mirror the catalog subtree (components/, features/, aggregates/) into the tempdir.
+	type catalogEntry struct{ subdir, name string }
+	catalogEntries := []catalogEntry{
+		{"components", "web.yaml"},
+		{"features", "premium.yaml"},
+		{"aggregates", "sub-with-violation.yaml"},
+	}
+	for _, e := range catalogEntries {
+		dstDir := filepath.Join(tmp, "catalog", e.subdir)
+		if err := os.MkdirAll(dstDir, 0o755); err != nil {
+			t.Fatalf("mkdir catalog/%s: %v", e.subdir, err)
+		}
+		data, err := os.ReadFile(filepath.Join(fixtureDir, "catalog", e.subdir, e.name))
+		if err != nil {
+			t.Fatalf("read catalog/%s/%s: %v", e.subdir, e.name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dstDir, e.name), data, 0o644); err != nil {
+			t.Fatalf("write catalog/%s/%s: %v", e.subdir, e.name, err)
+		}
+	}
+
+	releasePath := filepath.Join(tmp, "release.yaml")
+	rel, err := resolver.LoadRelease(releasePath)
+	if err != nil {
+		t.Fatalf("load release: %v", err)
+	}
+
+	srv := newTestServer(t, tmp, nil, nil)
+	srv.activeRelease = rel
+	srv.activeReleasePath = releasePath
+	srv.cascadeAttempt = cascadeAttempt{
+		AuthoringReleaseConfigured: true,
+		ReleaseCandidatesFound:     1,
+		ResolvedStep:               1,
+	}
+	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
+
+	aggPath := filepath.Join(tmp, "aggregate.yaml")
+	subAggPath := filepath.Join(tmp, "catalog", "aggregates", "sub-with-violation.yaml")
+
+	// Step 2: independently run the pipeline so the unfiltered analyzer
+	// output is observable. The slice must carry violations from BOTH
+	// the root Aggregate file AND the sub-aggregate file before the
+	// per-file filter assertion is meaningful.
+	resolved, env := srv.resolveReleaseClosure(releasePath)
+	if env != nil {
+		t.Fatalf("resolveReleaseClosure envelope: %+v", env)
+	}
+	recipeCat, err := srv.resolveRecipeCatalog()
+	if err != nil {
+		t.Fatalf("resolveRecipeCatalog: %v", err)
+	}
+	tier4, _ := pipeline.RunTier4Pipeline(
+		pipeline.Inputs{
+			Release:           resolved.Release,
+			Manifest:          resolved.Manifest,
+			AggregateRawBytes: resolved.AggBytes,
+			AggregatePath:     aggPath,
+			WorkspaceConfig:   srv.wsConfig,
+		},
+		srv.lazyCatalog.AsCatalogLookup(),
+		recipeCat.SubAggregateLoader(),
+	)
+	if tier4 == nil || tier4.Analysis == nil {
+		t.Fatalf("expected non-nil Tier4Result.Analysis from pipeline; got %+v", tier4)
+	}
+	rootOriginCount := 0
+	subOriginCount := 0
+	var rootMessages, subMessages []string
+	for _, e := range tier4.Analysis.Errors {
+		switch e.OriginFile {
+		case aggPath:
+			rootOriginCount++
+			rootMessages = append(rootMessages, e.Message)
+		case subAggPath:
+			subOriginCount++
+			subMessages = append(subMessages, e.Message)
+		default:
+			t.Errorf("unexpected OriginFile on analyzer violation: %q (Source=%q)", e.OriginFile, e.Source)
+		}
+	}
+	if rootOriginCount == 0 {
+		t.Fatalf("expected ≥1 analyzer violation with OriginFile=%q (root); pipeline produced none. all errors: %+v",
+			aggPath, tier4.Analysis.Errors)
+	}
+	if subOriginCount == 0 {
+		t.Fatalf("expected ≥1 analyzer violation with OriginFile=%q (sub-aggregate); pipeline produced none. all errors: %+v",
+			subAggPath, tier4.Analysis.Errors)
+	}
+	// Disjointness on message content prevents a degenerate fixture where
+	// the same message is emitted twice with different OriginFiles.
+	for _, rm := range rootMessages {
+		for _, sm := range subMessages {
+			if rm == sm {
+				t.Errorf("root-origin and sub-origin messages overlap; the fixture should produce per-file distinct violations.\n  root: %q\n  sub : %q", rm, sm)
+			}
+		}
+	}
+
+	// Step 3: drive the daemon's validate against the root Aggregate.
+	// The response carries only the root-origin violation(s) — the
+	// sub-origin entries are filtered.
+	aggBytes, err := os.ReadFile(aggPath)
+	if err != nil {
+		t.Fatalf("read aggregate: %v", err)
+	}
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/validate", validateParams{
+		File:    aggPath,
+		Content: string(aggBytes),
+	}))
+	resp := runOneRequest(t, srv, &in, &out)
+	if resp.Error != nil {
+		t.Fatalf("unexpected envelope error: %+v", resp.Error)
+	}
+	var result validateResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	// Every root-origin message must appear; no sub-origin message may.
+	for _, rm := range rootMessages {
+		found := false
+		for _, d := range result.Diagnostics {
+			if containsSubstring(d.Message, rm) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("root-origin violation message %q missing from daemon response; daemon diagnostics: %v",
+				rm, diagMessages(result.Diagnostics))
+		}
+	}
+	for _, sm := range subMessages {
+		for _, d := range result.Diagnostics {
+			if containsSubstring(d.Message, sm) {
+				t.Errorf("sub-origin violation message %q leaked into daemon response; the per-file filter should have dropped it. all daemon diagnostics: %v",
+					sm, diagMessages(result.Diagnostics))
+				break
+			}
+		}
 	}
 }
 

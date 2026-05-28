@@ -73,6 +73,7 @@ func validateAppliesTo(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 						"feature %q (type %q) appliesTo constraint not satisfied by node %q labels %v",
 						instance, entry.Type, nodeID, node.Labels,
 					),
+					OriginFile: sourceFileFor(graph, nodeID),
 				})
 			}
 		}

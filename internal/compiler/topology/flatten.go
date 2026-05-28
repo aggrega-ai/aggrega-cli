@@ -73,6 +73,7 @@ func flattenAggregate(
 	agg *types.Aggregate,
 	prefix string,
 	subsystemPath string,
+	sourceFile string,
 	loader SubAggregateLoader,
 	visited map[string]bool,
 	depth int,
@@ -101,6 +102,7 @@ func flattenAggregate(
 			SelfInject:      comp.Inject,
 			SubsystemPath:   subsystemPath,
 			SourceAggregate: prefix,
+			SourceFile:      sourceFile,
 		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
@@ -108,7 +110,7 @@ func flattenAggregate(
 	// Walk subsystems in author order (recursive)
 	for subName, sub := range agg.Spec.Subsystems.All() {
 		subPath := qualifiedID(subsystemPath, subName)
-		if err := flattenSubsystem(result, prefix, subPath, sub); err != nil {
+		if err := flattenSubsystem(result, prefix, subPath, sourceFile, sub); err != nil {
 			return nil, err
 		}
 	}
@@ -122,7 +124,7 @@ func flattenAggregate(
 				return nil, cerrors.Wrap(ErrSubAggregateLoad, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("circular sub-aggregate reference %q at %q", subAgg.Type, childPrefix))
 			}
 
-			childAgg, err := loader(subAgg.Type)
+			childAgg, childSourceFile, err := loader(subAgg.Type)
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad))
 			}
@@ -130,7 +132,7 @@ func flattenAggregate(
 			childVisited := copyVisited(visited)
 			childVisited[subAgg.Type] = true
 
-			childResult, err := flattenAggregate(childAgg, childPrefix, "", loader, childVisited, depth+1)
+			childResult, err := flattenAggregate(childAgg, childPrefix, "", childSourceFile, loader, childVisited, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -182,7 +184,7 @@ func flattenAggregate(
 // node map would overwrite an existing entry. The collision is impossible
 // by current schema (root-level instance names cannot contain dots) but
 // the guard defends against future schema loosening or validation bypass.
-func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub types.Subsystem) error {
+func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile string, sub types.Subsystem) error {
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
 		if existing, exists := result.Nodes.Get(nodeID); exists {
@@ -195,6 +197,7 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub t
 			SelfInject:      comp.Inject,
 			SubsystemPath:   subsystemPath,
 			SourceAggregate: prefix,
+			SourceFile:      sourceFile,
 		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
@@ -202,7 +205,7 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath string, sub t
 	// Recurse into nested subsystems
 	for subName, nested := range sub.Subsystems.All() {
 		nestedPath := subsystemPath + "." + subName
-		if err := flattenSubsystem(result, prefix, nestedPath, nested); err != nil {
+		if err := flattenSubsystem(result, prefix, nestedPath, sourceFile, nested); err != nil {
 			return err
 		}
 	}

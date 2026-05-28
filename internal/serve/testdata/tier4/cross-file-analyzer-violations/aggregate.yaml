@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-cross-file-analyzer-violations
+  version: "1.0.0"
+spec:
+  components:
+    root-target:
+      type: example/web
+      features:
+        root-premium:
+          type: example/premium
+  aggregates:
+    sub:
+      type: example/sub-with-violation

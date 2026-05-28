@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: example/sub-with-violation
+  version: "1.0.0"
+spec:
+  components:
+    sub-target:
+      type: example/web
+      features:
+        sub-premium:
+          type: example/premium

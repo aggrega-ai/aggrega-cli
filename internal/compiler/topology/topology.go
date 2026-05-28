@@ -80,6 +80,15 @@ type TopologyNode struct {
 	SubsystemPath   string
 	BoundaryPath    string
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
+	// SourceFile is the filesystem path of the Aggregate file where this
+	// node was authored. Root-tier nodes inherit BuildConfig.RootAggregateFile;
+	// sub-aggregate nodes inherit the path returned by SubAggregateLoader.
+	// Empty when the loader returns empty (synthetic test fixtures) — the
+	// IR builder propagates the empty case to IRNode.SourceFile, which
+	// downstream consumers (the analyzer's OriginFile population, the
+	// daemon's per-file diagnostic filter) interpret as "no provenance
+	// known" and handle via backfill.
+	SourceFile string
 }
 
 // NormalizedEdge is one directed edge in the topology graph. The shape is
@@ -156,13 +165,19 @@ type SecretAttachment struct {
 // function whenever it encounters a `spec.aggregates` entry that names a
 // sub-aggregate type to import.
 //
+// Returns the loaded Aggregate together with the filesystem path it was
+// loaded from. The path threads through flatten into TopologyNode.SourceFile
+// so per-node IR records carry source-file provenance for per-file
+// diagnostic filtering. The path may be empty when the loader returns a
+// synthetic Aggregate (test fixtures) — consumers must tolerate empty.
+//
 // The callback indirection — rather than a direct *catalog.Catalog
 // reference — keeps the topology package free of any catalog-package
 // import dependency and lets tests construct in-memory sub-aggregate
 // fixtures without spinning up a filesystem catalog. The production
 // caller wires `cat.SubAggregateLoader()` from pkg/catalog (see
 // pkg/catalog/catalog.go for the adapter pattern documentation).
-type SubAggregateLoader func(typeName string) (*types.Aggregate, error)
+type SubAggregateLoader func(typeName string) (*types.Aggregate, string, error)
 
 // BuildConfig is the input bundle for Build. Three fields, all required:
 //
@@ -180,6 +195,15 @@ type BuildConfig struct {
 	ResolveResult    *resolver.ResolveResult
 	CatalogLookup    resolver.CatalogLookup
 	LoadSubAggregate SubAggregateLoader
+
+	// RootAggregateFile is the filesystem path of the root Aggregate
+	// being flattened. flattenAggregate stamps it onto every node
+	// declared at the root tier (TopologyNode.SourceFile) so the
+	// analyzer-side OriginFile population — and the daemon's per-file
+	// diagnostic filtering — operate on real file paths. Empty is
+	// tolerated (synthetic tests); consumers downstream backfill or
+	// treat the empty case as "no provenance known".
+	RootAggregateFile string
 }
 
 // Build executes Step 2 of the compiler pipeline: topology construction.
@@ -228,7 +252,7 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 	agg := cfg.ResolveResult.Aggregate
 
 	// 1. Flatten
-	flat, err := flattenAggregate(agg, "", "", cfg.LoadSubAggregate, map[string]bool{}, 0)
+	flat, err := flattenAggregate(agg, "", "", cfg.RootAggregateFile, cfg.LoadSubAggregate, map[string]bool{}, 0)
 	if err != nil {
 		return nil, err
 	}

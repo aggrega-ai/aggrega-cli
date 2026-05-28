@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: example/premium
+  version: "1.0.0"
+spec:
+  appliesTo:
+    component.aggrega.ai/type: "premium-server"
+  schema:
+    values:
+      tier: { type: string, default: "gold" }

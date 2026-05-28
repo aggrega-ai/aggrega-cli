@@ -375,6 +375,7 @@ func TestIndexFile_NonEntityYAML(t *testing.T) {
 		componentSources: map[string]string{},
 		featureSources:   map[string]string{},
 		providerSources:  map[string]string{},
+		aggregateSources: map[string]string{},
 	}
 	// Non-entity YAML.
 	if err := c.indexFile([]byte("not: an entity\n"), "p"); err != nil {
@@ -418,6 +419,7 @@ func makeEmptyCatalog() *Catalog {
 		componentSources: map[string]string{},
 		featureSources:   map[string]string{},
 		providerSources:  map[string]string{},
+		aggregateSources: map[string]string{},
 		entityBytes:      map[string][]byte{},
 	}
 }

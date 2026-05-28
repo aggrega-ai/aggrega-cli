@@ -415,6 +415,124 @@ func TestValidateSelectors_FeatureOriginatedEdgeReadsFeatureUsesSchema(t *testin
 // stable alphabetical order joined by comma. The function also surfaces
 // optional count-form suffixes for appliesToExpressions and
 // appliesToAnyOf when those structured-form lists are non-empty.
+func TestValidateSelectors_PopulatesOriginFileFromSourceNode(t *testing.T) {
+	t.Parallel()
+	// Two nodes authored in different files, both fail the same selector
+	// against their target. The analyzer must stamp each violation's
+	// OriginFile from its source node's SourceFile, so a downstream
+	// per-file filter can partition the diagnostics cleanly.
+	apiLabels := types.OrderedMap[string]{}
+	apiLabels.Set(types.ComponentTypeLabel, "server")
+	cacheLabels := types.OrderedMap[string]{}
+	cacheLabels.Set(types.ComponentTypeLabel, "resource")
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api-root", types.IRNode{
+		Component:  "core/server/api-server",
+		Labels:     apiLabels,
+		SourceFile: "/workspace/root.yaml",
+	})
+	nodes.Set("api-sub", types.IRNode{
+		Component:  "core/server/api-server",
+		Labels:     apiLabels,
+		SourceFile: "/workspace/sub.yaml",
+	})
+	nodes.Set("cache", types.IRNode{
+		Component: "core/redis",
+		Labels:    cacheLabels,
+	})
+
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: nodes,
+			Edges: []types.IREdge{
+				{Source: "api-root", Target: "cache", Socket: "databases"},
+				{Source: "api-sub", Target: "cache", Socket: "databases"},
+			},
+		},
+	}
+
+	errs := validateSelectors(graph, analyzerCatalog())
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 selector violations, got %d", len(errs))
+	}
+
+	got := map[string]string{}
+	for _, e := range errs {
+		got[e.Source] = e.OriginFile
+	}
+	want := map[string]string{
+		"api-root": "/workspace/root.yaml",
+		"api-sub":  "/workspace/sub.yaml",
+	}
+	for source, wantFile := range want {
+		if got[source] != wantFile {
+			t.Errorf("source %q: OriginFile = %q; want %q", source, got[source], wantFile)
+		}
+	}
+}
+
+func TestValidateAppliesTo_PopulatesOriginFileFromAttachingNode(t *testing.T) {
+	t.Parallel()
+	appliesTo := types.OrderedMap[string]{}
+	appliesTo.Set(types.ComponentTypeLabel, "server")
+
+	feat := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
+		Spec: types.FeatureSpec{
+			AppliesTo: appliesTo,
+		},
+	}
+
+	mismatch := types.OrderedMap[string]{}
+	mismatch.Set(types.ComponentTypeLabel, "stateful-server")
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("db-root", types.IRNode{
+		Component:  "core/database/postgres",
+		Labels:     mismatch,
+		SourceFile: "/workspace/root.yaml",
+	})
+	nodes.Set("db-sub", types.IRNode{
+		Component:  "core/database/postgres",
+		Labels:     mismatch,
+		SourceFile: "/workspace/sub.yaml",
+	})
+
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	for _, node := range []string{"db-root", "db-sub"} {
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring"})
+		fvm.Set(node, inner)
+	}
+
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes:                nodes,
+			FeatureValuesMapping: fvm,
+		},
+	}
+
+	errs := validateAppliesTo(graph, analyzerCatalogWithFeature(feat))
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 appliesTo violations, got %d", len(errs))
+	}
+
+	got := map[string]string{}
+	for _, e := range errs {
+		got[e.Source] = e.OriginFile
+	}
+	want := map[string]string{
+		"db-root": "/workspace/root.yaml",
+		"db-sub":  "/workspace/sub.yaml",
+	}
+	for source, wantFile := range want {
+		if got[source] != wantFile {
+			t.Errorf("source %q: OriginFile = %q; want %q", source, got[source], wantFile)
+		}
+	}
+}
+
 func TestFormatAppliesTo_MultiLabelOutput(t *testing.T) {
 	t.Parallel()
 	appliesTo := types.OrderedMap[string]{}

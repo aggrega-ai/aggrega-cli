@@ -236,11 +236,11 @@ func TestErrSubAggregateNameCollision_HaltsOnOverwrite(t *testing.T) {
 		},
 	}
 
-	loader := func(typeName string) (*types.Aggregate, error) {
+	loader := func(typeName string) (*types.Aggregate, string, error) {
 		if typeName == "modules/data-layer" {
-			return childAgg, nil
+			return childAgg, "", nil
 		}
-		return nil, fmt.Errorf("unknown: %s", typeName)
+		return nil, "", fmt.Errorf("unknown: %s", typeName)
 	}
 
 	_, err := Build(BuildConfig{

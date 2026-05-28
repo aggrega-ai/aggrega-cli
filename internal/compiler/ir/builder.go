@@ -137,6 +137,7 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 			AggregateAnnotations: aggregateAnnotations,
 			CatalogMetadata:      buildCatalogMetadata(topoNode.ComponentType, cfg.CatalogLookup),
 			SelfInject:           topoNode.SelfInject,
+			SourceFile:           topoNode.SourceFile,
 		}
 
 		// Resolved version from catalog

@@ -380,15 +380,25 @@ func TestLoad_SubAggregateLoader(t *testing.T) {
 
 	loader := c.SubAggregateLoader()
 
-	agg, err := loader("db-module")
+	agg, path, err := loader("db-module")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if agg.Metadata.Name != "db-module" {
 		t.Errorf("name: %q", agg.Metadata.Name)
 	}
+	if path == "" {
+		t.Errorf("loader returned empty path for db-module; expected the testdata file path")
+	}
 
-	_, err = loader("nonexistent")
+	if file, ok := c.AggregateSourceFile("db-module"); !ok || file != path {
+		t.Errorf("AggregateSourceFile(db-module) = (%q, %v); want matching loader path %q", file, ok, path)
+	}
+	if _, ok := c.AggregateSourceFile("nonexistent"); ok {
+		t.Error("AggregateSourceFile(nonexistent) reported ok; expected false")
+	}
+
+	_, _, err = loader("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent aggregate")
 	}

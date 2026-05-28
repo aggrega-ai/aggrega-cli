@@ -118,7 +118,7 @@ type stepsOneToFourOutput struct {
 func runStepsOneToFour(
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	subAggregateLoader func(path string) (*types.Aggregate, error),
+	subAggregateLoader topology.SubAggregateLoader,
 ) (*stepsOneToFourOutput, error) {
 	out := &stepsOneToFourOutput{}
 
@@ -161,9 +161,10 @@ func runStepsOneToFour(
 
 	// Step 2: Topology.
 	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: subAggregateLoader,
+		ResolveResult:     resolveResult,
+		CatalogLookup:     catalogLookup,
+		LoadSubAggregate:  subAggregateLoader,
+		RootAggregateFile: inputs.AggregatePath,
 	})
 	if err != nil {
 		return out, fmt.Errorf("Step 2 (topology): %w", err)
@@ -214,7 +215,7 @@ func runStepsOneToFour(
 func RunTier4Pipeline(
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	subAggregateLoader func(path string) (*types.Aggregate, error),
+	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
 	stepsOut, err := runStepsOneToFour(inputs, catalogLookup, subAggregateLoader)
 	if stepsOut != nil && stepsOut.ResolveResult != nil {
@@ -279,7 +280,7 @@ func RunPipeline(
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
 	recipeLookup renderer.RecipeLookup,
-	subAggregateLoader func(path string) (*types.Aggregate, error),
+	subAggregateLoader topology.SubAggregateLoader,
 	engineFactory renderer.EngineFactory,
 	opts Options,
 ) (*Result, error) {

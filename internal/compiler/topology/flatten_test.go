@@ -54,7 +54,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", nil, map[string]bool{}, 0)
+	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", nil, map[string]bool{}, 0)
+	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", nil, map[string]bool{}, 0)
+	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,14 +154,14 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 		},
 	}
 
-	loader := func(typeName string) (*types.Aggregate, error) {
+	loader := func(typeName string) (*types.Aggregate, string, error) {
 		if typeName == "modules/data-layer" {
-			return childAgg, nil
+			return childAgg, "", nil
 		}
-		return nil, fmt.Errorf("unknown: %s", typeName)
+		return nil, "", fmt.Errorf("unknown: %s", typeName)
 	}
 
-	result, err := flattenAggregate(agg, "", "", loader, map[string]bool{}, 0)
+	result, err := flattenAggregate(agg, "", "", "", loader, map[string]bool{}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 	t.Parallel()
 
-	loader := func(typeName string) (*types.Aggregate, error) {
+	loader := func(typeName string) (*types.Aggregate, string, error) {
 		aggregates := types.OrderedMap[types.SubAggregate]{}
 		aggregates.Set("self", types.SubAggregate{Type: "circular-module"})
 		return &types.Aggregate{
@@ -188,7 +188,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 			Spec: types.AggregateSpec{
 				Aggregates: aggregates,
 			},
-		}, nil
+		}, "", nil
 	}
 	aggregates := types.OrderedMap[types.SubAggregate]{}
 	aggregates.Set("loop", types.SubAggregate{Type: "circular-module"})
@@ -200,7 +200,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 		},
 	}
 
-	_, err := flattenAggregate(agg, "", "", loader, map[string]bool{}, 0)
+	_, err := flattenAggregate(agg, "", "", "", loader, map[string]bool{}, 0)
 	if err == nil {
 		t.Fatal("expected error for circular sub-aggregate")
 	}
@@ -212,7 +212,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 func TestFlattenAggregate_MaxDepth(t *testing.T) {
 	t.Parallel()
 
-	_, err := flattenAggregate(&types.Aggregate{}, "", "", nil, map[string]bool{}, maxSubAggregateDepth+1)
+	_, err := flattenAggregate(&types.Aggregate{}, "", "", "", nil, map[string]bool{}, maxSubAggregateDepth+1)
 	if err == nil {
 		t.Fatal("expected error for max depth")
 	}
@@ -237,7 +237,7 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", nil, map[string]bool{}, 0)
+	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

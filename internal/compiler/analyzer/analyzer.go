@@ -107,6 +107,25 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	)
 }
 
+// sourceFileFor returns the SourceFile recorded on the IR node named
+// nodeID. Returns "" when the graph carries no node by that name (a
+// defensive case that shouldn't surface in production — every analyzer
+// emission site is gated upstream by a successful Nodes.Get for the
+// same nodeID) or when the node was authored without recoverable
+// provenance (synthetic test IR). Empty results route through the
+// daemon's backfill, preserving today's "surface to validated file"
+// semantics for unknown-provenance entries.
+func sourceFileFor(graph *types.IRGraph, nodeID string) string {
+	if graph == nil {
+		return ""
+	}
+	node, ok := graph.Spec.Nodes.Get(nodeID)
+	if !ok {
+		return ""
+	}
+	return node.SourceFile
+}
+
 // PrecalculatedPath is one acyclic path through the IR graph,
 // enumerated by [calculatePaths]'s cycle-safe DFS:
 //
