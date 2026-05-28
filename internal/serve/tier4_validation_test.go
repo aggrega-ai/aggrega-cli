@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -441,6 +442,91 @@ func TestRunTier4Validation_MissingRequiredParameterPositionsAtAggregateKey(t *t
 		wantLine:    8,
 		wantMessage: "database_url",
 	})
+}
+
+// TestAnalyzerErrorsToDiagnostics_FiltersCrossFileEntries exercises
+// the OriginFile-based cross-file filter inside
+// analyzerErrorsToDiagnostics. A synthetic AnalysisResult carries
+// two entries: one whose OriginFile matches the validated file and
+// one whose OriginFile names a different file. The helper drops
+// the cross-file entry and emits a Diagnostic only for the match.
+//
+// Today no production analyzer path populates OriginFile — the
+// daemon's runTier4Validation backfills the field with the
+// validated file path for every entry, so all entries pass the
+// filter (a no-op). This test exercises the filter LOGIC directly
+// by supplying pre-populated OriginFile values that simulate the
+// future case where an analyzer enhancement tracks per-error
+// file origins. The filter is correctness defense against that
+// enhancement landing — without this test, a future change that
+// breaks the filter could ship undetected.
+func TestAnalyzerErrorsToDiagnostics_FiltersCrossFileEntries(t *testing.T) {
+	t.Parallel()
+	const validatedFile = "/workspace/aggregate.yaml"
+	const otherFile = "/workspace/catalog/components/server.yaml"
+
+	errs := []analyzer.AnalysisError{
+		{
+			Source:     "web",
+			Target:     "api",
+			Socket:     "apis",
+			Message:    "selector violation: in-file error",
+			OriginFile: validatedFile,
+		},
+		{
+			Source:     "data",
+			Target:     "core/db",
+			Socket:     "databases",
+			Message:    "selector violation: cross-file error",
+			OriginFile: otherFile,
+		},
+	}
+
+	diags := analyzerErrorsToDiagnostics(errs, validatedFile)
+
+	if len(diags) != 1 {
+		t.Fatalf("expected 1 diagnostic after cross-file filter; got %d: %+v", len(diags), diags)
+	}
+	if !containsSubstring(diags[0].Message, "in-file error") {
+		t.Errorf("expected in-file diagnostic to survive; got message %q", diags[0].Message)
+	}
+	if containsSubstring(diags[0].Message, "cross-file error") {
+		t.Errorf("cross-file diagnostic leaked through filter; got message %q", diags[0].Message)
+	}
+}
+
+// TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile pins the
+// behavior the production daemon path relies on today: analyzer
+// errors whose OriginFile is empty get backfilled with the validated
+// file path and pass the filter. This matches today's analyzer (which
+// doesn't track OriginFile) and ensures the filter is a no-op until
+// a future enhancement populates the field.
+func TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile(t *testing.T) {
+	t.Parallel()
+	const validatedFile = "/workspace/aggregate.yaml"
+
+	errs := []analyzer.AnalysisError{
+		{
+			Source:  "web",
+			Target:  "api",
+			Socket:  "apis",
+			Message: "selector violation: no OriginFile set by analyzer",
+			// OriginFile intentionally empty — matches today's
+			// analyzer behavior.
+		},
+	}
+
+	diags := analyzerErrorsToDiagnostics(errs, validatedFile)
+
+	if len(diags) != 1 {
+		t.Fatalf("expected 1 diagnostic for empty-OriginFile entry; got %d", len(diags))
+	}
+	// Confirm the backfill happened so the next emission with the
+	// same slice would see the field populated.
+	if errs[0].OriginFile != validatedFile {
+		t.Errorf("OriginFile was not backfilled; got %q want %q",
+			errs[0].OriginFile, validatedFile)
+	}
 }
 
 // TestRunTier4Validation_DanglingExtendsFallsBackToTierD pins the

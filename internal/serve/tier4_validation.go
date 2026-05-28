@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
@@ -109,22 +110,50 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 	}
 
 	if tier4 != nil && tier4.Analysis != nil {
-		// Analyzer violations (Step 4) — Tier-B class. Position-recovery
-		// for selector / appliesTo violations is future work; emit at
-		// file:1:1 with a "Closure: " prefix until the Tier-B walker
-		// lands.
-		for i := range tier4.Analysis.Errors {
-			tier4.Analysis.Errors[i].OriginFile = file
-			diags = append(diags, Diagnostic{
-				Line:     1,
-				Column:   1,
-				Severity: "error",
-				Message:  "Closure: " + tier4.Analysis.Errors[i].Error(),
-			})
-		}
+		diags = append(diags, analyzerErrorsToDiagnostics(tier4.Analysis.Errors, file)...)
 	}
 
 	return diags
+}
+
+// analyzerErrorsToDiagnostics maps the analyzer's structured
+// violation slice to Diagnostics for the requested file. Analyzer
+// violations (Step 4) are Tier-B class — position recovery for
+// selector / appliesTo violations is future work; today they emit
+// at file:1:1 with a "Closure: " prefix.
+//
+// Cross-file filter: each AnalysisError carries an OriginFile
+// field naming the source file where the violating authoring
+// lives. The filter drops entries whose OriginFile points to a
+// different file from the validated one — per-file diagnostic
+// collection means cross-file errors surface when the user opens
+// the offending file. Today no production analyzer path populates
+// OriginFile (the analyzer doesn't track per-error file paths),
+// so the default-to-file branch fires for every entry and nothing
+// gets filtered. When a future analyzer enhancement populates
+// OriginFile from the IR's entity-to-source map, cross-file
+// diagnostics naturally drop here without further wiring.
+//
+// Mutates the input slice in place to backfill OriginFile when
+// empty. Callers that want to preserve the input shape should
+// copy before invoking.
+func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string) []Diagnostic {
+	var out []Diagnostic
+	for i := range errs {
+		if errs[i].OriginFile == "" {
+			errs[i].OriginFile = file
+		}
+		if errs[i].OriginFile != file {
+			continue
+		}
+		out = append(out, Diagnostic{
+			Line:     1,
+			Column:   1,
+			Severity: "error",
+			Message:  "Closure: " + errs[i].Error(),
+		})
+	}
+	return out
 }
 
 // resolverViolationToDiagnostic maps a resolver-class violation to a
