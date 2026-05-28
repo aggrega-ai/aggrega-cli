@@ -95,7 +95,7 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 //
 // Caller invariant: never called with an empty slice; the call site
 // gates on len(verrs) > 0.
-func aggregateParameterViolations(verrs []*ResolverError) *ResolverError {
+func aggregateParameterViolations(verrs []*ResolverError) error {
 	if len(verrs) == 1 {
 		return verrs[0]
 	}
@@ -104,11 +104,12 @@ func aggregateParameterViolations(verrs []*ResolverError) *ResolverError {
 	for _, v := range verrs {
 		fmt.Fprintf(&b, "\n  - %s: %s", v.Field, v.Message)
 	}
-	return &ResolverError{
-		Entity:  "Aggregate",
-		Field:   ".spec.parameters",
-		Message: b.String(),
-		Err:     ErrParameterContractViolation,
+	return &MultiResolverError{
+		Entity:     "Aggregate",
+		Field:      ".spec.parameters",
+		Summary:    b.String(),
+		Sentinel:   ErrParameterContractViolation,
+		Violations: verrs,
 	}
 }
 

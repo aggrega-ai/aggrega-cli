@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-missing-required
+  version: "1.0.0"
+spec:
+  parameters:
+    database_url:
+      type: string
+      required: true
+  components: {}

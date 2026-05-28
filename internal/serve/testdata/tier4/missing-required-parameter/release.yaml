@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: tier4-missing-required-release
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest

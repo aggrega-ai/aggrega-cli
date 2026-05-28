@@ -131,6 +131,61 @@ func (e *ResolverError) Unwrap() error {
 	return e.Err
 }
 
+// MultiResolverError carries the per-violation slice when a resolver
+// pass produces multiple ResolverError instances at once. Returned by
+// aggregateParameterViolations (and any future multi-violation
+// aggregator) in place of the previous single-summary ResolverError
+// when len(violations) > 1.
+//
+// Implements the error interface with the same multi-line summary
+// format the previous single-aggregate ResolverError produced so
+// existing callers reading err.Error() see no change in human-
+// readable output. Consumers needing the structured per-violation
+// slice (e.g., the daemon's Tier-4 validate path mapping each
+// violation to source positions) extract it via:
+//
+//	var multi *MultiResolverError
+//	if errors.As(err, &multi) {
+//	    for _, ve := range multi.Violations { ... }
+//	}
+//
+// errors.Is matching against domain sentinels (e.g.,
+// ErrParameterContractViolation) succeeds when ANY of the embedded
+// violations wraps that sentinel — Unwrap returns the slice as a
+// []error per Go 1.20+ multi-error convention.
+type MultiResolverError struct {
+	Entity     string            // e.g. "Aggregate my-app"
+	Field      string            // typically a parent JSON-path like ".spec.parameters"
+	Summary    string            // multi-line human-readable description
+	Sentinel   error             // domain sentinel for errors.Is on the parent (e.g., ErrParameterContractViolation)
+	Violations []*ResolverError  // per-violation slice with structured Field locators preserved
+}
+
+// Error returns the multi-line summary so callers reading err.Error()
+// see the same format aggregateParameterViolations produced before
+// the structured-violations preservation refactor.
+func (e *MultiResolverError) Error() string {
+	if e.Field != "" {
+		return fmt.Sprintf("%s at %s: %s", e.Entity, e.Field, e.Summary)
+	}
+	return fmt.Sprintf("%s: %s", e.Entity, e.Summary)
+}
+
+// Unwrap returns the per-violation slice as []error so
+// errors.Is / errors.As match against any individual violation's
+// wrapped sentinel. Tier-4 callers reading Violations directly bypass
+// the unwrap chain entirely.
+func (e *MultiResolverError) Unwrap() []error {
+	out := make([]error, 0, len(e.Violations)+1)
+	if e.Sentinel != nil {
+		out = append(out, e.Sentinel)
+	}
+	for _, v := range e.Violations {
+		out = append(out, v)
+	}
+	return out
+}
+
 // ToCompilerError converts the structured ResolverError into a
 // *cerrors.CompilerError carrying the appropriate Category. The category
 // is classified by the Entity prefix per cerrors.ClassifyEntityCategory:

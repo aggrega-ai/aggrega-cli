@@ -399,16 +399,14 @@ spec:
 	}
 }
 
-// TestAggregateParameterViolations_MultiViolation_SingleResolverError pins
-// the multi-violation reporting contract per the aggregateParameterViolations
-// helper. When two parameters violate their contracts simultaneously, the
-// returned error is a single *ResolverError extractable via errors.As,
-// with Field == ".spec.parameters" and a multi-line Message naming both
-// violation paths + reasons. This shape preserves the CLI renderer's
-// errors.As(*ResolverError) extraction at error_format.go through the
-// fmt.Errorf wrapping that would otherwise defeat an errors.Join chain's
-// multi-error detection.
-func TestAggregateParameterViolations_MultiViolation_SingleResolverError(t *testing.T) {
+// TestAggregateParameterViolations_MultiViolation pins the multi-violation
+// reporting contract per the aggregateParameterViolations helper. When two
+// parameters violate their contracts simultaneously, the returned error is
+// a *MultiResolverError extractable via errors.As, with Field
+// ".spec.parameters", a multi-line Summary naming both violation paths,
+// and a Violations slice preserving every per-violation Field locator for
+// downstream consumers (the daemon's Tier-4 position-recovery walks).
+func TestAggregateParameterViolations_MultiViolation(t *testing.T) {
 	t.Parallel()
 
 	contract := buildContract(t,
@@ -429,26 +427,48 @@ func TestAggregateParameterViolations_MultiViolation_SingleResolverError(t *test
 	if err == nil {
 		t.Fatalf("expected aggregated error, got nil")
 	}
-	if err.Field != ".spec.parameters" {
-		t.Errorf("aggregated Field = %q; want %q", err.Field, ".spec.parameters")
+
+	var multi *MultiResolverError
+	if !errors.As(err, &multi) {
+		t.Fatalf("expected *MultiResolverError extractable via errors.As; got %T: %v", err, err)
+	}
+	if multi.Field != ".spec.parameters" {
+		t.Errorf("MultiResolverError Field = %q; want %q", multi.Field, ".spec.parameters")
 	}
 	if !errors.Is(err, ErrParameterContractViolation) {
 		t.Errorf("aggregated error not ErrParameterContractViolation: %v", err)
 	}
 
-	// Assert the multi-line Message names BOTH violation paths.
-	if !strings.Contains(err.Message, ".spec.parameters.port") {
-		t.Errorf("aggregated Message missing port violation: %s", err.Message)
+	// Per-violation slice preserves both Field locators.
+	if len(multi.Violations) < 2 {
+		t.Errorf("expected >=2 preserved violations; got %d", len(multi.Violations))
 	}
-	if !strings.Contains(err.Message, ".spec.parameters.host") {
-		t.Errorf("aggregated Message missing host violation: %s", err.Message)
+	gotPaths := make(map[string]bool, len(multi.Violations))
+	for _, v := range multi.Violations {
+		gotPaths[v.Field] = true
+	}
+	if !gotPaths[".spec.parameters.port"] {
+		t.Errorf("Violations missing port locator; got %v", gotPaths)
+	}
+	if !gotPaths[".spec.parameters.host"] {
+		t.Errorf("Violations missing host locator; got %v", gotPaths)
 	}
 
-	// Single-violation case: aggregator returns the original error unchanged.
+	// Multi-line Summary names both paths (human-readable shape preserved).
+	if !strings.Contains(multi.Summary, ".spec.parameters.port") {
+		t.Errorf("aggregated Summary missing port violation: %s", multi.Summary)
+	}
+	if !strings.Contains(multi.Summary, ".spec.parameters.host") {
+		t.Errorf("aggregated Summary missing host violation: %s", multi.Summary)
+	}
+
+	// Single-violation case: aggregator returns the original *ResolverError
+	// unchanged (no MultiResolverError wrapping).
 	singleVerr := []*ResolverError{verrs[0]}
 	single := aggregateParameterViolations(singleVerr)
-	if single != verrs[0] {
-		t.Errorf("single-violation case should pass through unchanged; got new error %v", single)
+	var singleAsResolver *ResolverError
+	if !errors.As(single, &singleAsResolver) || singleAsResolver != verrs[0] {
+		t.Errorf("single-violation case should pass through unchanged; got %T %v", single, single)
 	}
 }
 

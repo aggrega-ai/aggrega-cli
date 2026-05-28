@@ -56,6 +56,16 @@ type AnalysisError struct {
 	Socket   string
 	Selector string
 	Message  string
+	// OriginFile records the absolute filesystem path of the source file
+	// where the violating authoring lives. Populated by the validate
+	// passes from the IR graph's per-node SourceLocation when available;
+	// stays empty when the violation has no recoverable single-file
+	// origin (e.g., violations involving catalog entities loaded from
+	// multiple per-version files). Consumers that filter per-file
+	// diagnostics (the daemon's Tier-4 validation) drop entries whose
+	// OriginFile does not match the requested file; consumers that
+	// surface all diagnostics ignore the field.
+	OriginFile string
 }
 
 // Error formats the violation as a single human-readable string. Selector

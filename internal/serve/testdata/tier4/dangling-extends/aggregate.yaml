@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-dangling-extends
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: local/broken-server

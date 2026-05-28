@@ -63,6 +63,196 @@ type Result struct {
 	Trace     map[string][]byte
 }
 
+// Tier4Result carries the outputs of Steps 1-4 of the compiler pipeline,
+// produced by RunTier4Pipeline. The daemon's runTier4Validation consumes
+// this shape to surface structured per-violation diagnostics through
+// aggrega/validate. IRGraph is populated when Step 3 ran; Analysis is
+// populated when Step 4 ran. Earlier phases that produced fatal errors
+// leave later phases skipped (the returned error is non-nil), but the
+// partial results from the phases that ran are still surfaced so the
+// caller can construct diagnostics from whichever phases completed.
+//
+// ResolveDiagnostics carries the per-violation slice extracted from the
+// resolver's error return. Populated for both single-violation and
+// multi-violation cases: single-violation wraps the embedded
+// *ResolverError as a one-element slice; multi-violation pulls the
+// preserved Violations slice from MultiResolverError. Empty only when
+// Step 1 succeeded (the function-level error is nil) or when the error
+// chain carries no *ResolverError at all. Tier-4 position-recovery
+// walks the slice with a uniform code path regardless of cardinality.
+type Tier4Result struct {
+	IRGraph            *types.IRGraph
+	Analysis           *analyzer.AnalysisResult
+	ResolveDiagnostics []*resolver.ResolverError
+}
+
+// stepsOneToFourOutput bundles the un-purged outputs that runStepsOneToFour
+// produces. Both RunTier4Pipeline and RunPipeline call the helper and own
+// the resolveResult.Parameters purge themselves so each exported function's
+// purge-on-exit discipline stays self-contained.
+type stepsOneToFourOutput struct {
+	ResolveResult *resolver.ResolveResult
+	Topology      *topology.TopologyResult
+	IRGraph       *types.IRGraph
+	FeatureOrder  ir.FeatureOrder
+	Analysis      *analyzer.AnalysisResult
+}
+
+// runStepsOneToFour executes Steps 1-4 of the compiler pipeline (resolve,
+// topology, IR finalisation, analyse) against caller-supplied inputs and
+// returns the un-purged ResolveResult alongside the phase outputs. The
+// caller owns parameter-map purge via its own defer. Used by both
+// RunTier4Pipeline (which discards Step 5) and RunPipeline (which feeds
+// the rendering step from the same outputs).
+//
+// Behavior on phase failure:
+//   - Step 1 sub-pass failures return (out, error) with whichever sub-pass
+//     outputs were captured before the failure. resolveResult may be nil
+//     when the very first sub-pass (ResolveFromInputs) failed.
+//   - Step 2/3 failures return populated resolveResult but nil downstream
+//     phases.
+//   - Step 4 (analyzer) errors do NOT surface as a function-level error.
+//     The structured AnalysisResult.Errors slice is returned in out.Analysis;
+//     callers decide whether to treat analyzer errors as fatal or
+//     structured diagnostics. This preserves the daemon's Tier-4 contract.
+func runStepsOneToFour(
+	inputs Inputs,
+	catalogLookup resolver.CatalogLookup,
+	subAggregateLoader func(path string) (*types.Aggregate, error),
+) (*stepsOneToFourOutput, error) {
+	out := &stepsOneToFourOutput{}
+
+	// Step 1: Resolve.
+	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
+		Release:           inputs.Release,
+		Manifest:          inputs.Manifest,
+		AggregateRawBytes: inputs.AggregateRawBytes,
+		AggregatePath:     inputs.AggregatePath,
+	})
+	if err != nil {
+		return out, fmt.Errorf("Step 1 (resolve): %w", err)
+	}
+	out.ResolveResult = resolveResult
+
+	// Validate annotation binding target paths against each target
+	// Feature's spec.schema before expansion runs.
+	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
+		return out, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+	}
+
+	// Surface non-fatal Manifest binding-map lint warnings.
+	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+
+	// Annotation-driven Feature expansion.
+	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
+		return out, fmt.Errorf("Step 1 (annotation expansion): %w", err)
+	}
+
+	// Run guards.
+	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
+	if len(guardErrs) > 0 {
+		for _, e := range guardErrs {
+			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
+		}
+		return out, fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
+	}
+
+	// Step 2: Topology.
+	topoResult, err := topology.Build(topology.BuildConfig{
+		ResolveResult:    resolveResult,
+		CatalogLookup:    catalogLookup,
+		LoadSubAggregate: subAggregateLoader,
+	})
+	if err != nil {
+		return out, fmt.Errorf("Step 2 (topology): %w", err)
+	}
+	out.Topology = topoResult
+
+	// Step 3: IR.
+	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
+		Topology:        topoResult,
+		ResolveResult:   resolveResult,
+		CatalogLookup:   catalogLookup,
+		CompilerVersion: "0.1.0",
+	})
+	if err != nil {
+		return out, fmt.Errorf("Step 3 (IR): %w", err)
+	}
+	out.IRGraph = graph
+	out.FeatureOrder = featureOrder
+
+	// Step 4: Analyze. Analyser errors surface as structured
+	// AnalysisResult.Errors; the function-level error stays nil for
+	// analyzer-only failures so Tier-4 callers can consume them as
+	// diagnostics. Build / irgraph callers convert AnalysisResult.Errors
+	// to the joined-error shape via RunPipeline's wrapper logic.
+	analysis := analyzer.Analyze(graph, catalogLookup)
+	out.Analysis = analysis
+	for _, w := range analysis.Warnings {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+	return out, nil
+}
+
+// RunTier4Pipeline executes Steps 1-4 of the compiler pipeline (resolve,
+// topology, IR finalisation, analyse) against caller-supplied inputs.
+// The daemon's runTier4Validation consumes this to surface structured
+// per-violation diagnostics through aggrega/validate without running
+// Step 5 (render), which is expensive and not needed for semantic
+// validation.
+//
+// Unlike RunPipeline's first-error-fatal semantic for terminal phases,
+// the returned Tier4Result carries whichever phases completed even when
+// a later phase produced an error. Callers consume the analyser's
+// structured errors (Analysis.Errors) directly rather than the joined
+// error return. The returned error is non-nil iff a phase produced a
+// fatal error that blocked downstream phases; analyzer errors are NOT
+// returned as the function-level error because the caller wants them
+// as structured diagnostics, not opaque error text.
+func RunTier4Pipeline(
+	inputs Inputs,
+	catalogLookup resolver.CatalogLookup,
+	subAggregateLoader func(path string) (*types.Aggregate, error),
+) (*Tier4Result, error) {
+	stepsOut, err := runStepsOneToFour(inputs, catalogLookup, subAggregateLoader)
+	if stepsOut != nil && stepsOut.ResolveResult != nil {
+		// Purge the merged parameter map as RunTier4Pipeline exits so the
+		// lifetime matches the rendering pass exactly. Owned per-exported-
+		// function to keep the discipline at each API boundary.
+		defer resolver.PurgeParameters(&stepsOut.ResolveResult.Parameters)
+	}
+
+	out := &Tier4Result{
+		IRGraph:  stepsOut.IRGraph,
+		Analysis: stepsOut.Analysis,
+	}
+
+	// Extract the structured per-violation slice into a uniform shape so
+	// downstream consumers iterate ResolveDiagnostics with one code path
+	// regardless of single-vs-multi-violation cardinality.
+	//
+	// Single-violation case: extract the embedded *ResolverError directly
+	// and wrap as a one-element slice. Multi-violation case: pull the
+	// preserved Violations slice from MultiResolverError. The two
+	// extractions are mutually exclusive — MultiResolverError contains
+	// ResolverErrors and the multi check runs first; the single check
+	// never matches inside a multi.
+	if err != nil {
+		var multi *resolver.MultiResolverError
+		var single *resolver.ResolverError
+		switch {
+		case stderrors.As(err, &multi):
+			out.ResolveDiagnostics = multi.Violations
+		case stderrors.As(err, &single):
+			out.ResolveDiagnostics = []*resolver.ResolverError{single}
+		}
+	}
+
+	return out, err
+}
+
 // RunPipeline executes the 5-step compiler pipeline against caller-supplied
 // inputs and returns the rendered artifact map plus the IR graph. The
 // function performs no filesystem reads or writes beyond the operations
@@ -79,6 +269,12 @@ type Result struct {
 // the renderer (for orchestrator-time path-template evaluation). Active-
 // purge runs as RunPipeline exits via a deferred PurgeParameters call —
 // the wrapper does not need to remember to purge.
+//
+// RunPipeline shares Steps 1-4 with RunTier4Pipeline through the
+// unexported runStepsOneToFour helper, then runs Step 4b + Step 5.
+// First-error-fatal semantic is preserved for terminal phases:
+// analyser errors land as a joined error return so existing irgraph +
+// CLI build callers see the flattened error shape they already consume.
 func RunPipeline(
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
@@ -87,85 +283,28 @@ func RunPipeline(
 	engineFactory renderer.EngineFactory,
 	opts Options,
 ) (*Result, error) {
-	// Step 1: Resolve (annotation binding validation + binding lint +
-	// expand annotations + guards happen below).
-	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
-		Release:           inputs.Release,
-		Manifest:          inputs.Manifest,
-		AggregateRawBytes: inputs.AggregateRawBytes,
-		AggregatePath:     inputs.AggregatePath,
-	})
+	stepsOut, err := runStepsOneToFour(inputs, catalogLookup, subAggregateLoader)
+	if stepsOut != nil && stepsOut.ResolveResult != nil {
+		defer resolver.PurgeParameters(&stepsOut.ResolveResult.Parameters)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("Step 1 (resolve): %w", err)
-	}
-	// Purge the merged parameter map as RunPipeline exits so the lifetime
-	// matches the rendering pass exactly. Any return path triggers purge.
-	defer resolver.PurgeParameters(&resolveResult.Parameters)
-
-	// Validate annotation binding target paths against each target
-	// Feature's spec.schema before expansion runs. A binding that
-	// routes a value to a path the Feature schema does not declare
-	// halts here with a clear OPS_ERROR, ahead of any synthesis that
-	// would carry the unrecognized field into downstream validation.
-	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
-		return nil, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+		return nil, err
 	}
 
-	// Surface non-fatal Manifest binding-map lint warnings (same-path
-	// overlap across Maps.Infra and Maps.Values).
-	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-
-	// Annotation-driven Feature expansion runs between the mechanical
-	// resolver and the guards pass so synthetic Feature attachments are
-	// visible to RunGuards' requiredFeatures completeness check.
-	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-		return nil, fmt.Errorf("Step 1 (annotation expansion): %w", err)
-	}
-
-	// Run guards
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
-		}
-		return nil, fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
-	}
-
-	// Step 2: Topology
-	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: subAggregateLoader,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("Step 2 (topology): %w", err)
-	}
-
-	// Step 3: IR
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("Step 3 (IR): %w", err)
-	}
-
-	// Step 4: Analyze
-	analysis := analyzer.Analyze(graph, catalogLookup)
-	for _, w := range analysis.Warnings {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-	if len(analysis.Errors) > 0 {
-		errs := make([]error, len(analysis.Errors))
-		for i := range analysis.Errors {
-			errs[i] = analysis.Errors[i].ToCompilerError()
+	// Step 4: convert analyzer errors to the joined-error shape that
+	// pre-extraction RunPipeline returned. Preserves the first-error-fatal
+	// semantic existing callers (irgraph, CLI build) consume.
+	if len(stepsOut.Analysis.Errors) > 0 {
+		errs := make([]error, len(stepsOut.Analysis.Errors))
+		for i := range stepsOut.Analysis.Errors {
+			errs[i] = stepsOut.Analysis.Errors[i].ToCompilerError()
 		}
 		return nil, stderrors.Join(errs...)
 	}
+
+	resolveResult := stepsOut.ResolveResult
+	graph := stepsOut.IRGraph
+	featureOrder := stepsOut.FeatureOrder
 
 	// Step 4b: Component / Feature assertions.
 	if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {

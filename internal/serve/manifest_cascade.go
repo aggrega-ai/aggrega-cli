@@ -241,3 +241,61 @@ func (s *Server) cascadeDiagnosticMessage() string {
 
 	return strings.Join(parts, "; ")
 }
+
+// cascadeAttemptFullTrace returns the multi-line trace of what each
+// cascade step attempted and why it failed (or was skipped). Consumed
+// by the 1002 (release-not-resolved) emission path so the extension
+// can auto-log the full trace to its OutputChannel; the toast
+// continues to display the one-line summary from
+// cascadeDiagnosticMessage.
+//
+// Each step appears on its own line so the OutputChannel rendering
+// remains scannable. Returns the empty string when the cascade
+// resolved a Release (the trace is informative only on the
+// exhausted-cascade path).
+func (s *Server) cascadeAttemptFullTrace() string {
+	a := s.cascadeAttempt
+	if a.ResolvedStep != 0 {
+		return ""
+	}
+
+	lines := []string{"Aggrega: release-not-resolved cascade trace"}
+
+	// Step 1 — config-based authoring_release
+	switch {
+	case !a.AuthoringReleaseConfigured:
+		lines = append(lines, "  step 1 (build.authoring_release in .aggrega-config.yaml): not configured")
+	case a.AuthoringReleaseLoadError != nil:
+		lines = append(lines, fmt.Sprintf("  step 1 (build.authoring_release): configured but failed to load — %v", a.AuthoringReleaseLoadError))
+	default:
+		lines = append(lines, "  step 1 (build.authoring_release): configured and loaded")
+	}
+
+	// Step 2 — single-Release heuristic
+	switch a.ReleaseCandidatesFound {
+	case 0:
+		lines = append(lines, "  step 2 (single-Release heuristic): zero Release files found in workspace")
+	case 1:
+		lines = append(lines, "  step 2 (single-Release heuristic): one Release file found — would have resolved here if step 1 did not")
+	default:
+		lines = append(lines, fmt.Sprintf("  step 2 (single-Release heuristic): ambiguous — %d Release files found, no marker selected one", a.ReleaseCandidatesFound))
+	}
+
+	// Step 3 — .aggrega/active-release marker
+	switch {
+	case !a.MarkerFilePresent:
+		lines = append(lines, "  step 3 (.aggrega/active-release marker): not present")
+	case a.MarkerFileTarget == "":
+		lines = append(lines, "  step 3 (.aggrega/active-release marker): present but empty")
+	case a.MarkerFileLoadError != nil:
+		lines = append(lines, fmt.Sprintf("  step 3 (.aggrega/active-release marker): target %q failed to load — %v", a.MarkerFileTarget, a.MarkerFileLoadError))
+	default:
+		lines = append(lines, fmt.Sprintf("  step 3 (.aggrega/active-release marker): target %q resolved", a.MarkerFileTarget))
+	}
+
+	// Step 4 — Aggregate-only fallback (always exhausted at this point;
+	// reaching here means none of the prior steps populated activeRelease)
+	lines = append(lines, "  step 4 (Aggregate-only fallback): operation requires Release context; fallback not applicable")
+
+	return strings.Join(lines, "\n")
+}

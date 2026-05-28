@@ -175,7 +175,7 @@ func (s *Server) dispatchValidate(req *jsonRPCRequest) error {
 	}
 	result, errEnvelope := s.handleValidate(params)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeErrorEnvelope(req.ID, errEnvelope)
 	}
 	return s.writeResult(req.ID, result)
 }
@@ -184,10 +184,16 @@ func (s *Server) dispatchValidate(req *jsonRPCRequest) error {
 // the daemon's parse cache + diagnostic cache for the file. The
 // validation runs at Tier 1 (parse-only) when no active Release is
 // selected; Tier 4 (full resolver + semantic checks via the pipeline
-// path) when an active Release is selected. The activeRelease branch
-// is wired but unreachable in the scaffold — the multi-Manifest
-// disambiguation cascade populates activeRelease in a successor
-// phase.
+// path) when an active Release is selected.
+//
+// When the workspace has Release files but the disambiguation cascade
+// did not select one (multiple Releases without a marker or config
+// pointer), the Tier-4 branch emits a 1002 errReleaseNotResolved
+// envelope so the extension can surface a non-modal remediation toast
+// with action buttons. The activeRelease == nil + workspaceFiles == 0
+// scaffold case (no Release at all) returns Tier-1 diagnostics only:
+// the 1002 path fires only when the cascade attempted to find a
+// Release and could not.
 func (s *Server) handleValidate(params validateParams) (validateResult, *jsonRPCError) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
@@ -197,25 +203,39 @@ func (s *Server) handleValidate(params validateParams) (validateResult, *jsonRPC
 		return validateResult{Diagnostics: []Diagnostic{diag}}, nil
 	}
 	s.parseCache.Put(params.File, &doc, []byte(params.Content))
-	var diags []Diagnostic
-	if s.activeRelease != nil {
-		// Tier 4: full resolver + semantic checks via the pipeline path.
-		// Wired when the active-Release cascade populates activeRelease;
-		// at this scaffold, activeRelease is always nil and this branch
-		// is unreachable.
-		diags = s.runTier4Validation(params.File, &doc)
+	if s.activeRelease == nil {
+		// Two sub-cases:
+		//   (a) cascade exhausted but Release files exist in the workspace
+		//       → operator's authoring needs a deliberate choice; emit 1002
+		//       so the extension surfaces the remediation toast.
+		//   (b) no Release files in the workspace at all → catalog-only or
+		//       scaffold case; Tier-1 diagnostics suffice. No spurious
+		//       toast.
+		if s.cascadeAttempt.ReleaseCandidatesFound > 0 {
+			return validateResult{}, s.emitReleaseNotResolvedEnvelope(params.File)
+		}
+		s.diagnostics[params.File] = nil
+		return validateResult{Diagnostics: nil}, nil
 	}
+	// Tier 4: structured semantic violations via RunTier4Pipeline.
+	diags := s.runTier4Validation(params.File, &doc)
 	s.diagnostics[params.File] = diags
 	return validateResult{Diagnostics: diags}, nil
 }
 
-// runTier4Validation is a placeholder for the active-Release Tier-4
-// path. Wired when the active-Release cascade ships; returns empty
-// diagnostics in the scaffold because activeRelease is always nil.
-func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
-	_ = file
-	_ = doc
-	return nil
+// emitReleaseNotResolvedEnvelope constructs the 1002 jsonRPCError
+// envelope that handlers needing Release context emit when
+// activeRelease == nil and the cascade has been attempted. The
+// envelope's Message carries the one-line cascade summary the
+// extension renders in its toast; the envelope's Data carries the
+// validated file's path plus the multi-line cascade trace the
+// extension auto-logs to its OutputChannel.
+func (s *Server) emitReleaseNotResolvedEnvelope(file string) *jsonRPCError {
+	return &jsonRPCError{
+		Code:    errReleaseNotResolved,
+		Message: s.cascadeDiagnosticMessage(),
+		Data:    newErrorDataWithCascade(file, s.cascadeAttemptFullTrace()),
+	}
 }
 
 // yamlErrorRegex extracts the line number from a yaml.v3 unmarshal

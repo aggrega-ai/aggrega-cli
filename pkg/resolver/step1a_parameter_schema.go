@@ -114,7 +114,7 @@ func loadParameterContractValidator() (jsonvalidator.Validator, error) {
 // (workspace-load issues, not contract violations).
 //
 // Returns nil if the contract passes envelope validation.
-func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregatePath string) *ResolverError {
+func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregatePath string) error {
 	v, err := loadParameterContractValidator()
 	if err != nil {
 		return &ResolverError{
