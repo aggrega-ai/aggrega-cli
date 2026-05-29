@@ -66,7 +66,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	cat, err := catalog.Load(fullstackCatalogPath)
+	cat, err := catalog.Load("", fullstackCatalogPath)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	cat, err := catalog.Load(fullstackCatalogPath)
+	cat, err := catalog.Load("", fullstackCatalogPath)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	cat, err := catalog.Load(fullstackCatalogPath)
+	cat, err := catalog.Load("", fullstackCatalogPath)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	cat, err := catalog.Load(fullstackCatalogPath)
+	cat, err := catalog.Load("", fullstackCatalogPath)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}

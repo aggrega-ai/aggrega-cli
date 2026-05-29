@@ -56,7 +56,7 @@ spec:
 		t.Fatalf("write library fixture: %v", err)
 	}
 
-	c, err := Load(dir)
+	c, err := Load("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -105,7 +105,7 @@ spec:
 		t.Fatalf("write library fixture: %v", err)
 	}
 
-	c, err := Load(dir)
+	c, err := Load("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

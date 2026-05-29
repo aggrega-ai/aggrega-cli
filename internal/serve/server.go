@@ -334,9 +334,9 @@ func (s *Server) resolveRecipeCatalog() (*catalog.Catalog, error) {
 	var cat *catalog.Catalog
 	var err error
 	if len(dirs) == 0 {
-		cat, err = catalog.Load(s.workspaceRoot)
+		cat, err = catalog.Load(s.workspaceRoot, s.workspaceRoot)
 	} else {
-		cat, err = catalog.LoadAll(dirs...)
+		cat, err = catalog.LoadAll(s.workspaceRoot, dirs...)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("catalog load: %w", err)

@@ -60,12 +60,22 @@ type Catalog struct {
 	featureSources   map[string]string
 	providerSources  map[string]string
 
-	// aggregateSources records the file path each Aggregate entity was
-	// loaded from. Populated by Pass 1 (indexFile) and exposed by
-	// AggregateSourceFile so consumers — notably the topology builder's
-	// SubAggregateLoader callback — can attach source-file provenance
-	// to per-node IR records for per-file diagnostic filtering.
+	// aggregateSources records the absolute filesystem path each Aggregate
+	// entity was loaded from. Populated by Pass 1 (indexFile) and exposed
+	// by AggregateSourceFile (and the SubAggregateLoader callback) after
+	// normalization against workspaceRoot — see RelativeToWorkspace.
 	aggregateSources map[string]string
+
+	// workspaceRoot is the workspace directory the caller resolved its
+	// inputs from. Set at Load/LoadAll construction time so the public
+	// source-file accessors render their returned paths workspace-
+	// relative, keeping the IR wire shape byte-identical across
+	// developer machines whose workspaces live at different absolute
+	// paths. Empty disables normalization — paths flow through
+	// verbatim. The catalog's load-time fields (Components, Features,
+	// etc.) remain absolute; only the path-rendering accessors consult
+	// this field.
+	workspaceRoot string
 
 	// lintWarnings accumulates non-fatal advisory diagnostics raised
 	// during catalog load — currently the schema-pillar-overlap
@@ -91,14 +101,26 @@ type Catalog struct {
 // Load scans a single directory recursively for .yaml / .yml files and
 // indexes every recognised entity into a fresh Catalog. Convenience wrapper
 // over LoadAll; see LoadAll for the merge, error, and skip semantics.
-func Load(dir string) (*Catalog, error) {
-	return LoadAll(dir)
+// workspaceRoot is the workspace the loader is loading on behalf of —
+// the catalog renders source-file accessors relative to it; pass ""
+// when the caller has no workspace concept (synthetic tests, workspace-
+// agnostic operations like `aggrega pull`).
+func Load(workspaceRoot, dir string) (*Catalog, error) {
+	return LoadAll(workspaceRoot, dir)
 }
 
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml
 // file under each, and indexes all six catalog-resident entity kinds into a
 // single Catalog. Files are dispatched by their top-level "kind:" field; see
 // indexFile for the dispatch table.
+//
+// workspaceRoot is the workspace the loader is loading on behalf of: the
+// catalog's source-file accessors (AggregateSourceFile, SubAggregateLoader)
+// render their returned paths relative to this root so the IR wire shape
+// stays byte-identical across developer machines whose workspaces live at
+// different absolute paths. Pass "" when the caller has no workspace
+// concept — paths flow through verbatim, the no-normalization mode used
+// by synthetic tests and workspace-agnostic operations.
 //
 // Layered-catalog merge. Later directories override earlier ones on key
 // collisions — last write wins on the entity's index key (spec.implements
@@ -140,8 +162,9 @@ func Load(dir string) (*Catalog, error) {
 // fail-fast (a YAML parse failure aborts the walk); Pass 2 errors are
 // collected across entities and surfaced as a single aggregate CatalogError
 // so authors fix all schema failures in one editing pass.
-func LoadAll(dirs ...string) (*Catalog, error) {
+func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
 	c := &Catalog{
+		workspaceRoot:    workspaceRoot,
 		Components:       make(map[string]types.Component),
 		Features:         make(map[string]types.Feature),
 		Recipes:          make(map[string]types.Recipe),
@@ -670,22 +693,27 @@ func (c *Catalog) RecipeLookup() renderer.RecipeLookup {
 	}
 }
 
-// AggregateSourceFile returns the filesystem path the Aggregate entity
-// named name was loaded from. Returns ("", false) when the catalog
-// carries no Aggregate by that name. The topology builder's
-// SubAggregateLoader callback uses this to attach source-file
-// provenance to flattened nodes so the analyzer's per-file diagnostic
-// filtering operates on real file paths.
+// AggregateSourceFile returns the path the Aggregate entity named
+// name was loaded from, rendered against the workspace root the
+// catalog was constructed with (the first argument to Load/LoadAll)
+// or the absolute path when that root was empty. Returns ("", false)
+// when the catalog carries no Aggregate by that name. The topology
+// builder's SubAggregateLoader callback uses this to attach
+// source-file provenance to flattened nodes so the analyzer's
+// per-file diagnostic filtering operates on consistent path forms.
 func (c *Catalog) AggregateSourceFile(name string) (string, bool) {
 	path, ok := c.aggregateSources[name]
-	return path, ok
+	if !ok {
+		return "", false
+	}
+	return RelativeToWorkspace(c.workspaceRoot, path), true
 }
 
 // SubAggregateLoader returns a topology.SubAggregateLoader closure that the
 // topology builder calls when it encounters a sub-aggregate reference
 // during graph construction. The closure looks up the named Aggregate in
-// this catalog's Aggregates map and returns the entity together with the
-// filesystem path it was loaded from.
+// this catalog's Aggregates map and returns the entity together with its
+// source path, rendered in the same coordinate system as AggregateSourceFile.
 //
 // The signature returns `(*types.Aggregate, string, error)` rather than the
 // `(value, bool)` shape used by CatalogLookup / RecipeLookup / ProviderLookup
@@ -701,6 +729,32 @@ func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 		if !ok {
 			return nil, "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
 		}
-		return &agg, c.aggregateSources[typeName], nil
+		return &agg, RelativeToWorkspace(c.workspaceRoot, c.aggregateSources[typeName]), nil
 	}
+}
+
+// RelativeToWorkspace returns absPath rendered relative to
+// workspaceRoot, falling back to absPath unchanged when workspaceRoot
+// is empty (no workspace concept), absPath is empty (no provenance to
+// normalize), or filepath.Rel fails (absPath lives outside the
+// workspace tree on a different volume). The single source of truth
+// for the IR's SourceFile normalization — Catalog uses it on the
+// emit side (AggregateSourceFile, SubAggregateLoader), the daemon's
+// per-file filter uses it on the consume side (converting the LSP-
+// provided validated file path to the same coordinate system).
+//
+// Catalogs whose paths share a common parent with the workspace root
+// produce a traversal-prefixed relative path (e.g. "../shared/...").
+// The result is still stable across developer machines that share the
+// same workspace-relative layout, which is the byte-identity property
+// the IR wire shape requires.
+func RelativeToWorkspace(workspaceRoot, absPath string) string {
+	if workspaceRoot == "" || absPath == "" {
+		return absPath
+	}
+	rel, err := filepath.Rel(workspaceRoot, absPath)
+	if err != nil {
+		return absPath
+	}
+	return rel
 }

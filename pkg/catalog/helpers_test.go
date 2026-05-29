@@ -441,7 +441,7 @@ spec: [not, a, mapping]
 // TestLoad_NoSuchDirectory pins the directory-walk error path.
 func TestLoad_NoSuchDirectory(t *testing.T) {
 	t.Parallel()
-	_, err := Load("/nonexistent/path/nope")
+	_, err := Load("", "/nonexistent/path/nope")
 	if err == nil {
 		t.Errorf("missing dir should error")
 	}
@@ -450,12 +450,12 @@ func TestLoad_NoSuchDirectory(t *testing.T) {
 // TestLoadAll_NoDirectories pins the empty-input branch.
 func TestLoadAll_NoDirectories(t *testing.T) {
 	t.Parallel()
-	c, err := LoadAll()
+	c, err := LoadAll("")
 	if err != nil {
 		t.Errorf("no dirs: %v", err)
 	}
 	if c == nil {
-		t.Errorf("LoadAll() with no args should return empty catalog, not nil")
+		t.Errorf("LoadAll with no dirs should return empty catalog, not nil")
 	}
 }
 
@@ -463,7 +463,7 @@ func TestLoadAll_NoDirectories(t *testing.T) {
 func TestLoadAll_OneInvalidDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	_, err := LoadAll(tmp, "/nonexistent/path")
+	_, err := LoadAll("", tmp, "/nonexistent/path")
 	if err == nil {
 		t.Errorf("invalid second dir should error")
 	}
@@ -495,7 +495,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(tmp, "fr.yaml"), []byte(frYAML), 0o644); err != nil {
 		t.Fatalf("write fr: %v", err)
 	}
-	c, err := Load(tmp)
+	c, err := Load("", tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

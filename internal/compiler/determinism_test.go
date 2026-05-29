@@ -43,7 +43,7 @@ func compileInProcess(t *testing.T) *determinismCompileResult {
 	base := "testdata/determinism/fullcompile/catalog/base"
 	recipesDir := "testdata/determinism/fullcompile/catalog/recipes/helm"
 
-	cat, err := catalog.LoadAll(base, recipesDir)
+	cat, err := catalog.LoadAll("", base, recipesDir)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}

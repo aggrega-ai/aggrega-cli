@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -77,12 +78,21 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 		}}
 	}
 
+	// Both the root aggregate's path (passed via Inputs.AggregatePath)
+	// and the validated `file` are rendered in the same workspace-
+	// relative coordinate system the catalog accessors produce for
+	// sub-aggregate paths, so per-node SourceFile and the per-file
+	// comparison sit in one form. catalog.RelativeToWorkspace is the
+	// single source of truth for the conversion; both sides call it.
+	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
+	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
+
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		pipeline.Inputs{
 			Release:           resolved.Release,
 			Manifest:          resolved.Manifest,
 			AggregateRawBytes: resolved.AggBytes,
-			AggregatePath:     aggPath,
+			AggregatePath:     relAggPath,
 			WorkspaceConfig:   s.wsConfig,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
@@ -110,7 +120,7 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 	}
 
 	if tier4 != nil && tier4.Analysis != nil {
-		diags = append(diags, analyzerErrorsToDiagnostics(tier4.Analysis.Errors, file)...)
+		diags = append(diags, analyzerErrorsToDiagnostics(tier4.Analysis.Errors, relFile)...)
 	}
 
 	return diags
@@ -124,15 +134,15 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 //
 // Cross-file filter: each AnalysisError carries an OriginFile
 // field naming the source file where the violating authoring
-// lives. The filter drops entries whose OriginFile points to a
-// different file from the validated one — per-file diagnostic
-// collection means cross-file errors surface when the user opens
-// the offending file. Today no production analyzer path populates
-// OriginFile (the analyzer doesn't track per-error file paths),
-// so the default-to-file branch fires for every entry and nothing
-// gets filtered. When a future analyzer enhancement populates
-// OriginFile from the IR's entity-to-source map, cross-file
-// diagnostics naturally drop here without further wiring.
+// lives. The catalog accessors that supplied those paths render
+// them in whatever form the catalog was constructed with — workspace-
+// relative when Load/LoadAll received a non-empty workspace root (the
+// production daemon); absolute when no workspace root was wired.
+// Callers convert the validated file to the same form before
+// invocation; this helper compares string-for-string and drops
+// entries whose OriginFile points to a different file from the
+// validated one. Per-file diagnostic collection means cross-file
+// errors surface when the user opens the offending file.
 //
 // Mutates the input slice in place to backfill OriginFile when
 // empty. Callers that want to preserve the input shape should

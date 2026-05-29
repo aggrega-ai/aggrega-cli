@@ -174,7 +174,7 @@ spec:
 `
 	writeFile(t, tmp1+"/comp.yaml", common)
 	writeFile(t, tmp2+"/comp.yaml", common)
-	c, err := LoadAll(tmp1, tmp2)
+	c, err := LoadAll("", tmp1, tmp2)
 	if err != nil {
 		t.Fatalf("loadAll: %v", err)
 	}

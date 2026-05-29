@@ -46,7 +46,7 @@ import (
 func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 	t.Parallel()
 
-	cat, err := catalog.LoadAll(
+	cat, err := catalog.LoadAll("", 
 		"testdata/compose-bridge/catalog/base",
 		"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
 		"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",

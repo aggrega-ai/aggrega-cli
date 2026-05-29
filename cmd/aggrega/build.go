@@ -72,8 +72,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 // call dispatchBuild directly to avoid racing on flag-bound globals
 // under t.Parallel.
 func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
-	// Load catalog from directory
-	cat, err := catalog.Load(catalogDir)
+	// Load catalog from directory. wsRoot is the workspace the caller
+	// invoked the build from; the catalog renders source-file accessors
+	// relative to it so the IR's per-node SourceFile records stay
+	// byte-identical across developer machines whose workspaces live at
+	// different absolute paths.
+	wsRoot, _ := os.Getwd()
+	cat, err := catalog.Load(wsRoot, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -161,12 +166,13 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		}
 	}
 
+	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggPath)
 	result, err := pipeline.RunPipeline(
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
-			AggregatePath:     aggPath,
+			AggregatePath:     relAggPath,
 			WorkspaceConfig:   wsCfg,
 		},
 		cat.CatalogLookup(),

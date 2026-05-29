@@ -150,7 +150,10 @@ func inspectPath(path, catalogDir string) error {
 // Loads the catalog at catalogDir, resolves extends chains, looks up
 // the named Component, and prints its merged schema + usesSchema.
 func inspectCatalogComponent(componentType, catalogDir string) error {
-	cat, err := catalog.Load(catalogDir)
+	// Workspace-agnostic inspection: this path prints catalog Component
+	// details without rendering any per-node IR, so no workspace-relative
+	// path normalization is needed.
+	cat, err := catalog.Load("", catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -255,7 +258,11 @@ func inspectComponentFile(path string, data []byte) error {
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
 func inspectReleaseFile(releasePath, catalogDir string) error {
-	cat, err := catalog.Load(catalogDir)
+	// wsRoot is the workspace the caller invoked the inspect from; the
+	// catalog renders source-file accessors relative to it so per-node
+	// IR SourceFile records stay byte-identical across machines.
+	wsRoot, _ := os.Getwd()
+	cat, err := catalog.Load(wsRoot, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -296,9 +303,10 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 	}
 
 	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: cat.SubAggregateLoader(),
+		ResolveResult:     resolveResult,
+		CatalogLookup:     catalogLookup,
+		LoadSubAggregate:  cat.SubAggregateLoader(),
+		RootAggregateFile: catalog.RelativeToWorkspace(wsRoot, aggPath),
 	})
 	if err != nil {
 		return fmt.Errorf("Step 2 (topology): %w", err)

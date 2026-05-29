@@ -80,14 +80,19 @@ type TopologyNode struct {
 	SubsystemPath   string
 	BoundaryPath    string
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
-	// SourceFile is the filesystem path of the Aggregate file where this
-	// node was authored. Root-tier nodes inherit BuildConfig.RootAggregateFile;
-	// sub-aggregate nodes inherit the path returned by SubAggregateLoader.
-	// Empty when the loader returns empty (synthetic test fixtures) — the
-	// IR builder propagates the empty case to IRNode.SourceFile, which
-	// downstream consumers (the analyzer's OriginFile population, the
-	// daemon's per-file diagnostic filter) interpret as "no provenance
-	// known" and handle via backfill.
+	// SourceFile is the Aggregate file where this node was authored,
+	// stamped verbatim from BuildConfig.RootAggregateFile (root-tier
+	// nodes) or from the path the SubAggregateLoader returned
+	// (sub-aggregate nodes). Production callers feed in workspace-
+	// relative paths so the IR wire shape stays byte-identical across
+	// developer machines; the catalog-backed loader applies that
+	// normalization using the workspace root it was constructed with
+	// (the first argument to Load/LoadAll).
+	// Empty when the loader returns empty (synthetic test fixtures) —
+	// the IR builder propagates the empty case to IRNode.SourceFile,
+	// which downstream consumers (the analyzer's OriginFile
+	// population, the daemon's per-file diagnostic filter) interpret
+	// as "no provenance known" and handle via backfill.
 	SourceFile string
 }
 
@@ -196,13 +201,19 @@ type BuildConfig struct {
 	CatalogLookup    resolver.CatalogLookup
 	LoadSubAggregate SubAggregateLoader
 
-	// RootAggregateFile is the filesystem path of the root Aggregate
-	// being flattened. flattenAggregate stamps it onto every node
-	// declared at the root tier (TopologyNode.SourceFile) so the
-	// analyzer-side OriginFile population — and the daemon's per-file
-	// diagnostic filtering — operate on real file paths. Empty is
-	// tolerated (synthetic tests); consumers downstream backfill or
-	// treat the empty case as "no provenance known".
+	// RootAggregateFile is the path of the root Aggregate being
+	// flattened, in whatever form the caller wants to surface — the
+	// production callers pass workspace-relative so the IR's per-node
+	// SourceFile stays byte-identical across developer machines whose
+	// workspaces live at different absolute paths. flattenAggregate
+	// stamps this onto every node declared at the root tier
+	// (TopologyNode.SourceFile) verbatim; sub-aggregate nodes inherit
+	// the path returned by SubAggregateLoader, also verbatim. The
+	// catalog-backed loader returns workspace-relative paths when it
+	// was constructed with a non-empty workspace root (the first
+	// argument to Load/LoadAll). Empty is tolerated (synthetic
+	// tests); consumers downstream backfill or treat the empty case
+	// as "no provenance known".
 	RootAggregateFile string
 }
 
@@ -367,4 +378,3 @@ func findComponentInSubsystem(sub types.Subsystem, name string) *types.Component
 	}
 	return nil
 }
-

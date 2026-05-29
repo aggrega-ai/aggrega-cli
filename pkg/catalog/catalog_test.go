@@ -47,7 +47,7 @@ import (
 func TestLoad_AllEntityTypes(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load("testdata")
+	c, err := Load("", "testdata")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 func TestProviderLookup(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load("testdata")
+	c, err := Load("", "testdata")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -148,7 +148,7 @@ spec:
 		t.Fatalf("write: %v", err)
 	}
 
-	c, err := Load(dir)
+	c, err := Load("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -191,7 +191,7 @@ spec:
 		t.Fatalf("write: %v", err)
 	}
 
-	c, err := Load(dir)
+	c, err := Load("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -231,7 +231,7 @@ spec:
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := Load(dir)
+	_, err := Load("", dir)
 	if err == nil {
 		t.Fatal("expected error for non-scalar mapping entry; got nil")
 	}
@@ -272,7 +272,7 @@ spec:
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := Load(dir)
+	_, err := Load("", dir)
 	if err == nil {
 		t.Fatal("expected error for $dynamicAnchor in template body; got nil")
 	}
@@ -305,7 +305,7 @@ spec:
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := Load(dir)
+	_, err := Load("", dir)
 	if err == nil {
 		t.Fatal("expected error for $dynamicAnchor; got nil")
 	}
@@ -317,7 +317,7 @@ spec:
 func TestLoad_CatalogLookup(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load("testdata")
+	c, err := Load("", "testdata")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestLoad_CatalogLookup(t *testing.T) {
 func TestLoad_RecipeLookup(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load("testdata")
+	c, err := Load("", "testdata")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestLoad_RecipeLookup(t *testing.T) {
 func TestLoad_SubAggregateLoader(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load("testdata")
+	c, err := Load("", "testdata")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestLoad_SubAggregateLoader(t *testing.T) {
 func TestLoad_EmptyDir(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load(t.TempDir())
+	c, err := Load("", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -449,7 +449,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	c, err := LoadAll(dirA, dirB)
+	c, err := LoadAll("", dirA, dirB)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -495,7 +495,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	cat, err := Load(dir)
+	cat, err := Load("", dir)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -555,7 +555,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	c, err := Load(dir)
+	c, err := Load("", dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

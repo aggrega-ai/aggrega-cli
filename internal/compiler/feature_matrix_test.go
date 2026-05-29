@@ -50,7 +50,7 @@ func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *fullst
 	recipesDir := filepath.Join("testdata/feature-matrix/catalog/recipes", variant.name)
 	dirs := append([]string{base, recipesDir}, variant.extraCatalogPaths...)
 
-	cat, err := catalog.LoadAll(dirs...)
+	cat, err := catalog.LoadAll("", dirs...)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -150,7 +150,7 @@ func tryRunFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) (*fu
 	recipesDir := filepath.Join("testdata/feature-matrix/catalog/recipes", variant.name)
 	dirs := append([]string{base, recipesDir}, variant.extraCatalogPaths...)
 
-	cat, err := catalog.LoadAll(dirs...)
+	cat, err := catalog.LoadAll("", dirs...)
 	if err != nil {
 		return nil, err
 	}

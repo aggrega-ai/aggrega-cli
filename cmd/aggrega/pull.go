@@ -101,7 +101,10 @@ func pullRun(cfg pullConfig) error {
 		return fmt.Errorf("load aggregate: %w", err)
 	}
 
-	cat, err := catalog.Load(cfg.CatalogDir)
+	// Workspace-agnostic: pull walks the closure to populate the
+	// lockfile and never emits IR, so the catalog's source-file
+	// accessors are unused. Pass "" for workspace root.
+	cat, err := catalog.Load("", cfg.CatalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}

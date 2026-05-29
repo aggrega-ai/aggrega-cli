@@ -73,7 +73,7 @@ func TestOptionalDiscriminator_E2E(t *testing.T) {
 func runOptionalDiscriminatorPipeline(t *testing.T, releasePath string) map[string][]byte {
 	t.Helper()
 
-	cat, err := catalog.LoadAll(
+	cat, err := catalog.LoadAll("", 
 		"testdata/optional-discriminator/catalog/components",
 		"testdata/optional-discriminator/catalog/recipes",
 		"testdata/optional-discriminator/catalog/providers",

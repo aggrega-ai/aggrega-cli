@@ -35,7 +35,7 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 		"../../../aggrega-hub/aggrega-catalog/recipe/terraform/mariadb-rds/recipe.yaml",
 		"../../../aggrega-hub/aggrega-catalog/recipe/cloudformation/mariadb-rds/recipe.yaml",
 	} {
-		if _, err := catalog.LoadAll(p); err != nil {
+		if _, err := catalog.LoadAll("", p); err != nil {
 			t.Errorf("Recipe %q failed to load: %v", p, err)
 		}
 	}
@@ -56,7 +56,7 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
 
-	cat, err := catalog.LoadAll(
+	cat, err := catalog.LoadAll("", 
 		"../../../aggrega-hub/aggrega-catalog/component/core/database",
 		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb",
 		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",

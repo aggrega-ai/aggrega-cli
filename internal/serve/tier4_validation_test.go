@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -483,6 +484,9 @@ func TestAnalyzerErrorsToDiagnostics_FiltersCrossFileEntries(t *testing.T) {
 		},
 	}
 
+	// Callers pre-render both OriginFile (via the catalog accessors)
+	// and the validated file in the same coordinate system; the
+	// helper just compares verbatim.
 	diags := analyzerErrorsToDiagnostics(errs, validatedFile)
 
 	if len(diags) != 1 {
@@ -762,7 +766,6 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
 
 	aggPath := filepath.Join(tmp, "aggregate.yaml")
-	subAggPath := filepath.Join(tmp, "catalog", "aggregates", "sub-with-violation.yaml")
 
 	// Step 2: independently run the pipeline so the unfiltered analyzer
 	// output is observable. The slice must carry violations from BOTH
@@ -776,12 +779,17 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	if err != nil {
 		t.Fatalf("resolveRecipeCatalog: %v", err)
 	}
+	// Mirror the daemon's production conversion: feed the pipeline a
+	// workspace-relative root aggregate path so the IR's per-node
+	// SourceFile records sit in the same coordinate system as the
+	// catalog accessors' sub-aggregate paths.
+	relAggPath := catalog.RelativeToWorkspace(srv.workspaceRoot, aggPath)
 	tier4, _ := pipeline.RunTier4Pipeline(
 		pipeline.Inputs{
 			Release:           resolved.Release,
 			Manifest:          resolved.Manifest,
 			AggregateRawBytes: resolved.AggBytes,
-			AggregatePath:     aggPath,
+			AggregatePath:     relAggPath,
 			WorkspaceConfig:   srv.wsConfig,
 		},
 		srv.lazyCatalog.AsCatalogLookup(),
@@ -790,28 +798,34 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	if tier4 == nil || tier4.Analysis == nil {
 		t.Fatalf("expected non-nil Tier4Result.Analysis from pipeline; got %+v", tier4)
 	}
+	// The IR emits SourceFile in workspace-relative form so the wire
+	// shape stays byte-identical across developer machines. Match
+	// against the relative form here.
+	const wantRootRel = "aggregate.yaml"
+	const wantSubRel = "catalog/aggregates/sub-with-violation.yaml"
 	rootOriginCount := 0
 	subOriginCount := 0
 	var rootMessages, subMessages []string
 	for _, e := range tier4.Analysis.Errors {
 		switch e.OriginFile {
-		case aggPath:
+		case wantRootRel:
 			rootOriginCount++
 			rootMessages = append(rootMessages, e.Message)
-		case subAggPath:
+		case wantSubRel:
 			subOriginCount++
 			subMessages = append(subMessages, e.Message)
 		default:
-			t.Errorf("unexpected OriginFile on analyzer violation: %q (Source=%q)", e.OriginFile, e.Source)
+			t.Errorf("unexpected OriginFile on analyzer violation: %q (Source=%q); want %q or %q",
+				e.OriginFile, e.Source, wantRootRel, wantSubRel)
 		}
 	}
 	if rootOriginCount == 0 {
 		t.Fatalf("expected ≥1 analyzer violation with OriginFile=%q (root); pipeline produced none. all errors: %+v",
-			aggPath, tier4.Analysis.Errors)
+			wantRootRel, tier4.Analysis.Errors)
 	}
 	if subOriginCount == 0 {
 		t.Fatalf("expected ≥1 analyzer violation with OriginFile=%q (sub-aggregate); pipeline produced none. all errors: %+v",
-			subAggPath, tier4.Analysis.Errors)
+			wantSubRel, tier4.Analysis.Errors)
 	}
 	// Disjointness on message content prevents a degenerate fixture where
 	// the same message is emitted twice with different OriginFiles.

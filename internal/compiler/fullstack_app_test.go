@@ -36,8 +36,8 @@ import (
 // Common assertions (every variant):
 //
 //  1. API_HOST env on frontend deployment = "backend.backend-zone.svc"  (injectMapping flow)
-//  2. Frontend deployment metadata.namespace = "frontend-zone"           (WI-6 annotation injection)
-//  3. Backend deployment metadata.namespace = "backend-zone"             (WI-6 annotation injection)
+//  2. Frontend deployment metadata.namespace = "frontend-zone"           (annotation injection)
+//  3. Backend deployment metadata.namespace = "backend-zone"             (annotation injection)
 //  4. Frontend container port = 3003                                     (values.port flows from Aggregate)
 //  5. Backend replicas = 3                                               (infra.replicas flows from Release)
 //  6. Output shape matches the provider mode.
@@ -97,7 +97,7 @@ func runFullstackAppVariant(t *testing.T, fx variantFixture) *fullstackAppResult
 		fx.manifestPath = "testdata/fullstack-app/manifest.yaml"
 	}
 
-	cat, err := catalog.LoadAll(base, recipesDir)
+	cat, err := catalog.LoadAll("", base, recipesDir)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -232,7 +232,7 @@ func assertCommonProof(t *testing.T, res *fullstackAppResult, mode variantMode) 
 		t.Errorf("[%s] API_HOST not rewritten in frontend deployment (%s):\n%s", tagFor(mode), frontendDepPath, frontendDep)
 	}
 
-	// 2 + 3. Namespace injection (WI-6)
+	// 2 + 3. Namespace injection
 	if !strings.Contains(frontendDep, "namespace: frontend-zone") {
 		t.Errorf("[%s] frontend deployment missing metadata.namespace frontend-zone (%s):\n%s", tagFor(mode), frontendDepPath, frontendDep)
 	}
