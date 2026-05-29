@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -31,11 +32,18 @@ import (
 // filepath.WalkDir does not follow symlinks by default, matching the
 // IDE's expectation that the workspace tree is a finite acyclic
 // search domain.
-func (s *Server) walkWorkspaceYAML(visit func(path string) error) error {
+//
+// The walk checks ctx.Err() at each directory entry so a shutdown
+// cancellation interrupts a long workspace traversal between files
+// rather than running it to completion.
+func (s *Server) walkWorkspaceYAML(ctx context.Context, visit func(path string) error) error {
 	w := newGitignoreWalker(s.workspaceRoot)
 	return filepath.WalkDir(s.workspaceRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
 		}
 		if path == s.workspaceRoot {
 			return nil

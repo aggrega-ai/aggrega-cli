@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -135,6 +136,24 @@ type incomingMessage struct {
 //   - Handler internal error: returns the -32603 internal-error
 //     envelope or an application-code envelope; loop continues.
 func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
+	// serverCtx is the session-level context every per-request context
+	// derives from. It is initialised HERE, before the reader goroutine
+	// below is spawned and before any handle() call — that ordering is
+	// what makes the reader's later read of s.serverCancel and handle()'s
+	// reads of s.serverCtx race-free (the fields are written once, then
+	// only read across goroutines, with no concurrent writer). The nil
+	// guard lets Run and the subprocess test harness construct a Server
+	// as a struct literal and reach this single init point; the in-memory
+	// unit-test harness, which drives handle() without a reader goroutine,
+	// initialises serverCtx at construction instead. The deferred cancel
+	// is the exit backstop (cancels derived contexts on EOF, read error,
+	// or drain); the primary cancel trigger is the reader goroutine on
+	// aggrega/shutdown arrival — see below.
+	if s.serverCtx == nil {
+		s.serverCtx, s.serverCancel = context.WithCancel(context.Background())
+	}
+	defer s.serverCancel()
+
 	messages := make(chan incomingMessage)
 	drainTimerInstall := make(chan (<-chan time.Time), 1)
 
@@ -165,6 +184,15 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 			}
 			if jerr := json.Unmarshal(body, &peek); jerr == nil && peek.Method == "aggrega/shutdown" && !timerArmed {
 				timerArmed = true
+				// Cancel serverCtx at notification ARRIVAL, from the
+				// reader goroutine — the only site that runs concurrently
+				// with a blocked in-flight handler in the main goroutine.
+				// dispatchShutdown (which sets shuttingDown) cannot do this:
+				// it runs in the main loop only after the in-flight handler
+				// returns, too late to interrupt it. This is what bounds
+				// worst-case exit latency at the drain budget rather than at
+				// in-flight-handler completion.
+				s.serverCancel()
 				timer := time.NewTimer(drainTimeout)
 				drainTimerInstall <- timer.C
 			}
@@ -219,8 +247,18 @@ func (s *Server) handle(req *jsonRPCRequest) error {
 	if s.testInDispatchHook != nil {
 		s.testInDispatchHook()
 	}
+	// Per-request context derived from the session-level serverCtx.
+	// dispatchLoop initialises serverCtx before spawning the reader
+	// goroutine (the test harness initialises it at Server construction),
+	// so this read is never concurrent with a write. When the reader
+	// cancels serverCtx on aggrega/shutdown arrival, this child cancels
+	// too, so an in-flight handler observes ctx.Err() at its next
+	// interruption point and returns within the drain budget. cancel runs
+	// when handle returns, releasing the child promptly.
+	ctx, cancel := context.WithCancel(s.serverCtx)
+	defer cancel()
 	if req.Method == "aggrega/shutdown" {
-		return s.dispatchShutdown(req)
+		return s.dispatchShutdown(ctx, req)
 	}
 	if s.shuttingDown {
 		if isNotification(req) {
@@ -230,25 +268,25 @@ func (s *Server) handle(req *jsonRPCRequest) error {
 	}
 	switch req.Method {
 	case "aggrega/initialize":
-		return s.dispatchInitialize(req)
+		return s.dispatchInitialize(ctx, req)
 	case "aggrega/validate":
-		return s.dispatchValidate(req)
+		return s.dispatchValidate(ctx, req)
 	case "aggrega/invalidate":
-		return s.dispatchInvalidate(req)
+		return s.dispatchInvalidate(ctx, req)
 	case "aggrega/diagnostics":
-		return s.dispatchDiagnostics(req)
+		return s.dispatchDiagnostics(ctx, req)
 	case "aggrega/irGraph":
-		return s.dispatchIrGraph(req)
+		return s.dispatchIrGraph(ctx, req)
 	case "aggrega/resolve":
-		return s.dispatchResolve(req)
+		return s.dispatchResolve(ctx, req)
 	case "aggrega/findReferences":
-		return s.dispatchFindReferences(req)
+		return s.dispatchFindReferences(ctx, req)
 	case "aggrega/findImplementations":
-		return s.dispatchFindImplementations(req)
+		return s.dispatchFindImplementations(ctx, req)
 	case "aggrega/hover":
-		return s.dispatchHover(req)
+		return s.dispatchHover(ctx, req)
 	case "aggrega/completion":
-		return s.dispatchCompletion(req)
+		return s.dispatchCompletion(ctx, req)
 	default:
 		return s.writeError(req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
 	}

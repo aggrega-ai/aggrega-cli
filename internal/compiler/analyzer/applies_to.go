@@ -4,6 +4,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -35,9 +36,9 @@ import (
 // case), Selector carries [formatAppliesTo]'s short summary of the
 // constraint. Errors emerge in (nodeID, instance) order via
 // pre-sorted iteration; no explicit post-sort.
-func validateAppliesTo(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) []AnalysisError {
+func validateAppliesTo(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) ([]AnalysisError, error) {
 	if catalogLookup.Feature == nil {
-		return nil
+		return nil, nil
 	}
 
 	var errs []AnalysisError
@@ -46,6 +47,9 @@ func validateAppliesTo(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 	sort.Strings(nodeIDs)
 
 	for _, nodeID := range nodeIDs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		node, ok := graph.Spec.Nodes.Get(nodeID)
 		if !ok {
 			continue
@@ -74,12 +78,13 @@ func validateAppliesTo(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 						instance, entry.Type, nodeID, node.Labels,
 					),
 					OriginFile: sourceFileFor(graph, nodeID),
+					Field:      appliesToFieldPath(nodeID, instance, node.SubsystemPath),
 				})
 			}
 		}
 	}
 
-	return errs
+	return errs, nil
 }
 
 // formatAppliesTo produces a short, deterministic single-line summary

@@ -4,7 +4,9 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -66,6 +68,53 @@ type AnalysisError struct {
 	// OriginFile does not match the requested file; consumers that
 	// surface all diagnostics ignore the field.
 	OriginFile string
+	// Field is a mapping-style dotted locator naming the authoring site
+	// of the violation within OriginFile, e.g.
+	// ".spec.components.<name>.uses.<socket>" for a selector violation or
+	// ".spec.components.<name>.features.<instance>" for an appliesTo
+	// violation. It mirrors the resolver's locator shape so a consumer
+	// can walk the parsed source document to a sub-file position. Empty
+	// when the violation has no recoverable single-key locator; consumers
+	// fall back to file-level positioning. The locator addresses a
+	// top-level component, so subsystem-nested components (authored under
+	// .spec.subsystems.*) yield an empty Field rather than a path that
+	// names the wrong authoring site.
+	Field string
+}
+
+// lastSegment returns the authored local component key from a flattened
+// node ID. Root-tier node IDs are the authored key already; sub-aggregate
+// node IDs are prefix-qualified (prefix + "." + name), so the authored key
+// is the segment after the final ".".
+func lastSegment(nodeID string) string {
+	if i := strings.LastIndex(nodeID, "."); i >= 0 {
+		return nodeID[i+1:]
+	}
+	return nodeID
+}
+
+// selectorFieldPath builds the mapping-style YAML locator for a selector
+// violation — the uses-socket key on the source component. Returns ""
+// for a subsystem-nested component (non-empty subsystemPath): its
+// authored site is .spec.subsystems.*, not .spec.components.*, so a
+// top-level locator would name the wrong path; an empty Field routes the
+// consumer to file-level positioning instead.
+func selectorFieldPath(nodeID, socket, subsystemPath string) string {
+	if subsystemPath != "" {
+		return ""
+	}
+	return fmt.Sprintf(".spec.components.%s.uses.%s", lastSegment(nodeID), socket)
+}
+
+// appliesToFieldPath builds the mapping-style YAML locator for an appliesTo
+// violation — the Feature-instance key under the attaching component.
+// Returns "" for a subsystem-nested component for the same reason as
+// selectorFieldPath.
+func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
+	if subsystemPath != "" {
+		return ""
+	}
+	return fmt.Sprintf(".spec.components.%s.features.%s", lastSegment(nodeID), instance)
 }
 
 // Error formats the violation as a single human-readable string. Selector
@@ -160,11 +209,32 @@ type PrecalculatedPath struct {
 // unconditionally; see the package doc Pipeline Integration
 // subsection for their downstream consumption status.
 func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *AnalysisResult {
+	// Background context never cancels, so the discarded error is always
+	// nil; callers that participate in cancellation use AnalyzeContext.
+	result, _ := AnalyzeContext(context.Background(), graph, catalogLookup)
+	return result
+}
+
+// AnalyzeContext is Analyze with cooperative cancellation: validateSelectors
+// and validateAppliesTo check ctx.Err() per iteration so a long Step-4 pass
+// over a large graph can be interrupted (e.g. by the daemon's shutdown
+// drain). It returns a non-nil error only when ctx is cancelled mid-pass;
+// analyzer violations remain in the result's Errors slice as structured
+// data, never as the function-level error. Analyze is the background-context
+// convenience wrapper.
+func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) (*AnalysisResult, error) {
 	// 1. Selector validation (usesSchema selector rules)
-	errs := validateSelectors(graph, catalogLookup)
+	errs, err := validateSelectors(ctx, graph, catalogLookup)
+	if err != nil {
+		return nil, err
+	}
 
 	// 2. Feature appliesTo validation
-	errs = append(errs, validateAppliesTo(graph, catalogLookup)...)
+	appliesErrs, err := validateAppliesTo(ctx, graph, catalogLookup)
+	if err != nil {
+		return nil, err
+	}
+	errs = append(errs, appliesErrs...)
 
 	// 3. DFS path calculation
 	paths := calculatePaths(graph)
@@ -180,7 +250,7 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 		Warnings:    warnings,
 		Paths:       paths,
 		PolicyInput: policyInput,
-	}
+	}, nil
 }
 
 // assemblePolicyInput projects the IR graph into the

@@ -22,25 +22,39 @@ package serve
 // through the extension's OutputChannel auto-log. Other error codes
 // leave CascadeAttempt empty.
 //
+// EndLine and EndColumn carry the end position of the source token the
+// error refers to (1-based, exclusive of nothing — they name the
+// position one past the token's last character, matching LSP Range
+// end semantics). When present alongside Line and Column, the
+// extension renders a diagnostic spanning the whole token rather than
+// a one-character squiggle. They honor the same single-line caveat as
+// the scalar-end computation: a multi-line block scalar falls back to
+// omitting them, leaving the diagnostic point-style.
+//
 // Cumulative shape across consecutive evolutions:
 //
 //	File           — initial shape (envelope's source-file label)
 //	Line           — initial shape (1-based, omitempty)
 //	Column         — initial shape (1-based, omitempty)
 //	CascadeAttempt — added for the release-not-resolved emission path
+//	EndLine        — added for wide diagnostic ranges (1-based, omitempty)
+//	EndColumn      — added for wide diagnostic ranges (1-based, omitempty)
 //
 // All fields are additive and omitempty so older clients ignore
 // new fields and newer clients consume them when present.
 //
 // Construct via newErrorData when a clean call-site one-liner is
-// preferable; use newErrorDataWithCascade for the 1002 emission
-// path; use a struct literal when the position fields would
+// preferable; use newErrorDataWithRange when both start and end
+// positions are known; use newErrorDataWithCascade for the 1002
+// emission path; use a struct literal when the position fields would
 // otherwise be omitted.
 type errorData struct {
 	File           string `json:"file,omitempty"`
 	Line           int    `json:"line,omitempty"`
 	Column         int    `json:"column,omitempty"`
 	CascadeAttempt string `json:"cascade_attempt,omitempty"`
+	EndLine        int    `json:"end_line,omitempty"`
+	EndColumn      int    `json:"end_column,omitempty"`
 }
 
 // newErrorData returns a populated *errorData. Line and column are
@@ -50,6 +64,17 @@ type errorData struct {
 // only.
 func newErrorData(file string, line, column int) *errorData {
 	return &errorData{File: file, Line: line, Column: column}
+}
+
+// newErrorDataWithRange returns a populated *errorData carrying both
+// the start (line, column) and end (endLine, endColumn) positions of
+// the source token. All four are 1-based at the call site; the
+// function does not adjust them. Zero end values are acceptable
+// (omitted from the wire via omitempty) — pass zero when the token
+// has no recoverable end position, in which case the extension falls
+// back to a point-style range at the start position.
+func newErrorDataWithRange(file string, line, column, endLine, endColumn int) *errorData {
+	return &errorData{File: file, Line: line, Column: column, EndLine: endLine, EndColumn: endColumn}
 }
 
 // newErrorDataWithCascade returns a populated *errorData carrying

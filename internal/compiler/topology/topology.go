@@ -4,6 +4,8 @@
 package topology
 
 import (
+	"context"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -260,6 +262,16 @@ type BuildConfig struct {
 // per-node pipe carried forward to the renderer's self-inject pass,
 // not a topology relationship.
 func Build(cfg BuildConfig) (*TopologyResult, error) {
+	return BuildContext(context.Background(), cfg)
+}
+
+// BuildContext is Build with cooperative cancellation: it checks
+// ctx.Err() at the per-node label-population boundary so a long
+// topology pass over a large workspace can be interrupted (e.g. by the
+// daemon's shutdown drain) rather than running to completion. Build is
+// the background-context convenience wrapper for callers that do not
+// participate in cancellation.
+func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error) {
 	agg := cfg.ResolveResult.Aggregate
 
 	// 1. Flatten
@@ -271,6 +283,9 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 	// 2. Populate labels from catalog
 	if cfg.CatalogLookup.Component != nil {
 		for _, node := range flat.Nodes.All() {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			catComp, found := cfg.CatalogLookup.Component(node.ComponentType)
 			if found {
 				node.Labels = catComp.Metadata.Labels

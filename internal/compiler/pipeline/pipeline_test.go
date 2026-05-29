@@ -5,6 +5,7 @@ package pipeline_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,6 +75,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 		t.Fatalf("catalog extends: %d resolution error(s); first: %v", len(extErrs), extErrs[0])
 	}
 	result, err := pipeline.RunPipeline(
+		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
@@ -162,6 +164,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 		t.Fatalf("catalog extends: %d resolution error(s); first: %v", len(extErrs), extErrs[0])
 	}
 	result, err := pipeline.RunPipeline(
+		context.Background(),
 		pipeline.Inputs{
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
@@ -205,6 +208,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 		t.Fatalf("catalog extends: %d resolution error(s); first: %v", len(extErrs), extErrs[0])
 	}
 	result, err := pipeline.RunPipeline(
+		context.Background(),
 		pipeline.Inputs{
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
@@ -267,6 +271,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(cwd) })
 
 	if _, err := pipeline.RunPipeline(
+		context.Background(),
 		pipeline.Inputs{
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,

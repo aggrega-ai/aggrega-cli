@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,9 +21,11 @@ import (
 // classify as a hover-eligible reference shape; otherwise the
 // rendered markdown for the resolved target entity.
 //
-// Dispatch follows the nine-kind set documented in the run plan's D7
-// (excludes SchemaProperty; UsesTarget renders the sibling
-// ComponentInstance per D11 option (b)).
+// Dispatch covers the hover-eligible reference kinds — metadata.name
+// self-hover; extends, component-type, feature-type, recipe-implements,
+// and manifest-recipe URI references; the two Release path lookups; and
+// uses-target, which renders the referenced sibling Component instance.
+// SchemaProperty and unclassified positions return null Contents.
 func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(params.URI)
 	if !ok {
@@ -93,10 +96,12 @@ func (s *Server) findEntityForHover(targetURI string) (*yaml.Node, []byte) {
 			return entry.node, entry.content
 		}
 	}
-	// Workspace-walk fallback.
+	// Workspace-walk fallback. Hover is a fast path; cancellation is
+	// honored at the dispatcher entry check rather than mid-walk, so a
+	// background context suffices here.
 	var foundDoc *yaml.Node
 	var foundContent []byte
-	_ = s.walkWorkspaceYAML(func(path string) error {
+	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
 		if foundDoc != nil {
 			return nil
 		}
@@ -207,11 +212,10 @@ func findComponentKeyAndValue(specMap *yaml.Node, targetName string) (*yaml.Node
 // hoverReleasePath resolves a workspace-relative path to a YAML file,
 // validates the file's kind against the expected kind, and renders
 // the actual-kind content. On kind mismatch, prepends a warning
-// header and still renders the actual-kind body (D8 Branch 2 per the
-// run plan's option 2 — surfaces operator typos at hover-preview
-// time without hiding the file's real content). On unrendered actual
-// kind (a kind not in the renderer set), renders the warning header
-// alone.
+// header and still renders the actual-kind body — surfacing operator
+// typos at hover-preview time without hiding the file's real content.
+// On unrendered actual kind (a kind not in the renderer set), renders
+// the warning header alone.
 func (s *Server) hoverReleasePath(relativePath, expectedKind string) *MarkupContent {
 	full := filepath.Join(s.workspaceRoot, relativePath+".yaml")
 	content, err := os.ReadFile(full)

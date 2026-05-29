@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"encoding/json"
 )
 
@@ -41,7 +42,7 @@ type invalidateResult struct {
 	Invalidated bool `json:"invalidated"`
 }
 
-func (s *Server) dispatchInvalidate(req *jsonRPCRequest) error {
+func (s *Server) dispatchInvalidate(_ context.Context, req *jsonRPCRequest) error {
 	var params invalidateParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())

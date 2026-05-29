@@ -116,11 +116,16 @@ type stepsOneToFourOutput struct {
 //     callers decide whether to treat analyzer errors as fatal or
 //     structured diagnostics. This preserves the daemon's Tier-4 contract.
 func runStepsOneToFour(
+	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*stepsOneToFourOutput, error) {
 	out := &stepsOneToFourOutput{}
+
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 
 	// Step 1: Resolve.
 	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
@@ -159,8 +164,12 @@ func runStepsOneToFour(
 		return out, fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
 	}
 
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+
 	// Step 2: Topology.
-	topoResult, err := topology.Build(topology.BuildConfig{
+	topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
 		ResolveResult:     resolveResult,
 		CatalogLookup:     catalogLookup,
 		LoadSubAggregate:  subAggregateLoader,
@@ -171,8 +180,12 @@ func runStepsOneToFour(
 	}
 	out.Topology = topoResult
 
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+
 	// Step 3: IR.
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
+	graph, featureOrder, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   resolveResult,
 		CatalogLookup:   catalogLookup,
@@ -184,12 +197,19 @@ func runStepsOneToFour(
 	out.IRGraph = graph
 	out.FeatureOrder = featureOrder
 
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+
 	// Step 4: Analyze. Analyser errors surface as structured
 	// AnalysisResult.Errors; the function-level error stays nil for
 	// analyzer-only failures so Tier-4 callers can consume them as
 	// diagnostics. Build / irgraph callers convert AnalysisResult.Errors
 	// to the joined-error shape via RunPipeline's wrapper logic.
-	analysis := analyzer.Analyze(graph, catalogLookup)
+	analysis, err := analyzer.AnalyzeContext(ctx, graph, catalogLookup)
+	if err != nil {
+		return out, err
+	}
 	out.Analysis = analysis
 	for _, w := range analysis.Warnings {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
@@ -213,11 +233,12 @@ func runStepsOneToFour(
 // returned as the function-level error because the caller wants them
 // as structured diagnostics, not opaque error text.
 func RunTier4Pipeline(
+	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
-	stepsOut, err := runStepsOneToFour(inputs, catalogLookup, subAggregateLoader)
+	stepsOut, err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader)
 	if stepsOut != nil && stepsOut.ResolveResult != nil {
 		// Purge the merged parameter map as RunTier4Pipeline exits so the
 		// lifetime matches the rendering pass exactly. Owned per-exported-
@@ -277,6 +298,7 @@ func RunTier4Pipeline(
 // analyser errors land as a joined error return so existing irgraph +
 // CLI build callers see the flattened error shape they already consume.
 func RunPipeline(
+	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
 	recipeLookup renderer.RecipeLookup,
@@ -284,7 +306,7 @@ func RunPipeline(
 	engineFactory renderer.EngineFactory,
 	opts Options,
 ) (*Result, error) {
-	stepsOut, err := runStepsOneToFour(inputs, catalogLookup, subAggregateLoader)
+	stepsOut, err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader)
 	if stepsOut != nil && stepsOut.ResolveResult != nil {
 		defer resolver.PurgeParameters(&stepsOut.ResolveResult.Parameters)
 	}
@@ -306,6 +328,10 @@ func RunPipeline(
 	resolveResult := stepsOut.ResolveResult
 	graph := stepsOut.IRGraph
 	featureOrder := stepsOut.FeatureOrder
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	// Step 4b: Component / Feature assertions.
 	if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
@@ -337,7 +363,7 @@ func RunPipeline(
 		Trace:         traceWriter,
 	}
 
-	renderResult, err := renderer.RenderAll(context.Background(), rendererInput, recipeLookup, engineFactory)
+	renderResult, err := renderer.RenderAll(ctx, rendererInput, recipeLookup, engineFactory)
 	if err != nil {
 		return nil, fmt.Errorf("Step 5 (render): %w", err)
 	}

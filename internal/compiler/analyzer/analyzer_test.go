@@ -4,6 +4,7 @@
 package analyzer
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -331,7 +332,7 @@ func TestAnalyze_EmptyGraph(t *testing.T) {
 func TestValidateSelectors_NilCatalogLookupReturnsNil(t *testing.T) {
 	t.Parallel()
 	graph := &types.IRGraph{Spec: types.IRSpec{}}
-	errs := validateSelectors(graph, resolver.CatalogLookup{})
+	errs, _ := validateSelectors(context.Background(), graph, resolver.CatalogLookup{})
 	if errs != nil {
 		t.Errorf("expected nil errors with nil catalog lookup; got %v", errs)
 	}
@@ -364,7 +365,7 @@ func TestValidateSelectors_MalformedSelectorProducesParseError(t *testing.T) {
 			return types.Component{}, false
 		},
 	}
-	errs := validateSelectors(graph, cat)
+	errs, _ := validateSelectors(context.Background(), graph, cat)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 parse-error; got %d: %v", len(errs), errs)
 	}
@@ -401,7 +402,7 @@ func TestValidateSelectors_FeatureOriginatedEdgeReadsFeatureUsesSchema(t *testin
 		Metadata: types.FeatureMetadata{Name: "core/metrics-exporter"},
 		Spec:     types.FeatureSpec{UsesSchema: featUses},
 	}
-	errs := validateSelectors(graph, analyzerCatalogWithFeature(feat))
+	errs, _ := validateSelectors(context.Background(), graph, analyzerCatalogWithFeature(feat))
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 no-match error from Feature-resolved selector; got %d: %v", len(errs), errs)
 	}
@@ -452,7 +453,7 @@ func TestValidateSelectors_PopulatesOriginFileFromSourceNode(t *testing.T) {
 		},
 	}
 
-	errs := validateSelectors(graph, analyzerCatalog())
+	errs, _ := validateSelectors(context.Background(), graph, analyzerCatalog())
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 selector violations, got %d", len(errs))
 	}
@@ -513,7 +514,7 @@ func TestValidateAppliesTo_PopulatesOriginFileFromAttachingNode(t *testing.T) {
 		},
 	}
 
-	errs := validateAppliesTo(graph, analyzerCatalogWithFeature(feat))
+	errs, _ := validateAppliesTo(context.Background(), graph, analyzerCatalogWithFeature(feat))
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 appliesTo violations, got %d", len(errs))
 	}

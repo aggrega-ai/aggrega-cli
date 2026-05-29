@@ -6,6 +6,7 @@ package serve
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,7 +27,7 @@ import (
 // populates and inspects.
 func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout io.Writer) *Server {
 	t.Helper()
-	return &Server{
+	srv := &Server{
 		workspaceRoot: workspaceRoot,
 		wsConfig:      workspaceconfig.Default(),
 		// lazyCatalog is populated with empty configuration so
@@ -42,6 +43,13 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 		stderr:           io.Discard,
 		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
+	// Production initializes serverCtx in dispatchLoop before spawning the
+	// reader goroutine. Tests that drive handle() directly bypass that
+	// path, so initialize here; the per-request contexts handle() derives
+	// then have a live parent.
+	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
+	t.Cleanup(srv.serverCancel)
+	return srv
 }
 
 // framedRequest returns a Content-Length-framed JSON-RPC request body

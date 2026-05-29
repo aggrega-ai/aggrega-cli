@@ -4,6 +4,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -35,14 +36,17 @@ import (
 // "selector parse error" framing; no-match errors carry target /
 // labels / selector / socket framing. Errors sort by
 // (source, target, socket).
-func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) []AnalysisError {
+func validateSelectors(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) ([]AnalysisError, error) {
 	if catalogLookup.Component == nil {
-		return nil
+		return nil, nil
 	}
 
 	var errs []AnalysisError
 
 	for _, edge := range graph.Spec.Edges {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		sourceNode, ok := graph.Spec.Nodes.Get(edge.Source)
 		if !ok {
 			continue
@@ -88,6 +92,7 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 				Selector:   selectorStr,
 				Message:    fmt.Sprintf("selector parse error: %v", err),
 				OriginFile: sourceFileFor(graph, edge.Source),
+				Field:      selectorFieldPath(edge.Source, edge.Socket, sourceNode.SubsystemPath),
 			})
 			continue
 		}
@@ -103,6 +108,7 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 					edge.Target, targetNode.Labels, selectorStr, edge.Socket,
 				),
 				OriginFile: sourceFileFor(graph, edge.Source),
+				Field:      selectorFieldPath(edge.Source, edge.Socket, sourceNode.SubsystemPath),
 			})
 		}
 	}
@@ -118,5 +124,5 @@ func validateSelectors(graph *types.IRGraph, catalogLookup resolver.CatalogLooku
 		return errs[i].Socket < errs[j].Socket
 	})
 
-	return errs
+	return errs, nil
 }

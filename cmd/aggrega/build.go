@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
 	"os"
@@ -168,6 +169,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggPath)
 	result, err := pipeline.RunPipeline(
+		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,

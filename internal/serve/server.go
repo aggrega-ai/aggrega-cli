@@ -15,6 +15,7 @@ package serve
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -69,13 +70,24 @@ type RunConfig struct {
 }
 
 // Diagnostic is the wire shape returned by `aggrega/validate` and
-// `aggrega/diagnostics`. Line + Column are 1-based per LSP-aligned
-// convention; Severity is one of "error" / "warning" / "info".
+// `aggrega/diagnostics` (and pushed via aggrega/publishDiagnostics).
+// Line + Column are 1-based per LSP-aligned convention; Severity is
+// one of "error" / "warning" / "info".
+//
+// EndLine + EndColumn carry the 1-based end position of the token the
+// diagnostic spans. When both are present (non-zero) the extension
+// renders a range spanning the whole token; when absent the extension
+// falls back to a point-style range at the start position. omitempty
+// keeps the wire backward compatible — pre-end-position clients ignore
+// the fields and post-end-position clients consuming an envelope
+// without them fall through to point-style.
 type Diagnostic struct {
-	Line     int    `json:"line"`
-	Column   int    `json:"column"`
-	Severity string `json:"severity"`
-	Message  string `json:"message"`
+	Line      int    `json:"line"`
+	Column    int    `json:"column"`
+	Severity  string `json:"severity"`
+	Message   string `json:"message"`
+	EndLine   int    `json:"end_line,omitempty"`
+	EndColumn int    `json:"end_column,omitempty"`
 }
 
 // Server holds the daemon's per-session state. Constructed once in Run
@@ -110,6 +122,16 @@ type Server struct {
 	// requests with errShuttingDown and drop subsequent
 	// notifications.
 	shuttingDown bool
+
+	// serverCtx is the session-level context every per-request context
+	// derives from; serverCancel cancels it. The reader goroutine calls
+	// serverCancel the moment an aggrega/shutdown notification arrives,
+	// which cancels the derived context of any in-flight handler so it
+	// can return within the drain budget instead of running to
+	// completion. Both are initialised in dispatchLoop. serverCancel is
+	// idempotent — the dispatch loop also defers it as an exit backstop.
+	serverCtx    context.Context
+	serverCancel context.CancelFunc
 
 	// lazyCatalog is the per-URI Tier-1/2/3 cascade for Component +
 	// Feature URIs. Constructed once at startup via

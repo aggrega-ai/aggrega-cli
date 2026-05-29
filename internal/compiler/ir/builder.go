@@ -4,6 +4,7 @@
 package ir
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 
@@ -98,6 +99,15 @@ type FeatureOrder map[string][]string
 // mapping leave the slot empty rather than aborting). Callers wrap the
 // error with the Step 3 prefix; see cmd/aggrega/build.go.
 func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
+	return BuildIRContext(context.Background(), cfg)
+}
+
+// BuildIRContext is BuildIR with cooperative cancellation: it checks
+// ctx.Err() at the per-node build boundary so a long IR-assembly pass
+// over a large graph can be interrupted (e.g. by the daemon's shutdown
+// drain). BuildIR is the background-context convenience wrapper for
+// callers that do not participate in cancellation.
+func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult
 
@@ -122,6 +132,9 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 
 	// 1. Build IR nodes in author order (topo.Nodes is OrderedMap-backed).
 	for nodeID, topoNode := range topo.Nodes.All() {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 
 		catalogAnnotations, releaseAnnotations, aggregateAnnotations := buildAnnotationBuckets(
 			nodeID, topoNode.ComponentType, cfg.CatalogLookup, res.BoundaryInfra,

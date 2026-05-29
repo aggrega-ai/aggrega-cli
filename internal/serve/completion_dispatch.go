@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -162,8 +163,10 @@ func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 			seen[name] = true
 		}
 	}
-	// Workspace-walk fallback.
-	_ = s.walkWorkspaceYAML(func(path string) error {
+	// Workspace-walk fallback. Completion is a fast path; cancellation is
+	// honored at the dispatcher entry check rather than mid-walk, so a
+	// background context suffices here.
+	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil
@@ -196,7 +199,9 @@ func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 // spec.manifest:).
 func (s *Server) enumerateWorkspaceRelativePaths(kindFilter string) []string {
 	seen := map[string]bool{}
-	_ = s.walkWorkspaceYAML(func(path string) error {
+	// Background context: completion is a fast path; cancellation is
+	// honored at the dispatcher entry check rather than mid-walk.
+	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil

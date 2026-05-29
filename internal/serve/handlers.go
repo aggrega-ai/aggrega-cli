@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -84,7 +85,7 @@ type initializeResult struct {
 // negotiation occurs (s.positionEncoding is initialized to UTF-16
 // in Run before dispatchInitialize ever runs). Unknown encoding
 // strings in the client's list are ignored.
-func (s *Server) dispatchInitialize(req *jsonRPCRequest) error {
+func (s *Server) dispatchInitialize(_ context.Context, req *jsonRPCRequest) error {
 	var params initializeParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
@@ -168,12 +169,17 @@ type validateResult struct {
 
 // dispatchValidate parses the request params, calls handleValidate,
 // and writes the response envelope.
-func (s *Server) dispatchValidate(req *jsonRPCRequest) error {
+func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) error {
 	var params validateParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	result, errEnvelope := s.handleValidate(params)
+	result, errEnvelope := s.handleValidate(ctx, params)
+	if ctx.Err() != nil {
+		// Cancelled mid-flight (shutdown). Drop the response; the
+		// dispatcher exits via the drain timer.
+		return nil
+	}
 	if errEnvelope != nil {
 		return s.writeErrorEnvelope(req.ID, errEnvelope)
 	}
@@ -194,7 +200,7 @@ func (s *Server) dispatchValidate(req *jsonRPCRequest) error {
 // scaffold case (no Release at all) returns Tier-1 diagnostics only:
 // the 1002 path fires only when the cascade attempted to find a
 // Release and could not.
-func (s *Server) handleValidate(params validateParams) (validateResult, *jsonRPCError) {
+func (s *Server) handleValidate(ctx context.Context, params validateParams) (validateResult, *jsonRPCError) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
 		diag := yamlErrorToDiagnostic(err)
@@ -218,7 +224,12 @@ func (s *Server) handleValidate(params validateParams) (validateResult, *jsonRPC
 		return validateResult{Diagnostics: nil}, nil
 	}
 	// Tier 4: structured semantic violations via RunTier4Pipeline.
-	diags := s.runTier4Validation(params.File, &doc)
+	diags := s.runTier4Validation(ctx, params.File, []byte(params.Content), &doc)
+	if ctx.Err() != nil {
+		// Cancelled mid-pipeline. Leave the prior diagnostic cache
+		// entry intact and return without overwriting it.
+		return validateResult{Diagnostics: diags}, nil
+	}
 	s.diagnostics[params.File] = diags
 	return validateResult{Diagnostics: diags}, nil
 }
@@ -272,7 +283,7 @@ type diagnosticsResult struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-func (s *Server) dispatchDiagnostics(req *jsonRPCRequest) error {
+func (s *Server) dispatchDiagnostics(_ context.Context, req *jsonRPCRequest) error {
 	var params diagnosticsParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
@@ -314,12 +325,17 @@ type irGraphResult struct {
 	Graph json.RawMessage `json:"graph"`
 }
 
-func (s *Server) dispatchIrGraph(req *jsonRPCRequest) error {
+func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error {
 	var params irGraphParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	result, errEnvelope := s.handleIrGraph(params)
+	result, errEnvelope := s.handleIrGraph(ctx, params)
+	if ctx.Err() != nil {
+		// Cancelled mid-pipeline (shutdown). Drop the response; the
+		// dispatcher exits via the drain timer.
+		return nil
+	}
 	if errEnvelope != nil {
 		return s.writeErrorEnvelope(req.ID, errEnvelope)
 	}
@@ -370,7 +386,7 @@ func daemonEngineFactory(providerName string) (renderer.Engine, error) {
 // well-formed IRGraph envelope. Per-handler dispatch is additionally
 // unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
-func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCError) {
+func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	releasePath := filepath.Join(s.workspaceRoot, params.Release)
 
 	// 1. Lockfile-absent gate. Blocking — no IR graph produced
@@ -426,6 +442,7 @@ func (s *Server) handleIrGraph(params irGraphParams) (irGraphResult, *jsonRPCErr
 
 	aggPath := filepath.Join(filepath.Dir(releasePath), resolved.Release.Spec.Aggregate+".yaml")
 	result, err := pipeline.RunPipeline(
+		ctx,
 		pipeline.Inputs{
 			Release:           resolved.Release,
 			Manifest:          resolved.Manifest,
@@ -489,12 +506,12 @@ type resolveResult struct {
 // outcome (definition found, definition not found, cursor on a
 // non-reference position) produces a result envelope with a possibly-
 // nil Location.
-func (s *Server) dispatchResolve(req *jsonRPCRequest) error {
+func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error {
 	var params resolveParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	loc, errEnvelope := s.resolveDefinitionSite(params.URI, params.Position)
+	loc, errEnvelope := s.resolveDefinitionSite(ctx, params.URI, params.Position)
 	if errEnvelope != nil {
 		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -518,12 +535,12 @@ type findReferencesResult struct {
 // findReferencesAcrossWorkspace. File-not-validated produces 1001;
 // every other outcome (matches found, no matches, cursor not on
 // metadata.name) produces a result envelope.
-func (s *Server) dispatchFindReferences(req *jsonRPCRequest) error {
+func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest) error {
 	var params findReferencesParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	locs, errEnvelope := s.findReferencesAcrossWorkspace(params.URI, params.Position)
+	locs, errEnvelope := s.findReferencesAcrossWorkspace(ctx, params.URI, params.Position)
 	if errEnvelope != nil {
 		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -548,12 +565,12 @@ type findImplementationsResult struct {
 
 // dispatchFindImplementations unmarshals params and invokes
 // findImplementationsAcrossWorkspace.
-func (s *Server) dispatchFindImplementations(req *jsonRPCRequest) error {
+func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRequest) error {
 	var params findImplementationsParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	locs, errEnvelope := s.findImplementationsAcrossWorkspace(params.URI, params.Position)
+	locs, errEnvelope := s.findImplementationsAcrossWorkspace(ctx, params.URI, params.Position)
 	if errEnvelope != nil {
 		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -581,7 +598,10 @@ type hoverResult struct {
 // the response envelope. File-not-validated produces a 1001 error
 // envelope; every other outcome produces a result envelope with a
 // possibly-nil Contents.
-func (s *Server) dispatchHover(req *jsonRPCRequest) error {
+func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 	var params hoverParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
@@ -621,7 +641,10 @@ type completionResult struct {
 // writes the response envelope. File-not-validated produces 1001;
 // all other outcomes produce a result envelope with a possibly-empty
 // Items slice.
-func (s *Server) dispatchCompletion(req *jsonRPCRequest) error {
+func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 	var params completionParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())

@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // parseYAML returns the parsed yaml.Node for the supplied content.
@@ -29,6 +31,13 @@ func parseYAML(t *testing.T, content string) *yaml.Node {
 		t.Fatalf("parse yaml: %v", err)
 	}
 	return &node
+}
+
+// lineIndexFor builds a UTF-16 LineIndex over content for the
+// diagnostic position-recovery tests, matching the daemon's default
+// position encoding.
+func lineIndexFor(content string) yamlpos.LineIndex {
+	return yamlpos.BuildLineIndexWithEncoding([]byte(content), yamlpos.PositionEncodingUTF16)
 }
 
 func TestWalkYAMLToField_TopLevelKey(t *testing.T) {
@@ -45,11 +54,11 @@ spec:
 	if pos == nil {
 		t.Fatalf("expected position for .spec; got nil")
 	}
-	if pos.line != 3 {
-		t.Errorf("line = %d; want 3", pos.line)
+	if pos.Line != 3 {
+		t.Errorf("line = %d; want 3", pos.Line)
 	}
-	if pos.col != 1 {
-		t.Errorf("col = %d; want 1", pos.col)
+	if pos.Column != 1 {
+		t.Errorf("col = %d; want 1", pos.Column)
 	}
 }
 
@@ -69,8 +78,8 @@ spec:
 	if pos == nil {
 		t.Fatalf("expected position for .spec.parameters.host; got nil")
 	}
-	if pos.line != 7 {
-		t.Errorf("line = %d; want 7 (host key line)", pos.line)
+	if pos.Line != 7 {
+		t.Errorf("line = %d; want 7 (host key line)", pos.Line)
 	}
 }
 
@@ -89,8 +98,8 @@ spec:
 	if pos == nil {
 		t.Fatalf("expected position for extends; got nil")
 	}
-	if pos.line != 7 {
-		t.Errorf("line = %d; want 7 (extends key line)", pos.line)
+	if pos.Line != 7 {
+		t.Errorf("line = %d; want 7 (extends key line)", pos.Line)
 	}
 }
 
@@ -128,8 +137,8 @@ func TestWalkYAMLToField_PartialMatchReturnsLastFoundKey(t *testing.T) {
 	if pos == nil {
 		t.Fatalf("expected fallback to .spec.parameters; got nil")
 	}
-	if pos.line != 2 {
-		t.Errorf("line = %d; want 2 (parameters key line)", pos.line)
+	if pos.Line != 2 {
+		t.Errorf("line = %d; want 2 (parameters key line)", pos.Line)
 	}
 }
 
@@ -146,23 +155,27 @@ func TestWalkYAMLToField_EmptyFieldReturnsNil(t *testing.T) {
 
 func TestResolverViolationToDiagnostic_FieldMatchesYAML(t *testing.T) {
 	t.Parallel()
-	doc := parseYAML(t,
-		`spec:
+	content := `spec:
   parameters:
     port:
       type: integer
     host:
       type: string
-`)
+`
+	doc := parseYAML(t, content)
 	ve := &resolver.ResolverError{
 		Entity:  "Aggregate",
 		Field:   ".spec.parameters.host",
 		Message: "parameter host: expected string, got integer",
 		Err:     resolver.ErrParameterContractViolation,
 	}
-	diag := resolverViolationToDiagnostic(ve, doc)
+	diag := resolverViolationToDiagnostic(ve, doc, lineIndexFor(content))
 	if diag.Line != 5 {
 		t.Errorf("Line = %d; want 5 (host key line)", diag.Line)
+	}
+	// host key spans columns 5-8 (1-based, end exclusive past "host").
+	if diag.Column != 5 || diag.EndColumn != 9 || diag.EndLine != 5 {
+		t.Errorf("range = %d:%d-%d:%d; want 5:5-5:9", diag.Line, diag.Column, diag.EndLine, diag.EndColumn)
 	}
 	if diag.Severity != "error" {
 		t.Errorf("Severity = %q; want %q", diag.Severity, "error")
@@ -172,21 +185,23 @@ func TestResolverViolationToDiagnostic_FieldMatchesYAML(t *testing.T) {
 	}
 }
 
-func TestResolverViolationToDiagnostic_FieldMissingFallsBackToFileOneOne(t *testing.T) {
+func TestResolverViolationToDiagnostic_FieldMissingFallsBackToNeighborhood(t *testing.T) {
 	t.Parallel()
-	doc := parseYAML(t,
-		`spec:
+	content := `spec:
   components: {}
-`)
+`
+	doc := parseYAML(t, content)
 	ve := &resolver.ResolverError{
 		Entity:  "Aggregate",
 		Field:   ".spec.parameters.missing",
 		Message: "parameter missing: required",
 		Err:     resolver.ErrParameterMissing,
 	}
-	diag := resolverViolationToDiagnostic(ve, doc)
+	// .spec matches but .parameters does not, so the walker falls back
+	// to the deepest reached key (.spec at line 1, column 1).
+	diag := resolverViolationToDiagnostic(ve, doc, lineIndexFor(content))
 	if diag.Line != 1 || diag.Column != 1 {
-		t.Errorf("expected file:1:1 fall-back; got %d:%d", diag.Line, diag.Column)
+		t.Errorf("expected fall-back to .spec at 1:1; got %d:%d", diag.Line, diag.Column)
 	}
 }
 
@@ -487,7 +502,7 @@ func TestAnalyzerErrorsToDiagnostics_FiltersCrossFileEntries(t *testing.T) {
 	// Callers pre-render both OriginFile (via the catalog accessors)
 	// and the validated file in the same coordinate system; the
 	// helper just compares verbatim.
-	diags := analyzerErrorsToDiagnostics(errs, validatedFile)
+	diags := analyzerErrorsToDiagnostics(errs, validatedFile, nil, yamlpos.LineIndex{})
 
 	if len(diags) != 1 {
 		t.Fatalf("expected 1 diagnostic after cross-file filter; got %d: %+v", len(diags), diags)
@@ -521,7 +536,7 @@ func TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile(t *testing.T) {
 		},
 	}
 
-	diags := analyzerErrorsToDiagnostics(errs, validatedFile)
+	diags := analyzerErrorsToDiagnostics(errs, validatedFile, nil, yamlpos.LineIndex{})
 
 	if len(diags) != 1 {
 		t.Fatalf("expected 1 diagnostic for empty-OriginFile entry; got %d", len(diags))
@@ -689,18 +704,18 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 //
 // Two-validation falsifiability pattern.
 //
-//	1. Drive the daemon's aggrega/validate against the root Aggregate
-//	   file. Capture the diagnostic set.
-//	2. Independently run the same pipeline inputs through
-//	   pipeline.RunTier4Pipeline and inspect the analyzer's unfiltered
-//	   Errors slice. The slice must carry at least one entry whose
-//	   OriginFile names the root file AND at least one whose OriginFile
-//	   names a different file (the sub-aggregate's path).
-//	3. Assert the daemon's response carries only the root-origin
-//	   violations — the sub-origin entries must NOT appear in the
-//	   daemon's response (filtered) yet MUST appear in the pipeline's
-//	   raw output (proving they were produced and not silently dropped
-//	   upstream).
+//  1. Drive the daemon's aggrega/validate against the root Aggregate
+//     file. Capture the diagnostic set.
+//  2. Independently run the same pipeline inputs through
+//     pipeline.RunTier4Pipeline and inspect the analyzer's unfiltered
+//     Errors slice. The slice must carry at least one entry whose
+//     OriginFile names the root file AND at least one whose OriginFile
+//     names a different file (the sub-aggregate's path).
+//  3. Assert the daemon's response carries only the root-origin
+//     violations — the sub-origin entries must NOT appear in the
+//     daemon's response (filtered) yet MUST appear in the pipeline's
+//     raw output (proving they were produced and not silently dropped
+//     upstream).
 //
 // If the fixture stops producing cross-file violations (catalog or
 // schema change), step 2 fails on disjointness. If the daemon's
@@ -785,6 +800,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	// catalog accessors' sub-aggregate paths.
 	relAggPath := catalog.RelativeToWorkspace(srv.workspaceRoot, aggPath)
 	tier4, _ := pipeline.RunTier4Pipeline(
+		context.Background(),
 		pipeline.Inputs{
 			Release:           resolved.Release,
 			Manifest:          resolved.Manifest,
@@ -926,17 +942,18 @@ func TestMultiResolverErrorRoundTripPreservesViolations(t *testing.T) {
 
 	// Walk each violation through resolverViolationToDiagnostic and
 	// confirm the position recovery works against a real YAML doc.
-	doc := parseYAML(t,
-		`spec:
+	content := `spec:
   parameters:
     port:
       type: integer
     host:
       type: string
-`)
+`
+	doc := parseYAML(t, content)
+	idx := lineIndexFor(content)
 	diags := make([]Diagnostic, 0, len(got.Violations))
 	for _, ve := range got.Violations {
-		diags = append(diags, resolverViolationToDiagnostic(ve, doc))
+		diags = append(diags, resolverViolationToDiagnostic(ve, doc, idx))
 	}
 	if len(diags) != 2 {
 		t.Fatalf("expected 2 diagnostics; got %d", len(diags))

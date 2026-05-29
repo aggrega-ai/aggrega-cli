@@ -4,6 +4,8 @@
 package serve
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // runTier4Validation runs Steps 1-4 of the compiler pipeline against
@@ -28,10 +31,11 @@ import (
 //	         (parameter type mismatch, missing required parameter,
 //	         dangling extends reference). Uses the parsed yaml.Node
 //	         to find the matching key; returns its Line/Column.
-//	Tier B — best-effort sub-file: position mapped to the component
-//	         or feature attachment site (selector and appliesTo
-//	         violations). Future work, bundled alongside daemon
-//	         end-position support for diagnostic ranges.
+//	Tier B — best-effort sub-file: selector and appliesTo violations
+//	         carry a Field locator naming the uses-socket or feature-
+//	         instance key; the diagnostic spans that key. Falls back to
+//	         file:1:1 when the locator names a path the walker cannot
+//	         reach (subsystem-nested components, sequence-indexed keys).
 //	Tier C — file-level only: renderer / file-context errors;
 //	         fall back to {1, 1} with a "<filename>: " prefix.
 //	         Distinguished from Tier D in a future iteration.
@@ -45,7 +49,7 @@ import (
 // not relevant to the requested file and the function returns an
 // empty slice — the caller's existing Tier-1 diagnostics for the
 // file already populated stay in place.
-func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
+func (s *Server) runTier4Validation(ctx context.Context, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	resolved, envelope := s.resolveReleaseClosure(s.activeReleasePath)
 	if envelope != nil {
 		// Closure-level failure (catalog load, Release/Manifest load,
@@ -88,6 +92,7 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
 
 	tier4, runErr := pipeline.RunTier4Pipeline(
+		ctx,
 		pipeline.Inputs{
 			Release:           resolved.Release,
 			Manifest:          resolved.Manifest,
@@ -99,6 +104,17 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 		recipeCat.SubAggregateLoader(),
 	)
 
+	// Cancellation (shutdown drain) surfaces as a context error from the
+	// pipeline. Return no diagnostics rather than a spurious closure-level
+	// entry; the caller drops the response.
+	if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+		return nil
+	}
+
+	// Source-position recovery walks the parsed document and computes
+	// scalar end positions in the validated file's coordinate space.
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+
 	var diags []Diagnostic
 
 	// Resolver-class violations (Step 1) — Tier-A position recovery
@@ -106,7 +122,7 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 	// populated uniformly for both single- and multi-violation cases.
 	if tier4 != nil && len(tier4.ResolveDiagnostics) > 0 {
 		for _, ve := range tier4.ResolveDiagnostics {
-			diags = append(diags, resolverViolationToDiagnostic(ve, doc))
+			diags = append(diags, resolverViolationToDiagnostic(ve, doc, idx))
 		}
 	} else if runErr != nil {
 		// Non-resolver pre-analyzer phase error (topology / IR / guards
@@ -120,17 +136,19 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 	}
 
 	if tier4 != nil && tier4.Analysis != nil {
-		diags = append(diags, analyzerErrorsToDiagnostics(tier4.Analysis.Errors, relFile)...)
+		diags = append(diags, analyzerErrorsToDiagnostics(tier4.Analysis.Errors, relFile, doc, idx)...)
 	}
 
 	return diags
 }
 
 // analyzerErrorsToDiagnostics maps the analyzer's structured
-// violation slice to Diagnostics for the requested file. Analyzer
-// violations (Step 4) are Tier-B class — position recovery for
-// selector / appliesTo violations is future work; today they emit
-// at file:1:1 with a "Closure: " prefix.
+// violation slice to Diagnostics for the requested file. Selector and
+// appliesTo violations (Step 4) carry a Field locator naming the
+// authoring site; this helper walks it to a sub-file position and
+// spans the offending key (Tier-B fidelity). When the Field is empty
+// or walks to a path the document does not contain, the diagnostic
+// falls back to file:1:1 with the "Closure: " prefix.
 //
 // Cross-file filter: each AnalysisError carries an OriginFile
 // field naming the source file where the violating authoring
@@ -142,12 +160,14 @@ func (s *Server) runTier4Validation(file string, doc *yaml.Node) []Diagnostic {
 // invocation; this helper compares string-for-string and drops
 // entries whose OriginFile points to a different file from the
 // validated one. Per-file diagnostic collection means cross-file
-// errors surface when the user opens the offending file.
+// errors surface when the user opens the offending file. The Field
+// walk therefore runs against the requested file's document, which is
+// the origin file for every entry that survives the filter.
 //
 // Mutates the input slice in place to backfill OriginFile when
 // empty. Callers that want to preserve the input shape should
 // copy before invoking.
-func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string) []Diagnostic {
+func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc *yaml.Node, idx yamlpos.LineIndex) []Diagnostic {
 	var out []Diagnostic
 	for i := range errs {
 		if errs[i].OriginFile == "" {
@@ -156,11 +176,18 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string) []D
 		if errs[i].OriginFile != file {
 			continue
 		}
+		line, col := 1, 1
+		var endLine, endCol int
+		if node := walkYAMLToField(doc, errs[i].Field); node != nil {
+			line, col, endLine, endCol = diagRangeForNode(idx, node)
+		}
 		out = append(out, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: "error",
-			Message:  "Closure: " + errs[i].Error(),
+			Line:      line,
+			Column:    col,
+			EndLine:   endLine,
+			EndColumn: endCol,
+			Severity:  "error",
+			Message:   "Closure: " + errs[i].Error(),
 		})
 	}
 	return out
@@ -170,29 +197,41 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string) []D
 // source-positioned diagnostic. The Field locator (e.g.,
 // ".spec.parameters.foo" or ".spec.components.bar.extends") is walked
 // against the parsed yaml.Node to find the matching key; when found,
-// the diagnostic carries the key's Line/Column. When the Field walks
-// to a path the document does not contain (orthogonal to the
+// the diagnostic carries the key's start and end position so the
+// editor renders a squiggle spanning the whole token. When the Field
+// walks to a path the document does not contain (orthogonal to the
 // authoring shape), or when the Field is empty, the diagnostic falls
 // back to file:1:1.
-func resolverViolationToDiagnostic(ve *resolver.ResolverError, doc *yaml.Node) Diagnostic {
+func resolverViolationToDiagnostic(ve *resolver.ResolverError, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	line, col := 1, 1
-	if pos := walkYAMLToField(doc, ve.Field); pos != nil {
-		line = pos.line
-		col = pos.col
+	var endLine, endCol int
+	if node := walkYAMLToField(doc, ve.Field); node != nil {
+		line, col, endLine, endCol = diagRangeForNode(idx, node)
 	}
 	return Diagnostic{
-		Line:     line,
-		Column:   col,
-		Severity: "error",
-		Message:  ve.Message,
+		Line:      line,
+		Column:    col,
+		EndLine:   endLine,
+		EndColumn: endCol,
+		Severity:  "error",
+		Message:   ve.Message,
 	}
 }
 
-// yamlPos is the internal pair returned by walkYAMLToField: 1-based
-// line and 1-based column matching yaml.v3's native coordinates.
-type yamlPos struct {
-	line int
-	col  int
+// diagRangeForNode computes the 1-based start and end position of a
+// matched key node in the validated file's coordinate space, using the
+// same LineIndex/encoding the rest of the daemon's position machinery
+// uses. The end position spans the key token via ScalarEnd. A
+// multi-line value (block scalar) has no single-line span, so the end
+// is left zero and the caller renders the diagnostic point-style.
+func diagRangeForNode(idx yamlpos.LineIndex, node *yaml.Node) (line, col, endLine, endCol int) {
+	start := idx.NodeToPosition(node)
+	line, col = start.Line+1, start.Character+1
+	if strings.Contains(node.Value, "\n") {
+		return line, col, 0, 0
+	}
+	end := idx.ScalarEnd(node)
+	return line, col, end.Line + 1, end.Character + 1
 }
 
 // walkYAMLToField walks the parsed yaml.Node to find the key node at
@@ -210,7 +249,7 @@ type yamlPos struct {
 // the diagnostic at file:1:1. Future work extends the walker to
 // handle "[<index>]" syntax and quoted keys when authoring shapes
 // surface them.
-func walkYAMLToField(doc *yaml.Node, field string) *yamlPos {
+func walkYAMLToField(doc *yaml.Node, field string) *yaml.Node {
 	if field == "" {
 		return nil
 	}
@@ -231,11 +270,10 @@ func walkYAMLToField(doc *yaml.Node, field string) *yamlPos {
 }
 
 // walkSegments recursively walks the YAML tree following the supplied
-// segment list. Returns the position of the LAST segment's key node,
-// or the deepest reached key node when the walk exhausts the document
-// before consuming all segments. Returns nil when the first segment
-// doesn't match.
-func walkSegments(n *yaml.Node, segments []string) *yamlPos {
+// segment list. Returns the LAST segment's key node, or the deepest
+// reached key node when the walk exhausts the document before consuming
+// all segments. Returns nil when the first segment doesn't match.
+func walkSegments(n *yaml.Node, segments []string) *yaml.Node {
 	if n == nil || len(segments) == 0 {
 		return nil
 	}
@@ -250,18 +288,18 @@ func walkSegments(n *yaml.Node, segments []string) *yamlPos {
 		if keyNode.Value != target {
 			continue
 		}
-		// Match found. If this is the last segment, return the key's
-		// position. Otherwise descend into the value and look up the
-		// remaining segments. If the descent fails to find the next
-		// segment, fall back to THIS key's position — better than
-		// nothing because it's at least in the right neighborhood.
+		// Match found. If this is the last segment, return the key node.
+		// Otherwise descend into the value and look up the remaining
+		// segments. If the descent fails to find the next segment, fall
+		// back to THIS key node — better than nothing because it's at
+		// least in the right neighborhood.
 		if len(rest) == 0 {
-			return &yamlPos{line: keyNode.Line, col: keyNode.Column}
+			return keyNode
 		}
 		if inner := walkSegments(valNode, rest); inner != nil {
 			return inner
 		}
-		return &yamlPos{line: keyNode.Line, col: keyNode.Column}
+		return keyNode
 	}
 	return nil
 }

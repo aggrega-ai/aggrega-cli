@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func splitVersionedURI(s string) (name, version string) {
 // not target a referenceable URI, when the target URI does not appear
 // in any workspace YAML's metadata.name, or when the workspace walk
 // has nothing to scan.
-func (s *Server) resolveDefinitionSite(uri string, pos yamlpos.Position) (*yamlpos.Location, *jsonRPCError) {
+func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos yamlpos.Position) (*yamlpos.Location, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(uri)
 	if !ok {
 		return nil, &jsonRPCError{
@@ -71,7 +72,7 @@ func (s *Server) resolveDefinitionSite(uri string, pos yamlpos.Position) (*yamlp
 			return nil, nil
 		}
 		name, version := splitVersionedURI(ctx.Value)
-		return s.findDefinitionByURI(name, version)
+		return s.findDefinitionByURI(reqCtx, name, version)
 	case yamlpos.ContextKindUsesTarget:
 		// Intra-document local-component reference. Walk the source
 		// document's spec.components (and recursively-nested
@@ -112,7 +113,7 @@ func (s *Server) resolveDefinitionSite(uri string, pos yamlpos.Position) (*yamlp
 // bounded by workspace size (single-digit-ms for typical sizes); the
 // duplicate-detection correctness gain is worth the unconditional
 // walk cost for a user-driven editor operation.
-func (s *Server) findDefinitionByURI(name, expectedVersion string) (*yamlpos.Location, *jsonRPCError) {
+func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersion string) (*yamlpos.Location, *jsonRPCError) {
 	type match struct {
 		path     string
 		version  string
@@ -140,7 +141,7 @@ func (s *Server) findDefinitionByURI(name, expectedVersion string) (*yamlpos.Loc
 	// Workspace-walk pass. Skip paths already captured by the parse-cache
 	// pass (a parse-cached file would be re-read from disk and possibly
 	// produce a duplicate; dedup by absolute path).
-	err := s.walkWorkspaceYAML(func(path string) error {
+	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
 		if seen[path] {
 			return nil
 		}
@@ -306,7 +307,7 @@ func mappingChild(n *yaml.Node, key string) *yaml.Node {
 // is not in the parse cache. Returns an empty slice (no envelope) when
 // the cursor does not address metadata.name or when the target URI is
 // empty.
-func (s *Server) findReferencesAcrossWorkspace(uri string, pos yamlpos.Position) ([]yamlpos.Location, *jsonRPCError) {
+func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri string, pos yamlpos.Position) ([]yamlpos.Location, *jsonRPCError) {
 	target, errEnvelope := s.uriAtMetadataName(uri, pos)
 	if errEnvelope != nil {
 		return nil, errEnvelope
@@ -316,7 +317,7 @@ func (s *Server) findReferencesAcrossWorkspace(uri string, pos yamlpos.Position)
 	}
 	var out []yamlpos.Location
 	var selfDefinitions []string
-	err := s.walkWorkspaceYAML(func(path string) error {
+	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return nil
@@ -357,7 +358,7 @@ func (s *Server) findReferencesAcrossWorkspace(uri string, pos yamlpos.Position)
 // Both contribute Locations pointing at the implementing / child
 // entity's metadata.name. Cursor must address metadata.name for a
 // non-empty result.
-func (s *Server) findImplementationsAcrossWorkspace(uri string, pos yamlpos.Position) ([]yamlpos.Location, *jsonRPCError) {
+func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri string, pos yamlpos.Position) ([]yamlpos.Location, *jsonRPCError) {
 	target, errEnvelope := s.uriAtMetadataName(uri, pos)
 	if errEnvelope != nil {
 		return nil, errEnvelope
@@ -366,7 +367,7 @@ func (s *Server) findImplementationsAcrossWorkspace(uri string, pos yamlpos.Posi
 		return []yamlpos.Location{}, nil
 	}
 	var out []yamlpos.Location
-	err := s.walkWorkspaceYAML(func(path string) error {
+	err := s.walkWorkspaceYAML(reqCtx, func(path string) error {
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return nil
