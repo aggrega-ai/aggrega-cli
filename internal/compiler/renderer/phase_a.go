@@ -11,9 +11,26 @@ import (
 )
 
 // FeatureRecipeRef pairs a feature instance name with its resolved FeatureRecipe.
+//
+// A ref participates in Phase A by having its FeatureRecipe's injectMapping
+// evaluated against a feature-scoped context. By default that context's
+// .values/.infra come from the matching entry in ctx.Features. Secret-derived
+// refs (credential Features partitioned into the IR secrets bucket) instead
+// carry an explicit scope: their .values are the secret entry's own values and
+// .infra is empty, mirroring the credential context the Phase B.6 path builds.
+// The scope is optional and unexported so feature refs constructed elsewhere
+// resolve from ctx.Features unchanged.
 type FeatureRecipeRef struct {
 	InstanceName  string
 	FeatureRecipe *types.FeatureRecipe
+	scope         *phaseAScope
+}
+
+// phaseAScope supplies a Phase A ref's feature-scoped .values/.infra directly,
+// bypassing the ctx.Features lookup. Used by secret-derived refs.
+type phaseAScope struct {
+	Values types.OrderedMap[any]
+	Infra  types.OrderedMap[any]
 }
 
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
@@ -72,7 +89,10 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		// (FR wins on collision). The current implementation uses a raw-string
 		// overlay; template-evaluated overlay is a future enhancement.
 		featureCtx := *ctx // shallow copy
-		if feat, ok := ctx.Features.Get(ref.InstanceName); ok {
+		if ref.scope != nil {
+			featureCtx.Values = ref.scope.Values
+			featureCtx.Infra = ref.scope.Infra
+		} else if feat, ok := ctx.Features.Get(ref.InstanceName); ok {
 			featureCtx.Values = feat.Values
 			featureCtx.Infra = feat.Infra
 		}

@@ -405,11 +405,16 @@ func phaseB6(
 		}
 	}
 
-	// Credential FR rendering. Secrets live in graph.Spec.Secrets[nodeID]
+	// Credential FR Resource Generation. Secrets live in graph.Spec.Secrets[nodeID]
 	// (IR partitions credential features here via guardCredentialPartition).
-	// For each secret, resolve the FR, build a feature-scoped context with
-	// .secret_name + top-level .inject populated, render via the FR's own
-	// provider engine. Output files under secrets/<name>/.
+	// This sub-pass renders ONLY resource-generating credential FRs (those with a
+	// source or valuesMapping — e.g. a Kubernetes Secret manifest), mirroring the
+	// non-credential path's isResourceGeneratingFR guard above. Inject-only
+	// credential FRs (injectMapping but no source/workload — e.g. a dotenv
+	// polyfill) contribute through Phase A and are skipped here; rendering them
+	// would have nothing to emit. For each resource-generating secret, build a
+	// feature-scoped context with .secret_name + top-level .inject populated and
+	// render via the FR's own provider engine. Output files under secrets/<name>/.
 	if secretsForNode.Len() > 0 && recipeLookup.FeatureRecipe != nil {
 		secretNames := secretsForNode.Keys()
 		sort.Strings(secretNames)
@@ -417,6 +422,11 @@ func phaseB6(
 			entry, _ := secretsForNode.Get(secretName)
 			fr, found := recipeLookup.FeatureRecipe(entry.Type)
 			if !found {
+				continue
+			}
+			if !isResourceGeneratingFR(fr) {
+				// Inject-only credential FR: Phase A owns its inject merge; B.6
+				// renders nothing for it.
 				continue
 			}
 

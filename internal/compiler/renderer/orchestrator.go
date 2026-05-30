@@ -224,7 +224,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// to Phase B; Phase A is a separate phase and stays at the
 		// orchestrator level.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
-		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
+		// Credential-partitioned secrets participate in Phase A too: an
+		// inject-only credential FeatureRecipe (no source/workload) rewrites the
+		// component's inject pipe exactly as a Feature FR does. Feature refs
+		// (Onion order) first, then secret refs (author order). The Phase A
+		// deep-merge is last-writer-wins per delivery key, so on a collision a
+		// secret overrides a feature (and a later secret overrides an earlier
+		// one) — deterministic by this ordering. featureRefs is reused by phaseB6
+		// below, so build a separate combined slice rather than appending in
+		// place.
+		secretRefs := resolveSecretRecipes(nodeID, graph, recipeLookup)
+		phaseARefs := make([]FeatureRecipeRef, 0, len(featureRefs)+len(secretRefs))
+		phaseARefs = append(phaseARefs, featureRefs...)
+		phaseARefs = append(phaseARefs, secretRefs...)
+		if err := ExecutePhaseA(tmplCtx, phaseARefs); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
@@ -840,6 +853,39 @@ func resolveFeatureRecipes(
 		refs = append(refs, FeatureRecipeRef{
 			InstanceName:  instanceName,
 			FeatureRecipe: fr,
+		})
+	}
+	return refs
+}
+
+// resolveSecretRecipes builds Phase A refs for the node's credential-partitioned
+// secrets (graph.Spec.Secrets[nodeID]). Each secret resolves its FeatureRecipe
+// by the secret's Type and carries a scope set to the secret entry's own values
+// with empty infra — so an inject-only credential FR's injectMapping rewrites the
+// component inject pipe with the secret-scoped context. Secrets are walked in
+// author order (the IR secrets bucket is author-ordered). A secret whose FR is
+// not found, or carries no injectMapping, is skipped by Phase A downstream.
+func resolveSecretRecipes(nodeID string, graph *types.IRGraph, recipeLookup RecipeLookup) []FeatureRecipeRef {
+	if recipeLookup.FeatureRecipe == nil {
+		return nil
+	}
+	secretsForNode, ok := graph.Spec.Secrets.Get(nodeID)
+	if !ok {
+		return nil
+	}
+	var refs []FeatureRecipeRef
+	for secretName, entry := range secretsForNode.All() {
+		fr, found := recipeLookup.FeatureRecipe(entry.Type)
+		if !found {
+			continue
+		}
+		refs = append(refs, FeatureRecipeRef{
+			InstanceName:  secretName,
+			FeatureRecipe: fr,
+			scope: &phaseAScope{
+				Values: entry.Values,
+				Infra:  types.OrderedMap[any]{},
+			},
 		})
 	}
 	return refs
