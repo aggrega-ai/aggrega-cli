@@ -153,11 +153,13 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			SourceFile:           topoNode.SourceFile,
 		}
 
-		// Resolved version from catalog
+		// Resolved version + schema-declared pillar defaults from catalog.
+		var valueDefaults, infraDefaults types.OrderedMap[any]
 		if cfg.CatalogLookup.Component != nil {
 			catComp, found := cfg.CatalogLookup.Component(topoNode.ComponentType)
 			if found {
 				irNode.ResolvedVersion = catComp.Metadata.Version
+				valueDefaults, infraDefaults = componentPillarDefaults(catComp)
 			}
 		}
 
@@ -170,17 +172,25 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 
 		irNodes.Set(nodeID, irNode)
 
-		// 4. Values mapping
-		if topoNode.Values.Len() > 0 {
-			raw, err := json.Marshal(topoNode.Values)
+		// 4. Values mapping — author values plus declared schema defaults for
+		// keys the Aggregate omitted (author values win).
+		filledValues := mergeSchemaDefaults(topoNode.Values, valueDefaults)
+		if filledValues.Len() > 0 {
+			raw, err := json.Marshal(filledValues)
 			if err == nil {
 				valuesMapping.Set(nodeID, raw)
 			}
 		}
 
-		// Infra mapping from boundary infra
-		if bi, ok := res.BoundaryInfra[nodeID]; ok && bi != nil && bi.Infra.Len() > 0 {
-			raw, err := json.Marshal(bi.Infra)
+		// Infra mapping from boundary infra plus declared schema defaults for
+		// keys the Release omitted (Release values win).
+		var baseInfra types.OrderedMap[any]
+		if bi, ok := res.BoundaryInfra[nodeID]; ok && bi != nil {
+			baseInfra = bi.Infra
+		}
+		filledInfra := mergeSchemaDefaults(baseInfra, infraDefaults)
+		if filledInfra.Len() > 0 {
+			raw, err := json.Marshal(filledInfra)
 			if err == nil {
 				infraMapping.Set(nodeID, raw)
 			}
