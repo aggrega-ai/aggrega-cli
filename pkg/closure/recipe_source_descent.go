@@ -49,7 +49,15 @@ func DescendRecipeSources(
 	var order []string
 
 	for _, ent := range closure.Entities {
-		entityKind, ok := classifyEntityKind(ent.URI)
+		// Prefer the kind recorded at collection time (e.g. a Manifest mapping
+		// value's position) over re-deriving it lexically from the URI. The
+		// hint recognises short-form Recipe references that carry no "/recipe/"
+		// path segment; entities collected without a hint fall back to lexical
+		// classification.
+		entityKind, ok := ent.KindHint, ent.KindHint != ""
+		if !ok {
+			entityKind, ok = classifyEntityKind(ent.URI)
+		}
 		if !ok {
 			continue
 		}

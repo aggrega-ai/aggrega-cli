@@ -78,6 +78,10 @@ type walkState struct {
 type pendingRef struct {
 	referencedFrom map[string]struct{}
 	resolution     *Resolution
+	// kindHint records a catalog kind ("recipe" / "feature_recipe") known from
+	// the URI's collection site (e.g. a Manifest mapping value's position).
+	// First non-empty hint wins; later references to the same URI keep it.
+	kindHint string
 }
 
 // pendingLibrary collects per-library-URI consumer→fragment
@@ -205,9 +209,12 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 		for componentType, recipeURI := range m.Spec.Mappings.Components.Type.All() {
 			// The mapping key is the developer-declared Component URI.
 			s.addEntity(componentType, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType))
-			// The mapping value is the Ops-side Recipe URI.
+			// The mapping value is the Ops-side Recipe URI. Its position (a
+			// components-mapping value) is authoritative for source-descent:
+			// record the recipe kind so a short-form reference is recognised
+			// even without a "/recipe/" path segment.
 			if recipeURI != "" {
-				s.addEntity(recipeURI, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType))
+				s.addEntityKind(recipeURI, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType), "recipe")
 			}
 		}
 	}
@@ -215,9 +222,12 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 		for featureType, frURI := range m.Spec.Mappings.Features.Type.All() {
 			// The mapping key is the developer-declared Feature URI.
 			s.addEntity(featureType, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType))
-			// The mapping value is the Ops-side FeatureRecipe URI.
+			// The mapping value is the Ops-side FeatureRecipe URI. Its position
+			// (a features-mapping value) is authoritative: record the
+			// feature_recipe kind so source-descent recognises it regardless of
+			// the URI's lexical form.
 			if frURI != "" {
-				s.addEntity(frURI, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType))
+				s.addEntityKind(frURI, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType), "feature_recipe")
 			}
 		}
 	}
@@ -715,6 +725,19 @@ func (s *walkState) addEntity(uri, refPath string) {
 	s.entities[uri].referencedFrom[refPath] = struct{}{}
 }
 
+// addEntityKind records an entity reference together with a catalog kind known
+// from the collection site ("recipe" or "feature_recipe"). The kind is
+// authoritative for source-descent, which would otherwise re-derive it
+// lexically from the URI and miss short-form references. First non-empty kind
+// for a URI wins, so a reference whose position implies a kind is not
+// overwritten by a later position-less reference to the same URI.
+func (s *walkState) addEntityKind(uri, refPath, kind string) {
+	s.addEntity(uri, refPath)
+	if kind != "" && s.entities[uri].kindHint == "" {
+		s.entities[uri].kindHint = kind
+	}
+}
+
 func (s *walkState) addWasmPlugin(uri, refPath string) {
 	if uri == "" {
 		return
@@ -781,6 +804,7 @@ func (p *pendingRef) toResolvedRef(uri string) ResolvedRef {
 		Digest:          p.resolution.Digest,
 		ResolutionPath:  p.resolution.ResolutionPath,
 		ReferencedFrom:  refs,
+		KindHint:        p.kindHint,
 	}
 }
 

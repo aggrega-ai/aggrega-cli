@@ -157,6 +157,14 @@ type ResolvedRef struct {
 	Digest          string
 	ResolutionPath  string
 	ReferencedFrom  []string
+	// KindHint is the catalog kind ("recipe" or "feature_recipe") known from
+	// where the URI was collected — e.g. a Manifest mapping value's position.
+	// Empty when the collection site carried no kind. Source-descent prefers
+	// this hint over re-deriving the kind lexically from the URI, so a
+	// short-form Recipe reference (one without a "/recipe/" path segment) is
+	// still recognised for fetching. Not a lockfile field; the lockfile writer
+	// copies only the wire-shape fields above.
+	KindHint string
 }
 
 // ResolvedLibrary captures a SchemaLibrary or MappingLibrary
