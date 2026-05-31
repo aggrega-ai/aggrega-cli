@@ -147,6 +147,19 @@ type ResolvedSource struct {
 // the orchestrator, not this sentinel.
 var ErrSourceTemplateAtLockTime = errors.New("closure: source-template evaluation failure at lock time")
 
+// ErrSourceTemplateParse marks a source-template that fails to PARSE (malformed
+// template text). A parse error is a structural authoring bug at any phase, so
+// lock-time local resolution keeps it loud rather than tolerating it. Errors of
+// this class also wrap ErrSourceTemplateAtLockTime.
+var ErrSourceTemplateParse = errors.New("closure: source-template parse error")
+
+// ErrSourceTemplateProvidesRef marks a source-template that references
+// `.provides`. Locals feed `.provides`, never the reverse — a template (or a
+// local) reading `.provides` is an invalid reverse reference at any phase, not a
+// lock-time-only absence, so lock-time local resolution keeps it loud. Errors of
+// this class also wrap ErrSourceTemplateAtLockTime.
+var ErrSourceTemplateProvidesRef = errors.New("closure: source-template references .provides (invalid reverse reference)")
+
 // ResolvedRef captures a single catalog-entity or Wasm-plugin
 // resolution result. Mirrors the lockfile package's Entity /
 // WasmPlugin wire shapes so the lockfile writer can copy

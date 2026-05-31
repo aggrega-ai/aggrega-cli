@@ -5,6 +5,7 @@ package closure
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -324,8 +325,8 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 		"optional": optionalFunc,
 	}).Parse(input)
 	if err != nil {
-		return "", fmt.Errorf("closure: parse template at %s: %w (cause: %s)",
-			fieldPath, ErrSourceTemplateAtLockTime, err)
+		return "", fmt.Errorf("closure: parse template at %s: %w (also %w) (cause: %s)",
+			fieldPath, ErrSourceTemplateAtLockTime, ErrSourceTemplateParse, err)
 	}
 	if err := rejectProvidesReference(tmpl, fieldPath); err != nil {
 		return "", err
@@ -451,9 +452,10 @@ func walkBranchNode(b *parse.BranchNode, fieldPath string) error {
 
 func providesError(fieldPath string) error {
 	return fmt.Errorf(
-		"source-version template at %s references `.provides`, which is not available at lock time — "+
-			"refactor to read only `.values` and `.infra` (and `.locals` over the same): %w",
-		fieldPath, ErrSourceTemplateAtLockTime)
+		"source-version template at %s references `.provides`, which is an invalid reverse "+
+			"reference (locals feed provides, never the reverse) — refactor to read only "+
+			"`.values` and `.infra` (and `.locals` over the same): %w (also %w)",
+		fieldPath, ErrSourceTemplateAtLockTime, ErrSourceTemplateProvidesRef)
 }
 
 // optionalFunc implements `{{ optional .infra "key" "default" }}`
@@ -482,7 +484,19 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 	for k, v := range locals.All() {
 		resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.locals."+k)
 		if err != nil {
-			return err
+			// Precise tolerance. A malformed template (parse) or a `.provides`
+			// reverse reference is invalid at any phase — keep it loud. An
+			// execute/missingkey failure means this local references data not
+			// available at the per-Release closure (e.g. a render-time-only
+			// `.context.instance_id` consumed by valuesMapping); it is not a
+			// lock-time concern, so skip it and continue. The source template's
+			// own evaluation remains the gate — if `source:` references this
+			// now-absent local, that eval fails with ErrSourceTemplateAtLockTime
+			// naming the source field.
+			if errors.Is(err, ErrSourceTemplateParse) || errors.Is(err, ErrSourceTemplateProvidesRef) {
+				return err
+			}
+			continue
 		}
 		ctx.Locals[k] = resolved
 	}
