@@ -432,7 +432,7 @@ func phaseB6(
 
 			frCtx := *tmplCtx // shallow copy
 			frCtx.Values = entry.Values
-			frCtx.Infra = types.OrderedMap[any]{}
+			frCtx.Infra = entry.Infra
 
 			frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 				fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],

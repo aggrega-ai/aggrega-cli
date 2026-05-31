@@ -144,6 +144,40 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	}
 }
 
+// TestMergeContribution_CredentialCarriesPerInstanceInfra pins the secret/feature
+// IR-entry unification: a credential routed into the secrets bucket carries its
+// per-instance infra (the Release-tier infra in scope at the merge site), exactly
+// as a feature does — not the former lossy {Type, Values}-only projection that
+// dropped it. Before the unification this infra was discarded and the secret
+// render path read an empty bag.
+func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
+	t.Parallel()
+	result := &featureResult{
+		Features: types.OrderedMap[types.IRFeatureEntry]{},
+		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
+	}
+	values := types.OrderedMap[any]{}
+	values.Set("vault_path", "/secret/db")
+	infra := types.OrderedMap[any]{}
+	infra.Set("replica_count", "3")
+	markerSet := map[string]bool{}
+
+	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, markerSet, featureCatalog(), "api", explicitProvenance); err != nil {
+		t.Fatalf("mergeContribution: %v", err)
+	}
+	if result.Features.Len() != 0 {
+		t.Errorf("credential should route to secrets, not features; got %d features", result.Features.Len())
+	}
+	s, ok := result.Secrets.Get("db-creds")
+	if !ok {
+		t.Fatal("expected secret db-creds")
+	}
+	got, ok := s.Infra.Get("replica_count")
+	if !ok || got != "3" {
+		t.Errorf("secret per-instance infra not carried: Infra=%v; want replica_count=3", s.Infra)
+	}
+}
+
 func TestCollectNodeFeatures_TypeMismatchError(t *testing.T) {
 	t.Parallel()
 

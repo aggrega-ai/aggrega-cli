@@ -14,11 +14,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -78,6 +80,49 @@ type pullConfig struct {
 // Returns wrapped errors on workspace-config validation failure,
 // Release/Manifest/Aggregate load failure, closure walk failure
 // (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
+// irEntityInfra derives the per-instance source infra for FeatureRecipe / secret
+// entities from the IR render-set (graph.Spec) — the exact feature/secret set the
+// renderer renders, assembled across all five tiers (Aggregate component/subsystem,
+// Release boundary-wide/component, annotation-expanded) at IR-build. Reading the IR
+// (rather than the topology or a Release-boundary walk, each short by tiers) is what
+// makes the no-using-instance skip in source-descent congruent with rendering.
+//
+// Each entry is keyed by the Manifest-mapped FeatureRecipe URI — the verbatim
+// string the closure records as the source-descent entity — so the returned map
+// joins against closure entities. An instance whose type has no Manifest mapping
+// carries no source-descent entity and is skipped. Per-instance infra is the
+// IR-resolved entry.Infra (the secret entry carries it post-unification), so no
+// Release-side join is needed.
+func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest) map[string][]closure.ComponentSourceInfra {
+	out := map[string][]closure.ComponentSourceInfra{}
+	add := func(nodeID, scope, instance, featType string, entryInfra types.OrderedMap[any]) {
+		if featType == "" {
+			return
+		}
+		frURI, found := catalog.FeatureRecipeURI(manifest, featType)
+		if !found {
+			return
+		}
+		var infra map[string]any
+		if entryInfra.Len() > 0 {
+			infra = entryInfra.TemplateAlphabeticalMapDeep()
+		}
+		out[frURI] = append(out[frURI],
+			closure.ComponentSourceInfra{Component: nodeID + "." + scope + "." + instance, Infra: infra})
+	}
+	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
+		for instName, entry := range feats.All() {
+			add(nodeID, "features", instName, entry.Type, entry.Infra)
+		}
+	}
+	for nodeID, secs := range graph.Spec.Secrets.All() {
+		for instName, entry := range secs.All() {
+			add(nodeID, "secrets", instName, entry.Type, entry.Infra)
+		}
+	}
+	return out
+}
+
 // source descent failure (closure.ErrSourceTemplateAtLockTime), and
 // lockfile write failure.
 func pullRun(cfg pullConfig) error {
@@ -210,40 +255,27 @@ func pullRun(cfg pullConfig) error {
 			closure.ComponentSourceInfra{Component: node.InstanceID, Infra: infra})
 	}
 
-	// Feature / secret attachment instances: mirror the closure's attachment
-	// enumeration (top-level boundaries' components' Features + Secrets), keyed by
-	// the Manifest-mapped FeatureRecipe URI. Per-feature infra is the raw
-	// BoundaryFeature.infra — feature attachments carry no cascade (the boundary
-	// cascade flows annotations, not infra).
-	for _, b := range rel.Spec.Boundaries.All() {
-		for compName, bc := range b.Components.All() {
-			for fname, bf := range bc.Features.All() {
-				if bf.Type == "" {
-					continue
-				}
-				if frURI, found := catalog.FeatureRecipeURI(manifest, bf.Type); found {
-					var infra map[string]any
-					if bf.Infra.Len() > 0 {
-						infra = bf.Infra.TemplateAlphabeticalMapDeep()
-					}
-					perEntityInfra[frURI] = append(perEntityInfra[frURI],
-						closure.ComponentSourceInfra{Component: compName + ".features." + fname, Infra: infra})
-				}
-			}
-			for sname, bs := range bc.Secrets.All() {
-				if bs.Type == "" {
-					continue
-				}
-				if frURI, found := catalog.FeatureRecipeURI(manifest, bs.Type); found {
-					var infra map[string]any
-					if bs.Infra.Len() > 0 {
-						infra = bs.Infra.TemplateAlphabeticalMapDeep()
-					}
-					perEntityInfra[frURI] = append(perEntityInfra[frURI],
-						closure.ComponentSourceInfra{Component: compName + ".secrets." + sname, Infra: infra})
-				}
-			}
-		}
+	// Feature / secret instances: derive from the IR render-set, not a Release
+	// walk. The renderer renders graph.Spec (the IR), whose feature/secret set is
+	// assembled across all five tiers (Aggregate component/subsystem, Release
+	// boundary-wide/component, annotation-expanded) at IR-build — a Release-boundary
+	// walk and the topology are each short by tiers, so the using-set must come from
+	// the IR for the no-using-instance skip to be congruent with rendering. Building
+	// the IR here is acyclic (it consumes topology + resolve + catalog and copies
+	// the recipe source pointer, never a fetched artifact); pull thus inherits the
+	// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra
+	// (Part B made secrets carry it), so no Release-side join is needed.
+	graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+		Topology:        topo,
+		ResolveResult:   rr,
+		CatalogLookup:   cat.CatalogLookup(),
+		CompilerVersion: "0.1.0",
+	})
+	if err != nil {
+		return fmt.Errorf("ir: %w", err)
+	}
+	for frURI, comps := range irEntityInfra(graph, manifest) {
+		perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
 	}
 
 	sourceArtifacts, err := closure.DescendRecipeSources(

@@ -12,7 +12,68 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// TestIrEntityInfra_DerivesUsingSetFromIRRenderSet pins Part A: the FeatureRecipe /
+// secret per-instance using-set is derived from the IR render-set (graph.Spec) —
+// every feature/secret entry the renderer renders, keyed by the Manifest-mapped
+// FeatureRecipe URI, carrying its own IR-resolved infra. Two instances of one FR on
+// different nodes yield two references with distinct infra; the secret bucket is
+// derived alongside features; an instance whose type has no Manifest mapping is
+// skipped. (The IR's five-tier assembly is tested in the ir package; this pins that
+// pull reads that render-set rather than a tier-short proxy.)
+func TestIrEntityInfra_DerivesUsingSetFromIRRenderSet(t *testing.T) {
+	t.Parallel()
+	entry := func(typ, infraKey, infraVal string) types.IRFeatureEntry {
+		e := types.IRFeatureEntry{Type: typ, Infra: types.OrderedMap[any]{}}
+		if infraKey != "" {
+			e.Infra.Set(infraKey, infraVal)
+		}
+		return e
+	}
+	apiFeats := types.OrderedMap[types.IRFeatureEntry]{}
+	apiFeats.Set("tls", entry("core/tls", "chart_version", "1.2.3"))
+	apiFeats.Set("orphan", entry("core/unmapped", "", "")) // no Manifest mapping
+	webFeats := types.OrderedMap[types.IRFeatureEntry]{}
+	webFeats.Set("tls", entry("core/tls", "chart_version", "4.5.6"))
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set("api", apiFeats)
+	fvm.Set("web", webFeats)
+
+	apiSecrets := types.OrderedMap[types.IRSecretEntry]{}
+	apiSecrets.Set("db", entry("core/db-creds", "size", "large"))
+	secs := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	secs.Set("api", apiSecrets)
+
+	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: fvm, Secrets: secs}}
+
+	flatF := &types.MappingTier{}
+	flatF.Type.Set("core/tls", "tls-helm:1.0.0")
+	flatF.Type.Set("core/db-creds", "db-creds-helm:1.0.0")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Features: flatF}}}
+
+	out := irEntityInfra(graph, manifest)
+
+	tls := out["tls-helm:1.0.0"]
+	if len(tls) != 2 {
+		t.Fatalf("tls-helm references: %d; want 2 (one per node instance)", len(tls))
+	}
+	gotInfra := map[string]any{}
+	for _, c := range tls {
+		gotInfra[c.Component] = c.Infra["chart_version"]
+	}
+	if gotInfra["api.features.tls"] != "1.2.3" || gotInfra["web.features.tls"] != "4.5.6" {
+		t.Errorf("per-instance infra not carried from the IR: %v", gotInfra)
+	}
+	db := out["db-creds-helm:1.0.0"]
+	if len(db) != 1 || db[0].Component != "api.secrets.db" || db[0].Infra["size"] != "large" {
+		t.Errorf("secret using-set not derived from the IR render-set: %v", db)
+	}
+	if _, ok := out["core/unmapped"]; ok {
+		t.Error("a type with no Manifest mapping must not appear in the using-set")
+	}
+}
 
 // authoringFixture writes the minimal multi-file fixture every pull /
 // build integration test consumes. Returns the absolute path to the

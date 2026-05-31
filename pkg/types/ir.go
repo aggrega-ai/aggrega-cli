@@ -203,14 +203,21 @@ type FieldProvenance struct {
 	OverridesAnnotation *FieldProvenance `json:"overrides_annotation,omitempty"`
 }
 
-// IRSecretEntry is a validated credential request for a node.
-// Schema: ir-v1alpha1.schema.json secrets entry
-type IRSecretEntry struct {
-	Type            string                         `json:"type"`
-	ResolvedVersion string                         `json:"resolved_version"`
-	Values          OrderedMap[any]                `json:"values,omitempty,omitzero"`
-	Inject          OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
-}
+// IRSecretEntry is a per-node credential request. A secret is structurally a
+// feature with kind=secret (see [FeatureKindSecret]): it carries the same IR
+// attachment shape as [IRFeatureEntry] and is partitioned into the secrets bucket
+// rather than given a lossier projection. Modelling the two as one shape keeps the
+// secret projection from drifting behind the feature projection — the accident that
+// dropped per-instance secret infra. No plaintext is implied: Values holds vault
+// pointers, and infra/provenance/origin are structural metadata, never resolved
+// secret values (the compiler stays blind to plaintext).
+//
+// All fields beyond Type/ResolvedVersion are omitempty, so a credential request
+// carrying only Type+Values serialises identically to the former dedicated shape;
+// the additional keys appear only when populated (e.g. per-instance infra).
+//
+// Schema: ir-v1alpha1.schema.json secrets entry (shares the feature entry shape).
+type IRSecretEntry = IRFeatureEntry
 
 // IRProvenance records compiler and source traceability for an IR build.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/provenance

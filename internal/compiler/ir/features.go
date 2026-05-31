@@ -291,6 +291,44 @@ func collectNodeFeatures(
 // tiers; the caller sort-extracts at the end of collectNodeFeatures.
 // FeatureOrder is appended only on first sight of an instance name so
 // the order vector is stable across re-merges of the same instance.
+// newAttachmentEntry builds a fresh IR attachment entry (a feature or, in the
+// secrets bucket, a credential) from one contribution. Both buckets share the
+// shape, so both build it here — there is no lossier secret construction to drift.
+//
+// The first-sight stamp on top-level Origin/AnnotationKey/AnnotationSource
+// preserves per-attachment provenance for contributions carrying no Values/Infra
+// leaves; the leaf-derived top-level Origin computed by finalizeTopLevelOrigin
+// overwrites these when per-leaf detail exists. The contribution's nested
+// OrderedMap structure copies into entry.Values / entry.Infra verbatim; the
+// provenance maps record one FieldProvenance per primitive leaf, keyed by the
+// dotted path flattened from the nested tree.
+func newAttachmentEntry(featType string, values, infra types.OrderedMap[any], provenance featureProvenance) types.IRFeatureEntry {
+	entry := types.IRFeatureEntry{
+		Type:             featType,
+		Values:           types.OrderedMap[any]{},
+		Infra:            types.OrderedMap[any]{},
+		ValuesProvenance: types.OrderedMap[types.FieldProvenance]{},
+		InfraProvenance:  types.OrderedMap[types.FieldProvenance]{},
+		Origin:           provenance.Origin,
+		AnnotationKey:    provenance.AnnotationKey,
+		AnnotationSource: provenance.AnnotationSource,
+	}
+	for k, v := range values.All() {
+		entry.Values.Set(k, v)
+	}
+	for k, v := range infra.All() {
+		entry.Infra.Set(k, v)
+	}
+	fp := provenance.toFieldProvenance()
+	for _, leaf := range types.FlattenLeaves(values) {
+		entry.ValuesProvenance.Set(leaf.Path, fp)
+	}
+	for _, leaf := range types.FlattenLeaves(infra) {
+		entry.InfraProvenance.Set(leaf.Path, fp)
+	}
+	return entry
+}
+
 func mergeContribution(
 	result *featureResult,
 	instanceName string,
@@ -302,51 +340,19 @@ func mergeContribution(
 	provenance featureProvenance,
 ) error {
 	if isCredential(featType, catalogLookup) {
-		result.Secrets.Set(instanceName, types.IRSecretEntry{
-			Type:   featType,
-			Values: values,
-		})
+		// A credential routes into the secrets bucket, but carries the same IR
+		// attachment shape as a feature (per-instance infra + provenance), not a
+		// lossier projection — so a secret FeatureRecipe's source/valuesMapping can
+		// read .infra exactly as a feature can. infra here is the in-scope
+		// per-instance bag the Release tiers pass.
+		result.Secrets.Set(instanceName, newAttachmentEntry(featType, values, infra, provenance))
 		markerSet[featType] = true
 		return nil
 	}
 
 	existing, exists := result.Features.Get(instanceName)
 	if !exists {
-		// First-sight stamp on top-level Origin/AnnotationKey/AnnotationSource
-		// preserves the per-attachment provenance for cases where the
-		// contribution carries no Values or Infra leaves. The leaf-
-		// derived top-level Origin computed by finalizeTopLevelOrigin
-		// overwrites these fields when per-leaf detail exists.
-		//
-		// Per-leaf provenance is keyed by flat-dotted-leaf path. The
-		// contribution's nested OrderedMap structure copies into
-		// entry.Values / entry.Infra verbatim (preserving the nested
-		// tree consumed downstream); the provenance maps record one
-		// FieldProvenance per primitive leaf, keyed by the dotted path
-		// flattened from the nested tree.
-		entry := types.IRFeatureEntry{
-			Type:             featType,
-			Values:           types.OrderedMap[any]{},
-			Infra:            types.OrderedMap[any]{},
-			ValuesProvenance: types.OrderedMap[types.FieldProvenance]{},
-			InfraProvenance:  types.OrderedMap[types.FieldProvenance]{},
-			Origin:           provenance.Origin,
-			AnnotationKey:    provenance.AnnotationKey,
-			AnnotationSource: provenance.AnnotationSource,
-		}
-		for k, v := range values.All() {
-			entry.Values.Set(k, v)
-		}
-		for k, v := range infra.All() {
-			entry.Infra.Set(k, v)
-		}
-		fp := provenance.toFieldProvenance()
-		for _, leaf := range types.FlattenLeaves(values) {
-			entry.ValuesProvenance.Set(leaf.Path, fp)
-		}
-		for _, leaf := range types.FlattenLeaves(infra) {
-			entry.InfraProvenance.Set(leaf.Path, fp)
-		}
+		entry := newAttachmentEntry(featType, values, infra, provenance)
 		result.Features.Set(instanceName, entry)
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
 		markerSet[featType] = true
