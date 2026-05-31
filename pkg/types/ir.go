@@ -212,9 +212,12 @@ type FieldProvenance struct {
 // pointers, and infra/provenance/origin are structural metadata, never resolved
 // secret values (the compiler stays blind to plaintext).
 //
-// All fields beyond Type/ResolvedVersion are omitempty, so a credential request
-// carrying only Type+Values serialises identically to the former dedicated shape;
-// the additional keys appear only when populated (e.g. per-instance infra).
+// Type and ResolvedVersion are always serialised (non-omitempty); ResolvedVersion
+// carries the credential's OWN resolved catalog version (the Feature's version, not
+// the host component's). Every other field is omitempty, so the serialised KEY set
+// for a credential carrying only Type+Values matches the former dedicated shape —
+// the added fields (infra, provenance, origin, nested secrets) appear only when
+// populated.
 //
 // Schema: ir-v1alpha1.schema.json secrets entry (shares the feature entry shape).
 type IRSecretEntry = IRFeatureEntry

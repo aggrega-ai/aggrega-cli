@@ -144,6 +144,79 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	}
 }
 
+// TestResolvedVersionIsFeatureVersionNotComponent pins the source-fix: a
+// feature/secret entry's resolved_version is the attachment's OWN catalog version
+// (catalogLookup.Feature(type).Metadata.Version), NOT the host component's version.
+// Existing fixtures use version-less features (resolved_version stays ""), so this
+// test supplies a versioned catalog and asserts the entry carries the feature's
+// version — the proof the populate landed against the right source.
+func TestResolvedVersionIsFeatureVersionNotComponent(t *testing.T) {
+	t.Parallel()
+	cat := resolver.CatalogLookup{
+		Feature: func(typeURI string) (types.Feature, bool) {
+			switch typeURI {
+			case "core/monitoring":
+				return types.Feature{Metadata: types.FeatureMetadata{Name: "core/monitoring", Version: "2.5.0"}}, true
+			case "core/db-creds":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.FeatureKindLabel, types.FeatureKindSecret)
+				return types.Feature{Metadata: types.FeatureMetadata{Name: "core/db-creds", Version: "3.1.0", Labels: labels}}, true
+			}
+			return types.Feature{}, false
+		},
+	}
+	result := &featureResult{
+		Features: types.OrderedMap[types.IRFeatureEntry]{},
+		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
+	}
+	empty := types.OrderedMap[any]{}
+	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
+		t.Fatalf("mergeContribution feature: %v", err)
+	}
+	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
+		t.Fatalf("mergeContribution credential: %v", err)
+	}
+	if f, _ := result.Features.Get("mon"); f.ResolvedVersion != "2.5.0" {
+		t.Errorf("feature resolved_version = %q; want 2.5.0 (feature catalog version)", f.ResolvedVersion)
+	}
+	if s, _ := result.Secrets.Get("creds"); s.ResolvedVersion != "3.1.0" {
+		t.Errorf("credential resolved_version = %q; want 3.1.0 (feature catalog version)", s.ResolvedVersion)
+	}
+}
+
+// TestCollectNodeFeatures_TopologySecretResolvedVersion pins resolved_version on the
+// topology SecretAttachments path (the :237 constructor), distinct from the
+// mergeContribution credential branch.
+func TestCollectNodeFeatures_TopologySecretResolvedVersion(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		SecretAttachments: map[string][]topology.SecretAttachment{
+			"api": {{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds"}}},
+		},
+	}
+	cat := resolver.CatalogLookup{
+		Component: func(string) (types.Component, bool) { return types.Component{}, false },
+		Feature: func(typeURI string) (types.Feature, bool) {
+			if typeURI == "core/db-creds" {
+				return types.Feature{Metadata: types.FeatureMetadata{Name: "core/db-creds", Version: "3.1.0"}}, true
+			}
+			return types.Feature{}, false
+		},
+	}
+	resolveResult := &resolver.ResolveResult{Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "t"}}}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, cat)
+	if err != nil {
+		t.Fatalf("collectNodeFeatures: %v", err)
+	}
+	if s, _ := result.Secrets.Get("db-creds"); s.ResolvedVersion != "3.1.0" {
+		t.Errorf("topology secret resolved_version = %q; want 3.1.0", s.ResolvedVersion)
+	}
+}
+
 // TestMergeContribution_CredentialCarriesPerInstanceInfra pins the secret/feature
 // IR-entry unification: a credential routed into the secrets bucket carries its
 // per-instance infra (the Release-tier infra in scope at the merge site), exactly

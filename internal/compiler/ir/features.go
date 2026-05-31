@@ -235,8 +235,9 @@ func collectNodeFeatures(
 	if attachments, ok := topoResult.SecretAttachments[nodeID]; ok {
 		for _, sa := range attachments {
 			result.Secrets.Set(sa.InstanceName, types.IRSecretEntry{
-				Type:   sa.Secret.Type,
-				Values: sa.Secret.Values,
+				Type:            sa.Secret.Type,
+				ResolvedVersion: featureVersion(catalogLookup, sa.Secret.Type),
+				Values:          sa.Secret.Values,
 			})
 			markerSet[sa.Secret.Type] = true
 		}
@@ -302,9 +303,10 @@ func collectNodeFeatures(
 // OrderedMap structure copies into entry.Values / entry.Infra verbatim; the
 // provenance maps record one FieldProvenance per primitive leaf, keyed by the
 // dotted path flattened from the nested tree.
-func newAttachmentEntry(featType string, values, infra types.OrderedMap[any], provenance featureProvenance) types.IRFeatureEntry {
+func newAttachmentEntry(featType, resolvedVersion string, values, infra types.OrderedMap[any], provenance featureProvenance) types.IRFeatureEntry {
 	entry := types.IRFeatureEntry{
 		Type:             featType,
+		ResolvedVersion:  resolvedVersion,
 		Values:           types.OrderedMap[any]{},
 		Infra:            types.OrderedMap[any]{},
 		ValuesProvenance: types.OrderedMap[types.FieldProvenance]{},
@@ -329,6 +331,22 @@ func newAttachmentEntry(featType string, values, infra types.OrderedMap[any], pr
 	return entry
 }
 
+// featureVersion resolves the catalog version of a Feature/credential type — the
+// attachment's OWN resolved version (NOT the host component's version). The entry's
+// resolved_version reflects the feature, so a node carrying components at one version
+// and features at another reports each accurately. Returns "" when the type is
+// absent (the IR keeps the empty string rather than borrowing a wrong version).
+func featureVersion(catalogLookup resolver.CatalogLookup, featType string) string {
+	if catalogLookup.Feature == nil || featType == "" {
+		return ""
+	}
+	feat, found := catalogLookup.Feature(featType)
+	if !found {
+		return ""
+	}
+	return feat.Metadata.Version
+}
+
 func mergeContribution(
 	result *featureResult,
 	instanceName string,
@@ -339,20 +357,23 @@ func mergeContribution(
 	nodeID string,
 	provenance featureProvenance,
 ) error {
+	// resolved_version is the attachment's OWN feature/credential version, not the
+	// host component's — resolved once here from the catalog.
+	version := featureVersion(catalogLookup, featType)
 	if isCredential(featType, catalogLookup) {
 		// A credential routes into the secrets bucket, but carries the same IR
 		// attachment shape as a feature (per-instance infra + provenance), not a
 		// lossier projection — so a secret FeatureRecipe's source/valuesMapping can
 		// read .infra exactly as a feature can. infra here is the in-scope
 		// per-instance bag the Release tiers pass.
-		result.Secrets.Set(instanceName, newAttachmentEntry(featType, values, infra, provenance))
+		result.Secrets.Set(instanceName, newAttachmentEntry(featType, version, values, infra, provenance))
 		markerSet[featType] = true
 		return nil
 	}
 
 	existing, exists := result.Features.Get(instanceName)
 	if !exists {
-		entry := newAttachmentEntry(featType, values, infra, provenance)
+		entry := newAttachmentEntry(featType, version, values, infra, provenance)
 		result.Features.Set(instanceName, entry)
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
 		markerSet[featType] = true
@@ -377,6 +398,9 @@ func mergeContribution(
 
 	if featType != "" {
 		existing.Type = featType
+		if existing.ResolvedVersion == "" {
+			existing.ResolvedVersion = version
+		}
 	}
 	result.Features.Set(instanceName, existing)
 	markerSet[featType] = true
