@@ -164,6 +164,90 @@ func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
 	}
 }
 
+// TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile pins the build-time
+// FeatureRecipe source contract: a FeatureRecipe's REMOTE source is resolved + verified + cache-extracted
+// through the SAME shared helper the component path uses (the FR render sites call
+// resolveEntitySource with the FR's source/locals/uri/infra). A real pinned fixture
+// (lockfile entry + cached archive matching {kind,url,version}) proves the cache HIT —
+// the resolved value is the extracted path, not the verbatim URL.
+func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZForResolveTest(t, map[string]string{
+		"Chart.yaml": "apiVersion: v2\nname: tls\nversion: 1.2.3\n",
+	})
+	digest := digestOfBytes(blob)
+	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
+		"oci://hub.aggrega.ai/charts/tls", "1.2.3", digest)
+	mustMkdirAll(t, slot)
+	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
+		Kind:      "helm-oci-chart",
+		URL:       "oci://hub.aggrega.ai/charts/tls",
+		Version:   "1.2.3",
+		Digest:    digest,
+		Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+		PulledAt:  time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC),
+	})
+	input := RendererInput{
+		Lockfile: &lockfile.Lockfile{
+			Version:     1,
+			Release:     "./r.yaml",
+			GeneratedAt: "2026-05-22T10:00:00Z",
+			SourceArtifacts: []lockfile.SourceArtifact{{
+				Kind:          "helm-oci-chart",
+				URL:           "oci://hub.aggrega.ai/charts/tls",
+				PinnedVersion: "1.2.3",
+				Digest:        digest,
+				Mediatype:     "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+				ReferencedBy: []lockfile.SourceArtifactReference{
+					{Entity: "feature_recipe", URI: "tls-helm:1.0.0", Field: "spec.source"},
+				},
+			}},
+		},
+		WorkspaceRoot: root,
+		CacheDir:      ".aggrega/cache",
+	}
+	source := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://hub.aggrega.ai/charts/tls",
+		"version": "1.2.3",
+	}
+	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{})
+	if err != nil {
+		t.Fatalf("resolveEntitySource (FR remote): %v", err)
+	}
+	resolvedPath, _ := resolved.(string)
+	if resolvedPath == "" {
+		t.Fatalf("FR Source should be a non-empty extracted path; got %v", resolved)
+	}
+	if _, err := os.Stat(filepath.Join(resolvedPath, "Chart.yaml")); err != nil {
+		t.Errorf("Chart.yaml missing in resolved FR Source path — cache HIT not proven: %v", err)
+	}
+}
+
+// TestResolveEntitySource_LocalForwardsVerbatim is the MANDATORY local-source
+// regression lock: even with lockfile + workspace + cache all set, a local/inline
+// source short-circuits to verbatim — only REMOTE sources route through
+// resolve+extract. This holds the FR local-source path byte-identical (the FR render
+// sites set frNodeCtx.Source = this verbatim value, identical to the prior
+// verbatim-forward behaviour for local sources).
+func TestResolveEntitySource_LocalForwardsVerbatim(t *testing.T) {
+	t.Parallel()
+	input := RendererInput{
+		Lockfile:      &lockfile.Lockfile{Version: 1},
+		WorkspaceRoot: "/ws",
+		CacheDir:      ".aggrega/cache",
+	}
+	resolved, err := resolveEntitySource(input, "./charts/local-tls", types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{})
+	if err != nil {
+		t.Fatalf("resolveEntitySource (local): %v", err)
+	}
+	if resolved != "./charts/local-tls" {
+		t.Errorf("local source must forward verbatim (no cache route); got %v", resolved)
+	}
+}
+
 func TestResolveSourceForNodeHaltsOnMissingLockfileEntry(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

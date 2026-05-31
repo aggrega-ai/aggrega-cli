@@ -220,14 +220,27 @@ func EvaluateSourceSpec(infra map[string]any, recipe *types.Recipe) (*SourceSpec
 	if recipe == nil || recipe.Spec.Source == nil {
 		return nil, nil
 	}
-	if infra == nil {
-		infra = map[string]any{}
-	}
 	recipeURI := recipe.Metadata.Name
 	if recipe.Metadata.Version != "" {
 		recipeURI = recipeURI + ":" + recipe.Metadata.Version
 	}
-	return buildSourceSpec(recipe.Spec.Source, infra, recipe.Spec.Locals, recipeURI)
+	return EvaluateSourceSpecFields(infra, recipe.Spec.Source, recipe.Spec.Locals, recipeURI)
+}
+
+// EvaluateSourceSpecFields is the entity-agnostic build-time source-spec evaluator.
+// It takes the source fields directly — the source value, the resolving instance's
+// per-instance infra, the entity's locals, and its URI — rather than a *types.Recipe,
+// so a FeatureRecipe render site resolves its source through the same buildSourceSpec
+// the component path uses (one evaluation body, two entities). EvaluateSourceSpec is
+// the thin *types.Recipe wrapper over it. Returns (nil, nil) for a nil source.
+func EvaluateSourceSpecFields(infra map[string]any, source any, locals types.OrderedMap[string], uri string) (*SourceSpec, error) {
+	if source == nil {
+		return nil, nil
+	}
+	if infra == nil {
+		infra = map[string]any{}
+	}
+	return buildSourceSpec(source, infra, locals, uri)
 }
 
 // buildSourceSpec normalises a Recipe spec.source field (which is

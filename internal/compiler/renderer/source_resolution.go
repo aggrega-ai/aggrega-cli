@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -50,38 +51,90 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 	if recipe == nil || recipe.Spec.Source == nil {
 		return nil
 	}
-	originalSource := recipe.Spec.Source
-	nodeCtx.OriginalSource = originalSource
-
-	if isLocalSource(originalSource) {
-		nodeCtx.Source = originalSource
-		return nil
+	nodeCtx.OriginalSource = recipe.Spec.Source
+	uri := recipe.Metadata.Name
+	if recipe.Metadata.Version != "" {
+		uri = uri + ":" + recipe.Metadata.Version
 	}
-
-	if input.Lockfile == nil || input.WorkspaceRoot == "" || input.CacheDir == "" {
-		nodeCtx.Source = originalSource
-		return nil
-	}
-
-	spec, err := closure.EvaluateSourceSpec(nodeBoundaryInfra(input, nodeCtx.NodeID), recipe)
+	resolved, err := resolveEntitySource(
+		input, recipe.Spec.Source, recipe.Spec.Locals, uri,
+		nodeBoundaryInfra(input, nodeCtx.NodeID),
+	)
 	if err != nil {
 		return err
 	}
-	if spec == nil {
-		nodeCtx.Source = nil
-		return nil
-	}
+	nodeCtx.Source = resolved
+	return nil
+}
 
+// resolveEntitySource resolves one entity's source — a component Recipe's or a
+// FeatureRecipe's — to the value an engine consumes, through ONE body both call
+// sites share (the component node loop via resolveSourceForNode, the FeatureRecipe
+// render sites directly). A local/inline source forwards verbatim; a remote source
+// with lockfile + workspaceRoot + cacheDir all set is evaluated to a
+// {kind, url, version} identity and resolved through the lockfile-pin cache extract;
+// with any of those inputs unset it forwards verbatim (preserving the pre-lockfile
+// path). infra is the resolving instance's per-instance infra; uri is the entity URI
+// for the source-spec evaluation. Returns the resolved source (extracted cache path,
+// or the verbatim source) and nil when the source evaluates to nil.
+//
+// Wrapping fetch errors into the FETCH_ERROR category is the caller's concern via
+// wrapSourceResolutionError, so both call sites surface fetch failures identically.
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, infra map[string]any) (any, error) {
+	if source == nil {
+		return nil, nil
+	}
+	if isLocalSource(source) {
+		return source, nil
+	}
+	if input.Lockfile == nil || input.WorkspaceRoot == "" || input.CacheDir == "" {
+		return source, nil
+	}
+	spec, err := closure.EvaluateSourceSpecFields(infra, source, locals, uri)
+	if err != nil {
+		return nil, err
+	}
+	if spec == nil {
+		return nil, nil
+	}
 	extracted, err := sourcecache.LookupAndExtract(
 		input.Lockfile,
 		spec.Kind, spec.URL, spec.Version,
 		input.WorkspaceRoot, input.CacheDir,
 	)
 	if err != nil {
-		return fmt.Errorf("source-artifact %s@%s: %w", spec.URL, spec.Version, err)
+		return nil, fmt.Errorf("source-artifact %s@%s: %w", spec.URL, spec.Version, err)
 	}
-	nodeCtx.Source = extracted
-	return nil
+	return extracted, nil
+}
+
+// frSourceURI is the FeatureRecipe analogue of the recipe URI used for source-spec
+// evaluation: metadata.name, optionally suffixed with :version.
+func frSourceURI(fr *types.FeatureRecipe) string {
+	uri := fr.Metadata.Name
+	if fr.Metadata.Version != "" {
+		uri = uri + ":" + fr.Metadata.Version
+	}
+	return uri
+}
+
+// wrapSourceResolutionError categorises a source-resolution error: fetch sentinels
+// route to FETCH_ERROR with an appended remediation pointer (unless the chain already
+// carries one); everything else routes to TRANSLATION_ERROR. Shared by the component
+// node loop and the FeatureRecipe render sites so both surface source-fetch failures
+// identically. label is the leading "Step 5 node %q ... source resolution" message.
+func wrapSourceResolutionError(err error, nodeID, label string) error {
+	category := cerrors.TranslationError
+	message := label
+	if sentinel, ok := matchFetchSentinel(err); ok {
+		category = cerrors.FetchError
+		if !strings.Contains(err.Error(), "remediation:") {
+			if rem := oci.RemediationFor(sentinel, hostFromSourceErr(err)); rem != "" {
+				message = message + "; " + rem
+			}
+		}
+	}
+	return cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, message)
 }
 
 // isLocalSource returns true when source is a scalar URI naming a

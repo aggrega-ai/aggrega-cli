@@ -41,7 +41,7 @@ func TestPhaseB6_NoFeatures(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
 	state := &PhaseBState{NodeID: "n"}
-	got, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, types.OrderedMap[types.IRSecretEntry]{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil)
+	got, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, types.OrderedMap[types.IRSecretEntry]{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{})
 	if err != nil {
 		t.Errorf("no features: %v", err)
 	}

@@ -319,6 +319,7 @@ func phaseB6(
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
+	input RendererInput,
 ) (map[string][]byte, error) {
 	out := map[string][]byte{}
 	nodeID := state.NodeID
@@ -388,11 +389,16 @@ func phaseB6(
 		}
 
 		frNodeCtx := nodeCtx
-		if src, ok := fr.Spec.Source.(string); ok && src != "" {
-			frNodeCtx.Source = src
-		} else if fr.Spec.Source != nil {
-			frNodeCtx.Source = fr.Spec.Source
+		frNodeCtx.OriginalSource = fr.Spec.Source
+		frInfra := map[string]any{}
+		if hasFeat {
+			frInfra = feat.Infra.TemplateAlphabeticalMapDeep()
 		}
+		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frInfra)
+		if err != nil {
+			return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q feature %q source resolution", nodeID, ref.InstanceName))
+		}
+		frNodeCtx.Source = resolvedSrc
 
 		frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 		if err != nil {
@@ -455,11 +461,12 @@ func phaseB6(
 			}
 
 			frNodeCtx := nodeCtx
-			if src, ok := fr.Spec.Source.(string); ok && src != "" {
-				frNodeCtx.Source = src
-			} else if fr.Spec.Source != nil {
-				frNodeCtx.Source = fr.Spec.Source
+			frNodeCtx.OriginalSource = fr.Spec.Source
+			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Infra.TemplateAlphabeticalMapDeep())
+			if err != nil {
+				return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
 			}
+			frNodeCtx.Source = resolvedSrc
 
 			frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 			if err != nil {
