@@ -17,35 +17,36 @@ import (
 
 // DescendRecipeSources walks every Recipe and FeatureRecipe URI in
 // the provided Closure, loads the parsed body via recipeLoader,
-// evaluates spec.source's templated fields against the Release's
-// resolved infra (plus the Recipe's own locals), classifies the
-// source kind, dispatches to sourceResolver, and aggregates the
+// evaluates spec.source's templated fields against each using
+// component's own infra (plus the Recipe's own locals), classifies
+// the source kind, dispatches to sourceResolver, and aggregates the
 // pulled artifacts into a deduped slice ready to feed into the
 // lockfile writer.
 //
-// release is the Release `aggrega pull` was invoked against; its
-// boundary cascade has been resolved upstream and is consumed via
-// the per-component infra view assembled here. workspaceRoot and
-// cacheDir are propagated into each SourceSpec the resolver
-// consumes (see internal/cacheslot for the slot computation that
-// depends on both).
+// perComponentInfra maps an entity URI to the per-component,
+// cascade-resolved infra of each component instance that uses it; the
+// source is resolved once per component, so the same Recipe used by
+// two components with different infra resolves twice (deduped by
+// identity, distinct when the infra genuinely differs). An entity with
+// no entry resolves once against empty infra. workspaceRoot and
+// cacheDir are propagated into each SourceSpec the resolver consumes
+// (see internal/cacheslot for the slot computation that depends on
+// both).
 //
 // Dedupe is by {Kind, URL, PinnedVersion} identity; each bucket
 // emits one SourceArtifact with all bucket's ReferencedBy records
-// appended (sorted by URI then Field for determinism).
+// appended (sorted by URI, then Component, then Field for determinism).
 //
 // Returns ErrSourceTemplateAtLockTime wrapped with the template's
 // source location on .provides references, ambiguous kind
 // classification, or missing .infra/.locals keys.
 func DescendRecipeSources(
-	release *types.Release,
+	perComponentInfra map[string][]ComponentSourceInfra,
 	closure Closure,
 	recipeLoader RecipeLoader,
 	sourceResolver SourceResolver,
 	workspaceRoot, cacheDir string,
 ) ([]SourceArtifact, error) {
-	infra := assembleInfra(release)
-
 	dedupe := map[string]*SourceArtifact{}
 	var order []string
 
@@ -99,44 +100,61 @@ func DescendRecipeSources(
 			continue
 		}
 
-		spec, err := buildSourceSpec(source, infra, locals, ent.URI)
-		if err != nil {
-			return nil, err
+		// Resolve the source once per using-component, against that component's
+		// own cascade-resolved infra — not a flattened Release-wide bag. A recipe
+		// backing N components resolves N times; identical resolutions dedupe to
+		// one artifact, genuinely-different ones produce distinct artifacts.
+		// Entities with no recorded per-component infra (none used the entity, or
+		// the source needs no infra) resolve once against empty infra.
+		comps := perComponentInfra[ent.URI]
+		if len(comps) == 0 {
+			comps = []ComponentSourceInfra{{Infra: map[string]any{}}}
 		}
-		if spec == nil {
-			continue
-		}
-		spec.WorkspaceRoot = workspaceRoot
-		spec.CacheDir = cacheDir
-
-		resolved, err := sourceResolver.Resolve(*spec)
-		if err != nil {
-			return nil, fmt.Errorf("closure: resolve source for %s %q: %w", entityKind, ent.URI, err)
-		}
-
-		ref := SourceArtifactReference{
-			Entity: entityKind,
-			URI:    ent.URI,
-			Field:  entityFieldTag,
-		}
-		if resolved.PinnedVersion != spec.Version && spec.Ref != "" {
-			ref.RequestedRef = spec.Ref
-		}
-
-		key := identityKey(resolved.Kind, resolved.URL, resolved.PinnedVersion)
-		sa, exists := dedupe[key]
-		if !exists {
-			sa = &SourceArtifact{
-				Kind:          resolved.Kind,
-				URL:           resolved.URL,
-				PinnedVersion: resolved.PinnedVersion,
-				Digest:        resolved.Digest,
-				Mediatype:     resolved.Mediatype,
+		for _, comp := range comps {
+			compInfra := comp.Infra
+			if compInfra == nil {
+				compInfra = map[string]any{}
 			}
-			dedupe[key] = sa
-			order = append(order, key)
+			spec, err := buildSourceSpec(source, compInfra, locals, ent.URI)
+			if err != nil {
+				return nil, err
+			}
+			if spec == nil {
+				continue
+			}
+			spec.WorkspaceRoot = workspaceRoot
+			spec.CacheDir = cacheDir
+
+			resolved, err := sourceResolver.Resolve(*spec)
+			if err != nil {
+				return nil, fmt.Errorf("closure: resolve source for %s %q: %w", entityKind, ent.URI, err)
+			}
+
+			ref := SourceArtifactReference{
+				Entity:    entityKind,
+				URI:       ent.URI,
+				Field:     entityFieldTag,
+				Component: comp.Component,
+			}
+			if resolved.PinnedVersion != spec.Version && spec.Ref != "" {
+				ref.RequestedRef = spec.Ref
+			}
+
+			key := identityKey(resolved.Kind, resolved.URL, resolved.PinnedVersion)
+			sa, exists := dedupe[key]
+			if !exists {
+				sa = &SourceArtifact{
+					Kind:          resolved.Kind,
+					URL:           resolved.URL,
+					PinnedVersion: resolved.PinnedVersion,
+					Digest:        resolved.Digest,
+					Mediatype:     resolved.Mediatype,
+				}
+				dedupe[key] = sa
+				order = append(order, key)
+			}
+			sa.ReferencedBy = append(sa.ReferencedBy, ref)
 		}
-		sa.ReferencedBy = append(sa.ReferencedBy, ref)
 	}
 
 	out := make([]SourceArtifact, 0, len(order))
@@ -146,6 +164,9 @@ func DescendRecipeSources(
 			a, b := sa.ReferencedBy[i], sa.ReferencedBy[j]
 			if a.URI != b.URI {
 				return a.URI < b.URI
+			}
+			if a.Component != b.Component {
+				return a.Component < b.Component
 			}
 			return a.Field < b.Field
 		})
@@ -165,10 +186,18 @@ func DescendRecipeSources(
 }
 
 // EvaluateSourceSpec is the build-time-orchestrator entry point for
-// source-template evaluation. Assembles infra from the Release,
-// extracts spec.source + spec.locals from the Recipe, and delegates
-// to the same buildSourceSpec used at lock time so the two evaluation
-// passes produce identical results against the same Release.
+// source-template evaluation. It takes the resolving component's own
+// per-component, cascade-resolved infra, extracts spec.source +
+// spec.locals from the Recipe, and delegates to the same buildSourceSpec
+// the lock-time descent uses — so a component's build-time source
+// identity matches the identity its lock-time descent pinned, against
+// the same per-component infra.
+//
+// The infra map is the component's BoundaryInfra projection (the same
+// per-component bag DescendRecipeSources resolves against at lock time),
+// NOT a Release-wide flattened bag. A Recipe backing two components with
+// different infra resolves to two identities — one per component — which
+// is exactly what the lockfile records.
 //
 // Returns a SourceSpec carrying the identity triple
 // {Kind, URL, Version} plus optional side-knobs (Chart, Ref,
@@ -180,17 +209,13 @@ func DescendRecipeSources(
 // Recipe — orchestrator skips resolution). Returns
 // ErrSourceTemplateAtLockTime on .provides references, ambiguous
 // kind classification, or missing keys.
-//
-// The lock-time descent path (DescendRecipeSources) does NOT call
-// this wrapper — it calls buildSourceSpec directly with infra
-// assembled once per descent pass. The wrapper exists for the
-// orchestrator's per-node call shape, where infra is consumed per
-// Recipe rather than batched.
-func EvaluateSourceSpec(release *types.Release, recipe *types.Recipe) (*SourceSpec, error) {
+func EvaluateSourceSpec(infra map[string]any, recipe *types.Recipe) (*SourceSpec, error) {
 	if recipe == nil || recipe.Spec.Source == nil {
 		return nil, nil
 	}
-	infra := assembleInfra(release)
+	if infra == nil {
+		infra = map[string]any{}
+	}
 	recipeURI := recipe.Metadata.Name
 	if recipe.Metadata.Version != "" {
 		recipeURI = recipeURI + ":" + recipe.Metadata.Version
@@ -501,35 +526,6 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 		ctx.Locals[k] = resolved
 	}
 	return nil
-}
-
-// assembleInfra produces the lock-time .infra map from the Release.
-// The current implementation walks Release.Spec.Boundaries and
-// flattens every BoundaryComponent.Infra into a single map. A future
-// implementation replaces this with the cascade-resolved per-component
-// view; tests use the helper directly with pre-assembled maps.
-func assembleInfra(release *types.Release) map[string]any {
-	out := map[string]any{}
-	if release == nil {
-		return out
-	}
-	var walk func(b types.Boundary)
-	walk = func(b types.Boundary) {
-		for _, bc := range b.Components.All() {
-			for k, v := range bc.Infra.All() {
-				if _, exists := out[k]; !exists {
-					out[k] = v
-				}
-			}
-		}
-		for _, sub := range b.Boundaries.All() {
-			walk(sub)
-		}
-	}
-	for _, b := range release.Spec.Boundaries.All() {
-		walk(b)
-	}
-	return out
 }
 
 // classifyEntityKind reads a catalog URI and returns "recipe" or

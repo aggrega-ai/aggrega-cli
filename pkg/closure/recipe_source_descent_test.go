@@ -138,9 +138,11 @@ func TestDescendEvaluatesInfraTemplate(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	release := releaseWithInfra(t, "db_chart_version", "25.0.8")
+	perComp := map[string][]closure.ComponentSourceInfra{
+		uri: {{Component: "db", Infra: map[string]any{"db_chart_version": "25.0.8"}}},
+	}
 
-	got, err := closure.DescendRecipeSources(release, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -161,14 +163,86 @@ func TestDescendEvaluatesLocalsOverInfra(t *testing.T) {
 	r.Spec.Locals.Set("computed", `{{ .infra.db_chart_version }}`)
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	release := releaseWithInfra(t, "db_chart_version", "26.0.0")
+	perComp := map[string][]closure.ComponentSourceInfra{
+		uri: {{Component: "db", Infra: map[string]any{"db_chart_version": "26.0.0"}}},
+	}
 
-	got, err := closure.DescendRecipeSources(release, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
 	if got[0].PinnedVersion != "26.0.0" {
 		t.Errorf("PinnedVersion = %q; want 26.0.0", got[0].PinnedVersion)
+	}
+}
+
+// TestDescendResolvesEachComponentAgainstOwnInfra pins the core
+// per-component contract: one Recipe backing two components whose infra
+// differs resolves to TWO source identities, each carrying that
+// component's own infra value — not a single first-wins collapse to one
+// version. The reference back-pointers carry the resolving component.
+func TestDescendResolvesEachComponentAgainstOwnInfra(t *testing.T) {
+	t.Parallel()
+	uri := "hub.aggrega.ai/recipe/helm/mariadb:1.0.0"
+	source := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://hub.aggrega.ai/charts/mariadb",
+		"version": `{{ .infra.chart_version }}`,
+	}
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+	perComp := map[string][]closure.ComponentSourceInfra{
+		uri: {
+			{Component: "db-a", Infra: map[string]any{"chart_version": "25.0.8"}},
+			{Component: "db-b", Infra: map[string]any{"chart_version": "26.0.0"}},
+		},
+	}
+
+	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("DescendRecipeSources: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("artifacts: %d; want 2 (per-component infra differs — no first-wins collapse)", len(got))
+	}
+	byVersion := map[string]string{}
+	for _, a := range got {
+		if len(a.ReferencedBy) != 1 {
+			t.Fatalf("artifact %s: ReferencedBy = %d; want 1", a.PinnedVersion, len(a.ReferencedBy))
+		}
+		byVersion[a.PinnedVersion] = a.ReferencedBy[0].Component
+	}
+	if byVersion["25.0.8"] != "db-a" {
+		t.Errorf("version 25.0.8 resolved by %q; want db-a", byVersion["25.0.8"])
+	}
+	if byVersion["26.0.0"] != "db-b" {
+		t.Errorf("version 26.0.0 resolved by %q; want db-b", byVersion["26.0.0"])
+	}
+}
+
+// TestDescendDoesNotShareInfraAcrossComponents pins the no-bleed
+// contract: a component's source template resolves against only that
+// component's own infra. A template referencing an infra key the
+// resolving component does not declare halts at the source-eval gate —
+// it cannot silently read a sibling component's value, because there is
+// no flattened Release-wide bag to read from.
+func TestDescendDoesNotShareInfraAcrossComponents(t *testing.T) {
+	t.Parallel()
+	uri := "hub.aggrega.ai/recipe/helm/mariadb:1.0.0"
+	source := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://hub.aggrega.ai/charts/mariadb",
+		"version": `{{ .infra.peer_only }}`,
+	}
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+	perComp := map[string][]closure.ComponentSourceInfra{
+		uri: {{Component: "db-a", Infra: map[string]any{"own_key": "x"}}},
+	}
+
+	_, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+		t.Errorf("a component reading a key it does not declare should halt (no cross-component bleed); got %v", err)
 	}
 }
 
@@ -372,19 +446,6 @@ func TestDescendSkipsNonRecipeEntities(t *testing.T) {
 	}
 }
 
-func releaseWithInfra(t *testing.T, key, value string) *types.Release {
-	t.Helper()
-	infra := types.OrderedMap[any]{}
-	infra.Set(key, value)
-	bc := types.BoundaryComponent{Infra: infra}
-	components := types.OrderedMap[types.BoundaryComponent]{}
-	components.Set("c1", bc)
-	root := types.Boundary{Components: components}
-	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("root", root)
-	return &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}}
-}
-
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && indexOf(s, sub) >= 0
 }
@@ -412,9 +473,11 @@ func TestDescendAcceptsLiteralProvidesString(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	release := releaseWithInfra(t, "label", "myns")
+	perComp := map[string][]closure.ComponentSourceInfra{
+		uri: {{Component: "x", Infra: map[string]any{"label": "myns"}}},
+	}
 
-	got, err := closure.DescendRecipeSources(release, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources should not halt on literal .provides text; got %v", err)
 	}

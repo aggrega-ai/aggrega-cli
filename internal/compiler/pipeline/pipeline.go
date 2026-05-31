@@ -127,60 +127,14 @@ func runStepsOneToFour(
 		return out, err
 	}
 
-	// Step 1: Resolve.
-	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
-		Release:           inputs.Release,
-		Manifest:          inputs.Manifest,
-		AggregateRawBytes: inputs.AggregateRawBytes,
-		AggregatePath:     inputs.AggregatePath,
-	})
-	if err != nil {
-		return out, fmt.Errorf("Step 1 (resolve): %w", err)
-	}
-	out.ResolveResult = resolveResult
-
-	// Validate annotation binding target paths against each target
-	// Feature's spec.schema before expansion runs.
-	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
-		return out, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
-	}
-
-	// Surface non-fatal Manifest binding-map lint warnings.
-	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-
-	// Annotation-driven Feature expansion.
-	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-		return out, fmt.Errorf("Step 1 (annotation expansion): %w", err)
-	}
-
-	// Run guards.
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
-		}
-		return out, fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
-	}
-
-	if err := ctx.Err(); err != nil {
-		return out, err
-	}
-
-	// Step 2: Topology.
-	topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
-		ResolveResult:     resolveResult,
-		CatalogLookup:     catalogLookup,
-		LoadSubAggregate:  subAggregateLoader,
-		RootAggregateFile: inputs.AggregatePath,
-	})
-	if err != nil {
-		return out, fmt.Errorf("Step 2 (topology): %w", err)
-	}
+	// Steps 1-2: resolve + topology flatten. Shared with `aggrega pull`'s
+	// per-component source resolution via ResolveAndFlatten, so lock-time
+	// source-descent and build-time rendering run one resolve + topology +
+	// recipe-selection path (no drift).
+	resolveResult, topoResult, err := ResolveAndFlatten(ctx, inputs, catalogLookup, subAggregateLoader)
+	out.ResolveResult = resolveResult // non-nil once resolve succeeded, even on later failure (caller purges)
 	out.Topology = topoResult
-
-	if err := ctx.Err(); err != nil {
+	if err != nil {
 		return out, err
 	}
 
@@ -215,6 +169,76 @@ func runStepsOneToFour(
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
 	return out, nil
+}
+
+// ResolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
+// (parameter interpolation, annotation binding validation + expansion,
+// guards) then topology flatten — and returns the resolved per-component
+// view: ResolveResult (carrying per-component BoundaryInfra) and the
+// flattened TopologyResult (nodes with InstanceID / ComponentType / Values).
+//
+// It is the single source of the resolve+flatten wiring. The build pipeline
+// (runStepsOneToFour) and `aggrega pull`'s per-component source resolution
+// both call it, so lock-time source-descent cannot drift from build-time
+// component / recipe / infra resolution — recipe selection then runs through
+// the same catalog RecipeLookup at both sites.
+//
+// resolveResult is returned non-nil once ResolveFromInputs succeeds, even when
+// a later Step-1 sub-pass or the topology step fails, so the caller can purge
+// the parameter map. The caller owns resolver.PurgeParameters.
+func ResolveAndFlatten(
+	ctx context.Context,
+	inputs Inputs,
+	catalogLookup resolver.CatalogLookup,
+	subAggregateLoader topology.SubAggregateLoader,
+) (*resolver.ResolveResult, *topology.TopologyResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
+		Release:           inputs.Release,
+		Manifest:          inputs.Manifest,
+		AggregateRawBytes: inputs.AggregateRawBytes,
+		AggregatePath:     inputs.AggregatePath,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("Step 1 (resolve): %w", err)
+	}
+
+	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
+		return resolveResult, nil, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+	}
+	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
+		return resolveResult, nil, fmt.Errorf("Step 1 (annotation expansion): %w", err)
+	}
+
+	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
+	if len(guardErrs) > 0 {
+		for _, e := range guardErrs {
+			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
+		}
+		return resolveResult, nil, fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
+	}
+
+	if err := ctx.Err(); err != nil {
+		return resolveResult, nil, err
+	}
+
+	topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
+		ResolveResult:     resolveResult,
+		CatalogLookup:     catalogLookup,
+		LoadSubAggregate:  subAggregateLoader,
+		RootAggregateFile: inputs.AggregatePath,
+	})
+	if err != nil {
+		return resolveResult, nil, fmt.Errorf("Step 2 (topology): %w", err)
+	}
+
+	return resolveResult, topoResult, nil
 }
 
 // RunTier4Pipeline executes Steps 1-4 of the compiler pipeline (resolve,

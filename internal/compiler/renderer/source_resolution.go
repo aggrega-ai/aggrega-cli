@@ -33,14 +33,19 @@ import (
 //     with the verbatim spec.
 //   - Remote source + any of lockfile/workspace/cacheDir unset:
 //     falls back to verbatim forward — Source is the recipe's
-//     spec.source value as authored. Preserves pre-WI-06e behaviour
-//     so existing tests that don't configure the optional fields
-//     stay green.
+//     spec.source value as authored. This keeps callers that do not
+//     configure the optional source-resolution inputs on the verbatim
+//     path.
+//
+// The source template evaluates against the node's own per-component,
+// cascade-resolved infra — the same per-component bag the lock-time
+// descent resolved against — so the build-time source identity matches
+// the identity the lockfile pinned for that component.
 //
 // Returns wrapped oci.ErrFetchIntegrity when a remote source has no
-// matching lockfile entry (build-time drift signal per amendment §3.7).
-// Returns the wrapped error from sourcecache.LookupAndExtract on
-// digest mismatch, missing cache slot, or extract failure.
+// matching lockfile entry (build-time drift signal). Returns the
+// wrapped error from sourcecache.LookupAndExtract on digest mismatch,
+// missing cache slot, or extract failure.
 func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *NodeRenderContext) error {
 	if recipe == nil || recipe.Spec.Source == nil {
 		return nil
@@ -58,7 +63,7 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 		return nil
 	}
 
-	spec, err := closure.EvaluateSourceSpec(buildReleaseForInfra(input), recipe)
+	spec, err := closure.EvaluateSourceSpec(nodeBoundaryInfra(input, nodeCtx.NodeID), recipe)
 	if err != nil {
 		return err
 	}
@@ -114,25 +119,27 @@ func isLocalURL(s string) bool {
 	}
 }
 
-// buildReleaseForInfra returns the Release the orchestrator's
-// source-template evaluator needs. In the current code the orchestrator
-// doesn't carry the Release directly; the resolver-result it has
-// access to (input.ResolveResult) is the post-resolved view. The
-// closure.EvaluateSourceSpec wrapper accepts a nil Release —
-// assembleInfra returns an empty map, and source templates that
-// don't reference .infra evaluate cleanly. Templates that reference
-// .infra against a nil Release halt with the missingkey=error
-// template setting — matching the build-time-drift behaviour
-// (regenerate the lockfile when the Release's infra changes).
+// nodeBoundaryInfra returns the per-component, cascade-resolved infra
+// for the node identified by nodeID, projected to a plain map for
+// source-template evaluation. The resolver wires this per-component bag
+// (keyed by component instance name) during Step 1; the source template
+// resolves against the same infra the lock-time descent used for that
+// component.
 //
-// A future implementation will thread the loaded Release into
-// RendererInput so .infra-referencing templates evaluate against
-// the same Release that produced the lockfile. The current shape
-// supports the structured-source acceptance walk via fixture
-// Releases that don't reference .infra; the existing tests use
-// literal version pins that don't need infra resolution.
-func buildReleaseForInfra(input RendererInput) *types.Release {
-	return nil
+// Returns an empty map when the resolve result or the node's entry is
+// absent — a source template that references an unresolved .infra key
+// then halts with the missingkey=error template setting, which is the
+// build-time-drift signal (regenerate the lockfile when the component's
+// infra changes).
+func nodeBoundaryInfra(input RendererInput, nodeID string) map[string]any {
+	if input.ResolveResult == nil {
+		return map[string]any{}
+	}
+	bi, ok := input.ResolveResult.BoundaryInfra[nodeID]
+	if !ok || bi == nil {
+		return map[string]any{}
+	}
+	return bi.Infra.TemplateAlphabeticalMapDeep()
 }
 
 // matchFetchSentinel walks the error chain via errors.Is against each

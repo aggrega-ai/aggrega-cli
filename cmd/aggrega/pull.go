@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -158,8 +160,55 @@ func pullRun(cfg pullConfig) error {
 		return nil
 	}
 
+	// Per-component source resolution. Run the shared resolve+flatten pass —
+	// the same path `aggrega build` uses (pipeline.ResolveAndFlatten) — so each
+	// component's source resolves against that component's own cascade-resolved
+	// infra (not a flattened Release-wide bag), and the component-to-Recipe join
+	// uses the same Manifest mapping the closure walker recorded (lock-time
+	// cannot drift from build-time). aggBytes feeds ResolveFromInputs, which
+	// re-parses internally.
+	aggBytes, err := os.ReadFile(aggPath)
+	if err != nil {
+		return fmt.Errorf("read aggregate: %w", err)
+	}
+	rr, topo, err := pipeline.ResolveAndFlatten(
+		context.Background(),
+		pipeline.Inputs{
+			Release:           rel,
+			Manifest:          manifest,
+			AggregateRawBytes: aggBytes,
+			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggPath),
+		},
+		cat.CatalogLookup(),
+		cat.SubAggregateLoader(),
+	)
+	if err != nil {
+		return fmt.Errorf("resolve: %w", err)
+	}
+	defer resolver.PurgeParameters(&rr.Parameters)
+
+	// Key per-component infra by the Manifest-mapped Recipe URI — the same
+	// verbatim string the closure walker records as the source-descent entity
+	// (catalog.ComponentRecipeURI resolves it flat-shape-first, legacy-fallback),
+	// so this map joins against closure entities regardless of short-form vs
+	// full-path mapping authoring. A component with no Manifest mapping carries
+	// no source-descent entity and is skipped.
+	perComponentInfra := map[string][]closure.ComponentSourceInfra{}
+	for _, node := range topo.Nodes.All() {
+		recURI, found := catalog.ComponentRecipeURI(manifest, node.ComponentType)
+		if !found {
+			continue
+		}
+		var infra map[string]any
+		if bi, ok := rr.BoundaryInfra[node.InstanceID]; ok && bi != nil {
+			infra = bi.Infra.TemplateAlphabeticalMapDeep()
+		}
+		perComponentInfra[recURI] = append(perComponentInfra[recURI],
+			closure.ComponentSourceInfra{Component: node.InstanceID, Infra: infra})
+	}
+
 	sourceArtifacts, err := closure.DescendRecipeSources(
-		rel, cl, cat.ClosureRecipeLoader(), sourceResolverShim{},
+		perComponentInfra, cl, cat.ClosureRecipeLoader(), sourceResolverShim{},
 		workspaceRoot, cacheDir,
 	)
 	if err != nil {

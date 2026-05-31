@@ -76,6 +76,48 @@ func TestRecipeLookupWithManifest_FlatShape(t *testing.T) {
 	}
 }
 
+// TestComponentRecipeURI_VerbatimMappingValue pins the source-descent join
+// key: ComponentRecipeURI returns the Manifest mapping value verbatim — short
+// form or full-path form — so the value matches the entity URI the dependency
+// closure records for that Recipe. Per-component infra keyed by this value
+// therefore joins against the closure regardless of mapping authoring style.
+// A type with no mapping returns false (it carries no source-descent entity).
+func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
+	t.Parallel()
+	flat := &types.MappingTier{}
+	flat.Type.Set("mariadb-bitnami", "mariadb-bitnami:1.0.0")
+	flat.Type.Set("core/database/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0")
+	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
+	legacy.Components.Type.Set("core/cache/redis", "core/helm/redis-legacy:1.0.0")
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Components: flat},
+		},
+	}
+	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
+
+	cases := []struct {
+		name, compType, wantURI string
+		wantOK                  bool
+	}{
+		{"short-form flat", "mariadb-bitnami", "mariadb-bitnami:1.0.0", true},
+		{"full-path flat", "core/database/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0", true},
+		{"legacy fallback", "core/cache/redis", "core/helm/redis-legacy:1.0.0", true},
+		{"unmapped type", "core/queue/nats", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, ok := ComponentRecipeURI(manifest, tc.compType)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
+			}
+			if uri != tc.wantURI {
+				t.Errorf("uri = %q; want %q", uri, tc.wantURI)
+			}
+		})
+	}
+}
+
 // TestRecipeLookupWithManifest_LegacyFallback pins layer-2: when the
 // flat shape is absent, the legacy v2 per-provider shape resolves.
 func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
@@ -123,13 +165,11 @@ func TestRecipeLookupWithManifest_MatchImplementsFinalFallback(t *testing.T) {
 }
 
 // TestRecipeLookupWithManifest_FlatWinsOverLegacy pins the dispatch
-// precedence pre-decided at the plan gate: when both flat and legacy
-// mappings carry the same component type, the flat-shape mapping
-// resolves. Uses distinct spec.implements values so both Recipes
-// survive the catalog's spec.implements-keyed Recipes map (today's
-// catalog map keying — wave 6's catalog refactor handles multi-Recipe-
-// per-implements via the RecipeKey shape; for this WI the precedence
-// behavior is demonstrable without that refactor).
+// precedence: when both flat and legacy mappings carry the same component
+// type, the flat-shape mapping resolves. Uses distinct spec.implements
+// values so both Recipes survive the catalog's spec.implements-keyed Recipes
+// map; keying that map so multiple Recipes can share one spec.implements is
+// future work, but the precedence behavior is demonstrable without it.
 func TestRecipeLookupWithManifest_FlatWinsOverLegacy(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(

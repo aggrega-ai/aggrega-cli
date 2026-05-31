@@ -202,6 +202,24 @@ func legacyComponentURI(manifest *types.Manifest, componentType string) (string,
 	return "", false
 }
 
+// ComponentRecipeURI returns the Recipe URI the Manifest maps componentType
+// to — the flat-shape mapping first, then the legacy per-provider shape. The
+// returned URI is the same verbatim string the dependency-closure walker
+// records as a source-descent entity, so callers keying per-component data by
+// this value join cleanly against the closure's entities (regardless of
+// whether the author wrote the mapping value in short form or full-path form).
+//
+// Returns ("", false) when no Manifest mapping names componentType. Such a
+// component carries no source-descent entity — it would be selected for render
+// by spec.implements, which is a render-selection path, not a
+// source-acquisition path — so it correctly contributes no source artifact.
+func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string, bool) {
+	if uri, ok := flatComponentURI(manifest, componentType); ok {
+		return uri, true
+	}
+	return legacyComponentURI(manifest, componentType)
+}
+
 // flatFeatureURI is the Feature analogue of flatComponentURI.
 func flatFeatureURI(manifest *types.Manifest, featureType string) (string, bool) {
 	if manifest == nil || manifest.Spec.Mappings.Features == nil {

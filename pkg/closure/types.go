@@ -82,6 +82,23 @@ type SourceArtifactReference struct {
 	URI          string
 	Field        string
 	RequestedRef string
+	// Component is the component instance whose per-component infra resolved this
+	// reference. A Recipe backing N components yields N references (one per
+	// component) that dedupe to a single artifact when the resolved identity
+	// coincides; the field distinguishes them. Empty when the reference was not
+	// resolved per-component.
+	Component string
+}
+
+// ComponentSourceInfra pairs a component instance with the per-component,
+// cascade-resolved infra its Recipe/FeatureRecipe source resolves against.
+// Source-descent resolves per component (not against a flattened Release-wide
+// infra bag), so the same Recipe used by two components with different infra
+// resolves twice — deduped by identity, distinct when the infra genuinely
+// differs.
+type ComponentSourceInfra struct {
+	Component string
+	Infra     map[string]any
 }
 
 // RecipeLoader loads parsed Recipe / FeatureRecipe bodies by URI.
