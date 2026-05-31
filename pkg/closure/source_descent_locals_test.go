@@ -29,7 +29,7 @@ func TestDescendSkipsRenderTimeOnlyLocal(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("render-time-only local must not abort source-descent; got %v", err)
 	}
@@ -49,7 +49,7 @@ func TestDescendFailsWhenSourceNeedsAnUnresolvableLocal(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Fatalf("source referencing a skipped local should halt with ErrSourceTemplateAtLockTime; got %v", err)
 	}
@@ -68,7 +68,7 @@ func TestDescendKeepsParseErrorLoud(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateParse) {
 		t.Errorf("malformed local should be ErrSourceTemplateParse (loud); got %v", err)
 	}
@@ -88,7 +88,7 @@ func TestDescendKeepsProvidesLocalLoud(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateProvidesRef) {
 		t.Errorf(".provides local should be ErrSourceTemplateProvidesRef (loud) regardless of source usage; got %v", err)
 	}
@@ -108,7 +108,7 @@ func TestDescendSkipSetIsDeterministic(t *testing.T) {
 		r.Spec.Locals.Set("b", `{{ .context.instance_id }}-b`)
 		loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 		cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
-		got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+		got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

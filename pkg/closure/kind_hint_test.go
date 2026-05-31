@@ -26,7 +26,7 @@ func TestDescend_ShortFormRecipeURIRecognizedViaKindHint(t *testing.T) {
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestDescend_ShortFormWithoutHintSkipped(t *testing.T) {
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}} // no KindHint
 
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestDescend_ShortFormFeatureRecipeViaKindHint(t *testing.T) {
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "feature_recipe"}}}
 
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestDescend_PathFormNoHintUnchanged(t *testing.T) {
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}} // no KindHint
 
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}

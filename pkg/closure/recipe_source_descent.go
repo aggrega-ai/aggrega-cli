@@ -29,10 +29,14 @@ import (
 // instances for a FeatureRecipe. The source is resolved once per
 // instance, so the same entity used by two instances with different
 // infra resolves twice (deduped by identity, distinct when the infra
-// genuinely differs). An entity with no entry resolves once against
-// empty infra. workspaceRoot and cacheDir are propagated into each
-// SourceSpec the resolver consumes (see internal/cacheslot for the slot
-// computation that depends on both).
+// genuinely differs). An entity with no using instance — mapped in the
+// Manifest but instantiated/attached by nothing in this Release — is
+// skipped: its source is never rendered at build, so there is no
+// artifact to pin (descending it would either pin a source nothing
+// consumes or, for an infra-templated source, halt for want of infra
+// that no instance supplies). workspaceRoot and cacheDir are propagated
+// into each SourceSpec the resolver consumes (see internal/cacheslot for
+// the slot computation that depends on both).
 //
 // Dedupe is by {Kind, URL, PinnedVersion} identity; each bucket
 // emits one SourceArtifact with all bucket's ReferencedBy records
@@ -105,11 +109,13 @@ func DescendRecipeSources(
 		// own infra — not a flattened Release-wide bag. An entity used by N
 		// instances resolves N times; identical resolutions dedupe to one
 		// artifact, genuinely-different ones produce distinct artifacts.
-		// Entities with no recorded per-instance infra (none used the entity, or
-		// the source needs no infra) resolve once against empty infra.
+		// An entity with no recorded using instance is mapped in the Manifest
+		// but instantiated/attached by nothing in this Release; its source is
+		// never built, so skip it rather than pin an unconsumed artifact (or
+		// halt on an infra-templated source no instance supplies infra for).
 		comps := perEntityInfra[ent.URI]
 		if len(comps) == 0 {
-			comps = []ComponentSourceInfra{{Infra: map[string]any{}}}
+			continue
 		}
 		for _, comp := range comps {
 			compInfra := comp.Infra

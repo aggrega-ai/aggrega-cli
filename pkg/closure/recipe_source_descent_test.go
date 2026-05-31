@@ -95,6 +95,19 @@ func makeFeatureRecipe(uri string, source any) *types.FeatureRecipe {
 	}
 }
 
+// usedFromClosure marks every entity in the closure as used by exactly one
+// instance with empty infra. Source-descent only descends entities that have a
+// using instance; a test exercising descent of an entity supplies one this way
+// (the empty infra suffices for sources that read no infra). Tests that need
+// per-instance infra pass their own map instead.
+func usedFromClosure(cl closure.Closure) map[string][]closure.ComponentSourceInfra {
+	m := map[string][]closure.ComponentSourceInfra{}
+	for _, e := range cl.Entities {
+		m[e.URI] = []closure.ComponentSourceInfra{{Infra: map[string]any{}}}
+	}
+	return m
+}
+
 func TestDescendResolvesScalarSourceShape(t *testing.T) {
 	t.Parallel()
 	uri := "hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0"
@@ -106,7 +119,7 @@ func TestDescendResolvesScalarSourceShape(t *testing.T) {
 	resolver := &fakeSourceResolver{}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	got, err := closure.DescendRecipeSources(nil, cl, loader, resolver, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, resolver, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -130,7 +143,7 @@ func TestDescendResolvesStructuredSourceShape(t *testing.T) {
 		recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)},
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -327,6 +340,33 @@ func TestDescendFeatureRecipeDoesNotShareInfraAcrossInstances(t *testing.T) {
 	}
 }
 
+// TestDescendSkipsEntityWithNoUsingInstance pins the no-using-instance contract:
+// an entity mapped in the Manifest but instantiated/attached by nothing in the
+// Release (absent from perEntityInfra) is not descended. Even with an
+// infra-templated source it is skipped — not false-halted for want of infra no
+// instance supplies — and no spurious artifact is pinned for a source the build
+// never renders.
+func TestDescendSkipsEntityWithNoUsingInstance(t *testing.T) {
+	t.Parallel()
+	uri := "hub.aggrega.ai/recipe/helm/unused:1.0.0"
+	source := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://hub.aggrega.ai/charts/unused",
+		"version": `{{ .infra.chart_version }}`,
+	}
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+
+	// No perEntityInfra entry for uri — nothing instantiates it.
+	got, err := closure.DescendRecipeSources(map[string][]closure.ComponentSourceInfra{}, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("an unused mapped entity must be skipped, not halt; got %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("artifacts: %d; want 0 (no using instance — nothing to pin)", len(got))
+	}
+}
+
 func TestDescendHaltsOnProvidesReference(t *testing.T) {
 	t.Parallel()
 	uri := "hub.aggrega.ai/recipe/helm/x:1.0.0"
@@ -338,7 +378,7 @@ func TestDescendHaltsOnProvidesReference(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err == nil {
 		t.Fatal("expected ErrSourceTemplateAtLockTime; got nil")
 	}
@@ -363,7 +403,7 @@ func TestDescendHaltsOnLocalsReferencingProvides(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Errorf(".locals→.provides chain should halt with ErrSourceTemplateAtLockTime; got %v", err)
 	}
@@ -387,7 +427,7 @@ func TestDescendDedupesIdenticalSources(t *testing.T) {
 		{URI: "hub.aggrega.ai/recipe/helm/a:1.0.0"},
 		{URI: "hub.aggrega.ai/recipe/helm/b:1.0.0"},
 	}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -413,7 +453,7 @@ func TestDescendPreservesTerraformGitRequestedRef(t *testing.T) {
 		pinTo: map[string]string{"https://example.com/mod.git@v1.0.0": "abc123def456abc123def456abc123def456abc1"},
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, resolver, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, resolver, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -445,7 +485,7 @@ func TestDescendOrdersReferencedByByConsumerURI(t *testing.T) {
 		{URI: "hub.aggrega.ai/recipe/helm/a:1.0.0"},
 		{URI: "hub.aggrega.ai/recipe/helm/m:1.0.0"},
 	}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -469,7 +509,7 @@ func TestDescendHaltsOnAmbiguousKind(t *testing.T) {
 		},
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Errorf("ambiguous scalar source should halt with ErrSourceTemplateAtLockTime; got %v", err)
 	}
@@ -482,7 +522,7 @@ func TestDescendIgnoresTier1LocalSources(t *testing.T) {
 		recipes: map[string]*types.Recipe{uri: makeRecipe(uri, "./local-chart")},
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -502,7 +542,7 @@ func TestDescendIgnoresStructuredLocalSources(t *testing.T) {
 		})},
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -518,7 +558,7 @@ func TestDescendSkipsNonRecipeEntities(t *testing.T) {
 		{URI: "hub.aggrega.ai/component/core/api-server:1.0.0"},
 		{URI: "hub.aggrega.ai/aggregate/example:1.0.0"},
 	}}
-	got, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("DescendRecipeSources: %v", err)
 	}
@@ -582,7 +622,7 @@ func TestDescendRejectsProvidesInsideRangeBranch(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Errorf("AST walk should reject .provides nested in range branch; got %v", err)
 	}
@@ -605,7 +645,7 @@ func TestDescendRejectsProvidesInsideTemplateInvocation(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	_, err := closure.DescendRecipeSources(nil, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Errorf(".provides in template-invocation pipeline should halt; got %v", err)
 	}
