@@ -23,15 +23,16 @@ import (
 // pulled artifacts into a deduped slice ready to feed into the
 // lockfile writer.
 //
-// perComponentInfra maps an entity URI to the per-component,
-// cascade-resolved infra of each component instance that uses it; the
-// source is resolved once per component, so the same Recipe used by
-// two components with different infra resolves twice (deduped by
-// identity, distinct when the infra genuinely differs). An entity with
-// no entry resolves once against empty infra. workspaceRoot and
-// cacheDir are propagated into each SourceSpec the resolver consumes
-// (see internal/cacheslot for the slot computation that depends on
-// both).
+// perEntityInfra maps a source-descent entity URI (a Recipe or
+// FeatureRecipe) to the per-instance infra of each instance that uses
+// it — component instances for a Recipe, feature/secret-attachment
+// instances for a FeatureRecipe. The source is resolved once per
+// instance, so the same entity used by two instances with different
+// infra resolves twice (deduped by identity, distinct when the infra
+// genuinely differs). An entity with no entry resolves once against
+// empty infra. workspaceRoot and cacheDir are propagated into each
+// SourceSpec the resolver consumes (see internal/cacheslot for the slot
+// computation that depends on both).
 //
 // Dedupe is by {Kind, URL, PinnedVersion} identity; each bucket
 // emits one SourceArtifact with all bucket's ReferencedBy records
@@ -41,7 +42,7 @@ import (
 // source location on .provides references, ambiguous kind
 // classification, or missing .infra/.locals keys.
 func DescendRecipeSources(
-	perComponentInfra map[string][]ComponentSourceInfra,
+	perEntityInfra map[string][]ComponentSourceInfra,
 	closure Closure,
 	recipeLoader RecipeLoader,
 	sourceResolver SourceResolver,
@@ -100,13 +101,13 @@ func DescendRecipeSources(
 			continue
 		}
 
-		// Resolve the source once per using-component, against that component's
-		// own cascade-resolved infra — not a flattened Release-wide bag. A recipe
-		// backing N components resolves N times; identical resolutions dedupe to
-		// one artifact, genuinely-different ones produce distinct artifacts.
-		// Entities with no recorded per-component infra (none used the entity, or
+		// Resolve the source once per using-instance, against that instance's
+		// own infra — not a flattened Release-wide bag. An entity used by N
+		// instances resolves N times; identical resolutions dedupe to one
+		// artifact, genuinely-different ones produce distinct artifacts.
+		// Entities with no recorded per-instance infra (none used the entity, or
 		// the source needs no infra) resolve once against empty infra.
-		comps := perComponentInfra[ent.URI]
+		comps := perEntityInfra[ent.URI]
 		if len(comps) == 0 {
 			comps = []ComponentSourceInfra{{Infra: map[string]any{}}}
 		}

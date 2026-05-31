@@ -187,13 +187,16 @@ func pullRun(cfg pullConfig) error {
 	}
 	defer resolver.PurgeParameters(&rr.Parameters)
 
-	// Key per-component infra by the Manifest-mapped Recipe URI — the same
+	// Key per-instance infra by the Manifest-mapped entity URI — the same
 	// verbatim string the closure walker records as the source-descent entity
-	// (catalog.ComponentRecipeURI resolves it flat-shape-first, legacy-fallback),
-	// so this map joins against closure entities regardless of short-form vs
-	// full-path mapping authoring. A component with no Manifest mapping carries
-	// no source-descent entity and is skipped.
-	perComponentInfra := map[string][]closure.ComponentSourceInfra{}
+	// (catalog.ComponentRecipeURI / FeatureRecipeURI resolve it flat-shape-first,
+	// legacy-fallback), so this map joins against closure entities regardless of
+	// short-form vs full-path mapping authoring. An instance with no Manifest
+	// mapping carries no source-descent entity and is skipped.
+	perEntityInfra := map[string][]closure.ComponentSourceInfra{}
+
+	// Component instances: drive from the flattened topology, against each
+	// component's own cascade-resolved boundary infra.
 	for _, node := range topo.Nodes.All() {
 		recURI, found := catalog.ComponentRecipeURI(manifest, node.ComponentType)
 		if !found {
@@ -203,12 +206,48 @@ func pullRun(cfg pullConfig) error {
 		if bi, ok := rr.BoundaryInfra[node.InstanceID]; ok && bi != nil {
 			infra = bi.Infra.TemplateAlphabeticalMapDeep()
 		}
-		perComponentInfra[recURI] = append(perComponentInfra[recURI],
+		perEntityInfra[recURI] = append(perEntityInfra[recURI],
 			closure.ComponentSourceInfra{Component: node.InstanceID, Infra: infra})
 	}
 
+	// Feature / secret attachment instances: mirror the closure's attachment
+	// enumeration (top-level boundaries' components' Features + Secrets), keyed by
+	// the Manifest-mapped FeatureRecipe URI. Per-feature infra is the raw
+	// BoundaryFeature.infra — feature attachments carry no cascade (the boundary
+	// cascade flows annotations, not infra).
+	for _, b := range rel.Spec.Boundaries.All() {
+		for compName, bc := range b.Components.All() {
+			for fname, bf := range bc.Features.All() {
+				if bf.Type == "" {
+					continue
+				}
+				if frURI, found := catalog.FeatureRecipeURI(manifest, bf.Type); found {
+					var infra map[string]any
+					if bf.Infra.Len() > 0 {
+						infra = bf.Infra.TemplateAlphabeticalMapDeep()
+					}
+					perEntityInfra[frURI] = append(perEntityInfra[frURI],
+						closure.ComponentSourceInfra{Component: compName + ".features." + fname, Infra: infra})
+				}
+			}
+			for sname, bs := range bc.Secrets.All() {
+				if bs.Type == "" {
+					continue
+				}
+				if frURI, found := catalog.FeatureRecipeURI(manifest, bs.Type); found {
+					var infra map[string]any
+					if bs.Infra.Len() > 0 {
+						infra = bs.Infra.TemplateAlphabeticalMapDeep()
+					}
+					perEntityInfra[frURI] = append(perEntityInfra[frURI],
+						closure.ComponentSourceInfra{Component: compName + ".secrets." + sname, Infra: infra})
+				}
+			}
+		}
+	}
+
 	sourceArtifacts, err := closure.DescendRecipeSources(
-		perComponentInfra, cl, cat.ClosureRecipeLoader(), sourceResolverShim{},
+		perEntityInfra, cl, cat.ClosureRecipeLoader(), sourceResolverShim{},
 		workspaceRoot, cacheDir,
 	)
 	if err != nil {

@@ -82,21 +82,25 @@ type SourceArtifactReference struct {
 	URI          string
 	Field        string
 	RequestedRef string
-	// Component is the component instance whose per-component infra resolved this
-	// reference. A Recipe backing N components yields N references (one per
-	// component) that dedupe to a single artifact when the resolved identity
+	// Component is the instance whose per-instance infra resolved this reference —
+	// a component instance for a Recipe, a feature/secret-attachment instance for
+	// a FeatureRecipe. An entity used by N instances yields N references (one per
+	// instance) that dedupe to a single artifact when the resolved identity
 	// coincides; the field distinguishes them. Empty when the reference was not
-	// resolved per-component.
+	// resolved per-instance.
 	Component string
 }
 
-// ComponentSourceInfra pairs a component instance with the per-component,
-// cascade-resolved infra its Recipe/FeatureRecipe source resolves against.
-// Source-descent resolves per component (not against a flattened Release-wide
-// infra bag), so the same Recipe used by two components with different infra
-// resolves twice — deduped by identity, distinct when the infra genuinely
-// differs.
+// ComponentSourceInfra pairs a using instance with the per-instance infra its
+// Recipe/FeatureRecipe source resolves against — a component instance (with its
+// cascade-resolved boundary infra) for a Recipe, or a feature/secret-attachment
+// instance (with its BoundaryFeature.infra) for a FeatureRecipe. Source-descent
+// resolves per instance (not against a flattened Release-wide infra bag), so the
+// same entity used by two instances with different infra resolves twice — deduped
+// by identity, distinct when the infra genuinely differs.
 type ComponentSourceInfra struct {
+	// Component is the using instance's identifier (component instance name, or
+	// feature/secret-attachment instance name).
 	Component string
 	Infra     map[string]any
 }

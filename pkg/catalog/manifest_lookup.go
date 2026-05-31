@@ -220,6 +220,21 @@ func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string,
 	return legacyComponentURI(manifest, componentType)
 }
 
+// FeatureRecipeURI is the FeatureRecipe analogue of ComponentRecipeURI: it
+// returns the FeatureRecipe URI the Manifest maps featureType to — the
+// flat-shape mapping first, then the legacy per-provider shape. The returned URI
+// is the same verbatim string the dependency-closure walker records as a
+// feature_recipe source-descent entity, so callers keying per-feature-instance
+// data by this value join cleanly against the closure's entities.
+//
+// Returns ("", false) when no Manifest mapping names featureType.
+func FeatureRecipeURI(manifest *types.Manifest, featureType string) (string, bool) {
+	if uri, ok := flatFeatureURI(manifest, featureType); ok {
+		return uri, true
+	}
+	return legacyFeatureURI(manifest, featureType)
+}
+
 // flatFeatureURI is the Feature analogue of flatComponentURI.
 func flatFeatureURI(manifest *types.Manifest, featureType string) (string, bool) {
 	if manifest == nil || manifest.Spec.Mappings.Features == nil {

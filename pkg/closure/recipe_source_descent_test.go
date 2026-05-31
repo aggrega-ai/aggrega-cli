@@ -83,6 +83,18 @@ func makeRecipe(uri string, source any) *types.Recipe {
 	}
 }
 
+func makeFeatureRecipe(uri string, source any) *types.FeatureRecipe {
+	return &types.FeatureRecipe{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "FeatureRecipe",
+		Metadata:   types.FeatureRecipeMetadata{Name: uri, Version: "1.0.0"},
+		Spec: types.FeatureRecipeSpec{
+			Provider: "helm",
+			Source:   source,
+		},
+	}
+}
+
 func TestDescendResolvesScalarSourceShape(t *testing.T) {
 	t.Parallel()
 	uri := "hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0"
@@ -243,6 +255,75 @@ func TestDescendDoesNotShareInfraAcrossComponents(t *testing.T) {
 	_, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Errorf("a component reading a key it does not declare should halt (no cross-component bleed); got %v", err)
+	}
+}
+
+// TestDescendResolvesFeatureRecipeAgainstPerInstanceInfra pins the FeatureRecipe
+// arm of the per-instance contract: a FeatureRecipe source resolves against each
+// attaching feature instance's own infra (the BoundaryFeature.infra the pull-side
+// walk keys into perEntityInfra), not the empty-infra fallback. Two feature
+// instances at different infra produce two source identities; the reference
+// back-pointer carries the resolving feature instance.
+func TestDescendResolvesFeatureRecipeAgainstPerInstanceInfra(t *testing.T) {
+	t.Parallel()
+	uri := "hub.aggrega.ai/feature-recipe/helm/tls:1.0.0"
+	source := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://hub.aggrega.ai/charts/tls",
+		"version": `{{ .infra.chart_version }}`,
+	}
+	loader := &fakeRecipeLoader{features: map[string]*types.FeatureRecipe{uri: makeFeatureRecipe(uri, source)}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+	perEntity := map[string][]closure.ComponentSourceInfra{
+		uri: {
+			{Component: "web.features.tls", Infra: map[string]any{"chart_version": "1.2.3"}},
+			{Component: "api.features.tls", Infra: map[string]any{"chart_version": "4.5.6"}},
+		},
+	}
+
+	got, err := closure.DescendRecipeSources(perEntity, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("DescendRecipeSources: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("artifacts: %d; want 2 (per-instance FeatureRecipe infra differs — no empty-infra collapse)", len(got))
+	}
+	byVersion := map[string]string{}
+	for _, a := range got {
+		if len(a.ReferencedBy) != 1 {
+			t.Fatalf("artifact %s: ReferencedBy = %d; want 1", a.PinnedVersion, len(a.ReferencedBy))
+		}
+		byVersion[a.PinnedVersion] = a.ReferencedBy[0].Component
+	}
+	if byVersion["1.2.3"] != "web.features.tls" {
+		t.Errorf("version 1.2.3 resolved by %q; want web.features.tls", byVersion["1.2.3"])
+	}
+	if byVersion["4.5.6"] != "api.features.tls" {
+		t.Errorf("version 4.5.6 resolved by %q; want api.features.tls", byVersion["4.5.6"])
+	}
+}
+
+// TestDescendFeatureRecipeDoesNotShareInfraAcrossInstances pins the no-bleed
+// contract for FeatureRecipe sources: a feature instance reading an infra key it
+// does not declare halts at the source-eval gate — it cannot read a sibling
+// instance's value, mirroring the component arm.
+func TestDescendFeatureRecipeDoesNotShareInfraAcrossInstances(t *testing.T) {
+	t.Parallel()
+	uri := "hub.aggrega.ai/feature-recipe/helm/tls:1.0.0"
+	source := map[string]any{
+		"kind":    "helm-oci-chart",
+		"url":     "oci://hub.aggrega.ai/charts/tls",
+		"version": `{{ .infra.peer_only }}`,
+	}
+	loader := &fakeRecipeLoader{features: map[string]*types.FeatureRecipe{uri: makeFeatureRecipe(uri, source)}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+	perEntity := map[string][]closure.ComponentSourceInfra{
+		uri: {{Component: "web.features.tls", Infra: map[string]any{"own_key": "x"}}},
+	}
+
+	_, err := closure.DescendRecipeSources(perEntity, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+		t.Errorf("a feature instance reading a key it does not declare should halt (no cross-instance bleed); got %v", err)
 	}
 }
 

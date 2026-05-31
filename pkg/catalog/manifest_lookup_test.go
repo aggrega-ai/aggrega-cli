@@ -118,6 +118,47 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}
 }
 
+// TestFeatureRecipeURI_VerbatimMappingValue is the FeatureRecipe analogue of
+// TestComponentRecipeURI_VerbatimMappingValue: FeatureRecipeURI returns the
+// Manifest feature-mapping value verbatim (short form or full path), matching the
+// feature_recipe entity URI the dependency closure records, so per-feature-instance
+// infra keyed by this value joins against the closure.
+func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
+	t.Parallel()
+	flat := &types.MappingTier{}
+	flat.Type.Set("tls-cert", "tls-cert:1.0.0")
+	flat.Type.Set("core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0")
+	legacy := types.ProviderMappings{Features: &types.MappingTier{}}
+	legacy.Features.Type.Set("core/observability/otel", "core/feature-recipe/otel-legacy:1.0.0")
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Features: flat},
+		},
+	}
+	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
+
+	cases := []struct {
+		name, featType, wantURI string
+		wantOK                  bool
+	}{
+		{"short-form flat", "tls-cert", "tls-cert:1.0.0", true},
+		{"full-path flat", "core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0", true},
+		{"legacy fallback", "core/observability/otel", "core/feature-recipe/otel-legacy:1.0.0", true},
+		{"unmapped type", "core/queue/nats", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, ok := FeatureRecipeURI(manifest, tc.featType)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
+			}
+			if uri != tc.wantURI {
+				t.Errorf("uri = %q; want %q", uri, tc.wantURI)
+			}
+		})
+	}
+}
+
 // TestRecipeLookupWithManifest_LegacyFallback pins layer-2: when the
 // flat shape is absent, the legacy v2 per-provider shape resolves.
 func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
