@@ -172,7 +172,7 @@ func collectNodeFeatures(
 					}
 				}
 			}
-			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, markerSet, catalogLookup, nodeID, prov); err != nil {
+			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, markerSet, catalogLookup, nodeID, prov); err != nil {
 				return nil, err
 			}
 		}
@@ -186,7 +186,7 @@ func collectNodeFeatures(
 	if topoNode.SubsystemPath != "" {
 		subsystemFeatures := collectSubsystemFeatures(resolveResult.Aggregate, topoNode.SubsystemPath)
 		for _, sf := range subsystemFeatures {
-			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
+			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
 				return nil, err
 			}
 		}
@@ -200,7 +200,7 @@ func collectNodeFeatures(
 	if topoNode.BoundaryPath != "" && resolveResult.Release != nil {
 		boundaryFeatures := collectBoundaryWideFeatures(resolveResult.Release.Spec.Boundaries, topoNode.BoundaryPath)
 		for _, bf := range boundaryFeatures {
-			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
+			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
 				return nil, err
 			}
 		}
@@ -225,7 +225,7 @@ func collectNodeFeatures(
 					AnnotationSource: record.AnnotationSource,
 				}
 			}
-			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, markerSet, catalogLookup, nodeID, prov); err != nil {
+			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, markerSet, catalogLookup, nodeID, prov); err != nil {
 				return nil, err
 			}
 		}
@@ -238,6 +238,7 @@ func collectNodeFeatures(
 				Type:            sa.Secret.Type,
 				ResolvedVersion: featureVersion(catalogLookup, sa.Secret.Type),
 				Values:          sa.Secret.Values,
+				Inject:          convertInjectBlock(sa.Secret.Inject),
 			})
 			markerSet[sa.Secret.Type] = true
 		}
@@ -303,12 +304,13 @@ func collectNodeFeatures(
 // OrderedMap structure copies into entry.Values / entry.Infra verbatim; the
 // provenance maps record one FieldProvenance per primitive leaf, keyed by the
 // dotted path flattened from the nested tree.
-func newAttachmentEntry(featType, resolvedVersion string, values, infra types.OrderedMap[any], provenance featureProvenance) types.IRFeatureEntry {
+func newAttachmentEntry(featType, resolvedVersion string, values, infra types.OrderedMap[any], inject types.OrderedMap[types.OrderedMap[string]], provenance featureProvenance) types.IRFeatureEntry {
 	entry := types.IRFeatureEntry{
 		Type:             featType,
 		ResolvedVersion:  resolvedVersion,
 		Values:           types.OrderedMap[any]{},
 		Infra:            types.OrderedMap[any]{},
+		Inject:           inject,
 		ValuesProvenance: types.OrderedMap[types.FieldProvenance]{},
 		InfraProvenance:  types.OrderedMap[types.FieldProvenance]{},
 		Origin:           provenance.Origin,
@@ -352,6 +354,7 @@ func mergeContribution(
 	instanceName string,
 	featType string,
 	values, infra types.OrderedMap[any],
+	inject *types.InjectBlock,
 	markerSet map[string]bool,
 	catalogLookup resolver.CatalogLookup,
 	nodeID string,
@@ -360,20 +363,25 @@ func mergeContribution(
 	// resolved_version is the attachment's OWN feature/credential version, not the
 	// host component's — resolved once here from the catalog.
 	version := featureVersion(catalogLookup, featType)
+	// Authored attachment-level inject (the developer's delivery declaration,
+	// a provides-key reference resolved against the attachment's own provides)
+	// projects into the IR entry; the topology layer carries it only on the
+	// Aggregate-side tiers (Release boundary tiers pass nil).
+	injectMap := convertInjectBlock(inject)
 	if isCredential(featType, catalogLookup) {
 		// A credential routes into the secrets bucket, but carries the same IR
 		// attachment shape as a feature (per-instance infra + provenance), not a
 		// lossier projection — so a secret FeatureRecipe's source/valuesMapping can
 		// read .infra exactly as a feature can. infra here is the in-scope
 		// per-instance bag the Release tiers pass.
-		result.Secrets.Set(instanceName, newAttachmentEntry(featType, version, values, infra, provenance))
+		result.Secrets.Set(instanceName, newAttachmentEntry(featType, version, values, infra, injectMap, provenance))
 		markerSet[featType] = true
 		return nil
 	}
 
 	existing, exists := result.Features.Get(instanceName)
 	if !exists {
-		entry := newAttachmentEntry(featType, version, values, infra, provenance)
+		entry := newAttachmentEntry(featType, version, values, infra, injectMap, provenance)
 		result.Features.Set(instanceName, entry)
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
 		markerSet[featType] = true
@@ -394,6 +402,20 @@ func mergeContribution(
 	}
 	for _, leaf := range types.FlattenLeaves(infra) {
 		mergeLeaf(&existing.Infra, &existing.InfraProvenance, leaf.Path, leaf.Value, provenance)
+	}
+
+	// Merge the authored attachment inject per-mechanism-per-key (incoming wins
+	// at the delivery key). Only Aggregate-side tiers carry inject; Release tiers
+	// pass nil, so this preserves the Aggregate-declared delivery on those merges.
+	for mech, keys := range injectMap.All() {
+		dst, ok := existing.Inject.Get(mech)
+		if !ok {
+			dst = types.OrderedMap[string]{}
+		}
+		for k, v := range keys.All() {
+			dst.Set(k, v)
+		}
+		existing.Inject.Set(mech, dst)
 	}
 
 	if featType != "" {

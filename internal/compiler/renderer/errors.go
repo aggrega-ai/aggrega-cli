@@ -10,6 +10,7 @@ var (
 	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
 	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
+	ErrAttachmentInjectKeyCollision = errors.New("duplicate delivery key across attachment-inject and another inject source")
 	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output")
 
 	// ErrLibraryImportNotYetSupported fires when a Recipe / FeatureRecipe

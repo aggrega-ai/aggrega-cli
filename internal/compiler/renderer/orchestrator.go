@@ -190,6 +190,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// Attachment-level inject (feature.inject / secret.inject): resolve each
+		// authored delivery key's provides-key reference against the attachment's
+		// own resolved provides and deliver into .context.inject, before Phase A's
+		// FeatureRecipe injectMapping last-wins overlay.
+		if err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment inject", nodeID))
+		}
+
 		// Build template context
 		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, inject, injectRaw)
 		if input.ResolveResult != nil && input.ResolveResult.Release != nil {

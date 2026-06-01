@@ -472,6 +472,99 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 	}
 }
 
+// TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput is the end-to-end
+// proof for top-level feature/secret inject delivery: an authored secret.inject and
+// feature.inject (provides-key references) resolve against each attachment's own
+// FeatureRecipe provides and reach the host component's .context.inject, so the host
+// Recipe rendering .context.inject.env.<KEY> emits the delivered values into its
+// output manifest. Inspected as real rendered output, both surfaces.
+func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	// Non-credential feature attachment with an authored top-level inject.
+	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+		fvals := types.OrderedMap[any]{}
+		fvals.Set("host", "redis.svc.cluster.local")
+		fenv := types.OrderedMap[string]{}
+		fenv.Set("CACHE_URL", "url")
+		finj := types.OrderedMap[types.OrderedMap[string]]{}
+		finj.Set("env", fenv)
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("cache", types.IRFeatureEntry{Type: "core/cache", Values: fvals, Inject: finj})
+		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"cache"}}
+	// Credential secret attachment with an authored top-level inject.
+	input.Graph.Spec.Secrets = func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
+		svals := types.OrderedMap[any]{}
+		svals.Set("generated", "s3cr3t")
+		senv := types.OrderedMap[string]{}
+		senv.Set("DB_PASSWORD", "root_password")
+		sinj := types.OrderedMap[types.OrderedMap[string]]{}
+		sinj.Set("env", senv)
+		inner := types.OrderedMap[types.IRSecretEntry]{}
+		inner.Set("root_password", types.IRSecretEntry{Type: "core/db-password", Values: svals, Inject: sinj})
+		outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec: types.RecipeSpec{
+						Provider:      "helm",
+						Implements:    "core/server/api-server",
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest", "environment": {"DB_PASSWORD": "{{ .context.inject.env.DB_PASSWORD }}", "CACHE_URL": "{{ .context.inject.env.CACHE_URL }}"}}`},
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+			switch featureType {
+			case "core/cache":
+				p := types.OrderedMap[string]{}
+				p.Set("url", `{{ .values.host }}`)
+				return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "cache"}, Spec: types.FeatureRecipeSpec{Provider: "helm", Implements: "core/cache", Provides: p}}, true
+			case "core/db-password":
+				p := types.OrderedMap[string]{}
+				p.Set("root_password", `{{ .values.generated }}`)
+				return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "db-password"}, Spec: types.FeatureRecipeSpec{Provider: "helm", Implements: "core/db-password", Provides: p}}, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+
+	var apiDep string
+	for k := range result.Files {
+		if strings.Contains(k, "api") && strings.Contains(k, "deployment") {
+			apiDep = k
+			break
+		}
+	}
+	if apiDep == "" {
+		t.Fatalf("no api deployment rendered; keys: %v", fileKeys(result.Files))
+	}
+	body := string(result.Files[apiDep])
+	if !strings.Contains(body, "s3cr3t") {
+		t.Errorf("secret.inject did not reach consumer rendered output: want DB_PASSWORD=s3cr3t in:\n%s", body)
+	}
+	if !strings.Contains(body, "redis.svc.cluster.local") {
+		t.Errorf("feature.inject did not reach consumer rendered output: want CACHE_URL=redis.svc.cluster.local in:\n%s", body)
+	}
+}
+
 func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 	t.Parallel()
 

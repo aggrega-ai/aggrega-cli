@@ -170,10 +170,10 @@ func TestResolvedVersionIsFeatureVersionNotComponent(t *testing.T) {
 		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
 	}
 	empty := types.OrderedMap[any]{}
-	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
+	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
 		t.Fatalf("mergeContribution feature: %v", err)
 	}
-	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
+	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
 		t.Fatalf("mergeContribution credential: %v", err)
 	}
 	if f, _ := result.Features.Get("mon"); f.ResolvedVersion != "2.5.0" {
@@ -217,6 +217,63 @@ func TestCollectNodeFeatures_TopologySecretResolvedVersion(t *testing.T) {
 	}
 }
 
+// TestCollectNodeFeatures_ProjectsAuthoredAttachmentInject pins the IR-build half
+// of attachment-inject delivery: the authored feature.inject / secret.inject blocks
+// project into the IR entry's Inject field (mechanism -> local key -> provides-key
+// reference) via convertInjectBlock, so the renderer has the delivery declaration to
+// resolve against the attachment's own provides. Without this projection the authored
+// block is validated and dropped.
+func TestCollectNodeFeatures_ProjectsAuthoredAttachmentInject(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {{InstanceName: "cache", Feature: types.FeatureInstance{
+				Type:   "core/cache",
+				Inject: &types.InjectBlock{Env: map[string]any{"CACHE_URL": "url"}},
+			}}},
+		},
+		SecretAttachments: map[string][]topology.SecretAttachment{
+			"api": {{InstanceName: "db-creds", Secret: types.SecretInstance{
+				Type:   "core/db-creds",
+				Inject: &types.InjectBlock{Env: map[string]any{"DB_PASSWORD": "root_password"}},
+			}}},
+		},
+	}
+	cat := resolver.CatalogLookup{
+		Component: func(string) (types.Component, bool) { return types.Component{}, false },
+		Feature:   func(string) (types.Feature, bool) { return types.Feature{}, false },
+	}
+	resolveResult := &resolver.ResolveResult{Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "t"}}}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, cat)
+	if err != nil {
+		t.Fatalf("collectNodeFeatures: %v", err)
+	}
+
+	f, ok := result.Features.Get("cache")
+	if !ok {
+		t.Fatal("feature 'cache' absent from result")
+	}
+	if env, ok := f.Inject.Get("env"); !ok {
+		t.Fatalf("feature entry inject missing env mechanism; got %v", f.Inject.Keys())
+	} else if v, _ := env.Get("CACHE_URL"); v != "url" {
+		t.Errorf("feature inject env.CACHE_URL = %q, want url (provides-key reference)", v)
+	}
+
+	s, ok := result.Secrets.Get("db-creds")
+	if !ok {
+		t.Fatal("secret 'db-creds' absent from result")
+	}
+	if env, ok := s.Inject.Get("env"); !ok {
+		t.Fatalf("secret entry inject missing env mechanism; got %v", s.Inject.Keys())
+	} else if v, _ := env.Get("DB_PASSWORD"); v != "root_password" {
+		t.Errorf("secret inject env.DB_PASSWORD = %q, want root_password (provides-key reference)", v)
+	}
+}
+
 // TestMergeContribution_CredentialCarriesPerInstanceInfra pins the secret/feature
 // IR-entry unification: a credential routed into the secrets bucket carries its
 // per-instance infra (the Release-tier infra in scope at the merge site), exactly
@@ -235,7 +292,7 @@ func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
 	infra.Set("replica_count", "3")
 	markerSet := map[string]bool{}
 
-	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, markerSet, featureCatalog(), "api", explicitProvenance); err != nil {
+	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, markerSet, featureCatalog(), "api", explicitProvenance); err != nil {
 		t.Fatalf("mergeContribution: %v", err)
 	}
 	if result.Features.Len() != 0 {
