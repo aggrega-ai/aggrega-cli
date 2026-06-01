@@ -333,3 +333,115 @@ spec:
 		t.Errorf("flavor default pool_size = %v, want 10", v)
 	}
 }
+
+// TestComponentPillarDefaults_ModelComponentPatternMaterializes verifies the shipped
+// fix against the standard library's pervasive model-component shape: a pillar that
+// `$ref`s BaseComponents#/schemas/BaseModelParameter (carrying a base default) plus a
+// sibling flavor property carrying its own default — the shape core/model/openai and
+// its siblings (anthropic, gemini, mistral, bedrock, …) use. Self-contained in-test
+// (uncoupled from catalog content so it cannot drift), but shaped to the real
+// catalog composition. strict_response_format is openai's real sibling; its boolean
+// false default also
+// exercises falsy-default extraction (a default of false must still materialize).
+func TestComponentPillarDefaults_ModelComponentPatternMaterializes(t *testing.T) {
+	t.Parallel()
+	libs := map[string]types.SchemaLibrary{
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: "1.0.0"
+spec:
+  schemas:
+    BaseModelParameter:
+      temperature: { type: string, default: "1.0" }
+`),
+	}
+	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/model/openai
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      $ref: "BaseComponents#/schemas/BaseModelParameter"
+      properties:
+        strict_response_format: { type: boolean, default: false }
+`
+	var comp types.Component
+	if err := yaml.Unmarshal([]byte(componentYAML), &comp); err != nil {
+		t.Fatalf("unmarshal component: %v", err)
+	}
+
+	// Control: no libraries → the base $ref does not resolve, nothing materializes.
+	if v, _ := componentPillarDefaults(comp, nil); v.Len() != 0 {
+		t.Fatalf("control: model-component ref must yield nothing without libraries; got %v", v.Keys())
+	}
+
+	values, _ := componentPillarDefaults(comp, libs)
+	if v, _ := values.Get("temperature"); v != "1.0" {
+		t.Errorf("base (BaseModelParameter) default temperature = %v, want 1.0", v)
+	}
+	v, ok := values.Get("strict_response_format")
+	if !ok {
+		t.Fatalf("flavor sibling strict_response_format absent; a false default must still materialize. keys=%v", values.Keys())
+	}
+	if v != false {
+		t.Errorf("flavor default strict_response_format = %v, want false", v)
+	}
+}
+
+// TestComponentPillarDefaults_CrossLibraryDeterministic pins the deterministic-output
+// invariant for the cross-library path: the same input materializes byte-identical
+// output (key order and values) across runs — the sorted-key extraction is stable.
+func TestComponentPillarDefaults_CrossLibraryDeterministic(t *testing.T) {
+	t.Parallel()
+	libs := map[string]types.SchemaLibrary{
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: "1.0.0"
+spec:
+  schemas:
+    BaseParams:
+      charset: { type: string, default: utf8mb4 }
+      collation: { type: string, default: utf8mb4_general_ci }
+      engine: { type: string, default: innodb }
+`),
+	}
+	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/database/mariadb
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      $ref: "BaseComponents#/schemas/BaseParams"
+`
+	var comp types.Component
+	if err := yaml.Unmarshal([]byte(componentYAML), &comp); err != nil {
+		t.Fatalf("unmarshal component: %v", err)
+	}
+
+	first, _ := componentPillarDefaults(comp, libs)
+	for i := 0; i < 5; i++ {
+		got, _ := componentPillarDefaults(comp, libs)
+		fk, gk := first.Keys(), got.Keys()
+		if len(fk) != len(gk) {
+			t.Fatalf("run %d: key count drift: %v vs %v", i, gk, fk)
+		}
+		for j, k := range fk {
+			if gk[j] != k {
+				t.Fatalf("run %d: key order drift at %d: %q vs %q", i, j, gk[j], k)
+			}
+			fv, _ := first.Get(k)
+			gv, _ := got.Get(k)
+			if fv != gv {
+				t.Errorf("run %d: value drift for %q: %v vs %v", i, k, gv, fv)
+			}
+		}
+	}
+}
