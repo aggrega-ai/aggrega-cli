@@ -12,6 +12,7 @@ package parse
 import (
 	"encoding/json"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,4 +35,25 @@ func TemplateOutput(b []byte, dst any) error {
 // provider engines' parseValuesPayload) decodes through this helper.
 func IRPayload(b []byte, dst any) error {
 	return json.Unmarshal(b, dst)
+}
+
+// NodePayloadMap extracts a node's IR-stored payload (a values_mapping or
+// infra_mapping entry) as a flattened, deterministically-ordered
+// map[string]any: it decodes the json.RawMessage through IRPayload and
+// flattens via the ordered map's deep view. Returns an empty map when the
+// node has no entry. The lock-time source descent and the build-time
+// source-eval both call this, so they turn the materialized IR pillar into
+// the template `.values` / `.infra` map identically — the two passes cannot
+// drift on the conversion, which is what keeps a value/infra-driven source
+// identity pinning the same at lock and build.
+func NodePayloadMap(mapping types.OrderedMap[json.RawMessage], nodeID string) map[string]any {
+	raw, ok := mapping.Get(nodeID)
+	if !ok {
+		return map[string]any{}
+	}
+	var om types.OrderedMap[any]
+	if err := IRPayload(raw, &om); err != nil {
+		return map[string]any{}
+	}
+	return om.TemplateAlphabeticalMapDeep()
 }

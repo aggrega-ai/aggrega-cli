@@ -271,7 +271,7 @@ func dispatchBoundaryScopeFR(
 	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —
 	// so a remote source is cache-extracted at build and the build-time
 	// identity matches the lockfile pin. A local source forwards verbatim.
-	resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), feat.Infra.TemplateAlphabeticalMapDeep())
+	resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), nil, feat.Infra.TemplateAlphabeticalMapDeep())
 	if err != nil {
 		return wrapSourceResolutionError(err, frNodeCtx.NodeID, fmt.Sprintf("boundary-scope FR %q source resolution", frInstance))
 	}

@@ -103,6 +103,12 @@ type ComponentSourceInfra struct {
 	// feature/secret-attachment instance name).
 	Component string
 	Infra     map[string]any
+	// Values is the using instance's per-instance values — the materialized
+	// component values (for a Recipe) or the per-instance attachment values
+	// (for a FeatureRecipe/secret). Source templates resolve `.values` against
+	// it, the same materialized values the renderer's `.values` pillar carries,
+	// so a value-driven source identity pins identically at lock and build.
+	Values map[string]any
 }
 
 // RecipeLoader loads parsed Recipe / FeatureRecipe bodies by URI.

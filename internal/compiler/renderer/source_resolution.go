@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -56,9 +57,13 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 	if recipe.Metadata.Version != "" {
 		uri = uri + ":" + recipe.Metadata.Version
 	}
+	var values, infra map[string]any
+	if input.Graph != nil {
+		values = parse.NodePayloadMap(input.Graph.Spec.ValuesMapping, nodeCtx.NodeID)
+		infra = parse.NodePayloadMap(input.Graph.Spec.InfraMapping, nodeCtx.NodeID)
+	}
 	resolved, err := resolveEntitySource(
-		input, recipe.Spec.Source, recipe.Spec.Locals, uri,
-		nodeBoundaryInfra(input, nodeCtx.NodeID),
+		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra,
 	)
 	if err != nil {
 		return err
@@ -80,7 +85,7 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 //
 // Wrapping fetch errors into the FETCH_ERROR category is the caller's concern via
 // wrapSourceResolutionError, so both call sites surface fetch failures identically.
-func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, infra map[string]any) (any, error) {
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any) (any, error) {
 	if source == nil {
 		return nil, nil
 	}
@@ -90,7 +95,7 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	if input.Lockfile == nil || input.WorkspaceRoot == "" || input.CacheDir == "" {
 		return source, nil
 	}
-	spec, err := closure.EvaluateSourceSpecFields(infra, source, locals, uri)
+	spec, err := closure.EvaluateSourceSpecFields(values, infra, source, locals, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -170,29 +175,6 @@ func isLocalURL(s string) bool {
 	default:
 		return true
 	}
-}
-
-// nodeBoundaryInfra returns the per-component, cascade-resolved infra
-// for the node identified by nodeID, projected to a plain map for
-// source-template evaluation. The resolver wires this per-component bag
-// (keyed by component instance name) during Step 1; the source template
-// resolves against the same infra the lock-time descent used for that
-// component.
-//
-// Returns an empty map when the resolve result or the node's entry is
-// absent — a source template that references an unresolved .infra key
-// then halts with the missingkey=error template setting, which is the
-// build-time-drift signal (regenerate the lockfile when the component's
-// infra changes).
-func nodeBoundaryInfra(input RendererInput, nodeID string) map[string]any {
-	if input.ResolveResult == nil {
-		return map[string]any{}
-	}
-	bi, ok := input.ResolveResult.BoundaryInfra[nodeID]
-	if !ok || bi == nil {
-		return map[string]any{}
-	}
-	return bi.Infra.TemplateAlphabeticalMapDeep()
 }
 
 // matchFetchSentinel walks the error chain via errors.Is against each

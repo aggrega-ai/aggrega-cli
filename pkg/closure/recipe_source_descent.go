@@ -122,7 +122,11 @@ func DescendRecipeSources(
 			if compInfra == nil {
 				compInfra = map[string]any{}
 			}
-			spec, err := buildSourceSpec(source, compInfra, locals, ent.URI)
+			compValues := comp.Values
+			if compValues == nil {
+				compValues = map[string]any{}
+			}
+			spec, err := buildSourceSpec(source, compValues, compInfra, locals, ent.URI)
 			if err != nil {
 				return nil, err
 			}
@@ -216,7 +220,7 @@ func DescendRecipeSources(
 // Recipe — orchestrator skips resolution). Returns
 // ErrSourceTemplateAtLockTime on .provides references, ambiguous
 // kind classification, or missing keys.
-func EvaluateSourceSpec(infra map[string]any, recipe *types.Recipe) (*SourceSpec, error) {
+func EvaluateSourceSpec(values, infra map[string]any, recipe *types.Recipe) (*SourceSpec, error) {
 	if recipe == nil || recipe.Spec.Source == nil {
 		return nil, nil
 	}
@@ -224,7 +228,7 @@ func EvaluateSourceSpec(infra map[string]any, recipe *types.Recipe) (*SourceSpec
 	if recipe.Metadata.Version != "" {
 		recipeURI = recipeURI + ":" + recipe.Metadata.Version
 	}
-	return EvaluateSourceSpecFields(infra, recipe.Spec.Source, recipe.Spec.Locals, recipeURI)
+	return EvaluateSourceSpecFields(values, infra, recipe.Spec.Source, recipe.Spec.Locals, recipeURI)
 }
 
 // EvaluateSourceSpecFields is the entity-agnostic build-time source-spec evaluator.
@@ -233,14 +237,17 @@ func EvaluateSourceSpec(infra map[string]any, recipe *types.Recipe) (*SourceSpec
 // so a FeatureRecipe render site resolves its source through the same buildSourceSpec
 // the component path uses (one evaluation body, two entities). EvaluateSourceSpec is
 // the thin *types.Recipe wrapper over it. Returns (nil, nil) for a nil source.
-func EvaluateSourceSpecFields(infra map[string]any, source any, locals types.OrderedMap[string], uri string) (*SourceSpec, error) {
+func EvaluateSourceSpecFields(values, infra map[string]any, source any, locals types.OrderedMap[string], uri string) (*SourceSpec, error) {
 	if source == nil {
 		return nil, nil
+	}
+	if values == nil {
+		values = map[string]any{}
 	}
 	if infra == nil {
 		infra = map[string]any{}
 	}
-	return buildSourceSpec(source, infra, locals, uri)
+	return buildSourceSpec(source, values, infra, locals, uri)
 }
 
 // buildSourceSpec normalises a Recipe spec.source field (which is
@@ -250,7 +257,7 @@ func EvaluateSourceSpecFields(infra map[string]any, source any, locals types.Ord
 // {.values, .infra, .locals} per amendment §3.7. Returns
 // ErrSourceTemplateAtLockTime on .provides references, ambiguous
 // kind classification, or missing keys.
-func buildSourceSpec(source any, infra map[string]any, locals types.OrderedMap[string], recipeURI string) (*SourceSpec, error) {
+func buildSourceSpec(source any, values, infra map[string]any, locals types.OrderedMap[string], recipeURI string) (*SourceSpec, error) {
 	switch s := source.(type) {
 	case string:
 		kind, err := classifyKindFromScheme(s, recipeURI)
@@ -259,7 +266,7 @@ func buildSourceSpec(source any, infra map[string]any, locals types.OrderedMap[s
 		}
 		return &SourceSpec{Kind: kind, URL: s, OriginalSource: source}, nil
 	case map[string]any:
-		return buildSpecFromMap(s, infra, locals, recipeURI, source)
+		return buildSpecFromMap(s, values, infra, locals, recipeURI, source)
 	default:
 		return nil, fmt.Errorf(
 			"closure: %s spec.source has unsupported shape %T: %w "+
@@ -268,10 +275,10 @@ func buildSourceSpec(source any, infra map[string]any, locals types.OrderedMap[s
 	}
 }
 
-func buildSpecFromMap(s map[string]any, infra map[string]any, locals types.OrderedMap[string], recipeURI string, original any) (*SourceSpec, error) {
+func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals types.OrderedMap[string], recipeURI string, original any) (*SourceSpec, error) {
 	spec := &SourceSpec{OriginalSource: original}
 	ctx := templateContext{
-		Values: map[string]any{},
+		Values: values,
 		Infra:  infra,
 		Locals: map[string]any{},
 	}

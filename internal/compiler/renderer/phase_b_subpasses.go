@@ -391,10 +391,12 @@ func phaseB6(
 		frNodeCtx := nodeCtx
 		frNodeCtx.OriginalSource = fr.Spec.Source
 		frInfra := map[string]any{}
+		frSrcValues := map[string]any{}
 		if hasFeat {
 			frInfra = feat.Infra.TemplateAlphabeticalMapDeep()
+			frSrcValues = feat.Values.TemplateAlphabeticalMapDeep()
 		}
-		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frInfra)
+		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frSrcValues, frInfra)
 		if err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q feature %q source resolution", nodeID, ref.InstanceName))
 		}
@@ -462,7 +464,7 @@ func phaseB6(
 
 			frNodeCtx := nodeCtx
 			frNodeCtx.OriginalSource = fr.Spec.Source
-			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Infra.TemplateAlphabeticalMapDeep())
+			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Values.TemplateAlphabeticalMapDeep(), entry.Infra.TemplateAlphabeticalMapDeep())
 			if err != nil {
 				return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
 			}

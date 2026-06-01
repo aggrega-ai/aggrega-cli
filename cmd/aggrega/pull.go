@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -105,7 +106,7 @@ type pullConfig struct {
 // to the per-component pin, preserving prior behavior.
 func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(featType string) (string, bool)) map[string][]closure.ComponentSourceInfra {
 	out := map[string][]closure.ComponentSourceInfra{}
-	add := func(nodeID, scope, instance, featType string, entryInfra types.OrderedMap[any]) {
+	add := func(nodeID, scope, instance, featType string, entryInfra, entryValues types.OrderedMap[any]) {
 		if featType == "" {
 			return
 		}
@@ -117,20 +118,24 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 		if entryInfra.Len() > 0 {
 			infra = entryInfra.TemplateAlphabeticalMapDeep()
 		}
+		var values map[string]any
+		if entryValues.Len() > 0 {
+			values = entryValues.TemplateAlphabeticalMapDeep()
+		}
 		out[frURI] = append(out[frURI],
-			closure.ComponentSourceInfra{Component: nodeID + "." + scope + "." + instance, Infra: infra})
+			closure.ComponentSourceInfra{Component: nodeID + "." + scope + "." + instance, Infra: infra, Values: values})
 	}
 	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
 		for instName, entry := range feats.All() {
 			if scope, ok := scopeOf(entry.Type); ok && scope == "boundary" {
 				continue // pinned once from the boundary projection below
 			}
-			add(nodeID, "features", instName, entry.Type, entry.Infra)
+			add(nodeID, "features", instName, entry.Type, entry.Infra, entry.Values)
 		}
 	}
 	for nodeID, secs := range graph.Spec.Secrets.All() {
 		for instName, entry := range secs.All() {
-			add(nodeID, "secrets", instName, entry.Type, entry.Infra)
+			add(nodeID, "secrets", instName, entry.Type, entry.Infra, entry.Values)
 		}
 	}
 	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
@@ -138,7 +143,8 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 			if scope, ok := scopeOf(bf.Type); !ok || scope != "boundary" {
 				continue // component-scope (or unresolvable): pinned per-component above
 			}
-			add(boundaryPath, "features", instName, bf.Type, bf.Infra)
+			// Boundary-scope features carry no values (Release pillar-split).
+			add(boundaryPath, "features", instName, bf.Type, bf.Infra, types.OrderedMap[any]{})
 		}
 	}
 	return out
@@ -261,21 +267,6 @@ func pullRun(cfg pullConfig) error {
 	// mapping carries no source-descent entity and is skipped.
 	perEntityInfra := map[string][]closure.ComponentSourceInfra{}
 
-	// Component instances: drive from the flattened topology, against each
-	// component's own cascade-resolved boundary infra.
-	for _, node := range topo.Nodes.All() {
-		recURI, found := catalog.ComponentRecipeURI(manifest, node.ComponentType)
-		if !found {
-			continue
-		}
-		var infra map[string]any
-		if bi, ok := rr.BoundaryInfra[node.InstanceID]; ok && bi != nil {
-			infra = bi.Infra.TemplateAlphabeticalMapDeep()
-		}
-		perEntityInfra[recURI] = append(perEntityInfra[recURI],
-			closure.ComponentSourceInfra{Component: node.InstanceID, Infra: infra})
-	}
-
 	// Feature / secret instances: derive from the IR render-set, not a Release
 	// walk. The renderer renders graph.Spec (the IR), whose feature/secret set is
 	// assembled across all five tiers (Aggregate component/subsystem, Release
@@ -308,6 +299,25 @@ func pullRun(cfg pullConfig) error {
 	}
 	for frURI, comps := range irEntityInfra(graph, manifest, executionScopeOf) {
 		perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
+	}
+
+	// Component instances: the component->Recipe join comes from the flattened
+	// topology; the per-component source-eval values and infra come from the
+	// MATERIALIZED IR pillars (graph.Spec.ValuesMapping / InfraMapping — schema
+	// defaults applied), the same pillars the renderer resolves the source
+	// against, so a value/infra-driven source identity pins identically at lock
+	// and build. Runs after BuildIR so the materialized pillars exist.
+	for _, node := range topo.Nodes.All() {
+		recURI, found := catalog.ComponentRecipeURI(manifest, node.ComponentType)
+		if !found {
+			continue
+		}
+		perEntityInfra[recURI] = append(perEntityInfra[recURI],
+			closure.ComponentSourceInfra{
+				Component: node.InstanceID,
+				Infra:     parse.NodePayloadMap(graph.Spec.InfraMapping, node.InstanceID),
+				Values:    parse.NodePayloadMap(graph.Spec.ValuesMapping, node.InstanceID),
+			})
 	}
 
 	sourceArtifacts, err := closure.DescendRecipeSources(

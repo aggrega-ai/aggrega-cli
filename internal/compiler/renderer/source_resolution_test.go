@@ -213,7 +213,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 		"url":     "oci://hub.aggrega.ai/charts/tls",
 		"version": "1.2.3",
 	}
-	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{})
+	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{})
 	if err != nil {
 		t.Fatalf("resolveEntitySource (FR remote): %v", err)
 	}
@@ -239,7 +239,7 @@ func TestResolveEntitySource_LocalForwardsVerbatim(t *testing.T) {
 		WorkspaceRoot: "/ws",
 		CacheDir:      ".aggrega/cache",
 	}
-	resolved, err := resolveEntitySource(input, "./charts/local-tls", types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{})
+	resolved, err := resolveEntitySource(input, "./charts/local-tls", types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{})
 	if err != nil {
 		t.Fatalf("resolveEntitySource (local): %v", err)
 	}
