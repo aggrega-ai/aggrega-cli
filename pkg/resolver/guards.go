@@ -22,6 +22,12 @@ type CatalogLookup struct {
 	Component func(typeURI string) (types.Component, bool)
 	// Feature returns the catalog Feature for a type URI. Returns false if not found.
 	Feature func(typeURI string) (types.Feature, bool)
+	// SchemaLibraries is the catalog's resolved SchemaLibrary set keyed by
+	// library metadata.name, used to resolve cross-library schema `$ref`s when
+	// compiling a Component's schema (whole-pillar and base+flavor composition).
+	// May be nil in catalog-less or not-yet-primed paths; consumers that need it
+	// guard on nil and fall back to inline-only behavior.
+	SchemaLibraries map[string]types.SchemaLibrary
 }
 
 // RunGuards executes the catalog-aware semantic checks of Step 1 against the

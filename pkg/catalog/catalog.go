@@ -657,6 +657,7 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			feat, ok := c.Features[typeURI]
 			return feat, ok
 		},
+		SchemaLibraries: c.SchemaLibraries,
 	}
 }
 

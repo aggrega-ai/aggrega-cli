@@ -163,7 +163,7 @@ spec:
 		t.Fatalf("unmarshal component: %v", err)
 	}
 
-	values, infra := componentPillarDefaults(comp)
+	values, infra := componentPillarDefaults(comp, nil)
 
 	if v, _ := values.Get("charset"); v != "utf8mb4" {
 		t.Errorf("values default charset = %v, want utf8mb4", v)
@@ -187,12 +187,13 @@ spec:
 	}
 }
 
-// TestComponentPillarDefaults_WholePillarRefYieldsNothing documents the current
-// limit: when a pillar is authored as a whole-pillar $ref (the standard-library
-// naked-base pattern), the compiled pillar has no direct `properties` map, so no
-// defaults are materialized today — even though the referenced $defs carries
-// them. Composition-aware resolution (resolving $ref/allOf before extraction)
-// is a deferred follow-on.
+// TestComponentPillarDefaults_WholePillarRefYieldsNothing documents the remaining
+// limit for a LOCAL in-document `#/$defs/` whole-pillar ref (passed no libraries):
+// the compiled pillar has no direct `properties` map, so no defaults materialize.
+// Cross-LIBRARY `$ref` resolution (whole-pillar and base+flavor against the
+// catalog's SchemaLibraries) IS resolved when libraries are supplied — see
+// TestComponentPillarDefaults_CrossLibraryRefMaterializes. Local in-document
+// `#/$defs/` inlining and allOf/oneOf/anyOf remain the deferred remainder.
 func TestComponentPillarDefaults_WholePillarRefYieldsNothing(t *testing.T) {
 	t.Parallel()
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
@@ -215,17 +216,120 @@ spec:
 		t.Fatalf("unmarshal component: %v", err)
 	}
 
-	values, _ := componentPillarDefaults(comp)
+	values, _ := componentPillarDefaults(comp, nil)
 	if values.Len() != 0 {
-		t.Errorf("whole-pillar $ref must yield no inline defaults today; got %v", values.Keys())
+		t.Errorf("local #/$defs/ whole-pillar $ref must yield no defaults; got %v", values.Keys())
 	}
 }
 
 // TestComponentPillarDefaults_NoSchema returns empty without error.
 func TestComponentPillarDefaults_NoSchema(t *testing.T) {
 	t.Parallel()
-	values, infra := componentPillarDefaults(types.Component{})
+	values, infra := componentPillarDefaults(types.Component{}, nil)
 	if values.Len() != 0 || infra.Len() != 0 {
 		t.Errorf("component with no schema must yield empty defaults; got values=%v infra=%v", values.Keys(), infra.Keys())
+	}
+}
+
+// loadSchemaLibraryFixture parses a SchemaLibrary YAML into the typed form the
+// catalog holds and componentPillarDefaults receives.
+func loadSchemaLibraryFixture(t *testing.T, y string) types.SchemaLibrary {
+	t.Helper()
+	var lib types.SchemaLibrary
+	if err := yaml.Unmarshal([]byte(y), &lib); err != nil {
+		t.Fatalf("unmarshal SchemaLibrary fixture: %v", err)
+	}
+	return lib
+}
+
+// TestComponentPillarDefaults_CrossLibraryRefMaterializes is the headline proof:
+// a Component whose values pillar is a whole-pillar cross-library $ref into a
+// SchemaLibrary declaring defaults materializes those defaults when the libraries
+// are supplied — previously a no-op for the composed majority of catalog Components.
+func TestComponentPillarDefaults_CrossLibraryRefMaterializes(t *testing.T) {
+	t.Parallel()
+	libs := map[string]types.SchemaLibrary{
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: "1.0.0"
+spec:
+  schemas:
+    BaseParams:
+      charset: { type: string, default: utf8mb4 }
+      collation: { type: string, default: utf8mb4_general_ci }
+`),
+	}
+	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/database/mariadb
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      $ref: "BaseComponents#/schemas/BaseParams"
+`
+	var comp types.Component
+	if err := yaml.Unmarshal([]byte(componentYAML), &comp); err != nil {
+		t.Fatalf("unmarshal component: %v", err)
+	}
+
+	// Control: without the libraries, the cross-library ref does not resolve and
+	// no defaults materialize (the prior behavior).
+	if v, _ := componentPillarDefaults(comp, nil); v.Len() != 0 {
+		t.Fatalf("control: cross-library ref must yield nothing without libraries; got %v", v.Keys())
+	}
+
+	values, _ := componentPillarDefaults(comp, libs)
+	if v, _ := values.Get("charset"); v != "utf8mb4" {
+		t.Errorf("cross-library default charset = %v, want utf8mb4 (materialized from BaseComponents)", v)
+	}
+	if v, _ := values.Get("collation"); v != "utf8mb4_general_ci" {
+		t.Errorf("cross-library default collation = %v, want utf8mb4_general_ci", v)
+	}
+}
+
+// TestComponentPillarDefaults_BaseFlavorMaterializes proves the base+flavor pattern:
+// a base cross-library $ref plus sibling properties, both carrying defaults, both
+// materialize (the expander flat-merges them; no allOf handling needed).
+func TestComponentPillarDefaults_BaseFlavorMaterializes(t *testing.T) {
+	t.Parallel()
+	libs := map[string]types.SchemaLibrary{
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: "1.0.0"
+spec:
+  schemas:
+    BaseParams:
+      charset: { type: string, default: utf8mb4 }
+`),
+	}
+	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/database/mariadb-flavored
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      $ref: "BaseComponents#/schemas/BaseParams"
+      properties:
+        pool_size: { type: string, default: "10" }
+`
+	var comp types.Component
+	if err := yaml.Unmarshal([]byte(componentYAML), &comp); err != nil {
+		t.Fatalf("unmarshal component: %v", err)
+	}
+
+	values, _ := componentPillarDefaults(comp, libs)
+	if v, _ := values.Get("charset"); v != "utf8mb4" {
+		t.Errorf("base default charset = %v, want utf8mb4", v)
+	}
+	if v, _ := values.Get("pool_size"); v != "10" {
+		t.Errorf("flavor default pool_size = %v, want 10", v)
 	}
 }

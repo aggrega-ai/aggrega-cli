@@ -159,7 +159,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			catComp, found := cfg.CatalogLookup.Component(topoNode.ComponentType)
 			if found {
 				irNode.ResolvedVersion = catComp.Metadata.Version
-				valueDefaults, infraDefaults = componentPillarDefaults(catComp)
+				valueDefaults, infraDefaults = componentPillarDefaults(catComp, cfg.CatalogLookup.SchemaLibraries)
 			}
 		}
 

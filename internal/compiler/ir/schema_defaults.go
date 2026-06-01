@@ -16,11 +16,21 @@ import (
 // malformed schema surfaces through the validator, not here. The compiled form
 // is an unordered map, so extraction emits keys in sorted order for
 // deterministic output.
-func componentPillarDefaults(comp types.Component) (values, infra types.OrderedMap[any]) {
+func componentPillarDefaults(comp types.Component, libraries map[string]types.SchemaLibrary) (values, infra types.OrderedMap[any]) {
 	if comp.Spec.Schema.Kind == 0 {
 		return types.OrderedMap[any]{}, types.OrderedMap[any]{}
 	}
-	compiled, err := compactform.Compile(&comp.Spec.Schema)
+	// Resolve cross-library schema `$ref`s (whole-pillar and base+flavor) against
+	// the catalog's SchemaLibraries so library-declared defaults materialize. The
+	// libraries are passed through the same compactform option the validator uses,
+	// so build-time and validate-time interpret the schema identically. Omitted
+	// when absent (inline-only behavior, unchanged). WithConsumerFile is not needed:
+	// cross-library refs resolve by library name, not by relative path.
+	var opts []compactform.CompileOption
+	if len(libraries) > 0 {
+		opts = append(opts, compactform.WithSchemaLibraries(libraries))
+	}
+	compiled, err := compactform.Compile(&comp.Spec.Schema, opts...)
 	if err != nil {
 		return types.OrderedMap[any]{}, types.OrderedMap[any]{}
 	}

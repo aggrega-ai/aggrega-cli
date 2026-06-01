@@ -62,6 +62,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		puller:          puller,
 		components:      map[string]types.Component{},
 		features:        map[string]types.Feature{},
+		schemaLibraries: map[string]types.SchemaLibrary{},
 		componentMisses: map[string]struct{}{},
 		featureMisses:   map[string]struct{}{},
 		componentIndex:  map[string]string{},
@@ -75,8 +76,9 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 // serve every consumer.
 func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
-		Component: l.Component,
-		Feature:   l.Feature,
+		Component:       l.Component,
+		Feature:         l.Feature,
+		SchemaLibraries: l.schemaLibraries,
 	}
 }
 
@@ -144,6 +146,9 @@ func (l *LazyLookup) Prime(cat *Catalog) {
 	for uri, feat := range cat.Features {
 		l.features[uri] = feat
 	}
+	for name, lib := range cat.SchemaLibraries {
+		l.schemaLibraries[name] = lib
+	}
 	l.componentIndexBuilt = true
 	l.featureIndexBuilt = true
 }
@@ -159,6 +164,13 @@ type LazyLookup struct {
 	// primitives).
 	components map[string]types.Component
 	features   map[string]types.Feature
+
+	// SchemaLibraries primed from an eager *Catalog (Prime). The lazy
+	// cascade resolves Components/Features on demand, but cross-library
+	// schema `$ref` resolution needs the whole library set at compile
+	// time; Prime supplies it so the daemon's IR materializes cross-library
+	// defaults identically to the CLI.
+	schemaLibraries map[string]types.SchemaLibrary
 
 	// Negative cache short-circuits repeated lookups of known-missing
 	// URIs within the session.
