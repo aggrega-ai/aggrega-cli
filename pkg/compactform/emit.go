@@ -530,8 +530,8 @@ func refURIFromNode(node *yaml.Node) string {
 // the same document (the JSON Pointer fragment-only form starting with
 // `#`). Cross-document refs have a non-empty document portion before the
 // `#`. OCI URIs are not in-document; the cross-document dispatch handles
-// them via expandSchemaLibraryRef, which resolves the OCI form for
-// workspace-local libraries and defers only remote fetch-at-build.
+// them via expandSchemaLibraryRef, which rejects a host-bearing reference —
+// libraries are addressed by identity, not by registry host.
 func isInDocumentRef(refURI string) bool {
 	return refURI != "" && refURI[0] == '#'
 }

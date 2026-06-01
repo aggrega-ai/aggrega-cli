@@ -169,12 +169,12 @@ func TestTemplateAlphabeticalMap_EmptyInput(t *testing.T) {
 func TestAnnotationValue_UnmarshalYAML_EveryBranch(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name         string
-		yamlSrc      string
-		wantScalar   string
+		name           string
+		yamlSrc        string
+		wantScalar     string
 		wantStructured bool
-		wantEmpty    bool
-		wantErr      bool
+		wantEmpty      bool
+		wantErr        bool
 	}{
 		{"scalar", `"hello"`, "hello", false, false, false},
 		{"null_tilde", `~`, "", false, true, false},
@@ -474,16 +474,6 @@ func TestValidateTemplateBody_NilAndZeroKindReturnNil(t *testing.T) {
 	}
 	if err := ValidateTemplateBody(&TemplateEntry{}); err != nil {
 		t.Errorf("zero-kind body: expected nil; got %v", err)
-	}
-}
-
-// TestCanonicalSchemaID_FormatsFullID pins the URL composer.
-func TestCanonicalSchemaID_FormatsFullID(t *testing.T) {
-	t.Parallel()
-	want := "oci://hub.aggrega.ai/base-components@1.0.0#/schemas/PostgresPayload"
-	got := CanonicalSchemaID("hub.aggrega.ai", "base-components", "1.0.0", "PostgresPayload")
-	if got != want {
-		t.Errorf("CanonicalSchemaID = %q; want %q", got, want)
 	}
 }
 

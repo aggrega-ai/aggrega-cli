@@ -47,20 +47,12 @@ type SchemaLibrarySpec struct {
 // YAML vs mixed) defers to the compact-form compiler's content-shape
 // heuristic at parse time; storing the raw node preserves authoring fidelity
 // for re-emission (deterministic output requires byte-identical round-trip).
-//
-// ID is the resolved canonical $id, computed post-parse from the workspace
-// lockfile entry: `oci://<host>/<library>@<version>#/schemas/<name>`. Local
-// development (where the library is unpacked under the catalog tree) uses
-// the placeholder host `local.aggrega`; publish-time resolution replaces
-// the placeholder with the canonical host.
 type SchemaEntry struct {
 	Content yaml.Node `json:"-" yaml:"-"`
-	ID      string    `json:"-" yaml:"-"`
 }
 
 // UnmarshalYAML captures the entry's raw YAML node so the parser dispatch
 // (compact form vs JSON Schema) can inspect content shape at parse time.
-// The ID field is populated post-parse by the canonical-$id derivation.
 func (e *SchemaEntry) UnmarshalYAML(value *yaml.Node) error {
 	if value == nil {
 		return nil

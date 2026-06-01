@@ -69,7 +69,7 @@ func WithConsumerFile(path string) CompileOption {
 // sentinels (ErrUnknownKeyword / ErrAmbiguousDispatch /
 // ErrEscapeContentInvalid / ErrConstraintTypeMismatch /
 // ErrReferenceUnresolvable / ErrUnresolvedSchemaLibraryRef /
-// ErrCircularRef / ErrOCINotYetSupported). Use errors.Is to match.
+// ErrCircularRef / ErrHostInLibraryRef). Use errors.Is to match.
 func Compile(input *yaml.Node, opts ...CompileOption) (Schema, error) {
 	if input == nil {
 		return nil, &CompileError{

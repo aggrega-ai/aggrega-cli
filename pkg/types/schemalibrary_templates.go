@@ -243,23 +243,3 @@ func ValidateTemplateBody(tmpl *TemplateEntry) error {
 	}
 	return scanForbiddenKeywords(&tmpl.Body)
 }
-
-// CanonicalSchemaID computes the canonical $id for a named schema entry in
-// a library, given the host + library name + version. Format:
-// `oci://<host>/<library>@<version>#/schemas/<name>`.
-//
-// Local development uses the placeholder host `local.aggrega`; publish-time
-// resolution replaces the placeholder with the canonical host (handled by
-// the publishing pipeline integration WI).
-func CanonicalSchemaID(host, libraryName, version, schemaName string) string {
-	return fmt.Sprintf("oci://%s/%s@%s#/schemas/%s", host, libraryName, version, schemaName)
-}
-
-// LocalDevelopmentHost is the placeholder host used by the canonical $id
-// derivation when the library is unpacked in the local catalog tree (not
-// yet published to an OCI registry). The publishing pipeline at the next
-// code change of this phase replaces this placeholder with the canonical host at
-// publish time. The value is visually distinct from canonical
-// `hub.aggrega.ai`-style hosts so logs and emitted artifacts flag local
-// references at a glance.
-const LocalDevelopmentHost = "local.aggrega"

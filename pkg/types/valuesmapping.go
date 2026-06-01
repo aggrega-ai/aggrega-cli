@@ -43,10 +43,8 @@ type ValuesMapping struct {
 	// Import carries the authored $import: target when the YAML value
 	// was {$import: ...} (modes 2 and 3). Local path (mode 2) or
 	// oci:// URL (mode 3); use HasOCIPrefix to discriminate. Named
-	// Import (not URL or Ref) to mirror the YAML key authors write;
-	// SchemaEntry.ID and MappingEntry.URL are canonical-resolved
-	// references on library entries, which is a structurally
-	// different concern.
+	// Import (not URL or Ref) to mirror the YAML key authors write,
+	// distinct from a library entry's canonical-resolved reference.
 	Import string `json:"-" yaml:"-"`
 }
 

@@ -96,8 +96,8 @@ func ValidateSchemaPillars(
 				cerrors.CatalogError,
 				cerrors.SourceLocation{File: filePath, Line: valueNode.Line},
 				fmt.Sprintf(
-					"%s %q: spec.schema.%s body failed to compile to JSON Schema 2020-12",
-					entityKind, entityName, keyNode.Value,
+					"%s %q: spec.schema.%s body failed to compile to JSON Schema 2020-12: %s",
+					entityKind, entityName, keyNode.Value, err.Error(),
 				),
 			)
 		}

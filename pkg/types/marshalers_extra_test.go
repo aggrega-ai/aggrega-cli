@@ -1117,17 +1117,3 @@ $dynamicAnchor: forbidden
 		t.Errorf("body with $dynamicAnchor should fail")
 	}
 }
-
-// TestCanonicalSchemaID_Format pins the canonical $id formatter.
-func TestCanonicalSchemaID_Format(t *testing.T) {
-	t.Parallel()
-	got := CanonicalSchemaID("hub.aggrega.ai", "MyLib", "1.0.0", "Probe")
-	want := "oci://hub.aggrega.ai/MyLib@1.0.0#/schemas/Probe"
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-	got = CanonicalSchemaID(LocalDevelopmentHost, "L", "0.0.1", "S")
-	if !strings.HasPrefix(got, "oci://local.aggrega/") {
-		t.Errorf("local host prefix missing; got %q", got)
-	}
-}

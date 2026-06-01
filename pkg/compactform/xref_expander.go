@@ -67,72 +67,64 @@ func parseCrossDocRefURI(ref string) (xrefURI, bool) {
 	return xrefURI{library: doc, entry: entry}, true
 }
 
-// ociRefPrefix is the scheme marker for OCI-form cross-document $ref URIs.
+// ociRefPrefix is the scheme marker for the host-bearing cross-document $ref
+// form. A library reference addresses its target by identity, not by a
+// registry host, so this prefix marks a reference that is rejected at compile.
 const ociRefPrefix = "oci://"
 
-// isOCIRef reports whether a $ref value carries the `oci://` scheme. The
-// OCI form resolves for workspace-local libraries (matched by name against
-// the loaded catalog); only fetch-at-build of a remote, not-locally-present
-// library is deferred.
+// isOCIRef reports whether a $ref value carries a registry host (the
+// `oci://<host>/…` form). Such a reference is rejected — references address
+// libraries by identity (the bare-name `<Library>#/schemas/<Entry>` form),
+// never by physical registry location.
 func isOCIRef(ref string) bool {
 	return strings.HasPrefix(ref, ociRefPrefix)
 }
 
-// parseOCIRefURI splits an OCI-form cross-document $ref value into its
-// library, version, and entry components. The canonical OCI authoring shape
-// (pkg/types/schemalibrary.go) is
-// `oci://<host>/<path>/<LibraryName>@<version>#/schemas/<Entry>`: the host and
-// any registry path precede the library name (the last path segment), `@`
-// separates the pinned version, and the `#/schemas/<Entry>` fragment names the
-// entry. Returns (parsed, version, true) on a syntactically valid OCI URI,
-// (zero, "", false) when the shape is malformed (missing `@version` or a
-// `/schemas/<Entry>` fragment) — callers route a malformed OCI URI to the
-// shape error at expandSchemaLibraryRef.
-//
-// The library is matched by name against the loaded catalog at resolution
-// time; <version> is a validated assertion against the resolved library, not a
-// selector (the catalog's SchemaLibraries map is name-keyed, one version per
-// name). The host portion is not consulted — workspace-local libraries carry
-// the placeholder host `local.aggrega`, and resolution is by name regardless
-// of host.
-func parseOCIRefURI(ref string) (xrefURI, string, bool) {
+// parseOCIRefURI extracts the library and entry names from a host-bearing
+// `oci://<host>/<path>/<LibraryName>[@<version>]#/schemas/<Entry>` reference so
+// the rejection diagnostic can suggest the identity-form equivalent
+// (`<LibraryName>#/schemas/<Entry>`). The host and any registry path precede
+// the library name (the last path segment); an optional `@<version>` is
+// stripped (the version is not part of an identity reference — the lockfile
+// resolves it). Returns (parsed, true) when the library + entry are
+// recoverable, (zero, false) otherwise — the rejection fires regardless, the
+// parse only enriches the message.
+func parseOCIRefURI(ref string) (xrefURI, bool) {
 	if !strings.HasPrefix(ref, ociRefPrefix) {
-		return xrefURI{}, "", false
+		return xrefURI{}, false
 	}
 	body := ref[len(ociRefPrefix):]
 	hash := strings.IndexByte(body, '#')
 	if hash < 0 {
-		return xrefURI{}, "", false
+		return xrefURI{}, false
 	}
 	doc := body[:hash]
 	frag := body[hash+1:]
 	const fragPrefix = "/schemas/"
 	if !strings.HasPrefix(frag, fragPrefix) {
-		return xrefURI{}, "", false
+		return xrefURI{}, false
 	}
 	entry := frag[len(fragPrefix):]
 	if entry == "" || strings.ContainsAny(entry, "/#") {
-		return xrefURI{}, "", false
+		return xrefURI{}, false
 	}
-	// `@` separates the pinned version from the host/path/library portion.
-	at := strings.LastIndexByte(doc, '@')
-	if at < 0 {
-		return xrefURI{}, "", false
+	// Strip an optional `@<version>` — not part of an identity reference.
+	pathPortion := doc
+	if at := strings.LastIndexByte(doc, '@'); at >= 0 {
+		pathPortion = doc[:at]
 	}
-	version := doc[at+1:]
-	pathPortion := doc[:at]
-	if version == "" || pathPortion == "" {
-		return xrefURI{}, "", false
+	if pathPortion == "" {
+		return xrefURI{}, false
 	}
-	// The library name is the last path segment before `@`.
+	// The library name is the last path segment.
 	library := pathPortion
 	if slash := strings.LastIndexByte(pathPortion, '/'); slash >= 0 {
 		library = pathPortion[slash+1:]
 	}
 	if library == "" {
-		return xrefURI{}, "", false
+		return xrefURI{}, false
 	}
-	return xrefURI{library: library, entry: entry}, version, true
+	return xrefURI{library: library, entry: entry}, true
 }
 
 // expandSchemaLibraryRef resolves a cross-document $ref to its target
@@ -149,21 +141,21 @@ func parseOCIRefURI(ref string) (xrefURI, string, bool) {
 // the merged schema.
 //
 // Error model:
-//   - ErrOCINotYetSupported when refURI is an `oci://` form whose library is
-//     NOT in the local catalog — a remote library deferred until the
-//     remote-library fetch path ships (distinct from a plain not-found so a
-//     reader can tell not-yet-fetchable from absent).
-//   - ErrSchemaLibraryVersionMismatch when an `oci://` refURI resolves its
-//     library by name but the library's metadata.version does not equal the
-//     URI's `@version` assertion.
+//   - ErrHostInLibraryRef when refURI carries a registry host (`oci://…`).
+//     A reference addresses a library by identity, never by physical location;
+//     the message steers the author to the bare-name form, suggesting the exact
+//     identity-form equivalent when the host-bearing URI is parseable.
+//   - ErrReferenceUnresolvable when refURI is not the bare-name identity shape
+//     — either syntactically malformed, or it pins a version
+//     (`<Library>@<version>#/schemas/<Entry>`); the version is resolved by the
+//     lockfile, not the reference, so a version pin is rejected with a steer to
+//     the bare-name form.
 //   - ErrUnresolvedSchemaLibraryRef when refURI's library portion is not
-//     present in libraries (bare-name form), or the entry portion is absent
-//     from the library's Spec.Schemas map (either form). The error message
-//     names the unresolved URI and the consumer file location.
+//     present in libraries, or the entry portion is absent from the library's
+//     Spec.Schemas map. The error message names the unresolved URI and the
+//     consumer file location.
 //   - ErrCircularRef when refURI is already in resolutionStack. The error
 //     message names the chain (oldest -> newest -> refURI).
-//   - ErrReferenceUnresolvable when refURI is syntactically malformed
-//     (not a recognised cross-document or OCI shape).
 //
 // Returns the entry's raw yaml.Node alongside the canonical library +
 // entry name pair. The names are returned so the caller can use them for
@@ -174,37 +166,42 @@ func expandSchemaLibraryRef(
 	resolutionStack []string,
 	consumerFile string,
 ) (entryContent *yaml.Node, libraryName, entryName string, err error) {
-	// Parse: both the OCI form and the bare-name form yield a {library,
-	// entry} pair; the OCI form additionally pins a version asserted below.
-	// The library-not-found error class differs by form (deferred-remote for
-	// OCI, plain not-found for bare-name), so track which form parsed.
-	var (
-		parsed     xrefURI
-		ociVersion string
-		isOCI      bool
-	)
+	// A reference carrying a registry host addresses by location, not
+	// identity — rejected. Suggest the identity-form equivalent when the
+	// host-bearing URI parses into a library + entry.
 	if isOCIRef(refURI) {
-		p, version, ok := parseOCIRefURI(refURI)
-		if !ok {
-			return nil, "", "", &CompileError{
-				Path:    consumerFile,
-				Keyword: "$ref",
-				Message: "OCI cross-document $ref shape must be `oci://<host>/<path>/<LibraryName>@<version>#/schemas/<EntryName>`: " + refURI,
-				Err:     ErrReferenceUnresolvable,
-			}
+		msg := "cross-document $ref carries a registry host; reference the library by identity"
+		if p, ok := parseOCIRefURI(refURI); ok {
+			msg += " (use `" + p.library + "#/schemas/" + p.entry + "`)"
 		}
-		parsed, ociVersion, isOCI = p, version, true
-	} else {
-		p, ok := parseCrossDocRefURI(refURI)
-		if !ok {
-			return nil, "", "", &CompileError{
-				Path:    consumerFile,
-				Keyword: "$ref",
-				Message: "cross-document $ref shape must be `<LibraryName>#/schemas/<EntryName>`: " + refURI,
-				Err:     ErrReferenceUnresolvable,
-			}
+		return nil, "", "", &CompileError{
+			Path:    consumerFile,
+			Keyword: "$ref",
+			Message: msg + ": " + refURI,
+			Err:     ErrHostInLibraryRef,
 		}
-		parsed = p
+	}
+
+	parsed, ok := parseCrossDocRefURI(refURI)
+	if !ok {
+		return nil, "", "", &CompileError{
+			Path:    consumerFile,
+			Keyword: "$ref",
+			Message: "cross-document $ref shape must be `<LibraryName>#/schemas/<EntryName>`: " + refURI,
+			Err:     ErrReferenceUnresolvable,
+		}
+	}
+
+	// A version pin in the reference is rejected — the lockfile resolves the
+	// version, so a `<Library>@<version>` reference carries a second version
+	// truth that can drift. Steer to the bare-name identity form.
+	if at := strings.IndexByte(parsed.library, '@'); at >= 0 {
+		return nil, "", "", &CompileError{
+			Path:    consumerFile,
+			Keyword: "$ref",
+			Message: "cross-document $ref must not pin a version (the lockfile resolves it); reference the library by identity (use `" + parsed.library[:at] + "#/schemas/" + parsed.entry + "`): " + refURI,
+			Err:     ErrReferenceUnresolvable,
+		}
 	}
 
 	// Cycle check: refURI already on the in-flight resolution stack.
@@ -220,40 +217,16 @@ func expandSchemaLibraryRef(
 		}
 	}
 
-	// Library lookup — the library portion (bare name, or the name extracted
-	// from the OCI URI) maps directly to metadata.name (the catalog's
-	// Catalog.SchemaLibraries map key, which is version-blind).
+	// Library lookup — the bare-name library portion maps directly to
+	// metadata.name (the catalog's Catalog.SchemaLibraries map key, which is
+	// version-blind; the version is supplied by the lockfile).
 	lib, found := libraries[parsed.library]
 	if !found {
-		if isOCI {
-			// Not in the local catalog: a remote library that would have to
-			// be fetched at build. Deferred until the remote-library fetch
-			// path ships — a distinct signal from a plain not-found.
-			return nil, "", "", &CompileError{
-				Path:    consumerFile,
-				Keyword: "$ref",
-				Message: "remote OCI SchemaLibrary " + parsed.library + " is not present in the local catalog and remote fetch-at-build is not yet supported: " + refURI,
-				Err:     ErrOCINotYetSupported,
-			}
-		}
 		return nil, "", "", &CompileError{
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: "SchemaLibrary " + parsed.library + " not found in catalog (referenced from " + consumerFile + "): " + refURI,
 			Err:     ErrUnresolvedSchemaLibraryRef,
-		}
-	}
-
-	// Version assertion (OCI form only): the URI's `@version` must equal the
-	// loaded library's metadata.version. The map is name-keyed, so `@version`
-	// is a validated assertion against the single loaded version, not a
-	// selector that picks among versions.
-	if isOCI && lib.Metadata.Version != ociVersion {
-		return nil, "", "", &CompileError{
-			Path:    consumerFile,
-			Keyword: "$ref",
-			Message: "OCI $ref pins version " + ociVersion + " but SchemaLibrary " + parsed.library + " is loaded at version " + lib.Metadata.Version + ": " + refURI,
-			Err:     ErrSchemaLibraryVersionMismatch,
 		}
 	}
 

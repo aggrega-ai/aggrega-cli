@@ -60,27 +60,15 @@ var (
 	// reference chains are detected by the same stack discipline.
 	ErrCircularRef = errors.New("compactform: circular cross-document $ref expansion")
 
-	// ErrOCINotYetSupported indicates a cross-document `oci://` `$ref:`
-	// names a SchemaLibrary that is NOT present in the local catalog — a
-	// remote library that would have to be fetched at build. The `oci://`
-	// `$ref` form itself resolves for workspace-local libraries (the
-	// library is matched by name against the loaded catalog and its
-	// `@version` is asserted); only fetch-at-build of a remote
-	// (not-locally-present) library is deferred until the remote-library
-	// fetch path ships.
-	ErrOCINotYetSupported = errors.New("compactform: remote OCI SchemaLibrary resolution at build is not yet supported")
-
-	// ErrSchemaLibraryVersionMismatch indicates a cross-document `oci://`
-	// `$ref:` resolved its SchemaLibrary by name in the local catalog, but
-	// the library's `metadata.version` does not equal the `@version` pinned
-	// in the URI. Distinct from ErrUnresolvedSchemaLibraryRef (library name
-	// unknown or entry absent): here both the library and the entry resolve,
-	// but the version assertion fails — the remediation is to align the
-	// URI's `@version` with the loaded library, not to fix the name. The
-	// catalog's SchemaLibraries map is name-keyed (one version per name), so
-	// `@version` is a validated assertion against the loaded library, not a
-	// version selector.
-	ErrSchemaLibraryVersionMismatch = errors.New("compactform: cross-document $ref version does not match the resolved SchemaLibrary")
+	// ErrHostInLibraryRef indicates a cross-document `$ref:` carries a
+	// registry host — the `oci://<host>/…` form. A library reference
+	// addresses its target by identity (the bare-name form
+	// `<Library>#/schemas/<Entry>`), never by physical registry location:
+	// the library name resolves against the loaded closure and the version
+	// is supplied by the lockfile. A host in a reference is rejected at
+	// compile so physical location cannot leak into authored source; the
+	// error message steers the author to the identity form.
+	ErrHostInLibraryRef = errors.New("compactform: cross-document $ref carries a registry host; reference the library by identity")
 )
 
 // CompileError is a structured compile failure carrying source-position

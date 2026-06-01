@@ -309,8 +309,8 @@ properties: {}
 	}
 }
 
-// ociLibFixture is a workspace-local SchemaLibrary (placeholder host form)
-// whose Storage entry declares a default, shared by the OCI-resolution tests.
+// ociLibFixture is a workspace-local SchemaLibrary whose Storage entry
+// declares a default, shared by the identity-reference tests.
 func ociLibFixture(t *testing.T) map[string]types.SchemaLibrary {
 	t.Helper()
 	return map[string]types.SchemaLibrary{
@@ -327,20 +327,20 @@ spec:
 	}
 }
 
-// TestExpand_OCIWorkspaceLocalResolves asserts the canonical OCI `$ref` form
-// resolves for a workspace-local library: the entry's property is merged, its
-// default materializes, and the source annotation normalizes to the canonical
-// `<Library>#/schemas/<Entry>` value (identical to the bare-name form).
-func TestExpand_OCIWorkspaceLocalResolves(t *testing.T) {
+// TestExpand_BareNameIdentityResolves asserts the bare-name identity form
+// resolves: the entry's property merges, its default materializes, and the
+// source annotation is the canonical `<Library>#/schemas/<Entry>` value. The
+// version is supplied by the lockfile, not the reference.
+func TestExpand_BareNameIdentityResolves(t *testing.T) {
 	t.Parallel()
 
 	libs := ociLibFixture(t)
-	consumer := parseConsumer(t, `$ref: "oci://local.aggrega/DbSizing@1.0.0#/schemas/Storage"
+	consumer := parseConsumer(t, `$ref: "DbSizing#/schemas/Storage"
 properties: {}
 `)
 	out, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
 	if err != nil {
-		t.Fatalf("OCI workspace-local $ref should resolve; got %v", err)
+		t.Fatalf("bare-name identity $ref should resolve; got %v", err)
 	}
 	props, ok := out["properties"].(Schema)
 	if !ok {
@@ -354,101 +354,53 @@ properties: {}
 		t.Errorf("library default should materialize; got default=%v", got)
 	}
 	if got := LibrarySourceAnnotation(sizeSchema); got != "DbSizing#/schemas/Storage" {
-		t.Errorf("annotation = %q; want DbSizing#/schemas/Storage (canonical normalized form)", got)
+		t.Errorf("annotation = %q; want DbSizing#/schemas/Storage", got)
 	}
 }
 
-// TestExpand_OCIEquivalentToBareName asserts the OCI form and the bare-name
-// form of the same workspace-local reference compile to byte-identical output —
-// the OCI form is an alternate spelling of the same canonical entry, not a
-// distinct resolution path.
-func TestExpand_OCIEquivalentToBareName(t *testing.T) {
+// TestExpand_HostBearingRefRejected asserts a reference carrying a registry
+// host (the `oci://…` form) is rejected loudly with ErrHostInLibraryRef, and
+// the diagnostic suggests the identity-form equivalent. The message is
+// domain-only — it reaches user terminals and carries no process vocabulary.
+func TestExpand_HostBearingRefRejected(t *testing.T) {
 	t.Parallel()
 
-	ociOut, err := Compile(
-		parseConsumer(t, `$ref: "oci://local.aggrega/DbSizing@1.0.0#/schemas/Storage"
-properties: {}
-`),
-		WithSchemaLibraries(ociLibFixture(t)), WithConsumerFile("test/consumer.yaml"))
-	if err != nil {
-		t.Fatalf("OCI form Compile: %v", err)
-	}
-	bareOut, err := Compile(
-		parseConsumer(t, `$ref: "DbSizing#/schemas/Storage"
-properties: {}
-`),
-		WithSchemaLibraries(ociLibFixture(t)), WithConsumerFile("test/consumer.yaml"))
-	if err != nil {
-		t.Fatalf("bare-name form Compile: %v", err)
-	}
-	if !reflect.DeepEqual(ociOut, bareOut) {
-		t.Errorf("OCI and bare-name forms should compile identically;\n oci = %v\nbare = %v", ociOut, bareOut)
-	}
-}
-
-// TestExpand_OCIVersionMismatch asserts the OCI `@version` is a validated
-// assertion: a version that does not equal the loaded library's
-// metadata.version halts with ErrSchemaLibraryVersionMismatch (distinct from
-// not-found — the library and entry resolve, only the version diverges).
-func TestExpand_OCIVersionMismatch(t *testing.T) {
-	t.Parallel()
-
-	libs := ociLibFixture(t) // DbSizing is loaded at version 1.0.0.
-	consumer := parseConsumer(t, `$ref: "oci://local.aggrega/DbSizing@2.0.0#/schemas/Storage"
+	libs := ociLibFixture(t)
+	consumer := parseConsumer(t, `$ref: "oci://hub.aggrega.ai/DbSizing@1.0.0#/schemas/Storage"
 properties: {}
 `)
 	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
-	if !errors.Is(err, ErrSchemaLibraryVersionMismatch) {
-		t.Errorf("error = %v; want ErrSchemaLibraryVersionMismatch", err)
-	}
-}
-
-// TestExpand_OCIMalformedShape asserts an OCI xref missing its `@version` or
-// its `#/schemas/<Entry>` fragment halts with the shape error
-// (ErrReferenceUnresolvable), not a not-found or deferred-remote signal.
-func TestExpand_OCIMalformedShape(t *testing.T) {
-	t.Parallel()
-
-	for name, ref := range map[string]string{
-		"no-version":  "oci://local.aggrega/DbSizing#/schemas/Storage",
-		"no-fragment": "oci://local.aggrega/DbSizing@1.0.0",
-		"empty-entry": "oci://local.aggrega/DbSizing@1.0.0#/schemas/",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			consumer := parseConsumer(t, `$ref: "`+ref+`"
-properties: {}
-`)
-			_, err := Compile(consumer, WithSchemaLibraries(ociLibFixture(t)), WithConsumerFile("test/consumer.yaml"))
-			if !errors.Is(err, ErrReferenceUnresolvable) {
-				t.Errorf("ref %q: error = %v; want ErrReferenceUnresolvable", ref, err)
-			}
-		})
-	}
-}
-
-// TestExpand_OCIDeferredRemote asserts an OCI xref whose library is NOT in the
-// local catalog surfaces the deferred-remote signal (ErrOCINotYetSupported) —
-// distinct from a plain not-found so a reader knows the library is
-// not-yet-fetchable, not merely absent. The emitted message is domain-only: it
-// carries no process vocabulary or work-item pointer (the error reaches user
-// terminals and is boundary-bound).
-func TestExpand_OCIDeferredRemote(t *testing.T) {
-	t.Parallel()
-
-	libs := map[string]types.SchemaLibrary{} // empty — the referenced library is remote.
-	consumer := parseConsumer(t, `$ref: "oci://registry.example.com/RemoteLib@1.0.0#/schemas/Entry"
-properties: {}
-`)
-	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
-	if !errors.Is(err, ErrOCINotYetSupported) {
-		t.Fatalf("error = %v; want ErrOCINotYetSupported", err)
+	if !errors.Is(err, ErrHostInLibraryRef) {
+		t.Fatalf("error = %v; want ErrHostInLibraryRef", err)
 	}
 	msg := err.Error()
-	for _, leak := range []string{"09f", "09e", "WI", "Scope B", "Wave", "intent", "TANDEM"} {
+	if !strings.Contains(msg, "DbSizing#/schemas/Storage") {
+		t.Errorf("rejection should suggest the identity form `DbSizing#/schemas/Storage`; got %q", msg)
+	}
+	for _, leak := range []string{"WI", "Wave", "intent", "TANDEM", "LDR 00", "Scope"} {
 		if strings.Contains(msg, leak) {
-			t.Errorf("deferred-remote message leaks process vocabulary %q: %s", leak, msg)
+			t.Errorf("rejection message leaks process vocabulary %q: %s", leak, msg)
 		}
+	}
+}
+
+// TestExpand_VersionPinRejected asserts a host-less but version-pinned
+// reference (`<Library>@<version>#/schemas/<Entry>`) is rejected — the version
+// is resolved by the lockfile, not the reference — with a steer to the
+// bare-name identity form.
+func TestExpand_VersionPinRejected(t *testing.T) {
+	t.Parallel()
+
+	libs := ociLibFixture(t)
+	consumer := parseConsumer(t, `$ref: "DbSizing@1.0.0#/schemas/Storage"
+properties: {}
+`)
+	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
+	if !errors.Is(err, ErrReferenceUnresolvable) {
+		t.Fatalf("error = %v; want ErrReferenceUnresolvable", err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "DbSizing#/schemas/Storage") {
+		t.Errorf("rejection should suggest the identity form; got %q", msg)
 	}
 }
 

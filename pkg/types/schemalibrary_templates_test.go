@@ -119,8 +119,8 @@ func TestInstantiateTemplate_UndeclaredArgRejected(t *testing.T) {
 	t.Parallel()
 	lib := libraryWithTemplate(t)
 	_, err := InstantiateTemplate(lib, "Probe", map[string]any{
-		"port":   8080,
-		"extra":  "value",
+		"port":  8080,
+		"extra": "value",
 	})
 	if !errors.Is(err, ErrTemplateParamTypeMismatch) {
 		t.Errorf("expected error for undeclared arg; got %v", err)
@@ -244,27 +244,6 @@ properties:
 	entry := &SchemaEntry{Content: *node.Content[0]}
 	if err := ValidateSchemaEntry(entry); err != nil {
 		t.Errorf("expected no error on clean schema; got %v", err)
-	}
-}
-
-// TestCanonicalSchemaID verifies the canonical $id derivation format.
-func TestCanonicalSchemaID(t *testing.T) {
-	t.Parallel()
-	got := CanonicalSchemaID("hub.aggrega.ai", "WebPrimitives", "1.0.0", "URL")
-	want := "oci://hub.aggrega.ai/WebPrimitives@1.0.0#/schemas/URL"
-	if got != want {
-		t.Errorf("CanonicalSchemaID = %q, want %q", got, want)
-	}
-}
-
-// TestCanonicalSchemaID_LocalDevelopmentHost verifies the local
-// development placeholder host renders correctly.
-func TestCanonicalSchemaID_LocalDevelopmentHost(t *testing.T) {
-	t.Parallel()
-	got := CanonicalSchemaID(LocalDevelopmentHost, "Probes", "0.1.0", "Probe")
-	want := "oci://local.aggrega/Probes@0.1.0#/schemas/Probe"
-	if got != want {
-		t.Errorf("CanonicalSchemaID (local host) = %q, want %q", got, want)
 	}
 }
 
