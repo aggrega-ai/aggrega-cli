@@ -45,6 +45,14 @@ func TestBuildBoundaryContext_AllBranches(t *testing.T) {
 	graph.Spec.Nodes.Set("leaf", leafNode)
 	graph.Spec.Nodes.Set("outside", outside)
 
+	// Boundary-feature projection — what the IR builder emits on
+	// graph.Spec.BoundaryFeatures, mirroring the Release's infra/fr1.
+	bfInfra := types.OrderedMap[any]{}
+	bfInfra.Set("size", "small")
+	bfInner := types.OrderedMap[types.IRBoundaryFeature]{}
+	bfInner.Set("fr1", types.IRBoundaryFeature{Type: "feat/x", Infra: bfInfra})
+	graph.Spec.BoundaryFeatures.Set("infra", bfInner)
+
 	graph.Spec.Edges = []types.IREdge{
 		{Source: "internal", Target: "leaf", Socket: "in"},      // internal-to-internal
 		{Source: "internal", Target: "outside", Socket: "out"},  // outgoing cross-boundary

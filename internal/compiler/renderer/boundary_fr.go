@@ -215,6 +215,7 @@ func dispatchBoundaryScopeFR(
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
+	input RendererInput,
 ) error {
 	// 1. Validate FR templates (cached).
 	cacheKey := fr.Metadata.Name + ":" + fr.Metadata.Version
@@ -237,7 +238,7 @@ func dispatchBoundaryScopeFR(
 	}
 
 	// 3. Read the boundary's BoundaryFeature for this FR instance.
-	feat, found := lookupBoundaryFeatureAttachment(release, key.BoundaryPath, frInstance)
+	feat, found := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
 	if !found {
 		// The dispatch path was reached because some component's feature
 		// cascade pointed at this FR-instance, but the boundary itself
@@ -297,11 +298,17 @@ func dispatchBoundaryScopeFR(
 	frNodeCtx.RecipeName = fr.Metadata.Name
 	frNodeCtx.RecipeVersion = fr.Metadata.Version
 	frNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(frNodeCtx.NodeID)
-	if src, ok := fr.Spec.Source.(string); ok && src != "" {
-		frNodeCtx.Source = src
-	} else if fr.Spec.Source != nil {
-		frNodeCtx.Source = fr.Spec.Source
+	frNodeCtx.OriginalSource = fr.Spec.Source
+	// The boundary-scope FR's source resolves through the shared
+	// resolve+extract helper against the boundary's own infra — the SAME
+	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —
+	// so a remote source is cache-extracted at build and the build-time
+	// identity matches the lockfile pin. A local source forwards verbatim.
+	resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), feat.Infra.TemplateAlphabeticalMapDeep())
+	if err != nil {
+		return wrapSourceResolutionError(err, frNodeCtx.NodeID, fmt.Sprintf("boundary-scope FR %q source resolution", frInstance))
 	}
+	frNodeCtx.Source = resolvedSrc
 
 	frValues := flattenOrderedMap(frCtx.Values)
 	frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
@@ -380,8 +387,7 @@ func evaluateBoundaryFRTemplates(
 // boundary at boundaryPath, then assembles the BoundaryContext that the
 // boundary-scope FR template evaluation reads.
 //
-// The function populates the documented BoundaryContext pillars per
-// proposal §2.3.4.1:
+// The function populates the documented BoundaryContext pillars:
 //
 //   - Path: the boundary's evaluated directory (read from any subtree
 //     node's BoundaryInfra; falls back to the boundaryPath verbatim).
@@ -410,8 +416,7 @@ func buildBoundaryContext(
 		return nil, cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "buildBoundaryContext: release is nil", nil, nil)
 	}
 	parts := strings.Split(boundaryPath, "/")
-	boundary, ok := findBoundaryAtPath(release.Spec.Boundaries, parts)
-	if !ok {
+	if _, ok := findBoundaryAtPath(release.Spec.Boundaries, parts); !ok {
 		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryPath}, fmt.Sprintf("buildBoundaryContext: boundary %q not found in release", boundaryPath), nil, nil)
 	}
 
@@ -504,16 +509,20 @@ func buildBoundaryContext(
 		bc.Annotations = ann
 	}
 
-	// Feature attachments: features directly on the boundary (parsed via
-	// the same opaque-payload pattern the IR builder uses).
-	for fname, raw := range boundary.Features.All() {
-		bf := parseBoundaryFeatureRaw(raw)
-		bc.FeatureAttachments = append(bc.FeatureAttachments, types.TemplateFeature{
-			Type:   bf.Type,
-			Values: types.OrderedMap[any]{},
-			Infra:  bf.Infra,
-		})
-		_ = fname
+	// Feature attachments: the boundary's Feature attachments read from the
+	// IR projection (the IR builder parsed them once at build; no Release
+	// re-walk here).
+	if graph != nil {
+		if inner, ok := graph.Spec.BoundaryFeatures.Get(boundaryPath); ok {
+			for fname, bf := range inner.All() {
+				bc.FeatureAttachments = append(bc.FeatureAttachments, types.TemplateFeature{
+					Type:   bf.Type,
+					Values: types.OrderedMap[any]{},
+					Infra:  bf.Infra,
+				})
+				_ = fname
+			}
+		}
 	}
 
 	return bc, nil
@@ -573,20 +582,17 @@ func isInSubtree(candidate, boundaryPath string) bool {
 // Falls back to componentBoundaryPath when no ancestor carries the
 // attachment — the boundary-scope dispatch then surfaces a precise
 // "no BoundaryFeature attachment" error rather than silently misattributing.
-func findFRAttachmentBoundary(release *types.Release, componentBoundaryPath, frInstance string) string {
-	if release == nil || componentBoundaryPath == "" {
+func findFRAttachmentBoundary(boundaryFeatures types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]], componentBoundaryPath, frInstance string) string {
+	if componentBoundaryPath == "" {
 		return componentBoundaryPath
 	}
 	parts := strings.Split(componentBoundaryPath, "/")
 	for i := len(parts); i >= 1; i-- {
 		candidatePath := strings.Join(parts[:i], "/")
-		segments := strings.Split(candidatePath, "/")
-		boundary, ok := findBoundaryAtPath(release.Spec.Boundaries, segments)
-		if !ok {
-			continue
-		}
-		if _, hasFeat := boundary.Features.Get(frInstance); hasFeat {
-			return candidatePath
+		if inner, ok := boundaryFeatures.Get(candidatePath); ok {
+			if _, hasFeat := inner.Get(frInstance); hasFeat {
+				return candidatePath
+			}
 		}
 	}
 	return componentBoundaryPath
@@ -597,80 +603,12 @@ func findFRAttachmentBoundary(release *types.Release, componentBoundaryPath, frI
 // when the boundary or feature instance is absent. The boundary's
 // Features map is OrderedMap[any]; this function parses the raw
 // payload into a typed BoundaryFeature.
-func lookupBoundaryFeatureAttachment(release *types.Release, boundaryPath, frInstance string) (types.BoundaryFeature, bool) {
-	if release == nil {
-		return types.BoundaryFeature{}, false
-	}
-	parts := strings.Split(boundaryPath, "/")
-	boundary, ok := findBoundaryAtPath(release.Spec.Boundaries, parts)
+func lookupBoundaryFeatureAttachment(boundaryFeatures types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]], boundaryPath, frInstance string) (types.IRBoundaryFeature, bool) {
+	inner, ok := boundaryFeatures.Get(boundaryPath)
 	if !ok {
-		return types.BoundaryFeature{}, false
+		return types.IRBoundaryFeature{}, false
 	}
-	raw, ok := boundary.Features.Get(frInstance)
-	if !ok {
-		return types.BoundaryFeature{}, false
-	}
-	return parseBoundaryFeatureRaw(raw), true
-}
-
-// parseBoundaryFeatureRaw is the renderer-side equivalent of the IR
-// builder's parseBoundaryFeature. Extracts type and infra from an opaque
-// map payload. Renderer-local copy avoids cross-package import of the IR
-// package's internal helper.
-func parseBoundaryFeatureRaw(raw any) types.BoundaryFeature {
-	bf := types.BoundaryFeature{}
-	switch m := raw.(type) {
-	case *types.OrderedMap[any]:
-		if m == nil {
-			return bf
-		}
-		if t, ok := m.Get("type"); ok {
-			if s, ok := t.(string); ok {
-				bf.Type = s
-			}
-		}
-		if infraRaw, ok := m.Get("infra"); ok {
-			switch infra := infraRaw.(type) {
-			case *types.OrderedMap[any]:
-				if infra != nil {
-					bf.Infra = *infra
-				}
-			case map[string]any:
-				om := types.OrderedMap[any]{}
-				keys := make([]string, 0, len(infra))
-				for k := range infra {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, k := range keys {
-					om.Set(k, infra[k])
-				}
-				bf.Infra = om
-			}
-		}
-	case map[string]any:
-		if t, ok := m["type"].(string); ok {
-			bf.Type = t
-		}
-		if infra, ok := m["infra"].(map[string]any); ok {
-			om := types.OrderedMap[any]{}
-			keys := make([]string, 0, len(infra))
-			for k := range infra {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				om.Set(k, infra[k])
-			}
-			bf.Infra = om
-		}
-	}
-	// BoundaryFeature has no Values field — Release schema's pillar-split
-	// rule forbids values: on Release-level features. Boundary-scope FR
-	// templates referencing .values see an empty OrderedMap; the
-	// Aggregate-side feature's values block flows through the per-component
-	// cascade only.
-	return bf
+	return inner.Get(frInstance)
 }
 
 // resolveBoundaryScopeFRProvides walks the consumer's BoundaryPath up the
@@ -697,7 +635,7 @@ func parseBoundaryFeatureRaw(raw any) types.BoundaryFeature {
 // allProvides lookup. The provides become silently empty (missingkey=zero
 // renders as empty string in value templates).
 //
-// The compose-bridge proof case in proposal §2.3.7 does not actively
+// The compose-bridge proof case does not actively
 // consume boundary-scope FR provides via per-component edges — the
 // bridge service's behavior is driven by Phase A injectMapping (which
 // fans per-consumer regardless of FR scope) plus the assembled compose

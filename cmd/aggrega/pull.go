@@ -93,7 +93,17 @@ type pullConfig struct {
 // carries no source-descent entity and is skipped. Per-instance infra is the
 // IR-resolved entry.Infra (the secret entry carries it post-unification), so no
 // Release-side join is needed.
-func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest) map[string][]closure.ComponentSourceInfra {
+//
+// scopeOf reports a FeatureRecipe's executionScope by feature type. A
+// boundary-scope FR renders once at its boundary from the boundary's own infra,
+// but its per-component FeatureValuesMapping entries are Tier-4 folds at the
+// wrong granularity for source identity; those entries are skipped here and the
+// FR's source is pinned once per (boundaryPath, instance) from the IR
+// boundary-feature projection — the same infra the renderer resolves the source
+// from, so the lock-time pin and the build-time resolution agree by
+// construction. scopeOf returning found=false (FR not resolvable) falls through
+// to the per-component pin, preserving prior behavior.
+func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(featType string) (string, bool)) map[string][]closure.ComponentSourceInfra {
 	out := map[string][]closure.ComponentSourceInfra{}
 	add := func(nodeID, scope, instance, featType string, entryInfra types.OrderedMap[any]) {
 		if featType == "" {
@@ -112,12 +122,23 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest) map[string][]
 	}
 	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
 		for instName, entry := range feats.All() {
+			if scope, ok := scopeOf(entry.Type); ok && scope == "boundary" {
+				continue // pinned once from the boundary projection below
+			}
 			add(nodeID, "features", instName, entry.Type, entry.Infra)
 		}
 	}
 	for nodeID, secs := range graph.Spec.Secrets.All() {
 		for instName, entry := range secs.All() {
 			add(nodeID, "secrets", instName, entry.Type, entry.Infra)
+		}
+	}
+	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
+		for instName, bf := range feats.All() {
+			if scope, ok := scopeOf(bf.Type); !ok || scope != "boundary" {
+				continue // component-scope (or unresolvable): pinned per-component above
+			}
+			add(boundaryPath, "features", instName, bf.Type, bf.Infra)
 		}
 	}
 	return out
@@ -274,7 +295,18 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("ir: %w", err)
 	}
-	for frURI, comps := range irEntityInfra(graph, manifest) {
+	executionScopeOf := func(featType string) (string, bool) {
+		frURI, ok := catalog.FeatureRecipeURI(manifest, featType)
+		if !ok {
+			return "", false
+		}
+		fr, ok := cat.FeatureRecipeByURI(frURI)
+		if !ok {
+			return "", false
+		}
+		return fr.Spec.ExecutionScope, true
+	}
+	for frURI, comps := range irEntityInfra(graph, manifest, executionScopeOf) {
 		perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
 	}
 

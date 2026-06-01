@@ -242,6 +242,14 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// 6. Provenance
 	prov := buildProvenance(res, cfg.CompilerVersion)
 
+	// Boundary-feature projection: the un-folded Release boundary attachments,
+	// the single source both lock-time source-descent and the render-time
+	// boundary-FR dispatch read (no Release re-walk on either side).
+	var boundaryFeatures types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]
+	if res.Release != nil {
+		boundaryFeatures = buildBoundaryFeaturesProjection(res.Release.Spec.Boundaries)
+	}
+
 	graph := &types.IRGraph{
 		APIVersion: types.IRAPIVersion,
 		Kind:       types.IRKind,
@@ -256,6 +264,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			InfraMapping:         infraMapping,
 			FeatureValuesMapping: featureValuesMapping,
 			Secrets:              secrets,
+			BoundaryFeatures:     boundaryFeatures,
 			Provenance:           prov,
 		},
 	}

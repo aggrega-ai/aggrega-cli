@@ -376,63 +376,6 @@ func TestEvalPathTemplate_HappyAndParseError(t *testing.T) {
 	}
 }
 
-// TestParseBoundaryFeatureRaw_AllShapes pins each accepted raw shape:
-// *OrderedMap[any] (nil + populated), OrderedMap value, map[string]any,
-// and unsupported (returns zero).
-func TestParseBoundaryFeatureRaw_AllShapes(t *testing.T) {
-	t.Parallel()
-	// Nil pointer.
-	got := parseBoundaryFeatureRaw((*types.OrderedMap[any])(nil))
-	if got.Type != "" {
-		t.Errorf("nil pointer = %+v; want zero", got)
-	}
-
-	// Populated *OrderedMap[any] with type + infra (*OrderedMap[any]).
-	infra := types.NewOrderedMap[any]()
-	infra.Set("size", "small")
-	om := types.NewOrderedMap[any]()
-	om.Set("type", "feat.myco/db")
-	om.Set("infra", infra)
-	got = parseBoundaryFeatureRaw(om)
-	if got.Type != "feat.myco/db" {
-		t.Errorf("Type = %q; want feat.myco/db", got.Type)
-	}
-	if v, _ := got.Infra.Get("size"); v != "small" {
-		t.Errorf("Infra.size = %v; want small", v)
-	}
-
-	// Populated *OrderedMap[any] with type + infra (map[string]any branch).
-	om2 := types.NewOrderedMap[any]()
-	om2.Set("type", "feat.myco/cache")
-	om2.Set("infra", map[string]any{"a": 1, "b": "x"})
-	got = parseBoundaryFeatureRaw(om2)
-	if got.Type != "feat.myco/cache" {
-		t.Errorf("Type = %q; want feat.myco/cache", got.Type)
-	}
-	if got.Infra.Len() != 2 {
-		t.Errorf("Infra.Len = %d; want 2", got.Infra.Len())
-	}
-
-	// map[string]any shape.
-	raw := map[string]any{
-		"type":  "feat.myco/inline",
-		"infra": map[string]any{"k": "v"},
-	}
-	got = parseBoundaryFeatureRaw(raw)
-	if got.Type != "feat.myco/inline" {
-		t.Errorf("plain map Type = %q", got.Type)
-	}
-	if v, _ := got.Infra.Get("k"); v != "v" {
-		t.Errorf("plain map Infra.k = %v; want v", v)
-	}
-
-	// Unsupported raw shape.
-	got = parseBoundaryFeatureRaw(42)
-	if got.Type != "" {
-		t.Errorf("unsupported shape should return zero; got %+v", got)
-	}
-}
-
 // TestResolveBoundaryScopeFRProvides_NilStateAndCascade pins nil-state
 // guard and the path-ancestor walk.
 func TestResolveBoundaryScopeFRProvides_NilStateAndCascade(t *testing.T) {
@@ -510,62 +453,61 @@ func TestIsInSubtree_AllBranches(t *testing.T) {
 	}
 }
 
-// TestFindFRAttachmentBoundary_AllBranches pins nil-release guard,
-// ancestor-match, fallback when no ancestor carries the attachment.
+// TestFindFRAttachmentBoundary_AllBranches pins empty-projection fallback,
+// empty-path guard, ancestor-match (the cascade), and fallback when no
+// ancestor in the projection carries the attachment.
 func TestFindFRAttachmentBoundary_AllBranches(t *testing.T) {
 	t.Parallel()
-	// Nil release.
-	got := findFRAttachmentBoundary(nil, "infra/web", "fr1")
+	// Empty projection → fallback to the component's own boundary path.
+	got := findFRAttachmentBoundary(types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}, "infra/web", "fr1")
 	if got != "infra/web" {
-		t.Errorf("nil release → fallback; got %q", got)
+		t.Errorf("empty projection → fallback; got %q", got)
 	}
 	// Empty boundary path.
-	got = findFRAttachmentBoundary(&types.Release{}, "", "fr1")
+	got = findFRAttachmentBoundary(types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}, "", "fr1")
 	if got != "" {
 		t.Errorf("empty path → fallback; got %q", got)
 	}
-	// Ancestor carries the attachment.
-	rel := &types.Release{}
-	infra := types.Boundary{Description: "infra-desc"}
-	infra.Features.Set("fr1", map[string]any{"type": "feat/x"})
-	web := types.Boundary{Description: "web-desc"}
-	infra.Boundaries.Set("web", web)
-	rel.Spec.Boundaries.Set("infra", infra)
-	got = findFRAttachmentBoundary(rel, "infra/web", "fr1")
+	// Ancestor "infra" carries the attachment; the consumer lives at the
+	// descendant "infra/web" — the cascade walk must climb to "infra".
+	proj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	inner := types.OrderedMap[types.IRBoundaryFeature]{}
+	inner.Set("fr1", types.IRBoundaryFeature{Type: "feat/x"})
+	proj.Set("infra", inner)
+	got = findFRAttachmentBoundary(proj, "infra/web", "fr1")
 	if got != "infra" {
 		t.Errorf("ancestor attachment = %q; want infra", got)
 	}
 	// No ancestor carries it → fallback.
-	got = findFRAttachmentBoundary(rel, "infra/web", "absent-fr")
+	got = findFRAttachmentBoundary(proj, "infra/web", "absent-fr")
 	if got != "infra/web" {
 		t.Errorf("no ancestor → fallback %q; got %q", "infra/web", got)
 	}
 }
 
-// TestLookupBoundaryFeatureAttachment_AllBranches pins nil-release,
+// TestLookupBoundaryFeatureAttachment_AllBranches pins empty-projection,
 // missing-boundary, missing-feature, and hit.
 func TestLookupBoundaryFeatureAttachment_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok := lookupBoundaryFeatureAttachment(nil, "p", "fr"); ok {
-		t.Errorf("nil release → false")
+	empty := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	if _, ok := lookupBoundaryFeatureAttachment(empty, "p", "fr"); ok {
+		t.Errorf("empty projection → false")
 	}
-	// Missing boundary.
-	rel := &types.Release{}
-	if _, ok := lookupBoundaryFeatureAttachment(rel, "missing", "fr"); ok {
+	// Missing boundary (projection has a different boundary).
+	proj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	proj.Set("infra", types.OrderedMap[types.IRBoundaryFeature]{})
+	if _, ok := lookupBoundaryFeatureAttachment(proj, "missing", "fr"); ok {
 		t.Errorf("missing boundary → false")
 	}
-	// Missing feature.
-	infra := types.Boundary{Description: "infra"}
-	rel.Spec.Boundaries.Set("infra", infra)
-	if _, ok := lookupBoundaryFeatureAttachment(rel, "infra", "fr"); ok {
+	// Missing feature (boundary present, instance absent).
+	if _, ok := lookupBoundaryFeatureAttachment(proj, "infra", "fr"); ok {
 		t.Errorf("missing feature → false")
 	}
 	// Hit.
-	infra2 := types.Boundary{Description: "infra"}
-	infra2.Features.Set("fr1", map[string]any{"type": "feat/x"})
-	rel.Spec.Boundaries = types.OrderedMap[types.Boundary]{}
-	rel.Spec.Boundaries.Set("infra", infra2)
-	bf, ok := lookupBoundaryFeatureAttachment(rel, "infra", "fr1")
+	inner := types.OrderedMap[types.IRBoundaryFeature]{}
+	inner.Set("fr1", types.IRBoundaryFeature{Type: "feat/x"})
+	proj.Set("infra", inner)
+	bf, ok := lookupBoundaryFeatureAttachment(proj, "infra", "fr1")
 	if !ok || bf.Type != "feat/x" {
 		t.Errorf("hit: ok=%v Type=%q", ok, bf.Type)
 	}

@@ -591,7 +591,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	for key, files := range boundaryFRState.Files {
 		// Look up the FR by walking the release; the FR's provider is
 		// what determines the dispatch path's provider component.
-		feat, found := lookupBoundaryFeatureAttachment(input.ResolveResult.Release, key.BoundaryPath, key.FRInstance)
+		feat, found := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, key.FRInstance)
 		if !found {
 			continue
 		}

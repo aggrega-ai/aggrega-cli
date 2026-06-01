@@ -52,7 +52,26 @@ type IRSpec struct {
 	InfraMapping         OrderedMap[json.RawMessage]            `json:"infra_mapping"`
 	FeatureValuesMapping OrderedMap[OrderedMap[IRFeatureEntry]] `json:"feature_values_mapping"`
 	Secrets              OrderedMap[OrderedMap[IRSecretEntry]]  `json:"secrets"`
-	Provenance           IRProvenance                           `json:"provenance"`
+	// BoundaryFeatures is the un-folded projection of each Release boundary's
+	// Feature attachments, keyed boundary-path -> instance-name. It mirrors
+	// release.Spec.Boundaries[*].Features as the single source both lock-time
+	// source-descent and the render-time boundary-FR dispatch read, so neither
+	// re-walks the Release. omitempty: only graphs with boundary-level Feature
+	// attachments carry it, so non-boundary-FR fixtures do not churn IR goldens.
+	BoundaryFeatures OrderedMap[OrderedMap[IRBoundaryFeature]] `json:"boundary_features,omitempty,omitzero"`
+	Provenance       IRProvenance                              `json:"provenance"`
+}
+
+// IRBoundaryFeature is one Release boundary-level Feature attachment projected
+// into the IR — the type URI plus the boundary infra. Boundary-level attachments
+// carry no values (the Release pillar-split forbids values: at boundary level), so
+// only Type and Infra are projected; Type resolves to the FeatureRecipe (source /
+// locals / provides) and Infra is the boundary infra a boundary-scope FR renders
+// against.
+// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/boundary_features
+type IRBoundaryFeature struct {
+	Type  string          `json:"type"`
+	Infra OrderedMap[any] `json:"infra,omitempty,omitzero"`
 }
 
 // IRNode is a single node in the IR graph. Purely topological — no opaque payload.

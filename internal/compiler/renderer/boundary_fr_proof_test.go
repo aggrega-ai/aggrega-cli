@@ -139,6 +139,15 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 	boundaries := types.OrderedMap[types.Boundary]{}
 	boundaries.Set("cluster", clusterBoundary)
 
+	// Boundary-feature projection — what the IR builder emits on
+	// graph.Spec.BoundaryFeatures, mirroring the Release's cluster/bridge.
+	bridgeInfra := types.OrderedMap[any]{}
+	bridgeInfra.Set("mappedPort", 15432)
+	clusterBFProj := types.OrderedMap[types.IRBoundaryFeature]{}
+	clusterBFProj.Set("bridge", types.IRBoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: bridgeInfra})
+	bfProj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	bfProj.Set("cluster", clusterBFProj)
+
 	bi := map[string]*resolver.BoundaryInfra{
 		"api": {BoundaryPath: "cluster", Directory: "dist/cluster"},
 		"db":  {BoundaryPath: "cluster", Directory: "dist/cluster"},
@@ -165,6 +174,7 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 				InfraMapping:         types.OrderedMap[json.RawMessage]{},
 				FeatureValuesMapping: fvm,
+				BoundaryFeatures:     bfProj,
 				Provenance:           types.IRProvenance{CompilerVersion: "test"},
 			},
 		},
@@ -281,6 +291,17 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 	boundaries := types.OrderedMap[types.Boundary]{}
 	boundaries.Set("cluster", clusterBoundary)
 
+	// Boundary-feature projection — the IR builder emits the bridge on the
+	// parent "cluster"; api/db live in child boundaries, so the renderer's
+	// ancestor walk over this projection must climb from the child to
+	// "cluster" (the cascade).
+	bridgeInfra := types.OrderedMap[any]{}
+	bridgeInfra.Set("mappedPort", 15432)
+	clusterBFProj := types.OrderedMap[types.IRBoundaryFeature]{}
+	clusterBFProj.Set("bridge", types.IRBoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: bridgeInfra})
+	bfProj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	bfProj.Set("cluster", clusterBFProj)
+
 	// Per-component BoundaryInfra carries each component's CONTAINING
 	// boundary directory: template (the child boundaries declare
 	// "{{ .parent_boundary.directory }}"). The orchestrator pre-computes
@@ -310,6 +331,7 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 				InfraMapping:         types.OrderedMap[json.RawMessage]{},
 				FeatureValuesMapping: fvm,
+				BoundaryFeatures:     bfProj,
 				Provenance:           types.IRProvenance{CompilerVersion: "test"},
 			},
 		},

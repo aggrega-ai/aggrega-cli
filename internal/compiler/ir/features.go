@@ -683,6 +683,40 @@ func collectCompFeaturesRecursive(boundaries types.OrderedMap[types.Boundary], n
 	}
 }
 
+// buildBoundaryFeaturesProjection projects every Release boundary's Feature
+// attachments into the IR, keyed boundary-path -> instance-name (the path is the
+// "/"-joined boundary-name chain, the same coordinate `findBoundaryAtPath` and the
+// renderer's boundary-FR cascade use). This un-folded projection is the single
+// source the lock-time source-descent (`irEntityInfra`) and the render-time
+// boundary-FR dispatch both read, so neither re-walks the Release. The per-node
+// Tier-4 fold into FeatureValuesMapping (collectBoundaryWideFeatures) is unchanged;
+// this projection is additive, for boundary-scope FR source identity + bf.Infra.
+func buildBoundaryFeaturesProjection(boundaries types.OrderedMap[types.Boundary]) types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]] {
+	out := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	var walk func(bs types.OrderedMap[types.Boundary], prefix string)
+	walk = func(bs types.OrderedMap[types.Boundary], prefix string) {
+		for name, boundary := range bs.All() {
+			path := name
+			if prefix != "" {
+				path = prefix + "/" + name
+			}
+			if boundary.Features.Len() > 0 {
+				inner := types.OrderedMap[types.IRBoundaryFeature]{}
+				for fname, raw := range boundary.Features.All() {
+					bf := parseBoundaryFeature(raw)
+					inner.Set(fname, types.IRBoundaryFeature{Type: bf.Type, Infra: bf.Infra})
+				}
+				if inner.Len() > 0 {
+					out.Set(path, inner)
+				}
+			}
+			walk(boundary.Boundaries, path)
+		}
+	}
+	walk(boundaries, "")
+	return out
+}
+
 func parseBoundaryFeature(raw any) types.BoundaryFeature {
 	bf := types.BoundaryFeature{}
 	switch m := raw.(type) {

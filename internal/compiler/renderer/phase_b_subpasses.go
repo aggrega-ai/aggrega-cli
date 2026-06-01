@@ -348,7 +348,7 @@ func phaseB6(
 			// (the IR builder's Tier-4 propagation may have inherited
 			// the feature from a parent boundary; the dedup key is the
 			// owning boundary, not the component's containing boundary).
-			owningBP := findFRAttachmentBoundary(release, state.BoundaryPath, ref.InstanceName)
+			owningBP := findFRAttachmentBoundary(graph.Spec.BoundaryFeatures, state.BoundaryPath, ref.InstanceName)
 			key := boundaryFRKey{BoundaryPath: owningBP, FRInstance: ref.InstanceName}
 			if boundaryFRState.Dedup[key] {
 				continue // FR already ran for this boundary
@@ -356,7 +356,7 @@ func phaseB6(
 			boundaryFRState.Dedup[key] = true
 			if err := dispatchBoundaryScopeFR(
 				ctx, fr, ref.InstanceName, key, state, boundaryFRState,
-				nodeCtx, engineFactory, graph, release, boundaryAnnotations,
+				nodeCtx, engineFactory, graph, release, boundaryAnnotations, input,
 			); err != nil {
 				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope feature %q", nodeID, ref.InstanceName))
 			}
