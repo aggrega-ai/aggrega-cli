@@ -60,12 +60,27 @@ var (
 	// reference chains are detected by the same stack discipline.
 	ErrCircularRef = errors.New("compactform: circular cross-document $ref expansion")
 
-	// ErrOCINotYetSupported indicates a cross-document `$ref:` URI uses
-	// the `oci://` scheme. The OCI URI form is defined-but-deferred: the
-	// authoring shape is reserved for use once the lockfile + OCI pull
-	// infrastructure ships. Pre-1.0 the compactform expander rejects OCI
-	// URIs with this sentinel.
-	ErrOCINotYetSupported = errors.New("compactform: oci:// $ref scheme not yet supported")
+	// ErrOCINotYetSupported indicates a cross-document `oci://` `$ref:`
+	// names a SchemaLibrary that is NOT present in the local catalog — a
+	// remote library that would have to be fetched at build. The `oci://`
+	// `$ref` form itself resolves for workspace-local libraries (the
+	// library is matched by name against the loaded catalog and its
+	// `@version` is asserted); only fetch-at-build of a remote
+	// (not-locally-present) library is deferred until the remote-library
+	// fetch path ships.
+	ErrOCINotYetSupported = errors.New("compactform: remote OCI SchemaLibrary resolution at build is not yet supported")
+
+	// ErrSchemaLibraryVersionMismatch indicates a cross-document `oci://`
+	// `$ref:` resolved its SchemaLibrary by name in the local catalog, but
+	// the library's `metadata.version` does not equal the `@version` pinned
+	// in the URI. Distinct from ErrUnresolvedSchemaLibraryRef (library name
+	// unknown or entry absent): here both the library and the entry resolve,
+	// but the version assertion fails — the remediation is to align the
+	// URI's `@version` with the loaded library, not to fix the name. The
+	// catalog's SchemaLibraries map is name-keyed (one version per name), so
+	// `@version` is a validated assertion against the loaded library, not a
+	// version selector.
+	ErrSchemaLibraryVersionMismatch = errors.New("compactform: cross-document $ref version does not match the resolved SchemaLibrary")
 )
 
 // CompileError is a structured compile failure carrying source-position
