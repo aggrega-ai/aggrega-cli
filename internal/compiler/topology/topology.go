@@ -133,6 +133,12 @@ type NormalizedEdge struct {
 	Alias         string
 	Inject        *types.InjectBlock
 	OriginFeature string // non-empty if edge came from a Feature's uses
+	// OriginFeatureInstance is the per-attachment instance name of the
+	// Feature whose uses block produced this edge (empty for Component-own
+	// edges). It disambiguates two attachments of the same Feature type on
+	// one boundary, letting a boundary-scope FeatureRecipe's resolved
+	// provides be located by instance rather than by the ambiguous type.
+	OriginFeatureInstance string
 }
 
 // FeatureAttachment pairs a feature instance name with its FeatureInstance
@@ -315,7 +321,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		// Component uses
 		comp := findComponent(agg, nodeID)
 		if comp != nil && comp.Uses.Len() > 0 {
-			compEdges, err := normalizeUses(comp.Uses, nodeID, "")
+			compEdges, err := normalizeUses(comp.Uses, nodeID, "", "")
 			if err != nil {
 				return nil, err
 			}
@@ -326,7 +332,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		if feats, ok := flat.FeatureAttachments[nodeID]; ok {
 			for _, fa := range feats {
 				if fa.Feature.Uses.Len() > 0 {
-					featEdges, err := normalizeUses(fa.Feature.Uses, nodeID, fa.Feature.Type)
+					featEdges, err := normalizeUses(fa.Feature.Uses, nodeID, fa.Feature.Type, fa.InstanceName)
 					if err != nil {
 						return nil, err
 					}
@@ -339,7 +345,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		if secs, ok := flat.SecretAttachments[nodeID]; ok {
 			for _, sa := range secs {
 				if sa.Secret.Uses.Len() > 0 {
-					secEdges, err := normalizeUses(sa.Secret.Uses, nodeID, sa.Secret.Type)
+					secEdges, err := normalizeUses(sa.Secret.Uses, nodeID, sa.Secret.Type, sa.InstanceName)
 					if err != nil {
 						return nil, err
 					}

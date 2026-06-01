@@ -141,12 +141,19 @@ type CatalogMetadata struct {
 // IREdge is a directed logical relationship between IR nodes.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/edges/items
 type IREdge struct {
-	Source        string                         `json:"source"`
-	Target        string                         `json:"target"`
-	Socket        string                         `json:"socket,omitempty"`
-	Alias         string                         `json:"alias,omitempty"`
-	OriginFeature string                         `json:"origin_feature,omitempty"`
-	Inject        OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Socket string `json:"socket,omitempty"`
+	Alias  string `json:"alias,omitempty"`
+	// OriginFeature is the catalog Feature type URI when the edge originated
+	// from a Feature's own uses block (empty for Component-own edges).
+	OriginFeature string `json:"origin_feature,omitempty"`
+	// OriginFeatureInstance is the per-attachment instance name of that
+	// Feature. It locates a boundary-scope FeatureRecipe's resolved provides
+	// by instance when a consumer's uses edge references them, disambiguating
+	// two attachments of the same Feature type on one boundary.
+	OriginFeatureInstance string                         `json:"origin_feature_instance,omitempty"`
+	Inject                OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 }
 
 // IRFeatureEntry is one feature attached to a node in the feature_values_mapping.

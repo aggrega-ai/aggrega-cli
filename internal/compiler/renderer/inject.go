@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -51,18 +52,64 @@ func BuildInjectPipe(rawInject *types.InjectBlock) (inject types.InjectPipe, inj
 // RehydrateInjectFromProvides resolves developer inject keys against target provides.
 // For each edge's inject block, the developer wrote {env: {DB_URL: "host"}} meaning
 // "resolve key 'host' from the target's provides dictionary."
+//
+// An edge whose OriginFeature names a boundary-scope FeatureRecipe resolves its
+// provided values from boundaryFRState rather than the per-component allProvides
+// bag: a boundary-scope FR renders once at its boundary, so its provides live in
+// BoundaryFRState keyed by (owning-boundary-path, instance), located via the
+// consumer node's boundary ancestry and the edge's OriginFeatureInstance (which
+// disambiguates two attachments of the same FR type on one boundary). Those
+// provides augment the per-component targetProvides; non-boundary edges keep the
+// exact allProvides[edge.Target] path. The pre-loop PrepopulateBoundaryScopeProvides
+// pass guarantees the boundary-scope provides exist by the time this runs.
 func RehydrateInjectFromProvides(
 	inject *types.InjectPipe,
 	edges []types.IREdge,
 	nodeID string,
 	allProvides NodeProvides,
+	graph *types.IRGraph,
+	recipeLookup RecipeLookup,
+	boundaryFRState *BoundaryFRState,
 ) {
+	consumerBoundaryPath := ""
+	if graph != nil {
+		if n, ok := graph.Spec.Nodes.Get(nodeID); ok {
+			consumerBoundaryPath = n.BoundaryPath
+		}
+	}
+
 	for _, edge := range edges {
 		if edge.Source != nodeID || edge.Inject.Len() == 0 {
 			continue
 		}
 
 		targetProvides, ok := allProvides[edge.Target]
+
+		// Boundary-scope FR provides augmentation. When the edge originated
+		// from a Feature whose FeatureRecipe is boundary-scope, its provides
+		// are not in the per-component allProvides bag — resolve them from the
+		// boundary accumulator by instance and merge over targetProvides.
+		if edge.OriginFeature != "" && edge.OriginFeatureInstance != "" && boundaryFRState != nil && recipeLookup.FeatureRecipe != nil {
+			if fr, found := recipeLookup.FeatureRecipe(edge.OriginFeature); found && fr.Spec.ExecutionScope == "boundary" {
+				if bprov, hit := resolveBoundaryScopeFRProvides(boundaryFRState, consumerBoundaryPath, edge.OriginFeatureInstance); hit {
+					merged := types.OrderedMap[string]{}
+					for k, v := range targetProvides.All() {
+						merged.Set(k, v)
+					}
+					bkeys := make([]string, 0, len(bprov))
+					for k := range bprov {
+						bkeys = append(bkeys, k)
+					}
+					sort.Strings(bkeys)
+					for _, k := range bkeys {
+						merged.Set(k, fmt.Sprint(bprov[k]))
+					}
+					targetProvides = merged
+					ok = true
+				}
+			}
+		}
+
 		if !ok {
 			continue
 		}

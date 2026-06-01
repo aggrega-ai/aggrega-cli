@@ -139,6 +139,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// See boundary_fr.go.
 	boundaryFRState := NewBoundaryFRState()
 
+	// Provides pre-pass: evaluate every boundary-scope FeatureRecipe's
+	// provides before the per-node loop so a per-component consumer's uses
+	// edge can resolve them during Phase A inject rehydration. The per-node
+	// Phase B.6 dispatch (which renders the FR's files) re-evaluates the same
+	// provides idempotently. See PrepopulateBoundaryScopeProvides.
+	if input.ResolveResult != nil {
+		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, boundaryFRState); err != nil {
+			return nil, err
+		}
+	}
+
 	// Trace writer (no-op when --trace is off; async filesystem writer
 	// when on). Per-pass capture surfaces happen at four representative
 	// sites in this revision: Phase A injectMapping output, Phase B.4
@@ -180,7 +191,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Pass 2b: Rehydrate inject from uses-edge provides
-		RehydrateInjectFromProvides(&inject, graph.Spec.Edges, nodeID, allProvides)
+		RehydrateInjectFromProvides(&inject, graph.Spec.Edges, nodeID, allProvides, graph, recipeLookup, boundaryFRState)
 
 		// Pass 2 collision check: self-inject vs uses-inject (post-2b, pre-Phase-A).
 		// Phase A's overlay merge runs downstream and is structurally invisible

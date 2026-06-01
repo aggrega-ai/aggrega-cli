@@ -63,7 +63,7 @@ func TestNormalizeUses_StringArray(t *testing.T) {
 	t.Parallel()
 
 	uses := mkCompactUses("databases", "db1", "db2")
-	edges, err := normalizeUses(uses, "api-server", "")
+	edges, err := normalizeUses(uses, "api-server", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestNormalizeUses_VerboseMap(t *testing.T) {
 	inject := &types.InjectBlock{Env: map[string]any{"DB_URL": "host"}}
 	uses := mkVerboseUses("databases", "hr-db", types.VerboseUsesEntry{Target: "corporate-hr", Inject: inject})
 
-	edges, err := normalizeUses(uses, "agent", "")
+	edges, err := normalizeUses(uses, "agent", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestNormalizeUses_OriginFeature(t *testing.T) {
 	t.Parallel()
 
 	uses := mkCompactUses("targets", "api")
-	edges, err := normalizeUses(uses, "node-a", "core/monitoring")
+	edges, err := normalizeUses(uses, "node-a", "core/monitoring", "mon-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,12 +117,18 @@ func TestNormalizeUses_OriginFeature(t *testing.T) {
 	if edges[0].OriginFeature != "core/monitoring" {
 		t.Errorf("OriginFeature = %q, want %q", edges[0].OriginFeature, "core/monitoring")
 	}
+	// The edge carries the firing attachment's instance name (not only the
+	// type), so a boundary-scope FeatureRecipe's provides can be located by
+	// instance — disambiguating two attachments of the same type on a boundary.
+	if edges[0].OriginFeatureInstance != "mon-1" {
+		t.Errorf("OriginFeatureInstance = %q, want %q", edges[0].OriginFeatureInstance, "mon-1")
+	}
 }
 
 func TestNormalizeUses_Empty(t *testing.T) {
 	t.Parallel()
 
-	edges, err := normalizeUses(types.OrderedMap[types.UsesSocketValue]{}, "node", "")
+	edges, err := normalizeUses(types.OrderedMap[types.UsesSocketValue]{}, "node", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -141,7 +147,7 @@ func TestNormalizeUses_DeterministicOrder(t *testing.T) {
 
 	var firstOrder []string
 	for i := 0; i < 10; i++ {
-		edges, err := normalizeUses(uses, "src", "")
+		edges, err := normalizeUses(uses, "src", "", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -170,7 +176,7 @@ func TestNormalizeUses_VerboseDefaultsTargetToAlias(t *testing.T) {
 
 	uses := mkVerboseUses("databases", "my-db", types.VerboseUsesEntry{})
 
-	edges, err := normalizeUses(uses, "src", "")
+	edges, err := normalizeUses(uses, "src", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,7 +203,7 @@ func TestNormalizeUses_VerboseFormPreservesAuthorOrder(t *testing.T) {
 		"m-alias", types.VerboseUsesEntry{Target: "m-target"},
 	)
 
-	edges, err := normalizeUses(uses, "src", "")
+	edges, err := normalizeUses(uses, "src", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -45,7 +45,7 @@ import (
 // field — the per-edge origin marker that keeps Feature-authored edges
 // separable from Component-authored edges. IR's IREdge.OriginFeature is
 // the downstream surface that consumes it.
-func normalizeUses(uses types.OrderedMap[types.UsesSocketValue], sourceNodeID, originFeature string) ([]NormalizedEdge, error) {
+func normalizeUses(uses types.OrderedMap[types.UsesSocketValue], sourceNodeID, originFeature, originFeatureInstance string) ([]NormalizedEdge, error) {
 	if uses.Len() == 0 {
 		return nil, nil
 	}
@@ -57,11 +57,12 @@ func normalizeUses(uses types.OrderedMap[types.UsesSocketValue], sourceNodeID, o
 		if len(val.Compact) > 0 {
 			for _, target := range val.Compact {
 				edges = append(edges, NormalizedEdge{
-					Source:        sourceNodeID,
-					Target:        target,
-					Socket:        socket,
-					Alias:         target,
-					OriginFeature: originFeature,
+					Source:                sourceNodeID,
+					Target:                target,
+					Socket:                socket,
+					Alias:                 target,
+					OriginFeature:         originFeature,
+					OriginFeatureInstance: originFeatureInstance,
 				})
 			}
 			continue
@@ -70,7 +71,7 @@ func normalizeUses(uses types.OrderedMap[types.UsesSocketValue], sourceNodeID, o
 		// Verbose form: alias-keyed map (author order via OrderedMap.All).
 		if val.Verbose.Len() > 0 {
 			for alias, entry := range val.Verbose.All() {
-				edges = append(edges, buildVerboseEdge(sourceNodeID, socket, alias, entry, originFeature))
+				edges = append(edges, buildVerboseEdge(sourceNodeID, socket, alias, entry, originFeature, originFeatureInstance))
 			}
 			continue
 		}
@@ -88,17 +89,18 @@ func normalizeUses(uses types.OrderedMap[types.UsesSocketValue], sourceNodeID, o
 // (nil when absent) carries through into the edge's Inject field directly;
 // the InjectBlock's Env / File / Arg / Additional fields populate via
 // standard YAML and JSON struct unmarshal of the inject mapping.
-func buildVerboseEdge(source, socket, alias string, entry types.VerboseUsesEntry, originFeature string) NormalizedEdge {
+func buildVerboseEdge(source, socket, alias string, entry types.VerboseUsesEntry, originFeature, originFeatureInstance string) NormalizedEdge {
 	target := entry.Target
 	if target == "" {
 		target = alias
 	}
 	return NormalizedEdge{
-		Source:        source,
-		Target:        target,
-		Socket:        socket,
-		Alias:         alias,
-		Inject:        entry.Inject,
-		OriginFeature: originFeature,
+		Source:                source,
+		Target:                target,
+		Socket:                socket,
+		Alias:                 alias,
+		Inject:                entry.Inject,
+		OriginFeature:         originFeature,
+		OriginFeatureInstance: originFeatureInstance,
 	}
 }

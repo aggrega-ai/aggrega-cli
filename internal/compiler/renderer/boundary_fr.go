@@ -231,46 +231,13 @@ func dispatchBoundaryScopeFR(
 		}
 	}
 
-	// 2. Build boundary-scope TemplateContext.
-	boundaryCtx, err := buildBoundaryContext(key.BoundaryPath, graph, release, boundaryAnnotations)
+	// 2-4. Build the FR-scoped TemplateContext (.boundary + .infra, .values
+	//       empty per the Release pillar-split). Shared with the pre-loop
+	//       provides pre-pass so both evaluate against an identical context.
+	feat, _ := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
+	frCtx, err := buildBoundaryFRTemplateContext(fr, frInstance, key, graph, release, boundaryAnnotations)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: build context for boundary %q", frInstance, key.BoundaryPath))
-	}
-
-	// 3. Read the boundary's BoundaryFeature for this FR instance.
-	feat, found := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
-	if !found {
-		// The dispatch path was reached because some component's feature
-		// cascade pointed at this FR-instance, but the boundary itself
-		// doesn't carry the attachment directly. The cascade resolution
-		// is upstream of phaseB6; this branch is defensive.
-		return cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath},
-			fmt.Sprintf("boundary-scope FR %q: no BoundaryFeature attachment found at boundary %q", frInstance, key.BoundaryPath),
-			nil, nil)
-	}
-
-	// 4. Build the FR-scoped TemplateContext with .boundary populated and
-	//    .infra from the BoundaryFeature. .values is empty at boundary
-	//    scope: BoundaryFeature carries only type + infra per the Release
-	//    schema's pillar-split rule (Aggregate authors values; Release
-	//    authors infra). Boundary-scope FR templates that reference .values
-	//    receive an empty OrderedMap.
-	frCtx := &types.TemplateContext{
-		Values:   types.OrderedMap[any]{},
-		Infra:    feat.Infra,
-		Locals:   types.OrderedMap[string]{},
-		Boundary: boundaryCtx,
-		Metadata: nil,
-	}
-	if release != nil {
-		frCtx.Metadata = &types.TemplateMetadata{
-			ReleaseName:    release.Metadata.Name,
-			ReleaseVersion: release.Metadata.Version,
-			Environment:    release.Metadata.Environment,
-		}
-		if graph != nil {
-			frCtx.Metadata.AggregateName = graph.Metadata.AggregateName
-		}
+		return err
 	}
 
 	// 5. Evaluate FR locals + valuesMapping + provides.
@@ -337,6 +304,104 @@ func dispatchBoundaryScopeFR(
 	// Suppress unused-state warnings — state is reserved for future per-
 	// boundary-FR observations.
 	_ = state
+	return nil
+}
+
+// buildBoundaryFRTemplateContext assembles the FR-scoped TemplateContext for a
+// boundary-scope FeatureRecipe instance: the boundary pillars (.boundary) plus
+// the boundary attachment's .infra, with .values empty per the Release
+// pillar-split (Aggregate authors values; Release authors infra). Shared by the
+// pre-loop provides pre-pass and the Phase B.6 dispatch so both evaluate the
+// FR's templates against an identical context.
+func buildBoundaryFRTemplateContext(
+	fr *types.FeatureRecipe,
+	frInstance string,
+	key boundaryFRKey,
+	graph *types.IRGraph,
+	release *types.Release,
+	boundaryAnnotations map[string]types.OrderedMap[string],
+) (*types.TemplateContext, error) {
+	boundaryCtx, err := buildBoundaryContext(key.BoundaryPath, graph, release, boundaryAnnotations)
+	if err != nil {
+		return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: build context for boundary %q", frInstance, key.BoundaryPath))
+	}
+	feat, found := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
+	if !found {
+		// The boundary doesn't carry the attachment directly. Defensive: the
+		// cascade resolution that reaches this FR-instance is upstream.
+		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath},
+			fmt.Sprintf("boundary-scope FR %q: no BoundaryFeature attachment found at boundary %q", frInstance, key.BoundaryPath),
+			nil, nil)
+	}
+	frCtx := &types.TemplateContext{
+		Values:   types.OrderedMap[any]{},
+		Infra:    feat.Infra,
+		Locals:   types.OrderedMap[string]{},
+		Boundary: boundaryCtx,
+		Metadata: nil,
+	}
+	if release != nil {
+		frCtx.Metadata = &types.TemplateMetadata{
+			ReleaseName:    release.Metadata.Name,
+			ReleaseVersion: release.Metadata.Version,
+			Environment:    release.Metadata.Environment,
+		}
+		if graph != nil {
+			frCtx.Metadata.AggregateName = graph.Metadata.AggregateName
+		}
+	}
+	return frCtx, nil
+}
+
+// PrepopulateBoundaryScopeProvides evaluates every boundary-scope FeatureRecipe's
+// provides ahead of the per-node render loop, storing them in
+// state.Provides keyed by (owning-boundary-path, instance). A per-component
+// consumer's uses edge resolves a boundary-scope FR's provided values from this
+// state during Phase A inject rehydration; without the pre-pass those provides
+// are written only at Phase B.6 — after the consumer's Phase A — and resolve
+// silently empty. The pre-pass is idempotent with the Phase B.6 dispatch: both
+// share buildBoundaryFRTemplateContext + evaluateBoundaryFRTemplates and the
+// validation cache, so a boundary-scope FR's provides evaluate identically
+// whether read here or overwritten at dispatch. Walks graph.Spec.BoundaryFeatures
+// (the un-folded projection), so no Release re-walk.
+func PrepopulateBoundaryScopeProvides(
+	graph *types.IRGraph,
+	release *types.Release,
+	boundaryAnnotations map[string]types.OrderedMap[string],
+	recipeLookup RecipeLookup,
+	state *BoundaryFRState,
+) error {
+	if graph == nil || state == nil {
+		return nil
+	}
+	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
+		for instName, bf := range feats.All() {
+			fr, ok := recipeLookup.FeatureRecipe(bf.Type)
+			if !ok || fr.Spec.ExecutionScope != "boundary" {
+				continue
+			}
+			cacheKey := fr.Metadata.Name + ":" + fr.Metadata.Version
+			if cached, seen := state.ValidatedFRs[cacheKey]; seen {
+				if cached != nil {
+					return cached
+				}
+			} else {
+				validationErr := validateBoundaryScopeFRTemplate(fr)
+				state.ValidatedFRs[cacheKey] = validationErr
+				if validationErr != nil {
+					return validationErr
+				}
+			}
+			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
+			frCtx, err := buildBoundaryFRTemplateContext(fr, instName, key, graph, release, boundaryAnnotations)
+			if err != nil {
+				return err
+			}
+			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

@@ -220,12 +220,13 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	irEdges := make([]types.IREdge, 0, len(topo.Edges))
 	for _, e := range topo.Edges {
 		irEdge := types.IREdge{
-			Source:        e.Source,
-			Target:        e.Target,
-			Socket:        e.Socket,
-			Alias:         e.Alias,
-			OriginFeature: e.OriginFeature,
-			Inject:        convertInjectBlock(e.Inject),
+			Source:                e.Source,
+			Target:                e.Target,
+			Socket:                e.Socket,
+			Alias:                 e.Alias,
+			OriginFeature:         e.OriginFeature,
+			OriginFeatureInstance: e.OriginFeatureInstance,
+			Inject:                convertInjectBlock(e.Inject),
 		}
 		irEdges = append(irEdges, irEdge)
 	}

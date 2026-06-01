@@ -94,7 +94,7 @@ func TestRehydrateInjectFromProvides(t *testing.T) {
 	dbProv.Set("service_port", "5432")
 	allProvides := NodeProvides{"db": dbProv}
 
-	RehydrateInjectFromProvides(&inject, edges, "api", allProvides)
+	RehydrateInjectFromProvides(&inject, edges, "api", allProvides, nil, RecipeLookup{}, nil)
 
 	if v, _ := inject.Env.Get("DB_URL"); v != "db.svc.cluster.local" {
 		t.Errorf("DB_URL: %q", v)
