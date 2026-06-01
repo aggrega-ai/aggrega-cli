@@ -93,6 +93,22 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
+	// Set AGGREGA_UPDATE_GOLDENS=1 to (re)write the golden tree from the
+	// rendered artifacts.
+	if os.Getenv("AGGREGA_UPDATE_GOLDENS") == "1" {
+		for k, body := range result.Artifacts {
+			p := filepath.Join(goldenFullstackDir, filepath.FromSlash(k))
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatalf("mkdir golden %s: %v", p, err)
+			}
+			if err := os.WriteFile(p, body, 0o644); err != nil {
+				t.Fatalf("write golden %s: %v", p, err)
+			}
+		}
+		t.Logf("AGGREGA_UPDATE_GOLDENS=1 — wrote %d goldens under %s", len(result.Artifacts), goldenFullstackDir)
+		return
+	}
+
 	wantPaths := map[string][]byte{}
 	walkErr := filepath.Walk(goldenFullstackDir, func(p string, info os.FileInfo, e error) error {
 		if e != nil {

@@ -13,6 +13,12 @@ import (
 // buildAggregaLabels produces the aggrega.ai/* resource labels for K8s manifests.
 // These are static metadata tags — the compiler has no knowledge of OpenTelemetry;
 // downstream tooling (Prometheus, cost allocation, OTel correlation) consumes them.
+//
+// Only label-safe values live here: Kubernetes label values must match
+// (([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])? and be ≤63 chars, so any
+// provenance whose value can carry ':' / '/' (recipe URIs, boundary paths) or a
+// leading '-' (negative sync waves) is emitted as an annotation by
+// buildAggregaAnnotations instead, where values are unconstrained.
 func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	componentID := nodeCtx.LabelComponentID
 	if componentID == "" {
@@ -21,12 +27,6 @@ func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":  componentID,
 		"aggrega.ai/component-id": componentID,
-	}
-	if nodeCtx.BoundaryPath != "" {
-		labels["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath
-	}
-	if nodeCtx.RecipeName != "" && nodeCtx.RecipeVersion != "" {
-		labels["aggrega.ai/recipe-uri"] = nodeCtx.RecipeName + ":" + nodeCtx.RecipeVersion
 	}
 	if nodeCtx.Provenance.CompilerVersion != "" {
 		labels["aggrega.ai/compiler-version"] = nodeCtx.Provenance.CompilerVersion
@@ -37,21 +37,26 @@ func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
 	if nodeCtx.Provenance.Environment != "" {
 		labels["aggrega.ai/environment"] = nodeCtx.Provenance.Environment
 	}
-	if nodeCtx.SyncWave != 0 {
-		labels["aggrega.ai/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
-	}
 	return labels
 }
 
 // buildAggregaAnnotations produces the aggrega.ai/* annotation set for K8s
 // manifests. Distinct from buildAggregaLabels: annotations carry data that
-// downstream tooling reads but doesn't filter on (ArgoCD wave order, Helm
-// hook ordering, etc.). Currently emits argocd.argoproj.io/sync-wave when
-// nodeCtx.SyncWave != 0 (default-0 elide); future expansions add more
-// annotations as provider-native sequencing primitives surface.
+// downstream tooling reads but doesn't filter on (ArgoCD wave order, Helm hook
+// ordering), plus provenance whose value cannot satisfy the K8s label-value
+// charset — the recipe URI (':' and path '/'), the boundary path ('/'), and the
+// sync wave (a negative value's leading '-' is an invalid label). The
+// argocd.argoproj.io/sync-wave annotation carries the same wave value for ArgoCD.
 func buildAggregaAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
 	annotations := map[string]string{}
+	if nodeCtx.BoundaryPath != "" {
+		annotations["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath
+	}
+	if nodeCtx.RecipeName != "" && nodeCtx.RecipeVersion != "" {
+		annotations["aggrega.ai/recipe-uri"] = nodeCtx.RecipeName + ":" + nodeCtx.RecipeVersion
+	}
 	if nodeCtx.SyncWave != 0 {
+		annotations["aggrega.ai/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
 		annotations["argocd.argoproj.io/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
 	}
 	return annotations

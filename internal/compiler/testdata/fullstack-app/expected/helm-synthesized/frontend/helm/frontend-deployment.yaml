@@ -5,13 +5,14 @@ metadata:
     namespace: frontend-zone
     labels:
         aggrega.ai/aggregate-name: fullstack-app
-        aggrega.ai/boundary-path: frontend-ns
         aggrega.ai/compiler-version: 0.1.0
         aggrega.ai/component-id: frontend
         aggrega.ai/environment: production
-        aggrega.ai/recipe-uri: helm-web-ui-synthesized:1.0.0
         app: frontend
         app.kubernetes.io/name: frontend
+    annotations:
+        aggrega.ai/boundary-path: frontend-ns
+        aggrega.ai/recipe-uri: helm-web-ui-synthesized:1.0.0
 spec:
     replicas: 2
     selector:
@@ -22,11 +23,9 @@ spec:
             name: ""
             labels:
                 aggrega.ai/aggregate-name: fullstack-app
-                aggrega.ai/boundary-path: frontend-ns
                 aggrega.ai/compiler-version: 0.1.0
                 aggrega.ai/component-id: frontend
                 aggrega.ai/environment: production
-                aggrega.ai/recipe-uri: helm-web-ui-synthesized:1.0.0
                 app: frontend
                 app.kubernetes.io/name: frontend
         spec:

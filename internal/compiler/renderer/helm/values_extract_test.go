@@ -4,6 +4,7 @@
 package helm
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -269,12 +270,18 @@ func TestChooseScalarStyle_SpecialAndPlain(t *testing.T) {
 
 // TestBuildAggregaLabels_EveryConditionalArm pins every optional-
 // emission branch in buildAggregaLabels.
+// k8sLabelValue is the Kubernetes label-value charset: empty, or start/end
+// alphanumeric with [-A-Za-z0-9_.] between, ≤63 chars.
+var k8sLabelValue = regexp.MustCompile(`^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$`)
+
 func TestBuildAggregaLabels_EveryConditionalArm(t *testing.T) {
 	t.Parallel()
+	// Deliberately label-HOSTILE values: a nested boundary path ('/'), a
+	// versioned recipe URI (':'), and a negative sync wave (leading '-').
 	ctx := renderer.NodeRenderContext{
 		NodeID:           "node-1",
 		LabelComponentID: "comp-x",
-		BoundaryPath:     "infra.web",
+		BoundaryPath:     "infra/web",
 		RecipeName:       "myco/web",
 		RecipeVersion:    "1.0.0",
 		Provenance: renderer.ProvenanceContext{
@@ -282,46 +289,67 @@ func TestBuildAggregaLabels_EveryConditionalArm(t *testing.T) {
 			AggregateName:   "agg-prod",
 			Environment:     "prod",
 		},
-		SyncWave: 5,
+		SyncWave: -1,
 	}
 	labels := buildAggregaLabels(ctx)
-	want := map[string]string{
-		"app.kubernetes.io/name":       "comp-x",
-		"aggrega.ai/component-id":      "comp-x",
-		"aggrega.ai/boundary-path":     "infra.web",
-		"aggrega.ai/recipe-uri":        "myco/web:1.0.0",
-		"aggrega.ai/compiler-version":  "v0.99",
-		"aggrega.ai/aggregate-name":    "agg-prod",
-		"aggrega.ai/environment":       "prod",
-		"aggrega.ai/sync-wave":         "5",
+	// Only label-safe provenance stays in the label map.
+	wantLabels := map[string]string{
+		"app.kubernetes.io/name":      "comp-x",
+		"aggrega.ai/component-id":     "comp-x",
+		"aggrega.ai/compiler-version": "v0.99",
+		"aggrega.ai/aggregate-name":   "agg-prod",
+		"aggrega.ai/environment":      "prod",
 	}
-	for k, v := range want {
+	for k, v := range wantLabels {
 		if labels[k] != v {
-			t.Errorf("%s = %q; want %q", k, labels[k], v)
+			t.Errorf("label %s = %q; want %q", k, labels[k], v)
+		}
+	}
+	// The label-hostile keys must NOT be labels.
+	for _, k := range []string{"aggrega.ai/recipe-uri", "aggrega.ai/boundary-path", "aggrega.ai/sync-wave"} {
+		if _, has := labels[k]; has {
+			t.Errorf("%s must be an annotation, not a label (label values reject ':'/'/'/leading '-')", k)
+		}
+	}
+	// Semantic guard: EVERY emitted label value must satisfy the K8s charset.
+	for k, v := range labels {
+		if !k8sLabelValue.MatchString(v) || len(v) > 63 {
+			t.Errorf("label %s has K8s-invalid value %q", k, v)
 		}
 	}
 
-	// Empty ctx: only the default identity labels emit.
+	// The label-hostile provenance lands in the annotation map verbatim.
+	ann := buildAggregaAnnotations(ctx)
+	wantAnn := map[string]string{
+		"aggrega.ai/boundary-path":     "infra/web",
+		"aggrega.ai/recipe-uri":        "myco/web:1.0.0",
+		"aggrega.ai/sync-wave":         "-1",
+		"argocd.argoproj.io/sync-wave": "-1",
+	}
+	for k, v := range wantAnn {
+		if ann[k] != v {
+			t.Errorf("annotation %s = %q; want %q", k, ann[k], v)
+		}
+	}
+
+	// Empty ctx: only the default identity labels emit; no annotations.
 	minimal := buildAggregaLabels(renderer.NodeRenderContext{NodeID: "n"})
 	if minimal["app.kubernetes.io/name"] != "n" {
 		t.Errorf("fallback to NodeID for app.kubernetes.io/name; got %q", minimal["app.kubernetes.io/name"])
 	}
-	if _, has := minimal["aggrega.ai/boundary-path"]; has {
-		t.Errorf("empty BoundaryPath should NOT emit aggrega.ai/boundary-path")
-	}
-	if _, has := minimal["aggrega.ai/sync-wave"]; has {
-		t.Errorf("zero SyncWave should NOT emit aggrega.ai/sync-wave")
+	if len(buildAggregaAnnotations(renderer.NodeRenderContext{NodeID: "n"})) != 0 {
+		t.Errorf("empty ctx should produce no annotations")
 	}
 }
 
 // TestBuildAggregaAnnotations_SyncWaveAndDefault pins the per-conditional
-// emission: SyncWave != 0 emits argocd.argoproj.io/sync-wave; zero
-// produces an empty map.
+// emission: SyncWave != 0 emits both sync-wave annotations; zero produces an
+// empty map.
 func TestBuildAggregaAnnotations_SyncWaveAndDefault(t *testing.T) {
 	t.Parallel()
 	got := buildAggregaAnnotations(renderer.NodeRenderContext{SyncWave: 3})
-	if got["argocd.argoproj.io/sync-wave"] != "3" {
-		t.Errorf("sync-wave 3 expected; got %v", got)
+	if got["argocd.argoproj.io/sync-wave"] != "3" || got["aggrega.ai/sync-wave"] != "3" {
+		t.Errorf("sync-wave 3 expected on both annotations; got %v", got)
 	}
 	got = buildAggregaAnnotations(renderer.NodeRenderContext{SyncWave: 0})
 	if len(got) != 0 {

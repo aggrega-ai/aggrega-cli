@@ -79,38 +79,54 @@ func TestBuildAggregaLabels_EveryConditional(t *testing.T) {
 		SyncWave: 5,
 	}
 	got := buildAggregaLabels(ctx)
+	// Only label-safe provenance stays in the label map.
 	want := map[string]string{
 		"app.kubernetes.io/name":      "comp-x",
 		"aggrega.ai/component-id":     "comp-x",
-		"aggrega.ai/boundary-path":    "infra/web",
-		"aggrega.ai/recipe-uri":       "myco/web:1.0.0",
 		"aggrega.ai/compiler-version": "v0.99",
 		"aggrega.ai/aggregate-name":   "agg-prod",
 		"aggrega.ai/environment":      "prod",
-		"aggrega.ai/sync-wave":        "5",
 	}
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("%s = %q; want %q", k, got[k], v)
 		}
 	}
-	// Empty ctx — only default identity labels.
+	// The label-hostile keys ('/' boundary path, ':' recipe URI) are not labels.
+	for _, k := range []string{"aggrega.ai/recipe-uri", "aggrega.ai/boundary-path", "aggrega.ai/sync-wave"} {
+		if _, has := got[k]; has {
+			t.Errorf("%s must be an annotation, not a label", k)
+		}
+	}
+	// They land in the annotation map verbatim.
+	ann := buildAggregaAnnotations(ctx)
+	wantAnn := map[string]string{
+		"aggrega.ai/boundary-path": "infra/web",
+		"aggrega.ai/recipe-uri":    "myco/web:1.0.0",
+		"aggrega.ai/sync-wave":     "5",
+	}
+	for k, v := range wantAnn {
+		if ann[k] != v {
+			t.Errorf("annotation %s = %q; want %q", k, ann[k], v)
+		}
+	}
+	// Empty ctx — only default identity labels, no annotations.
 	minimal := buildAggregaLabels(renderer.NodeRenderContext{NodeID: "n"})
 	if minimal["app.kubernetes.io/name"] != "n" {
 		t.Errorf("fallback to NodeID; got %q", minimal["app.kubernetes.io/name"])
 	}
-	if _, has := minimal["aggrega.ai/sync-wave"]; has {
-		t.Errorf("zero SyncWave should not emit")
+	if len(buildAggregaAnnotations(renderer.NodeRenderContext{NodeID: "n"})) != 0 {
+		t.Errorf("empty ctx should produce no annotations")
 	}
 }
 
 // TestBuildAggregaAnnotations_SyncWaveAndDefault pins the conditional
-// emission of argocd.argoproj.io/sync-wave.
+// emission of the sync-wave annotations.
 func TestBuildAggregaAnnotations_SyncWaveAndDefault(t *testing.T) {
 	t.Parallel()
 	got := buildAggregaAnnotations(renderer.NodeRenderContext{SyncWave: 3})
-	if got["argocd.argoproj.io/sync-wave"] != "3" {
-		t.Errorf("got %v; want sync-wave=3", got)
+	if got["argocd.argoproj.io/sync-wave"] != "3" || got["aggrega.ai/sync-wave"] != "3" {
+		t.Errorf("got %v; want sync-wave=3 on both annotations", got)
 	}
 	got = buildAggregaAnnotations(renderer.NodeRenderContext{SyncWave: 0})
 	if len(got) != 0 {

@@ -5,13 +5,14 @@ metadata:
     namespace: raw-zone
     labels:
         aggrega.ai/aggregate-name: fullstack-app-helm-artifacts
-        aggrega.ai/boundary-path: raw-zone
         aggrega.ai/compiler-version: 0.1.0
         aggrega.ai/component-id: config
         aggrega.ai/environment: production
-        aggrega.ai/recipe-uri: helm-raw-manifest-artifacts:1.0.0
         app: config
         app.kubernetes.io/name: config
+    annotations:
+        aggrega.ai/boundary-path: raw-zone
+        aggrega.ai/recipe-uri: helm-raw-manifest-artifacts:1.0.0
 spec:
     replicas: 1
     selector:
@@ -22,11 +23,9 @@ spec:
             name: ""
             labels:
                 aggrega.ai/aggregate-name: fullstack-app-helm-artifacts
-                aggrega.ai/boundary-path: raw-zone
                 aggrega.ai/compiler-version: 0.1.0
                 aggrega.ai/component-id: config
                 aggrega.ai/environment: production
-                aggrega.ai/recipe-uri: helm-raw-manifest-artifacts:1.0.0
                 app: config
                 app.kubernetes.io/name: config
         spec:

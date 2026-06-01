@@ -4,12 +4,13 @@ metadata:
     name: postgres
     labels:
         aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/boundary-path: default
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: postgres
         aggrega.ai/environment: test-env
         app: postgres
         app.kubernetes.io/name: postgres
+    annotations:
+        aggrega.ai/boundary-path: default
 spec:
     replicas: 1
     selector:
@@ -20,7 +21,6 @@ spec:
             name: ""
             labels:
                 aggrega.ai/aggregate-name: test-agg
-                aggrega.ai/boundary-path: default
                 aggrega.ai/compiler-version: test
                 aggrega.ai/component-id: postgres
                 aggrega.ai/environment: test-env
@@ -51,12 +51,13 @@ metadata:
     name: postgres-db
     labels:
         aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/boundary-path: default
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: postgres
         aggrega.ai/environment: test-env
         app: postgres
         app.kubernetes.io/name: postgres
+    annotations:
+        aggrega.ai/boundary-path: default
 spec:
     type: ClusterIP
     clusterIP: None

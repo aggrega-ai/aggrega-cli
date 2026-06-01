@@ -4,12 +4,13 @@ metadata:
     name: data-server
     labels:
         aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/boundary-path: default
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: data-server
         aggrega.ai/environment: test-env
         app: data-server
         app.kubernetes.io/name: data-server
+    annotations:
+        aggrega.ai/boundary-path: default
 spec:
     replicas: 1
     selector:
@@ -20,7 +21,6 @@ spec:
             name: ""
             labels:
                 aggrega.ai/aggregate-name: test-agg
-                aggrega.ai/boundary-path: default
                 aggrega.ai/compiler-version: test
                 aggrega.ai/component-id: data-server
                 aggrega.ai/environment: test-env
@@ -52,12 +52,13 @@ metadata:
     name: data-server-data
     labels:
         aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/boundary-path: default
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: data-server
         aggrega.ai/environment: test-env
         app: data-server
         app.kubernetes.io/name: data-server
+    annotations:
+        aggrega.ai/boundary-path: default
 spec:
     accessModes:
         - ReadWriteOnce
@@ -71,12 +72,13 @@ metadata:
     name: data-server-api
     labels:
         aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/boundary-path: default
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: data-server
         aggrega.ai/environment: test-env
         app: data-server
         app.kubernetes.io/name: data-server
+    annotations:
+        aggrega.ai/boundary-path: default
 spec:
     type: ClusterIP
     selector:
