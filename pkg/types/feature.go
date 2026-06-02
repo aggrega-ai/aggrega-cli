@@ -35,8 +35,9 @@ type FeatureMetadata struct {
 // Schema carries the free-form pillars (values / infra / provides) as JSON
 // Schema 2020-12 content with the same three-mode authoring surface as
 // ComponentSpec.Schema (inline content; {$import: <path>} for single-file
-// replacement; {$ref: oci://...#/schemas/<name>} for SchemaLibrary
-// references). UsesSchema and SecretsSchema cover the fixed-shape pillars;
+// replacement; {$ref: <Library>#/schemas/<name>} for SchemaLibrary
+// references by bare-name identity — version from the per-Release lockfile,
+// no registry host). UsesSchema and SecretsSchema cover the fixed-shape pillars;
 // bridge synthesis composes the three into the unified validation surface.
 type FeatureSpec struct {
 	Extends              string                      `json:"extends,omitempty" yaml:"extends,omitempty"`

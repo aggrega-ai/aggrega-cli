@@ -63,17 +63,8 @@ type MappingLibrarySpec struct {
 // verbatim preserves authoring fidelity for re-emission and lets the
 // consumption-side parser handle template-content semantics including
 // any cross-library `$import:` references inside the body.
-//
-// URL is the resolved canonical reference URL computed post-parse:
-// `oci://<host>/<library>@<version>#/mappings/<name>`. Named URL rather
-// than ID because consumers reference these via URL-syntax strings at
-// `valuesMapping: { $import: <url> }` consumption sites; SchemaLibrary's
-// parallel field is named ID because JSON Schema spec calls the cross-
-// document identifier `$id` and that field's primary consumer is the
-// JSON Schema validator's `$ref` resolution machinery.
 type MappingEntry struct {
 	Body string `json:"-" yaml:"-"`
-	URL  string `json:"-" yaml:"-"`
 }
 
 // UnmarshalYAML captures the entry's YAML scalar value into Body. The

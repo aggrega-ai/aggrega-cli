@@ -36,8 +36,9 @@ type ComponentMetadata struct {
 // Schema 2020-12 content. The field accepts three authoring modes via
 // content-shape dispatch: inline content (compact form / JSON Schema YAML
 // / mixed); single-file replacement via {$import: <path>}; and cross-document
-// reference via {$ref: oci://<host>/<library>@<version>#/schemas/<name>}
-// into a SchemaLibrary entry. UsesSchema and SecretsSchema cover the
+// reference via {$ref: <Library>#/schemas/<name>} into a SchemaLibrary entry
+// by bare-name identity (the version is supplied by the per-Release lockfile;
+// no registry host appears in the reference). UsesSchema and SecretsSchema cover the
 // fixed-shape pillars (dependency sockets, credential bindings); their
 // bridge synthesis emits JSON Schema with x-aggrega-selector / x-aggrega-
 // inject extension keywords composed with Schema into the entity's
