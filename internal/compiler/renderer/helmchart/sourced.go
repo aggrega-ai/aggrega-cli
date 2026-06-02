@@ -59,22 +59,30 @@ func copySourcedChart(chartPath string) (map[string][]byte, error) {
 	return out, nil
 }
 
-// readChartName parses a local chart's Chart.yaml and returns its `name` field.
-// Used by the umbrella builder so the dependency entry carries the chart's real
-// name while the alias identifies the instance.
-func readChartName(chartPath string) (string, error) {
+// readChartMeta parses a local chart's Chart.yaml and returns its `name` and
+// `version` fields. Used by the umbrella builder so the dependency entry mirrors
+// the vendored chart in BOTH name and version — the alias identifies the
+// instance, but the version must match the physically-copied chart or Helm will
+// not bind the dependency (and the umbrella's per-instance values never reach the
+// sub-chart). An empty name or version halts loudly, so a future drift cannot
+// silently drop the alias.
+func readChartMeta(chartPath string) (name, version string, err error) {
 	data, err := os.ReadFile(filepath.Join(chartPath, "Chart.yaml"))
 	if err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: read Chart.yaml in %q", chartPath))
+		return "", "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: read Chart.yaml in %q", chartPath))
 	}
 	var header struct {
-		Name string `yaml:"name"`
+		Name    string `yaml:"name"`
+		Version string `yaml:"version"`
 	}
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q", chartPath))
+		return "", "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q", chartPath))
 	}
 	if header.Name == "" {
-		return "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty name", chartPath), nil, nil)
+		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty name", chartPath), nil, nil)
 	}
-	return header.Name, nil
+	if header.Version == "" {
+		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty version", chartPath), nil, nil)
+	}
+	return header.Name, header.Version, nil
 }

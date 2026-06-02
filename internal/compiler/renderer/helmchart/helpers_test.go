@@ -281,12 +281,12 @@ func TestCopySourcedChart_NestedFiles(t *testing.T) {
 	}
 }
 
-// TestReadChartName_AllBranches pins missing-file, parse-error,
-// empty-name, and happy paths.
-func TestReadChartName_AllBranches(t *testing.T) {
+// TestReadChartMeta_AllBranches pins missing-file, parse-error, empty-name,
+// empty-version, and happy paths.
+func TestReadChartMeta_AllBranches(t *testing.T) {
 	t.Parallel()
 	// Missing file.
-	_, err := readChartName("/nonexistent/path")
+	_, _, err := readChartMeta("/nonexistent/path")
 	if err == nil {
 		t.Errorf("missing path should error")
 	}
@@ -296,7 +296,7 @@ func TestReadChartName_AllBranches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp, "Chart.yaml"), []byte("::: not yaml :::"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, err = readChartName(tmp)
+	_, _, err = readChartMeta(tmp)
 	if err == nil {
 		t.Errorf("malformed YAML should error")
 	}
@@ -306,9 +306,18 @@ func TestReadChartName_AllBranches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp2, "Chart.yaml"), []byte("apiVersion: v2\nversion: 0.1.0\n"), 0o644); err != nil {
 		t.Fatalf("write empty: %v", err)
 	}
-	_, err = readChartName(tmp2)
+	_, _, err = readChartMeta(tmp2)
 	if err == nil {
 		t.Errorf("empty name should error")
+	}
+
+	// Empty version (the parallel guard).
+	tmp2b := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp2b, "Chart.yaml"), []byte("apiVersion: v2\nname: real-name\n"), 0o644); err != nil {
+		t.Fatalf("write empty version: %v", err)
+	}
+	if _, _, err := readChartMeta(tmp2b); err == nil {
+		t.Errorf("empty version should error")
 	}
 
 	// Happy.
@@ -316,12 +325,15 @@ func TestReadChartName_AllBranches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp3, "Chart.yaml"), []byte("apiVersion: v2\nname: real-name\nversion: 0.1.0\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err := readChartName(tmp3)
+	got, gotVer, err := readChartMeta(tmp3)
 	if err != nil {
 		t.Fatalf("happy: %v", err)
 	}
 	if got != "real-name" {
 		t.Errorf("name = %q; want real-name", got)
+	}
+	if gotVer != "0.1.0" {
+		t.Errorf("version = %q; want 0.1.0", gotVer)
 	}
 }
 
