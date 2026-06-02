@@ -177,8 +177,11 @@ func pullRun(cfg pullConfig) error {
 
 	// Workspace-agnostic: pull walks the closure to populate the
 	// lockfile and never emits IR, so the catalog's source-file
-	// accessors are unused. Pass "" for workspace root.
-	cat, err := catalog.Load("", cfg.CatalogDir)
+	// accessors are unused. Pass "" for workspace root. The walk skips
+	// the configured cache directory so cached library.yaml files are not
+	// ingested as authored Tier-1 catalog.
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cat, err := catalog.LoadWithCacheDir("", cacheDir, cfg.CatalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -202,11 +205,6 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("workspace root: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.CacheDir
-	if cacheDir == "" {
-		cacheDir = ".aggrega/cache"
-	}
-
 	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
 	// Re-pull reuse-check: when a prior lockfile exists, verify reused
 	// cache slots against its pins so a slot that has drifted from its

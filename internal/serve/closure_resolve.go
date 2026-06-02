@@ -95,10 +95,7 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 	}
 
 	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
-	cacheDir := s.wsConfig.Workspace.CacheDir
-	if cacheDir == "" {
-		cacheDir = ".aggrega/cache"
-	}
+	cacheDir := s.wsConfig.Workspace.ResolvedCacheDir()
 	lookup := recipeCat.ClosureLookupWithExternals(nil, s.workspaceRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, s.wsConfig, lookup)
 	if err != nil {

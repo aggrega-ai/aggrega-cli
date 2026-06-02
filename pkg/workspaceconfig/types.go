@@ -73,6 +73,17 @@ type WorkspaceConfig struct {
 	AutoPull          bool     `yaml:"auto_pull"`
 }
 
+// ResolvedCacheDir returns the configured content-cache directory, applying the
+// ".aggrega/cache" default when CacheDir is unset. Centralizes the default so
+// every catalog / closure load site resolves the cache path identically — if
+// the default ever moves, it moves here.
+func (w WorkspaceConfig) ResolvedCacheDir() string {
+	if w.CacheDir == "" {
+		return ".aggrega/cache"
+	}
+	return w.CacheDir
+}
+
 // BuildConfig groups build-time strictness dials and authoring
 // hints. AuthoringRelease names a Release YAML the LSP treats as
 // the "current Release" for inline diagnostics; HaltOnDeprecated

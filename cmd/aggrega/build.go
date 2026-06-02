@@ -79,7 +79,16 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// byte-identical across developer machines whose workspaces live at
 	// different absolute paths.
 	wsRoot, _ := os.Getwd()
-	cat, err := catalog.Load(wsRoot, catalogDir)
+
+	// Load workspace config up front: the catalog walk skips the configured
+	// cache directory (a resolution artifact, not authored catalog), and the
+	// pipeline call below reuses wsCfg.
+	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cat, err := catalog.LoadWithCacheDir(wsRoot, cacheDir, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -130,13 +139,6 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	aggBytes, err := os.ReadFile(aggPath)
 	if err != nil {
 		return fmt.Errorf("read aggregate: %w", err)
-	}
-
-	// Load workspace config for the pipeline call. Workspace defaults
-	// apply when the config file is absent.
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 
 	// engineFactory dispatches recipe.spec.provider to a fresh-per-call
@@ -308,10 +310,7 @@ func verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath string, 
 	if err != nil {
 		return fmt.Errorf("workspace root: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.CacheDir
-	if cacheDir == "" {
-		cacheDir = ".aggrega/cache"
-	}
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
 
 	externals := lockfile.LoadExternalEntities(rel,
 		filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"),

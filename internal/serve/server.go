@@ -353,12 +353,16 @@ func (s *Server) resolveRecipeCatalog() (*catalog.Catalog, error) {
 		return s.recipeCatalog, nil
 	}
 	dirs := s.wsConfig.Workspace.CatalogDirs
+	cacheDir := s.wsConfig.Workspace.ResolvedCacheDir()
 	var cat *catalog.Catalog
 	var err error
 	if len(dirs) == 0 {
-		cat, err = catalog.Load(s.workspaceRoot, s.workspaceRoot)
+		// workspaceRoot is loaded as the catalog dir, so the workspace
+		// cache sits under the walk — skip it (a resolution artifact, not
+		// authored catalog).
+		cat, err = catalog.LoadWithCacheDir(s.workspaceRoot, cacheDir, s.workspaceRoot)
 	} else {
-		cat, err = catalog.LoadAll(s.workspaceRoot, dirs...)
+		cat, err = catalog.LoadAllWithCacheDir(s.workspaceRoot, cacheDir, dirs...)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("catalog load: %w", err)

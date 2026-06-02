@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -152,8 +153,15 @@ func inspectPath(path, catalogDir string) error {
 func inspectCatalogComponent(componentType, catalogDir string) error {
 	// Workspace-agnostic inspection: this path prints catalog Component
 	// details without rendering any per-node IR, so no workspace-relative
-	// path normalization is needed.
-	cat, err := catalog.Load("", catalogDir)
+	// path normalization is needed. The walk still skips the configured
+	// cache directory (anchored on catalogDir) so cached library.yaml files
+	// are not shown as authored Tier-1 catalog.
+	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cat, err := catalog.LoadWithCacheDir("", cacheDir, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -262,7 +270,12 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 	// catalog renders source-file accessors relative to it so per-node
 	// IR SourceFile records stay byte-identical across machines.
 	wsRoot, _ := os.Getwd()
-	cat, err := catalog.Load(wsRoot, catalogDir)
+	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cat, err := catalog.LoadWithCacheDir(wsRoot, cacheDir, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}

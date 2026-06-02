@@ -105,8 +105,22 @@ type Catalog struct {
 // the catalog renders source-file accessors relative to it; pass ""
 // when the caller has no workspace concept (synthetic tests, workspace-
 // agnostic operations like `aggrega pull`).
+//
+// Load does NOT skip the content-addressed cache. A production caller that
+// walks a directory which may contain the workspace cache — e.g. the
+// `--catalog .` default, where `.aggrega/cache` sits under the catalog dir —
+// must use LoadWithCacheDir / LoadAllWithCacheDir so cached `library.yaml`
+// files are not ingested as authored Tier-1 catalog entities.
 func Load(workspaceRoot, dir string) (*Catalog, error) {
-	return LoadAll(workspaceRoot, dir)
+	return LoadAllWithCacheDir(workspaceRoot, "", dir)
+}
+
+// LoadWithCacheDir is Load with the configured cache directory skipped during
+// the walk — the single-directory form of LoadAllWithCacheDir. cacheDir is the
+// workspace-relative cache path (e.g. ".aggrega/cache"); "" disables the skip
+// (identical to Load).
+func LoadWithCacheDir(workspaceRoot, cacheDir, dir string) (*Catalog, error) {
+	return LoadAllWithCacheDir(workspaceRoot, cacheDir, dir)
 }
 
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml
@@ -163,6 +177,22 @@ func Load(workspaceRoot, dir string) (*Catalog, error) {
 // collected across entities and surfaced as a single aggregate CatalogError
 // so authors fix all schema failures in one editing pass.
 func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
+	return LoadAllWithCacheDir(workspaceRoot, "", dirs...)
+}
+
+// LoadAllWithCacheDir is LoadAll with the content-addressed cache directory
+// skipped during the walk. cacheDir is the workspace-relative cache path (the
+// resolution-artifact store, e.g. ".aggrega/cache"); a directory whose path
+// relative to a walked root equals cacheDir is skipped, so cached
+// `library.yaml` files are never ingested as authored Tier-1 catalog. The skip
+// anchors on each walked root (not on workspaceRoot), so it fires for the
+// `--catalog .` default regardless of whether workspaceRoot is set. cacheDir
+// "" disables the skip — the LoadAll / Load behavior, for callers with no cache.
+func LoadAllWithCacheDir(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
+	cacheClean := ""
+	if cacheDir != "" {
+		cacheClean = filepath.Clean(cacheDir)
+	}
 	c := &Catalog{
 		workspaceRoot:    workspaceRoot,
 		Components:       make(map[string]types.Component),
@@ -184,7 +214,19 @@ func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || (!strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml")) {
+			if d.IsDir() {
+				// Skip the content-addressed cache: it is a resolution
+				// artifact, not authored Tier-1 catalog. Anchored on the
+				// walked root so the `--catalog .` default (cache under the
+				// catalog dir) is caught regardless of workspaceRoot.
+				if cacheClean != "" {
+					if rel, relErr := filepath.Rel(dir, path); relErr == nil && filepath.Clean(rel) == cacheClean {
+						return filepath.SkipDir
+					}
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
 				return nil
 			}
 			data, err := os.ReadFile(path)
