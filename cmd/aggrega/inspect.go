@@ -23,16 +23,15 @@ import (
 
 var inspectCatalogDir string
 
-var inspectCmd = &cobra.Command{
-	Use:   "inspect <identifier>",
-	Short: "Inspect a catalog Component or a Release file (resolves by entity kind)",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runInspect,
-}
-
-func init() {
-	inspectCmd.Flags().StringVar(&inspectCatalogDir, "catalog", ".", "Directory containing catalog entities")
-	rootCmd.AddCommand(inspectCmd)
+func newInspectCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "inspect <identifier>",
+		Short: "Inspect a catalog Component or a Release file (resolves by entity kind)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runInspect,
+	}
+	c.Flags().StringVar(&inspectCatalogDir, "catalog", ".", "Directory containing catalog entities")
+	return c
 }
 
 // runInspect reads the cobra-bound --catalog flag and delegates to

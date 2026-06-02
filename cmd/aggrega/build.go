@@ -32,20 +32,19 @@ var (
 	traceEnabled bool
 )
 
-var buildCmd = &cobra.Command{
-	Use:   "build",
-	Short: "Compile Aggregate + Release into Helm artifacts via the 5-step pipeline",
-	RunE:  runBuild,
-}
-
-func init() {
-	buildCmd.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
-	buildCmd.Flags().StringVar(&catalogDir, "catalog", ".", "Directory containing catalog entities")
-	buildCmd.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
-	if err := buildCmd.MarkFlagRequired("release"); err != nil {
+func newBuildCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "build",
+		Short: "Compile Aggregate + Release into Helm artifacts via the 5-step pipeline",
+		RunE:  runBuild,
+	}
+	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
+	c.Flags().StringVar(&catalogDir, "catalog", ".", "Directory containing catalog entities")
+	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
+	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
-	rootCmd.AddCommand(buildCmd)
+	return c
 }
 
 // runBuild is the cobra entry point. It reads the flag-bound package

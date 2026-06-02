@@ -33,33 +33,32 @@ var (
 	pullIncludePrerelease bool
 )
 
-var pullCmd = &cobra.Command{
-	Use:   "pull",
-	Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if pullVerify && pullRegenerate {
-			return fmt.Errorf("--verify and --regenerate are mutually exclusive")
-		}
-		return pullRun(pullConfig{
-			ReleasePath:       pullReleasePath,
-			CatalogDir:        pullCatalogDir,
-			Regenerate:        pullRegenerate,
-			Verify:            pullVerify,
-			IncludePrerelease: pullIncludePrerelease,
-		})
-	},
-}
-
-func init() {
-	pullCmd.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
-	pullCmd.Flags().StringVar(&pullCatalogDir, "catalog", ".", "Directory containing catalog entities")
-	pullCmd.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and rebuild from current registry state")
-	pullCmd.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
-	pullCmd.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
-	if err := pullCmd.MarkFlagRequired("release"); err != nil {
+func newPullCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "pull",
+		Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if pullVerify && pullRegenerate {
+				return fmt.Errorf("--verify and --regenerate are mutually exclusive")
+			}
+			return pullRun(pullConfig{
+				ReleasePath:       pullReleasePath,
+				CatalogDir:        pullCatalogDir,
+				Regenerate:        pullRegenerate,
+				Verify:            pullVerify,
+				IncludePrerelease: pullIncludePrerelease,
+			})
+		},
+	}
+	c.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
+	c.Flags().StringVar(&pullCatalogDir, "catalog", ".", "Directory containing catalog entities")
+	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and rebuild from current registry state")
+	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
+	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
+	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
-	rootCmd.AddCommand(pullCmd)
+	return c
 }
 
 // pullConfig is the input contract for the pull workflow. cobra-bound

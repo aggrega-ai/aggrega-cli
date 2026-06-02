@@ -485,7 +485,10 @@ func TestPullVerifyAndRegenerateMutuallyExclusive(t *testing.T) {
 
 	// The mutual-exclusion check lives in the cobra RunE wrapper,
 	// not in pullRun itself, so this test exercises the cobra
-	// command-execution path. Set the flag globals directly.
+	// command-execution path. Construct the command first (its flag
+	// binding resets the globals to their defaults), then set the
+	// globals the RunE wrapper reads.
+	cmd := newPullCmd()
 	pullReleasePath = releasePath
 	pullCatalogDir = filepath.Join(root, "catalog")
 	pullVerify = true
@@ -497,7 +500,7 @@ func TestPullVerifyAndRegenerateMutuallyExclusive(t *testing.T) {
 		pullRegenerate = false
 	}()
 
-	err := pullCmd.RunE(pullCmd, nil)
+	err := cmd.RunE(cmd, nil)
 	if err == nil {
 		t.Fatal("expected error for --verify + --regenerate combination, got nil")
 	}

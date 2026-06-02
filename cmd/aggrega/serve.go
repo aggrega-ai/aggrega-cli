@@ -15,10 +15,11 @@ import (
 
 var serveWorkspaceRoot string
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Run as a long-running compiler-as-service over JSON-RPC 2.0 on stdin/stdout",
-	Long: `Run the Aggrega compiler as a long-running service. The daemon
+func newServeCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "serve",
+		Short: "Run as a long-running compiler-as-service over JSON-RPC 2.0 on stdin/stdout",
+		Long: `Run the Aggrega compiler as a long-running service. The daemon
 reads JSON-RPC 2.0 messages from stdin and writes responses to stdout
 under the aggrega/ method namespace. State (parsed YAML, diagnostics,
 resolved catalog) holds across requests so IDE clients can issue many
@@ -45,13 +46,11 @@ The daemon honors the aggrega/shutdown JSON-RPC notification for a
 cooperative cross-platform exit: the daemon completes the in-flight
 handler if any, refuses new requests with code 1005, and exits
 cleanly within a 2-second drain budget.`,
-	RunE: runServe,
-}
-
-func init() {
-	serveCmd.Flags().StringVar(&serveWorkspaceRoot, "workspace-root", "",
+		RunE: runServe,
+	}
+	c.Flags().StringVar(&serveWorkspaceRoot, "workspace-root", "",
 		"absolute path to use as the workspace root (skips discovery)")
-	rootCmd.AddCommand(serveCmd)
+	return c
 }
 
 func runServe(cmd *cobra.Command, args []string) error {

@@ -50,10 +50,11 @@ var (
 	lintNoEnforceImmutability     bool
 )
 
-var lintCmd = &cobra.Command{
-	Use:   "lint <entity-path>",
-	Short: "Run the publishing-linter rule set over a catalog entity",
-	Long: `aggrega lint runs the publishing-linter rule set against an entity.
+func newLintCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "lint <entity-path>",
+		Short: "Run the publishing-linter rule set over a catalog entity",
+		Long: `aggrega lint runs the publishing-linter rule set against an entity.
 
 In default mode the rules run at warning severity over local content
 without consulting any registry. With --pre-publish the previous
@@ -64,47 +65,45 @@ Per-workspace policy flags from .aggrega-config.yaml's
 lint.publishing_discipline block can be overridden per invocation
 via the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag
 pairs.`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		path := lintEntityPath
-		if path == "" && len(args) > 0 {
-			path = args[0]
-		}
-		return lintRun(lintConfig{
-			EntityPath:     path,
-			PrePublish:     lintPrePublish,
-			PluginPath:     lintPluginPath,
-			PolicyResolver: makeResolverFromCobra(cmd),
-		})
-	},
-}
-
-func init() {
-	lintCmd.Flags().StringVar(&lintEntityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
-	lintCmd.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
-	lintCmd.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := lintEntityPath
+			if path == "" && len(args) > 0 {
+				path = args[0]
+			}
+			return lintRun(lintConfig{
+				EntityPath:     path,
+				PrePublish:     lintPrePublish,
+				PluginPath:     lintPluginPath,
+				PolicyResolver: makeResolverFromCobra(cmd),
+			})
+		},
+	}
+	c.Flags().StringVar(&lintEntityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
+	c.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
+	c.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
 
 	// Tri-state allow_* flags
-	lintCmd.Flags().BoolVar(&lintAllowDynamicRefs, "allow-dynamic-refs", false, "Force allow_dynamic_refs=true for this invocation")
-	lintCmd.Flags().BoolVar(&lintNoAllowDynamicRefs, "no-allow-dynamic-refs", false, "Force allow_dynamic_refs=false for this invocation")
-	lintCmd.Flags().BoolVar(&lintAllowIDOverrides, "allow-id-overrides", false, "Force allow_id_overrides=true for this invocation")
-	lintCmd.Flags().BoolVar(&lintNoAllowIDOverrides, "no-allow-id-overrides", false, "Force allow_id_overrides=false for this invocation")
-	lintCmd.Flags().BoolVar(&lintAllowDirectXAggregaExt, "allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=true")
-	lintCmd.Flags().BoolVar(&lintNoAllowDirectXAggregaExt, "no-allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=false")
-	lintCmd.Flags().BoolVar(&lintAllowAggregaAIPrefix, "allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=true")
-	lintCmd.Flags().BoolVar(&lintNoAllowAggregaAIPrefix, "no-allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=false")
-	lintCmd.Flags().BoolVar(&lintAllowNonstandardNames, "allow-nonstandard-names", false, "Force allow_nonstandard_names=true")
-	lintCmd.Flags().BoolVar(&lintNoAllowNonstandardNames, "no-allow-nonstandard-names", false, "Force allow_nonstandard_names=false")
-	lintCmd.Flags().BoolVar(&lintAllowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
-	lintCmd.Flags().BoolVar(&lintNoAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
+	c.Flags().BoolVar(&lintAllowDynamicRefs, "allow-dynamic-refs", false, "Force allow_dynamic_refs=true for this invocation")
+	c.Flags().BoolVar(&lintNoAllowDynamicRefs, "no-allow-dynamic-refs", false, "Force allow_dynamic_refs=false for this invocation")
+	c.Flags().BoolVar(&lintAllowIDOverrides, "allow-id-overrides", false, "Force allow_id_overrides=true for this invocation")
+	c.Flags().BoolVar(&lintNoAllowIDOverrides, "no-allow-id-overrides", false, "Force allow_id_overrides=false for this invocation")
+	c.Flags().BoolVar(&lintAllowDirectXAggregaExt, "allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=true")
+	c.Flags().BoolVar(&lintNoAllowDirectXAggregaExt, "no-allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=false")
+	c.Flags().BoolVar(&lintAllowAggregaAIPrefix, "allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=true")
+	c.Flags().BoolVar(&lintNoAllowAggregaAIPrefix, "no-allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=false")
+	c.Flags().BoolVar(&lintAllowNonstandardNames, "allow-nonstandard-names", false, "Force allow_nonstandard_names=true")
+	c.Flags().BoolVar(&lintNoAllowNonstandardNames, "no-allow-nonstandard-names", false, "Force allow_nonstandard_names=false")
+	c.Flags().BoolVar(&lintAllowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
+	c.Flags().BoolVar(&lintNoAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
 
 	// Tri-state enforce_* flags
-	lintCmd.Flags().BoolVar(&lintEnforceMonotonicNarrowing, "enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=true")
-	lintCmd.Flags().BoolVar(&lintNoEnforceMonotonic, "no-enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=false")
-	lintCmd.Flags().BoolVar(&lintEnforceImmutability, "enforce-immutability", false, "Force enforce_immutability=true")
-	lintCmd.Flags().BoolVar(&lintNoEnforceImmutability, "no-enforce-immutability", false, "Force enforce_immutability=false")
+	c.Flags().BoolVar(&lintEnforceMonotonicNarrowing, "enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=true")
+	c.Flags().BoolVar(&lintNoEnforceMonotonic, "no-enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=false")
+	c.Flags().BoolVar(&lintEnforceImmutability, "enforce-immutability", false, "Force enforce_immutability=true")
+	c.Flags().BoolVar(&lintNoEnforceImmutability, "no-enforce-immutability", false, "Force enforce_immutability=false")
 
-	rootCmd.AddCommand(lintCmd)
+	return c
 }
 
 // lintConfig is the test-injectable input contract. Tests construct

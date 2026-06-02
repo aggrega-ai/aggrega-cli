@@ -23,28 +23,27 @@ var (
 	pushDryRun     bool
 )
 
-var pushCmd = &cobra.Command{
-	Use:   "push <entity-path>",
-	Short: "Bundle and publish a catalog entity to an OCI registry",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		path := pushEntityPath
-		if path == "" && len(args) > 0 {
-			path = args[0]
-		}
-		return pushRun(pushConfig{
-			EntityPath: path,
-			Registry:   pushRegistry,
-			DryRun:     pushDryRun,
-		})
-	},
-}
-
-func init() {
-	pushCmd.Flags().StringVar(&pushEntityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
-	pushCmd.Flags().StringVar(&pushRegistry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
-	pushCmd.Flags().BoolVar(&pushDryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
-	rootCmd.AddCommand(pushCmd)
+func newPushCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "push <entity-path>",
+		Short: "Bundle and publish a catalog entity to an OCI registry",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := pushEntityPath
+			if path == "" && len(args) > 0 {
+				path = args[0]
+			}
+			return pushRun(pushConfig{
+				EntityPath: path,
+				Registry:   pushRegistry,
+				DryRun:     pushDryRun,
+			})
+		},
+	}
+	c.Flags().StringVar(&pushEntityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
+	c.Flags().StringVar(&pushRegistry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
+	c.Flags().BoolVar(&pushDryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
+	return c
 }
 
 // pushConfig is the input contract for the push workflow. The cobra

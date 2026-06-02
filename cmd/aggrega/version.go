@@ -15,13 +15,14 @@ import (
 
 var versionJSON bool
 
-// versionCmd surfaces the aggrega CLI's build identity. Used by the
+// newVersionCmd surfaces the aggrega CLI's build identity. Used by the
 // VS Code extension's startup compatibility check and by operators
 // inspecting a binary by hand.
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the aggrega CLI version",
-	Long: `Print the aggrega CLI's build identity.
+func newVersionCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "version",
+		Short: "Print the aggrega CLI version",
+		Long: `Print the aggrega CLI's build identity.
 
 By default the output is a single human-readable line. With --json,
 the output is a structured JSON object suitable for programmatic
@@ -32,14 +33,12 @@ Version values come from runtime/debug.ReadBuildInfo: tagged release
 builds report the module tag (e.g., v1.0.0); source builds report
 the literal "(devel)". Operators who see "(devel)" know they are
 running an unreleased build.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVersion(cmd.OutOrStdout(), versionJSON)
-	},
-}
-
-func init() {
-	versionCmd.Flags().BoolVar(&versionJSON, "json", false, "emit a structured JSON object instead of the human-readable line")
-	rootCmd.AddCommand(versionCmd)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVersion(cmd.OutOrStdout(), versionJSON)
+		},
+	}
+	c.Flags().BoolVar(&versionJSON, "json", false, "emit a structured JSON object instead of the human-readable line")
+	return c
 }
 
 // versionInfo is the structured payload emitted by `aggrega version
