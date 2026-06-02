@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: demo-server-remote
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: demo/server
+  source:
+    kind: helm-oci-chart
+    url: oci://demo.example/charts/server
+    version: "1.0.0"
+  provides:
+    host: "{{ .context.instance_id }}"
+  valuesMapping: |
+    {}

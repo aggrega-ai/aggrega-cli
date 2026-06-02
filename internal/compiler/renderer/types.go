@@ -24,11 +24,12 @@ type RendererInput struct {
 	// orchestrator looks up each Recipe's spec.source against
 	// Lockfile.SourceArtifacts, verifies the cached archive's full
 	// digest, and populates NodeRenderContext.Source with the extracted
-	// path. When any of the three is unset, the orchestrator falls back
-	// to forwarding recipe.Spec.Source verbatim — preserving the
-	// sourceless and local-path code paths exercised by existing tests.
-	// Production callers populate all three from the loaded lockfile,
-	// the workspace's root directory, and workspaceconfig.CacheDir.
+	// path — so a remote source resolves to its cache entry and renders.
+	// When any of the three is unset, the orchestrator forwards
+	// recipe.Spec.Source verbatim: the sourceless, local-path, and
+	// no-lockfile code paths. The CLI build and the serve daemon both
+	// populate all three — from the loaded lockfile, the workspace root,
+	// and the resolved cache directory.
 	Lockfile      *lockfile.Lockfile
 	WorkspaceRoot string
 	CacheDir      string

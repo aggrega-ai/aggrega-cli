@@ -427,7 +427,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    aggrega/publishDiagnostics notification. Non-blocking —
 	//    irGraph still produces the IR graph; drift is a
 	//    Problems-panel signal, not a halt.
-	s.verifyDriftAndPublish(lockfilePath, resolved.Closure)
+	lf := s.verifyDriftAndPublish(lockfilePath, resolved.Closure)
 
 	// 4. Resolve the recipeCatalog for the pipeline call (the
 	//    closure path used the same primitive; this re-uses the
@@ -449,6 +449,8 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			AggregateRawBytes: resolved.AggBytes,
 			AggregatePath:     aggPath,
 			WorkspaceConfig:   s.wsConfig,
+			Lockfile:          lf,
+			WorkspaceRoot:     s.workspaceRoot,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
 		recipeCat.RecipeLookup(),

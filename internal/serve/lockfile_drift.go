@@ -74,9 +74,12 @@ func (s *Server) loadAndCheckLockfileAtStartup() {
 // verifyDriftAndUpdateCache (no notification) because the
 // notification flushes from dispatchInitialize's post-response
 // loop per the LSP-canonical ordering.
-func (s *Server) verifyDriftAndPublish(lockfilePath string, cl closure.Closure) {
-	s.verifyDriftAndUpdateCache(lockfilePath, cl)
+// Returns the loaded lockfile (nil on load failure) so the caller can thread
+// it into the render pipeline for build-time source-artifact resolution.
+func (s *Server) verifyDriftAndPublish(lockfilePath string, cl closure.Closure) *lockfile.Lockfile {
+	lf := s.verifyDriftAndUpdateCache(lockfilePath, cl)
 	_ = s.publishDiagnostics(lockfilePath)
+	return lf
 }
 
 // verifyDriftAndUpdateCache runs the lockfile verify against the
@@ -87,20 +90,24 @@ func (s *Server) verifyDriftAndPublish(lockfilePath string, cl closure.Closure) 
 // LSP-canonical ordering. Per-handleIrGraph callers use
 // verifyDriftAndPublish, which wraps this and fires the
 // notification afterwards.
-func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closure) {
+// Returns the freshly-loaded lockfile (nil on load failure). Drift is
+// non-blocking: on drift the lockfile is still returned (it parsed fine), so the
+// render pipeline can resolve sources against its pins regardless.
+func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closure) *lockfile.Lockfile {
 	lf, _, err := lockfile.LoadLockfile(lockfilePath)
 	if err != nil {
 		fmt.Fprintf(s.stderr, "  lockfile load %s: %v\n", lockfilePath, err)
 		delete(s.diagnostics, lockfilePath)
-		return
+		return nil
 	}
 	if err := lockfile.Verify(lf, cl); err != nil {
 		message := fmt.Sprintf("Lockfile drifted from current closure. Run `aggrega pull --regenerate --release <path>` to update. Details: %v", err)
 		s.diagnostics[lockfilePath] = []Diagnostic{
 			{Line: 1, Column: 1, Severity: "warning", Message: message},
 		}
-		return
+		return lf
 	}
 	// No drift — clear any prior drift diagnostic.
 	delete(s.diagnostics, lockfilePath)
+	return lf
 }

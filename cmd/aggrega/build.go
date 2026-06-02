@@ -103,6 +103,16 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		return err
 	}
 
+	// Load the verified (or auto-pulled) lockfile to thread into the render
+	// pipeline: build-time source-artifact resolution resolves each remote
+	// Recipe / FeatureRecipe source to its lockfile-pinned, content-addressed
+	// cache entry. The lockfile is guaranteed present here — verify confirmed
+	// it, auto-pull just wrote it.
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		return fmt.Errorf("load lockfile: %w", err)
+	}
+
 	// Resolve extends inheritance for every Component and Feature so downstream
 	// guards/renderer see the fully-merged entity (inherited labels, secretNames,
 	// usesSchema, composed schema).
@@ -178,6 +188,8 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     relAggPath,
 			WorkspaceConfig:   wsCfg,
+			Lockfile:          lf,
+			WorkspaceRoot:     wsRoot,
 		},
 		cat.CatalogLookup(),
 		cat.RecipeLookup(),

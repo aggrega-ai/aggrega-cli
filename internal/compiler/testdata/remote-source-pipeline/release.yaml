@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: demo-app
+  manifest: demo-manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        app: {}

@@ -12,9 +12,11 @@
 //
 // The package is the build-time complement to pkg/sourceresolver
 // (the lock-time pull pipeline). The orchestrator at render time
-// calls LookupAndExtract before dispatching to the engine; engines
-// consume the returned path through their existing loader.Load
-// surfaces.
+// calls LookupAndExtract before dispatching to the engine. The
+// returned path is the raw extracted-archive root; the consumer
+// locates its own artifact within it — a Helm chart, for instance,
+// untars under a single <chartname>/ directory, so the helm engine
+// descends to the directory holding Chart.yaml before loader.Load.
 //
 // The package re-exports the four fetch-error sentinels from pkg/oci
 // so consumers can errors.Is against either name without importing
@@ -49,7 +51,11 @@ var (
 // pinned_version}, verifies the full SHA-256 of the cached `.tgz`
 // against the entry's digest AND the cache slot's metadata.yaml
 // digest, wipes and regenerates the `extracted/` subdirectory from
-// the archive, and returns the absolute path of `extracted/`.
+// the archive, and returns the absolute path of `extracted/`. The
+// archive is extracted verbatim, so the returned path is the archive
+// root — not necessarily a directly-loadable artifact root: a Helm
+// chart untars under a <chartname>/ subdirectory, and the consumer
+// resolves its artifact within.
 //
 // Returns ErrFetchNotFound when no lockfile entry matches the
 // {kind, url, pinned_version} triple. Returns ErrFetchIntegrity on

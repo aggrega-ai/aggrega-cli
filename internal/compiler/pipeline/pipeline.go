@@ -26,6 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -43,6 +44,16 @@ type Inputs struct {
 	AggregateRawBytes []byte
 	AggregatePath     string
 	WorkspaceConfig   workspaceconfig.Config
+
+	// Lockfile and WorkspaceRoot, together with WorkspaceConfig's resolved
+	// cache directory, enable build-time source-artifact resolution: when
+	// Lockfile is non-nil and WorkspaceRoot is set, RunPipeline populates the
+	// renderer's source-resolution inputs so a remote Recipe (or FeatureRecipe)
+	// source resolves to its lockfile-pinned, content-addressed cache entry and
+	// renders. When Lockfile is nil or WorkspaceRoot is empty, the renderer
+	// forwards each source verbatim — the sourceless and local-path paths.
+	Lockfile      *lockfile.Lockfile
+	WorkspaceRoot string
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -385,6 +396,15 @@ func RunPipeline(
 		ResolveResult: resolveResult,
 		CatalogLookup: catalogLookup,
 		Trace:         traceWriter,
+	}
+	// Build-time source-artifact resolution: when the caller supplies a
+	// lockfile and workspace root, the orchestrator resolves each remote
+	// source to its pinned cache entry. Left unset, the renderer forwards
+	// sources verbatim (sourceless / local-path paths).
+	if inputs.Lockfile != nil && inputs.WorkspaceRoot != "" {
+		rendererInput.Lockfile = inputs.Lockfile
+		rendererInput.WorkspaceRoot = inputs.WorkspaceRoot
+		rendererInput.CacheDir = inputs.WorkspaceConfig.Workspace.ResolvedCacheDir()
 	}
 
 	renderResult, err := renderer.RenderAll(ctx, rendererInput, recipeLookup, engineFactory)

@@ -127,6 +127,38 @@ func TestLookupAndExtractHappyPath(t *testing.T) {
 	}
 }
 
+// TestLookupAndExtractNestedChartLayout pins extraction of a REAL Helm OCI chart
+// archive, whose contents live under a single top-level <chartname>/ directory
+// (unlike the flat synthetic fixture above). Extraction is verbatim: the chart
+// lands at extracted/<chartname>/Chart.yaml, NOT extracted/Chart.yaml. The
+// consumer (the helm engine's resolveChartRoot) descends into <chartname>/;
+// LookupAndExtract itself returns the raw extracted-archive root.
+func TestLookupAndExtractNestedChartLayout(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZ(t, map[string]string{
+		"mariadb/Chart.yaml":         "apiVersion: v2\nname: mariadb\nversion: 25.0.8\n",
+		"mariadb/templates/dep.yaml": "kind: Deployment\n",
+	})
+	digest := digestOf(blob)
+	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "25.0.8", blob, digest)
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "25.0.8", digest)
+
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "25.0.8", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("LookupAndExtract: %v", err)
+	}
+	// The chart is nested under mariadb/ — the real OCI layout.
+	if _, err := os.Stat(filepath.Join(extracted, "mariadb", "Chart.yaml")); err != nil {
+		t.Errorf("Chart.yaml missing under extracted/mariadb/: %v", err)
+	}
+	// And NOT flattened to the extracted root — confirming the consumer must
+	// descend (the blind spot the flat fixture above hid).
+	if _, err := os.Stat(filepath.Join(extracted, "Chart.yaml")); err == nil {
+		t.Error("Chart.yaml unexpectedly at the extracted root; the nested layout should be preserved verbatim")
+	}
+}
+
 func TestLookupAndExtractMissingLockfileEntryWrapsNotFound(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
