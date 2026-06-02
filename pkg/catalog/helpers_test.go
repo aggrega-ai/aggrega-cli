@@ -135,21 +135,21 @@ func TestFeatureRecipeByURI_AllBranches(t *testing.T) {
 // section, hit, miss.
 func TestFlatFeatureURI_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok := flatFeatureURI(nil, "t"); ok {
+	if _, ok, _ := flatFeatureURI(nil, "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
-	if _, ok := flatFeatureURI(&types.Manifest{}, "t"); ok {
+	if _, ok, _ := flatFeatureURI(&types.Manifest{}, "t"); ok {
 		t.Errorf("no features section should miss")
 	}
 	m := &types.Manifest{}
 	mt := &types.MappingTier{}
 	mt.Type.Set("feat-type", "feat-uri")
 	m.Spec.Mappings.Features = mt
-	uri, ok := flatFeatureURI(m, "feat-type")
+	uri, ok, _ := flatFeatureURI(m, "feat-type")
 	if !ok || uri != "feat-uri" {
 		t.Errorf("hit: ok=%v uri=%q", ok, uri)
 	}
-	if _, ok := flatFeatureURI(m, "absent"); ok {
+	if _, ok, _ := flatFeatureURI(m, "absent"); ok {
 		t.Errorf("missing key should miss")
 	}
 }
@@ -158,17 +158,17 @@ func TestFlatFeatureURI_AllBranches(t *testing.T) {
 // provider-without-features, miss across all providers, hit.
 func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok := legacyFeatureURI(nil, "t"); ok {
+	if _, ok, _ := legacyFeatureURI(nil, "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
 	// No providers.
-	if _, ok := legacyFeatureURI(&types.Manifest{}, "t"); ok {
+	if _, ok, _ := legacyFeatureURI(&types.Manifest{}, "t"); ok {
 		t.Errorf("no providers should miss")
 	}
 	// Provider without Features section.
 	m := &types.Manifest{}
 	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{})
-	if _, ok := legacyFeatureURI(m, "t"); ok {
+	if _, ok, _ := legacyFeatureURI(m, "t"); ok {
 		t.Errorf("provider without features should miss")
 	}
 	// Provider with Features but no matching key.
@@ -176,7 +176,7 @@ func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 	mt.Type.Set("other-feat", "other-uri")
 	m2 := &types.Manifest{}
 	m2.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: mt})
-	if _, ok := legacyFeatureURI(m2, "absent"); ok {
+	if _, ok, _ := legacyFeatureURI(m2, "absent"); ok {
 		t.Errorf("absent key should miss")
 	}
 	// Hit.
@@ -184,7 +184,7 @@ func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 	mt2.Type.Set("feat-type", "feat-uri")
 	m3 := &types.Manifest{}
 	m3.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: mt2})
-	uri, ok := legacyFeatureURI(m3, "feat-type")
+	uri, ok, _ := legacyFeatureURI(m3, "feat-type")
 	if !ok || uri != "feat-uri" {
 		t.Errorf("hit: ok=%v uri=%q", ok, uri)
 	}
@@ -195,13 +195,13 @@ func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 // exercise.
 func TestLegacyComponentURI_NilAndNoComponents(t *testing.T) {
 	t.Parallel()
-	if _, ok := legacyComponentURI(nil, "t"); ok {
+	if _, ok, _ := legacyComponentURI(nil, "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
 	// Provider without Components section.
 	m := &types.Manifest{}
 	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{})
-	if _, ok := legacyComponentURI(m, "t"); ok {
+	if _, ok, _ := legacyComponentURI(m, "t"); ok {
 		t.Errorf("provider without components should miss")
 	}
 }
@@ -292,9 +292,9 @@ func TestVerifyManifestImplementsConsistency_EveryArm(t *testing.T) {
 
 	manifest := &types.Manifest{}
 	mt := &types.MappingTier{}
-	mt.Type.Set("core/missing", "myco/never")          // missing recipe
-	mt.Type.Set("core/mismatch", "myco/mismatch")       // mismatched recipe
-	mt.Type.Set("core/match", "myco/matching")          // matching recipe
+	mt.Type.Set("core/missing", "myco/never")     // missing recipe
+	mt.Type.Set("core/mismatch", "myco/mismatch") // mismatched recipe
+	mt.Type.Set("core/match", "myco/matching")    // matching recipe
 	manifest.Spec.Mappings.Components = mt
 
 	mtF := &types.MappingTier{}

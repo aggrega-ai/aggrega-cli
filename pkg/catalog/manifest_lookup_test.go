@@ -107,7 +107,10 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			uri, ok := ComponentRecipeURI(manifest, tc.compType)
+			uri, ok, err := ComponentRecipeURI(manifest, tc.compType)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
 			}
@@ -148,7 +151,10 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			uri, ok := FeatureRecipeURI(manifest, tc.featType)
+			uri, ok, err := FeatureRecipeURI(manifest, tc.featType)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
 			}
@@ -286,5 +292,144 @@ func TestVerifyManifestImplementsConsistency_NilManifest(t *testing.T) {
 	c := fakeCatalog()
 	if errs := c.VerifyManifestImplementsConsistency(nil, ""); errs != nil {
 		t.Errorf("expected nil on nil manifest; got %v", errs)
+	}
+}
+
+// TestComponentRecipeURI_VersionTolerant pins the source-descent join's version
+// tolerance: an authored component type resolves to its Manifest mapping recipe
+// even when the authored type's version differs from (or omits) the mapping
+// key's version — the idiomatic shape where the Aggregate authors a bare type
+// and the Manifest pins a version. Both mismatch directions resolve, and the
+// exact-version / unversioned-key fast paths are unchanged. The legacy
+// per-provider shape is tolerant on the same terms.
+func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
+	t.Parallel()
+	flat := &types.MappingTier{}
+	flat.Type.Set("core/database/mariadb:1.0.0", "mariadb-bitnami:1.0.0") // versioned key
+	flat.Type.Set("core/cache/redis", "redis-helm:1.0.0")                 // unversioned key
+	flat.Type.Set("core/database/postgres:2.0.0", "postgres-helm:2.0.0")  // versioned key
+	flat.Type.Set("core/queue/nats", "nats-helm:1.0.0")                   // unversioned key
+	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
+	legacy.Components.Type.Set("core/legacy/thing:1.0.0", "thing-legacy:1.0.0")
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Components: flat},
+		},
+	}
+	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
+
+	cases := []struct {
+		name, compType, wantURI string
+		wantOK                  bool
+	}{
+		{"unversioned type, versioned key (the unblock)", "core/database/mariadb", "mariadb-bitnami:1.0.0", true},
+		{"versioned type, unversioned key (reverse)", "core/cache/redis:3.1.0", "redis-helm:1.0.0", true},
+		{"versioned type, versioned key (exact, unchanged)", "core/database/postgres:2.0.0", "postgres-helm:2.0.0", true},
+		{"unversioned type, unversioned key (exact, unchanged)", "core/queue/nats", "nats-helm:1.0.0", true},
+		{"version mismatch, base matches", "core/database/postgres:9.9.9", "postgres-helm:2.0.0", true},
+		{"legacy version-tolerant", "core/legacy/thing", "thing-legacy:1.0.0", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, ok, err := ComponentRecipeURI(manifest, tc.compType)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
+			}
+			if uri != tc.wantURI {
+				t.Errorf("uri = %q; want %q", uri, tc.wantURI)
+			}
+		})
+	}
+}
+
+// TestFeatureRecipeURI_VersionTolerant is the FeatureRecipe analogue of
+// TestComponentRecipeURI_VersionTolerant — the feature source-descent join
+// matches version-tolerantly on both mismatch directions.
+func TestFeatureRecipeURI_VersionTolerant(t *testing.T) {
+	t.Parallel()
+	flat := &types.MappingTier{}
+	flat.Type.Set("core/security/tls:1.0.0", "tls-cert:1.0.0")  // versioned key
+	flat.Type.Set("core/observability/otel", "otel-helm:1.0.0") // unversioned key
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Features: flat},
+		},
+	}
+
+	cases := []struct {
+		name, featType, wantURI string
+		wantOK                  bool
+	}{
+		{"unversioned type, versioned key", "core/security/tls", "tls-cert:1.0.0", true},
+		{"versioned type, unversioned key", "core/observability/otel:4.0.0", "otel-helm:1.0.0", true},
+		{"versioned type, versioned key (exact)", "core/security/tls:1.0.0", "tls-cert:1.0.0", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, ok, err := FeatureRecipeURI(manifest, tc.featType)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
+			}
+			if uri != tc.wantURI {
+				t.Errorf("uri = %q; want %q", uri, tc.wantURI)
+			}
+		})
+	}
+}
+
+// TestComponentRecipeURI_AmbiguousVersionKeys pins the Loud Guardrail: two
+// version-distinct Manifest keys sharing one base make an UNVERSIONED authored
+// type ambiguous, so the lookup halts with ErrAmbiguousTypeMapping rather than
+// silently resolving the first. An exact-version authored type still resolves —
+// the exact key match wins before the base-match ambiguity check.
+func TestComponentRecipeURI_AmbiguousVersionKeys(t *testing.T) {
+	t.Parallel()
+	flat := &types.MappingTier{}
+	flat.Type.Set("core/database/mariadb:1.0.0", "mariadb-v1:1.0.0")
+	flat.Type.Set("core/database/mariadb:2.0.0", "mariadb-v2:2.0.0")
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Components: flat},
+		},
+	}
+
+	if _, ok, err := ComponentRecipeURI(manifest, "core/database/mariadb"); err == nil {
+		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
+	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
+		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
+	}
+
+	uri, ok, err := ComponentRecipeURI(manifest, "core/database/mariadb:2.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error on exact-version match: %v", err)
+	}
+	if !ok || uri != "mariadb-v2:2.0.0" {
+		t.Errorf("exact-version match: uri=%q ok=%v; want %q true", uri, ok, "mariadb-v2:2.0.0")
+	}
+}
+
+// TestFeatureRecipeURI_AmbiguousVersionKeys is the FeatureRecipe analogue:
+// version-distinct feature-mapping keys sharing a base halt loudly.
+func TestFeatureRecipeURI_AmbiguousVersionKeys(t *testing.T) {
+	t.Parallel()
+	flat := &types.MappingTier{}
+	flat.Type.Set("core/security/tls:1.0.0", "tls-v1:1.0.0")
+	flat.Type.Set("core/security/tls:2.0.0", "tls-v2:2.0.0")
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Features: flat},
+		},
+	}
+
+	if _, ok, err := FeatureRecipeURI(manifest, "core/security/tls"); err == nil {
+		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
+	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
+		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
 	}
 }

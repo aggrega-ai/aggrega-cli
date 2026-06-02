@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -648,5 +649,70 @@ func TestDescendRejectsProvidesInsideTemplateInvocation(t *testing.T) {
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
 		t.Errorf(".provides in template-invocation pipeline should halt; got %v", err)
+	}
+}
+
+// TestVersionTolerantMappingJoinsSourceDescent drives the full source-descent
+// join across the package boundary: a component whose authored type is
+// UNVERSIONED (`core/database/mariadb`) against a VERSIONED Manifest mapping key
+// (`core/database/mariadb:1.0.0`) — the idiomatic shape where the Aggregate
+// authors a bare type and the Manifest pins a version. ComponentRecipeURI
+// resolves the type version-tolerantly to the recipe URI; pull keys
+// perEntityInfra by that URI; the URI joins the closure entity, so the recipe's
+// remote source descends and pins.
+//
+// Network-free: the recipe loader and source resolver are fakes. The live OCI
+// fetch is exercised manually against the example workspace.
+func TestVersionTolerantMappingJoinsSourceDescent(t *testing.T) {
+	t.Parallel()
+	const authoredType = "core/database/mariadb" // unversioned, as the Aggregate authors it
+	const recipeURI = "hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0"
+
+	flat := &types.MappingTier{}
+	flat.Type.Set("core/database/mariadb:1.0.0", recipeURI) // versioned key — the idiomatic shape
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: flat}},
+	}
+
+	// Non-vacuous canary: the pre-fix EXACT lookup misses on this shape — so
+	// without the version-tolerant resolve the recipe never enters
+	// perEntityInfra and the source never descends. The tolerant
+	// ComponentRecipeURI below is what makes the join succeed.
+	if _, exact := manifest.Spec.Mappings.Components.Type.Get(authoredType); exact {
+		t.Fatal("precondition: an exact lookup of the unversioned authored type must MISS for this canary to be meaningful")
+	}
+
+	recURI, ok, err := catalog.ComponentRecipeURI(manifest, authoredType)
+	if err != nil {
+		t.Fatalf("ComponentRecipeURI: %v", err)
+	}
+	if !ok || recURI != recipeURI {
+		t.Fatalf("ComponentRecipeURI(%q) = (%q, %v); want (%q, true)", authoredType, recURI, ok, recipeURI)
+	}
+
+	loader := &fakeRecipeLoader{
+		recipes: map[string]*types.Recipe{
+			recipeURI: makeRecipe(recipeURI, "oci://hub.aggrega.ai/charts/mariadb"),
+		},
+	}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: recipeURI}}}
+	// pull keys perEntityInfra by the resolved recipe URI (recURI == the
+	// closure entity URI), so the descent finds a using instance.
+	perEntity := map[string][]closure.ComponentSourceInfra{
+		recURI: {{Component: "db", Infra: map[string]any{}}},
+	}
+
+	got, err := closure.DescendRecipeSources(perEntity, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("DescendRecipeSources: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("artifacts: %d; want 1 (remote source descends via the version-tolerant join)", len(got))
+	}
+	if got[0].Kind != "helm-oci-chart" {
+		t.Errorf("Kind = %q; want helm-oci-chart (inferred from oci:// scheme)", got[0].Kind)
+	}
+	if len(got[0].ReferencedBy) != 1 || got[0].ReferencedBy[0].Component != "db" {
+		t.Errorf("ReferencedBy = %v; want one reference from db", got[0].ReferencedBy)
 	}
 }

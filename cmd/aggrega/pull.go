@@ -104,15 +104,18 @@ type pullConfig struct {
 // from, so the lock-time pin and the build-time resolution agree by
 // construction. scopeOf returning found=false (FR not resolvable) falls through
 // to the per-component pin, preserving prior behavior.
-func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(featType string) (string, bool)) map[string][]closure.ComponentSourceInfra {
+func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(featType string) (string, bool)) (map[string][]closure.ComponentSourceInfra, error) {
 	out := map[string][]closure.ComponentSourceInfra{}
-	add := func(nodeID, scope, instance, featType string, entryInfra, entryValues types.OrderedMap[any]) {
+	add := func(nodeID, scope, instance, featType string, entryInfra, entryValues types.OrderedMap[any]) error {
 		if featType == "" {
-			return
+			return nil
 		}
-		frURI, found := catalog.FeatureRecipeURI(manifest, featType)
+		frURI, found, err := catalog.FeatureRecipeURI(manifest, featType)
+		if err != nil {
+			return err
+		}
 		if !found {
-			return
+			return nil
 		}
 		var infra map[string]any
 		if entryInfra.Len() > 0 {
@@ -124,18 +127,23 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 		}
 		out[frURI] = append(out[frURI],
 			closure.ComponentSourceInfra{Component: nodeID + "." + scope + "." + instance, Infra: infra, Values: values})
+		return nil
 	}
 	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
 		for instName, entry := range feats.All() {
 			if scope, ok := scopeOf(entry.Type); ok && scope == "boundary" {
 				continue // pinned once from the boundary projection below
 			}
-			add(nodeID, "features", instName, entry.Type, entry.Infra, entry.Values)
+			if err := add(nodeID, "features", instName, entry.Type, entry.Infra, entry.Values); err != nil {
+				return nil, err
+			}
 		}
 	}
 	for nodeID, secs := range graph.Spec.Secrets.All() {
 		for instName, entry := range secs.All() {
-			add(nodeID, "secrets", instName, entry.Type, entry.Infra, entry.Values)
+			if err := add(nodeID, "secrets", instName, entry.Type, entry.Infra, entry.Values); err != nil {
+				return nil, err
+			}
 		}
 	}
 	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
@@ -144,10 +152,12 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 				continue // component-scope (or unresolvable): pinned per-component above
 			}
 			// Boundary-scope features carry no values (Release pillar-split).
-			add(boundaryPath, "features", instName, bf.Type, bf.Infra, types.OrderedMap[any]{})
+			if err := add(boundaryPath, "features", instName, bf.Type, bf.Infra, types.OrderedMap[any]{}); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // source descent failure (closure.ErrSourceTemplateAtLockTime), and
@@ -302,7 +312,12 @@ func pullRun(cfg pullConfig) error {
 		return fmt.Errorf("ir: %w", err)
 	}
 	executionScopeOf := func(featType string) (string, bool) {
-		frURI, ok := catalog.FeatureRecipeURI(manifest, featType)
+		// Scope classification only, not a source-pin join: a miss OR a
+		// version-ambiguous mapping falls through to the per-component pin,
+		// preserving prior behavior. The loud ambiguity halt belongs to the
+		// source-pin joins below (irEntityInfra for features, ComponentRecipeURI
+		// for components), where a wrong pick would mis-pin a fetched source.
+		frURI, ok, _ := catalog.FeatureRecipeURI(manifest, featType)
 		if !ok {
 			return "", false
 		}
@@ -312,7 +327,11 @@ func pullRun(cfg pullConfig) error {
 		}
 		return fr.Spec.ExecutionScope, true
 	}
-	for frURI, comps := range irEntityInfra(graph, manifest, executionScopeOf) {
+	featInfra, err := irEntityInfra(graph, manifest, executionScopeOf)
+	if err != nil {
+		return fmt.Errorf("feature source-descent mapping: %w", err)
+	}
+	for frURI, comps := range featInfra {
 		perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
 	}
 
@@ -323,7 +342,10 @@ func pullRun(cfg pullConfig) error {
 	// against, so a value/infra-driven source identity pins identically at lock
 	// and build. Runs after BuildIR so the materialized pillars exist.
 	for _, node := range topo.Nodes.All() {
-		recURI, found := catalog.ComponentRecipeURI(manifest, node.ComponentType)
+		recURI, found, err := catalog.ComponentRecipeURI(manifest, node.ComponentType)
+		if err != nil {
+			return fmt.Errorf("component source-descent mapping for %q: %w", node.ComponentType, err)
+		}
 		if !found {
 			continue
 		}

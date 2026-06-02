@@ -22,6 +22,47 @@ import (
 // workspace load.
 var ErrManifestImplementsMismatch = errors.New("manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key")
 
+// ErrAmbiguousTypeMapping fires when a component/feature type resolves to more
+// than one version-distinct Manifest mapping key under version-tolerant
+// matching — the lookup cannot pick one without guessing, so it halts loudly
+// rather than silently resolving the first.
+var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous")
+
+// versionTolerantTypeGet resolves a component / feature TYPE to its mapped recipe
+// URI in typeMap, tolerant of a version mismatch between the authored type and
+// the mapping key. It tries an exact key match first (so an exact-version key
+// wins), then falls back to a BASE match: the authored type and a mapping key
+// resolve together when their stripVersion bases are equal.
+//
+// The tolerance is base-equality, NOT semver-range satisfaction — the
+// type-to-recipe mapping only needs to find the recipe; the concrete version is
+// pinned downstream by the closure's minimal-version selection. A caret key
+// (`core/x:^1.0.0`) base-matches like any other; a single base match resolves; a
+// base shared by multiple version-distinct keys is ambiguous and returns
+// ErrAmbiguousTypeMapping (a Loud Guardrail), never a silent first-wins.
+func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string) (string, bool, error) {
+	if uri, ok := typeMap.Get(lookupType); ok {
+		return uri, true, nil
+	}
+	base := stripVersion(lookupType)
+	var matchURI string
+	var matchedKeys []string
+	for key, uri := range typeMap.All() {
+		if stripVersion(key) == base {
+			matchURI = uri
+			matchedKeys = append(matchedKeys, key)
+		}
+	}
+	switch len(matchedKeys) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return matchURI, true, nil
+	default:
+		return "", false, fmt.Errorf("%w: type %q matches version-distinct keys %v — pin the authored type's version or remove the duplicate mapping keys", ErrAmbiguousTypeMapping, lookupType, matchedKeys)
+	}
+}
+
 // RecipeLookupWithManifest returns a renderer.RecipeLookup whose Recipe
 // and FeatureRecipe closures dispatch through a three-layer cascade
 // when a Manifest is supplied:
@@ -48,8 +89,12 @@ func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.Re
 
 func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string) (*types.Recipe, bool) {
 	return func(componentType string) (*types.Recipe, bool) {
-		// Layer 1: flat-shape mapping.
-		if uri, ok := flatComponentURI(manifest, componentType); ok {
+		// Layer 1: flat-shape mapping. A version-ambiguous mapping error is
+		// swallowed to a miss here — render is resilient via the Layer-3
+		// implements fallback below; the loud ErrAmbiguousTypeMapping is the
+		// pull/source-descent contract (ComponentRecipeURI), where a wrong pick
+		// mis-pins a source.
+		if uri, ok, err := flatComponentURI(manifest, componentType); err == nil && ok {
 			if r, found := c.RecipeByURI(uri); found {
 				return &r, true
 			}
@@ -59,7 +104,7 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 			// at the consistency-check step.
 		}
 		// Layer 2: legacy v2 per-provider mapping.
-		if uri, ok := legacyComponentURI(manifest, componentType); ok {
+		if uri, ok, err := legacyComponentURI(manifest, componentType); err == nil && ok {
 			if r, found := c.RecipeByURI(uri); found {
 				return &r, true
 			}
@@ -75,12 +120,12 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 
 func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifest) func(string) (*types.FeatureRecipe, bool) {
 	return func(featureType string) (*types.FeatureRecipe, bool) {
-		if uri, ok := flatFeatureURI(manifest, featureType); ok {
+		if uri, ok, err := flatFeatureURI(manifest, featureType); err == nil && ok {
 			if fr, found := c.FeatureRecipeByURI(uri); found {
 				return &fr, true
 			}
 		}
-		if uri, ok := legacyFeatureURI(manifest, featureType); ok {
+		if uri, ok, err := legacyFeatureURI(manifest, featureType); err == nil && ok {
 			if fr, found := c.FeatureRecipeByURI(uri); found {
 				return &fr, true
 			}
@@ -173,11 +218,11 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 
 // flatComponentURI returns the Recipe URI mapped to the given
 // componentType in the Manifest's flat-shape mapping, when populated.
-func flatComponentURI(manifest *types.Manifest, componentType string) (string, bool) {
+func flatComponentURI(manifest *types.Manifest, componentType string) (string, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Components == nil {
-		return "", false
+		return "", false, nil
 	}
-	return manifest.Spec.Mappings.Components.Type.Get(componentType)
+	return versionTolerantTypeGet(manifest.Spec.Mappings.Components.Type, componentType)
 }
 
 // legacyComponentURI walks the legacy v2 per-provider mappings looking
@@ -187,19 +232,23 @@ func flatComponentURI(manifest *types.Manifest, componentType string) (string, b
 // transitional overlay, we accept the first match as a sufficient
 // fallback (the legacy fixtures with populated mappings all carry
 // the single-provider shape).
-func legacyComponentURI(manifest *types.Manifest, componentType string) (string, bool) {
+func legacyComponentURI(manifest *types.Manifest, componentType string) (string, bool, error) {
 	if manifest == nil {
-		return "", false
+		return "", false, nil
 	}
 	for _, pm := range manifest.Spec.Mappings.Legacy.All() {
 		if pm.Components == nil {
 			continue
 		}
-		if uri, ok := pm.Components.Type.Get(componentType); ok {
-			return uri, true
+		uri, ok, err := versionTolerantTypeGet(pm.Components.Type, componentType)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return uri, true, nil
 		}
 	}
-	return "", false
+	return "", false, nil
 }
 
 // ComponentRecipeURI returns the Recipe URI the Manifest maps componentType
@@ -213,9 +262,11 @@ func legacyComponentURI(manifest *types.Manifest, componentType string) (string,
 // component carries no source-descent entity — it would be selected for render
 // by spec.implements, which is a render-selection path, not a
 // source-acquisition path — so it correctly contributes no source artifact.
-func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string, bool) {
-	if uri, ok := flatComponentURI(manifest, componentType); ok {
-		return uri, true
+func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string, bool, error) {
+	if uri, ok, err := flatComponentURI(manifest, componentType); err != nil {
+		return "", false, err
+	} else if ok {
+		return uri, true, nil
 	}
 	return legacyComponentURI(manifest, componentType)
 }
@@ -228,35 +279,41 @@ func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string,
 // data by this value join cleanly against the closure's entities.
 //
 // Returns ("", false) when no Manifest mapping names featureType.
-func FeatureRecipeURI(manifest *types.Manifest, featureType string) (string, bool) {
-	if uri, ok := flatFeatureURI(manifest, featureType); ok {
-		return uri, true
+func FeatureRecipeURI(manifest *types.Manifest, featureType string) (string, bool, error) {
+	if uri, ok, err := flatFeatureURI(manifest, featureType); err != nil {
+		return "", false, err
+	} else if ok {
+		return uri, true, nil
 	}
 	return legacyFeatureURI(manifest, featureType)
 }
 
 // flatFeatureURI is the Feature analogue of flatComponentURI.
-func flatFeatureURI(manifest *types.Manifest, featureType string) (string, bool) {
+func flatFeatureURI(manifest *types.Manifest, featureType string) (string, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Features == nil {
-		return "", false
+		return "", false, nil
 	}
-	return manifest.Spec.Mappings.Features.Type.Get(featureType)
+	return versionTolerantTypeGet(manifest.Spec.Mappings.Features.Type, featureType)
 }
 
 // legacyFeatureURI is the Feature analogue of legacyComponentURI.
-func legacyFeatureURI(manifest *types.Manifest, featureType string) (string, bool) {
+func legacyFeatureURI(manifest *types.Manifest, featureType string) (string, bool, error) {
 	if manifest == nil {
-		return "", false
+		return "", false, nil
 	}
 	for _, pm := range manifest.Spec.Mappings.Legacy.All() {
 		if pm.Features == nil {
 			continue
 		}
-		if uri, ok := pm.Features.Type.Get(featureType); ok {
-			return uri, true
+		uri, ok, err := versionTolerantTypeGet(pm.Features.Type, featureType)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return uri, true, nil
 		}
 	}
-	return "", false
+	return "", false, nil
 }
 
 // stripVersion removes the :version segment from a URI, returning the

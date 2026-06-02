@@ -54,7 +54,10 @@ func TestIrEntityInfra_DerivesUsingSetFromIRRenderSet(t *testing.T) {
 	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Features: flatF}}}
 
 	componentScope := func(string) (string, bool) { return "component", true }
-	out := irEntityInfra(graph, manifest, componentScope)
+	out, err := irEntityInfra(graph, manifest, componentScope)
+	if err != nil {
+		t.Fatalf("irEntityInfra: %v", err)
+	}
 
 	tls := out["tls-helm:1.0.0"]
 	if len(tls) != 2 {
@@ -132,7 +135,10 @@ func TestIrEntityInfra_BoundaryScopePinnedOnceFromProjection(t *testing.T) {
 		}
 		return "component", true
 	}
-	out := irEntityInfra(graph, manifest, scopeOf)
+	out, err := irEntityInfra(graph, manifest, scopeOf)
+	if err != nil {
+		t.Fatalf("irEntityInfra: %v", err)
+	}
 
 	// bridge pinned ONCE, from the projection's boundary infra — not twice from
 	// the folded per-component FVM entries.
