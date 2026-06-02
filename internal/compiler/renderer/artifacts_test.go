@@ -434,7 +434,7 @@ func TestEvaluateArtifacts_HelmChartProviderRejectsInline(t *testing.T) {
 	}
 }
 
-// ----- Q5: authored key order preserved through provenance injection -----
+// ----- authored key order preserved through provenance injection -----
 
 func TestEvaluateArtifacts_PreservesAuthoredKeyOrder(t *testing.T) {
 	t.Parallel()
@@ -477,7 +477,7 @@ spec:
 	}
 }
 
-// ----- Q3: template parse errors surface through artifacts evaluator -----
+// ----- template parse errors surface through artifacts evaluator -----
 
 func TestEvaluateArtifacts_TemplateParseErrorSurfaces(t *testing.T) {
 	t.Parallel()
@@ -620,15 +620,126 @@ data:
 	}
 }
 
-// ----- Test 13: helm-chart file containing downstream template syntax skips provenance and warns -----
+// ----- Test 12b: helm-chart quoted-scalar artifact round-trips and gets provenance -----
 //
-// Post-unification both skip-paths (pre-emptive `{{` substring detection
-// and post-parse-failure fallback) emit the same warning message. This
-// test exercises the substring-detection path — the fixture's
-// `{{- include "common.labels" . | nindent 4 }}` line trips the `{{`
-// detector before yaml.Unmarshal runs. The unified warning shape means
-// a single test verifies the user-facing behaviour regardless of which
-// path actually fired.
+// A dual-delimiter artifact whose only Helm `{{ }}` sits at a QUOTED
+// scalar position parses as YAML before Helm rendering, so the compiler
+// injects provenance and the Helm reference survives (re-quoted) for the
+// downstream render. Before the single-gate change this file was skipped
+// by the pre-emptive `{{` substring check — so the provenance assertion
+// is non-vacuous.
+func TestEvaluateArtifacts_HelmChartQuotedScalarInjectsProvenance(t *testing.T) {
+	t.Parallel()
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	state.Recipe.Spec.Provider = "helm-chart"
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "netpol.yaml")
+	if err := os.WriteFile(p, []byte(`apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: [[ .context.instance_id ]]-netpol
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  podSelector:
+    matchLabels:
+      app: [[ .context.instance_id ]]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
+
+	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
+	if err != nil {
+		t.Fatalf("evaluateArtifacts: %v", err)
+	}
+	emitted := findEmitted(t, files, "templates/netpol.yaml")
+	body := string(emitted.Body)
+
+	// (1) Provenance injected — non-vacuous (this file was skipped pre-fix).
+	labels := readDocLabels(t, emitted.Body)
+	if labels["aggrega.ai/component-id"] != "api" {
+		t.Errorf("expected provenance label aggrega.ai/component-id=api; got labels %v\nbody:\n%s", labels, body)
+	}
+	// (2) Aggrega `[[ ]]` resolved at compile time.
+	if !strings.Contains(body, "name: api-netpol") {
+		t.Errorf("[[ .context.instance_id ]] should resolve to api-netpol; body:\n%s", body)
+	}
+	// (3) Helm `{{ }}` survives for Helm's downstream render (quote style
+	// may shift; the reference itself is preserved verbatim).
+	if !strings.Contains(body, "{{ .Release.Namespace }}") {
+		t.Errorf("Helm {{ .Release.Namespace }} should survive untouched; body:\n%s", body)
+	}
+	// (4) No skip warning for a round-trippable file.
+	for _, w := range state.Warnings {
+		if strings.Contains(w, "netpol.yaml") && strings.Contains(w, "skipped provenance label injection") {
+			t.Errorf("round-trippable artifact should NOT warn; got %q", w)
+		}
+	}
+}
+
+// ----- Test 12c: same Helm token quoted AND unquoted in one file skips (count guard) -----
+//
+// `{{ .Values.shared }}` appears both quoted (round-trips) and unquoted
+// (yaml.v3 re-marshals it as a flow mapping, dropping the token). A pure
+// substring check would see the surviving quoted copy and wrongly accept
+// the file; the token-COUNT check catches the dropped copy and forces a
+// skip, so a partially-corrupted artifact is never injected.
+func TestEvaluateArtifacts_HelmChartMixedQuotingSameTokenSkips(t *testing.T) {
+	t.Parallel()
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	state.Recipe.Spec.Provider = "helm-chart"
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "mixed-quoting.yaml")
+	if err := os.WriteFile(p, []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: [[ .context.instance_id ]]-cm
+data:
+  quoted: "{{ .Values.shared }}"
+  unquoted: {{ .Values.shared }}
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	state.Recipe.Spec.Artifacts.Set(filepath.Base(p), types.ArtifactEntry{Import: p})
+
+	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
+	if err != nil {
+		t.Fatalf("evaluateArtifacts: %v", err)
+	}
+	body := string(findEmitted(t, files, "templates/mixed-quoting.yaml").Body)
+
+	// Skipped: no provenance injected, original bytes emitted unchanged
+	// (both the quoted and unquoted forms survive verbatim).
+	if strings.Contains(body, "aggrega.ai/") {
+		t.Errorf("file with a mangled token copy must NOT be injected; body:\n%s", body)
+	}
+	if !strings.Contains(body, `quoted: "{{ .Values.shared }}"`) || !strings.Contains(body, "unquoted: {{ .Values.shared }}") {
+		t.Errorf("skipped file should emit the original bytes unchanged; body:\n%s", body)
+	}
+	var warned bool
+	for _, w := range state.Warnings {
+		if strings.Contains(w, "mixed-quoting.yaml") && strings.Contains(w, "skipped provenance label injection") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("expected a skip warning naming mixed-quoting.yaml; got %v", state.Warnings)
+	}
+}
+
+// ----- Test 13: helm-chart file with structural Helm syntax skips provenance and warns -----
+//
+// The fixture's `{{- include "common.labels" . | nindent 4 }}` is
+// structural Helm syntax that does not parse as YAML before Helm
+// rendering, so the yaml.Unmarshal round-trip fails and the file is
+// emitted unchanged with a provenance-skip warning. This is the genuine
+// non-round-trippable case the warning reserves `_helpers.tpl` for —
+// distinct from a quoted-scalar `{{ }}`, which round-trips and DOES get
+// provenance (see TestEvaluateArtifacts_HelmChartQuotedScalarInjectsProvenance).
 
 func TestEvaluateArtifacts_HelmChartFileWithHelmSyntaxSkipsProvenanceAndWarns(t *testing.T) {
 	t.Parallel()

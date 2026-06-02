@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -211,18 +212,34 @@ func evaluateArtifacts(
 	return out, nil
 }
 
-// provenanceSkipWarning is the single user-facing message emitted from
-// either of the two skip-paths inside evaluateOneArtifactWithDelims (the
-// pre-emptive `{{` substring detection and the post-parse-failure
-// fallback). One message regardless of trigger: the user-facing
-// remediation is identical (`_helpers.tpl`-side provenance injection),
-// so the warning text reads the same and the operator's mental model
-// stays clean.
+// provenanceSkipWarning is the user-facing message emitted when a
+// helm-chart `$import:`-loaded artifact does not survive Aggrega's
+// pre-render YAML round-trip, so provenance labels cannot be merged
+// before the file is handed to Helm. The guidance points first at
+// quoting scalar Helm substitutions — a quoted `{{ }}` scalar round-
+// trips, so the compiler can then inject provenance — and reserves the
+// chart's `_helpers.tpl` for files using structural Helm template
+// actions, which never parse as YAML pre-render.
 func provenanceSkipWarning(filename string) string {
 	return fmt.Sprintf(
-		"artifact %q ($import-loaded): skipped provenance label injection (file contains downstream template syntax incompatible with Aggrega's pre-render YAML round-trip); use chart _helpers.tpl for provenance on this file",
+		"artifact %q ($import-loaded): skipped provenance label injection — the file does not survive Aggrega's pre-render YAML round-trip. Quote scalar Helm substitutions (e.g. namespace: \"{{ .Release.Namespace }}\") so the compiler can inject provenance; for structural Helm actions ({{- if }}, {{- range }}, {{- include }}), add provenance via the chart's _helpers.tpl instead.",
 		filename,
 	)
+}
+
+// helmTemplateTokenRe matches the maximal `{{ ... }}` spans on a single
+// line — the Helm references that must survive a provenance round-trip
+// verbatim. Structural / multi-line actions never reach the verification;
+// they fail the YAML parse first.
+var helmTemplateTokenRe = regexp.MustCompile(`\{\{.*?\}\}`)
+
+// helmTemplateTokens returns the Helm `{{ ... }}` references in s. The
+// provenance round-trip is accepted only when each is preserved verbatim
+// in the re-marshalled output — yaml.v3 parses an unquoted `{{ x }}` value
+// as a flow mapping and re-marshals it as `{? {x: ”} : ”}`, which this
+// check detects as a dropped token.
+func helmTemplateTokens(s string) []string {
+	return helmTemplateTokenRe.FindAllString(s, -1)
 }
 
 // evaluateOneArtifact is the default-delimiters wrapper used by the
@@ -286,31 +303,33 @@ func evaluateOneArtifactWithDelims(
 
 	usingDefaultDelims := leftDelim == "{{" && rightDelim == "}}"
 
-	// External-handler path (non-default delimiters): the output may carry
-	// downstream template syntax — `{{ ... }}` in unquoted positions —
-	// that yaml.v3 would either fail to parse OR re-shape destructively
-	// during the round-trip (interpreting `{{` as the start of a flow
-	// mapping at scalar leaves; quoted-scalar positions like
-	// `name: {{ .Values.x }}` re-emerge as `name: '{{ .Values.x }}'` with
-	// shifted spacing). Two triggers route to the same outcome — skip
-	// provenance injection, emit the rendered bytes unchanged, append
-	// state.Warnings via the shared warning shape:
+	// External-handler path (non-default delimiters, e.g. helm-chart's
+	// `[[ ]]`): the post-`[[ ]]` output may still carry Helm `{{ ... }}`
+	// destined for Helm's downstream render. Provenance is merged only when
+	// the YAML round-trip below preserves those Helm references intact —
+	// the gate is "does the round-trip preserve every Helm token", NOT
+	// merely "does it parse":
 	//
-	//   1. Pre-emptive: any `{{` present in the rendered output. Catches
-	//      both YAML-parseable-but-round-trip-destructive and
-	//      YAML-unparseable cases without first attempting a round-trip
-	//      that may corrupt the file's bytes.
-	//   2. Post-parse: yaml.Unmarshal fails on a non-default-delimiter
-	//      file even after the `{{` substring check (e.g., structural
-	//      template syntax that uses other characters). Defense-in-depth.
+	//   - Helm `{{ }}` confined to QUOTED scalar positions (or files using
+	//     only `[[ ]]` context) round-trip cleanly — the reference rides
+	//     inside a string scalar (the re-marshal may swap `"{{ x }}"` for
+	//     `'{{ x }}'`, cosmetic and harmless). Provenance is merged.
+	//   - UNQUOTED `{{ x }}` at a value position does NOT fail to parse:
+	//     yaml.v3 reads it as a flow mapping and re-marshals it destructively
+	//     (`{{ x }}` -> `{? {x: ''} : ''}`), corrupting the Helm template. A
+	//     parse success with a mangled re-marshal is therefore treated as a
+	//     skip, not an inject — caught by the token check after the marshal.
+	//   - Structural Helm actions (`{{- if }}`, `{{- range }}`,
+	//     `{{- include }}`) fail the parse outright.
 	//
-	// Default-delimiter (non-external-handler) callers continue to treat
-	// parse failure as a CATALOG_ERROR — Aggrega's pre-templating output
-	// is authoritative for that path.
-	if !usingDefaultDelims && strings.Contains(rendered, "{{") {
-		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
-		return []byte(rendered), nil
-	}
+	// All non-round-trippable cases route to the same outcome: skip
+	// provenance, emit the rendered bytes UNCHANGED, and warn — provenance
+	// for such files belongs in the chart's `_helpers.tpl`.
+	//
+	// Default-delimiter (non-external-handler) callers instead treat a parse
+	// failure as a CATALOG_ERROR — Aggrega's pre-templating output is
+	// authoritative for that path, and its `{{ }}` were Aggrega's own
+	// delimiters, already resolved, so no Helm tokens remain to preserve.
 
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(rendered), &node); err != nil {
@@ -334,6 +353,35 @@ func evaluateOneArtifactWithDelims(
 	body, err := yaml.Marshal(&node)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q yaml marshal", filename))
+	}
+
+	// Round-trip verification (external-handler path only): if the re-marshal
+	// dropped or re-shaped any Helm `{{ ... }}` token the rendered input
+	// carried, the provenance merge corrupted the template. Discard the
+	// merged body, emit the original rendered bytes unchanged, and warn.
+	//
+	// Two checks together: every input token must still be present in the
+	// body, AND the token COUNT must match. The count guards the case the
+	// substring check alone misses — the same token text appearing both
+	// quoted (survives) and unquoted (mangled): the surviving copy keeps the
+	// substring present, but the mangled copy drops the body's token count.
+	// Provenance labels/annotations add no `{{ }}`, so exact equality holds.
+	if !usingDefaultDelims {
+		inTokens := helmTemplateTokens(rendered)
+		bodyStr := string(body)
+		preserved := len(inTokens) == len(helmTemplateTokens(bodyStr))
+		for _, tok := range inTokens {
+			if !preserved {
+				break
+			}
+			if !strings.Contains(bodyStr, tok) {
+				preserved = false
+			}
+		}
+		if !preserved {
+			state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
+			return []byte(rendered), nil
+		}
 	}
 	return body, nil
 }
