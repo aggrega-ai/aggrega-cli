@@ -98,6 +98,62 @@ type catalogLookup struct {
 	workspaceRoot string
 	cacheDir      string
 	externals     map[string][]byte
+
+	// priorPins, when non-nil, turns Tier-2 cache reuse into a verified
+	// reuse: a cached slot whose content digest no longer matches its
+	// prior-lockfile pin is skipped (re-fetched at Tier-3) instead of
+	// trusted. refetchPending flags the URIs that drifted so the Tier-3
+	// arm can record a notice via warn; both are nil unless a
+	// ReuseVerification was supplied (the hermetic build and serve
+	// paths leave them nil and reuse cache slots unconditionally).
+	priorPins      map[string]string
+	refetchPending map[string]string
+	warn           func(notice string)
+}
+
+// ReuseVerification, when supplied to ClosureLookupWithReuse, makes
+// every Tier-2 cache reuse verify the cached bytes against a prior
+// lockfile's pins before trusting them. A reused entity whose content
+// digest no longer matches its pin is re-fetched from the registry
+// (Tier-3), which rewrites the cache slot from authoritative bytes,
+// and a notice is handed to Warn. A nil *ReuseVerification disables the
+// check, leaving behavior identical to ClosureLookupWithExternals.
+//
+// PriorPins maps a canonical entity URI to the content digest the prior
+// lockfile recorded for it. A URI absent from the map is reused without
+// verification — there is nothing to compare against (e.g. an entity
+// that entered closure after the prior lock).
+type ReuseVerification struct {
+	PriorPins map[string]string
+	Warn      func(notice string)
+}
+
+// ClosureLookupWithReuse returns the same closure.Lookup as
+// ClosureLookupWithExternals, additionally verifying Tier-2 cache reuse
+// against a prior lockfile when reuse is non-nil. It is the lookup the
+// re-pull flow uses: reusing cached bytes that have drifted from their
+// pin would silently launder a corrupt or upstream-re-tagged slot into
+// the freshly-written lockfile, so a mismatch re-fetches from the
+// registry (re-establishing the pin from authoritative bytes) and
+// records a notice rather than trusting the slot.
+//
+// A nil reuse argument yields exactly ClosureLookupWithExternals'
+// behavior, so the hermetic build and serve paths (which pass nil) are
+// unaffected.
+func (c *Catalog) ClosureLookupWithReuse(ociPuller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, reuse *ReuseVerification) closure.Lookup {
+	l := &catalogLookup{
+		catalog:       c,
+		ociPuller:     ociPuller,
+		workspaceRoot: workspaceRoot,
+		cacheDir:      cacheDir,
+		externals:     externals,
+	}
+	if reuse != nil {
+		l.priorPins = reuse.PriorPins
+		l.refetchPending = map[string]string{}
+		l.warn = reuse.Warn
+	}
+	return l
 }
 
 func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
@@ -240,11 +296,59 @@ func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requested
 }
 
 func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
-	return tier2ReadBytes(l.workspaceRoot, l.cacheDir, uri)
+	bytes, res, ok := tier2ReadBytes(l.workspaceRoot, l.cacheDir, uri)
+	if !ok {
+		return nil, closure.Resolution{}, false
+	}
+	if l.priorPins == nil {
+		return bytes, res, true
+	}
+	pin, havePin := l.priorPins[uri]
+	if !havePin || contentDigest(bytes) == pin {
+		return bytes, res, true
+	}
+	// Re-pull reuse-check: the cached slot no longer hashes to the pin
+	// the prior lockfile recorded. Skip the hit and flag the URI so the
+	// Tier-3 re-fetch (which rewrites the slot) records a drift notice.
+	// Re-establishing the pin from authoritative registry bytes is the
+	// correct action where the registry is reachable, rather than
+	// laundering the drifted slot into the new lockfile.
+	l.refetchPending[uri] = pin
+	return nil, closure.Resolution{}, false
 }
 
 func (l *catalogLookup) tier3CatalogEntity(uri string) ([]byte, closure.Resolution, error) {
-	return tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+	bytes, res, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+	if err == nil && !res.NotFound {
+		l.recordRefetchNotice(uri, res.Digest)
+	}
+	return bytes, res, err
+}
+
+// recordRefetchNotice emits a re-fetch notice via the configured warn
+// sink when uri was re-pulled because its cached slot drifted from the
+// prior pin (the Tier-2 reuse-check flagged it). A Tier-3 pull reached
+// by a plain cache miss is not flagged and records nothing. The notice
+// distinguishes a benign refresh (the slot was stale but the registry
+// content still hashes to the prior pin) from a moved pin (the registry
+// content changed — the reproducibility baseline shifted).
+func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
+	if l.refetchPending == nil {
+		return
+	}
+	priorPin, flagged := l.refetchPending[uri]
+	if !flagged {
+		return
+	}
+	delete(l.refetchPending, uri)
+	if l.warn == nil {
+		return
+	}
+	if newDigest == priorPin {
+		l.warn(fmt.Sprintf("cache entry for %s was stale; refreshed from the registry (pin unchanged)", uri))
+		return
+	}
+	l.warn(fmt.Sprintf("pin for %s moved %s -> %s; the reproducibility baseline changed", uri, priorPin, newDigest))
 }
 
 // tier2ReadBytes is the package-level Tier-2 cache primitive. Reads
@@ -275,6 +379,35 @@ func tier2ReadBytes(workspaceRoot, cacheDir, uri string) ([]byte, closure.Resolu
 		Digest:          contentDigest(bytes),
 		ResolutionPath:  "tier-2-cache",
 	}, true
+}
+
+// tier2ReadVerified is the verifying Tier-2 cache read. It reads the cached
+// entity bytes for a versioned URI and verifies them against expectedDigest —
+// the lockfile pin — before returning, mirroring the source-artifact cache read
+// in pkg/sourcecache (LookupAndExtract): read the slot, recompute the content
+// digest, compare to the pin. A non-empty expectedDigest is REQUIRED — there is
+// no skip mode. Integrity lives at the cache boundary, not in caller discipline:
+// a reader that has a lockfile pin reads through this and cannot get back
+// unverified bytes.
+//
+// Returns the verified bytes on a digest match. Returns ErrFetchNotFound when
+// the cache slot is absent (the caller issues a pull-first remediation) and
+// ErrFetchIntegrity when the cached content does not match the pin. An empty
+// expectedDigest is a programming error at the call site (a read that cannot
+// supply a pin is a gap to wire, never a silent skip) and is reported as such.
+func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest string) ([]byte, error) {
+	if expectedDigest == "" {
+		return nil, fmt.Errorf("catalog: tier-2 verified read of %s requires a non-empty expected digest", uri)
+	}
+	bytes, _, ok := tier2ReadBytes(workspaceRoot, cacheDir, uri)
+	if !ok {
+		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
+	}
+	if got := contentDigest(bytes); got != expectedDigest {
+		return nil, fmt.Errorf("catalog: cached %s content digest %s does not match lockfile pin %s: %w",
+			uri, got, expectedDigest, oci.ErrFetchIntegrity)
+	}
+	return bytes, nil
 }
 
 // tier3PullCatalogEntity is the package-level Tier-3 OCI pull
@@ -330,9 +463,11 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, uri, tag, result); err != nil {
 		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s %s: %w", kind, uri, err)
 	}
+	digest := contentDigest(result.Bytes)
+	l.recordRefetchNotice(uri, digest)
 	return closure.Resolution{
 		ResolvedVersion: tag,
-		Digest:          contentDigest(result.Bytes),
+		Digest:          digest,
 		ResolutionPath:  "tier-3-pull",
 	}, nil
 }

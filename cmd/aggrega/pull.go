@@ -208,7 +208,24 @@ func pullRun(cfg pullConfig) error {
 	}
 
 	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
-	lookup := cat.ClosureLookupWithExternals(catalog.NewDefaultOCIPuller(wsCfg), workspaceRoot, cacheDir, externals)
+	// Re-pull reuse-check: when a prior lockfile exists, verify reused
+	// cache slots against its pins so a slot that has drifted from its
+	// pin is re-fetched and re-pinned from authoritative registry bytes
+	// rather than laundered into the new lockfile. Skipped under
+	// --verify (read-only — lockfile.Verify covers drift below) and when
+	// no prior lockfile is present (first pull, or --regenerate removed
+	// it above): there both establish pins from scratch, with nothing to
+	// verify against.
+	var reuse *catalog.ReuseVerification
+	if !cfg.Verify {
+		if prior, _, lerr := lockfile.LoadLockfile(lockfilePath); lerr == nil && prior != nil {
+			reuse = &catalog.ReuseVerification{
+				PriorPins: prior.PinsByURI(),
+				Warn:      func(notice string) { fmt.Fprintf(os.Stderr, "  reuse: %s\n", notice) },
+			}
+		}
+	}
+	lookup := cat.ClosureLookupWithReuse(catalog.NewDefaultOCIPuller(wsCfg), workspaceRoot, cacheDir, externals, reuse)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return fmt.Errorf("closure: %w", err)
