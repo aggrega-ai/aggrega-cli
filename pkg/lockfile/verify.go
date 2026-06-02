@@ -28,7 +28,7 @@ import (
 // tiers does not drift; drift surfaces only when the content
 // actually changes (re-published tag, vendored re-tarred content,
 // edited workspace catalog entity).
-var ErrLockfileDrift = errors.New("lockfile: closure drift between lockfile and current catalog state")
+var ErrLockfileDrift = errors.New("lockfile: out of date; it no longer matches the current catalog")
 
 // Verify checks every URI in the freshly-computed closure against
 // the loaded lockfile's pinned (version, digest). Returns nil when
@@ -71,12 +71,12 @@ func collectEntityDrift(have []Entity, want []closure.ResolvedRef) []error {
 			continue
 		}
 		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("entity %q drift: lockfile=(%s,%s) current=(%s,%s)",
+			out = append(out, fmt.Errorf("entity %q changed: lockfile=(%s,%s) current=(%s,%s)",
 				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
 		}
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("entity %q in lockfile but not in current closure", uri))
+		out = append(out, fmt.Errorf("entity %q no longer used by the release", uri))
 	}
 	return out
 }
@@ -96,12 +96,12 @@ func collectSchemaLibraryDrift(have []SchemaLibrary, want []closure.ResolvedLibr
 			continue
 		}
 		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("schema-library %q drift: lockfile=(%s,%s) current=(%s,%s)",
+			out = append(out, fmt.Errorf("schema-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
 				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
 		}
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("schema-library %q in lockfile but not in current closure", uri))
+		out = append(out, fmt.Errorf("schema-library %q no longer used by the release", uri))
 	}
 	return out
 }
@@ -121,12 +121,12 @@ func collectMappingLibraryDrift(have []MappingLibrary, want []closure.ResolvedLi
 			continue
 		}
 		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("mapping-library %q drift: lockfile=(%s,%s) current=(%s,%s)",
+			out = append(out, fmt.Errorf("mapping-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
 				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
 		}
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("mapping-library %q in lockfile but not in current closure", uri))
+		out = append(out, fmt.Errorf("mapping-library %q no longer used by the release", uri))
 	}
 	return out
 }
@@ -146,12 +146,12 @@ func collectWasmPluginDrift(have []WasmPlugin, want []closure.ResolvedRef) []err
 			continue
 		}
 		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("wasm-plugin %q drift: lockfile=(%s,%s) current=(%s,%s)",
+			out = append(out, fmt.Errorf("wasm-plugin %q changed: lockfile=(%s,%s) current=(%s,%s)",
 				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
 		}
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("wasm-plugin %q in lockfile but not in current closure", uri))
+		out = append(out, fmt.Errorf("wasm-plugin %q no longer used by the release", uri))
 	}
 	return out
 }
