@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -107,6 +109,7 @@ func (l *LazyLookup) Reset() {
 	l.componentIndexBuilt = false
 	l.featureIndex = map[string]string{}
 	l.featureIndexBuilt = false
+	l.pins = nil
 }
 
 // Prime copies the supplied catalog's already-merged Components and
@@ -185,6 +188,66 @@ type LazyLookup struct {
 	componentIndexBuilt bool
 	featureIndex        map[string]string
 	featureIndexBuilt   bool
+
+	// pins maps a versioned entity URI to its lockfile content-digest pin, set
+	// per request via SetPins from the request's loaded lockfile. A Tier-2 cache
+	// hit is verified against the pin before use (verify-on-read). nil pins means
+	// no lockfile is threaded for this request — the cache is not trusted, so
+	// Tier-2 falls through to a Tier-3 re-establish rather than returning
+	// unverified bytes.
+	pins map[string]string
+}
+
+// SetPins threads the per-request lockfile pins into the lazy lookup, enabling
+// verify-on-read on the Tier-2 cache. It MUST be called before the request's
+// Component/Feature reads run (the daemon's sequential dispatch sets it from the
+// per-request loaded lockfile, then resolves). Passing nil disables trust in the
+// cache for the request: Tier-2 hits are not returned unverified; the cascade
+// falls through to Tier-3.
+//
+// On a pin mismatch the slot is skipped (not used, not re-fetched) so the IR is
+// not built from drifted content; the per-request drift DIAGNOSTIC is the
+// closure-level lockfile-verify already run on the same request, so the skip
+// deliberately does NOT emit a second notice (no double-report).
+func (l *LazyLookup) SetPins(pins map[string]string) {
+	l.pins = pins
+}
+
+// tier2Outcome is the verify-on-read decision for a Tier-2 cache slot.
+type tier2Outcome int
+
+const (
+	tier2Use   tier2Outcome = iota // bytes verified against the pin — use them
+	tier2Fetch                     // slot absent, or no pin threaded — fall through to Tier-3
+	tier2Skip                      // slot drifted from the pin — diagnostic emitted; do NOT use, do NOT fetch
+)
+
+// tier2Verified applies the serve verify-on-read posture to the Tier-2 cache
+// slot for uri. It routes through tier2ReadVerified so a daemon never previews
+// unverified cache content:
+//   - pin match -> (bytes, tier2Use).
+//   - pin mismatch (drift) -> (nil, tier2Skip): the slot is NOT used and NOT
+//     re-fetched. Self-healing a drift would show content a real build would
+//     halt on (a false-green preview). The user-facing drift notice is the
+//     closure-level lockfile verify already run on the same request, so the skip
+//     does not emit a second diagnostic (avoids double-reporting one drift).
+//   - slot absent, or no pin threaded for uri -> (nil, tier2Fetch): the cascade
+//     re-establishes at Tier-3 (an on-demand fetch verifies against the registry
+//     descriptor), rather than returning unverified cache bytes.
+func (l *LazyLookup) tier2Verified(uri string) ([]byte, tier2Outcome) {
+	pin, havePin := l.pins[uri]
+	if !havePin {
+		return nil, tier2Fetch
+	}
+	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, uri, pin)
+	switch {
+	case err == nil:
+		return bytes, tier2Use
+	case errors.Is(err, oci.ErrFetchIntegrity):
+		return nil, tier2Skip
+	default: // oci.ErrFetchNotFound (slot absent) or an unreadable slot
+		return nil, tier2Fetch
+	}
 }
 
 // fileHeader is the partial unmarshal struct used by the catalog-tree
@@ -269,11 +332,17 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true
 	}
-	if bytes, _, ok := tier2ReadBytes(l.workspaceRoot, l.cacheDir, uri); ok {
+	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		var comp types.Component
 		if err := yaml.Unmarshal(bytes, &comp); err == nil && comp.Kind == "Component" {
 			return comp, true
 		}
+		// Verified bytes parsed to a non-Component kind — fall through to Tier-3.
+	} else if outcome == tier2Skip {
+		// Cache drifted from the pin; diagnostic already emitted. Do not use the
+		// drifted bytes and do not self-heal — the entity is unavailable for this
+		// request (an honest degraded preview, not a false-green render).
+		return types.Component{}, false
 	}
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
@@ -292,11 +361,16 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return feat, true
 	}
-	if bytes, _, ok := tier2ReadBytes(l.workspaceRoot, l.cacheDir, uri); ok {
+	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		var feat types.Feature
 		if err := yaml.Unmarshal(bytes, &feat); err == nil && feat.Kind == "Feature" {
 			return feat, true
 		}
+		// Verified bytes parsed to a non-Feature kind — fall through to Tier-3.
+	} else if outcome == tier2Skip {
+		// Cache drifted from the pin; diagnostic already emitted. Do not use the
+		// drifted bytes and do not self-heal.
+		return types.Feature{}, false
 	}
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {

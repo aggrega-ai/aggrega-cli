@@ -5,6 +5,8 @@ package catalog_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +14,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
+
+// pinFor computes the lockfile content-digest pin for cached bytes, matching
+// the catalog's internal contentDigest (sha256, "sha256:" prefix). Tests use it
+// to set a verify-on-read pin that matches (or, when altered, mismatches) a
+// pre-populated cache slot.
+func pinFor(body []byte) string {
+	sum := sha256.Sum256(body)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
 
 // mockPuller is a stand-in for the production OCI puller. Records
 // per-key call counts so tests can assert per-tier behavior without
@@ -115,33 +126,87 @@ func TestLazyLookupComponentTier1HitFromNonStrictLayout(t *testing.T) {
 	}
 }
 
-func TestLazyLookupComponentTier2HitFromCacheDir(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	cacheDir := ".aggrega/cache"
-	// Pre-populate the OCI cache slot for a versioned URI.
-	uri := "test/cached-component:2.0.0"
-	yamlBody := `apiVersion: aggrega.ai/v1alpha1
+const cachedComponentURI = "test/cached-component:2.0.0"
+const cachedComponentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
   name: test/cached-component
   version: "2.0.0"
 spec: {}
 `
-	if err := oci.WriteCached(tmp, cacheDir, uri, "2.0.0", []byte(yamlBody)); err != nil {
+
+// TestLazyLookupComponentTier2HitFromCacheDir: a Tier-2 cache slot is used only
+// after verify-on-read — the lookup is given a lockfile pin matching the cached
+// content, so the slot resolves and Tier-3 is not invoked.
+func TestLazyLookupComponentTier2HitFromCacheDir(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	if err := oci.WriteCached(tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
 	puller := newMockPuller()
-	lookup := catalog.NewLazyLookup(tmp, cacheDir, nil, puller).AsCatalogLookup()
-	comp, ok := lookup.Component(uri)
+	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
+	ll.SetPins(map[string]string{cachedComponentURI: pinFor([]byte(cachedComponentYAML))})
+	comp, ok := ll.AsCatalogLookup().Component(cachedComponentURI)
 	if !ok {
-		t.Fatalf("Component(%q) not found at Tier-2", uri)
+		t.Fatalf("Component(%q) not found at Tier-2 under a matching pin", cachedComponentURI)
 	}
 	if comp.Metadata.Name != "test/cached-component" {
 		t.Errorf("Metadata.Name = %q; want %q", comp.Metadata.Name, "test/cached-component")
 	}
 	if len(puller.pullCalls) != 0 {
-		t.Errorf("Tier-3 puller should not be invoked when Tier-2 hits; got %v", puller.pullCalls)
+		t.Errorf("Tier-3 puller should not be invoked when a verified Tier-2 hits; got %v", puller.pullCalls)
+	}
+}
+
+// TestLazyLookupComponentTier2DriftSkips: a Tier-2 slot whose content does not
+// match the lockfile pin is SKIPPED — not used (no false-green preview) and NOT
+// re-fetched (no self-heal). The entity resolves as unavailable; the daemon does
+// not crash. (The per-request drift diagnostic is the closure-level lockfile
+// verify, not a second per-read notice.)
+func TestLazyLookupComponentTier2DriftSkips(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	if err := oci.WriteCached(tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
+		t.Fatalf("WriteCached: %v", err)
+	}
+	puller := newMockPuller()
+	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
+	// Pin does NOT match the cached content -> drift.
+	ll.SetPins(map[string]string{cachedComponentURI: "sha256:0000000000000000000000000000000000000000000000000000000000000000"})
+	if _, ok := ll.AsCatalogLookup().Component(cachedComponentURI); ok {
+		t.Errorf("drifted Tier-2 slot must NOT resolve (false-green); got a hit")
+	}
+	if len(puller.pullCalls) != 0 {
+		t.Errorf("drift must NOT self-heal via Tier-3; got pulls %v", puller.pullCalls)
+	}
+}
+
+// TestLazyLookupComponentTier2NoPinFallsToTier3: with no lockfile pin threaded
+// for a URI, the unverifiable Tier-2 slot is not trusted; the cascade
+// re-establishes at Tier-3 rather than returning unverified cache bytes.
+func TestLazyLookupComponentTier2NoPinFallsToTier3(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	if err := oci.WriteCached(tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
+		t.Fatalf("WriteCached: %v", err)
+	}
+	puller := newMockPuller()
+	puller.bytesByURI[cachedComponentURI] = []byte(cachedComponentYAML)
+	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
+	// No SetPins -> nil pins -> the cache is not trusted.
+	comp, ok := ll.AsCatalogLookup().Component(cachedComponentURI)
+	if !ok {
+		t.Fatalf("Component(%q) should resolve via Tier-3 when no pin is threaded", cachedComponentURI)
+	}
+	if comp.Metadata.Name != "test/cached-component" {
+		t.Errorf("Metadata.Name = %q; want %q", comp.Metadata.Name, "test/cached-component")
+	}
+	if len(puller.pullCalls) == 0 {
+		t.Errorf("Tier-3 puller must be invoked when the cache is untrusted (no pin); got no pulls")
 	}
 }
 

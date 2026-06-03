@@ -429,6 +429,28 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    Problems-panel signal, not a halt.
 	lf := s.verifyDriftAndPublish(lockfilePath, resolved.Closure)
 
+	// 3b. Thread the freshly-loaded lockfile pins into the lazy lookup so its
+	//     Tier-2 cache reads in the render pipeline (step 5) verify-on-read: a
+	//     drifted cache slot is skipped (not previewed as false-green content),
+	//     a genuine miss re-establishes at Tier-3. The per-request drift notice
+	//     is the closure-level verify just run (step 3); the skip does not
+	//     double-report it. lf is nil only when the lockfile failed to load
+	//     (drift is non-blocking and still returns it); nil pins disables cache
+	//     trust for the request.
+	//
+	//     ORDERING IS LOAD-BEARING: this SetPins MUST precede the RunPipeline
+	//     reads below. Verify-on-read depends on the pins being set before the
+	//     Tier-2 reads fire; moving SetPins after them (or removing it) silently
+	//     degrades to no-pin -> Tier-3 re-fetch, which re-introduces drift-masking
+	//     (serve would preview re-fetched content that a local-cache-drifted build
+	//     halts on). The degraded path stays green, so no test catches the reorder
+	//     — guard it here.
+	var pins map[string]string
+	if lf != nil {
+		pins = lf.PinsByURI()
+	}
+	s.lazyCatalog.SetPins(pins)
+
 	// 4. Resolve the recipeCatalog for the pipeline call (the
 	//    closure path used the same primitive; this re-uses the
 	//    primed cache).

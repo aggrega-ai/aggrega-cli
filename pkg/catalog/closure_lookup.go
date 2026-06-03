@@ -296,7 +296,7 @@ func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requested
 }
 
 func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
-	bytes, res, ok := tier2ReadBytes(l.workspaceRoot, l.cacheDir, uri)
+	bytes, res, ok := tier2ReadSlotUnverified(l.workspaceRoot, l.cacheDir, uri)
 	if !ok {
 		return nil, closure.Resolution{}, false
 	}
@@ -351,17 +351,28 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 	l.warn(fmt.Sprintf("pin for %s moved %s -> %s; the reproducibility baseline changed", uri, priorPin, newDigest))
 }
 
-// tier2ReadBytes is the package-level Tier-2 cache primitive. Reads
-// the cached entity bytes for a versioned URI from the workspace
-// cache directory. Returns the bytes plus the standard
-// closure.Resolution descriptor. The lazy lookup (NewLazyLookup)
-// consumes the bytes to parse typed entities; the existing
-// catalogLookup discards bytes and uses only the Resolution.
+// tier2ReadSlotUnverified reads the cached entity bytes for a versioned URI
+// from the workspace cache directory WITHOUT verifying them against any pin.
+//
+// DO NOT call this from a new read path. Integrity lives at the cache boundary:
+// every cache read that returns bytes to a consumer must verify them against a
+// lockfile pin via tier2ReadVerified. This unverified primitive survives for
+// exactly two internal callers that verify the bytes themselves and must see the
+// raw slot to do so:
+//   - tier2ReadVerified — recomputes the content digest and compares to the
+//     required lockfile pin (the one verifying read all consumers route through).
+//   - catalogLookup.tier2 — the pull reuse-check, which compares the slot digest
+//     to the PRIOR lockfile pin to decide re-fetch vs reuse (build reaches it
+//     with no prior pin and relies on the closure-level lockfile.Verify gate).
+//
+// A new caller that wants cache bytes is a gap to wire through tier2ReadVerified,
+// never a reason to reach for this. (See the verify-on-read posture in
+// pkg/sourcecache.LookupAndExtract, which this mirrors.)
 //
 // Returns (nil, Resolution{}, false) when the cache directory is
 // unset, when the URI carries no version pin, or when the cache slot
 // is empty or unreadable.
-func tier2ReadBytes(workspaceRoot, cacheDir, uri string) ([]byte, closure.Resolution, bool) {
+func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closure.Resolution, bool) {
 	if cacheDir == "" {
 		return nil, closure.Resolution{}, false
 	}
@@ -399,7 +410,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest string) ([]b
 	if expectedDigest == "" {
 		return nil, fmt.Errorf("catalog: tier-2 verified read of %s requires a non-empty expected digest", uri)
 	}
-	bytes, _, ok := tier2ReadBytes(workspaceRoot, cacheDir, uri)
+	bytes, _, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
 	if !ok {
 		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
 	}
