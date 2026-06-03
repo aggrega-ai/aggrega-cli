@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
@@ -90,6 +91,29 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// single source of truth for the conversion; both sides call it.
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
+
+	// Thread the active Release's lockfile pins into the lazy lookup so the Tier-4
+	// resolution reads below verify-on-read against THIS Release's pins, matching
+	// the irGraph handler's posture. Set unconditionally (nil when no/invalid
+	// lockfile) so validation never inherits the session-scoped pin state a prior
+	// request left, and gains no hard lockfile dependency: nil pins -> no-pin ->
+	// Tier-3 re-establish, exactly as before.
+	//
+	// This is a QUIET load — pins only, no drift verify and no diagnostic
+	// publication. Lockfile drift is surfaced by the at-startup check and the
+	// irGraph handler, and those notifications persist in the client; re-publishing
+	// here (validate fires per edit) would re-send an un-deduplicated drift notice
+	// at editing cadence without adding a needed signal.
+	//
+	// ORDERING IS LOAD-BEARING: this MUST precede RunTier4Pipeline. A reorder (or
+	// removal) degrades to a no-pin Tier-3 re-fetch on a drifted cache, masking the
+	// drift a verify-on-read skip would surface — guarded by an end-to-end test
+	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
+	var pins map[string]string
+	if lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath)); err == nil && lf != nil {
+		pins = lf.PinsByURI()
+	}
+	s.lazyCatalog.SetPins(pins)
 
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
