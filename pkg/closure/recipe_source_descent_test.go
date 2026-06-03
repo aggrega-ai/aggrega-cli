@@ -682,7 +682,7 @@ func TestVersionTolerantMappingJoinsSourceDescent(t *testing.T) {
 		t.Fatal("precondition: an exact lookup of the unversioned authored type must MISS for this canary to be meaningful")
 	}
 
-	recURI, ok, err := catalog.ComponentRecipeURI(manifest, authoredType)
+	recURI, ok, err := catalog.ComponentRecipeURI(manifest, "", authoredType)
 	if err != nil {
 		t.Fatalf("ComponentRecipeURI: %v", err)
 	}

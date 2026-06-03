@@ -117,10 +117,10 @@ containers:
 		},
 	}
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return sharedRecipe, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) {
 			return nil, false
 		},
 	}

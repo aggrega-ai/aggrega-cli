@@ -62,7 +62,7 @@ func testInput() renderer.RendererInput {
 
 func testRecipeLookup() renderer.RecipeLookup {
 	return renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
 				provides := types.OrderedMap[string]{}
 				provides.Set("host", `{{ .context.instance_id }}.svc.cluster.local`)
@@ -82,7 +82,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			return nil, false
 		},
 	}
@@ -129,7 +129,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 	}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			switch componentType {
 			case "core/server/api-server":
 				return &types.Recipe{
@@ -152,7 +152,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return nil, false
 			}
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
@@ -175,7 +175,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 
 	input := testInput()
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "pipeline-recipe"},
 				Spec: types.RecipeSpec{
@@ -186,7 +186,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 				},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
@@ -216,13 +216,13 @@ func TestRenderAll_Deterministic(t *testing.T) {
 	input.Graph.Spec.Nodes.Set("a-db", types.IRNode{Component: "core/database/postgres"})
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "generic"},
 				Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	var firstKeys []string
@@ -264,7 +264,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 	input.FeatureOrder = ir.FeatureOrder{"api": []string{"mon"}}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
@@ -277,7 +277,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/monitoring" {
 				locals := types.OrderedMap[string]{}
 				locals.Set("scrape_target", `{{ .values.tier }}-{{ .values.scrape_port }}`)
@@ -354,7 +354,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 	input.FeatureOrder = ir.FeatureOrder{"api": []string{"dns"}}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
@@ -363,7 +363,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/dns-resolver" {
 				// Inject-only FR (only injectMapping, no source/valuesMapping) — must NOT generate resources.
 				return &types.FeatureRecipe{
@@ -413,7 +413,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 	}()
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
@@ -426,7 +426,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/db-password" {
 				// Credential FR: its valuesMapping references .secret_name AND
 				// the top-level .inject map populated by buildSecretInject.
@@ -513,7 +513,7 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 	}()
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
@@ -526,7 +526,7 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			switch featureType {
 			case "core/cache":
 				p := types.OrderedMap[string]{}
@@ -578,7 +578,7 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 
 	// valuesMapping reads ONLY .values.port — ignores .infra.replicas.
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "ghost-recipe"},
 				Spec: types.RecipeSpec{
@@ -586,7 +586,7 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 				},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
@@ -677,7 +677,7 @@ func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
 
 	input := testInput()
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType == "core/server/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe-failing"},
@@ -693,7 +693,7 @@ func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			return nil, false
 		},
 	}

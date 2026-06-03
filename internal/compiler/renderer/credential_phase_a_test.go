@@ -113,7 +113,7 @@ func TestResolveSecretRecipes_ScopesToSecretEntryValues(t *testing.T) {
 	graph := &types.IRGraph{Spec: types.IRSpec{Secrets: outer}}
 
 	lookup := RecipeLookup{
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/secret-value" {
 				return dotenvSecretFR(), true
 			}
@@ -146,7 +146,7 @@ func TestResolveSecretRecipes_NoSecretsOrLookup(t *testing.T) {
 	if refs := resolveSecretRecipes("db", graph, RecipeLookup{}); refs != nil {
 		t.Errorf("nil FeatureRecipe lookup should yield no refs, got %d", len(refs))
 	}
-	lookup := RecipeLookup{FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false }}
+	lookup := RecipeLookup{FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false }}
 	if refs := resolveSecretRecipes("absent", graph, lookup); refs != nil {
 		t.Errorf("node with no secrets should yield no refs, got %d", len(refs))
 	}

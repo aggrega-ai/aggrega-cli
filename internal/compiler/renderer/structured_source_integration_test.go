@@ -246,7 +246,7 @@ func integrationInputCompose(t *testing.T, workspaceRoot, componentType, nodeID,
 
 func structuredSourceRecipeLookup(provider, kind, url, version string) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType != "core/server/api-server" {
 				return nil, false
 			}
@@ -263,7 +263,7 @@ func structuredSourceRecipeLookup(provider, kind, url, version string) renderer.
 				},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 }
 

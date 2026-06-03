@@ -53,7 +53,7 @@ func TestIrEntityInfra_DerivesUsingSetFromIRRenderSet(t *testing.T) {
 	flatF.Type.Set("core/db-creds", "db-creds-helm:1.0.0")
 	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Features: flatF}}}
 
-	componentScope := func(string) (string, bool) { return "component", true }
+	componentScope := func(_, _ string) (string, bool) { return "component", true }
 	out, err := irEntityInfra(graph, manifest, componentScope)
 	if err != nil {
 		t.Fatalf("irEntityInfra: %v", err)
@@ -126,7 +126,7 @@ func TestIrEntityInfra_BoundaryScopePinnedOnceFromProjection(t *testing.T) {
 	flatF.Type.Set("core/legacy", "legacy-helm:1.0.0")
 	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Features: flatF}}}
 
-	scopeOf := func(featType string) (string, bool) {
+	scopeOf := func(_, featType string) (string, bool) {
 		switch featType {
 		case "core/bridge":
 			return "boundary", true

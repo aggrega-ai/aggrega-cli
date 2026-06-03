@@ -5,6 +5,9 @@ package catalog
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -31,7 +34,7 @@ func fakeCatalog(recipes ...types.Recipe) *Catalog {
 		Providers:      map[string]types.Provider{},
 	}
 	for _, r := range recipes {
-		c.Recipes[r.Spec.Implements] = r
+		c.Recipes[recipeURIKey(r.Metadata.Name, r.Metadata.Version)] = r
 	}
 	return c
 }
@@ -67,7 +70,7 @@ func TestRecipeLookupWithManifest_FlatShape(t *testing.T) {
 		},
 	}
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("core/database/postgres")
+	r, ok := lookup.Recipe("", "core/database/postgres")
 	if !ok {
 		t.Fatal("expected flat-shape dispatch to hit")
 	}
@@ -107,7 +110,7 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			uri, ok, err := ComponentRecipeURI(manifest, tc.compType)
+			uri, ok, err := ComponentRecipeURI(manifest, "", tc.compType)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -151,7 +154,7 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			uri, ok, err := FeatureRecipeURI(manifest, tc.featType)
+			uri, ok, err := FeatureRecipeURI(manifest, "", tc.featType)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -181,7 +184,7 @@ func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
 	}
 	manifest.Spec.Mappings.Legacy.Set("helm", legacyHelm)
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("core/database/postgres")
+	r, ok := lookup.Recipe("", "core/database/postgres")
 	if !ok {
 		t.Fatal("expected legacy-shape dispatch to hit")
 	}
@@ -202,7 +205,7 @@ func TestRecipeLookupWithManifest_MatchImplementsFinalFallback(t *testing.T) {
 	// Empty Manifest mappings — neither flat nor legacy populated.
 	manifest := &types.Manifest{Spec: types.ManifestSpec{}}
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("core/database/postgres")
+	r, ok := lookup.Recipe("", "core/database/postgres")
 	if !ok {
 		t.Fatal("expected matchImplements fallback to hit")
 	}
@@ -234,7 +237,7 @@ func TestRecipeLookupWithManifest_FlatWinsOverLegacy(t *testing.T) {
 	}
 	manifest.Spec.Mappings.Legacy.Set("helm", legacyHelm)
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, _ := lookup.Recipe("core/database/postgres-A")
+	r, _ := lookup.Recipe("", "core/database/postgres-A")
 	if r.Metadata.Name != "core/helm/postgres-flat" {
 		t.Errorf("expected flat-shape to win; got %q", r.Metadata.Name)
 	}
@@ -331,7 +334,7 @@ func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			uri, ok, err := ComponentRecipeURI(manifest, tc.compType)
+			uri, ok, err := ComponentRecipeURI(manifest, "", tc.compType)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -369,7 +372,7 @@ func TestFeatureRecipeURI_VersionTolerant(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			uri, ok, err := FeatureRecipeURI(manifest, tc.featType)
+			uri, ok, err := FeatureRecipeURI(manifest, "", tc.featType)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -399,13 +402,13 @@ func TestComponentRecipeURI_AmbiguousVersionKeys(t *testing.T) {
 		},
 	}
 
-	if _, ok, err := ComponentRecipeURI(manifest, "core/database/mariadb"); err == nil {
+	if _, ok, err := ComponentRecipeURI(manifest, "", "core/database/mariadb"); err == nil {
 		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
 	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
 		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
 	}
 
-	uri, ok, err := ComponentRecipeURI(manifest, "core/database/mariadb:2.0.0")
+	uri, ok, err := ComponentRecipeURI(manifest, "", "core/database/mariadb:2.0.0")
 	if err != nil {
 		t.Fatalf("unexpected error on exact-version match: %v", err)
 	}
@@ -427,9 +430,214 @@ func TestFeatureRecipeURI_AmbiguousVersionKeys(t *testing.T) {
 		},
 	}
 
-	if _, ok, err := FeatureRecipeURI(manifest, "core/security/tls"); err == nil {
+	if _, ok, err := FeatureRecipeURI(manifest, "", "core/security/tls"); err == nil {
 		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
 	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
 		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
+	}
+}
+
+// writeCatalogEntity writes one entity YAML under dir so tests load through the
+// REAL catalog loader rather than a hand-built map.
+func writeCatalogEntity(t *testing.T, dir, rel, body string) {
+	t.Helper()
+	p := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", p, err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", p, err)
+	}
+}
+
+// recipeYAML builds a minimal loadable Recipe. provider: eval bans the
+// three-input-kinds, so the recipe needs no source/workload/artifacts to pass
+// load validation — enough for a resolution-only test.
+func recipeYAML(name, implements string) string {
+	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
+		"\n  version: 1.0.0\nspec:\n  provider: eval\n  implements: " + implements + "\n"
+}
+
+func featureRecipeYAML(name, implements string) string {
+	return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
+		"\n  version: 1.0.0\nspec:\n  provider: eval\n  implements: " + implements + "\n"
+}
+
+// TestNameTierOverride_FiresAtBothJoins is the per-instance recipe-override
+// guard, proven through the REAL catalog loader: two recipes implementing ONE
+// component type (and two
+// feature recipes implementing one feature type) both survive load, and a
+// per-instance `name:` override resolves to its override while siblings resolve
+// to the type-tier recipe — at BOTH the pull join (ComponentRecipeURI /
+// FeatureRecipeURI) and the build join (RecipeLookupWithManifest closures).
+func TestNameTierOverride_FiresAtBothJoins(t *testing.T) {
+	t.Parallel()
+	const compType = "app/db"
+	const featType = "sec/db-cred"
+	dir := t.TempDir()
+	writeCatalogEntity(t, dir, "recipe/db-default.yaml", recipeYAML("db-default", compType))
+	writeCatalogEntity(t, dir, "recipe/db-override.yaml", recipeYAML("db-override", compType))
+	writeCatalogEntity(t, dir, "feature-recipe/cred-default.yaml", featureRecipeYAML("cred-default", featType))
+	writeCatalogEntity(t, dir, "feature-recipe/cred-override.yaml", featureRecipeYAML("cred-override", featType))
+
+	c, err := Load("", dir)
+	if err != nil {
+		t.Fatalf("catalog load: %v", err)
+	}
+	// Fiction-killer: BOTH same-type recipes (and feature recipes) survive the
+	// real loader — the catalog state the override depends on is reachable.
+	if _, ids, _ := matchRecipeByImplements(c.Recipes, compType); len(ids) != 2 {
+		t.Fatalf("expected 2 recipes implementing %q to coexist after load; got %v", compType, ids)
+	}
+	if _, ids, _ := matchFeatureRecipeByImplements(c.FeatureRecipes, featType); len(ids) != 2 {
+		t.Fatalf("expected 2 feature recipes implementing %q to coexist after load; got %v", featType, ids)
+	}
+
+	comp := &types.MappingTier{}
+	comp.Type.Set(compType, "db-default:1.0.0")      // bulk type mapping
+	comp.Name.Set("db-special", "db-override:1.0.0") // per-instance override
+	feat := &types.MappingTier{}
+	feat.Type.Set(featType, "cred-default:1.0.0")
+	feat.Name.Set("cred-special", "cred-override:1.0.0")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp, Features: feat}}}
+
+	// Pull join: ComponentRecipeURI / FeatureRecipeURI return the override URI
+	// for the named instance, the type URI for siblings, and (component) the
+	// type URI for an empty instance name.
+	assertURI := func(label, gotURI string, ok bool, gotErr error, want string) {
+		t.Helper()
+		if gotErr != nil || !ok || gotURI != want {
+			t.Errorf("%s = %q (ok=%v err=%v); want %q", label, gotURI, ok, gotErr, want)
+		}
+	}
+	u, ok, e := ComponentRecipeURI(manifest, "db-special", compType)
+	assertURI("pull override db-special", u, ok, e, "db-override:1.0.0")
+	u, ok, e = ComponentRecipeURI(manifest, "db-other", compType)
+	assertURI("pull sibling db-other", u, ok, e, "db-default:1.0.0")
+	u, ok, e = ComponentRecipeURI(manifest, "", compType)
+	assertURI("pull empty name", u, ok, e, "db-default:1.0.0")
+	u, ok, e = FeatureRecipeURI(manifest, "cred-special", featType)
+	assertURI("pull override cred-special", u, ok, e, "cred-override:1.0.0")
+	u, ok, e = FeatureRecipeURI(manifest, "cred-other", featType)
+	assertURI("pull sibling cred-other", u, ok, e, "cred-default:1.0.0")
+
+	// Build join: the render closures resolve the override instance to the
+	// override recipe and siblings to the type-tier recipe.
+	lookup := c.RecipeLookupWithManifest(manifest)
+	assertRecipe := func(label, name, want string) {
+		t.Helper()
+		r, ok := lookup.Recipe(name, compType)
+		if !ok {
+			t.Errorf("%s: not resolved", label)
+			return
+		}
+		if r.Metadata.Name != want {
+			t.Errorf("%s: got %q; want %q", label, r.Metadata.Name, want)
+		}
+	}
+	assertRecipe("build override db-special", "db-special", "db-override")
+	assertRecipe("build sibling db-other", "db-other", "db-default")
+	assertFR := func(label, name, want string) {
+		t.Helper()
+		fr, ok := lookup.FeatureRecipe(name, featType)
+		if !ok {
+			t.Errorf("%s: not resolved", label)
+			return
+		}
+		if fr.Metadata.Name != want {
+			t.Errorf("%s: got %q; want %q", label, fr.Metadata.Name, want)
+		}
+	}
+	assertFR("build override cred-special", "cred-special", "cred-override")
+	assertFR("build sibling cred-other", "cred-other", "cred-default")
+}
+
+// TestNameTier_DuplicateIdentityDetected pins the load-time guard: two recipes
+// sharing one identity (metadata.name + version) halt loudly rather than one
+// silently shadowing the other.
+func TestNameTier_DuplicateIdentityDetected(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeCatalogEntity(t, dir, "a.yaml", recipeYAML("dup", "app/db"))
+	writeCatalogEntity(t, dir, "b.yaml", recipeYAML("dup", "app/other"))
+	if _, err := Load("", dir); err == nil || !errors.Is(err, ErrDuplicateRecipeIdentity) {
+		t.Fatalf("expected ErrDuplicateRecipeIdentity for identity dup:1.0.0; got %v", err)
+	}
+}
+
+// TestVerifyRecipeResolution_HaltsLoudly pins the pre-render resolution-
+// completeness pass: an unmapped type implemented by >1 recipe halts naming the
+// colliding recipes; an unimplemented type halts as no-recipe; a mapped type
+// resolves cleanly.
+func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeCatalogEntity(t, dir, "r1.yaml", recipeYAML("db-a", "app/db"))
+	writeCatalogEntity(t, dir, "r2.yaml", recipeYAML("db-b", "app/db"))
+	c, err := Load("", dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	empty := &types.Manifest{}
+
+	gAmbig := &types.IRGraph{}
+	gAmbig.Spec.Nodes.Set("db-x", types.IRNode{Component: "app/db"})
+	err = c.VerifyRecipeResolution(empty, gAmbig)
+	if err == nil || !errors.Is(err, ErrAmbiguousImplements) {
+		t.Errorf("expected ErrAmbiguousImplements for unmapped 2-impl type; got %v", err)
+	} else if !strings.Contains(err.Error(), "db-a") || !strings.Contains(err.Error(), "db-b") {
+		t.Errorf("ambiguity error must name both recipes; got %v", err)
+	}
+
+	gNone := &types.IRGraph{}
+	gNone.Spec.Nodes.Set("x", types.IRNode{Component: "app/none"})
+	if err := c.VerifyRecipeResolution(empty, gNone); err == nil || !errors.Is(err, ErrNoRecipeResolved) {
+		t.Errorf("expected ErrNoRecipeResolved for unimplemented type; got %v", err)
+	}
+
+	comp := &types.MappingTier{}
+	comp.Type.Set("app/db", "db-a:1.0.0")
+	mapped := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
+	if err := c.VerifyRecipeResolution(mapped, gAmbig); err != nil {
+		t.Errorf("a mapped type should resolve cleanly; got %v", err)
+	}
+}
+
+// TestNameTier_PrecedenceWithVersionTolerantType pins the cascade order: a name
+// override short-circuits before the (version-tolerant) type tier, and a lookup
+// with no name override still resolves through the version-tolerant type match.
+func TestNameTier_PrecedenceWithVersionTolerantType(t *testing.T) {
+	t.Parallel()
+	comp := &types.MappingTier{}
+	comp.Type.Set("core/database/mariadb:1.0.0", "recipe-typed") // versioned type key
+	comp.Name.Set("db-primary", "recipe-named")                  // per-instance override
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}},
+	}
+	// Name wins even though the type tier would version-tolerantly match.
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/database/mariadb"); !ok || uri != "recipe-named" {
+		t.Errorf("name must win over version-tolerant type: got %q ok=%v; want recipe-named", uri, ok)
+	}
+	// No name override -> version-tolerant type match still resolves.
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/database/mariadb"); !ok || uri != "recipe-typed" {
+		t.Errorf("no-name lookup must keep version-tolerant type: got %q ok=%v; want recipe-typed", uri, ok)
+	}
+}
+
+// TestNameTier_LegacyShape pins the name tier in the legacy per-provider mapping
+// shape (so the override is not silently shape-dependent).
+func TestNameTier_LegacyShape(t *testing.T) {
+	t.Parallel()
+	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
+	legacy.Components.Type.Set("core/database/mariadb", "recipe-typed-legacy")
+	legacy.Components.Name.Set("db-primary", "recipe-named-legacy")
+	manifest := &types.Manifest{}
+	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
+
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/database/mariadb"); !ok || uri != "recipe-named-legacy" {
+		t.Errorf("legacy-shape name override must resolve: got %q ok=%v; want recipe-named-legacy", uri, ok)
+	}
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/database/mariadb"); !ok || uri != "recipe-typed-legacy" {
+		t.Errorf("legacy-shape sibling -> type: got %q ok=%v; want recipe-typed-legacy", uri, ok)
 	}
 }

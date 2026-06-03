@@ -124,7 +124,7 @@ spec:
   valuesMapping: '{"image": "x:latest"}'
 `
 	_ = c.indexFile([]byte(src), "/some/dir/r.yaml")
-	if r, ok := c.Recipes["core/server/api"]; ok {
+	if r, _, ok := matchRecipeByImplements(c.Recipes, "core/server/api"); ok {
 		if s, _ := r.Spec.Source.(string); s != "/absolute/path" {
 			t.Errorf("absolute source rewritten unexpectedly: %q", s)
 		}

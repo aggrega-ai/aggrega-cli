@@ -147,7 +147,7 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 			WorkspaceRoot:     root,
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookup(),
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
@@ -204,7 +204,7 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 			// Lockfile + WorkspaceRoot intentionally unset.
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookup(),
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},

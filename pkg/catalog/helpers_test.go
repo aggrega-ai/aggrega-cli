@@ -85,26 +85,26 @@ func TestRecipeLookup_HitAndMiss(t *testing.T) {
 	}
 	r := types.Recipe{}
 	r.Spec.Implements = "core/server/api-server"
-	c.Recipes["core/server/api-server"] = r
+	c.Recipes[recipeURIKey(r.Metadata.Name, r.Metadata.Version)] = r
 
 	fr := types.FeatureRecipe{}
 	fr.Spec.Implements = "feature/monitoring"
-	c.FeatureRecipes["feature/monitoring"] = fr
+	c.FeatureRecipes[recipeURIKey(fr.Metadata.Name, fr.Metadata.Version)] = fr
 
 	lookup := c.RecipeLookup()
-	gotR, ok := lookup.Recipe("core/server/api-server")
+	gotR, ok := lookup.Recipe("", "core/server/api-server")
 	if !ok || gotR == nil {
 		t.Errorf("recipe hit should return non-nil + true")
 	}
-	_, ok = lookup.Recipe("absent")
+	_, ok = lookup.Recipe("", "absent")
 	if ok {
 		t.Errorf("recipe miss should return false")
 	}
-	gotFR, ok := lookup.FeatureRecipe("feature/monitoring")
+	gotFR, ok := lookup.FeatureRecipe("", "feature/monitoring")
 	if !ok || gotFR == nil {
 		t.Errorf("feature-recipe hit should return non-nil + true")
 	}
-	_, ok = lookup.FeatureRecipe("absent")
+	_, ok = lookup.FeatureRecipe("", "absent")
 	if ok {
 		t.Errorf("feature-recipe miss should return false")
 	}
@@ -119,7 +119,7 @@ func TestFeatureRecipeByURI_AllBranches(t *testing.T) {
 	fr := types.FeatureRecipe{}
 	fr.Metadata.Name = "myco/rewrite-host"
 	fr.Spec.Implements = "feature/rewrite"
-	c.FeatureRecipes["feature/rewrite"] = fr
+	c.FeatureRecipes[recipeURIKey(fr.Metadata.Name, fr.Metadata.Version)] = fr
 
 	got, ok := c.FeatureRecipeByURI("myco/rewrite-host")
 	if !ok || got.Metadata.Name != "myco/rewrite-host" {
@@ -135,21 +135,21 @@ func TestFeatureRecipeByURI_AllBranches(t *testing.T) {
 // section, hit, miss.
 func TestFlatFeatureURI_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok, _ := flatFeatureURI(nil, "t"); ok {
+	if _, ok, _ := flatFeatureURI(nil, "", "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
-	if _, ok, _ := flatFeatureURI(&types.Manifest{}, "t"); ok {
+	if _, ok, _ := flatFeatureURI(&types.Manifest{}, "", "t"); ok {
 		t.Errorf("no features section should miss")
 	}
 	m := &types.Manifest{}
 	mt := &types.MappingTier{}
 	mt.Type.Set("feat-type", "feat-uri")
 	m.Spec.Mappings.Features = mt
-	uri, ok, _ := flatFeatureURI(m, "feat-type")
+	uri, ok, _ := flatFeatureURI(m, "", "feat-type")
 	if !ok || uri != "feat-uri" {
 		t.Errorf("hit: ok=%v uri=%q", ok, uri)
 	}
-	if _, ok, _ := flatFeatureURI(m, "absent"); ok {
+	if _, ok, _ := flatFeatureURI(m, "", "absent"); ok {
 		t.Errorf("missing key should miss")
 	}
 }
@@ -158,17 +158,17 @@ func TestFlatFeatureURI_AllBranches(t *testing.T) {
 // provider-without-features, miss across all providers, hit.
 func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok, _ := legacyFeatureURI(nil, "t"); ok {
+	if _, ok, _ := legacyFeatureURI(nil, "", "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
 	// No providers.
-	if _, ok, _ := legacyFeatureURI(&types.Manifest{}, "t"); ok {
+	if _, ok, _ := legacyFeatureURI(&types.Manifest{}, "", "t"); ok {
 		t.Errorf("no providers should miss")
 	}
 	// Provider without Features section.
 	m := &types.Manifest{}
 	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{})
-	if _, ok, _ := legacyFeatureURI(m, "t"); ok {
+	if _, ok, _ := legacyFeatureURI(m, "", "t"); ok {
 		t.Errorf("provider without features should miss")
 	}
 	// Provider with Features but no matching key.
@@ -176,7 +176,7 @@ func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 	mt.Type.Set("other-feat", "other-uri")
 	m2 := &types.Manifest{}
 	m2.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: mt})
-	if _, ok, _ := legacyFeatureURI(m2, "absent"); ok {
+	if _, ok, _ := legacyFeatureURI(m2, "", "absent"); ok {
 		t.Errorf("absent key should miss")
 	}
 	// Hit.
@@ -184,7 +184,7 @@ func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 	mt2.Type.Set("feat-type", "feat-uri")
 	m3 := &types.Manifest{}
 	m3.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: mt2})
-	uri, ok, _ := legacyFeatureURI(m3, "feat-type")
+	uri, ok, _ := legacyFeatureURI(m3, "", "feat-type")
 	if !ok || uri != "feat-uri" {
 		t.Errorf("hit: ok=%v uri=%q", ok, uri)
 	}
@@ -195,13 +195,13 @@ func TestLegacyFeatureURI_AllBranches(t *testing.T) {
 // exercise.
 func TestLegacyComponentURI_NilAndNoComponents(t *testing.T) {
 	t.Parallel()
-	if _, ok, _ := legacyComponentURI(nil, "t"); ok {
+	if _, ok, _ := legacyComponentURI(nil, "", "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
 	// Provider without Components section.
 	m := &types.Manifest{}
 	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{})
-	if _, ok, _ := legacyComponentURI(m, "t"); ok {
+	if _, ok, _ := legacyComponentURI(m, "", "t"); ok {
 		t.Errorf("provider without components should miss")
 	}
 }
@@ -217,12 +217,12 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	fr1 := types.FeatureRecipe{}
 	fr1.Metadata.Name = "myco/rewrite-host"
 	fr1.Spec.Implements = "feature/rewrite"
-	c.FeatureRecipes["feature/rewrite"] = fr1
+	c.FeatureRecipes[recipeURIKey(fr1.Metadata.Name, fr1.Metadata.Version)] = fr1
 
 	fr2 := types.FeatureRecipe{}
 	fr2.Metadata.Name = "myco/legacy-helper"
 	fr2.Spec.Implements = "feature/legacy"
-	c.FeatureRecipes["feature/legacy"] = fr2
+	c.FeatureRecipes[recipeURIKey(fr2.Metadata.Name, fr2.Metadata.Version)] = fr2
 
 	// Layer 1: flat-shape mapping.
 	manifest := &types.Manifest{}
@@ -230,7 +230,7 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	mt.Type.Set("feature/rewrite", "myco/rewrite-host")
 	manifest.Spec.Mappings.Features = mt
 	lookup := c.featureTypeToFeatureRecipeWithManifest(manifest)
-	got, ok := lookup("feature/rewrite")
+	got, ok := lookup("", "feature/rewrite")
 	if !ok || got == nil || got.Metadata.Name != "myco/rewrite-host" {
 		t.Errorf("layer 1 flat hit: ok=%v got=%v", ok, got)
 	}
@@ -241,19 +241,19 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	legacyMT.Type.Set("feature/legacy", "myco/legacy-helper")
 	manifest2.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: legacyMT})
 	lookup2 := c.featureTypeToFeatureRecipeWithManifest(manifest2)
-	got, ok = lookup2("feature/legacy")
+	got, ok = lookup2("", "feature/legacy")
 	if !ok || got == nil || got.Metadata.Name != "myco/legacy-helper" {
 		t.Errorf("layer 2 legacy hit: ok=%v got=%v", ok, got)
 	}
 
 	// Layer 3: matchImplements fallback (no manifest mapping for this type).
-	got, ok = lookup2("feature/rewrite") // type maps via spec.implements walking
+	got, ok = lookup2("", "feature/rewrite") // type maps via spec.implements walking
 	if !ok || got == nil {
 		t.Errorf("layer 3 fallback: ok=%v got=%v", ok, got)
 	}
 
 	// Miss.
-	_, ok = lookup2("absent/type")
+	_, ok = lookup2("", "absent/type")
 	if ok {
 		t.Errorf("absent type should miss")
 	}
@@ -272,23 +272,23 @@ func TestVerifyManifestImplementsConsistency_EveryArm(t *testing.T) {
 	rMismatch := types.Recipe{}
 	rMismatch.Metadata.Name = "myco/mismatch"
 	rMismatch.Spec.Implements = "core/different"
-	c.Recipes["core/different"] = rMismatch
+	c.Recipes[recipeURIKey(rMismatch.Metadata.Name, rMismatch.Metadata.Version)] = rMismatch
 
 	// Recipe that matches.
 	rMatch := types.Recipe{}
 	rMatch.Metadata.Name = "myco/matching"
 	rMatch.Spec.Implements = "core/match"
-	c.Recipes["core/match"] = rMatch
+	c.Recipes[recipeURIKey(rMatch.Metadata.Name, rMatch.Metadata.Version)] = rMatch
 
 	// FeatureRecipe with the same shapes.
 	frMismatch := types.FeatureRecipe{}
 	frMismatch.Metadata.Name = "myco/fr-mismatch"
 	frMismatch.Spec.Implements = "feature/different"
-	c.FeatureRecipes["feature/different"] = frMismatch
+	c.FeatureRecipes[recipeURIKey(frMismatch.Metadata.Name, frMismatch.Metadata.Version)] = frMismatch
 	frMatch := types.FeatureRecipe{}
 	frMatch.Metadata.Name = "myco/fr-match"
 	frMatch.Spec.Implements = "feature/match"
-	c.FeatureRecipes["feature/match"] = frMatch
+	c.FeatureRecipes[recipeURIKey(frMatch.Metadata.Name, frMatch.Metadata.Version)] = frMatch
 
 	manifest := &types.Manifest{}
 	mt := &types.MappingTier{}
@@ -499,7 +499,7 @@ spec:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fr, ok := c.FeatureRecipes["feature/example"]
+	fr, _, ok := matchFeatureRecipeByImplements(c.FeatureRecipes, "feature/example")
 	if !ok {
 		t.Fatalf("FR not loaded")
 	}

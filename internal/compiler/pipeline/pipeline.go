@@ -62,6 +62,13 @@ type Inputs struct {
 // Result.Trace stays nil and the trace writer is a no-op.
 type Options struct {
 	IncludeTrace bool
+	// RecipeResolutionVerifier, when set, runs after IR-build and before render
+	// to assert every component/feature instance resolves to exactly one recipe
+	// (halting loudly on a no-recipe instance or an unmapped ambiguously-
+	// implemented type). Left nil — e.g. by callers that build the IR for
+	// inspection rather than render — the check is skipped. Catalog supplies
+	// VerifyRecipeResolution, whose signature this matches.
+	RecipeResolutionVerifier func(*types.Manifest, *types.IRGraph) error
 }
 
 // Result carries the pipeline's outputs. Artifacts is the rendered file
@@ -371,6 +378,15 @@ func RunPipeline(
 	// Step 4b: Component / Feature assertions.
 	if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Step 4b (Component/Feature assertions)")
+	}
+
+	// Step 4c: resolution-completeness — every component/feature instance must
+	// resolve to exactly one recipe before render. Skipped when the caller does
+	// not supply a verifier (IR-inspection paths that do not render).
+	if opts.RecipeResolutionVerifier != nil {
+		if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
+		}
 	}
 
 	// Step 5: Render. Trace writer selection: in-memory collection when

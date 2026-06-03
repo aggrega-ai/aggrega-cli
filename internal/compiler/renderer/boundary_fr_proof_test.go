@@ -98,7 +98,7 @@ func boundaryScopeBridgeFR(t *testing.T) *types.FeatureRecipe {
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         fragPath,
-			ValuesMapping: types.ValuesMapping{Inline: `{}`},
+			ValuesMapping:  types.ValuesMapping{Inline: `{}`},
 		},
 	}
 }
@@ -193,7 +193,7 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 	dbRecipe := composeWorkloadRecipe("db", "postgres:15", 5432)
 	bridgeFR := boundaryScopeBridgeFR(t)
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			switch componentType {
 			case "core/api":
 				return apiRecipe, true
@@ -202,7 +202,7 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if strings.HasPrefix(featureType, "core/compose-bridge") {
 				return bridgeFR, true
 			}
@@ -350,7 +350,7 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 	dbRecipe := composeWorkloadRecipe("db", "postgres:15", 5432)
 	bridgeFR := boundaryScopeBridgeFR(t)
 	lookup := renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			switch componentType {
 			case "core/api":
 				return apiRecipe, true
@@ -359,7 +359,7 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 			}
 			return nil, false
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if strings.HasPrefix(featureType, "core/compose-bridge") {
 				return bridgeFR, true
 			}

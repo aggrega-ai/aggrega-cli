@@ -274,7 +274,7 @@ func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 		},
 	}
 	rl := RecipeLookup{
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return &fr, true },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return &fr, true },
 	}
 	if err := EvaluateRecipeAndFeatureRecipeAssertions(
 		graph,
@@ -308,7 +308,7 @@ func TestStep5b_FeatureRecipeAssertionFailsHaltsBuild(t *testing.T) {
 		},
 	}
 	rl := RecipeLookup{
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return &fr, true },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return &fr, true },
 	}
 	err := EvaluateRecipeAndFeatureRecipeAssertions(
 		graph,

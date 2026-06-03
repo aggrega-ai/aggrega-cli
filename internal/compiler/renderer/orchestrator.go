@@ -63,10 +63,13 @@ type pendingDispatch struct {
 	contributingBoundaries []string
 }
 
-// RecipeLookup resolves a component type to its Recipe and FeatureRecipes.
+// RecipeLookup resolves a component/feature instance to its Recipe and
+// FeatureRecipes. Both closures take the instance NAME plus the catalog TYPE so
+// the Manifest name tier (a per-instance recipe override) can take precedence
+// over the type mapping; an empty instance name resolves by type alone.
 type RecipeLookup struct {
-	Recipe        func(componentType string) (*types.Recipe, bool)
-	FeatureRecipe func(featureType string) (*types.FeatureRecipe, bool)
+	Recipe        func(instanceName, componentType string) (*types.Recipe, bool)
+	FeatureRecipe func(instanceName, featureType string) (*types.FeatureRecipe, bool)
 }
 
 // RenderAll executes the full Step 5 pipeline:
@@ -95,7 +98,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	for _, nodeID := range nodeIDs {
 		node, _ := graph.Spec.Nodes.Get(nodeID)
 		if recipeLookup.Recipe != nil {
-			if r, found := recipeLookup.Recipe(node.Component); found {
+			if r, found := recipeLookup.Recipe(nodeID, node.Component); found {
 				nodeRecipes[nodeID] = r
 			}
 		}
@@ -606,8 +609,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if !found {
 			continue
 		}
-		// Resolve FR by type to get its provider.
-		fr, ok := recipeLookup.FeatureRecipe(feat.Type)
+		// Resolve the FR for this boundary-feature instance (name tier wins,
+		// else by type) to get its provider.
+		fr, ok := recipeLookup.FeatureRecipe(key.FRInstance, feat.Type)
 		if !ok {
 			continue
 		}
@@ -854,7 +858,7 @@ func resolveFeatureRecipes(
 		if !ok {
 			continue
 		}
-		fr, found := recipeLookup.FeatureRecipe(entry.Type)
+		fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
 		if !found {
 			continue
 		}
@@ -883,7 +887,7 @@ func resolveSecretRecipes(nodeID string, graph *types.IRGraph, recipeLookup Reci
 	}
 	var refs []FeatureRecipeRef
 	for secretName, entry := range secretsForNode.All() {
-		fr, found := recipeLookup.FeatureRecipe(entry.Type)
+		fr, found := recipeLookup.FeatureRecipe(secretName, entry.Type)
 		if !found {
 			continue
 		}

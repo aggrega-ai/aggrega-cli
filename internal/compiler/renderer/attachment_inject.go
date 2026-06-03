@@ -43,7 +43,7 @@ func ResolveAttachmentInject(
 			if entry.Inject.Len() == 0 {
 				continue
 			}
-			fr, found := recipeLookup.FeatureRecipe(entry.Type)
+			fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
 			if !found {
 				continue
 			}

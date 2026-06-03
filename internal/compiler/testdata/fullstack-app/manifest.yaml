@@ -3,4 +3,14 @@ kind: Manifest
 metadata:
   name: prod-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  # The fullstack test catalog ships several Recipe variants per component
+  # type (synthesized/sourced x plain/with-artifacts x helm/compose). The
+  # mapping pins one variant per type so recipe selection is deterministic
+  # rather than depending on catalog load order.
+  mappings:
+    components:
+      type:
+        core/server/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
+        core/server/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/database/postgres: helm-postgres-synthesized-with-artifacts:1.0.0

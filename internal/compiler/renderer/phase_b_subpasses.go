@@ -428,7 +428,7 @@ func phaseB6(
 		sort.Strings(secretNames)
 		for _, secretName := range secretNames {
 			entry, _ := secretsForNode.Get(secretName)
-			fr, found := recipeLookup.FeatureRecipe(entry.Type)
+			fr, found := recipeLookup.FeatureRecipe(secretName, entry.Type)
 			if !found {
 				continue
 			}

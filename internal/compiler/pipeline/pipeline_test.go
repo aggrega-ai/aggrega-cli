@@ -84,7 +84,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 			WorkspaceConfig:   workspaceconfig.Default(),
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookup(),
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
@@ -186,7 +186,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(), cat.RecipeLookup(), cat.SubAggregateLoader(),
+		cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
@@ -230,7 +230,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(), cat.RecipeLookup(), cat.SubAggregateLoader(),
+		cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: true},
 	)
@@ -293,7 +293,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(), cat.RecipeLookup(), cat.SubAggregateLoader(),
+		cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: true},
 	); err != nil {

@@ -56,7 +56,7 @@ func TestResolveAttachmentInject_SecretDeliversResolvedProvidesToHostPipe(t *tes
 	secrets.Set("api", inner)
 	graph := &types.IRGraph{Spec: types.IRSpec{Secrets: secrets}}
 
-	lookup := RecipeLookup{FeatureRecipe: func(ft string) (*types.FeatureRecipe, bool) {
+	lookup := RecipeLookup{FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
 		if ft == "core/db-creds" {
 			return providesFR("core/db-creds:1.0.0", "root_password", "{{ .values.generated }}"), true
 		}
@@ -96,7 +96,7 @@ func TestResolveAttachmentInject_FeatureDeliversResolvedProvidesToHostPipe(t *te
 	fvm.Set("api", inner)
 	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: fvm}}
 
-	lookup := RecipeLookup{FeatureRecipe: func(ft string) (*types.FeatureRecipe, bool) {
+	lookup := RecipeLookup{FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
 		if ft == "core/cache" {
 			return providesFR("core/cache:1.0.0", "url", "{{ .values.host }}"), true
 		}
@@ -129,7 +129,7 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyHalts(t *testing.T) {
 	secrets.Set("api", inner)
 	graph := &types.IRGraph{Spec: types.IRSpec{Secrets: secrets}}
 
-	lookup := RecipeLookup{FeatureRecipe: func(ft string) (*types.FeatureRecipe, bool) {
+	lookup := RecipeLookup{FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
 		return providesFR("core/db-creds:1.0.0", "root_password", "{{ .values.generated }}"), true
 	}}
 

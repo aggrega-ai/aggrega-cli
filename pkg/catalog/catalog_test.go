@@ -69,7 +69,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Recipes) != 1 {
 		t.Errorf("expected 1 recipe, got %d", len(c.Recipes))
 	}
-	if _, ok := c.Recipes["core/server/api-server"]; !ok {
+	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/server/api-server"); !ok {
 		t.Error("missing recipe implementing core/api-server")
 	}
 
@@ -356,7 +356,7 @@ func TestLoad_RecipeLookup(t *testing.T) {
 
 	lookup := c.RecipeLookup()
 
-	r, found := lookup.Recipe("core/server/api-server")
+	r, found := lookup.Recipe("", "core/server/api-server")
 	if !found {
 		t.Fatal("expected to find recipe for core/api-server")
 	}
@@ -364,7 +364,7 @@ func TestLoad_RecipeLookup(t *testing.T) {
 		t.Errorf("recipe name: %q", r.Metadata.Name)
 	}
 
-	_, found = lookup.Recipe("nonexistent")
+	_, found = lookup.Recipe("", "nonexistent")
 	if found {
 		t.Error("expected not found")
 	}
@@ -453,10 +453,10 @@ spec:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := c.Recipes["core/x"]; !ok {
+	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/x"); !ok {
 		t.Error("missing core/x from dirA")
 	}
-	if _, ok := c.Recipes["core/y"]; !ok {
+	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/y"); !ok {
 		t.Error("missing core/y from dirB")
 	}
 }
@@ -559,7 +559,7 @@ spec:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r, ok := c.Recipes["core/rel"]
+	r, _, ok := matchRecipeByImplements(c.Recipes, "core/rel")
 	if !ok {
 		t.Fatal("recipe not loaded")
 	}

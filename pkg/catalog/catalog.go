@@ -43,8 +43,8 @@ import (
 type Catalog struct {
 	Components       map[string]types.Component
 	Features         map[string]types.Feature
-	Recipes          map[string]types.Recipe         // keyed by spec.implements
-	FeatureRecipes   map[string]types.FeatureRecipe  // keyed by spec.implements
+	Recipes          map[string]types.Recipe         // keyed by identity (metadata.name:version)
+	FeatureRecipes   map[string]types.FeatureRecipe  // keyed by identity (metadata.name:version)
 	Aggregates       map[string]types.Aggregate      // keyed by metadata.name
 	Providers        map[string]types.Provider       // keyed by metadata.name (e.g. "helm", "helm-chart")
 	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
@@ -432,7 +432,11 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			entry.Import = abs
 			e.Spec.Artifacts.Set(name, entry)
 		}
-		c.Recipes[e.Spec.Implements] = e
+		rKey := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+		if _, dup := c.Recipes[rKey]; dup {
+			return cerrors.Wrap(ErrDuplicateRecipeIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe identity %q already declared", rKey))
+		}
+		c.Recipes[rKey] = e
 		c.entityBytes[entityBytesKey("Recipe", e.Metadata.Name)] = data
 	case "FeatureRecipe":
 		var e types.FeatureRecipe
@@ -450,7 +454,11 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			}
 			e.Spec.Source = abs
 		}
-		c.FeatureRecipes[e.Spec.Implements] = e
+		frKey := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+		if _, dup := c.FeatureRecipes[frKey]; dup {
+			return cerrors.Wrap(ErrDuplicateRecipeIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("feature recipe identity %q already declared", frKey))
+		}
+		c.FeatureRecipes[frKey] = e
 		c.entityBytes[entityBytesKey("FeatureRecipe", e.Metadata.Name)] = data
 	case "Aggregate":
 		var e types.Aggregate
@@ -719,15 +727,17 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 // precedence; the lookup closures here just dispatch through it.
 func (c *Catalog) RecipeLookup() renderer.RecipeLookup {
 	return renderer.RecipeLookup{
-		Recipe: func(componentType string) (*types.Recipe, bool) {
-			r, ok := matchImplements(c.Recipes, componentType)
+		// No Manifest → no name tier; resolution is implements-only, so the
+		// instance name is unused here.
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			r, _, ok := matchRecipeByImplements(c.Recipes, componentType)
 			if !ok {
 				return nil, false
 			}
 			return &r, true
 		},
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
-			fr, ok := matchImplements(c.FeatureRecipes, featureType)
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			fr, _, ok := matchFeatureRecipeByImplements(c.FeatureRecipes, featureType)
 			if !ok {
 				return nil, false
 			}

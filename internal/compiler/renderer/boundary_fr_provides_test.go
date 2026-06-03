@@ -28,7 +28,7 @@ func boundaryScopeProvidesFR() *types.FeatureRecipe {
 
 func dbProvidesLookup(fr *types.FeatureRecipe) RecipeLookup {
 	return RecipeLookup{
-		FeatureRecipe: func(featureType string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/db:1.0" {
 				return fr, true
 			}

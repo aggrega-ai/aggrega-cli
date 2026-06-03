@@ -102,7 +102,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 			continue
 		}
 		for instanceName, entry := range fvm.All() {
-			fr, found := recipeLookup.FeatureRecipe(entry.Type)
+			fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
 			if !found || fr.Spec.Assertions.Len() == 0 {
 				continue
 			}

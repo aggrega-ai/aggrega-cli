@@ -35,7 +35,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 	}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			provides := types.OrderedMap[string]{}
 			provides.Set("host", `{{ .context.inject.env.TARGET }}`)
 			return &types.Recipe{
@@ -46,7 +46,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 				},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
@@ -98,7 +98,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 	input.Graph.Spec.Nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(ct string) (*types.Recipe, bool) {
+		Recipe: func(_, ct string) (*types.Recipe, bool) {
 			switch ct {
 			case "core/server/api-server":
 				return &types.Recipe{
@@ -121,7 +121,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 				return nil, false
 			}
 		},
-		FeatureRecipe: func(ft string) (*types.FeatureRecipe, bool) {
+		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
 			if ft == "core/dns-resolver" {
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "dns-resolver-recipe"},
@@ -177,13 +177,13 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 	}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "r"},
 				Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
@@ -212,9 +212,9 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 	t.Error("no deployment found")
 }
 
-// TestIntegration_ValuesAndInfraFlow proves the correctness fix from WI-3:
-// .values from the Aggregate and .infra from the Release boundary must flow
-// through the valuesMapping template to reach the rendered K8s manifest.
+// TestIntegration_ValuesAndInfraFlow proves a values/infra-flow correctness
+// invariant: .values from the Aggregate and .infra from the Release boundary
+// must flow through the valuesMapping template to reach the rendered K8s manifest.
 func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +247,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 	}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
 				Spec: types.RecipeSpec{
@@ -256,7 +256,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 				},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
@@ -371,13 +371,13 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 			}
 
 			lookup := renderer.RecipeLookup{
-				Recipe: func(string) (*types.Recipe, bool) {
+				Recipe: func(_, _ string) (*types.Recipe, bool) {
 					return &types.Recipe{
 						Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 						Spec:     spec,
 					}, true
 				},
-				FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+				FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 			}
 
 			capture := &captureComposerEngine{}

@@ -90,7 +90,7 @@ func RehydrateInjectFromProvides(
 		// are not in the per-component allProvides bag — resolve them from the
 		// boundary accumulator by instance and merge over targetProvides.
 		if edge.OriginFeature != "" && edge.OriginFeatureInstance != "" && boundaryFRState != nil && recipeLookup.FeatureRecipe != nil {
-			if fr, found := recipeLookup.FeatureRecipe(edge.OriginFeature); found && fr.Spec.ExecutionScope == "boundary" {
+			if fr, found := recipeLookup.FeatureRecipe(edge.OriginFeatureInstance, edge.OriginFeature); found && fr.Spec.ExecutionScope == "boundary" {
 				if bprov, hit := resolveBoundaryScopeFRProvides(boundaryFRState, consumerBoundaryPath, edge.OriginFeatureInstance); hit {
 					merged := types.OrderedMap[string]{}
 					for k, v := range targetProvides.All() {

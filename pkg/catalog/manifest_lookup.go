@@ -6,6 +6,10 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/Masterminds/semver/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -27,6 +31,37 @@ var ErrManifestImplementsMismatch = errors.New("manifest mapping entry's recipe 
 // matching — the lookup cannot pick one without guessing, so it halts loudly
 // rather than silently resolving the first.
 var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous")
+
+// ErrDuplicateRecipeIdentity fires when two catalog recipes (or feature
+// recipes) share the same identity — metadata.name plus version. The catalog is
+// keyed by identity so multiple recipes implementing one component type coexist;
+// a genuine duplicate identity is an authoring collision surfaced loudly at load
+// rather than silently shadowed.
+var ErrDuplicateRecipeIdentity = errors.New("duplicate recipe identity (metadata.name + version) in the catalog")
+
+// ErrAmbiguousImplements fires when a component/feature type carries no Manifest
+// mapping yet more than one catalog recipe implements it — the compiler cannot
+// pick one without guessing, so it halts and names the colliding recipes. This
+// is the implements-search analogue of ErrAmbiguousTypeMapping, possible only
+// because the catalog (keyed by identity) holds multiple recipes per type.
+var ErrAmbiguousImplements = errors.New("multiple recipes implement this type and the Manifest does not map it; pin the instance or type in the Manifest to disambiguate")
+
+// ErrNoRecipeResolved fires when a component/feature instance resolves to no
+// recipe at all — no Manifest mapping names it and no catalog recipe implements
+// its type. The build halts rather than silently emitting a component with no
+// rendered output.
+var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance; map its type in the Manifest or add a recipe implementing it")
+
+// recipeURIKey is the catalog's identity key for a recipe or feature recipe:
+// metadata.name joined with version as "name:version" (the same URI form
+// Manifest mapping values and the closure walker use). A versionless entity
+// keys on its bare name.
+func recipeURIKey(name, version string) string {
+	if version == "" {
+		return name
+	}
+	return name + ":" + version
+}
 
 // versionTolerantTypeGet resolves a component / feature TYPE to its mapped recipe
 // URI in typeMap, tolerant of a version mismatch between the authored type and
@@ -63,6 +98,25 @@ func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string)
 	}
 }
 
+// nameThenType resolves a mapping tier with name-wins-over-type precedence:
+// an exact instance-name hit short-circuits all further lookup; otherwise the
+// version-tolerant type match applies. This is the single expression of the
+// Manifest two-tier precedence per entity kind — flat-shape and legacy callers
+// both route through it, so the cascade entry points stay dumb forwarders and
+// the precedence cannot drift between resolution paths. An empty instanceName
+// (no per-instance name in scope at a call site) cleanly skips the name tier.
+func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (string, bool, error) {
+	if tier == nil {
+		return "", false, nil
+	}
+	if instanceName != "" {
+		if uri, ok := tier.Name.Get(instanceName); ok {
+			return uri, true, nil
+		}
+	}
+	return versionTolerantTypeGet(tier.Type, lookupType)
+}
+
 // RecipeLookupWithManifest returns a renderer.RecipeLookup whose Recipe
 // and FeatureRecipe closures dispatch through a three-layer cascade
 // when a Manifest is supplied:
@@ -87,14 +141,14 @@ func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.Re
 	}
 }
 
-func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string) (*types.Recipe, bool) {
-	return func(componentType string) (*types.Recipe, bool) {
-		// Layer 1: flat-shape mapping. A version-ambiguous mapping error is
-		// swallowed to a miss here — render is resilient via the Layer-3
-		// implements fallback below; the loud ErrAmbiguousTypeMapping is the
-		// pull/source-descent contract (ComponentRecipeURI), where a wrong pick
-		// mis-pins a source.
-		if uri, ok, err := flatComponentURI(manifest, componentType); err == nil && ok {
+func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.Recipe, bool) {
+	return func(instanceName, componentType string) (*types.Recipe, bool) {
+		// Layer 1: flat-shape mapping (name-wins-over-type via flatComponentURI).
+		// A version-ambiguous mapping error is swallowed to a miss here — render
+		// is resilient via the Layer-3 implements fallback below; the loud
+		// ErrAmbiguousTypeMapping is the pull/source-descent contract
+		// (ComponentRecipeURI), where a wrong pick mis-pins a source.
+		if uri, ok, err := flatComponentURI(manifest, instanceName, componentType); err == nil && ok {
 			if r, found := c.RecipeByURI(uri); found {
 				return &r, true
 			}
@@ -104,13 +158,16 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 			// at the consistency-check step.
 		}
 		// Layer 2: legacy v2 per-provider mapping.
-		if uri, ok, err := legacyComponentURI(manifest, componentType); err == nil && ok {
+		if uri, ok, err := legacyComponentURI(manifest, instanceName, componentType); err == nil && ok {
 			if r, found := c.RecipeByURI(uri); found {
 				return &r, true
 			}
 		}
-		// Layer 3: matchImplements walking spec.implements.
-		r, ok := matchImplements(c.Recipes, componentType)
+		// Layer 3: implements-search (the name tier is a Manifest-mapping
+		// concern, not an implements axis). A type with no mapping and >1
+		// implementing recipe misses here and halts loudly in the pre-render
+		// resolution-completeness pass — render never silently picks one.
+		r, _, ok := matchRecipeByImplements(c.Recipes, componentType)
 		if !ok {
 			return nil, false
 		}
@@ -118,19 +175,19 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 	}
 }
 
-func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifest) func(string) (*types.FeatureRecipe, bool) {
-	return func(featureType string) (*types.FeatureRecipe, bool) {
-		if uri, ok, err := flatFeatureURI(manifest, featureType); err == nil && ok {
+func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.FeatureRecipe, bool) {
+	return func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
+		if uri, ok, err := flatFeatureURI(manifest, instanceName, featureType); err == nil && ok {
 			if fr, found := c.FeatureRecipeByURI(uri); found {
 				return &fr, true
 			}
 		}
-		if uri, ok, err := legacyFeatureURI(manifest, featureType); err == nil && ok {
+		if uri, ok, err := legacyFeatureURI(manifest, instanceName, featureType); err == nil && ok {
 			if fr, found := c.FeatureRecipeByURI(uri); found {
 				return &fr, true
 			}
 		}
-		fr, ok := matchImplements(c.FeatureRecipes, featureType)
+		fr, _, ok := matchFeatureRecipeByImplements(c.FeatureRecipes, featureType)
 		if !ok {
 			return nil, false
 		}
@@ -138,32 +195,209 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 	}
 }
 
-// RecipeByURI resolves a Recipe URI directly against the catalog. The
-// URI carries the canonical namespace/provider/name shape with an
-// optional version segment (exact, caret-range, or unversioned per
-// the three-form matching rules). The function walks the catalog's
-// Recipes map applying matchImplements semantics against the Recipe
-// URIs (not the spec.implements strings).
+// RecipeByURI resolves a Manifest mapping value (a Recipe URI) to its catalog
+// Recipe. The catalog is keyed by identity (metadata.name:version), so an exact
+// `name:version` URI is a direct map get; an unversioned URI (or a versioned URI
+// whose exact version is absent) resolves by recipe NAME when exactly one
+// version carries that name. Two versions under one name make an unversioned URI
+// ambiguous — that misses here and is surfaced as a loud resolution halt
+// upstream rather than silently picking a version.
 func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
-	// The catalog's Recipes map is keyed by spec.implements today, not
-	// by Recipe URI. Build a transient URI-keyed view (metadata.name)
-	// once per lookup. The catalog is small enough today (<100 entries)
-	// that the per-call allocation is negligible; future work
-	// promotes this to a pre-built index when scale demands it.
-	uriIndex := make(map[string]types.Recipe, len(c.Recipes))
-	for _, r := range c.Recipes {
-		uriIndex[r.Metadata.Name] = r
+	if r, ok := c.Recipes[uri]; ok {
+		return r, true
 	}
-	return matchImplements(uriIndex, uri)
+	name := stripVersion(uri)
+	var match types.Recipe
+	n := 0
+	for _, r := range c.Recipes {
+		if r.Metadata.Name == name {
+			match = r
+			n++
+		}
+	}
+	if n == 1 {
+		return match, true
+	}
+	return types.Recipe{}, false
 }
 
 // FeatureRecipeByURI is the FeatureRecipe analogue of RecipeByURI.
 func (c *Catalog) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
-	uriIndex := make(map[string]types.FeatureRecipe, len(c.FeatureRecipes))
-	for _, fr := range c.FeatureRecipes {
-		uriIndex[fr.Metadata.Name] = fr
+	if fr, ok := c.FeatureRecipes[uri]; ok {
+		return fr, true
 	}
-	return matchImplements(uriIndex, uri)
+	name := stripVersion(uri)
+	var match types.FeatureRecipe
+	n := 0
+	for _, fr := range c.FeatureRecipes {
+		if fr.Metadata.Name == name {
+			match = fr
+			n++
+		}
+	}
+	if n == 1 {
+		return match, true
+	}
+	return types.FeatureRecipe{}, false
+}
+
+// implementsSatisfies reports whether a recipe declaring spec.implements==impl
+// satisfies a request for componentType, under the three-form matching rule
+// (exact, caret-range, unversioned base) — the same precedence matchImplements
+// applies, expressed per-entry so the implements SEARCH can collect every
+// matching recipe (the catalog now holds more than one recipe per type).
+func implementsSatisfies(impl, componentType string) bool {
+	if impl == componentType {
+		return true
+	}
+	cBase, cVer, cHasVer := splitVersionedURI(componentType)
+	if !cHasVer {
+		return false
+	}
+	iBase, iVer, iHasVer := splitVersionedURI(impl)
+	if iHasVer && iBase == cBase && strings.HasPrefix(iVer, "^") {
+		if cv, err := semver.NewVersion(cVer); err == nil {
+			if con, cerr := semver.NewConstraint(iVer); cerr == nil && con.Check(cv) {
+				return true
+			}
+		}
+		return false
+	}
+	return impl == cBase
+}
+
+// matchRecipeByImplements searches the catalog for recipes whose spec.implements
+// satisfies componentType. It returns the single match when exactly one recipe
+// implements the type; the sorted identity list of all matches is returned for
+// the caller's diagnostics. Zero or more than one return ok=false — the
+// resolution-completeness pass turns those into a loud halt (no recipe / the
+// ambiguity the Manifest must disambiguate), so render never silently picks.
+func matchRecipeByImplements(recipes map[string]types.Recipe, componentType string) (types.Recipe, []string, bool) {
+	var match types.Recipe
+	var ids []string
+	for _, r := range recipes {
+		if implementsSatisfies(r.Spec.Implements, componentType) {
+			match = r
+			ids = append(ids, recipeURIKey(r.Metadata.Name, r.Metadata.Version))
+		}
+	}
+	sort.Strings(ids)
+	if len(ids) == 1 {
+		return match, ids, true
+	}
+	return types.Recipe{}, ids, false
+}
+
+// matchFeatureRecipeByImplements is the FeatureRecipe analogue of
+// matchRecipeByImplements.
+func matchFeatureRecipeByImplements(frs map[string]types.FeatureRecipe, featureType string) (types.FeatureRecipe, []string, bool) {
+	var match types.FeatureRecipe
+	var ids []string
+	for _, fr := range frs {
+		if implementsSatisfies(fr.Spec.Implements, featureType) {
+			match = fr
+			ids = append(ids, recipeURIKey(fr.Metadata.Name, fr.Metadata.Version))
+		}
+	}
+	sort.Strings(ids)
+	if len(ids) == 1 {
+		return match, ids, true
+	}
+	return types.FeatureRecipe{}, ids, false
+}
+
+// resolveComponentRecipeForVerify runs the renderer's component cascade
+// (Manifest name → type → legacy mapping, then the implements search) for one
+// instance and returns a loud error when it does not resolve to exactly one
+// recipe. nil means the instance resolves cleanly.
+func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, instanceName, componentType string) error {
+	uri, ok, err := ComponentRecipeURI(manifest, instanceName, componentType)
+	if err != nil {
+		return err // ambiguous version-distinct type mapping (already a loud sentinel)
+	}
+	if ok {
+		if _, found := c.RecipeByURI(uri); !found {
+			return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to recipe %q, which is not in the catalog", ErrNoRecipeResolved, instanceName, componentType, uri)
+		}
+		return nil
+	}
+	_, ids, single := matchRecipeByImplements(c.Recipes, componentType)
+	if single {
+		return nil
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("%w: component %q (type %q): no Manifest mapping and no recipe implements it", ErrNoRecipeResolved, instanceName, componentType)
+	}
+	return fmt.Errorf("%w: component %q (type %q): recipes %v all implement it", ErrAmbiguousImplements, instanceName, componentType, ids)
+}
+
+// resolveFeatureRecipeForVerify is the FeatureRecipe analogue of
+// resolveComponentRecipeForVerify.
+func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instanceName, featureType string) error {
+	uri, ok, err := FeatureRecipeURI(manifest, instanceName, featureType)
+	if err != nil {
+		return err
+	}
+	if ok {
+		if _, found := c.FeatureRecipeByURI(uri); !found {
+			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved, instanceName, featureType, uri)
+		}
+		return nil
+	}
+	_, ids, single := matchFeatureRecipeByImplements(c.FeatureRecipes, featureType)
+	if single {
+		return nil
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it", ErrNoRecipeResolved, instanceName, featureType)
+	}
+	return fmt.Errorf("%w: feature %q (type %q): feature recipes %v all implement it", ErrAmbiguousImplements, instanceName, featureType, ids)
+}
+
+// VerifyRecipeResolution is the pre-render resolution-completeness pass: every
+// component and feature instance in the IR must resolve to exactly one recipe.
+// It runs the same cascade the renderer uses and halts loudly — rather than
+// letting a no-recipe instance silently render nothing or an ambiguous type
+// silently pick one — naming the offending instance and (for ambiguity) the
+// colliding recipes. Errors across all instances are collected (no
+// short-circuit) and joined in IR author order. Returns nil when every instance
+// resolves cleanly. Signature matches pipeline.Options.RecipeResolutionVerifier.
+func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
+	if graph == nil {
+		return nil
+	}
+	var errs []error
+	for _, nodeID := range graph.Spec.Nodes.Keys() {
+		node, _ := graph.Spec.Nodes.Get(nodeID)
+		if err := c.resolveComponentRecipeForVerify(manifest, nodeID, node.Component); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
+		_ = nodeID
+		for instName, entry := range feats.All() {
+			if err := c.resolveFeatureRecipeForVerify(manifest, instName, entry.Type); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	for nodeID, secs := range graph.Spec.Secrets.All() {
+		_ = nodeID
+		for instName, entry := range secs.All() {
+			if err := c.resolveFeatureRecipeForVerify(manifest, instName, entry.Type); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	for bp, feats := range graph.Spec.BoundaryFeatures.All() {
+		_ = bp
+		for instName, bf := range feats.All() {
+			if err := c.resolveFeatureRecipeForVerify(manifest, instName, bf.Type); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // VerifyManifestImplementsConsistency walks every populated mapping
@@ -216,13 +450,15 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 	return errs
 }
 
-// flatComponentURI returns the Recipe URI mapped to the given
-// componentType in the Manifest's flat-shape mapping, when populated.
-func flatComponentURI(manifest *types.Manifest, componentType string) (string, bool, error) {
+// flatComponentURI returns the Recipe URI mapped to the given component
+// instance in the Manifest's flat-shape mapping, when populated. Resolution
+// is name-wins-over-type: a `name:` override on instanceName takes precedence
+// over the (version-tolerant) `type:` match on componentType.
+func flatComponentURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Components == nil {
 		return "", false, nil
 	}
-	return versionTolerantTypeGet(manifest.Spec.Mappings.Components.Type, componentType)
+	return nameThenType(manifest.Spec.Mappings.Components, instanceName, componentType)
 }
 
 // legacyComponentURI walks the legacy v2 per-provider mappings looking
@@ -232,7 +468,7 @@ func flatComponentURI(manifest *types.Manifest, componentType string) (string, b
 // transitional overlay, we accept the first match as a sufficient
 // fallback (the legacy fixtures with populated mappings all carry
 // the single-provider shape).
-func legacyComponentURI(manifest *types.Manifest, componentType string) (string, bool, error) {
+func legacyComponentURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
 	if manifest == nil {
 		return "", false, nil
 	}
@@ -240,7 +476,7 @@ func legacyComponentURI(manifest *types.Manifest, componentType string) (string,
 		if pm.Components == nil {
 			continue
 		}
-		uri, ok, err := versionTolerantTypeGet(pm.Components.Type, componentType)
+		uri, ok, err := nameThenType(pm.Components, instanceName, componentType)
 		if err != nil {
 			return "", false, err
 		}
@@ -262,13 +498,13 @@ func legacyComponentURI(manifest *types.Manifest, componentType string) (string,
 // component carries no source-descent entity — it would be selected for render
 // by spec.implements, which is a render-selection path, not a
 // source-acquisition path — so it correctly contributes no source artifact.
-func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string, bool, error) {
-	if uri, ok, err := flatComponentURI(manifest, componentType); err != nil {
+func ComponentRecipeURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
+	if uri, ok, err := flatComponentURI(manifest, instanceName, componentType); err != nil {
 		return "", false, err
 	} else if ok {
 		return uri, true, nil
 	}
-	return legacyComponentURI(manifest, componentType)
+	return legacyComponentURI(manifest, instanceName, componentType)
 }
 
 // FeatureRecipeURI is the FeatureRecipe analogue of ComponentRecipeURI: it
@@ -279,25 +515,26 @@ func ComponentRecipeURI(manifest *types.Manifest, componentType string) (string,
 // data by this value join cleanly against the closure's entities.
 //
 // Returns ("", false) when no Manifest mapping names featureType.
-func FeatureRecipeURI(manifest *types.Manifest, featureType string) (string, bool, error) {
-	if uri, ok, err := flatFeatureURI(manifest, featureType); err != nil {
+func FeatureRecipeURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
+	if uri, ok, err := flatFeatureURI(manifest, instanceName, featureType); err != nil {
 		return "", false, err
 	} else if ok {
 		return uri, true, nil
 	}
-	return legacyFeatureURI(manifest, featureType)
+	return legacyFeatureURI(manifest, instanceName, featureType)
 }
 
-// flatFeatureURI is the Feature analogue of flatComponentURI.
-func flatFeatureURI(manifest *types.Manifest, featureType string) (string, bool, error) {
+// flatFeatureURI is the Feature analogue of flatComponentURI: name-wins-over-type
+// resolution of a feature instance against the flat-shape mapping.
+func flatFeatureURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Features == nil {
 		return "", false, nil
 	}
-	return versionTolerantTypeGet(manifest.Spec.Mappings.Features.Type, featureType)
+	return nameThenType(manifest.Spec.Mappings.Features, instanceName, featureType)
 }
 
 // legacyFeatureURI is the Feature analogue of legacyComponentURI.
-func legacyFeatureURI(manifest *types.Manifest, featureType string) (string, bool, error) {
+func legacyFeatureURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
 	if manifest == nil {
 		return "", false, nil
 	}
@@ -305,7 +542,7 @@ func legacyFeatureURI(manifest *types.Manifest, featureType string) (string, boo
 		if pm.Features == nil {
 			continue
 		}
-		uri, ok, err := versionTolerantTypeGet(pm.Features.Type, featureType)
+		uri, ok, err := nameThenType(pm.Features, instanceName, featureType)
 		if err != nil {
 			return "", false, err
 		}

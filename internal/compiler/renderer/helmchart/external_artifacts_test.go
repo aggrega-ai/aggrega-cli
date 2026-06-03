@@ -52,8 +52,6 @@ var (
 //   - metadata.labels carries aggrega.ai/component-id.
 //   - The chart-root files (Chart.yaml, the original templates/_app.yaml)
 //     also land in the per-node tree alongside the injected crd.yaml.
-//
-// Acceptance criterion 6 in the WI front-matter.
 func TestHelmChartArtifactsImport_EndToEnd(t *testing.T) {
 	t.Parallel()
 
@@ -115,7 +113,7 @@ spec:
 	}
 
 	lookup := renderer.RecipeLookup{
-		Recipe: func(string) (*types.Recipe, bool) {
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			artifacts := types.OrderedMap[types.ArtifactEntry]{}
 			artifacts.Set("crd.yaml", types.ArtifactEntry{Import: crdPath})
 			return &types.Recipe{
@@ -128,7 +126,7 @@ spec:
 				},
 			}, true
 		},
-		FeatureRecipe: func(string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
 	factory := func(string) (renderer.Engine, error) { return &HelmEngine{}, nil }

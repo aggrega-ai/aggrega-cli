@@ -453,9 +453,12 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			WorkspaceRoot:     s.workspaceRoot,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
-		recipeCat.RecipeLookup(),
+		recipeCat.RecipeLookupWithManifest(resolved.Manifest),
 		recipeCat.SubAggregateLoader(),
 		daemonEngineFactory,
+		// irGraph is resilient inspection — it returns the IR graph even when
+		// resolution is incomplete, so it does not run the render-time
+		// resolution-completeness halt (that gate is the CLI build's).
 		pipeline.Options{IncludeTrace: false},
 	)
 	if err != nil {

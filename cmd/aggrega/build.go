@@ -191,10 +191,13 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 			WorkspaceRoot:     wsRoot,
 		},
 		cat.CatalogLookup(),
-		cat.RecipeLookup(),
+		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		engineFactory,
-		pipeline.Options{IncludeTrace: traceEnabled},
+		pipeline.Options{
+			IncludeTrace:             traceEnabled,
+			RecipeResolutionVerifier: cat.VerifyRecipeResolution,
+		},
 	)
 	if err != nil {
 		return err

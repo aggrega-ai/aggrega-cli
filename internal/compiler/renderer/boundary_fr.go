@@ -376,7 +376,7 @@ func PrepopulateBoundaryScopeProvides(
 	}
 	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
 		for instName, bf := range feats.All() {
-			fr, ok := recipeLookup.FeatureRecipe(bf.Type)
+			fr, ok := recipeLookup.FeatureRecipe(instName, bf.Type)
 			if !ok || fr.Spec.ExecutionScope != "boundary" {
 				continue
 			}
