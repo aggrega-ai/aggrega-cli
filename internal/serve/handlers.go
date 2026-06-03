@@ -443,8 +443,9 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//     Tier-2 reads fire; moving SetPins after them (or removing it) silently
 	//     degrades to no-pin -> Tier-3 re-fetch, which re-introduces drift-masking
 	//     (serve would preview re-fetched content that a local-cache-drifted build
-	//     halts on). The degraded path stays green, so no test catches the reorder
-	//     — guard it here.
+	//     halts on). The reorder is guarded by an end-to-end test that drives this
+	//     handler against a drifted cache slot and asserts Tier-3 is never reached
+	//     (TestServeIrGraphVerifiesCacheAgainstPinBeforePreview).
 	var pins map[string]string
 	if lf != nil {
 		pins = lf.PinsByURI()
