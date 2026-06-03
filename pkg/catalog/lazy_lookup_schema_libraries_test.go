@@ -5,38 +5,38 @@ package catalog
 
 import (
 	"testing"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestLazyLookup_PrimeCarriesSchemaLibraries proves daemon/CLI IR parity for
+// TestLazyLookup_ResolvesSchemaLibrariesViaWalk proves daemon/CLI IR parity for
 // cross-library schema defaults. The daemon resolves Components/Features through
-// the lazy lookup but loads an eager Catalog for RecipeLookup; it primes the lazy
-// lookup from that eager Catalog. Priming must carry the eager Catalog's
-// SchemaLibraries through AsCatalogLookup so the daemon's IR materializes
-// cross-library defaults identically to the CLI (which uses
-// Catalog.CatalogLookup directly). Without this, the daemon's /ir would serve
-// content-divergent IR for cross-library Components.
-func TestLazyLookup_PrimeCarriesSchemaLibraries(t *testing.T) {
+// the lazy lookup; cross-library schema `$ref` resolution needs the whole
+// SchemaLibrary set, which the lazy backing now resolves ITSELF by walking its
+// catalog directories — it no longer depends on being Prime-fed an eager Catalog's
+// libraries. AsCatalogLookup must expose those walked libraries so the daemon's IR
+// materializes cross-library defaults identically to the CLI. Without this, the
+// daemon's /ir would serve content-divergent IR for cross-library Components.
+func TestLazyLookup_ResolvesSchemaLibrariesViaWalk(t *testing.T) {
 	t.Parallel()
-	cat := &Catalog{
-		SchemaLibraries: map[string]types.SchemaLibrary{
-			"BaseComponents": {Metadata: types.SchemaLibraryMetadata{Name: "BaseComponents"}},
-		},
-	}
-	lazy := NewLazyLookup("", "", nil, nil)
+	dir := t.TempDir()
+	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: 1.0.0
+spec:
+  schemas:
+    Storage:
+      size: { type: string, default: "10Gi" }
+`)
 
-	// Pre-prime: no libraries available.
-	if before := lazy.AsCatalogLookup(); len(before.SchemaLibraries) != 0 {
-		t.Fatalf("pre-prime lazy lookup must carry no SchemaLibraries; got %d", len(before.SchemaLibraries))
-	}
-
-	lazy.Prime(cat)
+	// No Prime — the lazy backing resolves libraries through its own catalog walk.
+	lazy := NewLazyLookup("", "", []string{dir}, nil)
 
 	cl := lazy.AsCatalogLookup()
 	lib, ok := cl.SchemaLibraries["BaseComponents"]
 	if !ok {
-		t.Fatalf("primed lazy lookup must expose SchemaLibraries via AsCatalogLookup (daemon IR would otherwise omit cross-library defaults)")
+		t.Fatalf("lazy lookup must resolve SchemaLibraries via its own catalog walk " +
+			"(daemon IR would otherwise omit cross-library defaults)")
 	}
 	if lib.Metadata.Name != "BaseComponents" {
 		t.Errorf("library Metadata.Name = %q, want BaseComponents", lib.Metadata.Name)

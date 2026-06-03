@@ -372,26 +372,23 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 
 	switch header.Kind {
 	case "Component":
-		var e types.Component
-		if err := yaml.Unmarshal(data, &e); err != nil {
+		// Pass 1 parse + the static per-entity x-aggrega-* discouragement scan run
+		// through the shared per-entity resolve (parseComponentEntity) so the eager
+		// and lazy backings cannot drift. The pillar-shape + body validation runs at
+		// Pass 2 via validateSchemaPillarsPass (it needs the complete SchemaLibraries
+		// map for cross-document $ref expansion, so it cannot run per-file here).
+		e, err := parseComponentEntity(data)
+		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
-		// DiscourageDirectXAggregaInSchema runs at Pass 1 (per-file) because
-		// it walks for x-aggrega-* extension keys statically — it needs
-		// neither SchemaLibrary access nor compactform expansion. The
-		// pillar-shape + body validation runs at Pass 2 via
-		// validateSchemaPillarsPass; keeping the two checks in separate
-		// passes keeps each pass's responsibility clear.
-		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Components[e.Metadata.Name] = e
 		c.componentSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Component", e.Metadata.Name)] = data
 	case "Feature":
-		var e types.Feature
-		if err := yaml.Unmarshal(data, &e); err != nil {
+		e, err := parseFeatureEntity(data)
+		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Feature")
 		}
-		validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 		c.Features[e.Metadata.Name] = e
 		c.featureSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Feature", e.Metadata.Name)] = data
@@ -477,26 +474,16 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.providerSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
 	case "SchemaLibrary":
-		var e types.SchemaLibrary
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal SchemaLibrary")
-		}
-		// Validate each schema entry's content + each template body for
-		// forbidden JSON Schema keywords ($dynamicAnchor / $dynamicRef)
-		// at parse time. Authors who use these keywords get a clear
-		// error citing the file path; the publishing-linter (separate
-		// WI) layers a redundant guard at publish time. The
-		// InstantiateTemplate post-substitution scan closes the
-		// parametric-introduction route at instantiation time.
-		for name, entry := range e.Spec.Schemas.All() {
-			if err := types.ValidateSchemaEntry(&entry); err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("SchemaLibrary %q schema %q: %v", e.Metadata.Name, name, err))
-			}
-		}
-		for name, tmpl := range e.Spec.Templates.All() {
-			if err := types.ValidateTemplateBody(&tmpl); err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("SchemaLibrary %q template %q: %v", e.Metadata.Name, name, err))
-			}
+		// Parse + the forbidden-keyword ($dynamicAnchor / $dynamicRef) and
+		// template-body scans run through the shared per-entity resolve
+		// (parseSchemaLibraryEntity). Authors who use these keywords get a clear
+		// error citing the file path; the publishing-linter peer layers a redundant
+		// guard at publish time, and the InstantiateTemplate post-substitution scan
+		// closes the parametric-introduction route at instantiation time. Sharing
+		// the scan is what gives the lazy backing reject-parity for libraries.
+		e, err := parseSchemaLibraryEntity(data)
+		if err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "load SchemaLibrary")
 		}
 		c.SchemaLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("SchemaLibrary", e.Metadata.Name)] = data
@@ -516,6 +503,68 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil
+}
+
+// parseComponentEntity is the single per-entity Component resolution shared by the
+// eager (catalog.Load, per file) and lazy (LazyLookup, per URI on cache miss)
+// catalog-access backings: full unmarshal, kind-check, and the static per-entity
+// load-time check. It is the SSOT for "what an authored Component resolves to" so
+// the two backings cannot drift in parse/validation. Extends-merge is applied
+// separately by each backing through validator.ResolveComponentExtends (eager in
+// ResolveAllExtends; lazy in Component()); library-dependent pillar validation
+// (validateSchemaPillarsPass) needs the complete SchemaLibraries map and is not a
+// per-entity step.
+func parseComponentEntity(data []byte) (types.Component, error) {
+	var e types.Component
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.Component{}, err
+	}
+	if e.Kind != "Component" {
+		return types.Component{}, fmt.Errorf("expected kind Component, got %q", e.Kind)
+	}
+	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
+	return e, nil
+}
+
+// parseFeatureEntity mirrors parseComponentEntity for the Feature surface.
+func parseFeatureEntity(data []byte) (types.Feature, error) {
+	var e types.Feature
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.Feature{}, err
+	}
+	if e.Kind != "Feature" {
+		return types.Feature{}, fmt.Errorf("expected kind Feature, got %q", e.Kind)
+	}
+	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
+	return e, nil
+}
+
+// parseSchemaLibraryEntity is the single per-entity SchemaLibrary resolution shared
+// by both backings: full unmarshal, kind-check, and the forbidden-keyword
+// (ValidateSchemaEntry) / template-body (ValidateTemplateBody) scans the eager load
+// applies. Sharing it is what gives the lazy backing reject-parity once it resolves
+// libraries directly (no longer Prime-copied from an already-validated eager
+// Catalog): an invalid library the eager build rejects is rejected by the lazy
+// resolution too.
+func parseSchemaLibraryEntity(data []byte) (types.SchemaLibrary, error) {
+	var e types.SchemaLibrary
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.SchemaLibrary{}, err
+	}
+	if e.Kind != "SchemaLibrary" {
+		return types.SchemaLibrary{}, fmt.Errorf("expected kind SchemaLibrary, got %q", e.Kind)
+	}
+	for name, entry := range e.Spec.Schemas.All() {
+		if err := types.ValidateSchemaEntry(&entry); err != nil {
+			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q schema %q: %w", e.Metadata.Name, name, err)
+		}
+	}
+	for name, tmpl := range e.Spec.Templates.All() {
+		if err := types.ValidateTemplateBody(&tmpl); err != nil {
+			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q template %q: %w", e.Metadata.Name, name, err)
+		}
+	}
+	return e, nil
 }
 
 // ProviderLookup returns the loaded Provider whose metadata.name matches

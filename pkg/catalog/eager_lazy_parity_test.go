@@ -7,7 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestEagerLazyResolutionParity is the eager-vs-lazy catalog-resolution
@@ -129,24 +132,66 @@ spec:
 	}
 
 	// Sanity: the cross-library `$ref` target is actually present in the eager
-	// view (so the canary below is meaningful, not green because there is no
-	// library to lose).
+	// view (so the parity assertion above is meaningful, not green because there
+	// is no library to compare).
 	if _, ok := eager.SchemaLibraries["DbSizing"]; !ok {
 		t.Fatalf("fixture invalid: eager view is missing the DbSizing SchemaLibrary")
 	}
 
-	// --- Non-vacuous canary: the UN-primed lazy view diverges. ---
-	// Without Prime the lazy cascade resolves no SchemaLibraries, so the
-	// cross-library-`$ref` default's target library is absent — the exact
-	// cross-library schema-default divergence the parity guard exists to catch. Asserting
-	// the divergence here proves the parity assertions above are earned, not
-	// vacuously green.
-	unprimed := NewLazyLookup("", "", []string{dir}, nil).AsCatalogLookup()
-	if len(unprimed.SchemaLibraries) != 0 {
-		t.Fatalf("un-primed lazy view should carry no SchemaLibraries; got %d", len(unprimed.SchemaLibraries))
+	// Positive semantic invariant — the materialization INPUT is present and correct.
+	// The cross-library $ref in core/database/mariadb is NOT expanded at this
+	// (CatalogLookup) level; it expands downstream at IR build. So a pure eager==lazy
+	// DeepEqual over the raw-$ref components could pass even if the resolved library
+	// silently lost the default the $ref targets (both identically wrong). Assert the
+	// resolved DbSizing.Storage actually carries its size default "10Gi"; a resolution
+	// bug that dropped it fails here rather than surfacing as wrong IR downstream. The
+	// SchemaLibraries DeepEqual above ties the lazy view to this eager assertion.
+	dbSizing := eager.SchemaLibraries["DbSizing"]
+	storage, ok := dbSizing.Spec.Schemas.Get("Storage")
+	if !ok {
+		t.Fatalf("DbSizing library is missing the Storage schema entry")
 	}
-	if reflect.DeepEqual(eager.SchemaLibraries, unprimed.SchemaLibraries) {
-		t.Errorf("canary failed to detect divergence: eager and un-primed-lazy SchemaLibraries compared equal")
+	storageBody, err := yaml.Marshal(&storage.Content)
+	if err != nil {
+		t.Fatalf("marshal DbSizing.Storage content: %v", err)
+	}
+	if !strings.Contains(string(storageBody), "10Gi") {
+		t.Errorf("resolved DbSizing.Storage lost its size default %q — the cross-library $ref target's materialization input is not preserved; got:\n%s", "10Gi", storageBody)
+	}
+
+	// --- The lazy backing resolves libraries itself, without Prime. ---
+	// The lazy backing no longer depends on being Prime-fed eager libraries; an
+	// un-primed lazy view walks its catalog dirs and resolves the same library set.
+	// This is the post-unification shape: both backings share one resolution.
+	unprimed := NewLazyLookup("", "", []string{dir}, nil).AsCatalogLookup()
+	if !reflect.DeepEqual(eager.SchemaLibraries, unprimed.SchemaLibraries) {
+		t.Errorf("un-primed lazy view should resolve the same SchemaLibraries as eager (no Prime dependency)")
+	}
+
+	// --- Non-vacuous reject-parity: an invalid library is rejected by BOTH
+	// backings. --- This is what the shared per-entity resolve buys once Prime's
+	// library copy is gone: a SchemaLibrary carrying a forbidden JSON Schema
+	// keyword that the eager `Load` rejects is rejected by the lazy backing's
+	// direct resolution too — the lazy path does not silently accept a library the
+	// build halts on. Proves the parity above is earned, not vacuously green.
+	rejectDir := t.TempDir()
+	writeFixture(t, rejectDir, "bad-library.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Bad
+  version: 1.0.0
+spec:
+  schemas:
+    Broken:
+      $dynamicAnchor: forbidden
+      type: string
+`)
+	if _, eagerErr := Load("", rejectDir); eagerErr == nil {
+		t.Fatalf("fixture invalid: eager Load must reject a library with a forbidden keyword (the reject-parity assertion is vacuous otherwise)")
+	}
+	rejectLazy := NewLazyLookup("", "", []string{rejectDir}, nil)
+	if lazyErr := rejectLazy.buildSchemaLibraries(); lazyErr == nil {
+		t.Errorf("lazy backing must reject the same invalid library the eager Load rejects (reject-parity); got no error")
 	}
 }
 

@@ -77,6 +77,12 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 // *LazyLookup, so the same hot caches + negative caches + indexes
 // serve every consumer.
 func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
+	// Resolve the SchemaLibrary set (once, cached) so cross-document $ref expansion
+	// sees the same libraries the eager backing does. Best-effort here: a library
+	// that fails validation is surfaced as a hard reject by the eager recipe-catalog
+	// load (serve's resolveRecipeCatalog) and by buildSchemaLibraries' returned
+	// error to a direct caller; AsCatalogLookup exposes the resolvable set.
+	_ = l.buildSchemaLibraries()
 	return resolver.CatalogLookup{
 		Component:       l.Component,
 		Feature:         l.Feature,
@@ -109,6 +115,8 @@ func (l *LazyLookup) Reset() {
 	l.componentIndexBuilt = false
 	l.featureIndex = map[string]string{}
 	l.featureIndexBuilt = false
+	l.schemaLibraries = map[string]types.SchemaLibrary{}
+	l.schemaLibrariesBuilt = false
 	l.pins = nil
 }
 
@@ -116,6 +124,11 @@ func (l *LazyLookup) Reset() {
 // Features into the lazy lookup's hot caches. After Prime, calls to
 // Component(uri) or Feature(uri) for URIs in the supplied catalog
 // return cache hits without walking Tier-1.
+//
+// SchemaLibraries are NOT primed. The lazy backing resolves them itself
+// (buildSchemaLibraries) through the same shared per-entity resolve the eager
+// path uses, so the lazy view never depends on being fed eager-loaded libraries
+// to reach parity. Prime is purely a Component/Feature hot-cache optimization.
 //
 // The catalog MUST have completed extends resolution (via
 // (*Catalog).ResolveAllExtends) before Prime is called — the entries
@@ -149,9 +162,6 @@ func (l *LazyLookup) Prime(cat *Catalog) {
 	for uri, feat := range cat.Features {
 		l.features[uri] = feat
 	}
-	for name, lib := range cat.SchemaLibraries {
-		l.schemaLibraries[name] = lib
-	}
 	l.componentIndexBuilt = true
 	l.featureIndexBuilt = true
 }
@@ -168,12 +178,14 @@ type LazyLookup struct {
 	components map[string]types.Component
 	features   map[string]types.Feature
 
-	// SchemaLibraries primed from an eager *Catalog (Prime). The lazy
-	// cascade resolves Components/Features on demand, but cross-library
-	// schema `$ref` resolution needs the whole library set at compile
-	// time; Prime supplies it so the daemon's IR materializes cross-library
-	// defaults identically to the CLI.
-	schemaLibraries map[string]types.SchemaLibrary
+	// SchemaLibraries resolved by the lazy backing itself (buildSchemaLibraries),
+	// not copied from an eager *Catalog. Cross-library schema `$ref` resolution
+	// needs the whole library set at compile time, so the set is walked + parsed +
+	// validated as a unit (not per-URI on demand) on first need and cached here.
+	// schemaLibrariesBuilt guards the one-time walk; Reset clears both so a changed
+	// workspace re-walks.
+	schemaLibraries      map[string]types.SchemaLibrary
+	schemaLibrariesBuilt bool
 
 	// Negative cache short-circuits repeated lookups of known-missing
 	// URIs within the session.
@@ -333,11 +345,11 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 		return comp, true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		var comp types.Component
-		if err := yaml.Unmarshal(bytes, &comp); err == nil && comp.Kind == "Component" {
+		// parseComponentEntity is the shared per-entity resolve; a non-Component
+		// kind returns an error and the cascade falls through to Tier-3.
+		if comp, err := parseComponentEntity(bytes); err == nil {
 			return comp, true
 		}
-		// Verified bytes parsed to a non-Component kind — fall through to Tier-3.
 	} else if outcome == tier2Skip {
 		// Cache drifted from the pin; diagnostic already emitted. Do not use the
 		// drifted bytes and do not self-heal — the entity is unavailable for this
@@ -346,8 +358,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 	}
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
-		var comp types.Component
-		if uerr := yaml.Unmarshal(bytes, &comp); uerr == nil && comp.Kind == "Component" {
+		if comp, perr := parseComponentEntity(bytes); perr == nil {
 			return comp, true
 		}
 	}
@@ -362,11 +373,9 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 		return feat, true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		var feat types.Feature
-		if err := yaml.Unmarshal(bytes, &feat); err == nil && feat.Kind == "Feature" {
+		if feat, err := parseFeatureEntity(bytes); err == nil {
 			return feat, true
 		}
-		// Verified bytes parsed to a non-Feature kind — fall through to Tier-3.
 	} else if outcome == tier2Skip {
 		// Cache drifted from the pin; diagnostic already emitted. Do not use the
 		// drifted bytes and do not self-heal.
@@ -374,8 +383,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 	}
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
-		var feat types.Feature
-		if uerr := yaml.Unmarshal(bytes, &feat); uerr == nil && feat.Kind == "Feature" {
+		if feat, perr := parseFeatureEntity(bytes); perr == nil {
 			return feat, true
 		}
 	}
@@ -396,8 +404,8 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 	if err != nil {
 		return types.Component{}, false
 	}
-	var comp types.Component
-	if err := yaml.Unmarshal(data, &comp); err != nil {
+	comp, perr := parseComponentEntity(data)
+	if perr != nil {
 		return types.Component{}, false
 	}
 	return comp, true
@@ -415,8 +423,8 @@ func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	if err != nil {
 		return types.Feature{}, false
 	}
-	var feat types.Feature
-	if err := yaml.Unmarshal(data, &feat); err != nil {
+	feat, perr := parseFeatureEntity(data)
+	if perr != nil {
 		return types.Feature{}, false
 	}
 	return feat, true
@@ -484,4 +492,54 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 			return nil
 		})
 	}
+}
+
+// buildSchemaLibraries walks the catalog directories once, parses + validates every
+// SchemaLibrary through the shared per-entity resolve (parseSchemaLibraryEntity),
+// and caches them in l.schemaLibraries. SchemaLibraries are consumed as a complete
+// set for cross-document $ref expansion, so the whole set is resolved as a unit
+// here (not per-URI on demand). Idempotent via schemaLibrariesBuilt.
+//
+// Returns the first validation error encountered, in catalog-walk order — the same
+// rejection the eager catalog.Load surfaces, so the lazy backing does not silently
+// accept a library the build rejects (reject-parity). Valid libraries are still
+// cached so a best-effort caller (AsCatalogLookup) sees the resolvable set; a
+// caller that must reject (the conformance test; a future serve gate) observes the
+// returned error. In the daemon, an invalid library is additionally caught as a
+// hard load failure by the eager recipe-catalog resolution before render.
+func (l *LazyLookup) buildSchemaLibraries() error {
+	if l.schemaLibrariesBuilt {
+		return nil
+	}
+	l.schemaLibrariesBuilt = true
+	var firstErr error
+	for _, dir := range l.catalogDirs {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			ext := filepath.Ext(path)
+			if ext != ".yaml" && ext != ".yml" {
+				return nil
+			}
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return nil
+			}
+			var hdr fileHeader
+			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil || hdr.Kind != "SchemaLibrary" {
+				return nil
+			}
+			lib, perr := parseSchemaLibraryEntity(data)
+			if perr != nil {
+				if firstErr == nil {
+					firstErr = perr
+				}
+				return nil
+			}
+			l.schemaLibraries[lib.Metadata.Name] = lib
+			return nil
+		})
+	}
+	return firstErr
 }
