@@ -95,6 +95,93 @@ func TestParseLibraryRef(t *testing.T) {
 	}
 }
 
+func TestParseIdentityRef(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		input       string
+		wantName    string
+		wantVersion string
+		wantFrag    string
+		wantErr     bool
+	}{
+		{
+			name:     "bare-name identity ref",
+			input:    "DbSizing#/schemas/Storage",
+			wantName: "DbSizing",
+			wantFrag: "/schemas/Storage",
+		},
+		{
+			name:        "host-less version floor",
+			input:       "DbSizing@1.0.0#/schemas/Storage",
+			wantName:    "DbSizing",
+			wantVersion: "1.0.0",
+			wantFrag:    "/schemas/Storage",
+		},
+		{
+			name:        "nested entry path with version floor",
+			input:       "DbSizing@2.1.0#/schemas/nested/DeepRef",
+			wantName:    "DbSizing",
+			wantVersion: "2.1.0",
+			wantFrag:    "/schemas/nested/DeepRef",
+		},
+		{
+			name:    "host-bearing reference rejected",
+			input:   "oci://hub.aggrega.ai/schema-library/DbSizing#/schemas/Storage",
+			wantErr: true,
+		},
+		{
+			name:    "in-document anchor is not a library ref",
+			input:   "#/$defs/Local",
+			wantErr: true,
+		},
+		{
+			name:    "fragment-less reference rejected",
+			input:   "DbSizing",
+			wantErr: true,
+		},
+		{
+			name:    "mappings fragment is the $import surface, not $ref",
+			input:   "BaseMappings#/mappings/SimpleValues",
+			wantErr: true,
+		},
+		{
+			name:    "empty input rejected",
+			input:   "",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			name, version, fragment, err := parseIdentityRef(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for input %q; got nil", tc.input)
+				}
+				if !errors.Is(err, ErrInvalidLibraryRef) {
+					t.Errorf("error should wrap ErrInvalidLibraryRef; got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if name != tc.wantName {
+				t.Errorf("name: got %q; want %q", name, tc.wantName)
+			}
+			if version != tc.wantVersion {
+				t.Errorf("version: got %q; want %q", version, tc.wantVersion)
+			}
+			if fragment != tc.wantFrag {
+				t.Errorf("fragment: got %q; want %q", fragment, tc.wantFrag)
+			}
+		})
+	}
+}
+
 func TestSelectMVSVersionPicksMaxVersion(t *testing.T) {
 	t.Parallel()
 	// Two consumers pinning compatible minors: MVS picks the maximum.

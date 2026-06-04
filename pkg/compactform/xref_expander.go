@@ -28,9 +28,9 @@ type xrefURI struct {
 // references (`#/$defs/...`) and other shapes to their own emission paths.
 //
 // The function does not consult the catalog; it only validates the URI's
-// shape against the canonical-$id convention documented at
-// pkg/types/schemalibrary.go:51-55. URI-target validation (library exists,
-// entry exists) happens at expandSchemaLibraryRef.
+// shape as a bare-name cross-document reference (`<Library>#/schemas/<Entry>`).
+// URI-target validation (library exists, entry exists) happens at
+// expandSchemaLibraryRef.
 func parseCrossDocRefURI(ref string) (xrefURI, bool) {
 	if ref == "" {
 		return xrefURI{}, false
@@ -50,7 +50,7 @@ func parseCrossDocRefURI(ref string) (xrefURI, bool) {
 	frag := ref[hash+1:]
 	// Fragment must be `/schemas/<entry-name>`. The leading slash matches
 	// JSON Pointer / RFC 6901 fragment shape; the `schemas` segment matches
-	// the canonical-$id derivation rule.
+	// the bare-name cross-document reference shape.
 	const fragPrefix = "/schemas/"
 	if !strings.HasPrefix(frag, fragPrefix) {
 		return xrefURI{}, false
@@ -127,6 +127,17 @@ func parseOCIRefURI(ref string) (xrefURI, bool) {
 	return xrefURI{library: library, entry: entry}, true
 }
 
+// canonicalRefKey is the cycle-guard identity for a cross-document reference:
+// the version-stripped, host-less `<Library>#/schemas/<Entry>` form. The cycle
+// guard keys on this canonical identity, never the raw reference string, so the
+// same library entry reached via different spellings — a bare-name reference and
+// a host-less `@version` reference of the same entry — shares one cycle key. A
+// cycle that traverses such an entry therefore cannot evade detection by
+// spelling its version inconsistently.
+func canonicalRefKey(library, entry string) string {
+	return library + "#/schemas/" + entry
+}
+
 // expandSchemaLibraryRef resolves a cross-document $ref to its target
 // SchemaLibrary entry's content. The caller (the cross-document branch
 // of the $ref dispatch arm) is responsible for compiling the returned
@@ -145,11 +156,10 @@ func parseOCIRefURI(ref string) (xrefURI, bool) {
 //     A reference addresses a library by identity, never by physical location;
 //     the message steers the author to the bare-name form, suggesting the exact
 //     identity-form equivalent when the host-bearing URI is parseable.
-//   - ErrReferenceUnresolvable when refURI is not the bare-name identity shape
-//     — either syntactically malformed, or it pins a version
-//     (`<Library>@<version>#/schemas/<Entry>`); the version is resolved by the
-//     lockfile, not the reference, so a version pin is rejected with a steer to
-//     the bare-name form.
+//   - ErrReferenceUnresolvable when refURI is not a cross-document reference
+//     shape (`<Library>#/schemas/<Entry>`). A host-less `@version` is accepted
+//     (stripped here; consumed as a minimum-version floor at lock time), not
+//     rejected.
 //   - ErrUnresolvedSchemaLibraryRef when refURI's library portion is not
 //     present in libraries, or the entry portion is absent from the library's
 //     Spec.Schemas map. The error message names the unresolved URI and the
@@ -192,22 +202,25 @@ func expandSchemaLibraryRef(
 		}
 	}
 
-	// A version pin in the reference is rejected — the lockfile resolves the
-	// version, so a `<Library>@<version>` reference carries a second version
-	// truth that can drift. Steer to the bare-name identity form.
+	// A host-less `@version` is accepted as an optional minimum-version-floor
+	// assertion: the closure walk records it as a floor for minimum-version
+	// selection at lock time, and the lockfile owns the selected version. The
+	// reference resolves by name, never by version — so the expander strips the
+	// asserted version and resolves the bare-name identity.
 	if at := strings.IndexByte(parsed.library, '@'); at >= 0 {
-		return nil, "", "", &CompileError{
-			Path:    consumerFile,
-			Keyword: "$ref",
-			Message: "cross-document $ref must not pin a version (the lockfile resolves it); reference the library by identity (use `" + parsed.library[:at] + "#/schemas/" + parsed.entry + "`): " + refURI,
-			Err:     ErrReferenceUnresolvable,
-		}
+		parsed.library = parsed.library[:at]
 	}
 
-	// Cycle check: refURI already on the in-flight resolution stack.
+	// Cycle check keyed on the canonical identity (version-stripped, host-less
+	// `<Library>#/schemas/<Entry>`), never the raw reference string — so the
+	// same entry reached via a bare-name reference and a host-less `@version`
+	// reference shares one cycle key and a cycle cannot evade the guard by
+	// inconsistent version spelling. The resolution stack holds canonical keys
+	// (the caller pushes the canonical key, not the raw URI).
+	key := canonicalRefKey(parsed.library, parsed.entry)
 	for _, inFlight := range resolutionStack {
-		if inFlight == refURI {
-			chain := append(append([]string{}, resolutionStack...), refURI)
+		if inFlight == key {
+			chain := append(append([]string{}, resolutionStack...), key)
 			return nil, "", "", &CompileError{
 				Path:    consumerFile,
 				Keyword: "$ref",

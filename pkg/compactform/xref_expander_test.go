@@ -309,6 +309,64 @@ properties: {}
 	}
 }
 
+// TestExpand_MixedSpellingCycleKeyedByIdentity asserts a library-to-library
+// cycle that traverses one entry spelled two ways — a bare-name reference and a
+// host-less `@version` reference of the SAME entry — is detected and reported by
+// canonical identity, not by the raw reference string. Because the expander
+// accepts and strips `@version` (both spellings resolve to one entry), the cycle
+// guard must key on the canonical `<Library>#/schemas/<Entry>` identity; keying
+// on the raw reference would report the cycle in mixed spellings (the `@version`
+// form leaking into the chain) and detect it later than the identity would.
+//
+// Non-vacuity: with the cycle key reverted to the raw reference string, the
+// `@version` spelling appears in the reported chain (the `@` assertion below goes
+// red); the cycle is still eventually caught — one hop late — because every
+// entry's outgoing reference is fixed, so this is mis-keyed detection, not the
+// unbounded recursion it might first appear (a static reference graph always
+// repeats some raw key on any path).
+func TestExpand_MixedSpellingCycleKeyedByIdentity(t *testing.T) {
+	t.Parallel()
+
+	libs := map[string]types.SchemaLibrary{
+		"A": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: A
+  version: 1.0.0
+spec:
+  schemas:
+    Cycle:
+      $ref: "B#/schemas/Cycle"
+`),
+		"B": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: B
+  version: 1.0.0
+spec:
+  schemas:
+    Cycle:
+      $ref: "A@1.0.0#/schemas/Cycle"
+`),
+	}
+	consumer := parseConsumer(t, `$ref: "A#/schemas/Cycle"
+properties: {}
+`)
+	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
+	if err == nil {
+		t.Fatal("expected cycle error; got nil")
+	}
+	if !errors.Is(err, ErrCircularRef) {
+		t.Fatalf("error = %v; want ErrCircularRef", err)
+	}
+	// The cycle is keyed and reported by canonical identity: the `@version`
+	// spelling never appears in the chain. Keying on the raw reference would
+	// leak `A@1.0.0#/schemas/Cycle` into the message.
+	if strings.Contains(err.Error(), "@") {
+		t.Errorf("cycle chain should report canonical identities, not @version spellings; got %q", err.Error())
+	}
+}
+
 // ociLibFixture is a workspace-local SchemaLibrary whose Storage entry
 // declares a default, shared by the identity-reference tests.
 func ociLibFixture(t *testing.T) map[string]types.SchemaLibrary {
@@ -384,23 +442,38 @@ properties: {}
 	}
 }
 
-// TestExpand_VersionPinRejected asserts a host-less but version-pinned
-// reference (`<Library>@<version>#/schemas/<Entry>`) is rejected — the version
-// is resolved by the lockfile, not the reference — with a steer to the
-// bare-name identity form.
-func TestExpand_VersionPinRejected(t *testing.T) {
+// TestExpand_VersionFloorAcceptedAndStripped asserts a host-less `@version`
+// reference (`<Library>@<version>#/schemas/<Entry>`) is accepted: the expander
+// strips the asserted version and resolves the bare-name identity. The asserted
+// version is an optional minimum-version floor consumed by selection at lock
+// time — not part of the reference's resolution — so the resolved content and
+// the source annotation match the bare-name form exactly (no version present).
+func TestExpand_VersionFloorAcceptedAndStripped(t *testing.T) {
 	t.Parallel()
 
 	libs := ociLibFixture(t)
 	consumer := parseConsumer(t, `$ref: "DbSizing@1.0.0#/schemas/Storage"
 properties: {}
 `)
-	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
-	if !errors.Is(err, ErrReferenceUnresolvable) {
-		t.Fatalf("error = %v; want ErrReferenceUnresolvable", err)
+	out, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
+	if err != nil {
+		t.Fatalf("host-less @version $ref should resolve (stripped to bare-name); got %v", err)
 	}
-	if msg := err.Error(); !strings.Contains(msg, "DbSizing#/schemas/Storage") {
-		t.Errorf("rejection should suggest the identity form; got %q", msg)
+	props, ok := out["properties"].(Schema)
+	if !ok {
+		t.Fatalf("expected properties map; got %T", out["properties"])
+	}
+	sizeSchema, ok := props["size"].(Schema)
+	if !ok {
+		t.Fatalf("expected size property from the library entry; got keys %v", propertyKeys(props))
+	}
+	if got := sizeSchema["default"]; got != "10Gi" {
+		t.Errorf("library default should materialize; got default=%v", got)
+	}
+	// The asserted version never appears in the resolved identity — the
+	// annotation is the host-less, version-less bare-name form.
+	if got := LibrarySourceAnnotation(sizeSchema); got != "DbSizing#/schemas/Storage" {
+		t.Errorf("annotation = %q; want DbSizing#/schemas/Storage (version stripped)", got)
 	}
 }
 

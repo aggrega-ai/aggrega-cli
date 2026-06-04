@@ -237,6 +237,12 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("closure: %w", err)
 	}
+	// Discover + resolve the cross-document SchemaLibrary axis (ComputeClosure's
+	// entity walk does not descend Component/Feature schema bodies). Shared with
+	// build's drift-verify so both compute the identical library closure.
+	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
+		return fmt.Errorf("closure: schema-library discovery: %w", err)
+	}
 
 	if cfg.Verify {
 		// Verify-only path: load the existing lockfile and check

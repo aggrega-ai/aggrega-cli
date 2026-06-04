@@ -6,6 +6,7 @@ package closure
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // libraryRefPattern matches the canonical library-reference URI
@@ -56,6 +57,60 @@ func parseLibraryRef(s string) (libraryURI, version, fragment string, err error)
 		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef, s)
 	}
 	return match[1], match[2], match[3], nil
+}
+
+// ociScheme marks the host-bearing reference form. A library is addressed by
+// identity, never by registry host; a `$ref:` carrying this scheme
+// is rejected at the cross-document expander and is not a library-closure
+// reference here, so the discovery walker does not record it.
+const ociScheme = "oci://"
+
+// schemasFragmentPrefix is the JSON Pointer fragment body that marks a
+// SchemaLibrary entry reference (`<Library>#/schemas/<Entry>`). The MappingLibrary
+// `$import:` surface (`/mappings/`) is discovered through parseLibraryRef until
+// its identity flip lands; parseIdentityRef is the SchemaLibrary `$ref:` parser.
+const schemasFragmentPrefix = "/schemas/"
+
+// isIdentityLibraryRef reports whether a `$ref:` value is a host-less
+// cross-document SchemaLibrary reference in the identity form
+// `<Library>[@<version>]#/schemas/<Entry>` (no registry host). In-document anchors
+// (`#/$defs/...`), host-bearing `oci://…` references (rejected at the
+// cross-document expander), and any other shape return false, so the discovery
+// walker records only genuine cross-library references.
+func isIdentityLibraryRef(value string) bool {
+	if value == "" || value[0] == '#' || strings.HasPrefix(value, ociScheme) {
+		return false
+	}
+	hash := strings.IndexByte(value, '#')
+	if hash <= 0 {
+		return false
+	}
+	return strings.HasPrefix(value[hash+1:], schemasFragmentPrefix)
+}
+
+// parseIdentityRef parses a host-less identity SchemaLibrary reference
+// `<Library>[@<version>]#/schemas/<Entry>` into its library name, optional
+// version assertion, and fragment body (the part after `#`, e.g.
+// "/schemas/PortSpec"). The optional `@<version>` is a minimum-version floor for
+// selection, never a pin (the lockfile owns the selected version); the
+// library name carries no registry host. Inputs that are not the identity shape
+// return a wrapped ErrInvalidLibraryRef naming the offending string.
+func parseIdentityRef(s string) (libraryName, version, fragment string, err error) {
+	if !isIdentityLibraryRef(s) {
+		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef, s)
+	}
+	hash := strings.IndexByte(s, '#')
+	doc := s[:hash]
+	fragment = s[hash+1:]
+	libraryName = doc
+	if at := strings.IndexByte(doc, '@'); at >= 0 {
+		libraryName = doc[:at]
+		version = doc[at+1:]
+	}
+	if libraryName == "" {
+		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef, s)
+	}
+	return libraryName, version, fragment, nil
 }
 
 // formatFragmentRef rebuilds the wire-form fragment ("#/schemas/X")

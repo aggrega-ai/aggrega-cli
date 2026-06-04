@@ -189,6 +189,84 @@ func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
 // `--catalog .` default regardless of whether workspaceRoot is set. cacheDir
 // "" disables the skip — the LoadAll / Load behavior, for callers with no cache.
 func LoadAllWithCacheDir(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
+	c, err := loadAllPassOne(workspaceRoot, cacheDir, dirs...)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.validateSchemaPillarsPass(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// LoadWithExtraLibraries runs the Pass-1 catalog walk, merges a set of
+// lockfile-pinned SchemaLibraries into the loaded catalog, and THEN runs Pass-2
+// pillar validation over the merged set. The merge sits between the two passes so
+// a cross-document $ref to a pinned remote library (present in `extra` but absent
+// from the local walk) resolves at Pass-2 exactly as a local library would. The
+// Pass-2 reject gate (validateSchemaPillars + library reject) is preserved, never
+// bypassed — `extra` is validated alongside the local set, not trusted blindly.
+//
+// A name present both in the local walk and in `extra` is a workspace
+// inconsistency: the LOCAL definition wins (the pin is skipped) and a collision
+// notice naming the library is returned. Warnings are returned in sorted-name
+// order for deterministic output. `extra` maps a library `metadata.name` (the
+// host-less identity) to its verified raw bytes (from ReadPinnedLibrary); the
+// bytes are parsed + indexed here so the bridged library carries faithful
+// entityBytes for the lockfile-drift verify.
+func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extra map[string][]byte, dirs ...string) (*Catalog, []string, error) {
+	c, err := loadAllPassOne(workspaceRoot, cacheDir, dirs...)
+	if err != nil {
+		return nil, nil, err
+	}
+	names := make([]string, 0, len(extra))
+	for name := range extra {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var warnings []string
+	for _, name := range names {
+		if _, local := c.SchemaLibraries[name]; local {
+			warnings = append(warnings, fmt.Sprintf(
+				"SchemaLibrary %q is present both in the local catalog and as a lockfile-pinned library; the local definition is used",
+				name))
+			continue
+		}
+		// Parse + index exactly as indexFile does for a local SchemaLibrary, so a
+		// bridged remote library is load-validated identically AND its entityBytes
+		// carry the exact verified bytes — the lockfile-drift verify recomputes the
+		// content digest from entityBytes, so storing the raw bytes (not a
+		// re-serialised parse) keeps that verify faithful.
+		lib, perr := parseSchemaLibraryEntity(extra[name])
+		if perr != nil {
+			return nil, nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged SchemaLibrary %q", name))
+		}
+		c.SchemaLibraries[name] = lib
+		c.entityBytes[entityBytesKey("SchemaLibrary", name)] = extra[name]
+	}
+	if err := c.validateSchemaPillarsPass(); err != nil {
+		return nil, nil, err
+	}
+	return c, warnings, nil
+}
+
+// LoadPassOne runs only Pass 1 of the catalog load — the filesystem walk +
+// per-file indexing, content-cache directory skipped — WITHOUT Pass-2 pillar
+// validation. The build-side library bridge uses it to determine the local
+// library set (which lockfile-pinned libraries are already authored locally and
+// must NOT be bridged from the cache) before injecting the remote pins via
+// LoadWithExtraLibraries. Pass 1 alone is sufficient for that and for the
+// closure walk (which scans raw `$ref` values, not expanded pillars).
+func LoadPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
+	return loadAllPassOne(workspaceRoot, cacheDir, dirs...)
+}
+
+// loadAllPassOne runs Pass 1 only — the filesystem walk + per-file indexing with
+// the content-addressed cache directory skipped — and returns the catalog BEFORE
+// Pass-2 pillar validation (validateSchemaPillarsPass). LoadAllWithCacheDir runs
+// Pass 2 immediately after; LoadWithExtraLibraries injects lockfile-pinned
+// libraries between the two passes. cacheDir "" disables the cache skip.
+func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
 	cacheClean := ""
 	if cacheDir != "" {
 		cacheClean = filepath.Clean(cacheDir)
@@ -238,11 +316,33 @@ func LoadAllWithCacheDir(workspaceRoot, cacheDir string, dirs ...string) (*Catal
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 		}
 	}
-
-	if err := c.validateSchemaPillarsPass(); err != nil {
-		return nil, err
-	}
 	return c, nil
+}
+
+// ReadPinnedLibrary reads a lockfile-pinned SchemaLibrary's VERIFIED BYTES from
+// the content cache. The cached bytes are verified against expectedDigest — the
+// lockfile pin — at the cache boundary via tier2ReadVerified: a cache miss
+// surfaces ErrFetchNotFound (the pull-first remediation), a digest mismatch
+// surfaces ErrFetchIntegrity. The caller (the build-side library bridge) supplies
+// the host-less name-path URI, the lockfile-resolved version, and the pinned
+// digest; integrity is structural at the cache read, so this carries no compare
+// of its own.
+//
+// It returns the raw bytes, not a parsed entity: parsing + catalog indexing
+// happens at the merge (LoadWithExtraLibraries) so the bridged library's
+// entityBytes carry the EXACT verified bytes the lockfile digest pins. A parsed
+// entity re-serialised would not byte-match, which would make the lockfile-drift
+// verify (which recomputes the content digest from entityBytes) halt spuriously.
+//
+// The versioned cache key is `<uri>:<version>` — the cache/lockfile version
+// separator is `:`, distinct from the optional `@` floor assertion that may
+// appear in an authored reference.
+func ReadPinnedLibrary(workspaceRoot, cacheDir, uri, version, expectedDigest string) ([]byte, error) {
+	versionedURI := uri
+	if version != "" {
+		versionedURI = uri + ":" + version
+	}
+	return tier2ReadVerified(workspaceRoot, cacheDir, versionedURI, expectedDigest)
 }
 
 // validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component,

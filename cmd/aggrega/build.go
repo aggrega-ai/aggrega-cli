@@ -87,29 +87,67 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-	cat, err := catalog.LoadWithCacheDir(wsRoot, cacheDir, catalogDir)
+
+	// Pass-1 catalog load. Determines the local library set (which lockfile-pinned
+	// libraries are already authored locally and must NOT be bridged from the
+	// cache) and serves the auto-pull closure walk. Pass 1 alone does not expand
+	// cross-document $ref pillars, so a reference to a pulled remote library does
+	// not fail here — which is exactly why the lockfile + library bridge must run
+	// before Pass-2 pillar validation.
+	passOne, err := catalog.LoadPassOne(wsRoot, cacheDir, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
-	// Lockfile verification + auto-pull integration. Runs after catalog
-	// load and before Step 1 so closure walking consults the in-memory
-	// catalog directly. The hermetic-build invariant (no network at
-	// build time) is preserved by injecting a nil OCIPuller into the
-	// ClosureLookup — Tier 3 returns NotFound on cache miss, which
-	// surfaces as ErrUnresolvableURI through the closure walker.
-	if err := verifyOrAutoPullLockfile(releasePath, catalogDir, cat); err != nil {
+	// Ensure the per-Release lockfile exists (auto-pull when missing + permitted),
+	// returning whether it pre-existed — drift is verified only for a pre-existing
+	// lockfile; a freshly auto-pulled one matches the closure by construction.
+	lockfilePreexisted, err := acquireLockfile(releasePath, catalogDir, wsCfg)
+	if err != nil {
 		return err
 	}
-
-	// Load the verified (or auto-pulled) lockfile to thread into the render
-	// pipeline: build-time source-artifact resolution resolves each remote
-	// Recipe / FeatureRecipe source to its lockfile-pinned, content-addressed
-	// cache entry. The lockfile is guaranteed present here — verify confirmed
-	// it, auto-pull just wrote it.
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if err != nil {
 		return fmt.Errorf("load lockfile: %w", err)
+	}
+
+	// Bridge lockfile-pinned remote libraries into the catalog BEFORE Pass-2, so a
+	// cross-document $ref to a pulled remote SchemaLibrary (in the cache + pinned,
+	// absent from the local walk) resolves at pillar validation. A locally-authored
+	// library has a pin but no cache slot, so only NON-LOCAL pins are bridged —
+	// reading a local pin would miss the cache. The bridged libraries pass through
+	// the same Pass-2 reject gate as local ones (LoadWithExtraLibraries runs Pass-2
+	// over the merged set).
+	extraLibs := map[string][]byte{}
+	for _, pin := range lf.SchemaLibraries {
+		if _, local := passOne.SchemaLibraries[pin.URI]; local {
+			continue
+		}
+		data, rerr := catalog.ReadPinnedLibrary(wsRoot, cacheDir, pin.URI, pin.ResolvedVersion, pin.Digest)
+		if rerr != nil {
+			return fmt.Errorf("bridge pinned SchemaLibrary %s: %w", pin.URI, rerr)
+		}
+		extraLibs[pin.URI] = data
+	}
+	cat, warnings, err := catalog.LoadWithExtraLibraries(wsRoot, cacheDir, extraLibs, catalogDir)
+	if err != nil {
+		return fmt.Errorf("catalog load: %w", err)
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+
+	// Lockfile-drift verification against the BRIDGED catalog. The bridged remote
+	// libraries resolve at Tier-1 with their pinned content digest (entityBytes
+	// carry the exact verified bytes), so the freshly-computed closure is compared
+	// faithfully to the lockfile and halts on any (URI, version, digest) drift with
+	// ErrLockfileDrift. Hermetic: the closure lookup injects a nil OCIPuller, so
+	// Tier 3 never fires at build time. Only a pre-existing lockfile is verified;
+	// an auto-pulled one matches by construction.
+	if lockfilePreexisted {
+		if err := verifyLockfileAgainstClosure(releasePath, catalogDir, lockfile.PathFor(releasePath), wsCfg, cat); err != nil {
+			return err
+		}
 	}
 
 	// Resolve extends inheritance for every Component and Feature so downstream
@@ -233,65 +271,45 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	return nil
 }
 
-// verifyOrAutoPullLockfile handles the pre-build lockfile flow:
+// acquireLockfile ensures the per-Release lockfile exists before the build's
+// library bridge + Pass-2 run, returning whether it PRE-EXISTED. A present
+// lockfile is left as-is — drift against it is verified later, against the
+// bridged catalog. A missing lockfile auto-pulls when workspace.auto_pull is true
+// (the default), populating the lockfile + cache in-process; under offline, or
+// with auto_pull false, it halts with the pull-first remediation (offline ignores
+// auto_pull because the pull itself needs network access).
 //
-//   - If the per-Release lockfile exists, the function loads it, computes
-//     the current closure (Tier 3 disabled — see below), and runs
-//     lockfile.Verify against the result. Drift halts with ErrLockfileDrift
-//     wrapped with the documented `aggrega pull --regenerate` remediation.
-//   - If the lockfile is missing AND workspace.auto_pull is true (default),
-//     the function invokes pullRun in-process, populating the lockfile
-//     and cache for subsequent steps.
-//   - If the lockfile is missing AND auto_pull is false, the function
-//     halts with a diagnostic naming the explicit `aggrega pull` step.
-//   - If workspace.offline is true, missing lockfile halts with an
-//     air-gap diagnostic (auto_pull is ignored under offline because
-//     the pull itself would need network access).
-//
-// Workspace configuration is loaded from .aggrega-config.yaml when
-// present, or the documented defaults are applied when absent (see
-// workspaceconfig.Default — auto_pull defaults to true, offline
-// defaults to false). The lockfile flow engages uniformly across
-// both cases; a workspace without an explicit config file behaves
-// the same as one whose config carries only the default values.
-//
-// Hermetic-build discipline: the ClosureLookup passed to ComputeClosure
-// here receives a nil OCIPuller. Tier 3 never fires at build time — any
-// catalog-entity URI not in the in-memory catalog or the local cache
-// surfaces as a closure walk failure instead of an out-of-band network
-// fetch. Source-artifact reads at render time go through
-// pkg/sourcecache.LookupAndExtract's cache gate, which carries its own
-// digest verification against the lockfile-supplied digest.
-func verifyOrAutoPullLockfile(releasePath, catalogDir string, cat *catalog.Catalog) error {
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
-	}
+// Splitting acquisition from drift-verification is what lets the build load the
+// lockfile, bridge the pinned remote libraries it names into the catalog, and
+// only then verify drift against the merged catalog: a remote $ref cannot be
+// expanded at Pass-2 until its library is bridged, and the library cannot be
+// bridged until the lockfile that pins it is acquired.
+func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Config) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
 	switch {
 	case statErr == nil:
-		return verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath, wsCfg, cat)
+		return true, nil
 	case stderrors.Is(statErr, os.ErrNotExist):
 		// fall through to auto-pull / halt decision below
 	default:
-		return fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
+		return false, fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
 	}
 
 	if wsCfg.Workspace.Offline {
-		return fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull %s` from a connected environment first: %w",
+		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull %s` from a connected environment first: %w",
 			lockfilePath, releasePath, oci.ErrFetchNotFound)
 	}
 	if !wsCfg.Workspace.AutoPull {
-		return fmt.Errorf("aggrega build: lockfile %s missing and auto_pull is false; run `aggrega pull %s` first",
+		return false, fmt.Errorf("aggrega build: lockfile %s missing and auto_pull is false; run `aggrega pull %s` first",
 			lockfilePath, releasePath)
 	}
 
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
-		return fmt.Errorf("auto-pull: %w", err)
+		return false, fmt.Errorf("auto-pull: %w", err)
 	}
-	return nil
+	return false, nil
 }
 
 // verifyLockfileAgainstClosure loads the per-Release lockfile and
@@ -333,6 +351,13 @@ func verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath string, 
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return fmt.Errorf("closure: %w", err)
+	}
+	// Discover + resolve the cross-document SchemaLibrary axis against the BRIDGED
+	// catalog (the same shared producer pull's pin flow uses), so the recomputed
+	// closure includes the bridged libraries and lockfile.Verify compares like
+	// for like — no spurious drift on a remote pinned library.
+	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
+		return fmt.Errorf("closure: schema-library discovery: %w", err)
 	}
 
 	if err := lockfile.Verify(lf, cl); err != nil {

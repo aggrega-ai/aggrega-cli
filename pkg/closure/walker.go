@@ -286,13 +286,13 @@ func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 // package's private state machinery.
 //
 // Schemas that contain no $ref: keys are silent no-ops.
-// Non-oci:// $ref: values (JSON-Schema local anchors like
-// "#/$defs/X", file-system relative paths) are silently ignored
-// as out-of-scope: the walker only tracks cross-library references
-// via the file-import vocabulary's `oci://...` URI shape.
-// Malformed `oci://` $ref: values that don't match the canonical
-// library-reference shape return a wrapped ErrInvalidLibraryRef
-// naming the offending string.
+// In-document anchors ("#/$defs/X"), host-bearing "oci://…"
+// references (rejected at the cross-document expander), and other
+// non-library shapes are silently ignored as out-of-scope: the
+// walker tracks only host-less cross-library references in the
+// identity form `<Library>[@<version>]#/schemas/<Entry>` (no host).
+// A $ref: matching that identity shape but otherwise malformed
+// returns a wrapped ErrInvalidLibraryRef naming the offending string.
 //
 // Usage discipline: WalkSchemaRefs is designed for incremental
 // population during a single closure walk — typically called
@@ -347,7 +347,7 @@ func (s *walkState) walkSchemaRefsInto(node *yaml.Node, consumerURI string) erro
 			keyNode := node.Content[i]
 			valNode := node.Content[i+1]
 			if keyNode.Value == "$ref" && valNode.Kind == yaml.ScalarNode {
-				if strings.HasPrefix(valNode.Value, "oci://") {
+				if isIdentityLibraryRef(valNode.Value) {
 					if err := s.recordSchemaRef(valNode.Value, consumerURI); err != nil {
 						return err
 					}
@@ -368,15 +368,18 @@ func (s *walkState) walkSchemaRefsInto(node *yaml.Node, consumerURI string) erro
 	return nil
 }
 
-// recordSchemaRef parses a $ref: value and records the resulting
-// library URI + consumer + fragment edge under the schema-library
-// pending map.
+// recordSchemaRef parses a host-less identity $ref: value
+// (`<Library>[@<version>]#/schemas/<Entry>`) and records the resulting library
+// name + consumer + fragment edge under the schema-library pending map. The
+// optional `@<version>` flows in as a minimum-version floor. Callers
+// gate on isIdentityLibraryRef, so a non-identity value here is malformed and
+// surfaces as ErrInvalidLibraryRef.
 func (s *walkState) recordSchemaRef(refValue, consumerURI string) error {
-	libURI, version, fragment, err := parseLibraryRef(refValue)
+	libName, version, fragment, err := parseIdentityRef(refValue)
 	if err != nil {
 		return err
 	}
-	s.addSchemaLibrary(libURI, version, consumerURI, formatFragmentRef(fragment))
+	s.addSchemaLibrary(libName, version, consumerURI, formatFragmentRef(fragment))
 	return nil
 }
 

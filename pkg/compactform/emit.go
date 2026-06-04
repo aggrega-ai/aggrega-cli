@@ -640,13 +640,15 @@ func emitWithXRefExpand(node *yaml.Node, refURI, path string, ctx *compileCtx) (
 		return nil, err
 	}
 
-	// Push the current URI onto the resolution stack for the recursive
-	// compile so library-to-library cycles surface as ErrCircularRef at
-	// the next expandSchemaLibraryRef call.
+	// Push the current entry's canonical identity (version-stripped, host-less
+	// `<Library>#/schemas/<Entry>`) onto the resolution stack for the recursive
+	// compile so library-to-library cycles surface as ErrCircularRef at the next
+	// expandSchemaLibraryRef call — keyed on identity, not the raw reference, so
+	// inconsistent `@version` spellings of one entry cannot evade detection.
 	childCtx := &compileCtx{
 		libraries:       ctx.libraries,
 		consumerFile:    ctx.consumerFile,
-		resolutionStack: append(append([]string{}, ctx.resolutionStack...), refURI),
+		resolutionStack: append(append([]string{}, ctx.resolutionStack...), canonicalRefKey(libraryName, entryName)),
 	}
 
 	resolved, err := compileNode(entryContent, pathJoin(path, "$ref"), childCtx)

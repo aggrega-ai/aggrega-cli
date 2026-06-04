@@ -223,11 +223,11 @@ func TestMVSResolvesLibraryVersionConflictsToMaxVersion(t *testing.T) {
 	t.Parallel()
 	c := closure.Closure{}
 
-	schemaA := mustParse(t, `$ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/PortSpec"`)
+	schemaA := mustParse(t, `$ref: "BaseTypes@1.0.0#/schemas/PortSpec"`)
 	if err := c.WalkSchemaRefs(schemaA, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk consumer A: %v", err)
 	}
-	schemaB := mustParse(t, `$ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.5.0#/schemas/PortSpec"`)
+	schemaB := mustParse(t, `$ref: "BaseTypes@1.5.0#/schemas/PortSpec"`)
 	if err := c.WalkSchemaRefs(schemaB, "hub.aggrega.ai/component/core/worker"); err != nil {
 		t.Fatalf("walk consumer B: %v", err)
 	}
@@ -236,11 +236,41 @@ func TestMVSResolvesLibraryVersionConflictsToMaxVersion(t *testing.T) {
 		t.Fatalf("expected 1 schema library; got %d", len(c.SchemaLibraries))
 	}
 	lib := c.SchemaLibraries[0]
-	if lib.URI != "oci://hub.aggrega.ai/schema-library/core/base-types" {
+	if lib.URI != "BaseTypes" {
 		t.Errorf("library URI: %q", lib.URI)
 	}
 	if len(lib.Consumers) != 2 {
 		t.Errorf("consumers: %d; want 2", len(lib.Consumers))
+	}
+}
+
+// TestSchemaRefDiscoveryRecordsIdentityFormOnly asserts the discovery walk
+// records a host-less identity $ref (`<Library>#/schemas/<Entry>`) and skips both
+// an in-document anchor (`#/$defs/...`) and a host-bearing `oci://…` reference —
+// the latter is rejected at the cross-document expander and is never a
+// library-closure edge. Keying discovery on the bare-name identity shape (not the
+// old `oci://` prefix) is what lets a remote bare-name library be discovered and
+// pinned.
+func TestSchemaRefDiscoveryRecordsIdentityFormOnly(t *testing.T) {
+	t.Parallel()
+	c := closure.Closure{}
+	schema := mustParse(t, `
+properties:
+  good:
+    $ref: "BaseTypes#/schemas/PortSpec"
+  local:
+    $ref: "#/$defs/Local"
+  hosted:
+    $ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/PortSpec"
+`)
+	if err := c.WalkSchemaRefs(schema, "hub.aggrega.ai/component/core/api-server"); err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(c.SchemaLibraries) != 1 {
+		t.Fatalf("expected exactly 1 library (only the identity-form ref); got %d", len(c.SchemaLibraries))
+	}
+	if c.SchemaLibraries[0].URI != "BaseTypes" {
+		t.Errorf("library URI: got %q; want BaseTypes (bare-name identity)", c.SchemaLibraries[0].URI)
 	}
 }
 
@@ -256,16 +286,16 @@ func TestLibraryConsumersTrackedPerEntityWithFragments(t *testing.T) {
 	t.Parallel()
 	c := closure.Closure{}
 
-	schemaA := mustParse(t, `$ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/PortSpec"`)
+	schemaA := mustParse(t, `$ref: "BaseTypes@1.0.0#/schemas/PortSpec"`)
 	if err := c.WalkSchemaRefs(schemaA, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk A: %v", err)
 	}
 	schemaB := mustParse(t, `
 properties:
   port:
-    $ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/PortSpec"
+    $ref: "BaseTypes@1.0.0#/schemas/PortSpec"
   endpoint:
-    $ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/EndpointSpec"
+    $ref: "BaseTypes@1.0.0#/schemas/EndpointSpec"
 `)
 	if err := c.WalkSchemaRefs(schemaB, "hub.aggrega.ai/component/core/gateway"); err != nil {
 		t.Fatalf("walk B: %v", err)
@@ -298,13 +328,13 @@ func TestVersionBumpAffectsLibraryDigestChain(t *testing.T) {
 	t.Parallel()
 	// Snapshot 1: consumer A pins lib@1.0.0; lookup digest "old".
 	c1 := closure.Closure{}
-	refOld := mustParse(t, `$ref: "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/PortSpec"`)
+	refOld := mustParse(t, `$ref: "BaseTypes@1.0.0#/schemas/PortSpec"`)
 	if err := c1.WalkSchemaRefs(refOld, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk old: %v", err)
 	}
 	// Snapshot 2: consumer A bumps to lib@2.0.0; lookup digest "new".
 	c2 := closure.Closure{}
-	refNew := mustParse(t, `$ref: "oci://hub.aggrega.ai/schema-library/core/base-types@2.0.0#/schemas/PortSpec"`)
+	refNew := mustParse(t, `$ref: "BaseTypes@2.0.0#/schemas/PortSpec"`)
 	if err := c2.WalkSchemaRefs(refNew, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk new: %v", err)
 	}
