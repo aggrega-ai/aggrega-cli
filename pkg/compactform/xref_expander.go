@@ -6,6 +6,7 @@ package compactform
 import (
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -218,15 +219,12 @@ func expandSchemaLibraryRef(
 	// inconsistent version spelling. The resolution stack holds canonical keys
 	// (the caller pushes the canonical key, not the raw URI).
 	key := canonicalRefKey(parsed.library, parsed.entry)
-	for _, inFlight := range resolutionStack {
-		if inFlight == key {
-			chain := append(append([]string{}, resolutionStack...), key)
-			return nil, "", "", &CompileError{
-				Path:    consumerFile,
-				Keyword: "$ref",
-				Message: "circular cross-document $ref expansion: " + strings.Join(chain, " -> "),
-				Err:     ErrCircularRef,
-			}
+	if chain, cyclic := refcycle.Check(resolutionStack, key); cyclic {
+		return nil, "", "", &CompileError{
+			Path:    consumerFile,
+			Keyword: "$ref",
+			Message: "circular cross-document $ref expansion: " + strings.Join(chain, " -> "),
+			Err:     ErrCircularRef,
 		}
 	}
 

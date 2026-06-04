@@ -23,6 +23,80 @@ type SchemaConsumer struct {
 // not available to scan); err is for a hard read/parse failure.
 type LibraryBodyFunc func(lib ResolvedLibrary) (entryBodies []*yaml.Node, found bool, err error)
 
+// MappingConsumer pairs a resolved Recipe/FeatureRecipe URI (or a MappingLibrary
+// URI, during transitive descent) with a template body so DiscoverMappingLibraries
+// can scan it for a field-root `$import:` MappingLibrary reference. For a Recipe /
+// FeatureRecipe the Template is the valuesMapping body in `$import: <ref>`
+// directive form; for a MappingLibrary entry it is the entry's own template body
+// (which may itself carry a field-root `$import:`).
+type MappingConsumer struct {
+	URI      string
+	Template string
+}
+
+// MappingBodyFunc returns the entry template bodies of a resolved MappingLibrary
+// so its own cross-library `$import:` references can be descended transitively.
+// The caller resolves the bodies from the catalog (a locally-authored or bridged
+// library); a false found return stops transitive descent into that library.
+type MappingBodyFunc func(lib ResolvedLibrary) (entryBodies []string, found bool, err error)
+
+// DiscoverMappingLibraries is the mapping-axis mirror of DiscoverSchemaLibraries:
+// it discovers the MappingLibrary closure reachable from a set of
+// Recipe/FeatureRecipe valuesMapping bodies via field-root `$import:` references,
+// resolves each discovered library (minimum-version selection + lookup), and
+// transitively descends each resolved library's own entry bodies to a fixpoint.
+// The discovered + resolved libraries are merged into c.MappingLibraries.
+//
+// As on the schema axis, this is the single producer of the mapping-library axis
+// of the closure, so pull's pin flow and build's drift-verify flow compute the
+// identical closure. Termination is by a visited-set on the canonical library
+// identity; a genuine library↔library cycle terminates discovery without error
+// and surfaces as a cycle at `$import:` consumption (render time), not here.
+func (c *Closure) DiscoverMappingLibraries(lookup Lookup, consumers []MappingConsumer, body MappingBodyFunc) error {
+	descended := map[string]struct{}{}
+
+	frontier := append([]MappingConsumer{}, consumers...)
+
+	for len(frontier) > 0 {
+		state := newWalkState()
+		for _, lib := range c.MappingLibraries {
+			state.mappingLibs[lib.URI] = libraryFromResolved(lib)
+		}
+		for _, mc := range frontier {
+			if err := state.walkMappingImportInto(mc.Template, mc.URI); err != nil {
+				return err
+			}
+		}
+		if err := state.resolveLibraries(lookup, false /* mapping */); err != nil {
+			return err
+		}
+		c.MappingLibraries = nil
+		for _, lib := range state.materialiseMappingLibs() {
+			c.MappingLibraries = append(c.MappingLibraries, lib)
+		}
+		canonicaliseClosure(c)
+
+		frontier = frontier[:0]
+		for _, lib := range c.MappingLibraries {
+			if _, seen := descended[lib.URI]; seen {
+				continue
+			}
+			descended[lib.URI] = struct{}{}
+			bodies, found, err := body(lib)
+			if err != nil {
+				return err
+			}
+			if !found {
+				continue
+			}
+			for _, b := range bodies {
+				frontier = append(frontier, MappingConsumer{URI: lib.URI, Template: b})
+			}
+		}
+	}
+	return nil
+}
+
 // DiscoverSchemaLibraries discovers the SchemaLibrary closure reachable from a set
 // of Component/Feature schema bodies via cross-document $ref: references,
 // resolves each discovered library (minimum-version selection + lookup), and

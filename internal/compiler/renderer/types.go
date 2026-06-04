@@ -19,6 +19,14 @@ type RendererInput struct {
 	CatalogLookup  resolver.CatalogLookup
 	ProviderLookup ProviderLookup // Optional: enables baseSchema validation in sourceless mode
 
+	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
+	// lockfile-pinned libraries bridged in at load), keyed by bare name. It is
+	// the source for resolving a Recipe / FeatureRecipe valuesMapping's bare-name
+	// `$import: <Library>#/mappings/<entry>` at render. Passing the typed set
+	// (not a catalog handle) keeps the renderer decoupled from pkg/catalog. nil
+	// when no MappingLibraries are present.
+	MappingLibraries map[string]types.MappingLibrary
+
 	// Lockfile, WorkspaceRoot, and CacheDir together enable orchestrator-
 	// side source-artifact resolution. When all three are set, the
 	// orchestrator looks up each Recipe's spec.source against

@@ -129,7 +129,18 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		}
 		extraLibs[pin.URI] = data
 	}
-	cat, warnings, err := catalog.LoadWithExtraLibraries(wsRoot, cacheDir, extraLibs, catalogDir)
+	extraMappings := map[string][]byte{}
+	for _, pin := range lf.MappingLibraries {
+		if _, local := passOne.MappingLibraries[pin.URI]; local {
+			continue
+		}
+		data, rerr := catalog.ReadPinnedLibrary(wsRoot, cacheDir, pin.URI, pin.ResolvedVersion, pin.Digest)
+		if rerr != nil {
+			return fmt.Errorf("bridge pinned MappingLibrary %s: %w", pin.URI, rerr)
+		}
+		extraMappings[pin.URI] = data
+	}
+	cat, warnings, err := catalog.LoadWithExtraLibraries(wsRoot, cacheDir, extraLibs, extraMappings, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -227,6 +238,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 			WorkspaceConfig:   wsCfg,
 			Lockfile:          lf,
 			WorkspaceRoot:     wsRoot,
+			MappingLibraries:  cat.MappingLibraries,
 		},
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),
@@ -358,6 +370,9 @@ func verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath string, 
 	// for like — no spurious drift on a remote pinned library.
 	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
 		return fmt.Errorf("closure: schema-library discovery: %w", err)
+	}
+	if err := discoverClosureMappingLibraries(&cl, cat, lookup); err != nil {
+		return fmt.Errorf("closure: mapping-library discovery: %w", err)
 	}
 
 	if err := lockfile.Verify(lf, cl); err != nil {

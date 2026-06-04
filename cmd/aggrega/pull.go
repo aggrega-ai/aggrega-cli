@@ -261,6 +261,9 @@ func pullRun(cfg pullConfig) error {
 	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
 		return fmt.Errorf("closure: schema-library discovery: %w", err)
 	}
+	if err := discoverClosureMappingLibraries(&cl, cat, lookup); err != nil {
+		return fmt.Errorf("closure: mapping-library discovery: %w", err)
+	}
 
 	if cfg.Verify {
 		// Verify-only path: load the existing lockfile and check
@@ -301,7 +304,18 @@ func pullRun(cfg pullConfig) error {
 		}
 		extraLibs[lib.URI] = data
 	}
-	bridged, warnings, err := catalog.LoadWithExtraLibraries("", cacheDir, extraLibs, cfg.CatalogDir)
+	extraMappings := map[string][]byte{}
+	for _, lib := range cl.MappingLibraries {
+		if _, local := cat.MappingLibraries[lib.URI]; local {
+			continue
+		}
+		data, rerr := catalog.ReadPinnedLibrary(workspaceRoot, cacheDir, lib.URI, lib.ResolvedVersion, lib.Digest)
+		if rerr != nil {
+			return fmt.Errorf("bridge pinned MappingLibrary %s: %w", lib.URI, rerr)
+		}
+		extraMappings[lib.URI] = data
+	}
+	bridged, warnings, err := catalog.LoadWithExtraLibraries("", cacheDir, extraLibs, extraMappings, cfg.CatalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load (bridged): %w", err)
 	}

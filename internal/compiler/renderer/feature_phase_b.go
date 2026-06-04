@@ -17,8 +17,10 @@ import (
 // source string. Mode 1 (inline) returns the authored content directly;
 // mode 2 (file $import:) reads the file from disk; mode 3 (library
 // $import: in the bare-name identity form `<Library>#/mappings/<entry>`)
-// returns ErrLibraryImportNotYetSupported until render-time library
-// resolution lands. A host-bearing `oci://…` $import: is rejected with
+// resolves the referenced MappingLibrary entry's template fragment from
+// mappingLibs (the local catalog plus any lockfile-pinned libraries bridged
+// in at load), recursively when an entry body is itself a field-root
+// `$import:`. A host-bearing `oci://…` $import: is rejected with
 // ErrHostInLibraryImport — a library is addressed by identity, not by
 // registry location. The empty struct returns "" + nil (callers treat as
 // "no valuesMapping").
@@ -26,7 +28,7 @@ import (
 // entityKind is one of "Recipe" / "FeatureRecipe" / "Provider"; used in
 // error wrapping for diagnostic clarity. entityName is the metadata.name
 // of the loaded entity.
-func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind string) (string, error) {
+func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind string, mappingLibs map[string]types.MappingLibrary) (string, error) {
 	if vm.IsEmpty() {
 		return "", nil
 	}
@@ -37,7 +39,11 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 		return "", cerrors.Wrap(ErrHostInLibraryImport, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping $import %q", entityKind, entityName, vm.Import))
 	}
 	if vm.IsLibraryImport() {
-		return "", cerrors.Wrap(ErrLibraryImportNotYetSupported, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping library import %q", entityKind, entityName, vm.Import))
+		text, err := resolveMappingLibraryImport(vm.Import, mappingLibs, nil)
+		if err != nil {
+			return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping library import %q", entityKind, entityName, vm.Import))
+		}
+		return text, nil
 	}
 	data, err := os.ReadFile(vm.Import)
 	if err != nil {
@@ -130,12 +136,12 @@ func EvaluateFeatureRecipeLocals(
 // valuesMapping field carries one of three content-shape-dispatched
 // modes (inline / file $import: / library $import:); this function
 // resolves the mode and returns the templated values output.
-func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe) (map[string]any, error) {
+func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe, mappingLibs map[string]types.MappingLibrary) (map[string]any, error) {
 	if fr == nil {
 		return map[string]any{}, nil
 	}
 
-	tmplText, err := resolveValuesMappingText(fr.Spec.ValuesMapping, fr.Metadata.Name, "FeatureRecipe")
+	tmplText, err := resolveValuesMappingText(fr.Spec.ValuesMapping, fr.Metadata.Name, "FeatureRecipe", mappingLibs)
 	if err != nil {
 		return nil, err
 	}

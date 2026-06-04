@@ -81,6 +81,14 @@ type PhaseBState struct {
 	// emit per-pass snapshots; the trace package handles serialization
 	// and async file I/O. The orchestrator owns Close().
 	Trace trace.Writer
+
+	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
+	// lockfile-pinned libraries bridged in at load), keyed by bare name. B.1
+	// resolves a Recipe valuesMapping's bare-name `$import: <Library>#/mappings/<entry>`
+	// against it. The orchestrator populates it once per node from the
+	// RendererInput; nil when no MappingLibraries are present (a non-library
+	// valuesMapping never reads it).
+	MappingLibraries map[string]types.MappingLibrary
 }
 
 // NewPhaseBState constructs a fresh accumulator for one node's Phase B run.

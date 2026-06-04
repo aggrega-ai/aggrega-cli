@@ -164,30 +164,40 @@ file:
 
 // TestResolveValuesMappingText_AllModes pins each ValuesMapping mode:
 // empty, inline, file $import (success + read error), bare-name library
-// import (recognized-but-not-yet-supported error), and the rejected
-// host-bearing form.
+// import (resolved against the mapping-library set; and the unresolved case),
+// and the rejected host-bearing form.
 func TestResolveValuesMappingText_AllModes(t *testing.T) {
 	t.Parallel()
+	libs := map[string]types.MappingLibrary{
+		"Lib": mappingLibraryFixture("Lib", map[string]string{"X": "imported: fragment\n"}),
+	}
+
 	// Empty.
-	got, err := resolveValuesMappingText(types.ValuesMapping{}, "n", "Recipe")
+	got, err := resolveValuesMappingText(types.ValuesMapping{}, "n", "Recipe", libs)
 	if err != nil || got != "" {
 		t.Errorf("empty: (%q, %v)", got, err)
 	}
 
 	// Inline.
-	got, err = resolveValuesMappingText(types.ValuesMapping{Inline: "k: v\n"}, "n", "Recipe")
+	got, err = resolveValuesMappingText(types.ValuesMapping{Inline: "k: v\n"}, "n", "Recipe", libs)
 	if err != nil || got != "k: v\n" {
 		t.Errorf("inline: (%q, %v)", got, err)
 	}
 
-	// Bare-name library import (mode 3).
-	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "Lib#/mappings/X"}, "n", "Recipe")
-	if err == nil || !errors.Is(err, ErrLibraryImportNotYetSupported) {
-		t.Errorf("bare-name library import should error ErrLibraryImportNotYetSupported; got %v", err)
+	// Bare-name library import (mode 3) — resolves to the entry's fragment.
+	got, err = resolveValuesMappingText(types.ValuesMapping{Import: "Lib#/mappings/X"}, "n", "Recipe", libs)
+	if err != nil || got != "imported: fragment\n" {
+		t.Errorf("bare-name library import should resolve to the entry fragment; got (%q, %v)", got, err)
+	}
+
+	// Bare-name library import naming an absent library errors.
+	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "Absent#/mappings/X"}, "n", "Recipe", libs)
+	if err == nil || !errors.Is(err, ErrMappingLibraryNotFound) {
+		t.Errorf("unresolved library import should error ErrMappingLibraryNotFound; got %v", err)
 	}
 
 	// Host-bearing $import is rejected (not addressable by location).
-	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "oci://hub/lib@1#/mappings/X"}, "n", "Recipe")
+	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "oci://hub/lib@1#/mappings/X"}, "n", "Recipe", libs)
 	if err == nil || !errors.Is(err, ErrHostInLibraryImport) {
 		t.Errorf("host-bearing $import should error ErrHostInLibraryImport; got %v", err)
 	}
@@ -197,13 +207,13 @@ func TestResolveValuesMappingText_AllModes(t *testing.T) {
 	if err := os.WriteFile(tmpFile, []byte("k: v\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err = resolveValuesMappingText(types.ValuesMapping{Import: tmpFile}, "n", "Recipe")
+	got, err = resolveValuesMappingText(types.ValuesMapping{Import: tmpFile}, "n", "Recipe", libs)
 	if err != nil || got != "k: v\n" {
 		t.Errorf("file import: (%q, %v)", got, err)
 	}
 
 	// File import — read error.
-	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "/nonexistent/path/nope.yaml"}, "n", "Recipe")
+	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "/nonexistent/path/nope.yaml"}, "n", "Recipe", libs)
 	if err == nil {
 		t.Errorf("missing file should error")
 	}

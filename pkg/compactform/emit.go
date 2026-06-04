@@ -4,6 +4,7 @@
 package compactform
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"gopkg.in/yaml.v3"
 )
 
@@ -648,7 +649,7 @@ func emitWithXRefExpand(node *yaml.Node, refURI, path string, ctx *compileCtx) (
 	childCtx := &compileCtx{
 		libraries:       ctx.libraries,
 		consumerFile:    ctx.consumerFile,
-		resolutionStack: append(append([]string{}, ctx.resolutionStack...), canonicalRefKey(libraryName, entryName)),
+		resolutionStack: refcycle.Push(ctx.resolutionStack, canonicalRefKey(libraryName, entryName)),
 	}
 
 	resolved, err := compileNode(entryContent, pathJoin(path, "$ref"), childCtx)

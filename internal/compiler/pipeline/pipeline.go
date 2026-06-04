@@ -54,6 +54,13 @@ type Inputs struct {
 	// forwards each source verbatim — the sourceless and local-path paths.
 	Lockfile      *lockfile.Lockfile
 	WorkspaceRoot string
+
+	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
+	// lockfile-pinned libraries bridged in at load), keyed by bare name. It
+	// flows to the renderer so a Recipe / FeatureRecipe valuesMapping's
+	// bare-name `$import: <Library>#/mappings/<entry>` resolves at render. nil
+	// when no MappingLibraries are present.
+	MappingLibraries map[string]types.MappingLibrary
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -407,11 +414,12 @@ func RunPipeline(
 	}()
 
 	rendererInput := renderer.RendererInput{
-		Graph:         graph,
-		FeatureOrder:  featureOrder,
-		ResolveResult: resolveResult,
-		CatalogLookup: catalogLookup,
-		Trace:         traceWriter,
+		Graph:            graph,
+		FeatureOrder:     featureOrder,
+		ResolveResult:    resolveResult,
+		CatalogLookup:    catalogLookup,
+		MappingLibraries: inputs.MappingLibraries,
+		Trace:            traceWriter,
 	}
 	// Build-time source-artifact resolution: when the caller supplies a
 	// lockfile and workspace root, the orchestrator resolves each remote

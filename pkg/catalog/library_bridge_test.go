@@ -116,7 +116,7 @@ func TestLoadWithExtraLibraries(t *testing.T) {
 
 		// Bridging the pinned library in lets Pass-2 resolve it — the gate runs
 		// over the merged set, it is not bypassed.
-		cat, warnings, err := LoadWithExtraLibraries("", "", extra, dir)
+		cat, warnings, err := LoadWithExtraLibraries("", "", extra, nil, dir)
 		if err != nil {
 			t.Fatalf("LoadWithExtraLibraries: %v", err)
 		}
@@ -140,7 +140,7 @@ func TestLoadWithExtraLibraries(t *testing.T) {
 		writeBridgeFixture(t, dir, "consumer.yaml", xrefConsumerYAML)
 		writeBridgeFixture(t, dir, "dbsizing.yaml", dbSizingLibYAML) // also local
 
-		cat, warnings, err := LoadWithExtraLibraries("", "", extra, dir)
+		cat, warnings, err := LoadWithExtraLibraries("", "", extra, nil, dir)
 		if err != nil {
 			t.Fatalf("LoadWithExtraLibraries: %v", err)
 		}

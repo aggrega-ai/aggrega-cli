@@ -231,6 +231,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// improvement: thread the path through the catalog resolver.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
+		state.MappingLibraries = input.MappingLibraries
 
 		// Phase B.0 — locals + source-as-template eval; populates
 		// ctx.Locals + ctx.Source. May replace state.Recipe with a local

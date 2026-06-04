@@ -6,6 +6,8 @@ package compactform
 import (
 	"errors"
 	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 )
 
 // Sentinel errors for errors.Is matching against compile failures.
@@ -51,14 +53,17 @@ var (
 	// valid URL whose target does not exist.
 	ErrUnresolvedSchemaLibraryRef = errors.New("compactform: cross-document $ref target not found")
 
-	// ErrCircularRef indicates a cross-document `$ref:` expansion cycle.
-	// The compactform expander maintains a resolution-stack of in-flight
-	// URIs during recursive expansion; a URI already on the stack triggers
-	// this error with the chain named in the error message
-	// (e.g. "A#/schemas/X -> B#/schemas/Y -> A#/schemas/X"). Basic two-
-	// entry cycles are detected; deeper cycle graphs across multi-hop
-	// reference chains are detected by the same stack discipline.
-	ErrCircularRef = errors.New("compactform: circular cross-document $ref expansion")
+	// ErrCircularRef is the $ref-surface name for a cross-document expansion
+	// cycle. It is the shared refcycle.ErrCycle sentinel so the `$ref` and
+	// `$import` surfaces report the same cycle identity through one detector;
+	// the compactform expander maintains a resolution-stack of in-flight
+	// canonical keys during recursive expansion and surfaces this error with
+	// the chain named in the message (e.g.
+	// "A#/schemas/X -> B#/schemas/Y -> A#/schemas/X"). Deeper cycle graphs
+	// across multi-hop reference chains are detected by the same stack
+	// discipline. Match with errors.Is(err, ErrCircularRef) or, equivalently,
+	// errors.Is(err, refcycle.ErrCycle).
+	ErrCircularRef = refcycle.ErrCycle
 
 	// ErrHostInLibraryRef indicates a cross-document `$ref:` carries a
 	// registry host — the `oci://<host>/…` form. A library reference

@@ -474,6 +474,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			WorkspaceConfig:   s.wsConfig,
 			Lockfile:          lf,
 			WorkspaceRoot:     s.workspaceRoot,
+			MappingLibraries:  recipeCat.MappingLibraries,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
 		recipeCat.RecipeLookupWithManifest(resolved.Manifest),

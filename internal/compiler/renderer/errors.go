@@ -3,7 +3,11 @@
 
 package renderer
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
+)
 
 var (
 	ErrProvidesSelfContainment      = errors.New("provides block references cross-node data")
@@ -13,15 +17,28 @@ var (
 	ErrAttachmentInjectKeyCollision = errors.New("duplicate delivery key across attachment-inject and another inject source")
 	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output")
 
-	// ErrLibraryImportNotYetSupported fires when a Recipe / FeatureRecipe
-	// valuesMapping carries a mapping-library import (mode 3) — an
-	// $import: of the bare-name identity form
-	// `<Library>#/mappings/<entry>` into a MappingLibrary entry. The
-	// reference is recognized; its render-time resolution is not yet
-	// implemented. Until it ships, authors use a local file path import
-	// (mode 2) as the workaround. The error message names the workaround
-	// inline so authors aren't blocked.
-	ErrLibraryImportNotYetSupported = errors.New("mapping-library import is recognized but not yet supported at render. Use a local file path import as a workaround (valuesMapping: { $import: ./relative/path.tmpl }) until library-import resolution lands.")
+	// ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
+	// MappingLibrary entry body's field-root $import:) is neither a host-bearing
+	// reference nor a well-formed bare-name `<Library>#/mappings/<entry>` identity.
+	ErrMappingImportShape = errors.New("valuesMapping $import: is not a bare-name mapping-library reference (<Library>#/mappings/<entry>)")
+
+	// ErrMappingLibraryNotFound fires when a bare-name mapping-library import
+	// names a MappingLibrary absent from the resolved set (the local catalog plus
+	// any lockfile-pinned libraries bridged in at load).
+	ErrMappingLibraryNotFound = errors.New("mapping-library import references a MappingLibrary not present in the catalog")
+
+	// ErrMappingEntryNotFound fires when a bare-name mapping-library import names
+	// an entry absent from the resolved MappingLibrary's mappings map.
+	ErrMappingEntryNotFound = errors.New("mapping-library import references an entry not present in the MappingLibrary")
+
+	// ErrCircularImport is the $import-surface name for a mapping-library import
+	// expansion cycle. It is the shared refcycle.ErrCycle sentinel — the same
+	// identity the $ref surface reports via ErrCircularRef — so one detector
+	// guards both surfaces; the recursive resolver maintains a stack of in-flight
+	// canonical `<Library>#/mappings/<Entry>` keys and surfaces this with the
+	// chain named in the message. Match with errors.Is(err, ErrCircularImport)
+	// or, equivalently, errors.Is(err, refcycle.ErrCycle).
+	ErrCircularImport = refcycle.ErrCycle
 
 	// ErrHostInLibraryImport fires when a valuesMapping $import: carries a
 	// registry host — the `oci://…` form. A mapping-library import is

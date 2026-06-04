@@ -382,14 +382,14 @@ func TestPhaseB1_NilState(t *testing.T) {
 func TestExecutePhaseBForFeature_NilAndEmpty(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
-	got, err := ExecutePhaseBForFeature(tmplCtx, nil)
+	got, err := ExecutePhaseBForFeature(tmplCtx, nil, nil)
 	if err != nil || len(got) != 0 {
 		t.Errorf("nil fr: (%v, %v)", got, err)
 	}
 	// FR with no valuesMapping → returns ctx.Values as-is.
 	fr := &types.FeatureRecipe{}
 	tmplCtx.Values.Set("k", "v")
-	got, err = ExecutePhaseBForFeature(tmplCtx, fr)
+	got, err = ExecutePhaseBForFeature(tmplCtx, fr, nil)
 	if err != nil {
 		t.Fatalf("no vm: %v", err)
 	}

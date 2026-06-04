@@ -90,7 +90,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 		Values: values2,
 	}
 
-	values, err := ExecutePhaseBForFeature(ctx, fr)
+	values, err := ExecutePhaseBForFeature(ctx, fr, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 
 func TestExecutePhaseBForFeature_NilFR(t *testing.T) {
 	t.Parallel()
-	got, err := ExecutePhaseBForFeature(nil, nil)
+	got, err := ExecutePhaseBForFeature(nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) 
 	values := types.OrderedMap[any]{}
 	values.Set("a", float64(1))
 	ctx := &types.TemplateContext{Values: values}
-	got, err := ExecutePhaseBForFeature(ctx, fr)
+	got, err := ExecutePhaseBForFeature(ctx, fr, nil)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -129,18 +129,40 @@ func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) 
 	}
 }
 
-func TestExecutePhaseBForFeature_LibraryImportNotYetSupported(t *testing.T) {
+func TestExecutePhaseBForFeature_ResolvesLibraryImport(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "lib"},
 		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "Helpers#/mappings/Core"}},
 	}
-	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
-	if err == nil {
-		t.Fatal("expected bare-name library import to be recognized-but-not-yet-supported")
+	libs := map[string]types.MappingLibrary{
+		"Helpers": mappingLibraryFixture("Helpers", map[string]string{
+			"Core": `{"image": "prom/mon:{{ .values.tag }}"}`,
+		}),
 	}
-	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
-		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
+	values2 := types.OrderedMap[any]{}
+	values2.Set("tag", "v2")
+	got, err := ExecutePhaseBForFeature(&types.TemplateContext{Values: values2}, fr, libs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["image"] != "prom/mon:v2" {
+		t.Errorf("image: %v; want the imported fragment templated against .values", got["image"])
+	}
+}
+
+func TestExecutePhaseBForFeature_LibraryImportNotFound(t *testing.T) {
+	t.Parallel()
+	fr := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "lib"},
+		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "Absent#/mappings/Core"}},
+	}
+	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr, nil)
+	if err == nil {
+		t.Fatal("expected an unresolved bare-name library import to error")
+	}
+	if !errors.Is(err, ErrMappingLibraryNotFound) {
+		t.Errorf("expected ErrMappingLibraryNotFound, got: %v", err)
 	}
 }
 
@@ -150,7 +172,7 @@ func TestExecutePhaseBForFeature_RejectsHostBearingImport(t *testing.T) {
 		Metadata: types.FeatureRecipeMetadata{Name: "lib"},
 		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "oci://hub.aggrega.ai/aggrega/helpers@1.0.0#/mappings/Core"}},
 	}
-	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
+	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr, nil)
 	if err == nil {
 		t.Fatal("expected host-bearing $import rejection")
 	}
@@ -165,7 +187,7 @@ func TestExecutePhaseBForFeature_InvalidYAML(t *testing.T) {
 		Metadata: types.FeatureRecipeMetadata{Name: "bad"},
 		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `not a mapping`}},
 	}
-	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
+	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr, nil)
 	if err == nil {
 		t.Fatal("expected YAML parse error")
 	}

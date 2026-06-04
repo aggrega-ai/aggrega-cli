@@ -21,7 +21,7 @@ func TestExecutePhaseB_NumberShape_IntLiteralIsInt(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "int-recipe"},
 		Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"ports": 8080}`}},
 	}
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestExecutePhaseB_NumberShape_FloatLiteralIsFloat(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "float-recipe"},
 		Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"replicas": 3.0}`}},
 	}
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestExecutePhaseB_NumberShape_StringNumericIsRejectedByAsNumber(t *testing.
 		// ok=false, allowing the consumer to emit a clear "expected number" error.
 		Spec: types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"ports": "8080"}`}},
 	}
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestExecutePhaseB_YAMLBlockScalar(t *testing.T) {
   line3
 `}},
 	}
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestExecutePhaseB_JSONShapedParity(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "json-shaped"},
 		Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "demo:1.0", "name": "{{ .values.name }}", "port": {{ .values.port }}, "enabled": true, "tags": ["a", "b"]}`}},
 	}
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

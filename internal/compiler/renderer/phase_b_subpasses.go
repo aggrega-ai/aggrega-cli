@@ -96,7 +96,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		state.PhaseReached = 1
 		return nil
 	}
-	tmplText, vmErr := resolveValuesMappingText(state.Recipe.Spec.ValuesMapping, state.Recipe.Metadata.Name, "Recipe")
+	tmplText, vmErr := resolveValuesMappingText(state.Recipe.Spec.ValuesMapping, state.Recipe.Metadata.Name, "Recipe", state.MappingLibraries)
 	if vmErr != nil {
 		return vmErr
 	}
@@ -378,7 +378,7 @@ func phaseB6(
 		}
 		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 
-		frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
+		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q", nodeID, ref.InstanceName))
 		}
@@ -452,7 +452,7 @@ func phaseB6(
 			frCtx.SecretName = secretName
 			frCtx.Inject = buildSecretInject(entry)
 
-			frValues, err := ExecutePhaseBForFeature(&frCtx, fr)
+			frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q", nodeID, secretName))
 			}

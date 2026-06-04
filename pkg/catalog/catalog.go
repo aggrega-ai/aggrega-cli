@@ -214,18 +214,14 @@ func LoadAllWithCacheDir(workspaceRoot, cacheDir string, dirs ...string) (*Catal
 // host-less identity) to its verified raw bytes (from ReadPinnedLibrary); the
 // bytes are parsed + indexed here so the bridged library carries faithful
 // entityBytes for the lockfile-drift verify.
-func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extra map[string][]byte, dirs ...string) (*Catalog, []string, error) {
+func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extraSchemas, extraMappings map[string][]byte, dirs ...string) (*Catalog, []string, error) {
 	c, err := loadAllPassOne(workspaceRoot, cacheDir, dirs...)
 	if err != nil {
 		return nil, nil, err
 	}
-	names := make([]string, 0, len(extra))
-	for name := range extra {
-		names = append(names, name)
-	}
-	sort.Strings(names)
 	var warnings []string
-	for _, name := range names {
+
+	for _, name := range sortedKeys(extraSchemas) {
 		if _, local := c.SchemaLibraries[name]; local {
 			warnings = append(warnings, fmt.Sprintf(
 				"SchemaLibrary %q is present both in the local catalog and as a lockfile-pinned library; the local definition is used",
@@ -237,17 +233,49 @@ func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extra map[string][]b
 		// carry the exact verified bytes — the lockfile-drift verify recomputes the
 		// content digest from entityBytes, so storing the raw bytes (not a
 		// re-serialised parse) keeps that verify faithful.
-		lib, perr := parseSchemaLibraryEntity(extra[name])
+		lib, perr := parseSchemaLibraryEntity(extraSchemas[name])
 		if perr != nil {
 			return nil, nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged SchemaLibrary %q", name))
 		}
 		c.SchemaLibraries[name] = lib
-		c.entityBytes[entityBytesKey("SchemaLibrary", name)] = extra[name]
+		c.entityBytes[entityBytesKey("SchemaLibrary", name)] = extraSchemas[name]
 	}
+
+	// The mapping axis mirrors the schema axis exactly: local-wins on a name
+	// collision (with a warning), and the bridged entityBytes carry the exact
+	// verified bytes so the lockfile-drift verify stays faithful. Mapping and
+	// schema libraries are keyed in separate catalog maps, so a name shared
+	// across the two kinds does not collide.
+	for _, name := range sortedKeys(extraMappings) {
+		if _, local := c.MappingLibraries[name]; local {
+			warnings = append(warnings, fmt.Sprintf(
+				"MappingLibrary %q is present both in the local catalog and as a lockfile-pinned library; the local definition is used",
+				name))
+			continue
+		}
+		lib, perr := parseMappingLibraryEntity(extraMappings[name])
+		if perr != nil {
+			return nil, nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged MappingLibrary %q", name))
+		}
+		c.MappingLibraries[name] = lib
+		c.entityBytes[entityBytesKey("MappingLibrary", name)] = extraMappings[name]
+	}
+
 	if err := c.validateSchemaPillarsPass(); err != nil {
 		return nil, nil, err
 	}
 	return c, warnings, nil
+}
+
+// sortedKeys returns the map's keys in lexicographic order for deterministic
+// iteration (bridged-library merge order and the warnings it emits).
+func sortedKeys(m map[string][]byte) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // LoadPassOne runs only Pass 1 of the catalog load — the filesystem walk +
@@ -663,6 +691,24 @@ func parseSchemaLibraryEntity(data []byte) (types.SchemaLibrary, error) {
 		if err := types.ValidateTemplateBody(&tmpl); err != nil {
 			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q template %q: %w", e.Metadata.Name, name, err)
 		}
+	}
+	return e, nil
+}
+
+// parseMappingLibraryEntity is the single per-entity MappingLibrary resolution,
+// mirroring parseSchemaLibraryEntity on the mapping axis: full unmarshal +
+// kind-check. There is no forbidden-keyword / template-body scan — MappingLibrary
+// entries are opaque Go template strings the compiler does not parse at entity
+// load (their content, including any cross-library `$import:`, resolves at
+// Recipe / FeatureRecipe render time). Used by the build-side bridge so a
+// lockfile-pinned remote MappingLibrary is parsed identically to a local one.
+func parseMappingLibraryEntity(data []byte) (types.MappingLibrary, error) {
+	var e types.MappingLibrary
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.MappingLibrary{}, err
+	}
+	if e.Kind != "MappingLibrary" {
+		return types.MappingLibrary{}, fmt.Errorf("expected kind MappingLibrary, got %q", e.Kind)
 	}
 	return e, nil
 }

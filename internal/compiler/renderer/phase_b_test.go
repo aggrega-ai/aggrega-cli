@@ -36,7 +36,7 @@ func TestExecutePhaseB_Simple(t *testing.T) {
 		},
 	}
 
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestExecutePhaseB_NoValuesMapping(t *testing.T) {
 		Spec:     types.RecipeSpec{},
 	}
 
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,23 +77,50 @@ func TestExecutePhaseB_NoValuesMapping(t *testing.T) {
 	}
 }
 
-func TestExecutePhaseB_LibraryImportNotYetSupported(t *testing.T) {
+func TestExecutePhaseB_ResolvesLibraryImport(t *testing.T) {
 	t.Parallel()
 
-	ctx := &types.TemplateContext{}
+	values := types.OrderedMap[any]{}
+	values.Set("tag", "v9")
+	ctx := &types.TemplateContext{Values: values}
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "library-import-recipe"},
 		Spec: types.RecipeSpec{
 			ValuesMapping: types.ValuesMapping{Import: "Helpers#/mappings/Core"},
 		},
 	}
-
-	_, err := ExecutePhaseB(ctx, recipe)
-	if err == nil {
-		t.Fatal("expected error for bare-name library-import valuesMapping")
+	libs := map[string]types.MappingLibrary{
+		"Helpers": mappingLibraryFixture("Helpers", map[string]string{
+			"Core": `{"image": "x:{{ .values.tag }}"}`,
+		}),
 	}
-	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
-		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
+
+	got, err := ExecutePhaseB(ctx, recipe, libs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["image"] != "x:v9" {
+		t.Errorf("image: %v; want the imported fragment templated against .values", got["image"])
+	}
+}
+
+func TestExecutePhaseB_LibraryImportNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := &types.TemplateContext{}
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "library-import-recipe"},
+		Spec: types.RecipeSpec{
+			ValuesMapping: types.ValuesMapping{Import: "Absent#/mappings/Core"},
+		},
+	}
+
+	_, err := ExecutePhaseB(ctx, recipe, nil)
+	if err == nil {
+		t.Fatal("expected error for an unresolved bare-name library-import valuesMapping")
+	}
+	if !errors.Is(err, ErrMappingLibraryNotFound) {
+		t.Errorf("expected ErrMappingLibraryNotFound, got: %v", err)
 	}
 }
 
@@ -108,7 +135,7 @@ func TestExecutePhaseB_RejectsHostBearingImport(t *testing.T) {
 		},
 	}
 
-	_, err := ExecutePhaseB(ctx, recipe)
+	_, err := ExecutePhaseB(ctx, recipe, nil)
 	if err == nil {
 		t.Fatal("expected error for host-bearing library-import valuesMapping")
 	}
@@ -120,7 +147,7 @@ func TestExecutePhaseB_RejectsHostBearingImport(t *testing.T) {
 func TestExecutePhaseB_NilRecipe(t *testing.T) {
 	t.Parallel()
 
-	values, err := ExecutePhaseB(&types.TemplateContext{}, nil)
+	values, err := ExecutePhaseB(&types.TemplateContext{}, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +169,7 @@ func TestExecutePhaseB_InvalidYAML(t *testing.T) {
 		},
 	}
 
-	_, err := ExecutePhaseB(ctx, recipe)
+	_, err := ExecutePhaseB(ctx, recipe, nil)
 	if err == nil {
 		t.Fatal("expected error for non-mapping template output")
 	}
@@ -169,7 +196,7 @@ func TestExecutePhaseB_UsesInjectPipe(t *testing.T) {
 		},
 	}
 
-	values, err := ExecutePhaseB(ctx, recipe)
+	values, err := ExecutePhaseB(ctx, recipe, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

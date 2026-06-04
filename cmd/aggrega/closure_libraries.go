@@ -10,6 +10,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // discoverClosureLibraries is the single producer of the closure's SchemaLibrary
@@ -69,4 +70,72 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 	}
 
 	return cl.DiscoverSchemaLibraries(lookup, consumers, body)
+}
+
+// discoverClosureMappingLibraries is the mapping-axis mirror of
+// discoverClosureLibraries: the single producer of the closure's MappingLibrary
+// axis, shared by pull's pin flow and build's drift-verify flow. It scans every
+// Recipe and FeatureRecipe valuesMapping in the loaded catalog for a field-root
+// `$import:` library reference, resolves the discovered libraries (minimum-version
+// selection + the injected lookup), and descends them transitively to a fixpoint,
+// merging the result into cl.MappingLibraries.
+//
+// A valuesMapping is presented to the walker in its authored `$import: <ref>`
+// directive form; a Mode-1 inline values template and a Mode-2 local-file import
+// carry no library reference and are skipped by the walker's identity gate.
+// Iteration is sorted-name for deterministic output.
+func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup closure.Lookup) error {
+	var consumers []closure.MappingConsumer
+
+	recipeNames := make([]string, 0, len(cat.Recipes))
+	for name := range cat.Recipes {
+		recipeNames = append(recipeNames, name)
+	}
+	sort.Strings(recipeNames)
+	for _, name := range recipeNames {
+		if tmpl, ok := valuesMappingImportDirective(cat.Recipes[name].Spec.ValuesMapping); ok {
+			consumers = append(consumers, closure.MappingConsumer{URI: name, Template: tmpl})
+		}
+	}
+
+	frNames := make([]string, 0, len(cat.FeatureRecipes))
+	for name := range cat.FeatureRecipes {
+		frNames = append(frNames, name)
+	}
+	sort.Strings(frNames)
+	for _, name := range frNames {
+		if tmpl, ok := valuesMappingImportDirective(cat.FeatureRecipes[name].Spec.ValuesMapping); ok {
+			consumers = append(consumers, closure.MappingConsumer{URI: name, Template: tmpl})
+		}
+	}
+
+	// Transitive body accessor: a discovered MappingLibrary's own entry bodies, for
+	// descending their field-root `$import:`s. A library present only in the cache
+	// (a remote pin not bridged into THIS catalog) is not found here and its
+	// transitive descent lands with the pull-side Tier-3 path.
+	body := func(lib closure.ResolvedLibrary) ([]string, bool, error) {
+		ml, ok := cat.MappingLibraries[lib.URI]
+		if !ok {
+			return nil, false, nil
+		}
+		bodies := make([]string, 0, ml.Spec.Mappings.Len())
+		for _, k := range ml.Spec.Mappings.Keys() {
+			entry, _ := ml.Spec.Mappings.Get(k)
+			bodies = append(bodies, entry.Body)
+		}
+		return bodies, true, nil
+	}
+
+	return cl.DiscoverMappingLibraries(lookup, consumers, body)
+}
+
+// valuesMappingImportDirective renders a valuesMapping that carries an `$import:`
+// target back into its authored directive form (`$import: <target>`) for the
+// discovery walker, which scans a template body for a field-root `$import:`. A
+// Mode-1 inline values template carries no import and yields ok=false.
+func valuesMappingImportDirective(vm types.ValuesMapping) (string, bool) {
+	if vm.Import == "" {
+		return "", false
+	}
+	return "$import: " + vm.Import, true
 }

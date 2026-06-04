@@ -40,6 +40,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -303,6 +304,13 @@ properties: {}
 	}
 	if !errors.Is(err, ErrCircularRef) {
 		t.Errorf("error = %v; want ErrCircularRef", err)
+	}
+	// Shared-primitive conformance: the $ref cycle sentinel IS refcycle.ErrCycle,
+	// the same identity the $import surface reports — one detector guards both, so
+	// a mutation to the primitive's logic surfaces in pkg/refcycle's unit test and
+	// a change to the shared sentinel breaks both surfaces' cycle assertions.
+	if !errors.Is(err, refcycle.ErrCycle) {
+		t.Errorf("error = %v; want the shared refcycle.ErrCycle identity", err)
 	}
 	if !strings.Contains(err.Error(), "->") {
 		t.Errorf("cycle error should name the chain; got %q", err.Error())
