@@ -95,25 +95,32 @@ func TestEvaluateOneArtifactWithDelims_EmptyOutput(t *testing.T) {
 }
 
 // TestEvaluateOneArtifactWithDelims_NonDefaultDelimsExternalHandler
-// pins the external-handler path: non-default delimiters → skip
-// provenance injection when {{ syntax is present in the rendered output.
+// pins the external-handler path on a metadata-less manifest: the surgical
+// splice has nothing to stamp (no metadata mapping), so it is a SILENT no-op
+// per the "manifests without metadata skip silently" contract — the
+// original bytes (including the unquoted Helm `{{ }}`) are emitted byte-faithfully
+// and no skip warning is appended. (The round-trip path this replaced could not
+// distinguish "no metadata" from "round-trip mangled" and warned spuriously.)
 func TestEvaluateOneArtifactWithDelims_NonDefaultDelimsExternalHandler(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{Recipe: &types.Recipe{}}
 	tmplCtx := &types.TemplateContext{}
-	// Template uses [[ ]] delims but content contains {{ }}.
+	// Template uses [[ ]] delims but content contains {{ }}; no metadata mapping.
 	src := "kind: Pod\nname: [[ .name ]]\nvalueFrom: {{ .Values.x }}\n"
 	tmplCtx.Values.Set("name", "n")
 	body, err := evaluateOneArtifactWithDelims(tmplCtx, state, NodeRenderContext{}, "f", src, "test", "[[", "]]")
 	if err != nil {
 		t.Fatalf("non-default: %v", err)
 	}
-	// Body should contain the {{ }} unchanged (since provenance injection skipped).
-	if !strings.Contains(string(body), "{{") {
-		t.Errorf("body should contain {{; got %s", body)
+	// Byte-faithful: the unquoted {{ }} survives unchanged.
+	if !strings.Contains(string(body), "valueFrom: {{ .Values.x }}") {
+		t.Errorf("body should preserve the unquoted Helm token; got %s", body)
 	}
-	if len(state.Warnings) == 0 {
-		t.Errorf("warnings should be appended")
+	if strings.Contains(string(body), "aggrega.ai/") {
+		t.Errorf("metadata-less manifest should not be stamped; got %s", body)
+	}
+	if len(state.Warnings) != 0 {
+		t.Errorf("no-metadata manifest is a silent no-op; want no warnings, got %v", state.Warnings)
 	}
 }
 

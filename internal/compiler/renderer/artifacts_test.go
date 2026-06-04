@@ -686,7 +686,7 @@ spec:
 // substring check would see the surviving quoted copy and wrongly accept
 // the file; the token-COUNT check catches the dropped copy and forces a
 // skip, so a partially-corrupted artifact is never injected.
-func TestEvaluateArtifacts_HelmChartMixedQuotingSameTokenSkips(t *testing.T) {
+func TestEvaluateArtifacts_HelmChartMixedQuotingSameTokenInjectsByteFaithfully(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	state.Recipe.Spec.Provider = "helm-chart"
@@ -712,22 +712,20 @@ data:
 	}
 	body := string(findEmitted(t, files, "templates/mixed-quoting.yaml").Body)
 
-	// Skipped: no provenance injected, original bytes emitted unchanged
-	// (both the quoted and unquoted forms survive verbatim).
-	if strings.Contains(body, "aggrega.ai/") {
-		t.Errorf("file with a mangled token copy must NOT be injected; body:\n%s", body)
+	// The surgical splice injects provenance into metadata WITHOUT re-marshalling
+	// the body, so BOTH the quoted and the unquoted Helm token survive byte-for-byte
+	// in the untouched `data:` section — the round-trip mangling that forced 09o to
+	// skip this file no longer applies.
+	if !strings.Contains(body, "aggrega.ai/component-id") {
+		t.Errorf("byte-faithful splice should inject provenance; body:\n%s", body)
 	}
 	if !strings.Contains(body, `quoted: "{{ .Values.shared }}"`) || !strings.Contains(body, "unquoted: {{ .Values.shared }}") {
-		t.Errorf("skipped file should emit the original bytes unchanged; body:\n%s", body)
+		t.Errorf("both Helm token copies must survive byte-faithfully in the untouched body; body:\n%s", body)
 	}
-	var warned bool
 	for _, w := range state.Warnings {
-		if strings.Contains(w, "mixed-quoting.yaml") && strings.Contains(w, "skipped provenance label injection") {
-			warned = true
+		if strings.Contains(w, "mixed-quoting.yaml") {
+			t.Errorf("byte-faithful inject should not warn; got %v", state.Warnings)
 		}
-	}
-	if !warned {
-		t.Errorf("expected a skip warning naming mixed-quoting.yaml; got %v", state.Warnings)
 	}
 }
 

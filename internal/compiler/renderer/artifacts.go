@@ -331,59 +331,37 @@ func evaluateOneArtifactWithDelims(
 	// authoritative for that path, and its `{{ }}` were Aggrega's own
 	// delimiters, already resolved, so no Helm tokens remain to preserve.
 
-	var node yaml.Node
-	if err := yaml.Unmarshal([]byte(rendered), &node); err != nil {
-		if usingDefaultDelims {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template output is not valid YAML", filename))
+	labels := buildProvenanceLabels(state, nodeCtx)
+	annotations := buildProvenanceAnnotations(state, nodeCtx)
+
+	// Primary: byte-faithful per-document surgical splice. Every byte the splice
+	// does not insert stays identical, so no Helm `{{ }}` token outside the
+	// inserted label lines can be re-shaped — and every document in a multi-doc
+	// stream is stamped (the single-yaml.Unmarshal path this replaces decoded only
+	// the first document and silently dropped the rest). ok=false (a non-spliceable
+	// metadata shape, or a post-splice anomaly) routes to the round-trip fallback.
+	if out, ok := spliceProvenanceMultiDoc(rendered, labels, annotations); ok {
+		return []byte(out), nil
+	}
+
+	// Fallback: multi-document-aware round-trip — verified-safe (decodes every
+	// document, injects each, re-marshals all) for the documents the splice cannot
+	// handle. The external-delims path gates on Helm-token preservation; a
+	// default-delims parse failure is a CATALOG_ERROR; otherwise skip + warn and
+	// emit the ORIGINAL rendered bytes.
+	body, outcome, rtErr := injectProvenanceRoundTrip(filename, rendered, labels, annotations, usingDefaultDelims)
+	switch outcome {
+	case artifactInjected:
+		if rtErr != nil {
+			return nil, rtErr // CATALOG_ERROR from the Q1a metadata-shape guard
 		}
+		return body, nil
+	case artifactParseFailDefault:
+		return nil, cerrors.Wrap(rtErr, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template output is not valid YAML", filename))
+	default: // artifactSkip
 		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
 		return []byte(rendered), nil
 	}
-	if node.Kind == 0 {
-		// Empty document (e.g., `---` only) — emit the rendered bytes as-is.
-		return []byte(rendered), nil
-	}
-
-	labels := buildProvenanceLabels(state, nodeCtx)
-	annotations := buildProvenanceAnnotations(state, nodeCtx)
-	if err := injectProvenanceNode(filename, &node, labels, annotations); err != nil {
-		return nil, err
-	}
-
-	body, err := yaml.Marshal(&node)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q yaml marshal", filename))
-	}
-
-	// Round-trip verification (external-handler path only): if the re-marshal
-	// dropped or re-shaped any Helm `{{ ... }}` token the rendered input
-	// carried, the provenance merge corrupted the template. Discard the
-	// merged body, emit the original rendered bytes unchanged, and warn.
-	//
-	// Two checks together: every input token must still be present in the
-	// body, AND the token COUNT must match. The count guards the case the
-	// substring check alone misses — the same token text appearing both
-	// quoted (survives) and unquoted (mangled): the surviving copy keeps the
-	// substring present, but the mangled copy drops the body's token count.
-	// Provenance labels/annotations add no `{{ }}`, so exact equality holds.
-	if !usingDefaultDelims {
-		inTokens := helmTemplateTokens(rendered)
-		bodyStr := string(body)
-		preserved := len(inTokens) == len(helmTemplateTokens(bodyStr))
-		for _, tok := range inTokens {
-			if !preserved {
-				break
-			}
-			if !strings.Contains(bodyStr, tok) {
-				preserved = false
-			}
-		}
-		if !preserved {
-			state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
-			return []byte(rendered), nil
-		}
-	}
-	return body, nil
 }
 
 // preCheckArtifactPillars walks the template's parsed field-access set
