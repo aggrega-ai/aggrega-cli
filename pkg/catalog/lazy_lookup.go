@@ -9,9 +9,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -58,17 +61,23 @@ import (
 // where most catalog entities are never referenced.
 func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller) *LazyLookup {
 	return &LazyLookup{
-		workspaceRoot:   workspaceRoot,
-		cacheDir:        cacheDir,
-		catalogDirs:     catalogDirs,
-		puller:          puller,
-		components:      map[string]types.Component{},
-		features:        map[string]types.Feature{},
-		schemaLibraries: map[string]types.SchemaLibrary{},
-		componentMisses: map[string]struct{}{},
-		featureMisses:   map[string]struct{}{},
-		componentIndex:  map[string]string{},
-		featureIndex:    map[string]string{},
+		workspaceRoot:    workspaceRoot,
+		cacheDir:         cacheDir,
+		catalogDirs:      catalogDirs,
+		puller:           puller,
+		components:       map[string]types.Component{},
+		features:         map[string]types.Feature{},
+		schemaLibraries:  map[string]types.SchemaLibrary{},
+		componentMisses:  map[string]struct{}{},
+		featureMisses:    map[string]struct{}{},
+		componentIndex:   map[string]string{},
+		featureIndex:     map[string]string{},
+		recipes:          map[string]types.Recipe{},
+		featureRecipes:   map[string]types.FeatureRecipe{},
+		aggregates:       map[string]types.Aggregate{},
+		aggregateSources: map[string]string{},
+		recipeSkips:      map[string]error{},
+		librarySkips:     map[string]error{},
 	}
 }
 
@@ -118,6 +127,14 @@ func (l *LazyLookup) Reset() {
 	l.schemaLibraries = map[string]types.SchemaLibrary{}
 	l.schemaLibrariesBuilt = false
 	l.pins = nil
+	l.recipes = map[string]types.Recipe{}
+	l.featureRecipes = map[string]types.FeatureRecipe{}
+	l.aggregates = map[string]types.Aggregate{}
+	l.aggregateSources = map[string]string{}
+	l.recipeSkips = map[string]error{}
+	l.recipeIndexBuilt = false
+	l.recipeCat = nil
+	l.librarySkips = map[string]error{}
 }
 
 // Prime copies the supplied catalog's already-merged Components and
@@ -208,6 +225,38 @@ type LazyLookup struct {
 	// Tier-2 falls through to a Tier-3 re-establish rather than returning
 	// unverified bytes.
 	pins map[string]string
+
+	// Recipe / FeatureRecipe / Aggregate sets enumerated TOLERANTLY from the
+	// catalog directories on first need (buildRecipeIndex). Recipes are keyed by
+	// identity (metadata.name:version), the same key the eager catalog uses, so
+	// the re-homed matcher resolves identically. A recipe/FR/aggregate whose body
+	// won't parse (or whose identity collides) is SKIPPED with a warning and a
+	// recorded reason rather than aborting the walk — so a broken UNUSED recipe is
+	// invisible to a resolution that doesn't need it (the blast-radius fix). The
+	// eager catalog, by contrast, fails the whole walk on the first broken recipe.
+	recipes          map[string]types.Recipe
+	featureRecipes   map[string]types.FeatureRecipe
+	aggregates       map[string]types.Aggregate
+	aggregateSources map[string]string
+	recipeSkips      map[string]error // skipped recipe/FR/aggregate file path -> reason
+	recipeIndexBuilt bool
+
+	// recipeCat is the cached *Catalog shell over the enumerated recipe/FR/
+	// aggregate maps. The shell carries ONLY the maps the matcher methods read
+	// (Recipes, FeatureRecipes, Aggregates, aggregateSources, workspaceRoot), so
+	// RecipeLookupWithManifest / VerifyRecipeResolution / SubAggregateLoader are
+	// reused verbatim against a lazily-enumerated set — no matcher reimplemented.
+	// nil after construction / Reset; rebuilt on first recipeCatalog() call so a
+	// changed workspace (serve's incremental edits) re-walks.
+	recipeCat *Catalog
+
+	// librarySkips records the validation error for each SchemaLibrary
+	// buildSchemaLibraries skipped (a forbidden keyword, a malformed template
+	// body). It lets an in-closure reference to a skipped library REPLAY the
+	// original library error (eager-parity diagnostic) instead of degrading to a
+	// coarse unresolvable-$ref. An out-of-closure broken library is recorded but
+	// never replayed (never referenced), so it is not build-fatal.
+	librarySkips map[string]error
 }
 
 // SetPins threads the per-request lockfile pins into the lazy lookup, enabling
@@ -535,6 +584,11 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 				if firstErr == nil {
 					firstErr = perr
 				}
+				// Record the skip reason keyed by the header name (the body parse
+				// failed, so lib.Metadata.Name is unavailable). An in-closure
+				// reference to this library replays perr via
+				// ReplaySkippedLibraryError for an eager-parity diagnostic.
+				l.librarySkips[hdr.Metadata.Name] = perr
 				return nil
 			}
 			l.schemaLibraries[lib.Metadata.Name] = lib
@@ -542,4 +596,161 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 		})
 	}
 	return firstErr
+}
+
+// buildRecipeIndex walks the catalog directories once and TOLERANTLY enumerates
+// every Recipe, FeatureRecipe, and Aggregate into the hot maps, keyed exactly as
+// the eager catalog keys them (recipes/FRs by metadata.name:version, aggregates
+// by metadata.name). A file that won't parse — or whose recipe/FR identity
+// collides with one already indexed — is skipped with a one-line stderr warning
+// and a recorded reason; it never aborts the walk. This is the robustness crux:
+// a broken UNUSED recipe is invisible to a resolution that doesn't need it, where
+// the eager catalog.Load fails the whole walk on the first broken recipe.
+//
+// Determinism: filepath.WalkDir visits lexically and catalogDirs is caller-
+// ordered, so identity-collision shadowing (first-wins) is stable across runs;
+// the matcher's own sort.Strings over candidate identities does the rest. Parsing
+// every recipe body (rather than headers only) forfeits the local lazy-CPU saving
+// but keeps a single recipe-resolution path feeding both the point-lookup
+// (RecipeByURI) and the implements search — no second parse that could drift.
+// Idempotent via recipeIndexBuilt; Reset clears it.
+func (l *LazyLookup) buildRecipeIndex() {
+	if l.recipeIndexBuilt {
+		return
+	}
+	l.recipeIndexBuilt = true
+	for _, dir := range l.catalogDirs {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			ext := filepath.Ext(path)
+			if ext != ".yaml" && ext != ".yml" {
+				return nil
+			}
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return nil
+			}
+			var hdr fileHeader
+			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil {
+				return nil
+			}
+			switch hdr.Kind {
+			case "Recipe":
+				e, perr := parseRecipeEntity(data, path)
+				if perr != nil {
+					l.recordRecipeSkip(path, perr)
+					return nil
+				}
+				key := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+				if _, dup := l.recipes[key]; dup {
+					l.recordRecipeSkip(path, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
+					return nil
+				}
+				l.recipes[key] = e
+			case "FeatureRecipe":
+				e, perr := parseFeatureRecipeEntity(data, path)
+				if perr != nil {
+					l.recordRecipeSkip(path, perr)
+					return nil
+				}
+				key := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+				if _, dup := l.featureRecipes[key]; dup {
+					l.recordRecipeSkip(path, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
+					return nil
+				}
+				l.featureRecipes[key] = e
+			case "Aggregate":
+				e, perr := parseAggregateEntity(data)
+				if perr != nil {
+					l.recordRecipeSkip(path, perr)
+					return nil
+				}
+				if _, dup := l.aggregates[e.Metadata.Name]; dup {
+					l.recordRecipeSkip(path, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
+					return nil
+				}
+				l.aggregates[e.Metadata.Name] = e
+				l.aggregateSources[e.Metadata.Name] = path
+			}
+			return nil
+		})
+	}
+}
+
+// recordRecipeSkip emits the one-line tolerance warning and records the reason,
+// keyed by file path (a parse failure has no reliable identity to key on).
+func (l *LazyLookup) recordRecipeSkip(path string, err error) {
+	fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", path, err.Error())
+	l.recipeSkips[path] = err
+}
+
+// recipeCatalog returns the cached *Catalog shell over the tolerantly-enumerated
+// recipe / FeatureRecipe / Aggregate maps. The shell holds only the fields the
+// matcher methods read, so RecipeLookupWithManifest, VerifyRecipeResolution, and
+// SubAggregateLoader run verbatim against the lazy set. Built on first call;
+// nil-and-rebuilt after Reset so an edited workspace re-walks.
+func (l *LazyLookup) recipeCatalog() *Catalog {
+	if l.recipeCat != nil {
+		return l.recipeCat
+	}
+	l.buildRecipeIndex()
+	l.recipeCat = &Catalog{
+		Recipes:          l.recipes,
+		FeatureRecipes:   l.featureRecipes,
+		Aggregates:       l.aggregates,
+		aggregateSources: l.aggregateSources,
+		workspaceRoot:    l.workspaceRoot,
+	}
+	return l.recipeCat
+}
+
+// RecipeLookupWithManifest exposes the catalog matcher's Manifest-aware recipe
+// resolution over the lazily-enumerated recipe set. The Manifest mapping tiers
+// resolve by URI (point-lookup); the implements fallback searches the enumerated
+// set, halting loudly on ambiguity exactly as the eager path does.
+func (l *LazyLookup) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
+	return l.recipeCatalog().RecipeLookupWithManifest(manifest)
+}
+
+// VerifyRecipeResolution runs the pre-render resolution-completeness pass over
+// the lazily-enumerated recipe set: every instance must resolve to exactly one
+// recipe, or the build halts loudly (no recipe / ambiguous implements).
+func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
+	return l.recipeCatalog().VerifyRecipeResolution(manifest, graph)
+}
+
+// SubAggregateLoader exposes the catalog's sub-aggregate loader over the lazily-
+// enumerated Aggregate set. A referenced sub-aggregate that is absent (or was
+// skipped as broken) is a fatal graph-construction failure, exactly as eager.
+func (l *LazyLookup) SubAggregateLoader() topology.SubAggregateLoader {
+	return l.recipeCatalog().SubAggregateLoader()
+}
+
+// RecipeSkips returns the tolerant-enumeration skip reasons keyed by file path,
+// for callers that surface a coverage note (which recipes the enumeration could
+// not index).
+func (l *LazyLookup) RecipeSkips() map[string]error {
+	return l.recipeSkips
+}
+
+// ReplaySkippedLibraryError returns the original validation error for the first
+// referenced SchemaLibrary that buildSchemaLibraries skipped, scanning the
+// referenced names in sorted order for determinism, or nil when none of the
+// referenced libraries were skipped. It gives an in-closure reference to a broken
+// library the eager-parity diagnostic (the forbidden-keyword / template-body
+// error) rather than a coarse unresolvable-$ref. referenced is the set of library
+// names the closure's $ref / $import directives reach (supplied by the caller
+// that knows the closure).
+func (l *LazyLookup) ReplaySkippedLibraryError(referenced []string) error {
+	l.buildSchemaLibraries()
+	names := append([]string(nil), referenced...)
+	sort.Strings(names)
+	for _, name := range names {
+		if err, ok := l.librarySkips[name]; ok {
+			return err
+		}
+	}
+	return nil
 }

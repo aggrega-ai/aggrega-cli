@@ -473,6 +473,75 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 	)
 }
 
+// ValidateClosurePillars is the closure-scoped counterpart to
+// validateSchemaPillarsPass: it validates ONLY the supplied Components and
+// Features — the Release's closure — against the supplied SchemaLibrary map,
+// rather than every entity in the catalog. The library map is the closure's
+// walked library set (not the whole catalog's), so cross-document $ref expansion
+// resolves exactly the libraries the closure reaches. A closure entity whose
+// $ref names a library absent from libs fails here (the hard in-closure
+// library-reject): when that library was skipped as broken, the caller replays
+// the original library error via ReplaySkippedLibraryError for an eager-parity
+// diagnostic; when it is genuinely absent, validator.ValidateSchemaPillars
+// surfaces the unresolvable-$ref.
+//
+// Iteration is sorted by name for diagnostic stability (the deterministic-output
+// invariant); errors are collected across entities and joined into one aggregate
+// CatalogError. Returns nil when every supplied entity validates. The advisory
+// pillar-overlap lint is intentionally NOT run here — it is a non-fatal authoring
+// smell the build collects separately, not part of the reject gate.
+func ValidateClosurePillars(
+	components map[string]types.Component, componentSources map[string]string,
+	features map[string]types.Feature, featureSources map[string]string,
+	libs map[string]types.SchemaLibrary,
+) error {
+	var validationErrors []error
+
+	compNames := make([]string, 0, len(components))
+	for name := range components {
+		compNames = append(compNames, name)
+	}
+	sort.Strings(compNames)
+	for _, name := range compNames {
+		comp := components[name]
+		if err := validator.ValidateSchemaPillars(
+			"Component", name, componentSources[name], &comp.Spec.Schema, libs,
+		); err != nil {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+
+	featNames := make([]string, 0, len(features))
+	for name := range features {
+		featNames = append(featNames, name)
+	}
+	sort.Strings(featNames)
+	for _, name := range featNames {
+		feat := features[name]
+		if err := validator.ValidateSchemaPillars(
+			"Feature", name, featureSources[name], &feat.Spec.Schema, libs,
+		); err != nil {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+
+	if len(validationErrors) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(validationErrors))
+	for _, e := range validationErrors {
+		parts = append(parts, e.Error())
+	}
+	return cerrors.New(
+		cerrors.CatalogError,
+		cerrors.SourceLocation{},
+		fmt.Sprintf("closure validation: %d schema validation error(s):\n  - %s",
+			len(validationErrors), strings.Join(parts, "\n  - ")),
+		nil,
+		nil,
+	)
+}
+
 // entityHeader peeks at the top-level "kind:" field before deciding which
 // pkg/types struct to unmarshal into. The peek is cheap (a partial YAML
 // decode that only touches one field) and lets indexFile dispatch through
@@ -521,41 +590,13 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.featureSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Feature", e.Metadata.Name)] = data
 	case "Recipe":
-		var e types.Recipe
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
-		}
-		// Load-time shape rules (chapter 16): valuesMapping ⇔ source pairing,
-		// at-least-one-input-kind, eval-provider input-kind ban. Returns a
-		// CATALOG_ERROR-shaped error on violation.
-		if err := validator.ValidateRecipe(&e, path); err != nil {
+		// parseRecipeEntity is the shared per-entity resolve (unmarshal, shape
+		// validation, relative source / artifact-$import rewrites) so the eager
+		// and lazy backings cannot drift. The dup-identity check is catalog-level
+		// state and stays here.
+		e, err := parseRecipeEntity(data, path)
+		if err != nil {
 			return err
-		}
-		// Resolve relative string sources against the Recipe file's directory so
-		// co-located charts stay bundled with their Recipe (on disk today, OCI
-		// artifact tomorrow). Absolute paths and non-string sources pass through.
-		if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
-			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
-			if err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe source %q", s))
-			}
-			e.Spec.Source = abs
-		}
-		// Resolve relative $import: paths in artifacts entries against the
-		// Recipe file's directory so co-located artifact files stay bundled
-		// with their Recipe. Inline entries (no $import: target) are
-		// unaffected.
-		for _, name := range e.Spec.Artifacts.Keys() {
-			entry, _ := e.Spec.Artifacts.Get(name)
-			if entry.Import == "" || filepath.IsAbs(entry.Import) {
-				continue
-			}
-			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
-			if err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifact %q $import target %q", name, entry.Import))
-			}
-			entry.Import = abs
-			e.Spec.Artifacts.Set(name, entry)
 		}
 		rKey := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
 		if _, dup := c.Recipes[rKey]; dup {
@@ -564,20 +605,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.Recipes[rKey] = e
 		c.entityBytes[entityBytesKey("Recipe", e.Metadata.Name)] = data
 	case "FeatureRecipe":
-		var e types.FeatureRecipe
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
-		}
-		// Resolve relative string sources against the FR file's directory so
-		// co-located fragments (compose-bridge's bridge-fragment.yaml,
-		// secret-FR's chart dir, etc.) stay bundled with their FR. Mirrors the
-		// Recipe-source rewrite above.
-		if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
-			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
-			if err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
-			}
-			e.Spec.Source = abs
+		e, err := parseFeatureRecipeEntity(data, path)
+		if err != nil {
+			return err
 		}
 		frKey := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
 		if _, dup := c.FeatureRecipes[frKey]; dup {
@@ -586,8 +616,8 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.FeatureRecipes[frKey] = e
 		c.entityBytes[entityBytesKey("FeatureRecipe", e.Metadata.Name)] = data
 	case "Aggregate":
-		var e types.Aggregate
-		if err := yaml.Unmarshal(data, &e); err != nil {
+		e, err := parseAggregateEntity(data)
+		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
 		c.Aggregates[e.Metadata.Name] = e
@@ -664,6 +694,90 @@ func parseFeatureEntity(data []byte) (types.Feature, error) {
 		return types.Feature{}, fmt.Errorf("expected kind Feature, got %q", e.Kind)
 	}
 	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
+	return e, nil
+}
+
+// parseRecipeEntity is the single per-entity Recipe resolution shared by the
+// eager (catalog.Load, per file via indexFile) and lazy (LazyLookup recipe
+// enumeration) backings: full unmarshal, kind-check, the load-time shape rules
+// (validator.ValidateRecipe — valuesMapping ⇔ source pairing, at-least-one-
+// input-kind, eval-provider input-kind ban), and the relative-source /
+// relative-artifact-$import path rewrites against the Recipe file's directory.
+// It is the SSOT for "what an authored Recipe resolves to" so the two backings
+// cannot drift. The cross-entity dup-identity check is a catalog-level concern
+// and stays with the indexing caller, not here.
+//
+// Unlike parseComponentEntity, this self-wraps every failure into its final
+// CATALOG_ERROR shape (unmarshal, source rewrite, artifact rewrite each carry a
+// distinct message; ValidateRecipe already returns a shaped error) so a single
+// `return err` at the caller preserves byte-identical diagnostics.
+func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
+	var e types.Recipe
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
+	}
+	if e.Kind != "Recipe" {
+		return types.Recipe{}, fmt.Errorf("expected kind Recipe, got %q", e.Kind)
+	}
+	if err := validator.ValidateRecipe(&e, path); err != nil {
+		return types.Recipe{}, err
+	}
+	if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
+		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
+		if err != nil {
+			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe source %q", s))
+		}
+		e.Spec.Source = abs
+	}
+	for _, name := range e.Spec.Artifacts.Keys() {
+		entry, _ := e.Spec.Artifacts.Get(name)
+		if entry.Import == "" || filepath.IsAbs(entry.Import) {
+			continue
+		}
+		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
+		if err != nil {
+			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifact %q $import target %q", name, entry.Import))
+		}
+		entry.Import = abs
+		e.Spec.Artifacts.Set(name, entry)
+	}
+	return e, nil
+}
+
+// parseFeatureRecipeEntity is the FeatureRecipe analogue of parseRecipeEntity:
+// unmarshal, kind-check, and the relative-source rewrite. FeatureRecipes carry
+// no ValidateRecipe shape pass and no artifacts surface, so the body is the
+// Recipe parse minus those two steps. Self-wraps its failures like
+// parseRecipeEntity.
+func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
+	var e types.FeatureRecipe
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
+	}
+	if e.Kind != "FeatureRecipe" {
+		return types.FeatureRecipe{}, fmt.Errorf("expected kind FeatureRecipe, got %q", e.Kind)
+	}
+	if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
+		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
+		if err != nil {
+			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
+		}
+		e.Spec.Source = abs
+	}
+	return e, nil
+}
+
+// parseAggregateEntity is the single per-entity Aggregate resolution: unmarshal
+// plus kind-check. Mirrors parseComponentEntity (returns the raw error; the
+// indexing caller wraps the unmarshal failure with "unmarshal Aggregate").
+func parseAggregateEntity(data []byte) (types.Aggregate, error) {
+	var e types.Aggregate
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.Aggregate{}, err
+	}
+	if e.Kind != "Aggregate" {
+		return types.Aggregate{}, fmt.Errorf("expected kind Aggregate, got %q", e.Kind)
+	}
 	return e, nil
 }
 
