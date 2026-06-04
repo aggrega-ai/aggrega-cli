@@ -233,11 +233,11 @@ func TestMVSResolvesLibraryVersionConflictsToMaxVersion(t *testing.T) {
 	t.Parallel()
 	c := closure.Closure{}
 
-	schemaA := mustParse(t, `$ref: "BaseTypes@1.0.0#/schemas/PortSpec"`)
+	schemaA := mustParse(t, `$ref: "BaseTypes:1.0.0#/schemas/PortSpec"`)
 	if err := c.WalkSchemaRefs(schemaA, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk consumer A: %v", err)
 	}
-	schemaB := mustParse(t, `$ref: "BaseTypes@1.5.0#/schemas/PortSpec"`)
+	schemaB := mustParse(t, `$ref: "BaseTypes:1.5.0#/schemas/PortSpec"`)
 	if err := c.WalkSchemaRefs(schemaB, "hub.aggrega.ai/component/core/worker"); err != nil {
 		t.Fatalf("walk consumer B: %v", err)
 	}
@@ -296,16 +296,16 @@ func TestLibraryConsumersTrackedPerEntityWithFragments(t *testing.T) {
 	t.Parallel()
 	c := closure.Closure{}
 
-	schemaA := mustParse(t, `$ref: "BaseTypes@1.0.0#/schemas/PortSpec"`)
+	schemaA := mustParse(t, `$ref: "BaseTypes:1.0.0#/schemas/PortSpec"`)
 	if err := c.WalkSchemaRefs(schemaA, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk A: %v", err)
 	}
 	schemaB := mustParse(t, `
 properties:
   port:
-    $ref: "BaseTypes@1.0.0#/schemas/PortSpec"
+    $ref: "BaseTypes:1.0.0#/schemas/PortSpec"
   endpoint:
-    $ref: "BaseTypes@1.0.0#/schemas/EndpointSpec"
+    $ref: "BaseTypes:1.0.0#/schemas/EndpointSpec"
 `)
 	if err := c.WalkSchemaRefs(schemaB, "hub.aggrega.ai/component/core/gateway"); err != nil {
 		t.Fatalf("walk B: %v", err)
@@ -338,13 +338,13 @@ func TestVersionBumpAffectsLibraryDigestChain(t *testing.T) {
 	t.Parallel()
 	// Snapshot 1: consumer A pins lib@1.0.0; lookup digest "old".
 	c1 := closure.Closure{}
-	refOld := mustParse(t, `$ref: "BaseTypes@1.0.0#/schemas/PortSpec"`)
+	refOld := mustParse(t, `$ref: "BaseTypes:1.0.0#/schemas/PortSpec"`)
 	if err := c1.WalkSchemaRefs(refOld, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk old: %v", err)
 	}
 	// Snapshot 2: consumer A bumps to lib@2.0.0; lookup digest "new".
 	c2 := closure.Closure{}
-	refNew := mustParse(t, `$ref: "BaseTypes@2.0.0#/schemas/PortSpec"`)
+	refNew := mustParse(t, `$ref: "BaseTypes:2.0.0#/schemas/PortSpec"`)
 	if err := c2.WalkSchemaRefs(refNew, "hub.aggrega.ai/component/core/api-server"); err != nil {
 		t.Fatalf("walk new: %v", err)
 	}

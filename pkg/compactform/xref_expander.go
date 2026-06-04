@@ -82,10 +82,10 @@ func isOCIRef(ref string) bool {
 }
 
 // parseOCIRefURI extracts the library and entry names from a host-bearing
-// `oci://<host>/<path>/<LibraryName>[@<version>]#/schemas/<Entry>` reference so
+// `oci://<host>/<path>/<LibraryName>[:<version>]#/schemas/<Entry>` reference so
 // the rejection diagnostic can suggest the identity-form equivalent
 // (`<LibraryName>#/schemas/<Entry>`). The host and any registry path precede
-// the library name (the last path segment); an optional `@<version>` is
+// the library name (the last path segment); an optional `:<version>` is
 // stripped (the version is not part of an identity reference — the lockfile
 // resolves it). Returns (parsed, true) when the library + entry are
 // recoverable, (zero, false) otherwise — the rejection fires regardless, the
@@ -109,18 +109,19 @@ func parseOCIRefURI(ref string) (xrefURI, bool) {
 	if entry == "" || strings.ContainsAny(entry, "/#") {
 		return xrefURI{}, false
 	}
-	// Strip an optional `@<version>` — not part of an identity reference.
-	pathPortion := doc
-	if at := strings.LastIndexByte(doc, '@'); at >= 0 {
-		pathPortion = doc[:at]
+	// The library name is the last path segment, with an optional `:<version>`
+	// floor stripped. Taking the segment BEFORE stripping the version keeps a
+	// registry `host:port` (an earlier path segment) from being mistaken for the
+	// version separator.
+	library := doc
+	if slash := strings.LastIndexByte(doc, '/'); slash >= 0 {
+		library = doc[slash+1:]
 	}
-	if pathPortion == "" {
-		return xrefURI{}, false
-	}
-	// The library name is the last path segment.
-	library := pathPortion
-	if slash := strings.LastIndexByte(pathPortion, '/'); slash >= 0 {
-		library = pathPortion[slash+1:]
+	// Strip a trailing version on either separator — the host-bearing form is
+	// rejected regardless, and a steer to the bare-name identity should isolate
+	// the name whether the author wrote the new ":" or a stale "@".
+	if at := strings.IndexAny(library, ":@"); at >= 0 {
+		library = library[:at]
 	}
 	if library == "" {
 		return xrefURI{}, false
@@ -132,7 +133,7 @@ func parseOCIRefURI(ref string) (xrefURI, bool) {
 // the version-stripped, host-less `<Library>#/schemas/<Entry>` form. The cycle
 // guard keys on this canonical identity, never the raw reference string, so the
 // same library entry reached via different spellings — a bare-name reference and
-// a host-less `@version` reference of the same entry — shares one cycle key. A
+// a host-less `:version` reference of the same entry — shares one cycle key. A
 // cycle that traverses such an entry therefore cannot evade detection by
 // spelling its version inconsistently.
 func canonicalRefKey(library, entry string) string {
@@ -158,7 +159,7 @@ func canonicalRefKey(library, entry string) string {
 //     the message steers the author to the bare-name form, suggesting the exact
 //     identity-form equivalent when the host-bearing URI is parseable.
 //   - ErrReferenceUnresolvable when refURI is not a cross-document reference
-//     shape (`<Library>#/schemas/<Entry>`). A host-less `@version` is accepted
+//     shape (`<Library>#/schemas/<Entry>`). A host-less `:version` is accepted
 //     (stripped here; consumed as a minimum-version floor at lock time), not
 //     rejected.
 //   - ErrUnresolvedSchemaLibraryRef when refURI's library portion is not
@@ -203,18 +204,29 @@ func expandSchemaLibraryRef(
 		}
 	}
 
-	// A host-less `@version` is accepted as an optional minimum-version-floor
+	// A host-less `:version` is accepted as an optional minimum-version-floor
 	// assertion: the closure walk records it as a floor for minimum-version
 	// selection at lock time, and the lockfile owns the selected version. The
 	// reference resolves by name, never by version — so the expander strips the
-	// asserted version and resolves the bare-name identity.
-	if at := strings.IndexByte(parsed.library, '@'); at >= 0 {
+	// asserted version and resolves the bare-name identity. The version separator
+	// is `:` (matching Manifest mappings and the lockfile pin); a stale `@`
+	// separator is rejected with a steer rather than failing as an opaque
+	// library-not-found.
+	if at := strings.IndexByte(parsed.library, ':'); at >= 0 {
 		parsed.library = parsed.library[:at]
+	}
+	if strings.IndexByte(parsed.library, '@') >= 0 {
+		return nil, "", "", &CompileError{
+			Path:    consumerFile,
+			Keyword: "$ref",
+			Message: "cross-document $ref version separator is ':', not '@' — use `" + strings.Replace(refURI, "@", ":", 1) + "`: " + refURI,
+			Err:     ErrReferenceUnresolvable,
+		}
 	}
 
 	// Cycle check keyed on the canonical identity (version-stripped, host-less
 	// `<Library>#/schemas/<Entry>`), never the raw reference string — so the
-	// same entry reached via a bare-name reference and a host-less `@version`
+	// same entry reached via a bare-name reference and a host-less `:version`
 	// reference shares one cycle key and a cycle cannot evade the guard by
 	// inconsistent version spelling. The resolution stack holds canonical keys
 	// (the caller pushes the canonical key, not the raw URI).

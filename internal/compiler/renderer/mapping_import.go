@@ -22,7 +22,7 @@ import (
 //
 // libs is the resolved MappingLibrary set — the local catalog plus any
 // lockfile-pinned remote libraries bridged in at load. The version is supplied
-// by that set (keyed by bare name); a `@version` floor in the reference is a
+// by that set (keyed by bare name); a `:version` floor in the reference is a
 // lock-time selection assertion and is stripped here.
 //
 // Error model: a host-bearing reference is rejected (ErrHostInLibraryImport); a
@@ -35,6 +35,11 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport, ref)
 		}
 		return "", fmt.Errorf("%w: %q", ErrMappingImportShape, ref)
+	}
+	// A stale `@` version separator is rejected with a steer to `:` rather than
+	// falling through to an opaque library-not-found.
+	if strings.IndexByte(library, '@') >= 0 {
+		return "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrMappingImportShape, strings.Replace(ref, "@", ":", 1))
 	}
 	key := library + "#/mappings/" + entry
 	if chain, cyclic := refcycle.Check(stack, key); cyclic {
@@ -54,8 +59,8 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 	return me.Body, nil
 }
 
-// splitMappingImportRef parses a host-less `<Library>[@<version>]#/mappings/<Entry>`
-// into its library name and entry, stripping any `@version` floor. A host-bearing
+// splitMappingImportRef parses a host-less `<Library>[:<version>]#/mappings/<Entry>`
+// into its library name and entry, stripping any `:version` floor. A host-bearing
 // reference (`oci://…`) or a non-`#/mappings/` fragment shape returns ok=false.
 // This is the consumption-side mirror of the closure walker's identity-import
 // gate (kept here so the renderer stays decoupled from pkg/closure).
@@ -77,7 +82,7 @@ func splitMappingImportRef(ref string) (library, entry string, ok bool) {
 	if entry == "" {
 		return "", "", false
 	}
-	if at := strings.IndexByte(doc, '@'); at >= 0 {
+	if at := strings.IndexByte(doc, ':'); at >= 0 {
 		doc = doc[:at]
 	}
 	if doc == "" {

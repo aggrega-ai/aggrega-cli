@@ -49,7 +49,7 @@ func TestResolveMappingLibraryImport_SingleLevel(t *testing.T) {
 	}
 }
 
-// TestResolveMappingLibraryImport_VersionFloorStripped pins that a `@version`
+// TestResolveMappingLibraryImport_VersionFloorStripped pins that a `:version`
 // floor in the reference is stripped — the version is supplied by the resolved
 // set (keyed by bare name), so the floor does not affect render-time lookup.
 func TestResolveMappingLibraryImport_VersionFloorStripped(t *testing.T) {
@@ -57,7 +57,7 @@ func TestResolveMappingLibraryImport_VersionFloorStripped(t *testing.T) {
 	libs := map[string]types.MappingLibrary{
 		"Helpers": mappingLibraryFixture("Helpers", map[string]string{"Core": "BODY"}),
 	}
-	got, err := resolveMappingLibraryImport("Helpers@1.2.0#/mappings/Core", libs, nil)
+	got, err := resolveMappingLibraryImport("Helpers:1.2.0#/mappings/Core", libs, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,7 +128,8 @@ func TestResolveMappingLibraryImport_Errors(t *testing.T) {
 	}{
 		{"unknown library", "Absent#/mappings/Core", ErrMappingLibraryNotFound},
 		{"unknown entry", "Helpers#/mappings/Missing", ErrMappingEntryNotFound},
-		{"host-bearing", "oci://hub/Helpers@1.0.0#/mappings/Core", ErrHostInLibraryImport},
+		{"host-bearing", "oci://hub/Helpers:1.0.0#/mappings/Core", ErrHostInLibraryImport},
+		{"stale @ version separator", "Helpers@1.0.0#/mappings/Core", ErrMappingImportShape},
 		{"non-mappings fragment", "Helpers#/schemas/Core", ErrMappingImportShape},
 		{"no fragment", "Helpers", ErrMappingImportShape},
 	}

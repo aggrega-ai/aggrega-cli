@@ -319,16 +319,16 @@ properties: {}
 
 // TestExpand_MixedSpellingCycleKeyedByIdentity asserts a library-to-library
 // cycle that traverses one entry spelled two ways — a bare-name reference and a
-// host-less `@version` reference of the SAME entry — is detected and reported by
+// host-less `:version` reference of the SAME entry — is detected and reported by
 // canonical identity, not by the raw reference string. Because the expander
-// accepts and strips `@version` (both spellings resolve to one entry), the cycle
+// accepts and strips `:version` (both spellings resolve to one entry), the cycle
 // guard must key on the canonical `<Library>#/schemas/<Entry>` identity; keying
-// on the raw reference would report the cycle in mixed spellings (the `@version`
+// on the raw reference would report the cycle in mixed spellings (the `:version`
 // form leaking into the chain) and detect it later than the identity would.
 //
 // Non-vacuity: with the cycle key reverted to the raw reference string, the
-// `@version` spelling appears in the reported chain (the `@` assertion below goes
-// red); the cycle is still eventually caught — one hop late — because every
+// `:version` spelling appears in the reported chain (the `A:1.0.0` assertion below
+// goes red); the cycle is still eventually caught — one hop late — because every
 // entry's outgoing reference is fixed, so this is mis-keyed detection, not the
 // unbounded recursion it might first appear (a static reference graph always
 // repeats some raw key on any path).
@@ -354,7 +354,7 @@ metadata:
 spec:
   schemas:
     Cycle:
-      $ref: "A@1.0.0#/schemas/Cycle"
+      $ref: "A:1.0.0#/schemas/Cycle"
 `),
 	}
 	consumer := parseConsumer(t, `$ref: "A#/schemas/Cycle"
@@ -367,11 +367,11 @@ properties: {}
 	if !errors.Is(err, ErrCircularRef) {
 		t.Fatalf("error = %v; want ErrCircularRef", err)
 	}
-	// The cycle is keyed and reported by canonical identity: the `@version`
+	// The cycle is keyed and reported by canonical identity: the `:version`
 	// spelling never appears in the chain. Keying on the raw reference would
-	// leak `A@1.0.0#/schemas/Cycle` into the message.
-	if strings.Contains(err.Error(), "@") {
-		t.Errorf("cycle chain should report canonical identities, not @version spellings; got %q", err.Error())
+	// leak `A:1.0.0#/schemas/Cycle` into the message.
+	if strings.Contains(err.Error(), "A:1.0.0") {
+		t.Errorf("cycle chain should report canonical identities, not :version spellings; got %q", err.Error())
 	}
 }
 
@@ -432,7 +432,7 @@ func TestExpand_HostBearingRefRejected(t *testing.T) {
 	t.Parallel()
 
 	libs := ociLibFixture(t)
-	consumer := parseConsumer(t, `$ref: "oci://hub.aggrega.ai/DbSizing@1.0.0#/schemas/Storage"
+	consumer := parseConsumer(t, `$ref: "oci://hub.aggrega.ai/DbSizing:1.0.0#/schemas/Storage"
 properties: {}
 `)
 	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
@@ -450,8 +450,8 @@ properties: {}
 	}
 }
 
-// TestExpand_VersionFloorAcceptedAndStripped asserts a host-less `@version`
-// reference (`<Library>@<version>#/schemas/<Entry>`) is accepted: the expander
+// TestExpand_VersionFloorAcceptedAndStripped asserts a host-less `:version`
+// reference (`<Library>:<version>#/schemas/<Entry>`) is accepted: the expander
 // strips the asserted version and resolves the bare-name identity. The asserted
 // version is an optional minimum-version floor consumed by selection at lock
 // time — not part of the reference's resolution — so the resolved content and
@@ -460,12 +460,12 @@ func TestExpand_VersionFloorAcceptedAndStripped(t *testing.T) {
 	t.Parallel()
 
 	libs := ociLibFixture(t)
-	consumer := parseConsumer(t, `$ref: "DbSizing@1.0.0#/schemas/Storage"
+	consumer := parseConsumer(t, `$ref: "DbSizing:1.0.0#/schemas/Storage"
 properties: {}
 `)
 	out, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
 	if err != nil {
-		t.Fatalf("host-less @version $ref should resolve (stripped to bare-name); got %v", err)
+		t.Fatalf("host-less :version $ref should resolve (stripped to bare-name); got %v", err)
 	}
 	props, ok := out["properties"].(Schema)
 	if !ok {

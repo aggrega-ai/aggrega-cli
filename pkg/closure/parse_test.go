@@ -25,18 +25,23 @@ func TestParseIdentityRef(t *testing.T) {
 			wantFrag: "/schemas/Storage",
 		},
 		{
-			name:        "host-less version floor",
-			input:       "DbSizing@1.0.0#/schemas/Storage",
+			name:        "host-less version floor (colon separator)",
+			input:       "DbSizing:1.0.0#/schemas/Storage",
 			wantName:    "DbSizing",
 			wantVersion: "1.0.0",
 			wantFrag:    "/schemas/Storage",
 		},
 		{
 			name:        "nested entry path with version floor",
-			input:       "DbSizing@2.1.0#/schemas/nested/DeepRef",
+			input:       "DbSizing:2.1.0#/schemas/nested/DeepRef",
 			wantName:    "DbSizing",
 			wantVersion: "2.1.0",
 			wantFrag:    "/schemas/nested/DeepRef",
+		},
+		{
+			name:    "stale @ version separator rejected with a steer",
+			input:   "DbSizing@1.0.0#/schemas/Storage",
+			wantErr: true,
 		},
 		{
 			name:    "host-bearing reference rejected",
@@ -117,15 +122,20 @@ func TestParseIdentityImportRef(t *testing.T) {
 			wantFrag: "/mappings/SimpleValues",
 		},
 		{
-			name:        "host-less version floor",
-			input:       "BaseMappings@1.0.0#/mappings/SimpleValues",
+			name:        "host-less version floor (colon separator)",
+			input:       "BaseMappings:1.0.0#/mappings/SimpleValues",
 			wantName:    "BaseMappings",
 			wantVersion: "1.0.0",
 			wantFrag:    "/mappings/SimpleValues",
 		},
 		{
+			name:    "stale @ version separator rejected with a steer",
+			input:   "BaseMappings@1.0.0#/mappings/SimpleValues",
+			wantErr: true,
+		},
+		{
 			name:    "host-bearing reference rejected",
-			input:   "oci://hub.aggrega.ai/mapping-library/BaseMappings@1.0.0#/mappings/SimpleValues",
+			input:   "oci://hub.aggrega.ai/mapping-library/BaseMappings:1.0.0#/mappings/SimpleValues",
 			wantErr: true,
 		},
 		{
