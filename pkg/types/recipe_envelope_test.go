@@ -243,6 +243,67 @@ spec:
 	}
 }
 
+// TestRecipeEnvelope_RejectsWorkloadBareNameLibraryImport pins that the
+// envelope guard at workload: rejects a bare-name library reference too, not
+// only the host-bearing form — library imports are unsupported at this site in
+// any form, and the `#/`-fragment guard surfaces it loudly at load rather than
+// as a file-not-found at consumption.
+func TestRecipeEnvelope_RejectsWorkloadBareNameLibraryImport(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: workload-bare-name-import
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  workload:
+    $import: Helpers#/workloads/Default
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on a bare-name library import at workload: site; got no findings")
+	}
+}
+
+// TestRecipeEnvelope_RejectsArtifactsBareNameLibraryImport pins the parallel
+// bare-name rejection for artifacts entries.
+func TestRecipeEnvelope_RejectsArtifactsBareNameLibraryImport(t *testing.T) {
+	t.Parallel()
+	v := recipeEnvelopeValidator(t)
+
+	src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: artifacts-bare-name-import
+  version: 1.0.0
+spec:
+  provider: helm
+  implements: core/server
+  source: ./chart
+  valuesMapping: |
+    {}
+  artifacts:
+    policy.yaml:
+      $import: Policies#/artifacts/Default
+  locals: {}
+`
+	rpt, err := v.Validate(yamlInstance(t, src), nil)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Fatalf("expected envelope rejection on a bare-name library import at artifacts entry; got no findings")
+	}
+}
+
 // TestRecipeEnvelope_AcceptsAssertions pins the new spec.assertions:
 // field — an OrderedMap of named Go template strings carrying Recipe-
 // level implementation-invariant rules. Evaluated at Step 5b.

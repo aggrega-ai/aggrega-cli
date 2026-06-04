@@ -14,7 +14,7 @@ import (
 // node carries a shape outside the three documented modes: not a string
 // scalar; not a mapping with a single $import key; or a mapping carrying
 // extra siblings beyond $import.
-var ErrValuesMappingShape = errors.New("valuesmapping: shape must be a string scalar or {$import: <path-or-oci-url>}")
+var ErrValuesMappingShape = errors.New("valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}")
 
 // ValuesMapping carries one of three content-shape-dispatched forms per
 // the schema-language migration's mapping authoring surface:
@@ -23,10 +23,13 @@ var ErrValuesMappingShape = errors.New("valuesmapping: shape must be a string sc
 //     authored content verbatim; Import stays empty.
 //   - Mode 2 (file import): a YAML map of exactly one key
 //     `$import: <local-path>`. Import carries the path; Inline stays
-//     empty. HasOCIPrefix returns false.
+//     empty. IsLibraryImport returns false.
 //   - Mode 3 (library import): a YAML map of exactly one key
-//     `$import: oci://<host>/<library>@<version>#/mappings/<entry>`.
-//     Import carries the OCI URL; HasOCIPrefix returns true.
+//     `$import: <Library>#/mappings/<entry>`, a host-less bare-name
+//     reference into a MappingLibrary entry (the version is supplied by
+//     the per-Release lockfile; no registry host appears in the
+//     reference). Import carries the identity reference;
+//     IsLibraryImport returns true.
 //
 // The struct uses two string fields with a runtime discriminator rather
 // than the yaml.Node pattern used by ComponentSpec.Schema because the
@@ -42,15 +45,35 @@ type ValuesMapping struct {
 
 	// Import carries the authored $import: target when the YAML value
 	// was {$import: ...} (modes 2 and 3). Local path (mode 2) or
-	// oci:// URL (mode 3); use HasOCIPrefix to discriminate. Named
-	// Import (not URL or Ref) to mirror the YAML key authors write,
-	// distinct from a library entry's canonical-resolved reference.
+	// bare-name library identity (mode 3); use IsLibraryImport to
+	// discriminate. Named Import (not URL or Ref) to mirror the YAML
+	// key authors write, distinct from a library entry's
+	// canonical-resolved reference.
 	Import string `json:"-" yaml:"-"`
 }
 
-// HasOCIPrefix reports whether v.Import carries an oci:// URL
-// (library import mode 3) vs a local path (file import mode 2).
-// Helper for consumption-site dispatch.
+// IsLibraryImport reports whether v.Import is a host-less bare-name
+// MappingLibrary reference (mode 3, `<Library>#/mappings/<entry>`) as
+// opposed to a local file path (mode 2). The discriminator is the
+// `#/mappings/` fragment surface with no registry host — the consumption
+// mirror of the closure walker's identity-import gate. The host-bearing
+// `oci://…` form is not a library import; HasOCIPrefix reports it for
+// rejection.
+func (v ValuesMapping) IsLibraryImport() bool {
+	if v.Import == "" || strings.HasPrefix(v.Import, "oci://") {
+		return false
+	}
+	hash := strings.IndexByte(v.Import, '#')
+	if hash <= 0 {
+		return false
+	}
+	return strings.HasPrefix(v.Import[hash+1:], "/mappings/")
+}
+
+// HasOCIPrefix reports whether v.Import carries a registry host (the
+// `oci://…` form). A library import is addressed by bare-name identity,
+// never by physical registry location; the consumption site rejects a
+// host-bearing reference rather than treating it as a library import.
 func (v ValuesMapping) HasOCIPrefix() bool {
 	return strings.HasPrefix(v.Import, "oci://")
 }

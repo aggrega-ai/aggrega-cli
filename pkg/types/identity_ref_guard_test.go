@@ -10,21 +10,19 @@ import (
 	"testing"
 )
 
-// hostBearingSchemaRefInComment matches the rejected host-bearing SchemaLibrary
-// cross-document $ref form (oci://<host>/<library>@<version>#/schemas/<entry>).
-// The compiler rejects host-bearing $ref references; the authored form is the
-// bare-name identity <Library>#/schemas/<entry>. A godoc comment in this package
-// teaching the host-bearing form contradicts the compiler.
+// hostBearingLibraryRefInComment matches a rejected host-bearing cross-document
+// library reference: the SchemaLibrary $ref form
+// (oci://<host>/<library>@<version>#/schemas/<entry>) and the MappingLibrary
+// $import form (oci://…#/mappings/<entry>). The compiler rejects host-bearing
+// references on both surfaces; the authored form is the bare-name identity
+// <Library>#/schemas/<entry> or <Library>#/mappings/<entry>. A godoc comment in
+// this package teaching either host-bearing form contradicts the compiler.
 //
-// Scope is the SchemaLibrary $ref surface (#/schemas/) only. The MappingLibrary
-// $import surface (#/mappings/) still recognises a library import by the oci://
-// prefix (the renderer's HasOCIPrefix), so its host-bearing form is the live
-// discrimination form — extending the guard to #/mappings/ awaits the $import
-// reconciliation. The character class stops at spaces, double-quotes, and
-// backticks so a truncated rejection mention does not trip it.
-var hostBearingSchemaRefInComment = regexp.MustCompile("oci://[^ \"`]*#/schemas/")
+// The character class stops at spaces, double-quotes, and backticks so a
+// truncated rejection mention does not trip it.
+var hostBearingLibraryRefInComment = regexp.MustCompile("oci://[^ \"`]*#/(schemas|mappings)/")
 
-// TestNoHostBearingSchemaRefInGodoc is the recurrence guard for the
+// TestNoHostBearingLibraryRefInGodoc is the recurrence guard for the
 // identity-reference doc model on this package's godoc. It scans comment lines
 // only: string literals in test fixtures legitimately carry the host-bearing
 // form to assert its rejection, and are not teaching surfaces. The guard is
@@ -32,7 +30,7 @@ var hostBearingSchemaRefInComment = regexp.MustCompile("oci://[^ \"`]*#/schemas/
 // rejection detector (pkg/compactform) and the closure-walk discovery
 // (pkg/closure) legitimately name the form in non-teaching comments in other
 // packages.
-func TestNoHostBearingSchemaRefInGodoc(t *testing.T) {
+func TestNoHostBearingLibraryRefInGodoc(t *testing.T) {
 	t.Parallel()
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -51,19 +49,24 @@ func TestNoHostBearingSchemaRefInGodoc(t *testing.T) {
 			if !strings.HasPrefix(strings.TrimSpace(line), "//") {
 				continue
 			}
-			if got := hostBearingSchemaRefInComment.FindString(line); got != "" {
-				t.Errorf("%s:%d godoc teaches the rejected host-bearing SchemaLibrary $ref form %q; use the bare-name identity form <Library>#/schemas/<entry>", name, i+1, got)
+			if got := hostBearingLibraryRefInComment.FindString(line); got != "" {
+				t.Errorf("%s:%d godoc teaches a rejected host-bearing library reference %q; use the bare-name identity form <Library>#/schemas/<entry> or <Library>#/mappings/<entry>", name, i+1, got)
 			}
 		}
 	}
 }
 
-// TestHostBearingSchemaRefCommentMatcherIsNonVacuous proves the matcher fires on
-// the rejected form so the guard above is not vacuously green.
-func TestHostBearingSchemaRefCommentMatcherIsNonVacuous(t *testing.T) {
+// TestHostBearingLibraryRefCommentMatcherIsNonVacuous proves the matcher fires
+// on both rejected surfaces so the guard above is not vacuously green.
+func TestHostBearingLibraryRefCommentMatcherIsNonVacuous(t *testing.T) {
 	t.Parallel()
-	const planted = "// reference via {$ref: oci://hub.aggrega.ai/x/DbSizing@1.0.0#/schemas/Storage}"
-	if !hostBearingSchemaRefInComment.MatchString(planted) {
-		t.Fatalf("matcher failed to catch a planted host-bearing comment %q; the guard is vacuous", planted)
+	planted := []string{
+		"// reference via {$ref: oci://hub.aggrega.ai/x/DbSizing@1.0.0#/schemas/Storage}",
+		"// reference via {$import: oci://hub.aggrega.ai/x/BaseMappings@1.0.0#/mappings/SimpleValues}",
+	}
+	for _, p := range planted {
+		if !hostBearingLibraryRefInComment.MatchString(p) {
+			t.Fatalf("matcher failed to catch a planted host-bearing comment %q; the guard is vacuous", p)
+		}
 	}
 }

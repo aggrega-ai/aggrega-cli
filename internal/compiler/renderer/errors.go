@@ -15,12 +15,22 @@ var (
 
 	// ErrLibraryImportNotYetSupported fires when a Recipe / FeatureRecipe
 	// valuesMapping carries a mapping-library import (mode 3) — an
-	// $import: targeting an oci:// URL into a MappingLibrary entry. The
-	// resolution pipeline lands when the lockfile + OCI pull
-	// infrastructure ships; until then, authors use a local file path
-	// import (mode 2) as the workaround. The error message names the
-	// workaround inline so authors aren't blocked.
-	ErrLibraryImportNotYetSupported = errors.New("library import via oci:// URL is not yet supported. Use a local file path import as a workaround (valuesMapping: { $import: ./relative/path.tmpl }) until the OCI publishing pipeline lands.")
+	// $import: of the bare-name identity form
+	// `<Library>#/mappings/<entry>` into a MappingLibrary entry. The
+	// reference is recognized; its render-time resolution is not yet
+	// implemented. Until it ships, authors use a local file path import
+	// (mode 2) as the workaround. The error message names the workaround
+	// inline so authors aren't blocked.
+	ErrLibraryImportNotYetSupported = errors.New("mapping-library import is recognized but not yet supported at render. Use a local file path import as a workaround (valuesMapping: { $import: ./relative/path.tmpl }) until library-import resolution lands.")
+
+	// ErrHostInLibraryImport fires when a valuesMapping $import: carries a
+	// registry host — the `oci://…` form. A mapping-library import is
+	// addressed by bare-name identity (`<Library>#/mappings/<entry>`),
+	// never by physical registry location: the library name resolves
+	// against the loaded closure and the version is supplied by the
+	// lockfile. A host in the reference is rejected so physical location
+	// cannot leak into authored source.
+	ErrHostInLibraryImport = errors.New("valuesMapping $import: carries a registry host; reference the mapping library by identity (valuesMapping: { $import: <Library>#/mappings/<entry> })")
 
 	// ErrUnknownProvider is the compiler-level fatal halt produced by the
 	// build-time engineFactory when a Recipe declares a provider name that

@@ -84,16 +84,36 @@ func TestExecutePhaseB_LibraryImportNotYetSupported(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "library-import-recipe"},
 		Spec: types.RecipeSpec{
+			ValuesMapping: types.ValuesMapping{Import: "Helpers#/mappings/Core"},
+		},
+	}
+
+	_, err := ExecutePhaseB(ctx, recipe)
+	if err == nil {
+		t.Fatal("expected error for bare-name library-import valuesMapping")
+	}
+	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
+		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
+	}
+}
+
+func TestExecutePhaseB_RejectsHostBearingImport(t *testing.T) {
+	t.Parallel()
+
+	ctx := &types.TemplateContext{}
+	recipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "host-import-recipe"},
+		Spec: types.RecipeSpec{
 			ValuesMapping: types.ValuesMapping{Import: "oci://hub.aggrega.ai/aggrega/helpers@1.0.0#/mappings/Core"},
 		},
 	}
 
 	_, err := ExecutePhaseB(ctx, recipe)
 	if err == nil {
-		t.Fatal("expected error for library-import valuesMapping")
+		t.Fatal("expected error for host-bearing library-import valuesMapping")
 	}
-	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
-		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
+	if !errors.Is(err, ErrHostInLibraryImport) {
+		t.Errorf("expected ErrHostInLibraryImport, got: %v", err)
 	}
 }
 

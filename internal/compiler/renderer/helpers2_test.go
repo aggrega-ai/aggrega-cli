@@ -163,8 +163,9 @@ file:
 }
 
 // TestResolveValuesMappingText_AllModes pins each ValuesMapping mode:
-// empty, inline, file $import (success + read error), OCI library
-// import (not yet supported error).
+// empty, inline, file $import (success + read error), bare-name library
+// import (recognized-but-not-yet-supported error), and the rejected
+// host-bearing form.
 func TestResolveValuesMappingText_AllModes(t *testing.T) {
 	t.Parallel()
 	// Empty.
@@ -179,10 +180,16 @@ func TestResolveValuesMappingText_AllModes(t *testing.T) {
 		t.Errorf("inline: (%q, %v)", got, err)
 	}
 
-	// OCI library import.
-	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "oci://hub/lib@1#/schemas/X"}, "n", "Recipe")
+	// Bare-name library import (mode 3).
+	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "Lib#/mappings/X"}, "n", "Recipe")
 	if err == nil || !errors.Is(err, ErrLibraryImportNotYetSupported) {
-		t.Errorf("OCI import should error ErrLibraryImportNotYetSupported; got %v", err)
+		t.Errorf("bare-name library import should error ErrLibraryImportNotYetSupported; got %v", err)
+	}
+
+	// Host-bearing $import is rejected (not addressable by location).
+	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "oci://hub/lib@1#/mappings/X"}, "n", "Recipe")
+	if err == nil || !errors.Is(err, ErrHostInLibraryImport) {
+		t.Errorf("host-bearing $import should error ErrHostInLibraryImport; got %v", err)
 	}
 
 	// File import — read success.

@@ -129,7 +129,22 @@ func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) 
 	}
 }
 
-func TestExecutePhaseBForFeature_RejectsLibraryImport(t *testing.T) {
+func TestExecutePhaseBForFeature_LibraryImportNotYetSupported(t *testing.T) {
+	t.Parallel()
+	fr := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "lib"},
+		Spec:     types.FeatureRecipeSpec{ValuesMapping: types.ValuesMapping{Import: "Helpers#/mappings/Core"}},
+	}
+	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
+	if err == nil {
+		t.Fatal("expected bare-name library import to be recognized-but-not-yet-supported")
+	}
+	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
+		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
+	}
+}
+
+func TestExecutePhaseBForFeature_RejectsHostBearingImport(t *testing.T) {
 	t.Parallel()
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "lib"},
@@ -137,10 +152,10 @@ func TestExecutePhaseBForFeature_RejectsLibraryImport(t *testing.T) {
 	}
 	_, err := ExecutePhaseBForFeature(&types.TemplateContext{}, fr)
 	if err == nil {
-		t.Fatal("expected library-import rejection")
+		t.Fatal("expected host-bearing $import rejection")
 	}
-	if !errors.Is(err, ErrLibraryImportNotYetSupported) {
-		t.Errorf("expected ErrLibraryImportNotYetSupported, got: %v", err)
+	if !errors.Is(err, ErrHostInLibraryImport) {
+		t.Errorf("expected ErrHostInLibraryImport, got: %v", err)
 	}
 }
 

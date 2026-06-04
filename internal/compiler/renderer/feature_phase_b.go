@@ -16,9 +16,12 @@ import (
 // resolveValuesMappingText resolves a ValuesMapping struct to a Go template
 // source string. Mode 1 (inline) returns the authored content directly;
 // mode 2 (file $import:) reads the file from disk; mode 3 (library
-// $import: with oci:// prefix) returns ErrLibraryImportNotYetSupported
-// until the lockfile + OCI pull pipeline lands. The empty struct returns
-// "" + nil (callers treat as "no valuesMapping").
+// $import: in the bare-name identity form `<Library>#/mappings/<entry>`)
+// returns ErrLibraryImportNotYetSupported until render-time library
+// resolution lands. A host-bearing `oci://…` $import: is rejected with
+// ErrHostInLibraryImport — a library is addressed by identity, not by
+// registry location. The empty struct returns "" + nil (callers treat as
+// "no valuesMapping").
 //
 // entityKind is one of "Recipe" / "FeatureRecipe" / "Provider"; used in
 // error wrapping for diagnostic clarity. entityName is the metadata.name
@@ -31,6 +34,9 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 		return vm.Inline, nil
 	}
 	if vm.HasOCIPrefix() {
+		return "", cerrors.Wrap(ErrHostInLibraryImport, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping $import %q", entityKind, entityName, vm.Import))
+	}
+	if vm.IsLibraryImport() {
 		return "", cerrors.Wrap(ErrLibraryImportNotYetSupported, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping library import %q", entityKind, entityName, vm.Import))
 	}
 	data, err := os.ReadFile(vm.Import)

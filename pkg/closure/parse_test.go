@@ -8,93 +8,6 @@ import (
 	"testing"
 )
 
-func TestParseLibraryRef(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name        string
-		input       string
-		wantURI     string
-		wantVersion string
-		wantFrag    string
-		wantErr     bool
-	}{
-		{
-			name:        "fully qualified ref with version and fragment",
-			input:       "oci://hub.aggrega.ai/schema-library/core/base-types@1.0.0#/schemas/PortSpec",
-			wantURI:     "oci://hub.aggrega.ai/schema-library/core/base-types",
-			wantVersion: "1.0.0",
-			wantFrag:    "/schemas/PortSpec",
-		},
-		{
-			name:        "version pinned without fragment",
-			input:       "oci://hub.aggrega.ai/mapping-library/core/base-mappings@1.0.0",
-			wantURI:     "oci://hub.aggrega.ai/mapping-library/core/base-mappings",
-			wantVersion: "1.0.0",
-			wantFrag:    "",
-		},
-		{
-			name:        "fragment without version (unpinned, deferred to MVS)",
-			input:       "oci://hub.aggrega.ai/schema-library/core/base-types#/schemas/PortSpec",
-			wantURI:     "oci://hub.aggrega.ai/schema-library/core/base-types",
-			wantVersion: "",
-			wantFrag:    "/schemas/PortSpec",
-		},
-		{
-			name:        "bare library URI",
-			input:       "oci://hub.aggrega.ai/schema-library/core/base-types",
-			wantURI:     "oci://hub.aggrega.ai/schema-library/core/base-types",
-			wantVersion: "",
-			wantFrag:    "",
-		},
-		{
-			name:    "non-oci scheme rejected",
-			input:   "https://example.com/some-schema.json",
-			wantErr: true,
-		},
-		{
-			name:    "empty input rejected",
-			input:   "",
-			wantErr: true,
-		},
-		{
-			name:        "fragment with nested entry path",
-			input:       "oci://hub.aggrega.ai/schema-library/core/base-types@2.1.0#/schemas/nested/DeepRef",
-			wantURI:     "oci://hub.aggrega.ai/schema-library/core/base-types",
-			wantVersion: "2.1.0",
-			wantFrag:    "/schemas/nested/DeepRef",
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			uri, version, fragment, err := parseLibraryRef(tc.input)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error for input %q; got nil", tc.input)
-				}
-				if !errors.Is(err, ErrInvalidLibraryRef) {
-					t.Errorf("error should wrap ErrInvalidLibraryRef; got %v", err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if uri != tc.wantURI {
-				t.Errorf("uri: got %q; want %q", uri, tc.wantURI)
-			}
-			if version != tc.wantVersion {
-				t.Errorf("version: got %q; want %q", version, tc.wantVersion)
-			}
-			if fragment != tc.wantFrag {
-				t.Errorf("fragment: got %q; want %q", fragment, tc.wantFrag)
-			}
-		})
-	}
-}
-
 func TestParseIdentityRef(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -157,6 +70,91 @@ func TestParseIdentityRef(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			name, version, fragment, err := parseIdentityRef(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for input %q; got nil", tc.input)
+				}
+				if !errors.Is(err, ErrInvalidLibraryRef) {
+					t.Errorf("error should wrap ErrInvalidLibraryRef; got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if name != tc.wantName {
+				t.Errorf("name: got %q; want %q", name, tc.wantName)
+			}
+			if version != tc.wantVersion {
+				t.Errorf("version: got %q; want %q", version, tc.wantVersion)
+			}
+			if fragment != tc.wantFrag {
+				t.Errorf("fragment: got %q; want %q", fragment, tc.wantFrag)
+			}
+		})
+	}
+}
+
+// TestParseIdentityImportRef mirrors TestParseIdentityRef on the MappingLibrary
+// `$import:` surface (`#/mappings/`): a host-less bare-name reference parses into
+// name + optional version floor + fragment; the host-bearing form, the
+// `#/schemas/` (that is the `$ref` surface), a local file path, and an
+// in-document anchor are all rejected.
+func TestParseIdentityImportRef(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		input       string
+		wantName    string
+		wantVersion string
+		wantFrag    string
+		wantErr     bool
+	}{
+		{
+			name:     "bare-name identity import",
+			input:    "BaseMappings#/mappings/SimpleValues",
+			wantName: "BaseMappings",
+			wantFrag: "/mappings/SimpleValues",
+		},
+		{
+			name:        "host-less version floor",
+			input:       "BaseMappings@1.0.0#/mappings/SimpleValues",
+			wantName:    "BaseMappings",
+			wantVersion: "1.0.0",
+			wantFrag:    "/mappings/SimpleValues",
+		},
+		{
+			name:    "host-bearing reference rejected",
+			input:   "oci://hub.aggrega.ai/mapping-library/BaseMappings@1.0.0#/mappings/SimpleValues",
+			wantErr: true,
+		},
+		{
+			name:    "schemas fragment is the $ref surface, not $import",
+			input:   "DbSizing#/schemas/Storage",
+			wantErr: true,
+		},
+		{
+			name:    "local file path is not a library import",
+			input:   "./mappings/mariadb.tmpl",
+			wantErr: true,
+		},
+		{
+			name:    "in-document anchor is not a library ref",
+			input:   "#/$defs/Local",
+			wantErr: true,
+		},
+		{
+			name:    "empty input rejected",
+			input:   "",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			name, version, fragment, err := parseIdentityImportRef(tc.input)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for input %q; got nil", tc.input)

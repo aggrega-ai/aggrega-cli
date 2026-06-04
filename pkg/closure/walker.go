@@ -387,13 +387,18 @@ func (s *walkState) recordSchemaRef(refValue, consumerURI string) error {
 // $import: declaration at the field-root position (per the
 // file-import vocabulary spec: $import: is whole-content
 // replacement at the field root only; never embedded). If the
-// first non-whitespace token of the body is `$import: <url>`,
-// the URL is parsed and recorded as a mapping-library reference
+// first non-whitespace token of the body is a host-less identity
+// MappingLibrary reference `$import: <Library>[@<version>]#/mappings/<Entry>`,
+// the reference is parsed and recorded as a mapping-library edge
 // under the consumer URI.
 //
-// Commented-out or deeper-embedded $import: patterns are silently
-// ignored — the schema-validation layer rejects them at parse
-// time; the walker can safely scan only the first token.
+// A local-file import (mode 2, no `#/mappings/` fragment) and the
+// host-bearing `oci://…` form are not cross-library references and are
+// silently ignored here — the file import is inlined at its consumption
+// site and the host form is rejected there. Commented-out or
+// deeper-embedded $import: patterns are likewise ignored — the
+// schema-validation layer rejects them at parse time; the walker can
+// safely scan only the first token.
 func (c *Closure) WalkMappingImport(template, consumerURI string) error {
 	state := newWalkState()
 	for _, lib := range c.MappingLibraries {
@@ -425,11 +430,17 @@ func (s *walkState) walkMappingImportInto(template, consumerURI string) error {
 	if url == "" {
 		return nil
 	}
-	libURI, version, fragment, err := parseLibraryRef(url)
+	// Gate as the $ref discovery does: record only host-less identity
+	// MappingLibrary references; a local-file import or a host-bearing
+	// form is not a cross-library edge and is left for its consumption site.
+	if !isIdentityImportRef(url) {
+		return nil
+	}
+	libName, version, fragment, err := parseIdentityImportRef(url)
 	if err != nil {
 		return err
 	}
-	s.addMappingLibrary(libURI, version, consumerURI, formatFragmentRef(fragment))
+	s.addMappingLibrary(libName, version, consumerURI, formatFragmentRef(fragment))
 	return nil
 }
 

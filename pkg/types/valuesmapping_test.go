@@ -66,6 +66,9 @@ func TestValuesMapping_RoundTripFileImportMode(t *testing.T) {
 	if w.ValuesMapping.HasOCIPrefix() {
 		t.Error("expected HasOCIPrefix false for mode 2")
 	}
+	if w.ValuesMapping.IsLibraryImport() {
+		t.Error("expected IsLibraryImport false for mode 2 (local file path)")
+	}
 	out, err := yaml.Marshal(&w)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -76,9 +79,44 @@ func TestValuesMapping_RoundTripFileImportMode(t *testing.T) {
 }
 
 // TestValuesMapping_RoundTripLibraryImportMode pins mode 3: a {$import:
-// oci://...} value parses into ValuesMapping.Import with the oci://
-// prefix preserved.
+// <Library>#/mappings/<entry>} bare-name identity value parses into
+// ValuesMapping.Import, is recognized as a library import (no registry host),
+// and round-trips unchanged.
 func TestValuesMapping_RoundTripLibraryImportMode(t *testing.T) {
+	t.Parallel()
+	in := `valuesMapping:
+  $import: BitnamiHelpers#/mappings/MariaDBBitnamiCore
+`
+	type wrap struct {
+		ValuesMapping ValuesMapping `yaml:"valuesMapping"`
+	}
+	var w wrap
+	if err := yaml.Unmarshal([]byte(in), &w); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !w.ValuesMapping.IsLibraryImport() {
+		t.Error("expected IsLibraryImport true for mode 3 (bare-name identity)")
+	}
+	if w.ValuesMapping.HasOCIPrefix() {
+		t.Error("expected HasOCIPrefix false for a host-less identity reference")
+	}
+	if w.ValuesMapping.Import != "BitnamiHelpers#/mappings/MariaDBBitnamiCore" {
+		t.Errorf("expected Import to carry the identity reference; got %q", w.ValuesMapping.Import)
+	}
+	out, err := yaml.Marshal(&w)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(out), "$import: BitnamiHelpers#/mappings/MariaDBBitnamiCore") {
+		t.Errorf("round-trip lost the identity $import; got:\n%s", out)
+	}
+}
+
+// TestValuesMapping_HostBearingImportIsNotLibraryImport pins the rejected form:
+// a host-bearing oci:// $import is recognized by HasOCIPrefix (for rejection at
+// the consumption site) and is NOT classified as a library import — a library is
+// addressed by identity, never by registry host.
+func TestValuesMapping_HostBearingImportIsNotLibraryImport(t *testing.T) {
 	t.Parallel()
 	in := `valuesMapping:
   $import: oci://hub.aggrega.ai/aggrega/bitnami-helpers@1.0.0#/mappings/MariaDBBitnamiCore
@@ -91,10 +129,10 @@ func TestValuesMapping_RoundTripLibraryImportMode(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if !w.ValuesMapping.HasOCIPrefix() {
-		t.Error("expected HasOCIPrefix true for mode 3")
+		t.Error("expected HasOCIPrefix true for the host-bearing form")
 	}
-	if !strings.Contains(w.ValuesMapping.Import, "MariaDBBitnamiCore") {
-		t.Errorf("expected Import to carry the OCI URL; got %q", w.ValuesMapping.Import)
+	if w.ValuesMapping.IsLibraryImport() {
+		t.Error("expected IsLibraryImport false for a host-bearing reference")
 	}
 }
 

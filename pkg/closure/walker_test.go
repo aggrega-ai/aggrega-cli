@@ -449,7 +449,7 @@ func TestDeterministicURIOrdering(t *testing.T) {
 func TestMappingImportRecordsConsumer(t *testing.T) {
 	t.Parallel()
 	c := closure.Closure{}
-	tmpl := `$import: oci://hub.aggrega.ai/mapping-library/core/base-mappings@1.0.0#/mappings/SimpleValues`
+	tmpl := `$import: BaseMappings#/mappings/SimpleValues`
 	if err := c.WalkMappingImport(tmpl, "hub.aggrega.ai/recipe/core/helm/postgres"); err != nil {
 		t.Fatalf("WalkMappingImport: %v", err)
 	}
@@ -457,14 +457,29 @@ func TestMappingImportRecordsConsumer(t *testing.T) {
 		t.Fatalf("mapping libraries: %d; want 1", len(c.MappingLibraries))
 	}
 	lib := c.MappingLibraries[0]
-	if lib.URI != "oci://hub.aggrega.ai/mapping-library/core/base-mappings" {
-		t.Errorf("library URI: %q", lib.URI)
+	if lib.URI != "BaseMappings" {
+		t.Errorf("library URI: %q; want the bare-name identity", lib.URI)
 	}
 	if len(lib.Consumers) != 1 || lib.Consumers[0].ConsumerURI != "hub.aggrega.ai/recipe/core/helm/postgres" {
 		t.Errorf("consumer: %+v", lib.Consumers)
 	}
 	if len(lib.Consumers[0].Fragments) != 1 || lib.Consumers[0].Fragments[0] != "#/mappings/SimpleValues" {
 		t.Errorf("fragment: %+v", lib.Consumers[0].Fragments)
+	}
+}
+
+// TestMappingImportSkipsHostBearingForm pins that the discovery walker does not
+// record a host-bearing $import as a cross-library edge — a library is addressed
+// by identity, and the host form is rejected at its consumption site, not here.
+func TestMappingImportSkipsHostBearingForm(t *testing.T) {
+	t.Parallel()
+	c := closure.Closure{}
+	tmpl := `$import: oci://hub.aggrega.ai/mapping-library/core/base-mappings@1.0.0#/mappings/SimpleValues`
+	if err := c.WalkMappingImport(tmpl, "hub.aggrega.ai/recipe/core/helm/postgres"); err != nil {
+		t.Fatalf("WalkMappingImport: %v", err)
+	}
+	if len(c.MappingLibraries) != 0 {
+		t.Errorf("mapping libraries: %d; want 0 (host-bearing form is not a library edge)", len(c.MappingLibraries))
 	}
 }
 
