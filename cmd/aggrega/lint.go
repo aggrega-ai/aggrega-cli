@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -52,24 +53,34 @@ var (
 
 func newLintCmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "lint <entity-path>",
-		Short: "Run the publishing-linter rule set over a catalog entity",
-		Long: `aggrega lint runs the publishing-linter rule set against an entity.
+		Use:   "lint [entity-path]",
+		Short: "Validate the whole catalog, or run the publishing-linter over one entity",
+		Long: `aggrega lint has two modes, selected by whether an entity path is given.
 
-In default mode the rules run at warning severity over local content
-without consulting any registry. With --pre-publish the previous
-registry version is fetched and the schema-evolution classification
-is compared against the proposed version bump; mismatches halt.
+Without an entity argument, lint validates the WHOLE catalog: it loads
+every catalog entity and runs the schema-pillar (Pass-2) and library
+resolution/rejection checks — the same correctness validation a build
+applies, but over the entire catalog rather than one Release's closure.
+This is the place a broken catalog entity is meant to surface (CI,
+pre-publish); a build validates only the Release it processes.
 
-Per-workspace policy flags from .aggrega-config.yaml's
-lint.publishing_discipline block can be overridden per invocation
-via the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag
-pairs.`,
+With an entity path, lint runs the publishing-linter rule set against
+that entity. In default mode the rules run at warning severity over
+local content without consulting any registry. With --pre-publish the
+previous registry version is fetched and the schema-evolution
+classification is compared against the proposed version bump; mismatches
+halt. Per-workspace policy flags from .aggrega-config.yaml's
+lint.publishing_discipline block can be overridden per invocation via
+the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := lintEntityPath
 			if path == "" && len(args) > 0 {
 				path = args[0]
+			}
+			if path == "" {
+				// No entity argument → whole-catalog validation.
+				return lintCatalogWideFromWorkspace()
 			}
 			return lintRun(lintConfig{
 				EntityPath:     path,
@@ -104,6 +115,46 @@ pairs.`,
 	c.Flags().BoolVar(&lintNoEnforceImmutability, "no-enforce-immutability", false, "Force enforce_immutability=false")
 
 	return c
+}
+
+// lintCatalogWideFromWorkspace resolves the workspace's catalog directories and
+// cache from .aggrega-config.yaml, then runs the whole-catalog validation pass.
+// Catalog dirs default to the workspace root when none are configured (mirroring
+// the daemon's catalog resolution).
+func lintCatalogWideFromWorkspace() error {
+	wsRoot, _ := os.Getwd()
+	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	if err != nil {
+		return fmt.Errorf("load workspace config: %w", err)
+	}
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	dirs := wsCfg.Workspace.CatalogDirs
+	if len(dirs) == 0 {
+		dirs = []string{wsRoot}
+	}
+	return lintCatalogWide(wsRoot, cacheDir, dirs)
+}
+
+// lintCatalogWide runs the whole-catalog correctness validation: it loads every
+// catalog entity under dirs and applies the schema-pillar (Pass-2) and library
+// resolution/rejection checks (LoadAllWithCacheDir), then resolves the extends
+// chains. This is the catalog-wide counterpart to a build's per-Release closure
+// validation — the home where a broken catalog entity is meant to surface (CI,
+// pre-publish). It halts loudly on any schema-pillar violation, unresolvable or
+// invalid library, or extends-resolution failure.
+func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
+	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
+	if err != nil {
+		return fmt.Errorf("catalog validation failed: %w", err)
+	}
+	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+		for _, e := range extErrs {
+			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+		}
+		return fmt.Errorf("catalog validation failed: %d extends resolution error(s)", len(extErrs))
+	}
+	fmt.Println("catalog validation passed (schema-pillar + library + extends)")
+	return nil
 }
 
 // lintConfig is the test-injectable input contract. Tests construct
