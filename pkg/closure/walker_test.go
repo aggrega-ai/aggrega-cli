@@ -35,14 +35,24 @@ func (f *fakeLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error
 }
 
 func (f *fakeLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, ok := f.schemaLibs[uri]; ok {
+	if res, ok := f.schemaLibs[fakeBaseName(uri)]; ok {
 		return res, nil
 	}
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
 }
 
+// fakeBaseName strips an optional `:version` so the mock resolves a versioned
+// library URI by its bare name, mirroring the production lookup's version-blind
+// schemaLibraryNameFromURI.
+func fakeBaseName(uri string) string {
+	if i := strings.LastIndex(uri, ":"); i >= 0 {
+		return uri[:i]
+	}
+	return uri
+}
+
 func (f *fakeLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, ok := f.mappingLibs[uri]; ok {
+	if res, ok := f.mappingLibs[fakeBaseName(uri)]; ok {
 		return res, nil
 	}
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil

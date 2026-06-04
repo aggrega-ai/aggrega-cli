@@ -4,15 +4,121 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
+
+// recordingSourceResolver is a stub closure.SourceResolver that records the
+// source version it is asked to resolve (the value the source: template
+// evaluated to against the materialized pillars) and returns a deterministic
+// resolved artifact without a real fetch.
+type recordingSourceResolver struct{ gotVersion string }
+
+func (r *recordingSourceResolver) Resolve(spec closure.SourceSpec) (*closure.ResolvedSource, error) {
+	r.gotVersion = spec.Version
+	return &closure.ResolvedSource{
+		Kind:          spec.Kind,
+		URL:           spec.URL,
+		PinnedVersion: spec.Version,
+		Digest:        "sha256:" + strings.Repeat("a", 64),
+		Mediatype:     "application/vnd.test",
+	}, nil
+}
+
+// fakeRemoteLibraryPuller is an in-memory LibraryPuller: it serves the DbSizing
+// SchemaLibrary at a fixed set of registry tags without touching the network. A
+// pure bare-name reference (no `@version` floor) drives the version-discovery
+// path — the puller
+// is asked for the version, lists its tags, and serves the highest; the served
+// body carries that resolved version as metadata.version so the pin and the
+// build-time resolution agree.
+type fakeRemoteLibraryPuller struct {
+	tags           []string
+	listTagsCalled bool
+}
+
+func (p *fakeRemoteLibraryPuller) Pull(_ context.Context, _, _ string) (*oci.PullResult, error) {
+	return nil, oci.ErrFetchNotFound // library resolution uses PullLibrary
+}
+
+func (p *fakeRemoteLibraryPuller) PullLibrary(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
+	version := floorVersion
+	if version == "" {
+		p.listTagsCalled = true
+		for _, t := range p.tags {
+			if version == "" || t > version {
+				version = t
+			}
+		}
+	}
+	body := []byte(fmt.Sprintf("apiVersion: aggrega.ai/v1alpha1\n"+
+		"kind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: \"%s\"\n"+
+		"spec:\n  schemas:\n    Storage:\n      size: { type: string, default: \"10Gi\" }\n", version))
+	return &oci.PullResult{MediaType: oci.MediaTypeSchemaLibrary, Bytes: body}, version, nil
+}
+
+// TestPullFetchesRemoteLibraryViaTier3 is the real-pull end-to-end: a Component
+// references DbSizing by pure bare-name identity, the library is NOT local, and
+// `aggrega pull` fetches it through the puller — the version-discovery path (no floor → list-tags
+// → highest), AOT-safe because the version resolution happens at pull and is
+// pinned. The build then bridges the pinned-and-cached library and materializes
+// its default. Unlike the constructed-post-pull-state e2e, the cache + lockfile
+// here are produced by an actual puller fetch.
+func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := remoteLibraryFixture(t, root)
+	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n")
+	catalogDir := filepath.Join(root, "catalog")
+
+	// Make DbSizing genuinely remote: remove the local copy so only a Tier-3
+	// fetch through the puller can resolve it.
+	if err := os.Remove(filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml")); err != nil {
+		t.Fatalf("remove local library: %v", err)
+	}
+
+	puller := &fakeRemoteLibraryPuller{tags: []string{"1.0.0", "2.0.0"}}
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, puller: puller}); err != nil {
+		t.Fatalf("pullRun (Tier-3 remote fetch): %v", err)
+	}
+
+	// A pure bare-name reference carried no floor, so the puller listed tags and
+	// resolved the highest (2.0.0 over 1.0.0).
+	if !puller.listTagsCalled {
+		t.Error("expected the list-tags version-discovery path (no @version floor)")
+	}
+	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
+	if err != nil {
+		t.Fatalf("LoadLockfile: %v", err)
+	}
+	var pinned string
+	for _, s := range lf.SchemaLibraries {
+		if s.URI == "DbSizing" {
+			pinned = s.ResolvedVersion
+		}
+	}
+	if pinned != "2.0.0" {
+		t.Errorf("lockfile should pin the highest tag (2.0.0) resolved at pull; got %q", pinned)
+	}
+
+	// The remote-fetched, pinned library bridges at build (no network) and its
+	// declared default materializes in the rendered output.
+	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+		t.Fatalf("dispatchBuild after remote fetch: %v", err)
+	}
+	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "10Gi") {
+		t.Errorf("remote-fetched library default should materialize; got:\n%s", got)
+	}
+}
 
 // remoteLibraryFixture authors a buildable workspace whose `server` Component
 // pulls an infra field from a SchemaLibrary by a host-less bare-name $ref
@@ -282,6 +388,62 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 	}
 	if !errors.Is(err, oci.ErrFetchIntegrity) {
 		t.Errorf("error should wrap ErrFetchIntegrity (verify-on-read at the bridge); got %v", err)
+	}
+}
+
+// TestPullSourceTemplateReadsBridgedLibraryDefault proves the pull-side
+// bridge closes the lock==build regression: a Recipe's source: version reads a
+// library-$ref-composed infra default (`.infra.storage.size`), with the library
+// remote-pinned. Pull bridges the discovered library BEFORE source-descent, so
+// the default materializes and the source template resolves to it — the identical
+// value build computes from the same bridged catalog (pull-identity ==
+// build-identity, no false ErrFetchIntegrity).
+//
+// Non-vacuity: revert the pull-side bridge (Pass-1 only) and the default never
+// materializes — the source template halts on the missing `.infra.storage.size`
+// key, so this test fails (pull errors) rather than silently passing.
+func TestPullSourceTemplateReadsBridgedLibraryDefault(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := remoteLibraryFixture(t, root)
+	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n")
+	catalogDir := filepath.Join(root, "catalog")
+
+	// Sourced-mode Recipe whose source: version reads the library-$ref-composed
+	// infra default; replaces the workload Recipe from the fixture.
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: server
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: server
+  source:
+    kind: helm-oci-chart
+    url: oci://registry.example.com/charts/server
+    version: "{{ .infra.storage.size }}"
+  valuesMapping: |
+    {}
+`)
+	// Make DbSizing remote so only the bridge supplies its default.
+	if err := os.Remove(filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml")); err != nil {
+		t.Fatalf("remove local library: %v", err)
+	}
+
+	puller := &fakeRemoteLibraryPuller{tags: []string{"1.0.0"}}
+	resolver := &recordingSourceResolver{}
+	if err := pullRun(pullConfig{
+		ReleasePath:    releasePath,
+		CatalogDir:     catalogDir,
+		puller:         puller,
+		sourceResolver: resolver,
+	}); err != nil {
+		t.Fatalf("pullRun (source template over bridged library default): %v", err)
+	}
+
+	if resolver.gotVersion != "10Gi" {
+		t.Errorf("source version resolved from the bridged library default = %q; want 10Gi", resolver.gotVersion)
 	}
 }
 

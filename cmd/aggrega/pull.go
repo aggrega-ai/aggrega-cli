@@ -70,6 +70,16 @@ type pullConfig struct {
 	Regenerate        bool
 	Verify            bool
 	IncludePrerelease bool
+
+	// puller overrides the production OCI puller; tests inject an in-memory
+	// implementation to exercise a remote-library fetch without the network. Nil
+	// uses NewDefaultOCIPuller (which is nil under workspace.offline).
+	puller catalog.OCIPuller
+
+	// sourceResolver overrides the production source-resolver shim; tests inject
+	// a recording/stub implementation to assert the source identity computed from
+	// the materialized pillars without a real artifact fetch. Nil uses the shim.
+	sourceResolver closure.SourceResolver
 }
 
 // pullRun executes the pull workflow against the supplied
@@ -190,7 +200,11 @@ func pullRun(cfg pullConfig) error {
 	// the configured cache directory so cached library.yaml files are not
 	// ingested as authored Tier-1 catalog.
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-	cat, err := catalog.LoadWithCacheDir("", cacheDir, cfg.CatalogDir)
+	// Pass-1 only: a cross-document $ref to a remote library cannot expand at load
+	// (Pass-2) because the library is not yet fetched — the closure walk + library
+	// discovery below acquire it. Pull's job is the closure + pins; build runs the
+	// authoritative Pass-2 pillar gate (against the bridged catalog).
+	cat, err := catalog.LoadPassOne("", cacheDir, cfg.CatalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -232,7 +246,11 @@ func pullRun(cfg pullConfig) error {
 			}
 		}
 	}
-	lookup := cat.ClosureLookupWithReuse(catalog.NewDefaultOCIPuller(wsCfg), workspaceRoot, cacheDir, externals, reuse)
+	puller := cfg.puller
+	if puller == nil {
+		puller = catalog.NewDefaultOCIPuller(wsCfg)
+	}
+	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, reuse)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return fmt.Errorf("closure: %w", err)
@@ -261,6 +279,36 @@ func pullRun(cfg pullConfig) error {
 			lockfilePath, len(cl.Entities))
 		return nil
 	}
+
+	// Bridge the discovered libraries into the catalog before source-descent, so
+	// its materialized pillars expand library-$ref-composed defaults exactly as
+	// build does. Source-descent reads graph.Spec.{Infra,Values}Mapping (schema
+	// defaults applied), and a library-$ref-composed default materializes only once
+	// Pass-2 expands the $ref against the SchemaLibraries map; pull and build must
+	// compute identical materialized pillars here or the pinned source identity
+	// diverges from build (ErrFetchIntegrity). Mirrors dispatchBuild's bridge: a
+	// locally-authored library is already in the Pass-1 catalog (skipped); a remote
+	// pinned library is read from the cache. With no remote libraries this reduces
+	// to a Pass-1+2 reload — restoring the validation the Pass-1-only load dropped.
+	extraLibs := map[string][]byte{}
+	for _, lib := range cl.SchemaLibraries {
+		if _, local := cat.SchemaLibraries[lib.URI]; local {
+			continue
+		}
+		data, rerr := catalog.ReadPinnedLibrary(workspaceRoot, cacheDir, lib.URI, lib.ResolvedVersion, lib.Digest)
+		if rerr != nil {
+			return fmt.Errorf("bridge pinned SchemaLibrary %s: %w", lib.URI, rerr)
+		}
+		extraLibs[lib.URI] = data
+	}
+	bridged, warnings, err := catalog.LoadWithExtraLibraries("", cacheDir, extraLibs, cfg.CatalogDir)
+	if err != nil {
+		return fmt.Errorf("catalog load (bridged): %w", err)
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+	cat = bridged
 
 	// Per-component source resolution. Run the shared resolve+flatten pass —
 	// the same path `aggrega build` uses (pipeline.ResolveAndFlatten) — so each
@@ -362,8 +410,12 @@ func pullRun(cfg pullConfig) error {
 			})
 	}
 
+	var srcResolver closure.SourceResolver = sourceResolverShim{}
+	if cfg.sourceResolver != nil {
+		srcResolver = cfg.sourceResolver
+	}
 	sourceArtifacts, err := closure.DescendRecipeSources(
-		perEntityInfra, cl, cat.ClosureRecipeLoader(), sourceResolverShim{},
+		perEntityInfra, cl, cat.ClosureRecipeLoader(), srcResolver,
 		workspaceRoot, cacheDir,
 	)
 	if err != nil {

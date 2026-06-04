@@ -31,6 +31,20 @@ type OCIPuller interface {
 	Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error)
 }
 
+// LibraryPuller is an optional OCIPuller capability: pulling a library by its
+// host-less identity (bare name + kind), binding it to a physical location, and
+// resolving its version when the caller supplies none — the first-pull case,
+// where the puller lists the registry's tags and selects the highest. A puller
+// implementing only Pull cannot Tier-3-pull a bare-name library; the bare-name
+// path then surfaces NotFound (the hermetic build's nil puller, and Pull-only
+// test pullers, both land there). floorVersion, when non-empty, is the asserted
+// minimum used directly as the tag. The "latest" resolution happens here, at
+// the network step, and is pinned in the lockfile — the build never lists or
+// fetches.
+type LibraryPuller interface {
+	PullLibrary(ctx context.Context, name, kind, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
+}
+
 // ClosureLookup returns a closure.Lookup that resolves catalog
 // entities, libraries, and Wasm plugins by walking three tiers in
 // order:
@@ -460,6 +474,37 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	if l.ociPuller == nil {
 		return closure.Resolution{NotFound: true}, nil
 	}
+
+	// Bare-name identity (the form discovery records): resolve location + version
+	// via the LibraryPuller capability — name→location, then list-tags→highest
+	// (when the URI carries no version) or the asserted floor as the tag (when a
+	// consumer's `@version` threaded a `name:floor` URI here). The cache
+	// slot is keyed `<name>:<version>` — the symmetric key the build-side bridge
+	// reads through ReadPinnedLibrary.
+	if lp, ok := l.ociPuller.(LibraryPuller); ok {
+		name, floor, _ := splitVersionedURI(uri)
+		result, resolvedVersion, err := lp.PullLibrary(context.Background(), name, kind, floor)
+		if err != nil {
+			if errors.Is(err, oci.ErrFetchNotFound) {
+				return closure.Resolution{NotFound: true}, nil
+			}
+			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, name, err)
+		}
+		versionedKey := name + ":" + resolvedVersion
+		if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, versionedKey, resolvedVersion, result); err != nil {
+			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s %s: %w", kind, name, err)
+		}
+		digest := contentDigest(result.Bytes)
+		l.recordRefetchNotice(uri, digest)
+		return closure.Resolution{
+			ResolvedVersion: resolvedVersion,
+			Digest:          digest,
+			ResolutionPath:  "tier-3-pull",
+		}, nil
+	}
+
+	// Pull-only puller (no library capability): the legacy full-reference path for
+	// an already-located, versioned URI.
 	reference, tag, ok := SplitURIForOCI(uri)
 	if !ok {
 		return closure.Resolution{NotFound: true}, nil

@@ -192,6 +192,49 @@ func TestResolveSchemaLibraryBareNameTier1(t *testing.T) {
 	}
 }
 
+// TestHighestSemverTag pins the first-pull version selector: the highest
+// dotted-numeric tag wins, by NUMERIC (not lexical) component comparison, and
+// non-semver tags (e.g. "latest") are ignored. An empty result means no usable
+// version (the puller then surfaces a fetch error).
+func TestHighestSemverTag(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		tags []string
+		want string
+	}{
+		{"highest of several", []string{"1.0.0", "2.3.1", "2.10.0", "2.3.10"}, "2.10.0"},
+		{"numeric not lexical", []string{"1.9.0", "1.10.0"}, "1.10.0"},
+		{"ignores non-semver tags", []string{"latest", "1.0.0", "edge"}, "1.0.0"},
+		{"none usable", []string{"latest", "stable"}, ""},
+		{"empty input", nil, ""},
+	}
+	for _, tc := range cases {
+		if got := highestSemverTag(tc.tags); got != tc.want {
+			t.Errorf("%s: highestSemverTag(%v) = %q; want %q", tc.name, tc.tags, got, tc.want)
+		}
+	}
+}
+
+// TestLibraryReference pins the pull-side name→location binding: a host-less
+// library identity resolves to `<registry>/<kind-segment>/<name>`, matching the
+// push-side publish path so a pulled library is fetched from where it was
+// published (the identity round-trip).
+func TestLibraryReference(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		registry, kind, name, want string
+	}{
+		{"hub.aggrega.ai", "SchemaLibrary", "DbSizing", "hub.aggrega.ai/schemalibrary/DbSizing"},
+		{"reg.example.com", "MappingLibrary", "BaseMappings", "reg.example.com/mappinglibrary/BaseMappings"},
+	}
+	for _, tc := range cases {
+		if got := libraryReference(tc.registry, tc.kind, tc.name); got != tc.want {
+			t.Errorf("libraryReference(%q, %q, %q) = %q; want %q", tc.registry, tc.kind, tc.name, got, tc.want)
+		}
+	}
+}
+
 func writeBridgeFixture(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

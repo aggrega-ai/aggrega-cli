@@ -495,11 +495,20 @@ func (s *walkState) resolveLibraries(lookup Lookup, schemas bool) error {
 		if err != nil {
 			return err
 		}
+		// Thread the MVS-selected version (the optional `@version` floor) to the
+		// lookup as a `name:version` URI, so a Tier-3 pull resolves that tag. A
+		// pure bare-name reference (no floor) leaves the version empty for the
+		// lookup to resolve at first pull (the list-tags→highest path). The stored
+		// library key stays the host-less bare name regardless.
+		resolveURI := uri
+		if selected != "" {
+			resolveURI = uri + ":" + selected
+		}
 		var res LibraryResolution
 		if schemas {
-			res, err = lookup.ResolveSchemaLibrary(uri)
+			res, err = lookup.ResolveSchemaLibrary(resolveURI)
 		} else {
-			res, err = lookup.ResolveMappingLibrary(uri)
+			res, err = lookup.ResolveMappingLibrary(resolveURI)
 		}
 		if err != nil {
 			return fmt.Errorf("closure: resolve library %q: %w", uri, err)
