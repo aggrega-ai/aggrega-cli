@@ -41,8 +41,12 @@ func TestArtifactDelimiters_HelmCompatible(t *testing.T) {
 	}
 }
 
-// TestSanitizeChartName_AllReplacements pins the dot+underscore →
-// hyphen substitution.
+// TestSanitizeChartName_AllReplacements pins the dot + underscore + path-separator
+// → hyphen substitution. The path-separator cases are the regression guard for the
+// umbrella chart name: a boundary path's "/" must become "-" so Helm can load the
+// chart (Helm rejects a name containing "/"). Non-vacuous — reverting the "/"
+// replacement leaves the slash in the output and the slash cases go red while the
+// dot/underscore cases stay green.
 func TestSanitizeChartName_AllReplacements(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -52,6 +56,10 @@ func TestSanitizeChartName_AllReplacements(t *testing.T) {
 		{"data.main-db", "data-main-db"},
 		{"my_under_score", "my-under-score"},
 		{"a.b_c", "a-b-c"},
+		{"dist/backend/helm-chart", "dist-backend-helm-chart"},
+		{"fullstack-app-dist/backend/helm-chart", "fullstack-app-dist-backend-helm-chart"},
+		// Distinct boundaries keep distinct names (no leaf-only collapse).
+		{"dist/frontend/helm-chart", "dist-frontend-helm-chart"},
 		{"", ""},
 	}
 	for _, tc := range cases {

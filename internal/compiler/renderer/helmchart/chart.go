@@ -10,11 +10,16 @@ const (
 	defaultChartVersion = "0.1.0"
 )
 
-// sanitizeChartName converts dot-notation instance IDs (e.g. "data.main-db")
-// to Helm-compatible names (e.g. "data-main-db"). Used by umbrella.go to
-// derive umbrella Chart.yaml names and per-sub-chart aliases from instance
-// IDs that may contain dots from sub-aggregate flattening.
+// sanitizeChartName converts an identifier into a Helm-valid chart name. Dots
+// (e.g. from sub-aggregate-flattened instance IDs like "data.main-db"),
+// underscores, and path separators all become dashes — so "data.main-db" becomes
+// "data-main-db" and a boundary path like "dist/backend/helm-chart" becomes
+// "dist-backend-helm-chart". Path separators matter because umbrella.go derives
+// the umbrella Chart.yaml name (and the per-sub-chart aliases) from the boundary
+// path, and Helm rejects a chart name containing "/". Replacing rather than
+// collapsing preserves the full path structure, so distinct boundaries keep
+// distinct names.
 func sanitizeChartName(id string) string {
-	r := strings.NewReplacer(".", "-", "_", "-")
+	r := strings.NewReplacer(".", "-", "_", "-", "/", "-")
 	return r.Replace(id)
 }
