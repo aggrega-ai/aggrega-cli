@@ -559,10 +559,10 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 // walked library set (not the whole catalog's), so cross-document $ref expansion
 // resolves exactly the libraries the closure reaches. A closure entity whose
 // $ref names a library absent from libs fails here (the hard in-closure
-// library-reject): when that library was skipped as broken, the caller replays
-// the original library error via ReplaySkippedLibraryError for an eager-parity
-// diagnostic; when it is genuinely absent, validator.ValidateSchemaPillars
-// surfaces the unresolvable-$ref.
+// library-reject) via validator.ValidateSchemaPillars surfacing the
+// unresolvable-$ref; the callers (build's tolerant-load SkippedEntity context,
+// the daemon's Skips() diagnostic) explain WHY a referenced library went missing
+// when it was skipped as broken.
 //
 // Iteration is sorted by name for diagnostic stability (the deterministic-output
 // invariant); errors are collected across entities and joined into one aggregate

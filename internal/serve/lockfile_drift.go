@@ -16,9 +16,9 @@ import (
 //
 //  1. Catalog-author workflows (no active Release) skip entirely —
 //     s.activeRelease == nil short-circuits before any work.
-//  2. Workspaces where s.recipeCatalog cannot be primed at startup
-//     (catalog dirs unavailable, hermetic lookup cannot resolve)
-//     stderr-log-and-skip; the next handleIrGraph retries.
+//  2. Workspaces where the lazy closure resolution cannot complete at
+//     startup (catalog dirs unavailable, or the hermetic lookup cannot
+//     resolve an entity) stderr-log-and-skip; the next handleIrGraph retries.
 //
 // On success populates s.lockfile and writes any drift findings
 // into s.diagnostics[lockfilePath]. The wire-level

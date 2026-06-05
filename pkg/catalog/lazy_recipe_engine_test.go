@@ -154,13 +154,11 @@ spec:
 	}
 }
 
-// TestLibrarySkipReplay proves the F3 mechanism: buildSchemaLibraries records the
-// ORIGINAL validation error for a skipped broken library, and
-// ReplaySkippedLibraryError replays it for a referenced library — so an in-closure
-// reference to a broken library gets the eager-parity diagnostic, not a coarse
-// unresolvable-$ref. Non-vacuous: a referenced VALID/absent-from-skips library
-// replays nothing.
-func TestLibrarySkipReplay(t *testing.T) {
+// TestBrokenLibraryRecordedInSkips proves a broken schema library is tolerated
+// (skipped, recorded in the shared skip map) rather than fatal — so a broken
+// UNUSED library never fails an unrelated build, and the daemon can surface WHY a
+// referenced one went missing. Non-vacuous: a clean library produces no skip.
+func TestBrokenLibraryRecordedInSkips(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad-library.yaml", `apiVersion: aggrega.ai/v1alpha1
@@ -175,16 +173,24 @@ spec:
       type: string
 `)
 	ll := NewLazyLookup(dir, "", []string{dir}, nil)
-	ll.buildSchemaLibraries()
+	skips := ll.Skips()
+	if len(skips) != 1 {
+		t.Fatalf("expected the invalid library to be skipped-and-recorded; got %d skips", len(skips))
+	}
 
-	if _, ok := ll.librarySkips["Bad"]; !ok {
-		t.Fatalf("expected the invalid library Bad to be recorded in librarySkips")
-	}
-	if err := ll.ReplaySkippedLibraryError([]string{"Bad"}); err == nil {
-		t.Error("an in-closure reference to the skipped library Bad must replay its original validation error")
-	}
-	if err := ll.ReplaySkippedLibraryError([]string{"SomeOtherLib"}); err != nil {
-		t.Errorf("a reference to a library that was not skipped must replay nothing; got %v", err)
+	clean := t.TempDir()
+	writeFixture(t, clean, "good-library.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Good
+  version: 1.0.0
+spec:
+  schemas:
+    Storage:
+      size: { type: string, default: "10Gi" }
+`)
+	if got := NewLazyLookup(clean, "", []string{clean}, nil).Skips(); len(got) != 0 {
+		t.Errorf("a valid library must produce no skip; got %d", len(got))
 	}
 }
 
@@ -231,6 +237,61 @@ spec:
 	}
 	if _, _, err := load("demo/missing"); err == nil {
 		t.Error("a missing sub-aggregate must be a fatal error per the loader contract")
+	}
+}
+
+// TestEagerLazyClosureLookupDigestParity is the digest-fidelity guard for serve's
+// lazy closure walk: the lazy ClosureLookup must return the SAME resolved version
+// + content digest as the eager *Catalog.ClosureLookupWithExternals for every kind
+// — Component (cascade), Recipe (shell), Aggregate (shell) — so a daemon drift
+// verify compares like-for-like against a lockfile a build/pull wrote. A digest
+// mismatch here is exactly the spurious-drift bug the retained-entityBytes design
+// prevents. Non-vacuous: digests are asserted non-empty and equal.
+func TestEagerLazyClosureLookupDigestParity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFixture(t, dir, "comp.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+`)
+	writeFixture(t, dir, "recipe.yaml", recipeYAML("server-recipe", "core/server"))
+	writeFixture(t, dir, "agg.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo/agg
+  version: "1.0.0"
+spec:
+  components: {}
+`)
+
+	eager, err := LoadAll(dir, dir)
+	if err != nil {
+		t.Fatalf("eager LoadAll: %v", err)
+	}
+	eagerLk := eager.ClosureLookupWithExternals(nil, dir, "", nil)
+	lazyLk := NewLazyLookup(dir, "", []string{dir}, nil).ClosureLookup(nil, dir, "", nil)
+
+	for _, uri := range []string{"core/server", "server-recipe:1.0.0", "demo/agg"} {
+		er, eerr := eagerLk.ResolveCatalogEntity(uri)
+		lr, lerr := lazyLk.ResolveCatalogEntity(uri)
+		if (eerr == nil) != (lerr == nil) {
+			t.Fatalf("%q: presence differs — eager err=%v lazy err=%v", uri, eerr, lerr)
+		}
+		if er.Digest == "" {
+			t.Fatalf("%q: eager digest empty; parity check would be vacuous", uri)
+		}
+		if er.Digest != lr.Digest {
+			t.Errorf("%q: digest differs — eager %s lazy %s", uri, er.Digest, lr.Digest)
+		}
+		if er.ResolvedVersion != lr.ResolvedVersion {
+			t.Errorf("%q: resolved version differs — eager %q lazy %q", uri, er.ResolvedVersion, lr.ResolvedVersion)
+		}
 	}
 }
 

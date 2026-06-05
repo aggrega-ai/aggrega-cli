@@ -59,9 +59,9 @@ func (s *Server) dispatchInvalidate(_ context.Context, req *jsonRPCRequest) erro
 //     The named file's parse-cache + diagnostic-cache entries drop.
 //     An empty File makes these drops no-ops.
 //   - Workspace-level drops fire on every granularity EXCEPT "file".
-//     recipeCatalog is cleared (re-loads on next aggrega/irGraph);
-//     the lazy lookup's hot caches + negative caches + per-kind
-//     indexes reset (re-walk on next Component / Feature lookup).
+//     The lazy lookup's hot caches + negative caches + per-kind indexes +
+//     enumerated recipe shell + retained entity bytes reset (re-walk on the
+//     next Component / Feature / recipe / closure resolution).
 //
 // activeRelease + cascadeAttempt are NOT invalidated. The
 // disambiguation cascade is session-immutable; workspace-shape
@@ -78,9 +78,8 @@ func (s *Server) dispatchInvalidate(_ context.Context, req *jsonRPCRequest) erro
 // caches stay empty.
 //
 // Thread-safety: relies on the daemon's sequential dispatch loop.
-// Concurrent callers would race on the recipeCatalog assignment +
-// the lazy lookup's map re-allocations; the dispatch loop is the
-// only intended caller.
+// Concurrent callers would race on the lazy lookup's map
+// re-allocations; the dispatch loop is the only intended caller.
 func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
 	// Per-file drops fire for every granularity — a file-scoped
 	// invalidate legitimately clears the named file's per-file
@@ -102,7 +101,6 @@ func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
 	// level reset on a misconfigured Server — a panic surfaces the
 	// bug at the right place (test setup) instead of masking it.
 	if params.Granularity != "file" {
-		s.recipeCatalog = nil
 		s.lazyCatalog.Reset()
 	}
 

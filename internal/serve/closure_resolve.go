@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -83,25 +85,20 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 			Data:    newErrorData(aggPath, 0, 0),
 		}
 	}
-	recipeCat, err := s.resolveRecipeCatalog()
-	if err != nil {
-		// Catalog-load failure aggregates multiple source dirs; no
-		// single file is the source of the error. Data left nil so
-		// the client falls back to workspace-level positioning.
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: err.Error(),
-		}
-	}
-
 	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
 	cacheDir := s.wsConfig.Workspace.ResolvedCacheDir()
-	lookup := recipeCat.ClosureLookupWithExternals(nil, s.workspaceRoot, cacheDir, externals)
+	// Lazy closure walk — no eager whole-catalog load (0090 point-7). The daemon
+	// passes a nil puller (hermetic, Tier-3 disabled), matching the eager path it
+	// replaces; a broken out-of-closure entity is never enumerated-fatal.
+	lookup := s.lazyCatalog.ClosureLookup(nil, s.workspaceRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, s.wsConfig, lookup)
 	if err != nil {
+		// An in-closure entity that was skipped at the tolerant lazy enumeration
+		// surfaces here as an unresolvable URI; skipContext replays WHY it went
+		// missing so the diagnostic is never a bare "not found".
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("closure compute: %v", err),
+			Message: s.skipContext(fmt.Sprintf("closure compute: %v", err)),
 		}
 	}
 	return &resolvedRelease{
@@ -111,4 +108,28 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 		AggBytes:  aggBytes,
 		Closure:   cl,
 	}, nil
+}
+
+// skipContext annotates a closure-level message with the catalog files the lazy
+// enumeration skipped (tolerantly) — so an in-closure entity that went missing
+// because it was skipped is explained, not silently absent. Deterministic
+// (sorted by path); no-op when nothing was skipped. Mirrors the CLI build's
+// withSkipContext, sourced from the lazy backing's skip record.
+func (s *Server) skipContext(msg string) string {
+	skips := s.lazyCatalog.Skips()
+	if len(skips) == 0 {
+		return msg
+	}
+	paths := make([]string, 0, len(skips))
+	for p := range skips {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	var b strings.Builder
+	b.WriteString(msg)
+	b.WriteString("; note: catalog files skipped at load (one may be the unresolved in-closure entity):")
+	for _, p := range paths {
+		fmt.Fprintf(&b, " %s: %v;", p, skips[p])
+	}
+	return b.String()
 }

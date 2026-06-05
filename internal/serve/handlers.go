@@ -452,17 +452,10 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	}
 	s.lazyCatalog.SetPins(pins)
 
-	// 4. Resolve the recipeCatalog for the pipeline call (the
-	//    closure path used the same primitive; this re-uses the
-	//    primed cache).
-	recipeCat, err := s.resolveRecipeCatalog()
-	if err != nil {
-		return irGraphResult{}, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: err.Error(),
-		}
-	}
-
+	// 4. Recipe + sub-aggregate + mapping-library resolution all come from the
+	//    lazy backing now (no eager whole-catalog load): the tolerantly-enumerated
+	//    recipe shell, on par with the Component/Feature cascade already feeding
+	//    AsCatalogLookup. A broken out-of-closure entity never fails this build.
 	aggPath := filepath.Join(filepath.Dir(releasePath), resolved.Release.Spec.Aggregate+".yaml")
 	result, err := pipeline.RunPipeline(
 		ctx,
@@ -474,11 +467,11 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			WorkspaceConfig:   s.wsConfig,
 			Lockfile:          lf,
 			WorkspaceRoot:     s.workspaceRoot,
-			MappingLibraries:  recipeCat.MappingLibraries,
+			MappingLibraries:  s.lazyCatalog.MappingLibraries(),
 		},
 		s.lazyCatalog.AsCatalogLookup(),
-		recipeCat.RecipeLookupWithManifest(resolved.Manifest),
-		recipeCat.SubAggregateLoader(),
+		s.lazyCatalog.RecipeLookupWithManifest(resolved.Manifest),
+		s.lazyCatalog.SubAggregateLoader(),
 		daemonEngineFactory,
 		// irGraph is resilient inspection — it returns the IR graph even when
 		// resolution is incomplete, so it does not run the render-time

@@ -73,16 +73,6 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		return nil
 	}
 
-	recipeCat, err := s.resolveRecipeCatalog()
-	if err != nil {
-		return []Diagnostic{{
-			Line:     1,
-			Column:   1,
-			Severity: "error",
-			Message:  "Closure: catalog load: " + err.Error(),
-		}}
-	}
-
 	// Both the root aggregate's path (passed via Inputs.AggregatePath)
 	// and the validated `file` are rendered in the same workspace-
 	// relative coordinate system the catalog accessors produce for
@@ -115,6 +105,38 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	}
 	s.lazyCatalog.SetPins(pins)
 
+	// Closure-scoped extends — the daemon's early-warning extends gate, mirroring
+	// the CLI build's closure-scoped extends resolution. A dangling parent (or a
+	// cycle / malformed chain) on an in-closure Component/Feature surfaces as a
+	// Tier-D closure-level diagnostic; an out-of-closure broken extends is never
+	// resolved. Runs after SetPins so its reads verify-on-read.
+	if extErrs := s.lazyCatalog.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
+		return []Diagnostic{{
+			Line:     1,
+			Column:   1,
+			Severity: "error",
+			Message:  fmt.Sprintf("Closure: catalog extends: %v", extErrs[0]),
+		}}
+	}
+
+	// Closure-scoped Pass-2 — the daemon's early-warning schema-pillar gate,
+	// replacing the whole-catalog Pass-2 the eager load used to provide. Runs AFTER
+	// SetPins so its resolution reads verify-on-read against this Release's pins (a
+	// drifted cache slot is skipped, never self-healed via Tier-3). Validates ONLY
+	// the entities the Release reaches; an in-closure schema-invalid Component/
+	// Feature (or a $ref to a skipped/missing library) surfaces as a Tier-D
+	// closure-level diagnostic, with the skip context explaining a missing library.
+	// A broken out-of-closure entity is never validated. build remains the
+	// authoritative validator.
+	if err := s.lazyCatalog.ValidateClosureScopedPillars(resolved.Closure); err != nil {
+		return []Diagnostic{{
+			Line:     1,
+			Column:   1,
+			Severity: "error",
+			Message:  "Closure: " + s.skipContext(err.Error()),
+		}}
+	}
+
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
 		pipeline.Inputs{
@@ -125,7 +147,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			WorkspaceConfig:   s.wsConfig,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
-		recipeCat.SubAggregateLoader(),
+		s.lazyCatalog.SubAggregateLoader(),
 	)
 
 	// Cancellation (shutdown drain) surfaces as a context error from the

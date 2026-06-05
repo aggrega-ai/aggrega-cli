@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -75,9 +76,11 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		recipes:          map[string]types.Recipe{},
 		featureRecipes:   map[string]types.FeatureRecipe{},
 		aggregates:       map[string]types.Aggregate{},
+		providers:        map[string]types.Provider{},
+		mappingLibraries: map[string]types.MappingLibrary{},
 		aggregateSources: map[string]string{},
 		recipeSkips:      map[string]error{},
-		librarySkips:     map[string]error{},
+		entityBytes:      map[string][]byte{},
 	}
 }
 
@@ -130,11 +133,13 @@ func (l *LazyLookup) Reset() {
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
+	l.providers = map[string]types.Provider{}
+	l.mappingLibraries = map[string]types.MappingLibrary{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
 	l.recipeIndexBuilt = false
 	l.recipeCat = nil
-	l.librarySkips = map[string]error{}
+	l.entityBytes = map[string][]byte{}
 }
 
 // Prime copies the supplied catalog's already-merged Components and
@@ -237,9 +242,23 @@ type LazyLookup struct {
 	recipes          map[string]types.Recipe
 	featureRecipes   map[string]types.FeatureRecipe
 	aggregates       map[string]types.Aggregate
+	providers        map[string]types.Provider
+	mappingLibraries map[string]types.MappingLibrary
 	aggregateSources map[string]string
-	recipeSkips      map[string]error // skipped recipe/FR/aggregate file path -> reason
+	recipeSkips      map[string]error // skipped recipe/FR/aggregate/provider/maplib file path -> reason
 	recipeIndexBuilt bool
+
+	// entityBytes retains the RAW authored bytes of every enumerated /
+	// resolved entity, keyed by entityBytesKey(kind, metadata.name) — the same
+	// key the eager catalog uses. The closure lookup (ClosureLookup) hashes
+	// these to produce the content digest the lockfile pins, so a serve drift
+	// verify compares the SAME digest a build/pull computed (digest fidelity:
+	// the bytes hashed are the bytes resolved, no second source of truth, no
+	// re-read TOCTOU). Populated by buildRecipeIndex / buildSchemaLibraries
+	// (enumerated kinds) and by resolveComponent / resolveFeature (on-demand
+	// kinds). Cleared by Reset so an invalidated workspace retains no stale
+	// bytes — they must not survive an mtime-eviction / invalidation.
+	entityBytes map[string][]byte
 
 	// recipeCat is the cached *Catalog shell over the enumerated recipe/FR/
 	// aggregate maps. The shell carries ONLY the maps the matcher methods read
@@ -249,14 +268,6 @@ type LazyLookup struct {
 	// nil after construction / Reset; rebuilt on first recipeCatalog() call so a
 	// changed workspace (serve's incremental edits) re-walks.
 	recipeCat *Catalog
-
-	// librarySkips records the validation error for each SchemaLibrary
-	// buildSchemaLibraries skipped (a forbidden keyword, a malformed template
-	// body). It lets an in-closure reference to a skipped library REPLAY the
-	// original library error (eager-parity diagnostic) instead of degrading to a
-	// coarse unresolvable-$ref. An out-of-closure broken library is recorded but
-	// never replayed (never referenced), so it is not build-fatal.
-	librarySkips map[string]error
 }
 
 // SetPins threads the per-request lockfile pins into the lazy lookup, enabling
@@ -397,6 +408,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
 		if comp, err := parseComponentEntity(bytes); err == nil {
+			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return comp, true
 		}
 	} else if outcome == tier2Skip {
@@ -408,6 +420,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
 		if comp, perr := parseComponentEntity(bytes); perr == nil {
+			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return comp, true
 		}
 	}
@@ -423,6 +436,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if feat, err := parseFeatureEntity(bytes); err == nil {
+			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return feat, true
 		}
 	} else if outcome == tier2Skip {
@@ -433,6 +447,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
 		if feat, perr := parseFeatureEntity(bytes); perr == nil {
+			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return feat, true
 		}
 	}
@@ -457,6 +472,7 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 	if perr != nil {
 		return types.Component{}, false
 	}
+	l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = data
 	return comp, true
 }
 
@@ -476,6 +492,7 @@ func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	if perr != nil {
 		return types.Feature{}, false
 	}
+	l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = data
 	return feat, true
 }
 
@@ -584,14 +601,16 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 				if firstErr == nil {
 					firstErr = perr
 				}
-				// Record the skip reason keyed by the header name (the body parse
-				// failed, so lib.Metadata.Name is unavailable). An in-closure
-				// reference to this library replays perr via
-				// ReplaySkippedLibraryError for an eager-parity diagnostic.
-				l.librarySkips[hdr.Metadata.Name] = perr
+				// Tolerant: a broken schema library is skipped (recorded), not
+				// fatal — a broken UNUSED library never fails an unrelated build.
+				// The skip is recorded in the shared skip map (keyed by path, like
+				// the recipe enumeration) so the daemon surfaces it as a
+				// closure-level diagnostic when the closure references it.
+				l.recipeSkips[path] = perr
 				return nil
 			}
 			l.schemaLibraries[lib.Metadata.Name] = lib
+			l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = data
 			return nil
 		})
 	}
@@ -649,6 +668,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 					return nil
 				}
 				l.recipes[key] = e
+				l.entityBytes[entityBytesKey("Recipe", e.Metadata.Name)] = data
 			case "FeatureRecipe":
 				e, perr := parseFeatureRecipeEntity(data, path)
 				if perr != nil {
@@ -661,6 +681,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 					return nil
 				}
 				l.featureRecipes[key] = e
+				l.entityBytes[entityBytesKey("FeatureRecipe", e.Metadata.Name)] = data
 			case "Aggregate":
 				e, perr := parseAggregateEntity(data)
 				if perr != nil {
@@ -673,6 +694,31 @@ func (l *LazyLookup) buildRecipeIndex() {
 				}
 				l.aggregates[e.Metadata.Name] = e
 				l.aggregateSources[e.Metadata.Name] = path
+				l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
+			case "Provider":
+				var e types.Provider
+				if uerr := yaml.Unmarshal(data, &e); uerr != nil {
+					l.recordRecipeSkip(path, uerr)
+					return nil
+				}
+				if _, dup := l.providers[e.Metadata.Name]; dup {
+					l.recordRecipeSkip(path, fmt.Errorf("duplicate provider name %q; this file is shadowed", e.Metadata.Name))
+					return nil
+				}
+				l.providers[e.Metadata.Name] = e
+				l.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
+			case "MappingLibrary":
+				e, perr := parseMappingLibraryEntity(data)
+				if perr != nil {
+					l.recordRecipeSkip(path, perr)
+					return nil
+				}
+				if _, dup := l.mappingLibraries[e.Metadata.Name]; dup {
+					l.recordRecipeSkip(path, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
+					return nil
+				}
+				l.mappingLibraries[e.Metadata.Name] = e
+				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
 			}
 			return nil
 		})
@@ -696,14 +742,28 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		return l.recipeCat
 	}
 	l.buildRecipeIndex()
+	_ = l.buildSchemaLibraries()
 	l.recipeCat = &Catalog{
 		Recipes:          l.recipes,
 		FeatureRecipes:   l.featureRecipes,
 		Aggregates:       l.aggregates,
+		Providers:        l.providers,
+		SchemaLibraries:  l.schemaLibraries,
+		MappingLibraries: l.mappingLibraries,
 		aggregateSources: l.aggregateSources,
+		entityBytes:      l.entityBytes,
 		workspaceRoot:    l.workspaceRoot,
 	}
 	return l.recipeCat
+}
+
+// MappingLibraries returns the tolerantly-enumerated MappingLibrary set, for the
+// daemon pipeline's MappingLibraries input (the closure/bridged mapping libraries
+// the renderer's $import resolution consumes). Triggers the recipe-shell
+// enumeration on first call.
+func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
+	l.buildRecipeIndex()
+	return l.mappingLibraries
 }
 
 // RecipeLookupWithManifest exposes the catalog matcher's Manifest-aware recipe
@@ -714,13 +774,6 @@ func (l *LazyLookup) RecipeLookupWithManifest(manifest *types.Manifest) renderer
 	return l.recipeCatalog().RecipeLookupWithManifest(manifest)
 }
 
-// VerifyRecipeResolution runs the pre-render resolution-completeness pass over
-// the lazily-enumerated recipe set: every instance must resolve to exactly one
-// recipe, or the build halts loudly (no recipe / ambiguous implements).
-func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
-	return l.recipeCatalog().VerifyRecipeResolution(manifest, graph)
-}
-
 // SubAggregateLoader exposes the catalog's sub-aggregate loader over the lazily-
 // enumerated Aggregate set. A referenced sub-aggregate that is absent (or was
 // skipped as broken) is a fatal graph-construction failure, exactly as eager.
@@ -728,29 +781,222 @@ func (l *LazyLookup) SubAggregateLoader() topology.SubAggregateLoader {
 	return l.recipeCatalog().SubAggregateLoader()
 }
 
-// RecipeSkips returns the tolerant-enumeration skip reasons keyed by file path,
-// for callers that surface a coverage note (which recipes the enumeration could
-// not index).
-func (l *LazyLookup) RecipeSkips() map[string]error {
+// Skips returns the tolerant-enumeration skip reasons keyed by file path — every
+// catalog file the lazy enumeration could not index (a recipe/FR/aggregate/
+// provider/mapping-library that failed to parse, a duplicate identity, or a
+// schema library that failed its forbidden-keyword / template-body checks). The
+// daemon surfaces these as a closure-level diagnostic so an in-closure entity
+// that went missing because it was skipped is explained, not silently absent.
+func (l *LazyLookup) Skips() map[string]error {
+	l.buildRecipeIndex()
+	_ = l.buildSchemaLibraries()
 	return l.recipeSkips
 }
 
-// ReplaySkippedLibraryError returns the original validation error for the first
-// referenced SchemaLibrary that buildSchemaLibraries skipped, scanning the
-// referenced names in sorted order for determinism, or nil when none of the
-// referenced libraries were skipped. It gives an in-closure reference to a broken
-// library the eager-parity diagnostic (the forbidden-keyword / template-body
-// error) rather than a coarse unresolvable-$ref. referenced is the set of library
-// names the closure's $ref / $import directives reach (supplied by the caller
-// that knows the closure).
-func (l *LazyLookup) ReplaySkippedLibraryError(referenced []string) error {
-	l.buildSchemaLibraries()
-	names := append([]string(nil), referenced...)
-	sort.Strings(names)
-	for _, name := range names {
-		if err, ok := l.librarySkips[name]; ok {
-			return err
+// ValidateClosureScopedPillars runs closure-scoped Pass-2 over the LAZY backing:
+// it resolves each closure Component/Feature through the cascade and validates its
+// schema pillars against the lazily-walked SchemaLibrary set — the daemon's
+// early-warning gate, replacing the whole-catalog Pass-2 the eager
+// resolveRecipeCatalog load used to provide. A broken out-of-closure entity is
+// never resolved here, so it is never validated; an in-closure pillar error (a
+// schema-invalid Component/Feature, or a $ref to a skipped/missing library) is
+// surfaced. Sources come from the per-kind index (file paths) for error
+// provenance. The resolved entities are extends-merged (what the daemon renders);
+// build remains the authoritative pre-extends validator.
+func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
+	_ = l.buildSchemaLibraries()
+	l.buildComponentIndex()
+	l.buildFeatureIndex()
+	comps := map[string]types.Component{}
+	compSrc := map[string]string{}
+	feats := map[string]types.Feature{}
+	featSrc := map[string]string{}
+	for _, e := range cl.Entities {
+		name := lookupNameFromURI(e.URI)
+		if comp, ok := l.Component(e.URI); ok {
+			comps[comp.Metadata.Name] = comp
+			compSrc[comp.Metadata.Name] = l.componentIndex[name]
+			continue
+		}
+		if feat, ok := l.Feature(e.URI); ok {
+			feats[feat.Metadata.Name] = feat
+			featSrc[feat.Metadata.Name] = l.featureIndex[name]
 		}
 	}
-	return nil
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.schemaLibraries)
+}
+
+// ResolveClosureExtends resolves the extends chain for each Component/Feature the
+// closure reaches and returns the collected resolution errors (a dangling parent,
+// a cycle, a malformed chain) — the daemon's early-warning extends gate, the lazy
+// counterpart to the CLI build's closure-scoped extends. An out-of-closure
+// entity's extends is never resolved, so a broken out-of-closure parent never
+// produces a diagnostic. Deterministic: closure entity names are deduped + sorted.
+func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
+	compLookup := func(uri string) (types.Component, bool) { return l.resolveComponent(uri) }
+	featLookup := func(uri string) (types.Feature, bool) { return l.resolveFeature(uri) }
+
+	byName := map[string]string{}
+	for _, e := range cl.Entities {
+		n := lookupNameFromURI(e.URI)
+		if _, ok := byName[n]; !ok {
+			byName[n] = e.URI
+		}
+	}
+	names := make([]string, 0, len(byName))
+	for n := range byName {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	var errs []error
+	for _, n := range names {
+		uri := byName[n]
+		if comp, ok := l.resolveComponent(uri); ok {
+			if comp.Spec.Extends == "" {
+				continue
+			}
+			if _, vErrs := validator.ResolveComponentExtends(comp, compLookup); len(vErrs) > 0 {
+				for _, ve := range vErrs {
+					errs = append(errs, ve)
+				}
+			}
+			continue
+		}
+		if feat, ok := l.resolveFeature(uri); ok {
+			if feat.Spec.Extends == "" {
+				continue
+			}
+			if _, vErrs := validator.ResolveFeatureExtends(feat, featLookup); len(vErrs) > 0 {
+				for _, ve := range vErrs {
+					errs = append(errs, ve)
+				}
+			}
+		}
+	}
+	return errs
+}
+
+// ClosureLookup returns a closure.Lookup that walks a Release's closure over the
+// LAZY backing — the daemon's replacement for the eager whole-catalog
+// `*Catalog.ClosureLookupWithExternals`. No catalog is loaded up front:
+// Component/Feature resolve per-URI through the Tier-1 (filesystem index) →
+// Tier-2 (verified cache) → Tier-3 (the SUPPLIED puller) cascade, and
+// Recipe/FeatureRecipe/Aggregate/Provider/SchemaLibrary/MappingLibrary resolve
+// through the tolerantly-enumerated recipe shell (also with Tier-2/3). A broken
+// out-of-closure entity is never enumerated-fatal; the digests returned hash the
+// SAME authored bytes a build/pull hashed (retained in entityBytes), so a serve
+// drift verify compares like-for-like. Hermeticity follows the supplied puller:
+// the daemon passes nil (Tier-3 disabled), matching the eager path it replaces.
+//
+// The closure walker resolves entity URIs structurally (Aggregate / Manifest /
+// Release references); it does not introspect schema bodies or Component extends,
+// so the per-URI resolution here deliberately skips extends-merge (the digest is
+// of the raw authored entity, exactly as the eager closure lookup hashed).
+func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte) closure.Lookup {
+	return &lazyClosureLookup{
+		l:      l,
+		puller: puller,
+		base:   l.recipeCatalog().ClosureLookupWithExternals(puller, workspaceRoot, cacheDir, externals),
+	}
+}
+
+// lazyClosureLookup composes Component/Feature resolution over the lazy cascade
+// with the recipe-shell-backed catalogLookup (base) for every other kind. The
+// shell's Components/Features maps are empty (those kinds stay on-demand), so
+// Component/Feature are tried here FIRST; everything else falls through to base,
+// which serves Recipe/FR/Aggregate/Provider at Tier-1 and all kinds at Tier-2/3.
+type lazyClosureLookup struct {
+	l      *LazyLookup
+	puller OCIPuller
+	base   closure.Lookup
+}
+
+func (x *lazyClosureLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
+	if res, ok := x.l.resolveComponentForClosure(uri, x.puller); ok {
+		return res, nil
+	}
+	if res, ok := x.l.resolveFeatureForClosure(uri, x.puller); ok {
+		return res, nil
+	}
+	return x.base.ResolveCatalogEntity(uri)
+}
+
+func (x *lazyClosureLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
+	return x.base.ResolveSchemaLibrary(uri)
+}
+
+func (x *lazyClosureLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
+	return x.base.ResolveMappingLibrary(uri)
+}
+
+func (x *lazyClosureLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
+	return x.base.ResolveWasmPlugin(uri)
+}
+
+// resolveComponentForClosure resolves a Component URI for the closure walk —
+// Tier-1 (filesystem index) → Tier-2 (verified cache) → Tier-3 (supplied puller),
+// retaining the raw bytes for the digest. No extends-merge (the walk is
+// structural). A non-Component cache slot (kind mismatch) falls through so the
+// caller routes the URI to the recipe shell. Returns ok=false on cascade
+// exhaustion. A tier2Skip (drifted cache) returns false — the entity is
+// unavailable for this request, surfaced upstream rather than self-healed.
+func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (closure.Resolution, bool) {
+	if comp, ok := l.tier1ReadComponent(uri); ok {
+		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-1-catalog"), true
+	}
+	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
+		if comp, err := parseComponentEntity(bytes); err == nil {
+			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-2-cache"), true
+		}
+	} else if outcome == tier2Skip {
+		return closure.Resolution{}, false
+	}
+	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri); err == nil && bytes != nil {
+		if comp, perr := parseComponentEntity(bytes); perr == nil {
+			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-3-pull"), true
+		}
+	}
+	return closure.Resolution{}, false
+}
+
+// resolveFeatureForClosure mirrors resolveComponentForClosure for the Feature
+// surface.
+func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (closure.Resolution, bool) {
+	if feat, ok := l.tier1ReadFeature(uri); ok {
+		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-1-catalog"), true
+	}
+	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
+		if feat, err := parseFeatureEntity(bytes); err == nil {
+			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-2-cache"), true
+		}
+	} else if outcome == tier2Skip {
+		return closure.Resolution{}, false
+	}
+	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri); err == nil && bytes != nil {
+		if feat, perr := parseFeatureEntity(bytes); perr == nil {
+			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-3-pull"), true
+		}
+	}
+	return closure.Resolution{}, false
+}
+
+// closureResolution builds the closure.Resolution for a lazily-resolved entity,
+// mirroring catalogLookup.tier1Resolution: digest of the retained raw bytes;
+// resolved version = the URI's pin when present, else metadata.version; the tier
+// tag matches the eager path's vocabulary so a drift compare never differs on it.
+func (l *LazyLookup) closureResolution(kind, name, metaVersion, uri, path string) closure.Resolution {
+	resolved := metaVersion
+	if _, v, hasV := splitVersionedURI(uri); hasV && v != "" {
+		resolved = v
+	}
+	return closure.Resolution{
+		ResolvedVersion: resolved,
+		Digest:          contentDigest(l.entityBytes[entityBytesKey(kind, name)]),
+		ResolutionPath:  path,
+	}
 }

@@ -639,6 +639,9 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 		ResolvedStep:               1,
 	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
+	// The lazy catalog captures catalogDirs at construction; newTestServer built it
+	// with nil dirs, so rewire it to the test's catalog dir now that it is set.
+	srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{filepath.Join(tmp, "catalog")}, nil)
 
 	aggPath := filepath.Join(tmp, "aggregate.yaml")
 	aggBytes, err := os.ReadFile(aggPath)
@@ -779,6 +782,9 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 		ResolvedStep:               1,
 	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
+	// The lazy catalog captures catalogDirs at construction; newTestServer built it
+	// with nil dirs, so rewire it to the test's catalog dir now that it is set.
+	srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{filepath.Join(tmp, "catalog")}, nil)
 
 	aggPath := filepath.Join(tmp, "aggregate.yaml")
 
@@ -789,10 +795,6 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	resolved, env := srv.resolveReleaseClosure(releasePath)
 	if env != nil {
 		t.Fatalf("resolveReleaseClosure envelope: %+v", env)
-	}
-	recipeCat, err := srv.resolveRecipeCatalog()
-	if err != nil {
-		t.Fatalf("resolveRecipeCatalog: %v", err)
 	}
 	// Mirror the daemon's production conversion: feed the pipeline a
 	// workspace-relative root aggregate path so the IR's per-node
@@ -809,7 +811,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			WorkspaceConfig:   srv.wsConfig,
 		},
 		srv.lazyCatalog.AsCatalogLookup(),
-		recipeCat.SubAggregateLoader(),
+		srv.lazyCatalog.SubAggregateLoader(),
 	)
 	if tier4 == nil || tier4.Analysis == nil {
 		t.Fatalf("expected non-nil Tier4Result.Analysis from pipeline; got %+v", tier4)
