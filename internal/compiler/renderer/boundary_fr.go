@@ -277,7 +277,14 @@ func dispatchBoundaryScopeFR(
 	}
 	frNodeCtx.Source = resolvedSrc
 
-	frValues := flattenOrderedMap(frCtx.Values)
+	// Evaluate the FR's valuesMapping against the boundary-scope context — the same
+	// evaluator the per-component FR path uses (phase_b_subpasses.go), not a parallel
+	// path. A valuesMapping-less FR yields the flattened .values pillar unchanged, so a
+	// boundary FR without a valuesMapping renders byte-identically.
+	frValues, err := ExecutePhaseBForFeature(frCtx, fr, input.MappingLibraries)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q valuesMapping", frInstance))
+	}
 	frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q render", frInstance))
@@ -405,16 +412,16 @@ func PrepopulateBoundaryScopeProvides(
 	return nil
 }
 
-// evaluateBoundaryFRTemplates evaluates a boundary-scope FR's locals,
-// valuesMapping, and provides templates against the FR-scoped context.
-// Stores the resolved provides into state.Provides under key.
+// evaluateBoundaryFRTemplates evaluates a boundary-scope FR's locals and
+// provides templates against the FR-scoped context, storing the resolved
+// provides into state.Provides under key (provides feed the cross-boundary
+// consumer cascade, a boundary-FR-specific concern).
 //
-// Pragmatic scope for this revision: locals + provides eval lands here;
-// the engine-side valuesMapping eval that drives engine.Render is invoked
-// indirectly via flattenOrderedMap(frCtx.Values) at the dispatch site (no
-// valuesMapping intermediate; the FR's values block carries the resolved
-// values via .values). Future enhancement extends this to invoke
-// ExecutePhaseBForFeature against the boundary-scope context.
+// The FR's valuesMapping is evaluated separately at the dispatch site
+// (dispatchBoundaryScopeFR) through the shared ExecutePhaseBForFeature — the
+// same evaluator the per-component FR path uses — and its output drives
+// engine.Render. A valuesMapping-less FR resolves to the flattened .values
+// pillar unchanged, so it renders identically either way.
 func evaluateBoundaryFRTemplates(
 	fr *types.FeatureRecipe,
 	frInstance string,

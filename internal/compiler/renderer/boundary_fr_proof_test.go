@@ -78,6 +78,17 @@ func sprintInt(n int) string {
 // the compose engine in sourced mode. The compose engine requires a
 // non-empty Source for non-Workload Render; the FR points at a temp
 // compose fragment that declares the `aggrega-gw` service.
+//
+// SCOPE: this helper bakes the `aggrega-gw` ports directly into the source
+// fragment and leaves valuesMapping empty (`{}`). It therefore exercises
+// boundary-FR PATH / DEDUP / MERGE coverage (its two callers,
+// TestComposeBridge_SingleBoundary_Proof and TestComposeBridge_MergedPath_Proof) —
+// it deliberately does NOT exercise the boundary-scope valuesMapping OVERLAY.
+// The overlay (the shipped core/compose-bridge's templated-ports path) is proven
+// separately and non-vacuously by bridgeFRViaValuesMapping +
+// TestDispatchBoundaryScopeFR_EvaluatesValuesMapping (ports come solely from
+// valuesMapping there). Keeping the two concerns in separate fixtures is
+// intentional: do not read this helper's green as overlay coverage.
 func boundaryScopeBridgeFR(t *testing.T) *types.FeatureRecipe {
 	t.Helper()
 	dir := t.TempDir()
@@ -394,4 +405,156 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 	if !strings.Contains(body, "nginx:alpine") {
 		t.Errorf("expected nginx:alpine (bridge image) in merged compose:\n%s", body)
 	}
+}
+
+// bridgeFRViaValuesMapping mirrors the SHIPPED core/compose-bridge shape: the
+// source fragment carries only the image, and the templated ports overlay comes
+// from valuesMapping (".infra.mappedPort"). This is the shape the existing
+// boundaryScopeBridgeFR helper sidesteps (it bakes ports into the fragment with an
+// empty valuesMapping), which is why the prior proof passed while the boundary-scope
+// valuesMapping overlay was silently dropped.
+func bridgeFRViaValuesMapping(t *testing.T) *types.FeatureRecipe {
+	t.Helper()
+	dir := t.TempDir()
+	fragPath := filepath.Join(dir, "bridge.yaml")
+	// Image only — NO ports. The ports must come from the valuesMapping overlay.
+	body := []byte("services:\n  aggrega-gw:\n    image: nginx:alpine\n")
+	if err := os.WriteFile(fragPath, body, 0o644); err != nil {
+		t.Fatalf("write bridge fragment: %v", err)
+	}
+	return &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
+		Spec: types.FeatureRecipeSpec{
+			Provider:       "compose",
+			Implements:     "core/compose-bridge:1.0.0",
+			ExecutionScope: "boundary",
+			Source:         fragPath,
+			ValuesMapping: types.ValuesMapping{Inline: "services:\n" +
+				"  aggrega-gw:\n" +
+				"    ports:\n" +
+				"      - \"{{ .infra.mappedPort }}:{{ .infra.mappedPort }}\"\n"},
+		},
+	}
+}
+
+// TestDispatchBoundaryScopeFR_EvaluatesValuesMapping is the non-vacuous proof that a
+// boundary-scope FeatureRecipe's valuesMapping is evaluated and overlaid onto its
+// source at render. The bridge FR's ports come ONLY from valuesMapping
+// (".infra.mappedPort" = 15432); the source fragment has no ports. The rendered
+// merged compose must carry "15432" (the overlay) AND "nginx:alpine" (the source).
+//
+// Revert the boundary_fr.go dispatch change (back to frValues :=
+// flattenOrderedMap(frCtx.Values), which never evaluates valuesMapping) and the
+// ports vanish — this test goes red. It is also the regression golden guarding the
+// shipped core/compose-bridge FR, whose port overlay this same gap silently dropped.
+func TestDispatchBoundaryScopeFR_EvaluatesValuesMapping(t *testing.T) {
+	t.Parallel()
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
+	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster"})
+
+	boundaryFeatures := types.OrderedMap[any]{}
+	boundaryFeatures.Set("bridge", map[string]any{
+		"type":  "core/compose-bridge:1.0.0",
+		"infra": map[string]any{"mappedPort": 15432},
+	})
+	clusterBoundary := types.Boundary{
+		Directory:  "dist/cluster",
+		Features:   boundaryFeatures,
+		Components: types.OrderedMap[types.BoundaryComponent]{},
+		Boundaries: types.OrderedMap[types.Boundary]{},
+	}
+	clusterBoundary.Components.Set("api", types.BoundaryComponent{})
+	clusterBoundary.Components.Set("db", types.BoundaryComponent{})
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set("cluster", clusterBoundary)
+
+	bridgeInfra := types.OrderedMap[any]{}
+	bridgeInfra.Set("mappedPort", 15432)
+	clusterBFProj := types.OrderedMap[types.IRBoundaryFeature]{}
+	clusterBFProj.Set("bridge", types.IRBoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: bridgeInfra})
+	bfProj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	bfProj.Set("cluster", clusterBFProj)
+
+	bi := map[string]*resolver.BoundaryInfra{
+		"api": {BoundaryPath: "cluster", Directory: "dist/cluster"},
+		"db":  {BoundaryPath: "cluster", Directory: "dist/cluster"},
+	}
+
+	bridgeEntry := types.IRFeatureEntry{Type: "core/compose-bridge:1.0.0"}
+	apiFV := types.OrderedMap[types.IRFeatureEntry]{}
+	apiFV.Set("bridge", bridgeEntry)
+	dbFV := types.OrderedMap[types.IRFeatureEntry]{}
+	dbFV.Set("bridge", bridgeEntry)
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set("api", apiFV)
+	fvm.Set("db", dbFV)
+
+	input := renderer.RendererInput{
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "compose-bridge-app"},
+			Spec: types.IRSpec{
+				Nodes:                nodes,
+				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
+				InfraMapping:         types.OrderedMap[json.RawMessage]{},
+				FeatureValuesMapping: fvm,
+				BoundaryFeatures:     bfProj,
+				Provenance:           types.IRProvenance{CompilerVersion: "test"},
+			},
+		},
+		FeatureOrder: ir.FeatureOrder{"api": []string{"bridge"}, "db": []string{"bridge"}},
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "compose-bridge-app"}},
+			Release:       &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
+			BoundaryInfra: bi,
+		},
+	}
+
+	apiRecipe := composeWorkloadRecipe("api", "api:1.0", 8080)
+	dbRecipe := composeWorkloadRecipe("db", "postgres:15", 5432)
+	bridgeFR := bridgeFRViaValuesMapping(t)
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			switch componentType {
+			case "core/api":
+				return apiRecipe, true
+			case "core/db":
+				return dbRecipe, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if strings.HasPrefix(featureType, "core/compose-bridge") {
+				return bridgeFR, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory())
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	body, ok := result.Files["dist/cluster/compose/docker-compose.yaml"]
+	if !ok {
+		t.Fatalf("expected merged compose at dist/cluster/compose/docker-compose.yaml; got %v", keysOfFiles(result.Files))
+	}
+	s := string(body)
+	// The overlay (from valuesMapping) must be present.
+	if !strings.Contains(s, "15432") {
+		t.Errorf("boundary-scope FR valuesMapping not evaluated: ports overlay (15432) missing from merged compose:\n%s", s)
+	}
+	// The source fragment's image must still be present (overlay merges, not replaces).
+	if !strings.Contains(s, "nginx:alpine") {
+		t.Errorf("bridge image (nginx:alpine) missing — source fragment not merged:\n%s", s)
+	}
+}
+
+func keysOfFiles(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
