@@ -200,11 +200,13 @@ func pullRun(cfg pullConfig) error {
 	// the configured cache directory so cached library.yaml files are not
 	// ingested as authored Tier-1 catalog.
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-	// Pass-1 only: a cross-document $ref to a remote library cannot expand at load
-	// (Pass-2) because the library is not yet fetched — the closure walk + library
-	// discovery below acquire it. Pull's job is the closure + pins; build runs the
-	// authoritative Pass-2 pillar gate (against the bridged catalog).
-	cat, err := catalog.LoadPassOne("", cacheDir, cfg.CatalogDir)
+	// Tolerant Pass-1: a file that fails to parse/index is skipped (recorded), not
+	// fatal — a broken catalog entity OUTSIDE this Release's closure never fails the
+	// pull. A cross-document $ref to a remote library cannot expand at load (Pass-2)
+	// because the library is not yet fetched — the closure walk + library discovery
+	// below acquire it; closure-scoped Pass-2 (after the bridge) is the validation
+	// gate, scoped to what the Release reaches.
+	cat, skipped, err := catalog.LoadPassOneTolerant("", cacheDir, cfg.CatalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -253,7 +255,7 @@ func pullRun(cfg pullConfig) error {
 	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, reuse)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
-		return fmt.Errorf("closure: %w", err)
+		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
 	}
 	// Discover + resolve the cross-document SchemaLibrary axis (ComputeClosure's
 	// entity walk does not descend Component/Feature schema bodies). Shared with
@@ -287,12 +289,14 @@ func pullRun(cfg pullConfig) error {
 	// its materialized pillars expand library-$ref-composed defaults exactly as
 	// build does. Source-descent reads graph.Spec.{Infra,Values}Mapping (schema
 	// defaults applied), and a library-$ref-composed default materializes only once
-	// Pass-2 expands the $ref against the SchemaLibraries map; pull and build must
-	// compute identical materialized pillars here or the pinned source identity
-	// diverges from build (ErrFetchIntegrity). Mirrors dispatchBuild's bridge: a
-	// locally-authored library is already in the Pass-1 catalog (skipped); a remote
-	// pinned library is read from the cache. With no remote libraries this reduces
-	// to a Pass-1+2 reload — restoring the validation the Pass-1-only load dropped.
+	// the $ref expands against the SchemaLibraries map; pull and build must compute
+	// identical materialized pillars here or the pinned source identity diverges
+	// from build (ErrFetchIntegrity). Mirrors dispatchBuild's bridge: a
+	// locally-authored library is already in the tolerant Pass-1 catalog (skipped);
+	// a remote pinned library is read from the cache. MERGE (not a reload): the
+	// libraries are merged into the existing tolerant catalog, so an out-of-closure
+	// broken entity is not re-walked-and-aborted; closure-scoped Pass-2 below is the
+	// validation gate, scoped to what the Release reaches.
 	extraLibs := map[string][]byte{}
 	for _, lib := range cl.SchemaLibraries {
 		if _, local := cat.SchemaLibraries[lib.URI]; local {
@@ -315,14 +319,21 @@ func pullRun(cfg pullConfig) error {
 		}
 		extraMappings[lib.URI] = data
 	}
-	bridged, warnings, err := catalog.LoadWithExtraLibraries("", cacheDir, extraLibs, extraMappings, cfg.CatalogDir)
+	bridgeWarnings, err := cat.MergeExtraLibraries(extraLibs, extraMappings)
 	if err != nil {
 		return fmt.Errorf("catalog load (bridged): %w", err)
 	}
-	for _, w := range warnings {
+	for _, w := range bridgeWarnings {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
-	cat = bridged
+	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
+	// the closure's libraries (local + bridged) — the same gate build applies, so a
+	// pull and a build of the same Release agree on what is valid. An in-closure
+	// schema-invalid entity, or a $ref to a skipped/missing library, fails loudly
+	// here; an out-of-closure break is never validated.
+	if err := cat.ValidateClosureScopedPillars(cl); err != nil {
+		return withSkipContext(err, skipped)
+	}
 
 	// Per-component source resolution. Run the shared resolve+flatten pass —
 	// the same path `aggrega build` uses (pipeline.ResolveAndFlatten) — so each

@@ -219,6 +219,31 @@ func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extraSchemas, extraM
 	if err != nil {
 		return nil, nil, err
 	}
+	warnings, err := c.MergeExtraLibraries(extraSchemas, extraMappings)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := c.validateSchemaPillarsPass(); err != nil {
+		return nil, nil, err
+	}
+	return c, warnings, nil
+}
+
+// MergeExtraLibraries merges lockfile-pinned remote libraries (the "URI → verified
+// bytes" maps produced by ReadPinnedLibrary) into an already-loaded catalog,
+// local-wins on a name collision (with a returned warning), WITHOUT running
+// whole-catalog Pass-2 validation. It is the bridge step shared by
+// LoadWithExtraLibraries (which follows it with Pass-2) and the closure-scoped
+// build / pull paths (which follow it with closure-scoped Pass-2 instead, so a
+// broken out-of-closure entity does not fail the merge).
+//
+// Each bridged library is parsed + indexed exactly as indexFile does for a local
+// one, and its entityBytes carry the EXACT verified bytes (not a re-serialised
+// parse) so the lockfile-drift verify — which recomputes the content digest from
+// entityBytes — stays faithful. Warnings are returned in sorted-name order for
+// deterministic output. Schema and mapping libraries are keyed in separate maps,
+// so a name shared across the two kinds does not collide.
+func (c *Catalog) MergeExtraLibraries(extraSchemas, extraMappings map[string][]byte) ([]string, error) {
 	var warnings []string
 
 	for _, name := range sortedKeys(extraSchemas) {
@@ -228,24 +253,14 @@ func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extraSchemas, extraM
 				name))
 			continue
 		}
-		// Parse + index exactly as indexFile does for a local SchemaLibrary, so a
-		// bridged remote library is load-validated identically AND its entityBytes
-		// carry the exact verified bytes — the lockfile-drift verify recomputes the
-		// content digest from entityBytes, so storing the raw bytes (not a
-		// re-serialised parse) keeps that verify faithful.
 		lib, perr := parseSchemaLibraryEntity(extraSchemas[name])
 		if perr != nil {
-			return nil, nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged SchemaLibrary %q", name))
+			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged SchemaLibrary %q", name))
 		}
 		c.SchemaLibraries[name] = lib
 		c.entityBytes[entityBytesKey("SchemaLibrary", name)] = extraSchemas[name]
 	}
 
-	// The mapping axis mirrors the schema axis exactly: local-wins on a name
-	// collision (with a warning), and the bridged entityBytes carry the exact
-	// verified bytes so the lockfile-drift verify stays faithful. Mapping and
-	// schema libraries are keyed in separate catalog maps, so a name shared
-	// across the two kinds does not collide.
 	for _, name := range sortedKeys(extraMappings) {
 		if _, local := c.MappingLibraries[name]; local {
 			warnings = append(warnings, fmt.Sprintf(
@@ -255,16 +270,13 @@ func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extraSchemas, extraM
 		}
 		lib, perr := parseMappingLibraryEntity(extraMappings[name])
 		if perr != nil {
-			return nil, nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged MappingLibrary %q", name))
+			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged MappingLibrary %q", name))
 		}
 		c.MappingLibraries[name] = lib
 		c.entityBytes[entityBytesKey("MappingLibrary", name)] = extraMappings[name]
 	}
 
-	if err := c.validateSchemaPillarsPass(); err != nil {
-		return nil, nil, err
-	}
-	return c, warnings, nil
+	return warnings, nil
 }
 
 // sortedKeys returns the map's keys in lexicographic order for deterministic
@@ -289,12 +301,55 @@ func LoadPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, erro
 	return loadAllPassOne(workspaceRoot, cacheDir, dirs...)
 }
 
+// SkippedEntity records a catalog file the TOLERANT Pass-1 walk
+// (LoadPassOneTolerant) could not index — a parse failure, a load-time shape
+// violation, a duplicate identity. Kind and Name are best-effort from a header
+// re-parse (empty when the YAML is malformed enough to lose even the header);
+// Err is the original indexing error. Callers replay these on an in-closure
+// resolution failure so a tolerated out-of-closure skip never hides WHY an
+// entity the Release reaches went missing.
+type SkippedEntity struct {
+	Path string
+	Kind string
+	Name string
+	Err  error
+}
+
 // loadAllPassOne runs Pass 1 only — the filesystem walk + per-file indexing with
 // the content-addressed cache directory skipped — and returns the catalog BEFORE
 // Pass-2 pillar validation (validateSchemaPillarsPass). LoadAllWithCacheDir runs
 // Pass 2 immediately after; LoadWithExtraLibraries injects lockfile-pinned
 // libraries between the two passes. cacheDir "" disables the cache skip.
+//
+// Fail-fast: a per-file read / parse / index error aborts the whole walk. The
+// tolerant counterpart (LoadPassOneTolerant) skips-and-records instead, for the
+// closure-scoped build / pull paths where an out-of-closure broken entity must
+// not fail an unrelated Release.
 func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
+	c, _, err := loadAllPassOneImpl(workspaceRoot, cacheDir, false, dirs...)
+	return c, err
+}
+
+// LoadPassOneTolerant runs Pass 1 like LoadPassOne but SKIPS a file that fails to
+// read, parse, or index — recording it in the returned []SkippedEntity — rather
+// than aborting the walk. The catalog returned holds every parseable entity; a
+// broken file is simply absent. This is the closure-scoped build / pull load:
+// combined with closure-scoped Pass-2, a broken entity OUTSIDE the Release's
+// closure never fails the build, while an in-closure break still fails loudly
+// (it is either absent — surfaced by the closure walk, with the skip replayed —
+// or present-but-schema-invalid, surfaced by closure-scoped Pass-2).
+//
+// The skip is per-file and post-`indexFile`: `indexFile` mutates the catalog
+// only after a successful parse, so a skipped file leaves no partial state.
+func LoadPassOneTolerant(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, []SkippedEntity, error) {
+	return loadAllPassOneImpl(workspaceRoot, cacheDir, true, dirs...)
+}
+
+// loadAllPassOneImpl is the shared Pass-1 walk. When tolerant is false it is
+// fail-fast (the historical loadAllPassOne behavior, byte-identical); when true a
+// per-file read/parse/index failure is recorded and skipped. The returned skip
+// slice is nil in the fail-fast mode.
+func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...string) (*Catalog, []SkippedEntity, error) {
 	cacheClean := ""
 	if cacheDir != "" {
 		cacheClean = filepath.Clean(cacheDir)
@@ -315,6 +370,7 @@ func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, e
 		aggregateSources: make(map[string]string),
 		entityBytes:      make(map[string][]byte),
 	}
+	var skipped []SkippedEntity
 	for _, dir := range dirs {
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
@@ -337,14 +393,37 @@ func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, e
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {
+				if tolerant {
+					skipped = append(skipped, newSkippedEntity(path, data, err))
+					return nil
+				}
 				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "read catalog file")
 			}
-			return c.indexFile(data, path)
+			if ierr := c.indexFile(data, path); ierr != nil {
+				if tolerant {
+					skipped = append(skipped, newSkippedEntity(path, data, ierr))
+					return nil
+				}
+				return ierr
+			}
+			return nil
 		}); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 		}
 	}
-	return c, nil
+	return c, skipped, nil
+}
+
+// newSkippedEntity builds a SkippedEntity, recovering kind + name from a
+// best-effort header re-parse (empty when the YAML is too malformed to peek).
+func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
+	se := SkippedEntity{Path: path, Err: err}
+	var hdr fileHeader
+	if yaml.Unmarshal(data, &hdr) == nil {
+		se.Kind = hdr.Kind
+		se.Name = hdr.Metadata.Name
+	}
+	return se
 }
 
 // ReadPinnedLibrary reads a lockfile-pinned SchemaLibrary's VERIFIED BYTES from

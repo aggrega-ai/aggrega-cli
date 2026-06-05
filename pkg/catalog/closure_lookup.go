@@ -11,11 +11,108 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
+
+// ValidateClosureScopedPillars validates ONLY the catalog Components and Features
+// the closure reaches — the closure-scoped counterpart to the whole-catalog
+// Pass-2 (validateSchemaPillarsPass). It intersects cl.Entities (by
+// version-stripped name) with the loaded Components / Features and delegates to
+// ValidateClosurePillars against the catalog's SchemaLibraries (local + bridged).
+//
+// A closure entity whose schema `$ref` names a library absent from the catalog —
+// a broken library skipped at tolerant load, or a genuinely missing one — fails
+// here: the hard in-closure library reject. An out-of-closure entity is never in
+// cl.Entities, so a broken one is never validated and never build-fatal. Pass-2
+// runs over the entities as loaded (pre-extends), exactly as the whole-catalog
+// pass does.
+func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
+	comps := map[string]types.Component{}
+	compSrc := map[string]string{}
+	feats := map[string]types.Feature{}
+	featSrc := map[string]string{}
+	for _, e := range cl.Entities {
+		name := lookupNameFromURI(e.URI)
+		if comp, ok := c.Components[name]; ok {
+			comps[name] = comp
+			compSrc[name] = c.componentSources[name]
+		}
+		if feat, ok := c.Features[name]; ok {
+			feats[name] = feat
+			featSrc[name] = c.featureSources[name]
+		}
+	}
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, c.SchemaLibraries)
+}
+
+// ResolveClosureExtends resolves the extends chain for ONLY the Components and
+// Features the closure reaches, in sorted-name order, mutating them in place —
+// the closure-scoped counterpart to ResolveAllExtends. An out-of-closure entity's
+// extends is never resolved, so a broken out-of-closure parent never fails the
+// build; an in-closure child whose parent is missing (skipped at tolerant load)
+// or malformed fails loudly. Each child's full chain is re-resolved from the
+// child via the catalog lookup, so an out-of-closure (unresolved) parent in the
+// chain is still merged correctly. Names are deduped (cl.Entities may list one
+// entity under several version-suffixed URIs) so no chain is double-merged.
+func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.ValidationError {
+	compLookup := func(uri string) (types.Component, bool) { comp, ok := c.Components[uri]; return comp, ok }
+	featLookup := func(uri string) (types.Feature, bool) { feat, ok := c.Features[uri]; return feat, ok }
+
+	compSet := map[string]struct{}{}
+	featSet := map[string]struct{}{}
+	for _, e := range cl.Entities {
+		name := lookupNameFromURI(e.URI)
+		if _, ok := c.Components[name]; ok {
+			compSet[name] = struct{}{}
+		}
+		if _, ok := c.Features[name]; ok {
+			featSet[name] = struct{}{}
+		}
+	}
+	compNames := make([]string, 0, len(compSet))
+	for name := range compSet {
+		compNames = append(compNames, name)
+	}
+	sort.Strings(compNames)
+	featNames := make([]string, 0, len(featSet))
+	for name := range featSet {
+		featNames = append(featNames, name)
+	}
+	sort.Strings(featNames)
+
+	var errs []*validator.ValidationError
+	for _, name := range compNames {
+		comp := c.Components[name]
+		if comp.Spec.Extends == "" {
+			continue
+		}
+		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
+		if len(vErrs) > 0 {
+			errs = append(errs, vErrs...)
+			continue
+		}
+		c.Components[name] = resolved
+	}
+	for _, name := range featNames {
+		feat := c.Features[name]
+		if feat.Spec.Extends == "" {
+			continue
+		}
+		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)
+		if len(vErrs) > 0 {
+			errs = append(errs, vErrs...)
+			continue
+		}
+		c.Features[name] = resolved
+	}
+	return errs
+}
 
 // OCIPuller is the minimum surface ClosureLookup needs to reach the
 // Tier-3 (network) fallback. Production wires this to a small adapter
@@ -598,6 +695,15 @@ func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
 		return "", "", false
 	}
 	return base, version, true
+}
+
+// EntityNameFromURI returns the catalog index name for an entity URI — the URI
+// with any trailing ":<version>" pin stripped (metadata.name, which may itself
+// contain "/" separators). Exported for callers outside the package — the
+// closure-scoped library-discovery filter intersects closure entity URIs with the
+// name-keyed catalog maps through this.
+func EntityNameFromURI(uri string) string {
+	return lookupNameFromURI(uri)
 }
 
 // lookupNameFromURI returns the URI with any trailing ":<version>"

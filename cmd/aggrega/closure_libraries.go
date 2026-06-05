@@ -21,12 +21,15 @@ import (
 // libraries (minimum-version selection + the injected lookup), and descends them
 // transitively to a fixpoint, merging the result into cl.SchemaLibraries.
 //
-// Scanning the whole loaded catalog (not just the entity closure) matches what
-// Load's Pass-2 pillar validation expands — every catalog Component/Feature
-// schema — so every library a loaded entity references is pinned and verified,
-// and the build's bridge has every library Pass-2 will need. Iteration is
+// Scanning is CLOSURE-SCOPED: only the Components and Features the Release reaches
+// (cl.Entities) are scanned for $ref:s, matching the closure-scoped Pass-2 gate —
+// so a library referenced only by an out-of-closure entity is neither pinned nor
+// resolution-fatal, and an out-of-closure entity with a dangling $ref never fails
+// the build/pull. Transitive descent into a discovered library's own $ref:s is
+// unscoped (those libraries are in-closure by construction). Iteration is
 // sorted-name for deterministic output.
 func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup closure.Lookup) error {
+	inClosure := closureNameSet(cl)
 	var consumers []closure.SchemaConsumer
 
 	compNames := make([]string, 0, len(cat.Components))
@@ -35,6 +38,9 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 	}
 	sort.Strings(compNames)
 	for _, name := range compNames {
+		if _, ok := inClosure[name]; !ok {
+			continue
+		}
 		comp := cat.Components[name]
 		consumers = append(consumers, closure.SchemaConsumer{URI: name, Schema: &comp.Spec.Schema})
 	}
@@ -45,6 +51,9 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 	}
 	sort.Strings(featNames)
 	for _, name := range featNames {
+		if _, ok := inClosure[name]; !ok {
+			continue
+		}
 		feat := cat.Features[name]
 		consumers = append(consumers, closure.SchemaConsumer{URI: name, Schema: &feat.Spec.Schema})
 	}
@@ -87,12 +96,16 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup closure.Lookup) error {
 	var consumers []closure.MappingConsumer
 
+	inClosure := closureNameSet(cl)
 	recipeNames := make([]string, 0, len(cat.Recipes))
 	for name := range cat.Recipes {
 		recipeNames = append(recipeNames, name)
 	}
 	sort.Strings(recipeNames)
 	for _, name := range recipeNames {
+		if _, ok := inClosure[catalog.EntityNameFromURI(name)]; !ok {
+			continue
+		}
 		if tmpl, ok := valuesMappingImportDirective(cat.Recipes[name].Spec.ValuesMapping); ok {
 			consumers = append(consumers, closure.MappingConsumer{URI: name, Template: tmpl})
 		}
@@ -104,6 +117,9 @@ func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, 
 	}
 	sort.Strings(frNames)
 	for _, name := range frNames {
+		if _, ok := inClosure[catalog.EntityNameFromURI(name)]; !ok {
+			continue
+		}
 		if tmpl, ok := valuesMappingImportDirective(cat.FeatureRecipes[name].Spec.ValuesMapping); ok {
 			consumers = append(consumers, closure.MappingConsumer{URI: name, Template: tmpl})
 		}
@@ -127,6 +143,16 @@ func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, 
 	}
 
 	return cl.DiscoverMappingLibraries(lookup, consumers, body)
+}
+
+// closureNameSet is the set of catalog index names (version-stripped) the
+// closure reaches, for filtering library discovery to closure entities.
+func closureNameSet(cl *closure.Closure) map[string]struct{} {
+	set := make(map[string]struct{}, len(cl.Entities))
+	for _, e := range cl.Entities {
+		set[catalog.EntityNameFromURI(e.URI)] = struct{}{}
+	}
+	return set
 }
 
 // valuesMappingImportDirective renders a valuesMapping that carries an `$import:`

@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -88,13 +89,14 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	}
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
 
-	// Pass-1 catalog load. Determines the local library set (which lockfile-pinned
-	// libraries are already authored locally and must NOT be bridged from the
-	// cache) and serves the auto-pull closure walk. Pass 1 alone does not expand
-	// cross-document $ref pillars, so a reference to a pulled remote library does
-	// not fail here — which is exactly why the lockfile + library bridge must run
-	// before Pass-2 pillar validation.
-	passOne, err := catalog.LoadPassOne(wsRoot, cacheDir, catalogDir)
+	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
+	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity
+	// OUTSIDE this Release's closure never fails the build. The closure walk +
+	// closure-scoped Pass-2 below validate exactly what the Release reaches;
+	// catalog-wide validation is `aggrega lint`'s job. Pass 1 does not expand
+	// cross-document $ref pillars, so a reference to a not-yet-bridged remote
+	// library does not fail here.
+	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, catalogDir)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -111,16 +113,15 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		return fmt.Errorf("load lockfile: %w", err)
 	}
 
-	// Bridge lockfile-pinned remote libraries into the catalog BEFORE Pass-2, so a
-	// cross-document $ref to a pulled remote SchemaLibrary (in the cache + pinned,
-	// absent from the local walk) resolves at pillar validation. A locally-authored
-	// library has a pin but no cache slot, so only NON-LOCAL pins are bridged —
-	// reading a local pin would miss the cache. The bridged libraries pass through
-	// the same Pass-2 reject gate as local ones (LoadWithExtraLibraries runs Pass-2
-	// over the merged set).
+	// Bridge lockfile-pinned remote libraries into the catalog (merge only — the
+	// authoritative gate is the closure-scoped Pass-2 below, not a whole-catalog
+	// pass). A locally-authored library has a pin but no cache slot, so only
+	// NON-LOCAL pins are bridged. ReadPinnedLibrary verifies each against its pin
+	// and HALTS on an integrity mismatch, so a tampered in-closure library is loud,
+	// never silently dropped.
 	extraLibs := map[string][]byte{}
 	for _, pin := range lf.SchemaLibraries {
-		if _, local := passOne.SchemaLibraries[pin.URI]; local {
+		if _, local := cat.SchemaLibraries[pin.URI]; local {
 			continue
 		}
 		data, rerr := catalog.ReadPinnedLibrary(wsRoot, cacheDir, pin.URI, pin.ResolvedVersion, pin.Digest)
@@ -131,7 +132,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	}
 	extraMappings := map[string][]byte{}
 	for _, pin := range lf.MappingLibraries {
-		if _, local := passOne.MappingLibraries[pin.URI]; local {
+		if _, local := cat.MappingLibraries[pin.URI]; local {
 			continue
 		}
 		data, rerr := catalog.ReadPinnedLibrary(wsRoot, cacheDir, pin.URI, pin.ResolvedVersion, pin.Digest)
@@ -140,49 +141,16 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		}
 		extraMappings[pin.URI] = data
 	}
-	cat, warnings, err := catalog.LoadWithExtraLibraries(wsRoot, cacheDir, extraLibs, extraMappings, catalogDir)
+	bridgeWarnings, err := cat.MergeExtraLibraries(extraLibs, extraMappings)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
-	for _, w := range warnings {
+	for _, w := range bridgeWarnings {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
 
-	// Lockfile-drift verification against the BRIDGED catalog. The bridged remote
-	// libraries resolve at Tier-1 with their pinned content digest (entityBytes
-	// carry the exact verified bytes), so the freshly-computed closure is compared
-	// faithfully to the lockfile and halts on any (URI, version, digest) drift with
-	// ErrLockfileDrift. Hermetic: the closure lookup injects a nil OCIPuller, so
-	// Tier 3 never fires at build time. Only a pre-existing lockfile is verified;
-	// an auto-pulled one matches by construction.
-	if lockfilePreexisted {
-		if err := verifyLockfileAgainstClosure(releasePath, catalogDir, lockfile.PathFor(releasePath), wsCfg, cat); err != nil {
-			return err
-		}
-	}
-
-	// Resolve extends inheritance for every Component and Feature so downstream
-	// guards/renderer see the fully-merged entity (inherited labels, secretNames,
-	// usesSchema, composed schema).
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
-		for _, e := range extErrs {
-			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
-		}
-		return fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs))
-	}
-
-	// Surface non-fatal deprecation notices (e.g. legacy secretNames usage).
-	for _, w := range cat.DeprecationWarnings() {
-		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
-	}
-
-	// Surface non-fatal lint advisories from catalog load (e.g.
-	// schema-pillar-overlap warnings).
-	for _, w := range cat.LintWarnings() {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-
-	// Load Release + derive Aggregate + Manifest paths.
+	// Load Release + derive Aggregate + Manifest paths. Loaded before the closure
+	// walk (which they feed) and reused by the pipeline below.
 	releaseDir := filepath.Dir(releasePath)
 	rel, err := resolver.LoadRelease(releasePath)
 	if err != nil {
@@ -194,9 +162,57 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
+	aggregate, err := resolver.LoadAggregate(aggPath)
+	if err != nil {
+		return fmt.Errorf("load aggregate: %w", err)
+	}
 	aggBytes, err := os.ReadFile(aggPath)
 	if err != nil {
 		return fmt.Errorf("read aggregate: %w", err)
+	}
+
+	// Compute the Release's closure ONCE — hermetic (nil puller, Tier-3 disabled),
+	// against the bridged catalog. Reused for closure-scoped validation, the
+	// lockfile-drift check, and extends resolution. Out-of-closure entities are
+	// never resolved here; an in-closure entity that was skipped at tolerant load
+	// surfaces as an unresolvable URI, and withSkipContext replays WHY it was
+	// skipped so the failure is never a bare "not found".
+	cl, err := computeBuildClosure(rel, manifest, aggregate, releaseDir, wsCfg, cat, wsRoot, cacheDir)
+	if err != nil {
+		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
+	}
+
+	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
+	// the closure's libraries (local + bridged). An in-closure entity that is
+	// schema-invalid — or whose $ref names a library skipped (broken) or missing —
+	// fails loudly here (the hard in-closure library reject); an out-of-closure
+	// break is never validated.
+	if err := cat.ValidateClosureScopedPillars(cl); err != nil {
+		return withSkipContext(err, skipped)
+	}
+
+	// Lockfile-drift verification against the freshly-computed closure. Only a
+	// pre-existing lockfile is verified; an auto-pulled one matches by construction.
+	if lockfilePreexisted {
+		if err := lockfile.Verify(lf, cl); err != nil {
+			return fmt.Errorf("%w; run `aggrega pull --regenerate %s` to refresh the lockfile against current catalog state",
+				err, releasePath)
+		}
+	}
+
+	// Resolve extends inheritance for the closure's Components and Features so the
+	// pipeline sees fully-merged entities. Closure-scoped: an out-of-closure broken
+	// extends never fails the build; an in-closure broken parent does.
+	if extErrs := cat.ResolveClosureExtends(cl); len(extErrs) > 0 {
+		for _, e := range extErrs {
+			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+		}
+		return withSkipContext(fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs)), skipped)
+	}
+
+	// Surface non-fatal deprecation notices (e.g. legacy secretNames usage).
+	for _, w := range cat.DeprecationWarnings() {
+		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
 	}
 
 	// engineFactory dispatches recipe.spec.provider to a fresh-per-call
@@ -324,62 +340,53 @@ func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Confi
 	return false, nil
 }
 
-// verifyLockfileAgainstClosure loads the per-Release lockfile and
-// compares it to a freshly-computed closure (Tier-1 + Tier-2 only —
-// the injected OCIPuller is nil so Tier 3 never runs).
-func verifyLockfileAgainstClosure(releasePath, catalogDir, lockfilePath string, wsCfg workspaceconfig.Config, cat *catalog.Catalog) error {
-	lf, diags, err := lockfile.LoadLockfile(lockfilePath)
-	if err != nil {
-		return fmt.Errorf("load lockfile %s: %w", lockfilePath, err)
-	}
-	for _, d := range diags {
-		fmt.Fprintf(os.Stderr, "  lockfile: %s\n", d.Message)
-	}
-
-	releaseDir := filepath.Dir(releasePath)
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		return fmt.Errorf("load release: %w", err)
-	}
-	manifest, err := resolver.LoadManifest(filepath.Join(releaseDir, rel.Spec.Manifest+".yaml"))
-	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
-	}
-	aggregate, err := resolver.LoadAggregate(filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"))
-	if err != nil {
-		return fmt.Errorf("load aggregate: %w", err)
-	}
-
-	workspaceRoot, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("workspace root: %w", err)
-	}
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-
+// computeBuildClosure walks the Release's closure ONCE, hermetically (nil
+// OCIPuller, so Tier 3 never fires at build time), against the bridged catalog,
+// and resolves the cross-document SchemaLibrary + MappingLibrary axes the entity
+// walk does not descend. The single closure is reused for closure-scoped
+// validation, lockfile-drift verification, and closure-scoped extends — so the
+// catalog is walked once, not once per concern. Discovery runs against the
+// bridged catalog (the same producer pull uses) so a remote pinned library
+// resolves at Tier-1 and the drift compare is like-for-like.
+func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, releaseDir string, wsCfg workspaceconfig.Config, cat *catalog.Catalog, wsRoot, cacheDir string) (closure.Closure, error) {
 	externals := lockfile.LoadExternalEntities(rel,
 		filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"),
 		filepath.Join(releaseDir, rel.Spec.Manifest+".yaml"))
-	lookup := cat.ClosureLookupWithExternals(nil, workspaceRoot, cacheDir, externals)
+	lookup := cat.ClosureLookupWithExternals(nil, wsRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
-		return fmt.Errorf("closure: %w", err)
+		return closure.Closure{}, err
 	}
-	// Discover + resolve the cross-document SchemaLibrary axis against the BRIDGED
-	// catalog (the same shared producer pull's pin flow uses), so the recomputed
-	// closure includes the bridged libraries and lockfile.Verify compares like
-	// for like — no spurious drift on a remote pinned library.
 	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
-		return fmt.Errorf("closure: schema-library discovery: %w", err)
+		return closure.Closure{}, fmt.Errorf("schema-library discovery: %w", err)
 	}
 	if err := discoverClosureMappingLibraries(&cl, cat, lookup); err != nil {
-		return fmt.Errorf("closure: mapping-library discovery: %w", err)
+		return closure.Closure{}, fmt.Errorf("mapping-library discovery: %w", err)
 	}
+	return cl, nil
+}
 
-	if err := lockfile.Verify(lf, cl); err != nil {
-		return fmt.Errorf("%w; run `aggrega pull --regenerate %s` to refresh the lockfile against current catalog state",
-			err, releasePath)
+// withSkipContext annotates an in-closure resolution / validation failure with
+// the catalog files the TOLERANT Pass-1 load skipped, so a tolerated skip never
+// hides WHY an entity the Release reaches went missing. A skipped file whose
+// header named the kind+name is reported with that identity; a file too malformed
+// to peek is reported by path. No-op when nothing was skipped or err is nil.
+func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
+	if err == nil || len(skipped) == 0 {
+		return err
 	}
-	return nil
+	var b strings.Builder
+	b.WriteString(err.Error())
+	b.WriteString("\n  note: catalog files skipped at load (one may be the unresolved in-closure entity):")
+	for _, s := range skipped {
+		switch {
+		case s.Kind != "" && s.Name != "":
+			fmt.Fprintf(&b, "\n    - %s %q (%s): %s", s.Kind, s.Name, s.Path, s.Err)
+		default:
+			fmt.Fprintf(&b, "\n    - %s: %s", s.Path, s.Err)
+		}
+	}
+	return fmt.Errorf("%s", b.String())
 }
 
 // writeArtifacts writes the rendered file map to disk under outRoot,
