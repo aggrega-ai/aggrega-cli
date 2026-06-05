@@ -620,10 +620,8 @@ func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []name
 // emitted before inner boundaries — same cascade discipline as the
 // per-subsystem level.
 //
-// Boundary feature payloads arrive as untyped any (Boundary
-// .Features is OrderedMap[any]) because Release boundary YAML
-// authors features as opaque maps the renderer interprets per-feature;
-// parseBoundaryFeature below extracts the type and infra fields.
+// Boundary features are typed [types.BoundaryFeature] values decoded
+// directly from YAML (Boundary.Features is OrderedMap[BoundaryFeature]).
 // Mergeable values are NOT collected here — Release boundaries
 // contribute infra-only under the pillar-split rule (values from the
 // Aggregate, infra from the Release), and collectNodeFeatures applies
@@ -643,8 +641,7 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 			break
 		}
 		// Collect boundary-wide features (author order)
-		for fname, raw := range boundary.Features.All() {
-			bf := parseBoundaryFeature(raw)
+		for fname, bf := range boundary.Features.All() {
 			result = append(result, namedBoundaryFeature{name: fname, feat: bf})
 		}
 		current = boundary.Boundaries
@@ -702,8 +699,7 @@ func buildBoundaryFeaturesProjection(boundaries types.OrderedMap[types.Boundary]
 			}
 			if boundary.Features.Len() > 0 {
 				inner := types.OrderedMap[types.IRBoundaryFeature]{}
-				for fname, raw := range boundary.Features.All() {
-					bf := parseBoundaryFeature(raw)
+				for fname, bf := range boundary.Features.All() {
 					inner.Set(fname, types.IRBoundaryFeature{Type: bf.Type, Infra: bf.Infra})
 				}
 				if inner.Len() > 0 {
@@ -715,57 +711,6 @@ func buildBoundaryFeaturesProjection(boundaries types.OrderedMap[types.Boundary]
 	}
 	walk(boundaries, "")
 	return out
-}
-
-func parseBoundaryFeature(raw any) types.BoundaryFeature {
-	bf := types.BoundaryFeature{}
-	switch m := raw.(type) {
-	case *types.OrderedMap[any]:
-		if m == nil {
-			return bf
-		}
-		if t, ok := m.Get("type"); ok {
-			if s, ok := t.(string); ok {
-				bf.Type = s
-			}
-		}
-		if infraRaw, ok := m.Get("infra"); ok {
-			switch infra := infraRaw.(type) {
-			case *types.OrderedMap[any]:
-				if infra != nil {
-					bf.Infra = *infra
-				}
-			case map[string]any:
-				om := types.OrderedMap[any]{}
-				keys := make([]string, 0, len(infra))
-				for k := range infra {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, k := range keys {
-					om.Set(k, infra[k])
-				}
-				bf.Infra = om
-			}
-		}
-	case map[string]any:
-		if t, ok := m["type"].(string); ok {
-			bf.Type = t
-		}
-		if infra, ok := m["infra"].(map[string]any); ok {
-			om := types.OrderedMap[any]{}
-			keys := make([]string, 0, len(infra))
-			for k := range infra {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				om.Set(k, infra[k])
-			}
-			bf.Infra = om
-		}
-	}
-	return bf
 }
 
 func splitPath(path string) []string {

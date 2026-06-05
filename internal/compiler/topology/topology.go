@@ -317,7 +317,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// documented in this package's doc.go and the consumer-side commitment
 	// in internal/compiler/ir/doc.go).
 	var edges []NormalizedEdge
-	for nodeID := range flat.Nodes.All() {
+	for nodeID, node := range flat.Nodes.All() {
 		// Component uses
 		comp := findComponent(agg, nodeID)
 		if comp != nil && comp.Uses.Len() > 0 {
@@ -353,6 +353,40 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				}
 			}
 		}
+
+		// Scope-wide feature uses. A feature attached subsystem-wide or
+		// boundary-wide contributes its uses-edge from every component in
+		// the scope — the "every component here depends on shared target
+		// D" pattern declared once at the scope rather than repeated on
+		// each component. The edge stamps the scope feature as its origin,
+		// so the consumer is injected the target's provides exactly as for
+		// a per-component feature uses-edge. The scope feature's own
+		// values/infra cascade is handled separately in the IR builder and
+		// is unaffected by this edge projection. Edges flow in
+		// outer-to-inner cascade order, author order within each level,
+		// mirroring the IR feature cascade.
+		for _, sf := range subsystemFeatureUses(agg, node.SubsystemPath) {
+			if sf.uses.Len() == 0 {
+				continue
+			}
+			subEdges, err := normalizeUses(sf.uses, nodeID, sf.featureType, sf.instanceName)
+			if err != nil {
+				return nil, err
+			}
+			edges = append(edges, subEdges...)
+		}
+		if cfg.ResolveResult.Release != nil {
+			for _, bf := range boundaryFeatureUses(cfg.ResolveResult.Release.Spec.Boundaries, node.BoundaryPath) {
+				if bf.uses.Len() == 0 {
+					continue
+				}
+				bndEdges, err := normalizeUses(bf.uses, nodeID, bf.featureType, bf.instanceName)
+				if err != nil {
+					return nil, err
+				}
+				edges = append(edges, bndEdges...)
+			}
+		}
 	}
 
 	return &TopologyResult{
@@ -362,6 +396,95 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		SecretAttachments:  flat.SecretAttachments,
 		ExportedComponents: flat.ExportedComponents,
 	}, nil
+}
+
+// scopeFeatureUses carries the three fields the edge projection needs
+// from a scope-wide (subsystem or boundary) feature attachment: the
+// attachment's instance name (the origin-feature instance the IR
+// consume-side resolves against), its feature type (the origin feature),
+// and its uses block. It unifies the subsystem-side [types.FeatureInstance]
+// and boundary-side [types.BoundaryFeature] shapes for the projection loop.
+type scopeFeatureUses struct {
+	instanceName string
+	featureType  string
+	uses         types.OrderedMap[types.UsesSocketValue]
+}
+
+// subsystemFeatureUses walks the subsystem chain named by subsystemPath
+// (the dotted path stamped on each node during flattening) from outer to
+// inner, returning every subsystem-level feature attachment in author
+// order. Mirrors the IR feature cascade's subsystem level so the uses-edge
+// projection and the values/infra cascade agree on which features apply to
+// a node and in what order.
+func subsystemFeatureUses(agg *types.Aggregate, subsystemPath string) []scopeFeatureUses {
+	if agg == nil {
+		return nil
+	}
+	parts := splitScopePath(subsystemPath)
+	if len(parts) == 0 {
+		return nil
+	}
+	var result []scopeFeatureUses
+	current := agg.Spec.Subsystems
+	for _, part := range parts {
+		sub, ok := current.Get(part)
+		if !ok {
+			break
+		}
+		for fname, feat := range sub.Features.All() {
+			result = append(result, scopeFeatureUses{instanceName: fname, featureType: feat.Type, uses: feat.Uses})
+		}
+		current = sub.Subsystems
+	}
+	return result
+}
+
+// boundaryFeatureUses walks the Release boundary chain named by
+// boundaryPath (the "/"-joined boundary-name chain stamped on each node)
+// from outer to inner, returning every boundary-wide feature attachment in
+// author order. Mirrors the IR feature cascade's boundary level.
+func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPath string) []scopeFeatureUses {
+	parts := splitScopePath(boundaryPath)
+	if len(parts) == 0 {
+		return nil
+	}
+	var result []scopeFeatureUses
+	current := boundaries
+	for _, part := range parts {
+		boundary, ok := current.Get(part)
+		if !ok {
+			break
+		}
+		for fname, feat := range boundary.Features.All() {
+			result = append(result, scopeFeatureUses{instanceName: fname, featureType: feat.Type, uses: feat.Uses})
+		}
+		current = boundary.Boundaries
+	}
+	return result
+}
+
+// splitScopePath splits a subsystem (dot-joined) or boundary (slash-joined)
+// scope path into its segments, dropping empty segments. It accepts both
+// separators so a single helper serves both cascades, matching the IR
+// builder's path-splitting discipline.
+func splitScopePath(path string) []string {
+	if path == "" {
+		return nil
+	}
+	var parts []string
+	start := 0
+	for i, ch := range path {
+		if ch == '/' || ch == '.' {
+			if i > start {
+				parts = append(parts, path[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if len(path) > start {
+		parts = append(parts, path[start:])
+	}
+	return parts
 }
 
 // findComponent looks up a ComponentInstance by its (unflattened) name in

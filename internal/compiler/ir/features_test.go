@@ -1463,62 +1463,6 @@ func TestIRBuilder_StructuredAnnotation_PerSubkeyProvenance(t *testing.T) {
 	// to the single annotation source.
 }
 
-// TestParseBoundaryFeature_TypedMapForm pins the *types.OrderedMap[any]
-// branch of the boundary-feature parser. Release boundary YAML decodes
-// into the typed OrderedMap; the parser must extract the type field
-// and the infra OrderedMap unchanged.
-func TestParseBoundaryFeature_TypedMapForm(t *testing.T) {
-	t.Parallel()
-	infra := types.OrderedMap[any]{}
-	infra.Set("upstream", "host.example.com")
-	m := types.OrderedMap[any]{}
-	m.Set("type", "feature.myco/rewrite-host")
-	m.Set("infra", &infra)
-	got := parseBoundaryFeature(&m)
-	if got.Type != "feature.myco/rewrite-host" {
-		t.Errorf("Type = %q; want feature.myco/rewrite-host", got.Type)
-	}
-	if v, ok := got.Infra.Get("upstream"); !ok || v != "host.example.com" {
-		t.Errorf("Infra.upstream = (%v, %v); want (host.example.com, true)", v, ok)
-	}
-}
-
-// TestParseBoundaryFeature_PlainMapForm pins the map[string]any branch
-// of the parser — boundary YAML payloads that decode via the
-// alternative untyped map path. The parser must still extract type and
-// infra correctly, sorting the converted infra keys for determinism.
-func TestParseBoundaryFeature_PlainMapForm(t *testing.T) {
-	t.Parallel()
-	raw := map[string]any{
-		"type": "feature.myco/rewrite-host",
-		"infra": map[string]any{
-			"upstream":   "host.example.com",
-			"alt_target": "fallback.example.com",
-		},
-	}
-	got := parseBoundaryFeature(raw)
-	if got.Type != "feature.myco/rewrite-host" {
-		t.Errorf("Type = %q; want feature.myco/rewrite-host", got.Type)
-	}
-	if v, ok := got.Infra.Get("upstream"); !ok || v != "host.example.com" {
-		t.Errorf("Infra.upstream = (%v, %v); want (host.example.com, true)", v, ok)
-	}
-}
-
-// TestParseBoundaryFeature_NilAndUnknownReturnZero pins the defensive
-// branches: nil typed-map pointer and unrecognised raw shape both
-// produce the zero-value BoundaryFeature.
-func TestParseBoundaryFeature_NilAndUnknownReturnZero(t *testing.T) {
-	t.Parallel()
-	var nilMap *types.OrderedMap[any]
-	if got := parseBoundaryFeature(nilMap); got.Type != "" {
-		t.Errorf("nil typed-map: Type = %q; want zero", got.Type)
-	}
-	if got := parseBoundaryFeature("unrelated string"); got.Type != "" {
-		t.Errorf("unknown shape: Type = %q; want zero", got.Type)
-	}
-}
-
 // TestBuildCatalogMetadata_NilLookupReturnsNil pins the early-return
 // guard: a CatalogLookup with no Component function returns nil rather
 // than panic on the nil function pointer.

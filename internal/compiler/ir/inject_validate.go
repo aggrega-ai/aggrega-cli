@@ -106,9 +106,11 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 //
 // Release-side surfaces walked: the resolved Release.Spec.Boundaries tree
 // is structurally walked for symmetry with the operator's stated scope.
-// As of the current schema, no Release-side struct type carries
-// *types.InjectBlock — BoundaryFeature has Type/Description/Infra only;
-// Boundary.Features is OrderedMap[any]; Boundary.Secrets is
+// As of the current schema, no Release-side struct type carries a
+// top-level *types.InjectBlock — BoundaryFeature has
+// Type/Description/Infra/Uses (uses carries its own inject inline via
+// the verbose UsesSocketValue form, not a struct-level InjectBlock);
+// Boundary.Features is OrderedMap[BoundaryFeature]; Boundary.Secrets is
 // OrderedMap[any]. The walk is therefore a structural no-op today; if a
 // future schema revision adds an InjectBlock-bearing field to any Release
 // surface, the walker is the extension point.

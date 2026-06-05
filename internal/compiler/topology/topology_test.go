@@ -35,6 +35,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
 func TestBuild_SimpleTopology(t *testing.T) {
@@ -172,6 +173,146 @@ func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 	}
 	if result.Edges[0].OriginFeature != "core/monitoring" {
 		t.Errorf("OriginFeature = %q, want %q", result.Edges[0].OriginFeature, "core/monitoring")
+	}
+}
+
+// scopeUsesEdges filters a result's edges to those targeting `target` and
+// originating from `originFeature`, returning the set of source node IDs.
+// The scope projection's headline assertion is "every component in the
+// scope gets an edge to the shared target", so the test checks the source
+// set rather than edge order.
+func scopeUsesEdges(edges []NormalizedEdge, target, originFeature, originInstance string) map[string]bool {
+	srcs := map[string]bool{}
+	for _, e := range edges {
+		if e.Target == target && e.OriginFeature == originFeature && e.OriginFeatureInstance == originInstance {
+			srcs[e.Source] = true
+		}
+	}
+	return srcs
+}
+
+// TestBuild_SubsystemFeatureUsesProjectsPerComponent proves, from real
+// Aggregate YAML, that a feature attached subsystem-wide carrying a uses
+// block contributes that uses-edge from every component in the subsystem.
+// A subsystem `tier` holds components x and y plus a subsystem-wide
+// telemetry feature whose uses targets the shared-cache component; the
+// build must emit x→shared-cache and y→shared-cache, each stamped with the
+// feature as origin. Reverting the scope projection drops both edges (the
+// only edges in this graph), so the green is non-vacuous.
+func TestBuild_SubsystemFeatureUsesProjectsPerComponent(t *testing.T) {
+	t.Parallel()
+	const aggYAML = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test-app
+spec:
+  components:
+    shared-cache:
+      type: core/redis
+  subsystems:
+    tier:
+      features:
+        telemetry:
+          type: core/telemetry
+          uses:
+            link:
+              - shared-cache
+      components:
+        x:
+          type: core/server/api-server
+        y:
+          type: core/server/api-server
+`
+	var agg types.Aggregate
+	if err := yaml.Unmarshal([]byte(aggYAML), &agg); err != nil {
+		t.Fatalf("unmarshal aggregate: %v", err)
+	}
+	result, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     &agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	srcs := scopeUsesEdges(result.Edges, "shared-cache", "core/telemetry", "telemetry")
+	if !srcs["x"] || !srcs["y"] {
+		t.Errorf("subsystem feature uses must project to every component in the scope; got sources %v, want both x and y → shared-cache (OriginFeature core/telemetry)", srcs)
+	}
+}
+
+// TestBuild_BoundaryFeatureUsesProjectsPerComponent proves, from real
+// Aggregate + Release YAML, that a feature attached boundary-wide carrying
+// a uses block contributes that uses-edge from every component routed into
+// the boundary. The Release attaches a telemetry feature boundary-wide on
+// `cluster` (components x and y) whose uses targets the shared-cache
+// component; the build must emit x→shared-cache and y→shared-cache, each
+// stamped with the feature as origin — the OriginFeature/OriginFeatureInstance
+// pair the injection pre-pass keys on to inject the target's provides.
+// Reverting the scope projection drops both edges.
+func TestBuild_BoundaryFeatureUsesProjectsPerComponent(t *testing.T) {
+	t.Parallel()
+	const aggYAML = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test-app
+spec:
+  components:
+    x:
+      type: core/server/api-server
+    y:
+      type: core/server/api-server
+    shared-cache:
+      type: core/redis
+`
+	const relYAML = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test
+  boundaries:
+    cluster:
+      features:
+        telemetry:
+          type: core/telemetry
+          uses:
+            link:
+              - shared-cache
+      components:
+        x: {}
+        y: {}
+`
+	var agg types.Aggregate
+	if err := yaml.Unmarshal([]byte(aggYAML), &agg); err != nil {
+		t.Fatalf("unmarshal aggregate: %v", err)
+	}
+	var rel types.Release
+	if err := yaml.Unmarshal([]byte(relYAML), &rel); err != nil {
+		t.Fatalf("unmarshal release: %v", err)
+	}
+	result, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate: &agg,
+			Release:   &rel,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{
+				"x": {BoundaryPath: "cluster"},
+				"y": {BoundaryPath: "cluster"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	srcs := scopeUsesEdges(result.Edges, "shared-cache", "core/telemetry", "telemetry")
+	if !srcs["x"] || !srcs["y"] {
+		t.Errorf("boundary feature uses must project to every component in the boundary; got sources %v, want both x and y → shared-cache (OriginFeature core/telemetry)", srcs)
 	}
 }
 

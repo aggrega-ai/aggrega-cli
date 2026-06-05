@@ -76,6 +76,59 @@ spec:
 	}
 }
 
+// TestBoundaryFeature_TypedDecodeWithUses pins the typed decode of a
+// boundary-wide feature attachment. Boundary.Features is
+// OrderedMap[BoundaryFeature]; the type and infra fields decode exactly
+// as the per-component boundary feature shape always has, and the uses
+// field decodes via UsesSocketValue's own unmarshaler — compact form
+// (a socket → list of targets) and verbose form (a socket → alias →
+// {target, inject}) both round-trip without a bespoke boundary parser.
+func TestBoundaryFeature_TypedDecodeWithUses(t *testing.T) {
+	t.Parallel()
+	src := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      features:
+        telemetry:
+          type: feature.myco/tier-telemetry
+          infra:
+            tier: prod-tier
+          uses:
+            collector:
+              - telemetry-collector
+`
+	var rel types.Release
+	if err := yaml.Unmarshal([]byte(src), &rel); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	prod, _ := rel.Spec.Boundaries.Get("prod")
+	feat, ok := prod.Features.Get("telemetry")
+	if !ok {
+		t.Fatal("boundary-wide feature 'telemetry' missing")
+	}
+	if feat.Type != "feature.myco/tier-telemetry" {
+		t.Errorf("Type = %q; want feature.myco/tier-telemetry", feat.Type)
+	}
+	if v, ok := feat.Infra.Get("tier"); !ok || v != "prod-tier" {
+		t.Errorf("Infra.tier = (%v, %v); want (prod-tier, true)", v, ok)
+	}
+	usesEntry, ok := feat.Uses.Get("collector")
+	if !ok {
+		t.Fatal("uses socket 'collector' missing — UsesSocketValue must decode under a boundary feature")
+	}
+	if got := usesEntry.Compact; len(got) != 1 || got[0] != "telemetry-collector" {
+		t.Errorf("uses.collector compact targets = %v; want [telemetry-collector]", got)
+	}
+}
+
 // TestBoundary_EmptyAnnotationsOmitempty pins the omitempty/omitzero
 // behaviour on OrderedMap[*string]. An empty Annotations map drops
 // from JSON marshal; a populated map serializes with the pointer

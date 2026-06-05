@@ -43,12 +43,11 @@ type ReleaseSpec struct {
 // Boundary is a recursive logical box into which components are routed.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary
 //
-// The Features and Secrets fields are typed as OrderedMap[any]
-// rather than OrderedMap[BoundaryFeature]: boundary-wide feature and
-// secret attachments arrive from YAML as opaque payloads that the IR
-// builder coerces into typed shapes via parseBoundaryFeature during
-// Step 3, parallel to how Tier 4/5 of the IR's feature cascade collects
-// boundary-wide attachments separately from per-component ones.
+// Features is typed as OrderedMap[BoundaryFeature], the same typed
+// shape as [BoundaryComponent.Features]: boundary-wide feature
+// attachments carry type, infra, and uses, decoded directly from YAML.
+// Secrets remains OrderedMap[any] — boundary-wide secret attachments
+// still arrive as opaque payloads the IR builder coerces separately.
 //
 // Boundary carries no Infra field — physical sizing is per-component
 // concern and lives on [BoundaryComponent] only.
@@ -76,7 +75,7 @@ type Boundary struct {
 	// instructions for Feature expansion and do not surface in
 	// template substrate).
 	Annotations OrderedMap[*AnnotationValue]  `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-	Features    OrderedMap[any]               `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Features    OrderedMap[BoundaryFeature]   `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets     OrderedMap[any]               `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 	Boundaries  OrderedMap[Boundary]          `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
 	Components  OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
@@ -103,18 +102,29 @@ type BoundaryComponent struct {
 	// entries override the inherited boundary cascade per key; sibling
 	// components retain their own annotation maps independently.
 	Annotations OrderedMap[*AnnotationValue] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-	Infra       OrderedMap[any]             `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
-	Features    OrderedMap[BoundaryFeature] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets     OrderedMap[BoundaryFeature] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Infra       OrderedMap[any]              `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Features    OrderedMap[BoundaryFeature]  `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets     OrderedMap[BoundaryFeature]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 }
 
 // BoundaryFeature is a feature or secret attachment within a Release boundary.
-// Release provides only type (for Ops-injected) and infra (physical sizing). Never values.
+// Release provides type (for Ops-injected), infra (physical sizing), and uses
+// (topology wiring). Never values — values are the Developer's domain on the
+// Aggregate.
+//
+// Uses on a boundary-wide attachment projects per-consumer: a boundary (or
+// subsystem) feature carrying a uses-edge to a shared target contributes that
+// edge from every component in the scope, so the "every component here depends
+// on shared target D" pattern is declared once at the scope rather than
+// repeated on each component. The edge carries the attachment as its origin
+// feature, so a consumer is injected the target's provides exactly as it would
+// be for a per-component feature uses-edge.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
 type BoundaryFeature struct {
-	Type        string          `json:"type,omitempty" yaml:"type,omitempty"`
-	Description string          `json:"description,omitempty" yaml:"description,omitempty"`
-	Infra       OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Type        string                      `json:"type,omitempty" yaml:"type,omitempty"`
+	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
+	Infra       OrderedMap[any]             `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
 }
 
 // AggregateRouting routes a nested Aggregate sub-module's components into a boundary.

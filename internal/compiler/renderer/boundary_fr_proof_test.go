@@ -132,13 +132,10 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster"})
 
 	// Boundary-attached compose-bridge feature.
-	boundaryFeatures := types.OrderedMap[any]{}
-	boundaryFeatures.Set("bridge", map[string]any{
-		"type": "core/compose-bridge:1.0.0",
-		"infra": map[string]any{
-			"mappedPort": 15432,
-		},
-	})
+	boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
+	brInfra := types.OrderedMap[any]{}
+	brInfra.Set("mappedPort", 15432)
+	boundaryFeatures.Set("bridge", types.BoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: brInfra})
 	clusterBoundary := types.Boundary{
 		Directory:  "dist/cluster",
 		Features:   boundaryFeatures,
@@ -272,11 +269,10 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster/data-net"})
 
 	// Parent boundary holds the bridge FR (no direct components).
-	clusterFeatures := types.OrderedMap[any]{}
-	clusterFeatures.Set("bridge", map[string]any{
-		"type":  "core/compose-bridge:1.0.0",
-		"infra": map[string]any{"mappedPort": 15432},
-	})
+	clusterFeatures := types.OrderedMap[types.BoundaryFeature]{}
+	clusterBrInfra := types.OrderedMap[any]{}
+	clusterBrInfra.Set("mappedPort", 15432)
+	clusterFeatures.Set("bridge", types.BoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: clusterBrInfra})
 
 	servicesNet := types.Boundary{
 		Directory:  "{{ .parent_boundary.directory }}",
@@ -454,11 +450,10 @@ func TestDispatchBoundaryScopeFR_EvaluatesValuesMapping(t *testing.T) {
 	nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
 	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster"})
 
-	boundaryFeatures := types.OrderedMap[any]{}
-	boundaryFeatures.Set("bridge", map[string]any{
-		"type":  "core/compose-bridge:1.0.0",
-		"infra": map[string]any{"mappedPort": 15432},
-	})
+	boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
+	brInfra := types.OrderedMap[any]{}
+	brInfra.Set("mappedPort", 15432)
+	boundaryFeatures.Set("bridge", types.BoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: brInfra})
 	clusterBoundary := types.Boundary{
 		Directory:  "dist/cluster",
 		Features:   boundaryFeatures,

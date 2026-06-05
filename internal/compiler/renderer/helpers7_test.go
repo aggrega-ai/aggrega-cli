@@ -30,7 +30,9 @@ func TestBuildBoundaryContext_AllBranches(t *testing.T) {
 	// Populated case: 2-component boundary + 1 internal edge + 1
 	// outgoing cross-boundary + 1 incoming.
 	infra := types.Boundary{Description: "infra"}
-	infra.Features.Set("fr1", map[string]any{"type": "feat/x", "infra": map[string]any{"size": "small"}})
+	fr1Infra := types.OrderedMap[any]{}
+	fr1Infra.Set("size", "small")
+	infra.Features.Set("fr1", types.BoundaryFeature{Type: "feat/x", Infra: fr1Infra})
 	web := types.Boundary{Description: "web"}
 	infra.Boundaries.Set("web", web)
 	rel.Spec.Boundaries.Set("infra", infra)
