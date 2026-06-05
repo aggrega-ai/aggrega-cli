@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: scope-feature-uses-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: scope-feature-uses-app
+  manifest: scope-feature-uses-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api: {}
+        db: {}
