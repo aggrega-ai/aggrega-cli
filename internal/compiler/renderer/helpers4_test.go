@@ -325,4 +325,13 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	if err == nil {
 		t.Errorf("rejected field should fail")
 	}
+	// Parse failure must propagate, not skip. injectMapping is parsed only
+	// here for a boundary-scope FR (the dispatch never evaluates it), so a
+	// swallowed parse error would vanish silently.
+	fr3 := &types.FeatureRecipe{}
+	fr3.Metadata.Name = "fr3"
+	fr3.Spec.InjectMapping = "{{ .boundary.name " // unterminated action
+	if err := validateBoundaryScopeFRTemplate(fr3); err == nil {
+		t.Errorf("a malformed inline template must propagate a parse error, not be skipped")
+	}
 }

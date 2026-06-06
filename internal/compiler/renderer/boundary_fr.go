@@ -121,20 +121,21 @@ var boundaryScopeFRRejectedFields = map[string]bool{
 	"inject_raw":  true,
 }
 
-// validateBoundaryScopeFRTemplate parses every template field on a FR with
-// spec.executionScope: boundary and verifies that no template references
+// validateBoundaryScopeFRTemplate parses every inline template field on a FR
+// with spec.executionScope: boundary and verifies that no template references
 // any per-component-only field (.context.*, .workload.*, .secret_name,
 // .inject, .inject_raw). Returns nil on pass; ErrFRTemplateInvalidField
-// wrapped with the FR name + offending field on first violation.
+// wrapped with the FR name + offending field on the first violation, or a
+// CATALOG_ERROR if any inline template fails to parse.
 //
-// Templates checked: Workload, InjectMapping, ValuesMapping, Provides
-// (each entry's template), Artifacts (each entry's template), Pipeline
-// step `with` templates. Templates loaded from external files (paths
-// rather than inline strings) are not parsed by this function — file
-// content load + parse happens at engine-render time and the validation
-// would need to load the file too. Pragmatic scope: inline templates
-// only at this validator; file-template content is the test-migration
-// intent's responsibility.
+// Templates checked (inline only): valuesMapping, injectMapping, each provides
+// entry, each locals entry, and each pipeline step `with` template. Templates
+// loaded from external files (paths rather than inline strings) are not parsed
+// here — file content load + parse happens at engine-render time. A parse
+// failure propagates as a CATALOG_ERROR rather than being skipped: this
+// validator is the only surface that parses injectMapping and pipeline `with`
+// for a boundary-scope FR (the dispatch evaluates only locals, valuesMapping,
+// and provides), so a skipped parse error would drop silently for those fields.
 func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 	if fr == nil {
 		return nil
@@ -168,10 +169,8 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 	for _, t := range tmpls {
 		t2, err := template.New("fr-validate").Funcs(aggregaFuncMap()).Parse(t.text)
 		if err != nil {
-			// Parse errors at the FR template surface as CATALOG_ERROR
-			// elsewhere; this validator skips on parse failure rather than
-			// double-reporting.
-			continue
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frName},
+				fmt.Sprintf("FeatureRecipe %q %s template failed to parse", frName, t.label))
 		}
 		fields := collectTopLevelFields(t2)
 		for _, f := range fields {

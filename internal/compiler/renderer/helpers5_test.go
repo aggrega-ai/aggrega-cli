@@ -74,6 +74,38 @@ func TestBuildProvenanceLabels_EveryConditional(t *testing.T) {
 	}
 }
 
+// TestProvenanceComponentID_PrefersSanitizedLabelComponentID pins the shared
+// component-identity contract every emitting surface (helm, helm-chart, the
+// artifacts emitter) now derives from one helper: when LabelComponentID is set
+// — the case for FR-emitted resources whose internal NodeID carries marker
+// syntax — it is the component identity, so a charset-invalid synthetic NodeID
+// never reaches a label value. When LabelComponentID is empty (the ordinary
+// component node) the already-label-valid NodeID stands.
+func TestProvenanceComponentID_PrefersSanitizedLabelComponentID(t *testing.T) {
+	t.Parallel()
+
+	// Synthetic boundary-FR node: raw NodeID is charset-invalid (":" / "@" /
+	// "<>"); the sanitised LabelComponentID is what labels must carry.
+	syn := NodeRenderContext{
+		NodeID:           "<boundary-fr>:bridge@cluster",
+		LabelComponentID: "boundary-fr-bridge-cluster",
+	}
+	if got := ProvenanceComponentID(syn); got != "boundary-fr-bridge-cluster" {
+		t.Errorf("ProvenanceComponentID = %q; want the sanitised LabelComponentID", got)
+	}
+	labels := BuildAggregaProvenanceLabels(syn)
+	for _, k := range []string{"aggrega.ai/component-id", "app.kubernetes.io/name"} {
+		if labels[k] != "boundary-fr-bridge-cluster" {
+			t.Errorf("%s = %q; want sanitised id (raw synthetic NodeID must not reach a label value)", k, labels[k])
+		}
+	}
+
+	// Ordinary component node: no LabelComponentID, the label-valid NodeID stands.
+	if got := ProvenanceComponentID(NodeRenderContext{NodeID: "data.main-db"}); got != "data.main-db" {
+		t.Errorf("ProvenanceComponentID fallback = %q; want the NodeID", got)
+	}
+}
+
 // TestBuildProvenanceAnnotations_SyncWaveAndDefault pins the
 // SyncWave-driven and zero cases.
 func TestBuildProvenanceAnnotations_SyncWaveAndDefault(t *testing.T) {
