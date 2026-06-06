@@ -12,10 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
-	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -215,34 +212,9 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
 	}
 
-	// engineFactory dispatches recipe.spec.provider to a fresh-per-call
-	// renderer.Engine. Three provider names ship:
-	//
-	//   - "helm" — fresh HelmEngine per call. The empty-string branch
-	//     also routes here, preserved as a defensive default; current
-	//     Recipe schema requires spec.provider, so empty values do
-	//     not reach this dispatch in normal flow.
-	//   - "helm-chart" — fresh helmchart.HelmEngine per call.
-	//   - "compose" — fresh ComposeEngine per call. Per-(path, provider)
-	//     dispatch grouping in the orchestrator (BoundaryAssembler tier)
-	//     handles cross-call aggregation; the engine itself is stateless.
-	//
-	// Unknown providerName wraps renderer.ErrUnknownProvider with the
-	// offending name so the upstream RenderAll error surfaces with
-	// dispatch failure context intact.
-	engineFactory := func(providerName string) (renderer.Engine, error) {
-		switch providerName {
-		case "helm", "":
-			return &renderHelm.HelmEngine{}, nil
-		case "helm-chart":
-			return &renderHelmChart.HelmEngine{}, nil
-		case "compose":
-			return &renderCompose.ComposeEngine{}, nil
-		default:
-			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerName)
-		}
-	}
-
+	// Provider dispatch is the shared enginefactory.Dispatch — the single
+	// source of truth both the CLI build and the build-faithful test harness
+	// use, so a test renders through exactly the engines a real build does.
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggPath)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
@@ -259,7 +231,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
-		engineFactory,
+		enginefactory.Dispatch,
 		pipeline.Options{
 			IncludeTrace:             traceEnabled,
 			RecipeResolutionVerifier: cat.VerifyRecipeResolution,

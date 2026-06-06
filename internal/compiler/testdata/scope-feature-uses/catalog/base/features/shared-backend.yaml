@@ -4,9 +4,16 @@ metadata:
   name: core/shared-backend
   version: "1.0.0"
 spec:
-  # A pure-wiring feature: it carries no values and renders no resource of
-  # its own (no FeatureRecipe). Its sole job is to contribute a `uses` edge
-  # to every component in the scope it is attached to, so a shared backend
-  # dependency is declared once at the scope rather than on each component.
+  # A pure-wiring feature: it carries no values and renders no resource of its
+  # own — its FeatureRecipe (shared-backend-compose) is a no-op. Its job is to
+  # contribute a `uses` edge to every component in the scope it is attached to,
+  # so a shared backend dependency is declared once at the scope rather than on
+  # each component. Like any feature instance, it still resolves to a
+  # FeatureRecipe (resolution-completeness); the no-op recipe is that resolution.
   interoperability:
     conflictsWith: []
+  # The socket the feature offers: a `backend` edge to the shared target,
+  # delivering the resolved connection over the env pillar.
+  usesSchema:
+    backend:
+      inject: [env]

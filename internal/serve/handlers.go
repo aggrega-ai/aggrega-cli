@@ -16,10 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
-	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
@@ -342,23 +339,6 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 	return s.writeResult(req.ID, result)
 }
 
-// daemonEngineFactory dispatches recipe.spec.provider to a fresh-per-
-// call renderer.Engine. Mirrors the closure constructed inside
-// cmd/aggrega/build.go: dispatchBuild — three concrete provider
-// engines with the same fallback semantics.
-func daemonEngineFactory(providerName string) (renderer.Engine, error) {
-	switch providerName {
-	case "helm", "":
-		return &renderHelm.HelmEngine{}, nil
-	case "helm-chart":
-		return &renderHelmChart.HelmEngine{}, nil
-	case "compose":
-		return &renderCompose.ComposeEngine{}, nil
-	default:
-		return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerName)
-	}
-}
-
 // handleIrGraph loads the Release at params.Release, derives the
 // Aggregate and Manifest paths, reads them from disk, and invokes
 // pipeline.RunPipeline to produce the IR graph. The graph is
@@ -472,7 +452,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		s.lazyCatalog.AsCatalogLookup(),
 		s.lazyCatalog.RecipeLookupWithManifest(resolved.Manifest),
 		s.lazyCatalog.SubAggregateLoader(),
-		daemonEngineFactory,
+		enginefactory.Dispatch,
 		// irGraph is resilient inspection — it returns the IR graph even when
 		// resolution is incomplete, so it does not run the render-time
 		// resolution-completeness halt (that gate is the CLI build's).

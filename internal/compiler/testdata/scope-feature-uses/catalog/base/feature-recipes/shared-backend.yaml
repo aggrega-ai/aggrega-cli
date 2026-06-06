@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: shared-backend-compose
+  version: 1.0.0
+  description: >
+    Compose implementation of core/shared-backend. This FeatureRecipe renders no
+    resources. A feature instance — whether attached to a component or projected
+    from a subsystem/boundary scope — must resolve to a FeatureRecipe for
+    resolution-completeness, the same way a component resolves to a Recipe. This
+    pure-wiring feature's effect is the uses-edge it carries (the shared backend
+    dependency injected into each component in scope), not anything this recipe
+    renders; so the recipe is intentionally empty.
+spec:
+  provider: compose
+  implements: core/shared-backend
