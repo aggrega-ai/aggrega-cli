@@ -279,6 +279,66 @@ func (c *Catalog) MergeExtraLibraries(extraSchemas, extraMappings map[string][]b
 	return warnings, nil
 }
 
+// MergeExtraAggregates folds lockfile-pinned, cache-bridged Aggregates into an
+// already-loaded catalog so the Release-triad resolver (`AggregateLookup`) and
+// the topology builder (`SubAggregateLoader`) — both of which read
+// `cat.Aggregates` — resolve a registry-pulled aggregate at build, from the
+// cache, with no build-time network. It is the aggregate counterpart of
+// MergeExtraLibraries and shares its discipline: local-wins on a name collision
+// (with a returned warning), and the bridged `entityBytes` carry the EXACT
+// verified bytes (not a re-serialised parse) so the lockfile-drift verify stays
+// faithful.
+//
+// The input is the verified bytes of every cache-present lockfile entity, keyed
+// by URI; the entries are dispatched by kind. Only the Aggregate arm is wired:
+// a non-Aggregate (a pulled Component / Recipe, or a tar.gz whose bytes are not
+// YAML) is skipped — folding other pulled kinds from the cache is a separate,
+// pre-existing concern, not this bridge. (A future generalisation could pre-
+// filter candidates by their `referenced_from` role to avoid reading non-
+// aggregate slots; that is a profiling-driven optimisation, deliberately not
+// built here.)
+//
+// A cache-bridged aggregate gets no `aggregateSources` entry: it has no
+// workspace source file, so AggregateSourceFile returns "" — honest empty
+// provenance, mirroring the library bridge which sets no source path.
+func (c *Catalog) MergeExtraAggregates(extra map[string][]byte) ([]string, error) {
+	var warnings []string
+	for _, uri := range sortedKeys(extra) {
+		data := extra[uri]
+		if peekEntityKind(data) != "Aggregate" {
+			continue
+		}
+		agg, perr := resolver.LoadAggregateFromBytes(data, uri)
+		if perr != nil {
+			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Aggregate %q", uri))
+		}
+		name := agg.Metadata.Name
+		if _, local := c.Aggregates[name]; local {
+			warnings = append(warnings, fmt.Sprintf(
+				"Aggregate %q is present both in the local catalog and as a lockfile-pinned aggregate; the local definition is used",
+				name))
+			continue
+		}
+		c.Aggregates[name] = *agg
+		c.entityBytes[entityBytesKey("Aggregate", name)] = data
+	}
+	return warnings, nil
+}
+
+// peekEntityKind returns the `kind` of an entity from its raw bytes, or "" when
+// the bytes are not a parseable YAML entity envelope (e.g. a Recipe's tar.gz
+// cache slot, whose bytes are gzip, not YAML). Used by MergeExtraAggregates to
+// dispatch cache-present entities by kind without committing to a full parse.
+func peekEntityKind(data []byte) string {
+	var hdr struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(data, &hdr); err != nil {
+		return ""
+	}
+	return hdr.Kind
+}
+
 // sortedKeys returns the map's keys in lexicographic order for deterministic
 // iteration (bridged-library merge order and the warnings it emits).
 func sortedKeys(m map[string][]byte) []string {
@@ -445,6 +505,21 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // separator is `:`, distinct from the optional `@` floor assertion that may
 // appear in an authored reference.
 func ReadPinnedLibrary(workspaceRoot, cacheDir, uri, version, expectedDigest string) ([]byte, error) {
+	versionedURI := uri
+	if version != "" {
+		versionedURI = uri + ":" + version
+	}
+	return tier2ReadVerified(workspaceRoot, cacheDir, versionedURI, expectedDigest)
+}
+
+// ReadPinnedEntity reads the verified cache bytes for a lockfile-pinned catalog
+// entity, keyed by its versioned URI. It is the generic counterpart of
+// ReadPinnedLibrary: verify-on-read against the pin digest, halting on a
+// mismatch (ErrFetchIntegrity — a tampered slot is loud). It passes
+// ErrFetchNotFound through unchanged so a caller scanning the lockfile can treat
+// an absent slot as "not cache-backed" (a catalog-resident entity is read from
+// the local catalog, not the cache) and skip it. Never networks.
+func ReadPinnedEntity(workspaceRoot, cacheDir, uri, version, expectedDigest string) ([]byte, error) {
 	versionedURI := uri
 	if version != "" {
 		versionedURI = uri + ":" + version

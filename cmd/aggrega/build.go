@@ -146,6 +146,34 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
 
+	// Bridge lockfile-pinned, cache-backed aggregates into the catalog so the
+	// triad resolver and the topology builder resolve a registry-pulled
+	// aggregate at build, from the cache, hermetically (no build-time network).
+	// The discriminator is build-machine-local catalog presence: read every
+	// lockfile entity's verified cache bytes; an absent slot (ErrFetchNotFound)
+	// is a catalog-resident entity (read from the local catalog, not the cache)
+	// and is skipped; a digest mismatch halts. MergeExtraAggregates dispatches
+	// by kind — folding only Aggregates, local-wins on a name collision — so the
+	// dropped per-entry resolution tier is never consulted.
+	extraAggs := map[string][]byte{}
+	for _, ent := range lf.Entities {
+		data, rerr := catalog.ReadPinnedEntity(wsRoot, cacheDir, ent.URI, ent.ResolvedVersion, ent.Digest)
+		if stderrors.Is(rerr, oci.ErrFetchNotFound) {
+			continue
+		}
+		if rerr != nil {
+			return fmt.Errorf("bridge pinned entity %s: %w", ent.URI, rerr)
+		}
+		extraAggs[ent.URI] = data
+	}
+	aggWarnings, err := cat.MergeExtraAggregates(extraAggs)
+	if err != nil {
+		return fmt.Errorf("catalog load: %w", err)
+	}
+	for _, w := range aggWarnings {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+
 	// Load Release + derive Aggregate + Manifest paths. Loaded before the closure
 	// walk (which they feed) and reused by the pipeline below.
 	releaseDir := filepath.Dir(releasePath)
