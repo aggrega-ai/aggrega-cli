@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -67,8 +66,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// the active Aggregate. Validating a different file with the
 	// active Release context produces no semantic diagnostics for
 	// THAT file from this pipeline.
-	releaseDir := filepath.Dir(s.activeReleasePath)
-	aggPath := filepath.Join(releaseDir, resolved.Release.Spec.Aggregate+".yaml")
+	aggPath := resolved.AggregatePath
 	if file != aggPath {
 		return nil
 	}

@@ -87,8 +87,8 @@ metadata:
   environment: testing
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
   boundaries:
     main:
       directory: ./dist/main

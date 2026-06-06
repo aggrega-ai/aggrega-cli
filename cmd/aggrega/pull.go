@@ -183,16 +183,15 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("load release: %w", err)
 	}
-	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
-	manifestPath := filepath.Join(releaseDir, rel.Spec.Manifest+".yaml")
-	manifest, err := resolver.LoadManifest(manifestPath)
+	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	aggregate, err := resolver.LoadAggregate(aggPath)
-	if err != nil {
-		return fmt.Errorf("load aggregate: %w", err)
-	}
+	manifest := manRes.Manifest
+	// The aggregate resolve is deferred until after the catalog loads (below) so
+	// its identity cascade can reach the catalog tier — pull must resolve the
+	// top-level aggregate the same way build does, or a catalog-resident
+	// aggregate would build but not pin (lock/build divergence).
 
 	// Workspace-agnostic: pull walks the closure to populate the
 	// lockfile and never emits IR, so the catalog's source-file
@@ -210,6 +209,12 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
+
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup())
+	if err != nil {
+		return fmt.Errorf("load aggregate: %w", err)
+	}
+	aggregate := aggRes.Aggregate
 
 	lockfilePath := lockfile.PathFor(cfg.ReleasePath)
 	if cfg.Regenerate {
@@ -230,7 +235,7 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("workspace root: %w", err)
 	}
-	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
+	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	// Re-pull reuse-check: when a prior lockfile exists, verify reused
 	// cache slots against its pins so a slot that has drifted from its
 	// pin is re-fetched and re-pinned from authoritative registry bytes
@@ -342,17 +347,14 @@ func pullRun(cfg pullConfig) error {
 	// uses the same Manifest mapping the closure walker recorded (lock-time
 	// cannot drift from build-time). aggBytes feeds ResolveFromInputs, which
 	// re-parses internally.
-	aggBytes, err := os.ReadFile(aggPath)
-	if err != nil {
-		return fmt.Errorf("read aggregate: %w", err)
-	}
+	aggBytes := aggRes.Bytes
 	rr, topo, err := pipeline.ResolveAndFlatten(
 		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
-			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggPath),
+			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
 		},
 		cat.CatalogLookup(),
 		cat.SubAggregateLoader(),

@@ -5,8 +5,8 @@ metadata:
   environment: production
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ../aggregate.yaml
+  manifest: ../manifest.yaml
   boundaries:
     api-net:
       directory: ./dist/shared

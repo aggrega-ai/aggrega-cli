@@ -436,7 +436,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    lazy backing now (no eager whole-catalog load): the tolerantly-enumerated
 	//    recipe shell, on par with the Component/Feature cascade already feeding
 	//    AsCatalogLookup. A broken out-of-closure entity never fails this build.
-	aggPath := filepath.Join(filepath.Dir(releasePath), resolved.Release.Spec.Aggregate+".yaml")
+	aggPath := resolved.AggregatePath
 	result, err := pipeline.RunPipeline(
 		ctx,
 		pipeline.Inputs{

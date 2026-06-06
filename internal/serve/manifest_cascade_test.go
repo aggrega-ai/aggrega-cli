@@ -25,8 +25,8 @@ metadata:
   name: ` + name + `
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
 `
 }
 

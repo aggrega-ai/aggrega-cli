@@ -36,6 +36,14 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
+	return LoadAggregateFromBytes(data, path)
+}
+
+// LoadAggregateFromBytes unmarshals an Aggregate from already-read bytes,
+// attributing any error to path. It is the read-free core of LoadAggregate,
+// for callers that already hold the bytes (the same-directory triad scan) and
+// must not read the file a second time.
+func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) {
 	var agg types.Aggregate
 	if err := yaml.Unmarshal(data, &agg); err != nil {
 		return nil, &ResolverError{
@@ -90,6 +98,14 @@ func LoadManifest(path string) (*types.Manifest, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
+	return LoadManifestFromBytes(data, path)
+}
+
+// LoadManifestFromBytes unmarshals a Manifest from already-read bytes and runs
+// the same reserved-prefix and cross-binding validations as LoadManifest,
+// attributing any error to path. It is the read-free core of LoadManifest, for
+// callers that already hold the bytes (the same-directory triad scan).
+func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 	var man types.Manifest
 	if err := yaml.Unmarshal(data, &man); err != nil {
 		return nil, &ResolverError{

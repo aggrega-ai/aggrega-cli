@@ -5,7 +5,6 @@ package serve
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,11 +20,12 @@ import (
 // that function's signature ergonomic (six discrete return values
 // would crowd call sites).
 type resolvedRelease struct {
-	Release   *types.Release
-	Manifest  *types.Manifest
-	Aggregate *types.Aggregate
-	AggBytes  []byte
-	Closure   closure.Closure
+	Release       *types.Release
+	Manifest      *types.Manifest
+	Aggregate     *types.Aggregate
+	AggBytes      []byte
+	AggregatePath string
+	Closure       closure.Closure
 }
 
 // resolveReleaseClosure loads the Manifest + Aggregate siblings to
@@ -59,33 +59,30 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 		}
 	}
 	releaseDir := filepath.Dir(releasePath)
-	manifestPath := filepath.Join(releaseDir, rel.Spec.Manifest+".yaml")
-	manifest, err := resolver.LoadManifest(manifestPath)
+	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load manifest %s: %v", manifestPath, err),
-			Data:    newErrorData(manifestPath, 0, 0),
+			Message: fmt.Sprintf("load manifest %q: %v", rel.Spec.Manifest, err),
+			Data:    newErrorData(releasePath, 0, 0),
 		}
 	}
-	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
-	aggBytes, err := os.ReadFile(aggPath)
+	manifest := manRes.Manifest
+	// The daemon resolves the top-level Aggregate by same-directory scan or
+	// `./`/`../` file (nil catalog tier): an LSP workspace's Release sits beside
+	// its Aggregate, and a catalog-resident top-level Aggregate is not part of
+	// this co-located resolution.
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, nil)
 	if err != nil {
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("read aggregate %s: %v", aggPath, err),
-			Data:    newErrorData(aggPath, 0, 0),
+			Message: fmt.Sprintf("load aggregate %q: %v", rel.Spec.Aggregate, err),
+			Data:    newErrorData(releasePath, 0, 0),
 		}
 	}
-	aggregate, err := resolver.LoadAggregate(aggPath)
-	if err != nil {
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load aggregate %s: %v", aggPath, err),
-			Data:    newErrorData(aggPath, 0, 0),
-		}
-	}
-	externals := lockfile.LoadExternalEntities(rel, aggPath, manifestPath)
+	aggregate := aggRes.Aggregate
+	aggBytes := aggRes.Bytes
+	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	cacheDir := s.wsConfig.Workspace.ResolvedCacheDir()
 	// Lazy closure walk — no eager whole-catalog load (0090 point-7). The daemon
 	// passes a nil puller (hermetic, Tier-3 disabled), matching the eager path it
@@ -102,11 +99,12 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 		}
 	}
 	return &resolvedRelease{
-		Release:   rel,
-		Manifest:  manifest,
-		Aggregate: aggregate,
-		AggBytes:  aggBytes,
-		Closure:   cl,
+		Release:       rel,
+		Manifest:      manifest,
+		Aggregate:     aggregate,
+		AggBytes:      aggBytes,
+		AggregatePath: aggRes.Path,
+		Closure:       cl,
 	}, nil
 }
 

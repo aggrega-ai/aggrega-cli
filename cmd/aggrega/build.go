@@ -153,20 +153,18 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	if err != nil {
 		return fmt.Errorf("load release: %w", err)
 	}
-	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
-	manifestPath := filepath.Join(releaseDir, rel.Spec.Manifest+".yaml")
-	manifest, err := resolver.LoadManifest(manifestPath)
+	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	aggregate, err := resolver.LoadAggregate(aggPath)
+	manifest := manRes.Manifest
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup())
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
 	}
-	aggBytes, err := os.ReadFile(aggPath)
-	if err != nil {
-		return fmt.Errorf("read aggregate: %w", err)
-	}
+	aggregate := aggRes.Aggregate
+	aggBytes := aggRes.Bytes
+	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 
 	// Compute the Release's closure ONCE — hermetic (nil puller, Tier-3 disabled),
 	// against the bridged catalog. Reused for closure-scoped validation, the
@@ -174,7 +172,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// never resolved here; an in-closure entity that was skipped at tolerant load
 	// surfaces as an unresolvable URI, and withSkipContext replays WHY it was
 	// skipped so the failure is never a bare "not found".
-	cl, err := computeBuildClosure(rel, manifest, aggregate, releaseDir, wsCfg, cat, wsRoot, cacheDir)
+	cl, err := computeBuildClosure(rel, manifest, aggregate, externals, wsCfg, cat, wsRoot, cacheDir)
 	if err != nil {
 		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
 	}
@@ -215,7 +213,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// Provider dispatch is the shared enginefactory.Dispatch — the single
 	// source of truth both the CLI build and the build-faithful test harness
 	// use, so a test renders through exactly the engines a real build does.
-	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggPath)
+	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
 		pipeline.Inputs{
@@ -320,10 +318,7 @@ func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Confi
 // catalog is walked once, not once per concern. Discovery runs against the
 // bridged catalog (the same producer pull uses) so a remote pinned library
 // resolves at Tier-1 and the drift compare is like-for-like.
-func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, releaseDir string, wsCfg workspaceconfig.Config, cat *catalog.Catalog, wsRoot, cacheDir string) (closure.Closure, error) {
-	externals := lockfile.LoadExternalEntities(rel,
-		filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml"),
-		filepath.Join(releaseDir, rel.Spec.Manifest+".yaml"))
+func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, externals map[string][]byte, wsCfg workspaceconfig.Config, cat *catalog.Catalog, wsRoot, cacheDir string) (closure.Closure, error) {
 	lookup := cat.ClosureLookupWithExternals(nil, wsRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {

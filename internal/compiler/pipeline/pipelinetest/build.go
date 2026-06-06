@@ -25,7 +25,6 @@ package pipelinetest
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -64,17 +63,16 @@ func Build(t *testing.T, in Input) *pipeline.Result {
 		t.Fatalf("pipelinetest.Build: load release: %v", err)
 	}
 	releaseDir := filepath.Dir(in.ReleasePath)
-	aggPath := filepath.Join(releaseDir, rel.Spec.Aggregate+".yaml")
-	manifestPath := filepath.Join(releaseDir, rel.Spec.Manifest+".yaml")
-
-	manifest, err := resolver.LoadManifest(manifestPath)
+	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		t.Fatalf("pipelinetest.Build: load manifest: %v", err)
 	}
-	aggBytes, err := os.ReadFile(aggPath)
+	manifest := manRes.Manifest
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup())
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: read aggregate: %v", err)
+		t.Fatalf("pipelinetest.Build: load aggregate: %v", err)
 	}
+	aggBytes := aggRes.Bytes
 
 	result, err := pipeline.RunPipeline(
 		context.Background(),
@@ -82,7 +80,7 @@ func Build(t *testing.T, in Input) *pipeline.Result {
 			Release:           rel,
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
-			AggregatePath:     aggPath,
+			AggregatePath:     aggRes.Path,
 			MappingLibraries:  cat.MappingLibraries,
 		},
 		cat.CatalogLookup(),

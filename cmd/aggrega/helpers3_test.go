@@ -34,8 +34,8 @@ metadata:
   environment: testing
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
   boundaries:
     main:
       directory: ./dist/main
@@ -127,8 +127,8 @@ metadata:
   environment: testing
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
   boundaries: {}
 `)
 	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -191,8 +191,8 @@ metadata:
   environment: testing
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
   boundaries: {}
 `)
 
@@ -266,8 +266,8 @@ metadata:
   environment: testing
   version: "1.0.0"
 spec:
-  aggregate: aggregate
-  manifest: manifest
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
   boundaries:
     main:
       directory: ./dist/main

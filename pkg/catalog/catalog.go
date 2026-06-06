@@ -1150,6 +1150,37 @@ func (c *Catalog) AggregateSourceFile(name string) (string, bool) {
 	return RelativeToWorkspace(c.workspaceRoot, path), true
 }
 
+// EntityBytes returns the raw authored bytes the catalog retained for the entity
+// of the given kind (e.g. "Aggregate") and metadata.name — the exact bytes a
+// lockfile digest pins, not a re-read. Returns ("", false) when no such entity
+// was indexed. Used by the Release-triad resolver's catalog tier to surface the
+// resolved Aggregate's bytes alongside the entity, so a catalog-resolved
+// aggregate carries the same (entity, path, bytes) contract as a
+// same-directory-resolved one.
+func (c *Catalog) EntityBytes(kind, name string) ([]byte, bool) {
+	b, ok := c.entityBytes[entityBytesKey(kind, name)]
+	return b, ok
+}
+
+// AggregateLookup returns a resolver.AggregateLookup backed by this catalog's
+// Aggregate index, source-path, and retained bytes — the catalog tier of the
+// Release-triad resolver. A name miss returns ok=false (the resolver's identity
+// cascade then continues to the registry tier or stops); a hit carries the
+// entity together with its workspace-relative source path and its
+// digest-verified bytes, so a catalog-resolved Aggregate presents the same
+// (entity, path, bytes) contract as a same-directory-resolved one.
+func (c *Catalog) AggregateLookup() resolver.AggregateLookup {
+	return func(name string) (resolver.ResolvedAggregate, bool) {
+		agg, ok := c.Aggregates[name]
+		if !ok {
+			return resolver.ResolvedAggregate{}, false
+		}
+		path, _ := c.AggregateSourceFile(name)
+		data, _ := c.EntityBytes("Aggregate", name)
+		return resolver.ResolvedAggregate{Aggregate: &agg, Path: path, Bytes: data}, true
+	}
+}
+
 // SubAggregateLoader returns a topology.SubAggregateLoader closure that the
 // topology builder calls when it encounters a sub-aggregate reference
 // during graph construction. The closure looks up the named Aggregate in
