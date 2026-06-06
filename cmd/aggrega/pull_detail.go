@@ -32,23 +32,35 @@ import (
 func printPullDetail(out io.Writer, cl closure.Closure) {
 	type row struct {
 		tier, kind, uri, ref string
+		// hasRef is false for library rows: a library's only reference is its
+		// consumer chain (inspect territory), so its line omits the referenced-from
+		// column to stay pull-event-scoped.
+		hasRef bool
 	}
 	var rows []row
 	for _, e := range cl.Entities {
 		rows = append(rows, row{
-			tier: pullEventTier(e.ResolutionPath),
-			kind: entityKindForDetail(e.KindHint, e.ReferencedFrom),
-			uri:  e.URI,
-			ref:  joinReferencedFrom(e.ReferencedFrom),
+			tier:   pullEventTier(e.ResolutionPath),
+			kind:   entityKindForDetail(e.KindHint, e.ReferencedFrom),
+			uri:    e.URI,
+			ref:    joinReferencedFrom(e.ReferencedFrom),
+			hasRef: true,
 		})
 	}
 	for _, w := range cl.WasmPlugins {
 		rows = append(rows, row{
-			tier: pullEventTier(w.ResolutionPath),
-			kind: "WasmPlugin",
-			uri:  w.URI,
-			ref:  joinReferencedFrom(w.ReferencedFrom),
+			tier:   pullEventTier(w.ResolutionPath),
+			kind:   "WasmPlugin",
+			uri:    w.URI,
+			ref:    joinReferencedFrom(w.ReferencedFrom),
+			hasRef: true,
 		})
+	}
+	for _, l := range cl.SchemaLibraries {
+		rows = append(rows, row{tier: pullEventTier(l.ResolutionPath), kind: "SchemaLibrary", uri: l.URI})
+	}
+	for _, l := range cl.MappingLibraries {
+		rows = append(rows, row{tier: pullEventTier(l.ResolutionPath), kind: "MappingLibrary", uri: l.URI})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].uri != rows[j].uri {
@@ -60,7 +72,11 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 	fmt.Fprintf(out, "resolved %d entities (this pull):\n", len(rows))
 	tw := tabwriter.NewWriter(out, 2, 2, 2, ' ', 0)
 	for _, r := range rows {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t← %s\n", r.tier, r.kind, r.uri, r.ref)
+		if r.hasRef {
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t← %s\n", r.tier, r.kind, r.uri, r.ref)
+		} else {
+			fmt.Fprintf(tw, "  %s\t%s\t%s\n", r.tier, r.kind, r.uri)
+		}
 	}
 	tw.Flush()
 }

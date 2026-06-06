@@ -105,6 +105,58 @@ func TestPullDetailRendersTierKindRef(t *testing.T) {
 	}
 }
 
+// TestPullDetailRendersLibraryAxis confirms a pulled SchemaLibrary / MappingLibrary
+// is surfaced as `<tier>  <Kind>  <uri>` with NO referenced-from column (a
+// library's only reference is its consumer chain — inspect territory), while an
+// entity row in the same render still carries its `← <referenced_from>`.
+func TestPullDetailRendersLibraryAxis(t *testing.T) {
+	cl := closure.Closure{
+		Entities: []closure.ResolvedRef{{
+			URI:            "hub.aggrega.ai/component/core/api:1.0.0",
+			ResolutionPath: "tier-1-catalog",
+			ReferencedFrom: []string{"aggregate.spec.components.api.type"},
+		}},
+		SchemaLibraries: []closure.ResolvedLibrary{{
+			URI:            "PortSpec",
+			ResolutionPath: "tier-3-pull",
+			Consumers:      []closure.LibraryConsumer{{ConsumerURI: "hub.aggrega.ai/component/core/api:1.0.0"}},
+		}},
+		MappingLibraries: []closure.ResolvedLibrary{{
+			URI:            "EnvMap",
+			ResolutionPath: "tier-2-cache",
+		}},
+	}
+
+	var buf bytes.Buffer
+	printPullDetail(&buf, cl)
+	out := buf.String()
+
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		switch {
+		case strings.Contains(line, "SchemaLibrary"):
+			if !strings.Contains(line, "fetched-fresh") || !strings.Contains(line, "PortSpec") {
+				t.Errorf("schema-library row wrong: %q", line)
+			}
+			if strings.Contains(line, "←") {
+				t.Errorf("library row must not carry a referenced-from column: %q", line)
+			}
+		case strings.Contains(line, "MappingLibrary"):
+			if !strings.Contains(line, "cache-reuse") || strings.Contains(line, "←") {
+				t.Errorf("mapping-library row wrong: %q", line)
+			}
+		case strings.Contains(line, "core/api"):
+			// the entity row still carries its reference site
+			if !strings.Contains(line, "← aggregate.spec.components.api.type") {
+				t.Errorf("entity row lost its referenced-from: %q", line)
+			}
+		}
+	}
+	// No consumer chain / consumer URI leaked into the output (stays out of inspect territory).
+	if strings.Contains(out, "consumer") || strings.Contains(out, "Consumer") {
+		t.Errorf("--detail leaked consumer-chain detail:\n%s", out)
+	}
+}
+
 // TestKindFromReferenceSite pins the reference-site → kind table, including the
 // nuance that distinguishes a Manifest mapping value (Recipe/FeatureRecipe)
 // from an instance attachment (Component/Feature/Secret), and a feature nested
