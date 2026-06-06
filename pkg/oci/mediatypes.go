@@ -19,12 +19,12 @@
 // implementation.
 package oci
 
-// Canonical OCI mediatypes for Aggrega catalog entities. Seven
-// declarations covering the seven first-party kinds.
+// Canonical OCI mediatypes for Aggrega catalog entities.
 //
-// Aggregates are intentionally NOT registered as an OCI-published
-// kind: Aggregates are the developer's authoring surface, lived in
-// the workspace's source-control system, not as catalog content
+// An Aggregate is publishable: it is a reusable module, resolvable as
+// a Release's top-level reference or as a sub-aggregate of another
+// Aggregate. A Release and a Manifest are not publishable — both are
+// deployment-side, lived in the workspace's source-control system, not
 // pushed to a registry.
 const (
 	MediaTypeComponent      = "application/vnd.aggrega.component.v1alpha1+yaml"
@@ -34,12 +34,12 @@ const (
 	MediaTypeProvider       = "application/vnd.aggrega.provider.v1alpha1+yaml"
 	MediaTypeSchemaLibrary  = "application/vnd.aggrega.schemalibrary.v1+json"
 	MediaTypeMappingLibrary = "application/vnd.aggrega.mappinglibrary.v1+json"
+	MediaTypeAggregate      = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
 )
 
 // kindMediaTypes maps the catalog entity kind string (matching the
 // values pkg/catalog/catalog.go switches on) to its canonical OCI
-// mediatype. Aggregate is intentionally absent — see the package
-// godoc for the rationale.
+// mediatype.
 var kindMediaTypes = map[string]string{
 	"Component":      MediaTypeComponent,
 	"Feature":        MediaTypeFeature,
@@ -48,14 +48,15 @@ var kindMediaTypes = map[string]string{
 	"Provider":       MediaTypeProvider,
 	"SchemaLibrary":  MediaTypeSchemaLibrary,
 	"MappingLibrary": MediaTypeMappingLibrary,
+	"Aggregate":      MediaTypeAggregate,
 }
 
 // MediaTypeForKind returns the canonical OCI mediatype for the given
 // entity kind. The kind parameter matches the convention used in
 // pkg/catalog/catalog.go: plain string values "Component", "Feature",
 // "Recipe", "FeatureRecipe", "Provider", "SchemaLibrary",
-// "MappingLibrary". Returns ErrUnknownEntityKind for unrecognised
-// values (a programming error, not a user-input error).
+// "MappingLibrary", "Aggregate". Returns ErrUnknownEntityKind for
+// unrecognised values (a programming error, not a user-input error).
 func MediaTypeForKind(kind string) (string, error) {
 	if mt, ok := kindMediaTypes[kind]; ok {
 		return mt, nil

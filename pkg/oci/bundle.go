@@ -23,18 +23,15 @@ import (
 // Per-kind dispatch (matching the kind strings pkg/catalog/catalog.go
 // switches on):
 //
-//   - Component / Feature / Provider / SchemaLibrary / MappingLibrary
-//     → bare YAML, no archive; bytes are the file contents unchanged.
+//   - Component / Feature / Provider / Aggregate / SchemaLibrary /
+//     MappingLibrary → bare YAML, no archive; bytes are the file
+//     contents unchanged.
 //   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
 //     co-located source: directories, $import:-referenced files in
 //     the same directory tree, and inline artifacts: payloads. File
 //     entries within the archive are sorted lexicographically and
 //     carry zeroed timestamps so two independent Bundle invocations
 //     against the same input produce byte-identical archives.
-//
-// Aggregate is NOT a bundled kind (Aggregates live in the workspace's
-// source-control system, not as OCI-published catalog content);
-// passing kind="Aggregate" returns ErrUnknownEntityKind.
 //
 // For libraries (SchemaLibrary, MappingLibrary), Bundle first invokes
 // validateLibraryPerVersionSubdir on the entityPath; mismatch
@@ -47,7 +44,7 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 	}
 
 	switch kind {
-	case "Component", "Feature", "Provider":
+	case "Component", "Feature", "Provider", "Aggregate":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)
@@ -74,12 +71,11 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 	default:
 		// MediaTypeForKind at the top of Bundle filters unknown
 		// kinds before this switch runs, so default is unreachable
-		// for the documented kind set. Maintenance note: if the
-		// mediatype registry grows to include a new kind (e.g., if
-		// Aggregate ever becomes OCI-publishable), add a matching
-		// case here. Falling through to the default would silently
-		// bundle the new kind under whichever shape its dispatch
-		// branch picks; explicit cases prevent that drift.
+		// for the documented kind set. Maintenance note: a new
+		// publishable kind needs both a kindMediaTypes entry and a
+		// matching case here. Falling through to the default would
+		// silently bundle the new kind under whichever shape its
+		// dispatch branch picks; explicit cases prevent that drift.
 		return nil, "", ErrUnknownEntityKind
 	}
 }
@@ -213,4 +209,3 @@ func collectArchiveEntries(dirPath string) ([]archiveEntry, error) {
 	}
 	return entries, nil
 }
-

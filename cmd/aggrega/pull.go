@@ -271,6 +271,14 @@ func pullRun(cfg pullConfig) error {
 	if err := discoverClosureMappingLibraries(&cl, cat, lookup); err != nil {
 		return fmt.Errorf("closure: mapping-library discovery: %w", err)
 	}
+	// Pull-side transitive sub-aggregate descent: pin the closure of every
+	// Aggregate reachable through a chain of sub-aggregate references, loading
+	// each from the cache the resolution just populated. Lock-time only — the
+	// build path reads these pins from the lockfile and never descends.
+	aggLoader, _ := lookup.(closure.AggregateLoader)
+	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
+		return fmt.Errorf("closure: sub-aggregate descent: %w", err)
+	}
 
 	if cfg.Verify {
 		// Verify-only path: load the existing lockfile and check

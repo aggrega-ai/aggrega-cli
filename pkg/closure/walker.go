@@ -149,7 +149,10 @@ func (s *walkState) walkAggregate(agg *types.Aggregate, path string) {
 	for name, sub := range agg.Spec.Aggregates.All() {
 		subPath := fmt.Sprintf("%s.spec.aggregates.%s.type", path, name)
 		if sub.Type != "" {
-			s.addEntity(sub.Type, subPath)
+			// Mark the sub-aggregate so DescendSubAggregates can find the
+			// aggregate entities to load and re-walk for their transitive
+			// closure. The hint is not serialised to the lockfile.
+			s.addEntityKind(sub.Type, subPath, aggregateKindHint)
 		}
 	}
 	for name, sys := range agg.Spec.Subsystems.All() {

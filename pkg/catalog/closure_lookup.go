@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -265,6 +266,25 @@ func (c *Catalog) ClosureLookupWithReuse(ociPuller OCIPuller, workspaceRoot, cac
 		l.warn = reuse.Warn
 	}
 	return l
+}
+
+// LoadAggregate loads a resolved sub-aggregate's parsed body for transitive
+// closure descent, satisfying closure.AggregateLoader. A catalog-resident
+// Aggregate is read from the catalog's retained authored bytes — the same
+// bytes its tier-1 digest pins. A pulled Aggregate is read from the content
+// cache through the verifying read, which checks the cached bytes against the
+// supplied pin digest before returning. Either way the descent walks the exact
+// bytes the pin covers, never a re-serialization or an unverified read.
+func (l *catalogLookup) LoadAggregate(uri, digest string) (*types.Aggregate, error) {
+	name := lookupNameFromURI(uri)
+	if data, ok := l.catalog.EntityBytes("Aggregate", name); ok {
+		return resolver.LoadAggregateFromBytes(data, name)
+	}
+	data, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, uri, digest)
+	if err != nil {
+		return nil, err
+	}
+	return resolver.LoadAggregateFromBytes(data, uri)
 }
 
 func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {

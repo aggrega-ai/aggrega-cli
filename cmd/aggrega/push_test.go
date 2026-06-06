@@ -183,7 +183,7 @@ spec:
 	}
 }
 
-// TestPushRecipeBundlesCoLocatedTreeAsTarGz pins WI 09 acceptance
+// TestPushRecipeBundlesCoLocatedTreeAsTarGz pins the acceptance
 // criterion 4: a Recipe directory's co-located content lands in the
 // published .tar.gz under the canonical mediatype.
 //
@@ -249,8 +249,8 @@ spec:
 	}
 }
 
-// TestPushRecipePreservesRemoteSourceURL pins WI 09 acceptance
-// criterion 3: a Recipe's remote `source:` URL is published as-is
+// TestPushRecipePreservesRemoteSourceURL pins the acceptance
+// criterion: a Recipe's remote `source:` URL is published as-is
 // in the YAML; the chart bytes are NOT pulled-then-bundled.
 func TestPushRecipePreservesRemoteSourceURL(t *testing.T) {
 	root := t.TempDir()
@@ -300,21 +300,36 @@ spec:
 	}
 }
 
-// TestPushRejectsNonCatalogKinds: the seven
-// catalog kinds are the publish allowlist; Aggregate / Release /
-// Manifest are deployment-side and uniformly rejected with a wrapped
-// ErrUnknownEntityKind.
-func TestPushRejectsNonCatalogKinds(t *testing.T) {
-	cases := []struct {
-		name string
-		body string
-	}{
-		{name: "Aggregate", body: `apiVersion: aggrega.ai/v1alpha1
+// TestPushAcceptsAggregate confirms an Aggregate publishes via the generic
+// catalog-kind path (no special-case): pushRun bundles it under the Aggregate
+// mediatype and pushes without error.
+func TestPushAcceptsAggregate(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	entityPath := filepath.Join(root, "entity.yaml")
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
   name: smoke
   version: 1.0.0
-`},
+`)
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		Registry:   "example.com",
+		PushTarget: memory.New(),
+	}); err != nil {
+		t.Fatalf("Aggregate should publish via the generic catalog-kind path; got %v", err)
+	}
+}
+
+// TestPushRejectsDeploymentSideKinds: an Aggregate is publishable, but a
+// Release and a Manifest are deployment-side and rejected with a wrapped
+// ErrUnknownEntityKind.
+func TestPushRejectsDeploymentSideKinds(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
 		{name: "Release", body: `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:

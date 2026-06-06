@@ -122,13 +122,19 @@ func TestBundleDeterminism(t *testing.T) {
 	}
 }
 
-func TestBundleAggregateReturnsUnknownKind(t *testing.T) {
+func TestBundleAggregate(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "aggregate.yaml"), []byte("kind: Aggregate\n"))
-	_, _, err := oci.Bundle("Aggregate", filepath.Join(dir, "aggregate.yaml"))
-	if !errors.Is(err, oci.ErrUnknownEntityKind) {
-		t.Errorf("Aggregate should NOT be a bundled kind; got %v", err)
+	mustWrite(t, filepath.Join(dir, "aggregate.yaml"), []byte("kind: Aggregate\nmetadata:\n  name: app\n"))
+	data, mt, err := oci.Bundle("Aggregate", filepath.Join(dir, "aggregate.yaml"))
+	if err != nil {
+		t.Fatalf("Aggregate should bundle via the generic YAML path; got %v", err)
+	}
+	if mt != oci.MediaTypeAggregate {
+		t.Errorf("Aggregate bundle mediatype = %q; want %q", mt, oci.MediaTypeAggregate)
+	}
+	if len(data) == 0 {
+		t.Errorf("Aggregate bundle bytes empty")
 	}
 }
 

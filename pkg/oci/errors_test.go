@@ -72,11 +72,13 @@ func TestMediaTypeForKindUnknownReturnsErrUnknownEntityKind(t *testing.T) {
 	if !errors.Is(err, oci.ErrUnknownEntityKind) {
 		t.Errorf("unknown kind should return ErrUnknownEntityKind; got %v", err)
 	}
-	// Aggregate is intentionally not in the registry — must NOT
-	// resolve.
-	_, err = oci.MediaTypeForKind("Aggregate")
-	if !errors.Is(err, oci.ErrUnknownEntityKind) {
-		t.Errorf("Aggregate must NOT resolve via MediaTypeForKind; got %v", err)
+	// Aggregate is publishable — it resolves to its mediatype.
+	mt, err := oci.MediaTypeForKind("Aggregate")
+	if err != nil {
+		t.Errorf("Aggregate should resolve via MediaTypeForKind; got %v", err)
+	}
+	if mt != oci.MediaTypeAggregate {
+		t.Errorf("Aggregate mediatype = %q; want %q", mt, oci.MediaTypeAggregate)
 	}
 }
 
