@@ -156,7 +156,13 @@ func renderSourced(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
 		}
-		outKey := nodeCtx.NodeID + "-" + base
+		// The file-key prefix uses the sanitised component id, not the raw
+		// NodeID: a boundary-scope FR's synthetic NodeID carries marker syntax
+		// (`<boundary-fr>:<inst>@<boundary>`) whose `<>:@` are illegal in
+		// filenames on some platforms. ProvenanceComponentID is the raw NodeID
+		// for ordinary components (byte-identical key) and the sanitised
+		// LabelComponentID for FR-emitted nodes.
+		outKey := renderer.ProvenanceComponentID(nodeCtx) + "-" + base
 		out[outKey] = annotated
 	}
 

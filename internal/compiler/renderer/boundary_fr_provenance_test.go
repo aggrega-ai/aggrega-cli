@@ -185,4 +185,18 @@ func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
 			t.Errorf("rendered ConfigMap (%s) leaked the raw synthetic node-ID fragment %q (charset-invalid label value)\n--- body ---\n%s", cmPath, bad, cm)
 		}
 	}
+
+	// The emitted file KEY must also use the sanitised id: a synthetic NodeID's
+	// ":" / "@" / "<>" are illegal in filenames on some platforms (Windows
+	// reserves ":", "<", ">") and break archive tooling, and this output lands
+	// in cross-platform GitOps repos. Reverting the file-key change makes the
+	// key revert to "<boundary-fr>:bridge@cluster-configmap.yaml" → these go red.
+	for _, bad := range []string{":", "@", "<", ">"} {
+		if strings.Contains(cmPath, bad) {
+			t.Errorf("emitted file key %q contains the filesystem-hostile char %q from a raw synthetic NodeID", cmPath, bad)
+		}
+	}
+	if !strings.Contains(cmPath, wantID+"-") {
+		t.Errorf("emitted file key %q should carry the sanitised prefix %q-", cmPath, wantID)
+	}
 }

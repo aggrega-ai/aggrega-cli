@@ -77,6 +77,15 @@ func (e *HelmEngine) SynthesizeWorkload(
 
 	labels := buildAggregaLabels(nodeCtx)
 	annotations := buildAggregaAnnotations(nodeCtx)
+	// File-key prefix derived uniformly with the sourced/sourceless paths via
+	// ProvenanceComponentID. Synthetic boundary-FR NodeIDs (with marker syntax
+	// `<>:@`) do not reach Phase B.4 synthesis today — HelmEngine.Render
+	// dispatches only sourced/sourceless — so for every node that reaches here
+	// LabelComponentID is empty and this resolves to the raw NodeID
+	// (byte-identical keys). Deriving it the same way keeps one rule across all
+	// four helm file-key sites, so the key stays filesystem-safe if synthesis
+	// ever becomes boundary-reachable.
+	keyID := renderer.ProvenanceComponentID(nodeCtx)
 	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
 	resourceLabels := mergeLabels(selectorLabels, labels)
 	resourceAnnotations := nilIfEmpty(annotations)
@@ -133,7 +142,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
-			Name: nodeCtx.NodeID + "-statefulset.yaml",
+			Name: keyID + "-statefulset.yaml",
 			Body: body,
 		})
 	} else {
@@ -152,7 +161,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
-			Name: nodeCtx.NodeID + "-deployment.yaml",
+			Name: keyID + "-deployment.yaml",
 			Body: body,
 		})
 	}

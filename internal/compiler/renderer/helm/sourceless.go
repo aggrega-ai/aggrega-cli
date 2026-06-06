@@ -23,7 +23,9 @@ const (
 
 // renderSourceless generates a flat Deployment + optional Service from the
 // values dictionary (already baseSchema-validated at the orchestrator level).
-// Output keys: "<nodeID>-deployment.yaml", "<nodeID>-service.yaml".
+// Output keys are "<id>-deployment.yaml" / "<id>-service.yaml", where <id> is
+// the node's filesystem-safe component id (the NodeID for ordinary components,
+// the sanitised LabelComponentID for FR-emitted nodes).
 func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	out := map[string][]byte{}
 
@@ -34,6 +36,12 @@ func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext)
 
 	aggregaLabels := buildAggregaLabels(nodeCtx)
 	aggregaAnnotations := buildAggregaAnnotations(nodeCtx)
+	// File-key prefix uses the sanitised component id, not the raw NodeID: a
+	// boundary-scope FR's synthetic NodeID carries marker syntax (`<>:@`) that
+	// is illegal in filenames on some platforms. ProvenanceComponentID is the
+	// raw NodeID for ordinary components (byte-identical key) and the sanitised
+	// LabelComponentID for FR-emitted nodes.
+	keyID := renderer.ProvenanceComponentID(nodeCtx)
 	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
 	resourceLabels := map[string]string{}
 	for k, v := range selectorLabels {
@@ -82,7 +90,7 @@ func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 	}
-	out[nodeCtx.NodeID+"-deployment.yaml"] = depYAML
+	out[keyID+"-deployment.yaml"] = depYAML
 
 	if len(svcPorts) > 0 {
 		svc := Service{
@@ -99,7 +107,7 @@ func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}
-		out[nodeCtx.NodeID+"-service.yaml"] = svcYAML
+		out[keyID+"-service.yaml"] = svcYAML
 	}
 
 	return out, nil
