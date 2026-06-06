@@ -100,6 +100,19 @@ func readDocLabels(t *testing.T, body []byte) map[string]string {
 	return doc.Metadata.Labels
 }
 
+func readDocAnnotations(t *testing.T, body []byte) map[string]string {
+	t.Helper()
+	var doc struct {
+		Metadata struct {
+			Annotations map[string]string `yaml:"annotations"`
+		} `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal artifact body: %v", err)
+	}
+	return doc.Metadata.Annotations
+}
+
 // ----- Test 1: inline-only -----
 
 func TestEvaluateArtifacts_InlineOnly(t *testing.T) {
@@ -332,21 +345,37 @@ spec:
 	if err != nil {
 		t.Fatalf("evaluateArtifacts: %v", err)
 	}
-	labels := readDocLabels(t, findEmitted(t, files, "deployment.yaml").Body)
+	body := findEmitted(t, files, "deployment.yaml").Body
+	labels := readDocLabels(t, body)
 
-	must := map[string]string{
+	// Label-safe provenance + the artifact's own author label stay in labels.
+	mustLabels := map[string]string{
 		"app.kubernetes.io/name":      "api",
 		"aggrega.ai/component-id":     "api",
-		"aggrega.ai/recipe-uri":       "api-server-helm:1.0.0",
-		"aggrega.ai/boundary-path":    "production",
 		"aggrega.ai/compiler-version": "v0.0.0-test",
 		"aggrega.ai/aggregate-name":   "demo",
 		"aggrega.ai/environment":      "prod",
 		"author":                      "alice",
 	}
-	for k, want := range must {
+	for k, want := range mustLabels {
 		if got := labels[k]; got != want {
 			t.Errorf("label %q = %q, want %q", k, got, want)
+		}
+	}
+	// Charset-unsafe provenance lands in annotations, not labels.
+	for _, k := range []string{"aggrega.ai/recipe-uri", "aggrega.ai/boundary-path"} {
+		if _, has := labels[k]; has {
+			t.Errorf("label %q present; a charset-unsafe key must be an annotation", k)
+		}
+	}
+	annotations := readDocAnnotations(t, body)
+	mustAnnotations := map[string]string{
+		"aggrega.ai/recipe-uri":    "api-server-helm:1.0.0",
+		"aggrega.ai/boundary-path": "production",
+	}
+	for k, want := range mustAnnotations {
+		if got := annotations[k]; got != want {
+			t.Errorf("annotation %q = %q, want %q", k, got, want)
 		}
 	}
 }

@@ -150,8 +150,9 @@ spec:
 		APIVersion string `yaml:"apiVersion"`
 		Kind       string `yaml:"kind"`
 		Metadata   struct {
-			Name   string            `yaml:"name"`
-			Labels map[string]string `yaml:"labels"`
+			Name        string            `yaml:"name"`
+			Labels      map[string]string `yaml:"labels"`
+			Annotations map[string]string `yaml:"annotations"`
 		} `yaml:"metadata"`
 	}
 	if err := yaml.Unmarshal(body, &doc); err != nil {
@@ -166,8 +167,12 @@ spec:
 	if got := doc.Metadata.Labels["aggrega.ai/component-id"]; got != "api" {
 		t.Errorf("provenance label aggrega.ai/component-id = %q, want api; full labels %v", got, doc.Metadata.Labels)
 	}
-	if got := doc.Metadata.Labels["aggrega.ai/recipe-uri"]; got != "api-recipe:1.0.0" {
-		t.Errorf("provenance label aggrega.ai/recipe-uri = %q, want api-recipe:1.0.0; full labels %v", got, doc.Metadata.Labels)
+	// recipe-uri is charset-unsafe (the ':') so it lands in annotations, not labels.
+	if _, has := doc.Metadata.Labels["aggrega.ai/recipe-uri"]; has {
+		t.Errorf("recipe-uri must be an annotation, not a label; labels %v", doc.Metadata.Labels)
+	}
+	if got := doc.Metadata.Annotations["aggrega.ai/recipe-uri"]; got != "api-recipe:1.0.0" {
+		t.Errorf("provenance annotation aggrega.ai/recipe-uri = %q, want api-recipe:1.0.0; full annotations %v", got, doc.Metadata.Annotations)
 	}
 
 	// Sanity: the chart-root Chart.yaml and the placeholder template the

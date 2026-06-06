@@ -32,28 +32,44 @@ func TestBuildProvenanceLabels_EveryConditional(t *testing.T) {
 	want := map[string]string{
 		"app.kubernetes.io/name":      "node-1",
 		"aggrega.ai/component-id":     "node-1",
-		"aggrega.ai/recipe-uri":       "myco/web:1.0.0",
-		"aggrega.ai/boundary-path":    "infra/web",
 		"aggrega.ai/compiler-version": "v0.99",
 		"aggrega.ai/aggregate-name":   "agg-prod",
 		"aggrega.ai/environment":      "prod",
-		"aggrega.ai/sync-wave":        "5",
 	}
 	for k, v := range want {
 		if got[k] != v {
-			t.Errorf("%s = %q; want %q", k, got[k], v)
+			t.Errorf("label %s = %q; want %q", k, got[k], v)
+		}
+	}
+	// The charset-unsafe provenance lives in annotations, never labels.
+	for _, k := range []string{"aggrega.ai/recipe-uri", "aggrega.ai/boundary-path", "aggrega.ai/sync-wave"} {
+		if _, has := got[k]; has {
+			t.Errorf("label %s present; a charset-unsafe key must be an annotation, not a label", k)
+		}
+	}
+	gotAnn := buildProvenanceAnnotations(state, ctx)
+	wantAnn := map[string]string{
+		"aggrega.ai/boundary-path":     "infra/web",
+		"aggrega.ai/recipe-uri":        "myco/web:1.0.0",
+		"aggrega.ai/sync-wave":         "5",
+		"argocd.argoproj.io/sync-wave": "5",
+	}
+	for k, v := range wantAnn {
+		if gotAnn[k] != v {
+			t.Errorf("annotation %s = %q; want %q", k, gotAnn[k], v)
 		}
 	}
 
-	// Minimal context: only identity labels emit.
+	// Minimal context: only identity labels emit; no charset-unsafe annotation.
 	minimal := buildProvenanceLabels(nil, NodeRenderContext{NodeID: "n"})
 	if minimal["aggrega.ai/component-id"] != "n" {
 		t.Errorf("identity fallback; got %q", minimal["aggrega.ai/component-id"])
 	}
-	if _, has := minimal["aggrega.ai/sync-wave"]; has {
+	minimalAnn := buildProvenanceAnnotations(nil, NodeRenderContext{NodeID: "n"})
+	if _, has := minimalAnn["aggrega.ai/sync-wave"]; has {
 		t.Errorf("zero SyncWave should not emit")
 	}
-	if _, has := minimal["aggrega.ai/recipe-uri"]; has {
+	if _, has := minimalAnn["aggrega.ai/recipe-uri"]; has {
 		t.Errorf("nil state should not emit recipe-uri")
 	}
 }

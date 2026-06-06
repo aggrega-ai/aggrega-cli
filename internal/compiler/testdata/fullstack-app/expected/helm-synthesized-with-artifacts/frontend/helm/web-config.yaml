@@ -3,12 +3,13 @@ kind: ConfigMap
 metadata:
   labels:
     aggrega.ai/aggregate-name: fullstack-app
-    aggrega.ai/boundary-path: frontend-ns
     aggrega.ai/compiler-version: 0.1.0
     aggrega.ai/component-id: frontend
     aggrega.ai/environment: production
-    aggrega.ai/recipe-uri: helm-web-ui-synthesized-with-artifacts:1.0.0
     app.kubernetes.io/name: frontend
+  annotations:
+    aggrega.ai/boundary-path: frontend-ns
+    aggrega.ai/recipe-uri: helm-web-ui-synthesized-with-artifacts:1.0.0
   name: frontend-web-config
 data:
   BACKEND: backend.backend-zone.svc
