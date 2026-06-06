@@ -61,34 +61,24 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 
 // splitMappingImportRef parses a host-less `<Library>[:<version>]#/mappings/<Entry>`
 // into its library name and entry, stripping any `:version` floor. A host-bearing
-// reference (`oci://…`) or a non-`#/mappings/` fragment shape returns ok=false.
-// This is the consumption-side mirror of the closure walker's identity-import
-// gate (kept here so the renderer stays decoupled from pkg/closure).
+// reference (`oci://…`), a non-`#/mappings/` fragment shape, or an empty entry or
+// library returns ok=false. The host-less identity grammar itself is shared from
+// [types.IdentityRefParts] (the renderer imports `pkg/types`, not `pkg/closure`,
+// so this consumption site stays decoupled from the catalog/closure layer); the
+// `:version` strip and the non-empty-entry requirement are layered here.
 func splitMappingImportRef(ref string) (library, entry string, ok bool) {
-	if ref == "" || strings.HasPrefix(ref, "oci://") {
+	doc, ent, matched := types.IdentityRefParts(ref, "/mappings/")
+	if !matched || ent == "" {
 		return "", "", false
 	}
-	hash := strings.IndexByte(ref, '#')
-	if hash <= 0 {
-		return "", "", false
-	}
-	doc := ref[:hash]
-	frag := ref[hash+1:]
-	const prefix = "/mappings/"
-	if !strings.HasPrefix(frag, prefix) {
-		return "", "", false
-	}
-	entry = frag[len(prefix):]
-	if entry == "" {
-		return "", "", false
-	}
+	library = doc
 	if at := strings.IndexByte(doc, ':'); at >= 0 {
-		doc = doc[:at]
+		library = doc[:at]
 	}
-	if doc == "" {
+	if library == "" {
 		return "", "", false
 	}
-	return doc, entry, true
+	return library, ent, true
 }
 
 // fieldRootImportTarget reports whether body's first non-whitespace token is a

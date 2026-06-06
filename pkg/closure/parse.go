@@ -6,13 +6,9 @@ package closure
 import (
 	"fmt"
 	"strings"
-)
 
-// ociScheme marks the host-bearing reference form. A library is addressed by
-// identity, never by registry host; a `$ref:` or `$import:` carrying this scheme
-// is rejected at its consumption site and is not a library-closure
-// reference here, so the discovery walker does not record it.
-const ociScheme = "oci://"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // schemasFragmentPrefix is the JSON Pointer fragment body that marks a
 // SchemaLibrary entry reference (`<Library>#/schemas/<Entry>`), the surface
@@ -32,14 +28,8 @@ const (
 // false, so a discovery walker records only genuine cross-library references on
 // the requested fragment surface.
 func isIdentityRefWithFragment(value, fragmentPrefix string) bool {
-	if value == "" || value[0] == '#' || strings.HasPrefix(value, ociScheme) {
-		return false
-	}
-	hash := strings.IndexByte(value, '#')
-	if hash <= 0 {
-		return false
-	}
-	return strings.HasPrefix(value[hash+1:], fragmentPrefix)
+	_, _, ok := types.IdentityRefParts(value, fragmentPrefix)
+	return ok
 }
 
 // isIdentityLibraryRef reports whether a `$ref:` value is a host-less

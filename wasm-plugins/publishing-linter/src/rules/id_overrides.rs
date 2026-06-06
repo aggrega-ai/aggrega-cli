@@ -4,14 +4,13 @@
 //! Reject explicit `$id` declarations at any sub-schema position in
 //! SchemaLibrary entries.
 //!
-//! The platform owns the canonical `$id` for every SchemaLibrary
-//! entry. The derivation lives at
-//! `aggrega-cli/pkg/types/schemalibrary_templates.go:
-//! CanonicalSchemaID` and produces
-//! `oci://<host>/<library>@<version>#/schemas/<name>`. Author-supplied
-//! `$id` declarations conflict with that derivation; cross-document
-//! `$ref` resolution, lockfile pinning, and registry-based discovery
-//! all assume platform-derived canonical IDs.
+//! The platform owns each SchemaLibrary entry's canonical identity. That
+//! identity is host-less — the bare library name (`metadata.name`, see
+//! `aggrega-cli/pkg/types/schemalibrary.go`) plus a `#/schemas/<name>`
+//! fragment — and never embeds a registry host; physical location is
+//! bound at resolution time, not in the identity. Author-supplied `$id`
+//! declarations conflict with that platform-owned identity; cross-document
+//! `$ref` resolution and lockfile pinning assume it.
 //!
 //! Scope: any sub-schema position at any depth — top-level entries
 //! and nested sub-schemas (`anyOf` branches, `properties.*` items,
@@ -61,8 +60,8 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
                     classification: None,
                     message: format!(
                         "SchemaLibrary entry {entry_name:?} declares an explicit $id{location}; \
-                         the platform derives the canonical $id per entry \
-                         (oci://<host>/<library>@<version>#/schemas/<name>); author overrides \
+                         the platform owns each entry's host-less canonical identity \
+                         (<Library>#/schemas/<name>); author overrides \
                          conflict with cross-document $ref resolution + lockfile pinning"
                     ),
                 });

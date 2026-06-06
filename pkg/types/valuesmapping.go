@@ -60,14 +60,8 @@ type ValuesMapping struct {
 // `oci://…` form is not a library import; HasOCIPrefix reports it for
 // rejection.
 func (v ValuesMapping) IsLibraryImport() bool {
-	if v.Import == "" || strings.HasPrefix(v.Import, "oci://") {
-		return false
-	}
-	hash := strings.IndexByte(v.Import, '#')
-	if hash <= 0 {
-		return false
-	}
-	return strings.HasPrefix(v.Import[hash+1:], "/mappings/")
+	_, _, ok := IdentityRefParts(v.Import, "/mappings/")
+	return ok
 }
 
 // HasOCIPrefix reports whether v.Import carries a registry host (the

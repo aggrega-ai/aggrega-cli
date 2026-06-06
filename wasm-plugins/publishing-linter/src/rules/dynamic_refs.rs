@@ -5,12 +5,11 @@
 //! positions in SchemaLibrary entries.
 //!
 //! The platform's compile-time `$ref` expansion machinery
-//! (`aggrega-cli/pkg/compactform/`) and the SchemaLibrary canonical-
-//! `$id` derivation (`aggrega-cli/pkg/types/schemalibrary_templates.go:
-//! CanonicalSchemaID`) cannot resolve dynamic-scope-chain constructs.
-//! The Go-side catalog loader rejects them at workspace-load time
-//! via `scanForbiddenKeywords` in the same file; the publishing-
-//! linter rule mirrors that machinery rejection at publish time so
+//! (`aggrega-cli/pkg/compactform/`) resolves cross-document references
+//! by host-less identity and cannot resolve dynamic-scope-chain
+//! constructs. The Go-side catalog loader rejects them at workspace-load
+//! time via `scanForbiddenKeywords` (`aggrega-cli/pkg/types/schemalibrary_templates.go`);
+//! the publishing-linter rule mirrors that rejection at publish time so
 //! the rejection happens before the artifact reaches a downstream
 //! consumer.
 //!
