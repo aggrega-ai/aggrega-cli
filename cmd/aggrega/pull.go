@@ -31,6 +31,7 @@ var (
 	pullRegenerate        bool
 	pullVerify            bool
 	pullIncludePrerelease bool
+	pullDetail            bool
 )
 
 func newPullCmd() *cobra.Command {
@@ -47,6 +48,7 @@ func newPullCmd() *cobra.Command {
 				Regenerate:        pullRegenerate,
 				Verify:            pullVerify,
 				IncludePrerelease: pullIncludePrerelease,
+				Detail:            pullDetail,
 			})
 		},
 	}
@@ -55,6 +57,7 @@ func newPullCmd() *cobra.Command {
 	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and rebuild from current registry state")
 	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
 	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
+	c.Flags().BoolVar(&pullDetail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -70,6 +73,7 @@ type pullConfig struct {
 	Regenerate        bool
 	Verify            bool
 	IncludePrerelease bool
+	Detail            bool
 
 	// puller overrides the production OCI puller; tests inject an in-memory
 	// implementation to exercise a remote-library fetch without the network. Nil
@@ -278,6 +282,14 @@ func pullRun(cfg pullConfig) error {
 	aggLoader, _ := lookup.(closure.AggregateLoader)
 	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("closure: sub-aggregate descent: %w", err)
+	}
+
+	// The pull-event tier diagnostic reads the closure's in-memory resolution
+	// tier (not persisted in the lockfile) and is unrecoverable after this run.
+	// Rendered before the verify/write split so it reflects the pull regardless
+	// of mode.
+	if cfg.Detail {
+		printPullDetail(os.Stdout, cl)
 	}
 
 	if cfg.Verify {
@@ -490,7 +502,6 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             e.URI,
 			ResolvedVersion: e.ResolvedVersion,
 			Digest:          e.Digest,
-			ResolutionPath:  e.ResolutionPath,
 			ReferencedFrom:  append([]string(nil), e.ReferencedFrom...),
 		})
 	}
@@ -501,7 +512,6 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
-			ResolutionPath:  l.ResolutionPath,
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}
@@ -512,7 +522,6 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
-			ResolutionPath:  l.ResolutionPath,
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}
@@ -523,7 +532,6 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             w.URI,
 			ResolvedVersion: w.ResolvedVersion,
 			Digest:          w.Digest,
-			ResolutionPath:  w.ResolutionPath,
 			ReferencedFrom:  append([]string(nil), w.ReferencedFrom...),
 		})
 	}

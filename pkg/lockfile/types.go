@@ -55,7 +55,6 @@ type Entity struct {
 	URI             string   `yaml:"uri"`
 	ResolvedVersion string   `yaml:"resolved_version"`
 	Digest          string   `yaml:"digest"`
-	ResolutionPath  string   `yaml:"resolution_path"`
 	ReferencedFrom  []string `yaml:"referenced_from"`
 }
 
@@ -68,7 +67,6 @@ type SchemaLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`
-	ResolutionPath  string            `yaml:"resolution_path"`
 	Consumers       []LibraryConsumer `yaml:"consumers"`
 }
 
@@ -80,7 +78,6 @@ type MappingLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`
-	ResolutionPath  string            `yaml:"resolution_path"`
 	Consumers       []LibraryConsumer `yaml:"consumers"`
 }
 
@@ -145,6 +142,5 @@ type WasmPlugin struct {
 	URI             string   `yaml:"uri"`
 	ResolvedVersion string   `yaml:"resolved_version"`
 	Digest          string   `yaml:"digest"`
-	ResolutionPath  string   `yaml:"resolution_path"`
 	ReferencedFrom  []string `yaml:"referenced_from"`
 }

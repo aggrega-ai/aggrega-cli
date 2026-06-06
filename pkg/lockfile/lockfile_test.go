@@ -39,13 +39,11 @@ entities:
   - uri: hub.aggrega.ai/component/core/compute/api-server
     resolved_version: 1.2.3
     digest: sha256:a1b2c3
-    resolution_path: tier3-registry
     referenced_from:
       - aggregate.spec.components.api.type
   - uri: hub.aggrega.ai/component/core/datastore/mariadb
     resolved_version: 1.0.0
     digest: sha256:d4e5f6
-    resolution_path: tier2-workspace
     referenced_from:
       - aggregate.spec.components.db.type
 
@@ -53,7 +51,6 @@ schema_libraries:
   - uri: hub.aggrega.ai/schema-library/core/base-types
     resolved_version: 1.0.0
     digest: sha256:v2w3x4
-    resolution_path: tier3-registry
     consumers:
       - consumer_uri: hub.aggrega.ai/component/core/compute/api-server
         fragments:
@@ -64,7 +61,6 @@ mapping_libraries:
   - uri: hub.aggrega.ai/mapping-library/core/base-mappings
     resolved_version: 1.0.0
     digest: sha256:y5z6a7
-    resolution_path: tier3-registry
     consumers:
       - consumer_uri: hub.aggrega.ai/recipe/core/helm/mariadb-bitnami
         fragments:
@@ -85,7 +81,6 @@ wasm_plugins:
   - uri: hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline
     resolved_version: 1.2.5
     digest: sha256:s9t0u1
-    resolution_path: tier3-registry
     referenced_from:
       - .aggrega-config.yaml.plugins.policy
 `
@@ -181,7 +176,6 @@ schema_libraries:
   - uri: hub.aggrega.ai/schema-library/core/base-types
     resolved_version: 1.0.0
     digest: sha256:v2w3x4
-    resolution_path: tier3-registry
 mapping_libraries: []
 `
 	path := writeFixture(t, content)
