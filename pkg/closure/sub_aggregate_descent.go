@@ -42,7 +42,7 @@ var ErrSubAggregateDepth = errors.New("closure: sub-aggregate inclusion depth ex
 // transitive aggregate descent needs resolved bytes; the Lookup surface stays
 // a version/digest/tier resolver for every other axis.
 type AggregateLoader interface {
-	LoadAggregate(uri, digest string) (*types.Aggregate, error)
+	LoadAggregate(uri, version, digest string) (*types.Aggregate, error)
 }
 
 // DescendSubAggregates extends an already-computed Closure with its transitive
@@ -81,7 +81,7 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 	for i, e := range c.Entities {
 		index[e.URI] = i
 		if e.KindHint == aggregateKindHint {
-			queue = append(queue, descentFrame{uri: e.URI, digest: e.Digest, depth: 1})
+			queue = append(queue, descentFrame{uri: e.URI, version: e.ResolvedVersion, digest: e.Digest, depth: 1})
 		}
 	}
 
@@ -97,7 +97,7 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 			return fmt.Errorf("%w: %q at depth %d", ErrSubAggregateDepth, f.uri, f.depth)
 		}
 
-		agg, err := loader.LoadAggregate(f.uri, f.digest)
+		agg, err := loader.LoadAggregate(f.uri, f.version, f.digest)
 		if err != nil {
 			return fmt.Errorf("closure: load sub-aggregate %q: %w", f.uri, err)
 		}
@@ -126,7 +126,7 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 			}
 			if ref.KindHint == aggregateKindHint {
 				if _, done := visited[uri]; !done {
-					queue = append(queue, descentFrame{uri: uri, digest: ref.Digest, depth: f.depth + 1})
+					queue = append(queue, descentFrame{uri: uri, version: ref.ResolvedVersion, digest: ref.Digest, depth: f.depth + 1})
 				}
 			}
 		}
@@ -155,10 +155,12 @@ func mergeReferencedFrom(existing, add []string) []string {
 }
 
 // descentFrame is one queued sub-aggregate to load and re-walk: its resolved
-// URI, the pin digest the loader verifies cached bytes against, and the
-// transitive depth for the maxSubAggregateDepth backstop.
+// URI and version (which the loader reconstructs into the name:version cache
+// key for a bare-name sub), the pin digest the loader verifies cached bytes
+// against, and the transitive depth for the maxSubAggregateDepth backstop.
 type descentFrame struct {
-	uri    string
-	digest string
-	depth  int
+	uri     string
+	version string
+	digest  string
+	depth   int
 }

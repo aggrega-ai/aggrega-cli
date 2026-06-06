@@ -214,7 +214,31 @@ func pullRun(cfg pullConfig) error {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup())
+	workspaceRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("workspace root: %w", err)
+	}
+	puller := cfg.puller
+	if puller == nil {
+		puller = catalog.NewDefaultOCIPuller(wsCfg)
+	}
+	// The registry (Tier-3) seam for a bare-name top-level spec.aggregate that the
+	// same-directory scan and the catalog both miss: fetch + cache it by identity,
+	// pinning its metadata.version (identity), not the OCI tag. Pull-only — build
+	// passes nil, so Tier-3 never networks and a registry top-level resolves there
+	// through the cache→catalog bridge.
+	registryFetch := func(ref string) (resolver.ResolvedAggregate, bool, error) {
+		data, version, digest, found, ferr := catalog.PullAndCacheAggregate(workspaceRoot, cacheDir, puller, ref)
+		if ferr != nil || !found {
+			return resolver.ResolvedAggregate{}, found, ferr
+		}
+		agg, perr := resolver.LoadAggregateFromBytes(data, ref)
+		if perr != nil {
+			return resolver.ResolvedAggregate{}, false, perr
+		}
+		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: data, ResolvedVersion: version, Digest: digest, FromRegistry: true}, true, nil
+	}
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), registryFetch)
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
 	}
@@ -235,11 +259,20 @@ func pullRun(cfg pullConfig) error {
 		}
 	}
 
-	workspaceRoot, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("workspace root: %w", err)
+	// A registry-resolved top-level is pinned as a real registry entity (its
+	// metadata.version + digest), seeded through the registry tier rather than the
+	// version-less external tier; a local top-level (same-dir / ./file / catalog)
+	// stays external exactly as before.
+	var externals map[string][]byte
+	var registrySeeds map[string]closure.Resolution
+	if aggRes.FromRegistry {
+		externals = lockfile.ExternalEntitiesFromBytes(rel, nil, manRes.Bytes)
+		registrySeeds = map[string]closure.Resolution{
+			rel.Spec.Aggregate: {ResolvedVersion: aggRes.ResolvedVersion, Digest: aggRes.Digest, ResolutionPath: "tier-3-pull"},
+		}
+	} else {
+		externals = lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	}
-	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	// Re-pull reuse-check: when a prior lockfile exists, verify reused
 	// cache slots against its pins so a slot that has drifted from its
 	// pin is re-fetched and re-pinned from authoritative registry bytes
@@ -257,11 +290,7 @@ func pullRun(cfg pullConfig) error {
 			}
 		}
 	}
-	puller := cfg.puller
-	if puller == nil {
-		puller = catalog.NewDefaultOCIPuller(wsCfg)
-	}
-	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, reuse)
+	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, reuse)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
@@ -282,6 +311,18 @@ func pullRun(cfg pullConfig) error {
 	aggLoader, _ := lookup.(closure.AggregateLoader)
 	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("closure: sub-aggregate descent: %w", err)
+	}
+	// Fold the registry aggregates the closure just pulled+cached into the catalog
+	// so pull's own source-descent topology flatten (SubAggregateLoader, below)
+	// resolves a registry-only sub-aggregate from cache — the same cache→catalog
+	// bridge build runs. The lockfile is written from the closure, not the catalog,
+	// so this fold does not perturb the pins.
+	pullPins := make([]aggregateBridgePin, 0, len(cl.Entities))
+	for _, e := range cl.Entities {
+		pullPins = append(pullPins, aggregateBridgePin{URI: e.URI, Version: e.ResolvedVersion, Digest: e.Digest})
+	}
+	if err := bridgeCachedAggregates(cat, workspaceRoot, cacheDir, pullPins); err != nil {
+		return err
 	}
 
 	// The pull-event tier diagnostic reads the closure's in-memory resolution

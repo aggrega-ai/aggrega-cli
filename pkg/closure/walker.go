@@ -467,7 +467,14 @@ func (s *walkState) resolveAll(lookup Lookup) error {
 
 func (s *walkState) resolveEntities(lookup Lookup) error {
 	for uri, pending := range s.entities {
-		res, err := lookup.ResolveCatalogEntity(uri)
+		// A sub-aggregate reference resolves through the dedicated aggregate
+		// registry tier (bare-name capable), not the generic catalog-entity
+		// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
+		resolve := lookup.ResolveCatalogEntity
+		if pending.kindHint == aggregateKindHint {
+			resolve = lookup.ResolveAggregate
+		}
+		res, err := resolve(uri)
 		if err != nil {
 			return fmt.Errorf("closure: resolve entity %q: %w", uri, err)
 		}

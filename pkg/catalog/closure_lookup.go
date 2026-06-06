@@ -143,6 +143,17 @@ type LibraryPuller interface {
 	PullLibrary(ctx context.Context, name, kind, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
 }
 
+// AggregatePuller is the optional puller capability for fetching a published
+// Aggregate by its bare identity — the aggregate counterpart of LibraryPuller.
+// It binds name → location → version (list-tags → highest, or an authored floor)
+// and reports the resolved version, which the closure's tier-3 pins as the
+// entity's metadata.version identity. A puller that does not implement it leaves
+// a bare-name aggregate Tier-3 as NotFound (the hermetic build path passes a nil
+// puller, so Tier-3 never fetches at build).
+type AggregatePuller interface {
+	PullAggregate(ctx context.Context, name, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
+}
+
 // ClosureLookup returns a closure.Lookup that resolves catalog
 // entities, libraries, and Wasm plugins by walking three tiers in
 // order:
@@ -211,6 +222,13 @@ type catalogLookup struct {
 	cacheDir      string
 	externals     map[string][]byte
 
+	// registrySeeds carries pre-resolved registry entities (a registry-resolved
+	// top-level spec.aggregate the triad resolver fetched at pull): URI →
+	// {version, digest, tier}. The closure pins these as real registry entities
+	// rather than version-less externals, without re-fetching. Empty on the build
+	// and serve paths (the top-level resolves there via the cache→catalog bridge).
+	registrySeeds map[string]closure.Resolution
+
 	// priorPins, when non-nil, turns Tier-2 cache reuse into a verified
 	// reuse: a cached slot whose content digest no longer matches its
 	// prior-lockfile pin is skipped (re-fetched at Tier-3) instead of
@@ -252,13 +270,14 @@ type ReuseVerification struct {
 // A nil reuse argument yields exactly ClosureLookupWithExternals'
 // behavior, so the hermetic build and serve paths (which pass nil) are
 // unaffected.
-func (c *Catalog) ClosureLookupWithReuse(ociPuller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, reuse *ReuseVerification) closure.Lookup {
+func (c *Catalog) ClosureLookupWithReuse(ociPuller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, registrySeeds map[string]closure.Resolution, reuse *ReuseVerification) closure.Lookup {
 	l := &catalogLookup{
 		catalog:       c,
 		ociPuller:     ociPuller,
 		workspaceRoot: workspaceRoot,
 		cacheDir:      cacheDir,
 		externals:     externals,
+		registrySeeds: registrySeeds,
 	}
 	if reuse != nil {
 		l.priorPins = reuse.PriorPins
@@ -275,20 +294,39 @@ func (c *Catalog) ClosureLookupWithReuse(ociPuller OCIPuller, workspaceRoot, cac
 // cache through the verifying read, which checks the cached bytes against the
 // supplied pin digest before returning. Either way the descent walks the exact
 // bytes the pin covers, never a re-serialization or an unverified read.
-func (l *catalogLookup) LoadAggregate(uri, digest string) (*types.Aggregate, error) {
+func (l *catalogLookup) LoadAggregate(uri, version, digest string) (*types.Aggregate, error) {
 	name := lookupNameFromURI(uri)
 	if data, ok := l.catalog.EntityBytes("Aggregate", name); ok {
 		return resolver.LoadAggregateFromBytes(data, name)
 	}
-	data, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, uri, digest)
+	data, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, version), digest)
 	if err != nil {
 		return nil, err
 	}
 	return resolver.LoadAggregateFromBytes(data, uri)
 }
 
+// versionedSlotURI returns the cache-slot key for an entity. The slot is keyed
+// by the versioned URI; a reference that already carries its version
+// (`name:version`, a host-bearing `host/path:version`) is used as-is, while a
+// bare-name reference gets the resolved version appended. Centralising the rule
+// keeps the bare-name case (a registry-published aggregate referenced by
+// identity) and the versioned-URI case from clashing on a double-appended tag.
+func versionedSlotURI(uri, version string) string {
+	if _, _, hasV := splitVersionedURI(uri); hasV {
+		return uri
+	}
+	if version == "" {
+		return uri
+	}
+	return uri + ":" + version
+}
+
 func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
 	if res, ok := l.lookupExternal(uri); ok {
+		return res, nil
+	}
+	if res, ok := l.lookupRegistry(uri); ok {
 		return res, nil
 	}
 	if res, ok := l.tier1CatalogEntity(uri); ok {
@@ -299,6 +337,37 @@ func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, er
 	}
 	_, res, err := l.tier3CatalogEntity(uri)
 	return res, err
+}
+
+// lookupRegistry returns a pre-resolved registry entity the caller seeded — a
+// registry-resolved top-level spec.aggregate the triad resolver fetched at pull.
+// It pins the entity as a real registry entity (its metadata.version + digest)
+// rather than letting it fall to the version-less external tier, so the lockfile
+// records a real version and the build-side bridge re-derives the same.
+func (l *catalogLookup) lookupRegistry(uri string) (closure.Resolution, bool) {
+	res, ok := l.registrySeeds[uri]
+	return res, ok
+}
+
+// ResolveAggregate resolves a sub-aggregate reference (a KindHint=="aggregate"
+// closure entity), satisfying closure.Lookup. It cascades like
+// ResolveCatalogEntity — external → tier-1 → tier-2 — but a bare-name miss falls
+// to tier3Aggregate (the AggregatePuller capability), not the tag-requiring
+// generic tier-3. This is the aggregate counterpart of ResolveSchemaLibrary, so
+// a registry-published sub-aggregate referenced by bare identity resolves at
+// pull (and the puller is nil on the hermetic build path, so it never fetches at
+// build — the sub resolves there via the build-side cache→catalog bridge).
+func (l *catalogLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
+	if res, ok := l.lookupExternal(uri); ok {
+		return res, nil
+	}
+	if res, ok := l.tier1CatalogEntity(uri); ok {
+		return res, nil
+	}
+	if _, res, ok := l.tier2(uri); ok {
+		return res, nil
+	}
+	return l.tier3Aggregate(uri)
 }
 
 func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
@@ -599,7 +668,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	// slot is keyed `<name>:<version>` — the symmetric key the build-side bridge
 	// reads through ReadPinnedLibrary.
 	if lp, ok := l.ociPuller.(LibraryPuller); ok {
-		name, floor, _ := splitVersionedURI(uri)
+		name, floor, hasFloor := splitVersionedURI(uri)
 		result, resolvedVersion, err := lp.PullLibrary(context.Background(), name, kind, floor)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound) {
@@ -607,14 +676,28 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 			}
 			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, name, err)
 		}
-		versionedKey := name + ":" + resolvedVersion
-		if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, versionedKey, resolvedVersion, result); err != nil {
+		// For a bare-name reference (no consumer @version floor), pin the fetched
+		// library's metadata.version (identity), not the resolver-selected tag
+		// (location): the tag drove discovery (list-tags → highest) but the pinned
+		// + cached identity is the body's metadata.version, matching the build-side
+		// tier-1 derivation so a tag != metadata.version publish does not drift. A
+		// floored reference keeps the floor as the pin — the consumer asked for that
+		// version, and minimum-version selection (which overrides ResolvedVersion to
+		// the floor) and the cache key must agree.
+		pinnedVersion := resolvedVersion
+		if !hasFloor {
+			if mv := entityMetadataVersion(result.Bytes); mv != "" {
+				pinnedVersion = mv
+			}
+		}
+		versionedKey := name + ":" + pinnedVersion
+		if err := writeEntityToCacheSlot(l.workspaceRoot, l.cacheDir, versionedKey, pinnedVersion, result); err != nil {
 			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s %s: %w", kind, name, err)
 		}
 		digest := contentDigest(result.Bytes)
 		l.recordRefetchNotice(uri, digest)
 		return closure.Resolution{
-			ResolvedVersion: resolvedVersion,
+			ResolvedVersion: pinnedVersion,
 			Digest:          digest,
 			ResolutionPath:  "tier-3-pull",
 		}, nil
@@ -643,6 +726,73 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 		Digest:          digest,
 		ResolutionPath:  "tier-3-pull",
 	}, nil
+}
+
+// tier3Aggregate is the bare-name Aggregate registry tier, the aggregate
+// counterpart of tier3Library. It binds a bare-name reference to a location via
+// the AggregatePuller capability (name → location → version), caches the slot
+// under name:metadata.version, and pins the fetched bytes' metadata.version
+// (identity), not the OCI tag it was fetched under (location) — so a registry
+// sub-aggregate's pinned version is identical to the tier-1 (bridged) version
+// build re-derives, and lockfile.Verify never drifts on a tag-vs-version
+// mismatch. A nil puller (the hermetic build path) or a puller without the
+// AggregatePuller capability resolves NotFound, so the registry tier never
+// fetches at build.
+func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
+	_, version, digest, found, err := PullAndCacheAggregate(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+	if err != nil {
+		return closure.Resolution{}, err
+	}
+	if !found {
+		return closure.Resolution{NotFound: true}, nil
+	}
+	l.recordRefetchNotice(uri, digest)
+	return closure.Resolution{
+		ResolvedVersion: version,
+		Digest:          digest,
+		ResolutionPath:  "tier-3-pull",
+	}, nil
+}
+
+// PullAndCacheAggregate fetches a bare-name published Aggregate via the puller's
+// AggregatePuller capability, caches it under name:metadata.version, and returns
+// the verified bytes + resolved version (the fetched metadata.version identity)
+// + content digest. found is false when the puller is nil (the hermetic build
+// path), lacks the AggregatePuller capability, or the registry has no such
+// aggregate (ErrFetchNotFound) — so a build, or an offline pull, never networks.
+// It is the single fetch+cache+pin primitive shared by the closure's
+// tier3Aggregate (sub path) and the triad resolver's Tier-3 seam (top-level
+// path): one cache layout, one identity rule, two call sites.
+func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest string, found bool, err error) {
+	if puller == nil {
+		return nil, "", "", false, nil
+	}
+	ap, ok := puller.(AggregatePuller)
+	if !ok {
+		return nil, "", "", false, nil
+	}
+	name, floor, _ := splitVersionedURI(ref)
+	result, fetchVersion, perr := ap.PullAggregate(context.Background(), name, floor)
+	if perr != nil {
+		if errors.Is(perr, oci.ErrFetchNotFound) {
+			return nil, "", "", false, nil
+		}
+		return nil, "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, perr)
+	}
+	// Pin the fetched entity's metadata.version (identity), not the OCI tag it
+	// was fetched under (fetchVersion, a location coordinate now discarded) — so
+	// the pin matches the build-side tier-1 (bridged) derivation and a
+	// tag != metadata.version publish does not drift. Fall back to the fetch
+	// coordinate only for a body that carries no version.
+	version = entityMetadataVersion(result.Bytes)
+	if version == "" {
+		version = fetchVersion
+	}
+	versionedKey := name + ":" + version
+	if werr := writeEntityToCacheSlot(workspaceRoot, cacheDir, versionedKey, version, result); werr != nil {
+		return nil, "", "", false, fmt.Errorf("catalog: tier-3 cache write Aggregate %s: %w", name, werr)
+	}
+	return result.Bytes, version, contentDigest(result.Bytes), true, nil
 }
 
 // writeEntityToCacheSlot stores the pulled bytes at the standard

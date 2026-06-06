@@ -72,7 +72,7 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 	// `./`/`../` file (nil catalog tier): an LSP workspace's Release sits beside
 	// its Aggregate, and a catalog-resident top-level Aggregate is not part of
 	// this co-located resolution.
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, nil)
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, nil, nil)
 	if err != nil {
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,

@@ -38,6 +38,14 @@ type ResolvedAggregate struct {
 	Aggregate *types.Aggregate
 	Path      string
 	Bytes     []byte
+	// ResolvedVersion and Digest are populated only for a registry (Tier-3)
+	// resolution — the fetched entity's metadata.version (its identity) and
+	// content digest — so the caller pins it as a real registry entity rather
+	// than a version-less external. FromRegistry marks that path; a same-dir,
+	// ./file, or catalog resolution leaves them zero and FromRegistry false.
+	ResolvedVersion string
+	Digest          string
+	FromRegistry    bool
 }
 
 // ResolvedManifest is the Manifest counterpart of [ResolvedAggregate]. A Manifest
@@ -65,6 +73,18 @@ type ResolvedManifest struct {
 // and entity-bytes accessors.
 type AggregateLookup func(name string) (ResolvedAggregate, bool)
 
+// AggregateRegistryFetch is the optional registry (Tier-3) seam for a bare-name
+// spec.aggregate that both the same-directory scan and the catalog miss. It is
+// supplied (non-nil) at pull, where it fetches the published Aggregate by
+// identity, caches it, and returns it carrying its metadata.version + digest
+// (FromRegistry true). At build it is nil — Tier-3 stays inert, so a
+// registry-published top-level resolves only through the build-side
+// cache→catalog bridge and a genuine miss is a loud ErrTriadRefUnresolvable
+// (pull-first remediation), never a network call. found is false when the
+// reference is not in the registry, letting the cascade fall through to the
+// unresolvable error.
+type AggregateRegistryFetch func(ref string) (ResolvedAggregate, bool, error)
+
 // isRelativePathRef reports whether ref is an explicit relative-path file
 // reference — the relative-path discriminator (`./…` / `../…`). A bare token
 // is an identity, not a path. This is deliberately distinct from the
@@ -84,7 +104,7 @@ func isRelativePathRef(ref string) bool {
 // same-directory scan skips unrelated or unparseable files rather than failing
 // the build (see [scanReleaseDir]); a within-tier duplicate identity halts with
 // ErrDuplicateTriadIdentity.
-func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup) (ResolvedAggregate, error) {
+func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registryFetch AggregateRegistryFetch) (ResolvedAggregate, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)
 		data, err := os.ReadFile(path)
@@ -109,7 +129,15 @@ func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup) (Resolv
 			return ra, nil
 		}
 	}
-	// tier 3 — registry: not yet active.
+	if registryFetch != nil { // tier 3 — registry (pull-only; nil at build)
+		ra, found, ferr := registryFetch(ref)
+		if ferr != nil {
+			return ResolvedAggregate{}, ferr
+		}
+		if found {
+			return ra, nil
+		}
+	}
 	return ResolvedAggregate{}, idx.unresolvable("Aggregate", ref)
 }
 

@@ -89,7 +89,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
 		// A puller that must not be reached on a verified hit.
-		lookup := cat.ClosureLookupWithReuse(&failPuller{t: t}, ws, cacheDir, nil, reuse)
+		lookup := cat.ClosureLookupWithReuse(&failPuller{t: t}, ws, cacheDir, nil, nil, reuse)
 		res, err := lookup.ResolveSchemaLibrary(reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)
@@ -123,7 +123,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			PriorPins: map[string]string{reuseURI: goodPin},
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
-		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, reuse)
+		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
 		res, err := lookup.ResolveSchemaLibrary(reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)
@@ -165,7 +165,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			PriorPins: map[string]string{reuseURI: goodPin},
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
-		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, reuse)
+		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
 		res, err := lookup.ResolveSchemaLibrary(reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)
@@ -194,7 +194,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			t.Fatalf("Load: %v", err)
 		}
 		// nil reuse + nil puller: the hermetic build / serve construction.
-		lookup := cat.ClosureLookupWithReuse(nil, ws, cacheDir, nil, nil)
+		lookup := cat.ClosureLookupWithReuse(nil, ws, cacheDir, nil, nil, nil)
 		res, err := lookup.ResolveSchemaLibrary(reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)

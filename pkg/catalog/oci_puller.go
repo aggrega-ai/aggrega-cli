@@ -80,6 +80,39 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 	return result, version, nil
 }
 
+// PullAggregate pulls a published Aggregate by its bare identity, binding it to
+// a physical location through the configured default registry — the pull-side
+// mirror of push's name→location (`<registry>/aggregate/<name>`). Discovery
+// mirrors PullLibrary: an empty floorVersion lists tags and selects the highest
+// semver; a non-empty floor is the tag. It returns the OCI tag it fetched under
+// (a location/discovery coordinate); the IDENTITY pinned in the lockfile is the
+// fetched body's metadata.version, which PullAndCacheAggregate reads and pins —
+// so the tag is discarded and the pin is identity-stable even when a publisher
+// tags `latest`/`stable` over the versioned identity.
+func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion string) (*oci.PullResult, string, error) {
+	reference := p.registry + "/" + libraryPathSegment("Aggregate") + "/" + name
+	repo, err := oci.NewRemoteRepository(reference)
+	if err != nil {
+		return nil, "", err
+	}
+	tag := floorVersion
+	if tag == "" {
+		tags, terr := oci.ListTags(ctx, repo)
+		if terr != nil {
+			return nil, "", terr
+		}
+		tag = highestSemverTag(tags)
+		if tag == "" {
+			return nil, "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
+		}
+	}
+	result, perr := oci.Pull(ctx, repo, tag)
+	if perr != nil {
+		return nil, "", perr
+	}
+	return result, tag, nil
+}
+
 // libraryReference binds a host-less library identity to a physical OCI
 // reference, `<registry>/<kind-segment>/<name>` — the pull-side mirror of push's
 // buildPushReference, so a library is fetched from exactly where push published

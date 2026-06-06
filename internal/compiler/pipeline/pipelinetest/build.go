@@ -68,7 +68,7 @@ func Build(t *testing.T, in Input) *pipeline.Result {
 		t.Fatalf("pipelinetest.Build: load manifest: %v", err)
 	}
 	manifest := manRes.Manifest
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup())
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		t.Fatalf("pipelinetest.Build: load aggregate: %v", err)
 	}

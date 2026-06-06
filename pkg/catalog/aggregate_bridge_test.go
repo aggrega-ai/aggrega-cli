@@ -114,6 +114,29 @@ func TestMergeExtraAggregatesLocalWins(t *testing.T) {
 	}
 }
 
+// TestVersionedSlotURI locks the cache-slot key rule, including the
+// already-versioned branch that has no integration consumer: a bare name gets
+// the resolved version appended; a reference that already carries its version
+// (bare-name:version, or a host-bearing host/path:version) is returned as-is —
+// never double-appended (the latent miss the old uri+":"+version logic caused
+// for an already-versioned URI).
+func TestVersionedSlotURI(t *testing.T) {
+	cases := []struct {
+		uri, version, want string
+	}{
+		{"DbSizing", "1.0.0", "DbSizing:1.0.0"},       // bare + version → append
+		{"DbSizing", "", "DbSizing"},                  // bare + no version → as-is
+		{"DbSizing:1.0.0", "1.0.0", "DbSizing:1.0.0"}, // already versioned → no double-append
+		{"DbSizing:2.0.0", "1.0.0", "DbSizing:2.0.0"}, // already versioned wins over the arg
+		{"hub.aggrega.ai/aggregate/example/app:1.0.0", "1.0.0", "hub.aggrega.ai/aggregate/example/app:1.0.0"}, // host-bearing versioned → as-is
+	}
+	for _, c := range cases {
+		if got := versionedSlotURI(c.uri, c.version); got != c.want {
+			t.Errorf("versionedSlotURI(%q, %q) = %q; want %q", c.uri, c.version, got, c.want)
+		}
+	}
+}
+
 // TestReadPinnedEntity pins the verified cache read: a hit returns the bytes, a
 // miss is ErrFetchNotFound (the caller's skip signal), a digest mismatch is
 // ErrFetchIntegrity (loud). The slot is written through the same primitive the

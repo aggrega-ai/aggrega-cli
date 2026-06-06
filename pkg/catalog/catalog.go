@@ -339,6 +339,21 @@ func peekEntityKind(data []byte) string {
 	return hdr.Kind
 }
 
+// entityMetadataVersion reads metadata.version from an entity's raw bytes, or
+// "" when the bytes are not a parseable YAML envelope. The registry tier pins
+// this (the entity's identity) rather than the OCI tag it was fetched under.
+func entityMetadataVersion(data []byte) string {
+	var hdr struct {
+		Metadata struct {
+			Version string `yaml:"version"`
+		} `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal(data, &hdr); err != nil {
+		return ""
+	}
+	return hdr.Metadata.Version
+}
+
 // sortedKeys returns the map's keys in lexicographic order for deterministic
 // iteration (bridged-library merge order and the warnings it emits).
 func sortedKeys(m map[string][]byte) []string {
@@ -520,11 +535,7 @@ func ReadPinnedLibrary(workspaceRoot, cacheDir, uri, version, expectedDigest str
 // an absent slot as "not cache-backed" (a catalog-resident entity is read from
 // the local catalog, not the cache) and skip it. Never networks.
 func ReadPinnedEntity(workspaceRoot, cacheDir, uri, version, expectedDigest string) ([]byte, error) {
-	versionedURI := uri
-	if version != "" {
-		versionedURI = uri + ":" + version
-	}
-	return tier2ReadVerified(workspaceRoot, cacheDir, versionedURI, expectedDigest)
+	return tier2ReadVerified(workspaceRoot, cacheDir, versionedSlotURI(uri, version), expectedDigest)
 }
 
 // validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component,

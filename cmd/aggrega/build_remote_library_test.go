@@ -44,6 +44,10 @@ func (r *recordingSourceResolver) Resolve(spec closure.SourceSpec) (*closure.Res
 type fakeRemoteLibraryPuller struct {
 	tags           []string
 	listTagsCalled bool
+	// metadataVersion, when set, is the served body's metadata.version — DELIBERATELY
+	// different from the resolved tag, to exercise the identity-not-tag pinning rule.
+	// Empty means the body's version equals the resolved tag (the common case).
+	metadataVersion string
 }
 
 func (p *fakeRemoteLibraryPuller) Pull(_ context.Context, _, _ string) (*oci.PullResult, error) {
@@ -60,10 +64,60 @@ func (p *fakeRemoteLibraryPuller) PullLibrary(_ context.Context, _, _, floorVers
 			}
 		}
 	}
+	bodyVersion := version
+	if p.metadataVersion != "" {
+		bodyVersion = p.metadataVersion
+	}
 	body := []byte(fmt.Sprintf("apiVersion: aggrega.ai/v1alpha1\n"+
 		"kind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: \"%s\"\n"+
-		"spec:\n  schemas:\n    Storage:\n      size: { type: string, default: \"10Gi\" }\n", version))
+		"spec:\n  schemas:\n    Storage:\n      size: { type: string, default: \"10Gi\" }\n", bodyVersion))
+	// Return the resolved TAG (version); the body carries bodyVersion. When they
+	// differ, the identity rule must pin bodyVersion (metadata.version), not the tag.
 	return &oci.PullResult{MediaType: oci.MediaTypeSchemaLibrary, Bytes: body}, version, nil
+}
+
+// TestBuildResolvesRemoteLibraryTagVersionMismatch is the library identity proof:
+// a registry-only library served under an OCI tag (2.0.0) DIFFERENT from its
+// body's metadata.version (1.0.0) must pin metadata.version, and the build-side
+// recompute must re-derive the same — so verify passes with no drift. The
+// existing equal-tag tests are the regression; this is the case the
+// tag==metadata.version fixture convention skipped.
+func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := remoteLibraryFixture(t, root)
+	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n  auto_pull: false\n")
+	catalogDir := filepath.Join(root, "catalog")
+	if err := os.Remove(filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml")); err != nil {
+		t.Fatalf("remove local library: %v", err)
+	}
+
+	puller := &fakeRemoteLibraryPuller{tags: []string{"2.0.0"}, metadataVersion: "1.0.0"}
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, puller: puller}); err != nil {
+		t.Fatalf("pullRun (library tag!=version): %v", err)
+	}
+	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
+	if err != nil {
+		t.Fatalf("LoadLockfile: %v", err)
+	}
+	var pinned string
+	for _, s := range lf.SchemaLibraries {
+		if s.URI == "DbSizing" {
+			pinned = s.ResolvedVersion
+		}
+	}
+	if pinned != "1.0.0" {
+		t.Fatalf("library must pin its metadata.version (1.0.0), not the served tag (2.0.0); got %q", pinned)
+	}
+
+	// Build re-derives 1.0.0 via the bridge → tier-1; verify must pass (no drift),
+	// and the library-declared default still materializes.
+	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+		t.Fatalf("dispatchBuild (library tag!=version) must succeed with no drift, got: %v", err)
+	}
+	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "10Gi") {
+		t.Errorf("library default did not materialize; got:\n%s", got)
+	}
 }
 
 // TestPullFetchesRemoteLibraryViaTier3 is the real-pull end-to-end: a Component

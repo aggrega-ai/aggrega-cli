@@ -155,23 +155,12 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// and is skipped; a digest mismatch halts. MergeExtraAggregates dispatches
 	// by kind — folding only Aggregates, local-wins on a name collision — so the
 	// dropped per-entry resolution tier is never consulted.
-	extraAggs := map[string][]byte{}
+	buildPins := make([]aggregateBridgePin, 0, len(lf.Entities))
 	for _, ent := range lf.Entities {
-		data, rerr := catalog.ReadPinnedEntity(wsRoot, cacheDir, ent.URI, ent.ResolvedVersion, ent.Digest)
-		if stderrors.Is(rerr, oci.ErrFetchNotFound) {
-			continue
-		}
-		if rerr != nil {
-			return fmt.Errorf("bridge pinned entity %s: %w", ent.URI, rerr)
-		}
-		extraAggs[ent.URI] = data
+		buildPins = append(buildPins, aggregateBridgePin{URI: ent.URI, Version: ent.ResolvedVersion, Digest: ent.Digest})
 	}
-	aggWarnings, err := cat.MergeExtraAggregates(extraAggs)
-	if err != nil {
-		return fmt.Errorf("catalog load: %w", err)
-	}
-	for _, w := range aggWarnings {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	if err := bridgeCachedAggregates(cat, wsRoot, cacheDir, buildPins); err != nil {
+		return err
 	}
 
 	// Load Release + derive Aggregate + Manifest paths. Loaded before the closure
@@ -186,13 +175,25 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		return fmt.Errorf("load manifest: %w", err)
 	}
 	manifest := manRes.Manifest
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup())
+	// Build never networks: the registry tier (Tier-3) is nil here, so a
+	// registry-published top-level resolves only through the cache→catalog bridge
+	// (folded into cat.Aggregates above) via catLookup.
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
 	}
 	aggregate := aggRes.Aggregate
 	aggBytes := aggRes.Bytes
-	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
+	// A registry-pinned top-level (a real resolved version in the lockfile)
+	// resolves via the bridge + tier-1; seeding it external — externals are
+	// consulted before the catalog — would shadow the bridge with a version-less
+	// pin and drift. Gate the external seed on the pin; the manifest is always
+	// external (it has no registry tier).
+	aggExternal := aggRes.Bytes
+	if lockfileHasRegistryPin(lf, rel.Spec.Aggregate) {
+		aggExternal = nil
+	}
+	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 
 	// Compute the Release's closure ONCE — hermetic (nil puller, Tier-3 disabled),
 	// against the bridged catalog. Reused for closure-scoped validation, the
@@ -310,6 +311,62 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 // only then verify drift against the merged catalog: a remote $ref cannot be
 // expanded at Pass-2 until its library is bridged, and the library cannot be
 // bridged until the lockfile that pins it is acquired.
+// aggregateBridgePin is the minimal pin shape the cache→catalog aggregate
+// bridge needs — satisfied by a committed lockfile.Entity (build) and an
+// in-memory closure.ResolvedRef (pull).
+type aggregateBridgePin struct {
+	URI     string
+	Version string
+	Digest  string
+}
+
+// bridgeCachedAggregates folds lockfile-pinned, cache-present Aggregates into the
+// catalog so the triad resolver and the topology SubAggregateLoader resolve a
+// registry-pulled aggregate from the cache. Shared by build (over the committed
+// lockfile) and pull (over the freshly-computed closure, so pull's own
+// source-descent topology flatten can resolve a registry-only sub it just
+// pinned). An absent cache slot is a catalog-resident entity, skipped; a digest
+// mismatch halts; MergeExtraAggregates folds only the Aggregate kind, local-wins
+// on a name collision.
+func bridgeCachedAggregates(cat *catalog.Catalog, wsRoot, cacheDir string, pins []aggregateBridgePin) error {
+	extra := map[string][]byte{}
+	for _, p := range pins {
+		data, err := catalog.ReadPinnedEntity(wsRoot, cacheDir, p.URI, p.Version, p.Digest)
+		if stderrors.Is(err, oci.ErrFetchNotFound) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("bridge pinned entity %s: %w", p.URI, err)
+		}
+		extra[p.URI] = data
+	}
+	warns, err := cat.MergeExtraAggregates(extra)
+	if err != nil {
+		return fmt.Errorf("catalog load: %w", err)
+	}
+	for _, w := range warns {
+		fmt.Fprintf(os.Stderr, "  %s\n", w)
+	}
+	return nil
+}
+
+// lockfileHasRegistryPin reports whether the lockfile pins uri as a registry
+// entity — one carrying a real resolved version. A version-less pin marks an
+// external (local) top-level; a real version marks one registry-resolved at pull
+// that must resolve at build via the cache→catalog bridge, not the external tier
+// (which would re-pin version "" and drift against the lockfile).
+func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
+	if lf == nil {
+		return false
+	}
+	for _, e := range lf.Entities {
+		if e.URI == uri {
+			return e.ResolvedVersion != ""
+		}
+	}
+	return false
+}
+
 func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Config) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 

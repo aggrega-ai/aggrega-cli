@@ -922,6 +922,10 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(uri string) (closure.Resolution
 	return x.base.ResolveCatalogEntity(uri)
 }
 
+func (x *lazyClosureLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
+	return x.base.ResolveAggregate(uri)
+}
+
 func (x *lazyClosureLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
 	return x.base.ResolveSchemaLibrary(uri)
 }

@@ -48,7 +48,7 @@ type fakeAggLoader struct {
 	seen   map[string]string
 }
 
-func (f *fakeAggLoader) LoadAggregate(uri, digest string) (*types.Aggregate, error) {
+func (f *fakeAggLoader) LoadAggregate(uri, version, digest string) (*types.Aggregate, error) {
 	if f.seen == nil {
 		f.seen = map[string]string{}
 	}

@@ -248,9 +248,15 @@ type LibraryConsumer struct {
 // partial construction would panic at call site rather than fail
 // at construction. Method-set interface satisfaction gives
 // compile-time guarantees that every implementer provides all
-// four resolution surfaces.
+// five resolution surfaces.
 type Lookup interface {
 	ResolveCatalogEntity(uri string) (Resolution, error)
+	// ResolveAggregate resolves a sub-aggregate reference (a KindHint=="aggregate"
+	// entity). It is distinct from ResolveCatalogEntity because a bare-name
+	// Aggregate resolves at a dedicated registry tier (the AggregatePuller),
+	// mirroring ResolveSchemaLibrary — the generic catalog-entity tier-3 needs a
+	// tag and cannot fetch a bare name.
+	ResolveAggregate(uri string) (Resolution, error)
 	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
 	ResolveMappingLibrary(uri string) (LibraryResolution, error)
 	ResolveWasmPlugin(uri string) (Resolution, error)

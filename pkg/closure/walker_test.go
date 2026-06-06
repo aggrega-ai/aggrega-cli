@@ -34,6 +34,10 @@ func (f *fakeLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error
 	return closure.Resolution{NotFound: true}, nil
 }
 
+func (f *fakeLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
+	return f.ResolveCatalogEntity(uri)
+}
+
 func (f *fakeLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
 	if res, ok := f.schemaLibs[fakeBaseName(uri)]; ok {
 		return res, nil
