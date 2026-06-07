@@ -5,8 +5,8 @@ metadata:
   environment: production
   version: "1.0.0"
 spec:
-  aggregate: ../aggregate.yaml
-  manifest: ../manifest.yaml
+  aggregate: ../aggregates/compose-with-artifacts.yaml
+  manifest: ../manifests/compose-with-artifacts.yaml
   boundaries:
     compose-app:
       directory: ./dist/compose-app

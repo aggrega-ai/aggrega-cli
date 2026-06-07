@@ -127,6 +127,23 @@ func buildResolveResult(agg *types.Aggregate) *resolver.ResolveResult {
 	}
 }
 
+// runPipeline drives the front half of the compiler — topology build, IR
+// construction, selector analysis — and returns the graph plus the analysis
+// result. It deliberately stops before render and does NOT run the recipe-
+// resolution-completeness check the CLI build runs between IR and render: the
+// fixtures here are graph-only (a hand-stubbed catalog with no recipes), so
+// they isolate node/edge construction and selector-analysis paths, not end-to-
+// end rendering. This is an intentional stage-isolation harness, not a faithful
+// end-to-end build; tests that render through the full build use
+// pipelinetest.Build instead.
+//
+// One consequence for the determinism coverage: TestPipeline_DeterministicOutput
+// below pins determinism at the graph/IR level — edge-source ordering, feature-
+// marker ordering, and selector-path count across repeated front-half runs.
+// That is a different surface from the rendered-output determinism pinned in
+// determinism_test.go (byte-identical artifact maps across full builds). The two
+// are complementary: this one guards the graph the front half produces; that one
+// guards the bytes the renderer emits.
 func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.AnalysisResult) {
 	t.Helper()
 	catalog := integrationCatalog()

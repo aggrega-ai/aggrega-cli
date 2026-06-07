@@ -5,8 +5,8 @@ metadata:
   environment: production
   version: "1.0.0"
 spec:
-  aggregate: ../aggregate.yaml
-  manifest: ../manifest.yaml
+  aggregate: ../aggregates/compose-synthesized.yaml
+  manifest: ../manifests/compose-synthesized.yaml
   boundaries:
     app:
       directory: ./dist/app

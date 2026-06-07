@@ -5,8 +5,8 @@ metadata:
   environment: test
   version: "1.0.0"
 spec:
-  aggregate: ../aggregates/annotation-structured
-  manifest: ../manifests/annotation-structured
+  aggregate: ../aggregates/annotation-structured.yaml
+  manifest: ../manifests/annotation-structured.yaml
   boundaries:
     db-ns:
       directory: ./dist/db

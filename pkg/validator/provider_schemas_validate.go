@@ -20,8 +20,8 @@ import (
 // surfaces any compile error wrapped in a CATALOG_ERROR-categorised
 // CompilerError citing the source file. Empty fields pass without
 // inspection — both fields are optional (helm-chart, terraform, and
-// cloudformation Providers omit workloadSchema; the helm-raw test
-// fixture omits baseSchema).
+// cloudformation Providers omit workloadSchema; a Provider that defines
+// no base parameters omits baseSchema).
 //
 // The function is invoked from pkg/catalog/catalog.go's Pass 2 alongside
 // ValidateSchemaPillars. Errors collect across providers (and across

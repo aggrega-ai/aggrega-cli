@@ -4,21 +4,11 @@
 package compiler_test
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
-	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 )
 
 // featureMatrixVariant identifies the per-Release fixture: which Release file under
@@ -34,195 +24,49 @@ type featureMatrixVariant struct {
 	// the demo Aggregate's bridge attachment resolves against the standard
 	// FR.
 	extraCatalogPaths []string
-	// traceRoot, when non-empty, enables trace capture into the given directory.
+	// includeTrace, when true, turns on per-pass trace collection; the
+	// rendered result's Trace map then carries the per-node trace entries.
 	// Used by the cross-cutting TraceLayout criterion; the per-Release smoke
-	// tests leave it empty.
-	traceRoot string
+	// tests leave it false.
+	includeTrace bool
 }
 
-// runFeatureMatrixVariant executes the full 5-step pipeline for one Release variant
-// and returns the rendered file set. Mirrors runFullstackAppVariant's shape with
-// per-variant Release path and per-variant catalog directory.
-func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *fullstackAppResult {
-	t.Helper()
-
+// featureMatrixInput builds the harness Input for one variant: the per-variant
+// Release under releases/, the feature-matrix base catalog plus the variant's
+// recipes sub-directory plus any extra catalog paths, and the trace knob. The
+// Aggregate and Manifest are derived from the Release's spec pointers.
+func featureMatrixInput(variant featureMatrixVariant) pipelinetest.Input {
 	base := "testdata/feature-matrix/catalog/base"
 	recipesDir := filepath.Join("testdata/feature-matrix/catalog/recipes", variant.name)
-	dirs := append([]string{base, recipesDir}, variant.extraCatalogPaths...)
+	return pipelinetest.Input{
+		ReleasePath:  filepath.Join("testdata/feature-matrix/releases", variant.releaseFile),
+		CatalogPaths: append([]string{base, recipesDir}, variant.extraCatalogPaths...),
+		IncludeTrace: variant.includeTrace,
+	}
+}
 
-	cat, err := catalog.LoadAll("", dirs...)
-	if err != nil {
-		t.Fatalf("catalog load: %v", err)
-	}
-
-	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: "testdata/feature-matrix/aggregate.yaml",
-		ReleasePath:   filepath.Join("testdata/feature-matrix/releases", variant.releaseFile),
-		ManifestPath:  "testdata/feature-matrix/manifest.yaml",
-	})
-	if err != nil {
-		t.Fatalf("Step 1 (resolve): %v", err)
-	}
-
-	catalogLookup := cat.CatalogLookup()
-
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			t.Errorf("guard: %s", e.Error())
-		}
-		t.FailNow()
-	}
-
-	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: cat.SubAggregateLoader(),
-	})
-	if err != nil {
-		t.Fatalf("Step 2 (topology): %v", err)
-	}
-
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0",
-	})
-	if err != nil {
-		t.Fatalf("Step 3 (IR): %v", err)
-	}
-
-	analysis := analyzer.Analyze(graph, catalogLookup)
-	for _, e := range analysis.Errors {
-		t.Errorf("selector: %s -> %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
-
-	var traceWriter trace.Writer
-	if variant.traceRoot != "" {
-		traceWriter = trace.New(variant.traceRoot)
-		defer func() { _ = traceWriter.Close() }()
-	}
-	rendererInput := renderer.RendererInput{
-		Graph:          graph,
-		FeatureOrder:   featureOrder,
-		ResolveResult:  resolveResult,
-		CatalogLookup:  catalogLookup,
-		ProviderLookup: cat.ProviderLookup,
-		Trace:          traceWriter,
-	}
-	engineFactory := func(providerName string) (renderer.Engine, error) {
-		switch providerName {
-		case "helm", "":
-			return &renderHelm.HelmEngine{}, nil
-		case "helm-chart":
-			return &renderHelmChart.HelmEngine{}, nil
-		case "compose":
-			return &renderCompose.ComposeEngine{}, nil
-		default:
-			return nil, nil
-		}
-	}
-
-	renderResult, err := renderer.RenderAll(
-		context.Background(),
-		rendererInput,
-		cat.RecipeLookup(),
-		engineFactory,
-	)
-	if err != nil {
-		t.Fatalf("Step 5 (render): %v", err)
-	}
-	return &fullstackAppResult{Files: renderResult.Files, Warnings: renderResult.Warnings}
+// runFeatureMatrixVariant compiles one Release variant through the build-
+// faithful harness (pipelinetest.Build) and returns the rendered file set
+// (plus the trace map when includeTrace is set).
+func runFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) *fullstackAppResult {
+	t.Helper()
+	result := pipelinetest.Build(t, featureMatrixInput(variant))
+	return &fullstackAppResult{Files: result.Artifacts, Trace: result.Trace}
 }
 
 // tryRunFeatureMatrixVariant mirrors runFeatureMatrixVariant but returns the
-// first pipeline error encountered instead of calling t.Fatalf. Used by
-// negative-path cross-cutting sub-tests that want to assert on the
-// compile-time error instead of treating any failure as a test fault.
+// first build error encountered instead of failing the test, via the harness's
+// error-returning sibling. Used by negative-path cross-cutting sub-tests that
+// assert on the error a real build produces rather than treating any failure as
+// a test fault. It runs the full build-faithful pipeline, so the error surfaces
+// in the same place a real build would surface it.
 func tryRunFeatureMatrixVariant(t *testing.T, variant featureMatrixVariant) (*fullstackAppResult, error) {
 	t.Helper()
-
-	base := "testdata/feature-matrix/catalog/base"
-	recipesDir := filepath.Join("testdata/feature-matrix/catalog/recipes", variant.name)
-	dirs := append([]string{base, recipesDir}, variant.extraCatalogPaths...)
-
-	cat, err := catalog.LoadAll("", dirs...)
+	result, err := pipelinetest.BuildE(t, featureMatrixInput(variant))
 	if err != nil {
 		return nil, err
 	}
-
-	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: "testdata/feature-matrix/aggregate.yaml",
-		ReleasePath:   filepath.Join("testdata/feature-matrix/releases", variant.releaseFile),
-		ManifestPath:  "testdata/feature-matrix/manifest.yaml",
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	catalogLookup := cat.CatalogLookup()
-	if guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra); len(guardErrs) > 0 {
-		return nil, guardErrs[0]
-	}
-
-	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: cat.SubAggregateLoader(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0",
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	analysis := analyzer.Analyze(graph, catalogLookup)
-	if len(analysis.Errors) > 0 {
-		return nil, analysis.Errors[0]
-	}
-
-	rendererInput := renderer.RendererInput{
-		Graph:          graph,
-		FeatureOrder:   featureOrder,
-		ResolveResult:  resolveResult,
-		CatalogLookup:  catalogLookup,
-		ProviderLookup: cat.ProviderLookup,
-	}
-	engineFactory := func(providerName string) (renderer.Engine, error) {
-		switch providerName {
-		case "helm", "":
-			return &renderHelm.HelmEngine{}, nil
-		case "helm-chart":
-			return &renderHelmChart.HelmEngine{}, nil
-		case "compose":
-			return &renderCompose.ComposeEngine{}, nil
-		default:
-			return nil, nil
-		}
-	}
-
-	renderResult, err := renderer.RenderAll(
-		context.Background(),
-		rendererInput,
-		cat.RecipeLookup(),
-		engineFactory,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &fullstackAppResult{Files: renderResult.Files, Warnings: renderResult.Warnings}, nil
+	return &fullstackAppResult{Files: result.Artifacts, Trace: result.Trace}, nil
 }
 
 // assertFeatureMatrixFilePresent checks at least one file in res whose path contains

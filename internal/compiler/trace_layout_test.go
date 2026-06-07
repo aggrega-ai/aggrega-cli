@@ -4,8 +4,6 @@
 package compiler_test
 
 import (
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -14,7 +12,9 @@ import (
 // TestTrace_FullLayout_OnHelmSourcedWithArtifacts exercises the full per-node
 // trace layout against a fixture whose Recipes carry source: + valuesMapping:
 // + artifacts: (plus the always-present pre-loop captures and Phase A flow).
-// Asserts the documented layout entries land at the variant's evaluated path.
+// Asserts the documented layout entries land for each node. Trace is collected
+// in-memory through the build-faithful harness (Input.IncludeTrace) and keyed
+// by the same relative path the on-disk trace writer would use.
 //
 // Slots present per the helm-sourced-with-artifacts shape:
 //   - 01-pillars-initial.yaml (pre-loop)
@@ -33,10 +33,9 @@ import (
 //   - 10-engine-synthesis/<filename>.yaml
 func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 	t.Parallel()
-	traceRoot := t.TempDir()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:      "helm-sourced-with-artifacts",
-		traceRoot: traceRoot,
+		name:         "helm-sourced-with-artifacts",
+		includeTrace: true,
 	})
 	if len(res.Files) == 0 {
 		t.Fatalf("renderer produced no files; trace assertion vacuous")
@@ -44,33 +43,27 @@ func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 
 	// Expected slots present per node. Three nodes: frontend, backend, data.main-db.
 	for _, nodeID := range []string{"frontend", "backend", "data.main-db"} {
-		// boundary path differs per node; discover at runtime via dir-walk.
-		nodeDir := findTraceNodeDir(t, traceRoot, nodeID)
-		assertTraceFilePresent(t, nodeDir, "01-pillars-initial.yaml")
-		assertTraceFilePresent(t, nodeDir, "02-pass1-provides.yaml")
-		assertTraceFilePresent(t, nodeDir, "03-pass2-inject.yaml")
-		assertTraceFilePresent(t, nodeDir, "04-phaseA-inject.yaml")
-		assertTraceFilePresent(t, nodeDir, "05-phaseB-source.yaml")
-		assertTraceFilePresent(t, nodeDir, "06-phaseB-locals.yaml")
-		assertTraceFilePresent(t, nodeDir, "07-phaseB-valuesMapping.yaml")
-		assertTraceFilePresent(t, nodeDir, "11-engine-emission.log")
-		assertTraceFilePresent(t, nodeDir, "12-labels-injected.log")
+		prefix := traceNodePrefix(t, res.Trace, nodeID)
+		assertTraceSlotPresent(t, res.Trace, prefix, "01-pillars-initial.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "02-pass1-provides.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "03-pass2-inject.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "04-phaseA-inject.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "05-phaseB-source.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "06-phaseB-locals.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "07-phaseB-valuesMapping.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "11-engine-emission.log")
+		assertTraceSlotPresent(t, res.Trace, prefix, "12-labels-injected.log")
 		// workload-mode and synthesis-per-file slots absent for sourced shape:
-		assertTraceFileAbsent(t, nodeDir, "08-phaseB-workload.yaml")
-		assertTraceDirAbsent(t, nodeDir, "10-engine-synthesis")
+		assertTraceSlotAbsent(t, res.Trace, prefix, "08-phaseB-workload.yaml")
+		assertTraceSlotDirAbsent(t, res.Trace, prefix, "10-engine-synthesis")
 	}
 
 	// Per-artifact granularity at slot 09: each component's Recipe has
 	// one artifacts entry; assert at least one file under
 	// <node>/09-phaseB-artifacts/.
 	for _, nodeID := range []string{"frontend", "backend", "data.main-db"} {
-		nodeDir := findTraceNodeDir(t, traceRoot, nodeID)
-		artifactDir := filepath.Join(nodeDir, "09-phaseB-artifacts")
-		entries, err := os.ReadDir(artifactDir)
-		if err != nil {
-			t.Errorf("node %s: 09-phaseB-artifacts dir not found: %v", nodeID, err)
-			continue
-		}
+		prefix := traceNodePrefix(t, res.Trace, nodeID)
+		entries := traceSlotDirEntries(res.Trace, prefix, "09-phaseB-artifacts")
 		if len(entries) == 0 {
 			t.Errorf("node %s: 09-phaseB-artifacts is empty; expected per-artifact entries", nodeID)
 		}
@@ -85,36 +78,30 @@ func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 // always present.
 func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 	t.Parallel()
-	traceRoot := t.TempDir()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:      "helm-synthesized",
-		traceRoot: traceRoot,
+		name:         "helm-synthesized",
+		includeTrace: true,
 	})
 	if len(res.Files) == 0 {
 		t.Fatalf("renderer produced no files; trace assertion vacuous")
 	}
 
 	for _, nodeID := range []string{"frontend", "backend", "data.main-db"} {
-		nodeDir := findTraceNodeDir(t, traceRoot, nodeID)
+		prefix := traceNodePrefix(t, res.Trace, nodeID)
 		// Always-present slots:
-		assertTraceFilePresent(t, nodeDir, "01-pillars-initial.yaml")
-		assertTraceFilePresent(t, nodeDir, "02-pass1-provides.yaml")
-		assertTraceFilePresent(t, nodeDir, "03-pass2-inject.yaml")
-		assertTraceFilePresent(t, nodeDir, "04-phaseA-inject.yaml")
-		assertTraceFilePresent(t, nodeDir, "08-phaseB-workload.yaml")
-		assertTraceFilePresent(t, nodeDir, "11-engine-emission.log")
-		assertTraceFilePresent(t, nodeDir, "12-labels-injected.log")
+		assertTraceSlotPresent(t, res.Trace, prefix, "01-pillars-initial.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "02-pass1-provides.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "03-pass2-inject.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "04-phaseA-inject.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "08-phaseB-workload.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "11-engine-emission.log")
+		assertTraceSlotPresent(t, res.Trace, prefix, "12-labels-injected.log")
 		// Absent slots for sourceless + no-valuesMapping:
-		assertTraceFileAbsent(t, nodeDir, "05-phaseB-source.yaml")
-		assertTraceFileAbsent(t, nodeDir, "07-phaseB-valuesMapping.yaml")
+		assertTraceSlotAbsent(t, res.Trace, prefix, "05-phaseB-source.yaml")
+		assertTraceSlotAbsent(t, res.Trace, prefix, "07-phaseB-valuesMapping.yaml")
 		// Slot 10 (per-synthesised-file): present because Recipe has workload:.
 		// Each component synthesises >= 1 file via WorkloadSynthesizer.
-		synthDir := filepath.Join(nodeDir, "10-engine-synthesis")
-		entries, err := os.ReadDir(synthDir)
-		if err != nil {
-			t.Errorf("node %s: 10-engine-synthesis dir not found: %v", nodeID, err)
-			continue
-		}
+		entries := traceSlotDirEntries(res.Trace, prefix, "10-engine-synthesis")
 		if len(entries) == 0 {
 			t.Errorf("node %s: 10-engine-synthesis is empty; expected per-synthesised-file entries", nodeID)
 		}
@@ -127,106 +114,94 @@ func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 // slot 10 (per-synthesised-file), and slot 11 (emission) all land for compose.
 func TestTrace_ComposeWithArtifacts_LayoutPresent(t *testing.T) {
 	t.Parallel()
-	traceRoot := t.TempDir()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:          "compose-with-artifacts",
-		aggregatePath: "testdata/fullstack-app/aggregates/compose-with-artifacts.yaml",
-		releasePath:   "testdata/fullstack-app/releases/compose-with-artifacts.yaml",
-		manifestPath:  "testdata/fullstack-app/manifests/compose-with-artifacts.yaml",
-		traceRoot:     traceRoot,
+		name:         "compose-with-artifacts",
+		releasePath:  "testdata/fullstack-app/releases/compose-with-artifacts.yaml",
+		includeTrace: true,
 	})
 	if len(res.Files) == 0 {
 		t.Fatalf("renderer produced no files; trace assertion vacuous")
 	}
 
-	nodeDir := findTraceNodeDir(t, traceRoot, "overlays")
-	assertTraceFilePresent(t, nodeDir, "01-pillars-initial.yaml")
-	assertTraceFilePresent(t, nodeDir, "02-pass1-provides.yaml")
-	assertTraceFilePresent(t, nodeDir, "03-pass2-inject.yaml")
-	assertTraceFilePresent(t, nodeDir, "08-phaseB-workload.yaml")
-	assertTraceFilePresent(t, nodeDir, "11-engine-emission.log")
-	assertTraceFilePresent(t, nodeDir, "12-labels-injected.log")
+	prefix := traceNodePrefix(t, res.Trace, "overlays")
+	assertTraceSlotPresent(t, res.Trace, prefix, "01-pillars-initial.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "02-pass1-provides.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "03-pass2-inject.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "08-phaseB-workload.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "11-engine-emission.log")
+	assertTraceSlotPresent(t, res.Trace, prefix, "12-labels-injected.log")
 	// Slots 09 and 10: ComposeArtifacts has both placeholder workload AND
 	// artifacts, so both per-file slot directories should appear.
 	for _, slotDir := range []string{"09-phaseB-artifacts", "10-engine-synthesis"} {
-		full := filepath.Join(nodeDir, slotDir)
-		entries, err := os.ReadDir(full)
-		if err != nil {
-			t.Errorf("%s dir not found at %s: %v", slotDir, full, err)
-			continue
-		}
-		if len(entries) == 0 {
+		if len(traceSlotDirEntries(res.Trace, prefix, slotDir)) == 0 {
 			t.Errorf("%s is empty; expected per-file entries", slotDir)
 		}
 	}
 }
 
-// findTraceNodeDir locates the trace directory for a given nodeID under
-// traceRoot/boundaries/<boundary>/<nodeID>/. Returns the discovered path or
-// fails the test. The boundary segment is unknown to the test (boundaries
-// vary per fixture); discovery is by directory walk.
-func findTraceNodeDir(t *testing.T, traceRoot, nodeID string) string {
+// traceNodePrefix locates the trace key prefix for a given nodeID within the
+// in-memory trace map. Every node emits the always-present slot
+// 12-labels-injected.log directly under its node directory, so the key ending
+// in /<nodeID>/12-labels-injected.log uniquely anchors the node; the prefix is
+// that key with the slot filename trimmed. Returns the prefix or fails the test.
+func traceNodePrefix(t *testing.T, tr map[string][]byte, nodeID string) string {
 	t.Helper()
-	boundariesDir := filepath.Join(traceRoot, "boundaries")
-	var found string
-	err := filepath.Walk(boundariesDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	const anchor = "12-labels-injected.log"
+	suffix := "/" + nodeID + "/" + anchor
+	for k := range tr {
+		if strings.HasSuffix(k, suffix) {
+			return strings.TrimSuffix(k, "/"+anchor)
 		}
-		if !info.IsDir() {
-			return nil
-		}
-		if filepath.Base(path) == nodeID && strings.HasPrefix(path, boundariesDir+string(filepath.Separator)) {
-			found = path
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk %s: %v", boundariesDir, err)
 	}
-	if found == "" {
-		t.Fatalf("trace node dir for %q not found under %s; existing entries: %v", nodeID, boundariesDir, listTraceContents(boundariesDir))
-	}
-	return found
+	t.Fatalf("trace node prefix for %q not found; keys: %v", nodeID, sortedTraceKeys(tr))
+	return ""
 }
 
-// assertTraceFilePresent verifies a single file exists at nodeDir/name.
-func assertTraceFilePresent(t *testing.T, nodeDir, name string) {
+// assertTraceSlotPresent verifies a single slot file exists at prefix/name.
+func assertTraceSlotPresent(t *testing.T, tr map[string][]byte, prefix, name string) {
 	t.Helper()
-	full := filepath.Join(nodeDir, name)
-	if _, err := os.Stat(full); err != nil {
-		t.Errorf("expected trace file %s missing: %v", full, err)
+	if _, ok := tr[prefix+"/"+name]; !ok {
+		t.Errorf("expected trace slot %s/%s missing", prefix, name)
 	}
 }
 
-// assertTraceFileAbsent verifies a file does NOT exist at nodeDir/name.
-func assertTraceFileAbsent(t *testing.T, nodeDir, name string) {
+// assertTraceSlotAbsent verifies a slot file does NOT exist at prefix/name.
+func assertTraceSlotAbsent(t *testing.T, tr map[string][]byte, prefix, name string) {
 	t.Helper()
-	full := filepath.Join(nodeDir, name)
-	if _, err := os.Stat(full); err == nil {
-		t.Errorf("trace file %s present but expected absent for this fixture's input kinds", full)
+	if _, ok := tr[prefix+"/"+name]; ok {
+		t.Errorf("trace slot %s/%s present but expected absent for this fixture's input kinds", prefix, name)
 	}
 }
 
-// assertTraceDirAbsent verifies a directory does NOT exist at nodeDir/name.
-func assertTraceDirAbsent(t *testing.T, nodeDir, name string) {
+// assertTraceSlotDirAbsent verifies no per-file slot entries exist under
+// prefix/dir/.
+func assertTraceSlotDirAbsent(t *testing.T, tr map[string][]byte, prefix, dir string) {
 	t.Helper()
-	full := filepath.Join(nodeDir, name)
-	if info, err := os.Stat(full); err == nil && info.IsDir() {
-		t.Errorf("trace dir %s present but expected absent for this fixture's input kinds", full)
+	if entries := traceSlotDirEntries(tr, prefix, dir); len(entries) > 0 {
+		t.Errorf("trace slot dir %s/%s present (%d entries) but expected absent for this fixture's input kinds", prefix, dir, len(entries))
 	}
 }
 
-// listTraceContents returns sorted dir entries for diagnostic messages.
-func listTraceContents(root string) []string {
+// traceSlotDirEntries returns the trace keys representing per-file entries
+// under prefix/dir/ (e.g. the per-artifact or per-synthesised-file slots).
+func traceSlotDirEntries(tr map[string][]byte, prefix, dir string) []string {
+	want := prefix + "/" + dir + "/"
 	var out []string
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	for k := range tr {
+		if strings.HasPrefix(k, want) {
+			out = append(out, k)
 		}
-		out = append(out, path)
-		return nil
-	})
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedTraceKeys returns the trace map's keys sorted, for diagnostic messages.
+func sortedTraceKeys(tr map[string][]byte) []string {
+	out := make([]string, 0, len(tr))
+	for k := range tr {
+		out = append(out, k)
+	}
 	sort.Strings(out)
 	return out
 }

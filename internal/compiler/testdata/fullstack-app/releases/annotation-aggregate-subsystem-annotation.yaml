@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: annotation-aggregate-subsystem-annotation
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-aggregate-subsystem-annotation.yaml
+  manifest: ../manifests/annotation-values-binding.yaml
+  boundaries:
+    data-ns:
+      directory: ./dist/data
+      annotations:
+        aggrega.ai/namespace: "data-zone"
+      components:
+        data.reader: {}
+        data.writer: {}

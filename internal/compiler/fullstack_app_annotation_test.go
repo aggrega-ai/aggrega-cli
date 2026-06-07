@@ -55,117 +55,84 @@ func headBytes(b []byte, n int) string {
 	return fmt.Sprintf("%s...\n[truncated; full length=%d]", string(b[:n]), len(b))
 }
 
-// runPairedAnnotationVariant runs the helm-synthesized pipeline for an
-// explicit-Feature pair and an annotation-driven pair and asserts the
-// rendered dist/ output is byte-identical.
-func runPairedAnnotationVariant(
-	t *testing.T,
-	explicitAggregate, explicitRelease,
-	annotationAggregate, annotationRelease,
-	manifest string,
-) {
+// runPairedAnnotationVariant compiles the helm-synthesized variant for an
+// explicit-Feature Release and an annotation-driven Release through the build-
+// faithful harness, then asserts the rendered dist/ output is byte-identical.
+// Each Release names its own Aggregate via spec pointers (the build derives
+// it), so the pair compares an explicitly-authored Aggregate against the
+// annotation-driven one that the same authoring should expand to.
+func runPairedAnnotationVariant(t *testing.T, explicitRelease, annotationRelease string) {
 	t.Helper()
 	explicit := runFullstackAppVariant(t, variantFixture{
-		name:          "helm-synthesized",
-		aggregatePath: explicitAggregate,
-		releasePath:   explicitRelease,
-		manifestPath:  manifest,
+		name:        "helm-synthesized",
+		releasePath: explicitRelease,
 	})
 	annotation := runFullstackAppVariant(t, variantFixture{
-		name:          "helm-synthesized",
-		aggregatePath: annotationAggregate,
-		releasePath:   annotationRelease,
-		manifestPath:  manifest,
+		name:        "helm-synthesized",
+		releasePath: annotationRelease,
 	})
 	assertPairedDistByteIdentical(t, explicit, annotation)
 }
 
 func TestFullstackApp_AnnotationRewriteHost_Boundary(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-release-side.yaml",
 		"testdata/fullstack-app/releases/annotation-boundary-explicit.yaml",
-		"testdata/fullstack-app/aggregates/annotation-release-side.yaml",
 		"testdata/fullstack-app/releases/annotation-boundary-annotation.yaml",
-		"testdata/fullstack-app/manifests/annotation-rewrite-host.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationRewriteHost_ComponentOverride(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-release-side.yaml",
 		"testdata/fullstack-app/releases/annotation-override-explicit.yaml",
-		"testdata/fullstack-app/aggregates/annotation-release-side.yaml",
 		"testdata/fullstack-app/releases/annotation-override-annotation.yaml",
-		"testdata/fullstack-app/manifests/annotation-rewrite-host.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationRewriteHost_NullOptOut(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-release-side.yaml",
 		"testdata/fullstack-app/releases/annotation-null-opt-out-explicit.yaml",
-		"testdata/fullstack-app/aggregates/annotation-release-side.yaml",
 		"testdata/fullstack-app/releases/annotation-null-opt-out-annotation.yaml",
-		"testdata/fullstack-app/manifests/annotation-rewrite-host.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationValuesBinding(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-values-binding-explicit.yaml",
 		"testdata/fullstack-app/releases/annotation-values-binding.yaml",
-		"testdata/fullstack-app/aggregates/annotation-values-binding-annotation.yaml",
-		"testdata/fullstack-app/releases/annotation-values-binding.yaml",
-		"testdata/fullstack-app/manifests/annotation-values-binding.yaml",
+		"testdata/fullstack-app/releases/annotation-values-binding-annotation.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationRecursiveBoundary(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-recursive-boundary.yaml",
 		"testdata/fullstack-app/releases/annotation-recursive-explicit.yaml",
-		"testdata/fullstack-app/aggregates/annotation-recursive-boundary.yaml",
 		"testdata/fullstack-app/releases/annotation-recursive-annotation.yaml",
-		"testdata/fullstack-app/manifests/annotation-rewrite-host.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationAggregateSubsystem(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-aggregate-subsystem-explicit.yaml",
 		"testdata/fullstack-app/releases/annotation-aggregate-subsystem.yaml",
-		"testdata/fullstack-app/aggregates/annotation-aggregate-subsystem-annotation.yaml",
-		"testdata/fullstack-app/releases/annotation-aggregate-subsystem.yaml",
-		"testdata/fullstack-app/manifests/annotation-values-binding.yaml",
+		"testdata/fullstack-app/releases/annotation-aggregate-subsystem-annotation.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationAggregateComponentOverride(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-aggregate-override-explicit.yaml",
 		"testdata/fullstack-app/releases/annotation-aggregate-override.yaml",
-		"testdata/fullstack-app/aggregates/annotation-aggregate-override-annotation.yaml",
-		"testdata/fullstack-app/releases/annotation-aggregate-override.yaml",
-		"testdata/fullstack-app/manifests/annotation-values-binding.yaml",
+		"testdata/fullstack-app/releases/annotation-aggregate-override-annotation.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationCrossSideCompose(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-cross-side-explicit.yaml",
 		"testdata/fullstack-app/releases/annotation-cross-side-explicit.yaml",
-		"testdata/fullstack-app/aggregates/annotation-cross-side-annotation.yaml",
 		"testdata/fullstack-app/releases/annotation-cross-side-annotation.yaml",
-		"testdata/fullstack-app/manifests/annotation-cross-side.yaml",
 	)
 }
 
 func TestFullstackApp_AnnotationStructuredValue(t *testing.T) {
 	runPairedAnnotationVariant(t,
-		"testdata/fullstack-app/aggregates/annotation-structured.yaml",
 		"testdata/fullstack-app/releases/annotation-structured-explicit.yaml",
-		"testdata/fullstack-app/aggregates/annotation-structured.yaml",
 		"testdata/fullstack-app/releases/annotation-structured-annotation.yaml",
-		"testdata/fullstack-app/manifests/annotation-structured.yaml",
 	)
 }

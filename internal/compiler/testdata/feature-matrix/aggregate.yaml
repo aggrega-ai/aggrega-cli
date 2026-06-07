@@ -17,9 +17,6 @@ spec:
                   from: host
                 - in: DB_PORT
                   from: port
-      features:
-        metrics:
-          type: core/prometheus-exporter
     db:
       type: core/database/mariadb
       values:

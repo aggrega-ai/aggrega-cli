@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: prod-manifest-by-implements
+  version: "1.0.0"
+spec:
+  # No component recipe pins: each per-variant test loads exactly one recipe
+  # sub-directory, so every component/feature type has a single implementer
+  # and resolves unambiguously by implements-fallback. (The sibling
+  # manifest.yaml pins recipes because the full-catalog pipeline test loads
+  # all variants at once and needs deterministic disambiguation.)
+  {}

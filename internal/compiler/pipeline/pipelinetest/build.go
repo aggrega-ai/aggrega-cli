@@ -12,7 +12,9 @@
 // Hand-assembling the pipeline (resolver.Resolve -> topology.Build ->
 // ir.BuildIR -> renderer.RenderAll) in a test skips the verifier and any other
 // gate RunPipeline runs between IR and render; do not do that for a test that
-// claims end-to-end build fidelity. Use Build.
+// claims end-to-end build fidelity. Use Build for a positive build, BuildE for
+// a negative-path test that asserts on the error a real build produces, and
+// set Input.IncludeTrace to assert on per-pass trace layout via Result.Trace.
 //
 // Scope: this harness loads a self-contained, local catalog (catalog.LoadAll)
 // and passes a nil Lockfile / empty WorkspaceRoot — the local/sourceless path
@@ -25,6 +27,7 @@ package pipelinetest
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -39,38 +42,69 @@ import (
 // spec.manifest names (resolved against the Release's directory), exactly as
 // the CLI build derives them. CatalogPaths are the catalog directories/files
 // to load (passed to catalog.LoadAll).
+//
+// IncludeTrace, when true, turns on per-pass trace collection: the returned
+// Result.Trace carries the same relative-path-keyed entries the filesystem
+// trace writer would emit (boundaries/<boundaryPath>/<nodeID>/...), so a test
+// can assert on trace layout by reading Result.Trace rather than walking a
+// temp directory. Off by default — most tests assert only on Artifacts.
 type Input struct {
 	ReleasePath  string
 	CatalogPaths []string
+	IncludeTrace bool
 }
 
 // Build compiles the workspace named by in through the real pipeline with the
 // CLI build's Options (recipe-resolution verifier ON) and the shared provider
-// dispatch, returning the pipeline Result (rendered Artifacts + the IR graph).
-// It fails the test on any error — including a Step-4c resolution-completeness
-// failure, which is the whole point: a build-invalid workspace fails here the
-// way it fails a real build.
+// dispatch, returning the pipeline Result (rendered Artifacts + the IR graph,
+// plus Trace when in.IncludeTrace is set). It fails the test on any error —
+// including a Step-4c resolution-completeness failure, which is the whole
+// point: a build-invalid workspace fails here the way it fails a real build.
 func Build(t *testing.T, in Input) *pipeline.Result {
 	t.Helper()
+	result, err := compile(in)
+	if err != nil {
+		t.Fatalf("pipelinetest.Build: %v", err)
+	}
+	return result
+}
 
+// BuildE is the error-returning sibling of Build: it runs the identical
+// build-faithful pipeline (Step 4c on) but returns the first error instead of
+// failing the test. A negative-path test uses BuildE to assert on the error a
+// real build produces — at catalog load, resolution, Step 4c, or render — via
+// errors.Is/message inspection, rather than treating any failure as a test
+// fault. It is build-faithful, not a bypass: the full pipeline runs, so the
+// same error surfaces in the same place a real build would surface it.
+func BuildE(t *testing.T, in Input) (*pipeline.Result, error) {
+	t.Helper()
+	return compile(in)
+}
+
+// compile is the shared core of Build and BuildE. It loads the catalog,
+// derives the Aggregate and Manifest from the Release's spec pointers (exactly
+// as the CLI build does), and runs the real pipeline with the recipe-
+// resolution verifier on. Returns the first error encountered; the two
+// exported entry points choose whether to fail the test or surface it.
+func compile(in Input) (*pipeline.Result, error) {
 	cat, err := catalog.LoadAll("", in.CatalogPaths...)
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: catalog load: %v", err)
+		return nil, fmt.Errorf("catalog load: %w", err)
 	}
 
 	rel, err := resolver.LoadRelease(in.ReleasePath)
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: load release: %v", err)
+		return nil, fmt.Errorf("load release: %w", err)
 	}
 	releaseDir := filepath.Dir(in.ReleasePath)
 	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: load manifest: %v", err)
+		return nil, fmt.Errorf("load manifest: %w", err)
 	}
 	manifest := manRes.Manifest
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: load aggregate: %v", err)
+		return nil, fmt.Errorf("load aggregate: %w", err)
 	}
 	aggBytes := aggRes.Bytes
 
@@ -91,10 +125,11 @@ func Build(t *testing.T, in Input) *pipeline.Result {
 			// The build-faithful bit: Step 4c (resolution-completeness) ON,
 			// exactly as cmd/aggrega/build.go runs it.
 			RecipeResolutionVerifier: cat.VerifyRecipeResolution,
+			IncludeTrace:             in.IncludeTrace,
 		},
 	)
 	if err != nil {
-		t.Fatalf("pipelinetest.Build: RunPipeline (build-faithful, Step 4c on): %v", err)
+		return nil, err
 	}
-	return result
+	return result, nil
 }

@@ -7,8 +7,6 @@ import (
 	"bytes"
 	stderrors "errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -99,12 +97,12 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 		v := v
 		t.Run("TraceLayout/"+v.name, func(t *testing.T) {
 			t.Parallel()
-			v.traceRoot = t.TempDir()
+			v.includeTrace = true
 			res := runFeatureMatrixVariant(t, v)
 			if len(res.Files) == 0 {
 				t.Fatalf("renderer produced no files; trace assertion vacuous")
 			}
-			assertAlwaysPresentTraceSlots(t, v.traceRoot)
+			assertAlwaysPresentTraceSlots(t, res.Trace)
 		})
 	}
 
@@ -383,45 +381,32 @@ func testSentinelFRTemplateInvalidField(t *testing.T) {
 	}
 }
 
-// assertAlwaysPresentTraceSlots discovers each node-leaf directory under
-// traceRoot/boundaries/ (recursively, so nested-boundary fixtures like the
-// compose+bridge variant are handled) and asserts the seven slots that
-// fire regardless of the node's Recipe shape: pre-loop captures (01-04),
-// Phase B.0 locals (06), per-node emission log (11), and provenance summary
-// (12).
+// assertAlwaysPresentTraceSlots discovers each node-leaf in the in-memory
+// trace map (recursively across nested boundaries, so the compose+bridge
+// variant is handled) and asserts the seven slots that fire regardless of the
+// node's Recipe shape: pre-loop captures (01-04), Phase B.0 locals (06),
+// per-node emission log (11), and provenance summary (12).
 //
-// Node-leaf detection: a directory carrying 12-labels-injected.log is a
-// node-leaf. Slots whose presence depends on Recipe shape (05-source,
-// 07-valuesMapping, 08-workload, 09-artifacts, 10-engine-synthesis) are
-// exercised by trace_layout_test.go's per-shape tests — the cross-cutting
-// criterion validates only the cross-variant always-present subset.
-func assertAlwaysPresentTraceSlots(t *testing.T, traceRoot string) {
+// Node-leaf detection: a node emits 12-labels-injected.log directly under its
+// node directory, so each key ending in /12-labels-injected.log anchors one
+// node-leaf; its prefix is that key with the slot filename trimmed. Slots
+// whose presence depends on Recipe shape (05-source, 07-valuesMapping,
+// 08-workload, 09-artifacts, 10-engine-synthesis) are exercised by
+// trace_layout_test.go's per-shape tests — the cross-cutting criterion
+// validates only the cross-variant always-present subset.
+func assertAlwaysPresentTraceSlots(t *testing.T, tr map[string][]byte) {
 	t.Helper()
-	boundariesDir := filepath.Join(traceRoot, "boundaries")
-	if _, err := os.Stat(boundariesDir); err != nil {
-		t.Fatalf("trace boundaries dir %s missing: %v", boundariesDir, err)
-	}
-	var nodeDirs []string
-	err := filepath.Walk(boundariesDir, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	const anchor = "12-labels-injected.log"
+	var prefixes []string
+	for k := range tr {
+		if strings.HasSuffix(k, "/"+anchor) {
+			prefixes = append(prefixes, strings.TrimSuffix(k, "/"+anchor))
 		}
-		if !info.IsDir() {
-			return nil
-		}
-		if _, err := os.Stat(filepath.Join(path, "12-labels-injected.log")); err == nil {
-			nodeDirs = append(nodeDirs, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk %s: %v", boundariesDir, err)
 	}
-	if len(nodeDirs) == 0 {
-		t.Fatalf("no node-leaf directories under %s; trace not emitted", boundariesDir)
+	if len(prefixes) == 0 {
+		t.Fatalf("no node-leaf trace entries; trace not emitted")
 	}
-	for _, nodeDir := range nodeDirs {
-		rel, _ := filepath.Rel(boundariesDir, nodeDir)
+	for _, prefix := range prefixes {
 		for _, slot := range []string{
 			"01-pillars-initial.yaml",
 			"02-pass1-provides.yaml",
@@ -431,8 +416,8 @@ func assertAlwaysPresentTraceSlots(t *testing.T, traceRoot string) {
 			"11-engine-emission.log",
 			"12-labels-injected.log",
 		} {
-			if _, err := os.Stat(filepath.Join(nodeDir, slot)); err != nil {
-				t.Errorf("node %s: always-present slot %s missing", rel, slot)
+			if _, ok := tr[prefix+"/"+slot]; !ok {
+				t.Errorf("node %s: always-present slot %s missing", prefix, slot)
 			}
 		}
 	}

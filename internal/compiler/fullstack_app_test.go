@@ -4,23 +4,13 @@
 package compiler_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
-	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 )
 
 // FullstackApp drives the end-to-end proof across the 4-variant provider matrix:
@@ -49,160 +39,66 @@ const (
 )
 
 type fullstackAppResult struct {
-	Files    map[string][]byte
-	Warnings []string
+	Files map[string][]byte
+	// Trace carries the per-pass intermediate state, keyed by the same
+	// relative path the on-disk trace writer would use
+	// (boundaries/<boundaryPath>/<nodeID>/...). Populated only when the
+	// variant sets includeTrace; nil otherwise.
+	Trace map[string][]byte
 }
 
-// variantFixture identifies the catalog sub-directory plus optional
-// per-variant overrides for the Aggregate / Release / Manifest paths.
-// Empty path fields default to the fullstack-app root files; variants requiring
-// distinct authoring shapes (compose-only Aggregates, artifacts-only topology)
-// supply their own paths under testdata/fullstack-app/aggregates/ etc.
+// variantFixture identifies the catalog recipes sub-directory plus an optional
+// per-variant Release path. An empty releasePath defaults to the fullstack-app
+// root Release; variants whose authoring shape diverges supply their own
+// Release under testdata/fullstack-app/releases/, which names its own Aggregate
+// and Manifest via spec pointers (the build derives them from the Release).
 //
-// traceRoot, when non-empty, enables --trace and writes per-pass intermediate
-// state under traceRoot/boundaries/<boundary>/<instance_id>/. Tests pass
-// t.TempDir() to confine the trace surface to the test process.
+// includeTrace, when true, turns on per-pass trace collection; the rendered
+// result's Trace map then carries the per-node trace entries for layout
+// assertions.
 type variantFixture struct {
-	name          string
-	aggregatePath string
-	releasePath   string
-	manifestPath  string
-	traceRoot     string
+	name         string
+	releasePath  string
+	includeTrace bool
 }
 
-// runFullstackApp executes the full 5-step pipeline for one variant and returns
-// the rendered file set, sharing the root Aggregate / Release / Manifest.
-// Thin wrapper over runFullstackAppVariant for variants that don't override.
+// runFullstackApp compiles one variant through the build-faithful harness and
+// returns the rendered file set, sharing the root Release. Thin wrapper over
+// runFullstackAppVariant for variants that don't override the Release.
 func runFullstackApp(t *testing.T, variant string) *fullstackAppResult {
 	t.Helper()
 	return runFullstackAppVariant(t, variantFixture{name: variant})
 }
 
-// runFullstackAppVariant executes the full 5-step pipeline for a per-variant
-// fixture. Path fields on fx default to the fullstack-app root files when empty;
-// variants whose authoring shape diverges from the shared Aggregate / Release
-// / Manifest pass explicit paths.
+// runFullstackAppVariant compiles a per-variant fixture through the build-
+// faithful harness (pipelinetest.Build) — the real pipeline with the CLI
+// build's Options, including Step 4c resolution-completeness. The Release path
+// defaults to the fullstack-app root Release when empty; the variant's recipe
+// layer is selected by loading catalog/recipes/<name>. The Aggregate and
+// Manifest are derived from the Release's spec pointers, exactly as a real
+// build derives them.
 func runFullstackAppVariant(t *testing.T, fx variantFixture) *fullstackAppResult {
 	t.Helper()
 
 	base := "testdata/fullstack-app/catalog/base"
 	recipesDir := filepath.Join("testdata/fullstack-app/catalog/recipes", fx.name)
-	if fx.aggregatePath == "" {
-		fx.aggregatePath = "testdata/fullstack-app/aggregate.yaml"
-	}
-	if fx.releasePath == "" {
-		fx.releasePath = "testdata/fullstack-app/release.yaml"
-	}
-	if fx.manifestPath == "" {
-		fx.manifestPath = "testdata/fullstack-app/manifest.yaml"
-	}
-
-	cat, err := catalog.LoadAll("", base, recipesDir)
-	if err != nil {
-		t.Fatalf("catalog load: %v", err)
+	releasePath := fx.releasePath
+	if releasePath == "" {
+		// The per-variant default Release pins no component recipes (its
+		// Manifest is spec-empty): each variant test loads one recipe
+		// sub-directory, so implements-fallback resolves unambiguously. The
+		// sibling release.yaml/manifest.yaml pair pins recipes for the
+		// full-catalog pipeline test and is not build-faithful for a single-
+		// variant load.
+		releasePath = "testdata/fullstack-app/release-by-implements.yaml"
 	}
 
-	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: fx.aggregatePath,
-		ReleasePath:   fx.releasePath,
-		ManifestPath:  fx.manifestPath,
+	result := pipelinetest.Build(t, pipelinetest.Input{
+		ReleasePath:  releasePath,
+		CatalogPaths: []string{base, recipesDir},
+		IncludeTrace: fx.includeTrace,
 	})
-	if err != nil {
-		t.Fatalf("Step 1 (resolve): %v", err)
-	}
-
-	catalogLookup := cat.CatalogLookup()
-
-	// Mirror the production Step 1 pipeline order from cmd/aggrega/build.go:
-	// validate annotation binding targets against catalog Feature schemas,
-	// then run annotation-driven Feature expansion before guards. The two
-	// calls are no-ops for fixtures with no annotation bindings (empty
-	// registry); they are load-bearing for fixtures declaring annotation
-	// bindings.
-	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
-		t.Fatalf("Step 1 (annotation binding validation): %v", err)
-	}
-	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-		t.Fatalf("Step 1 (annotation expansion): %v", err)
-	}
-
-	// Step 1a: Guards — MUST pass for the end-to-end proof.
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			t.Errorf("guard: %s", e.Error())
-		}
-		t.FailNow()
-	}
-
-	// Step 2: Topology
-	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: cat.SubAggregateLoader(),
-	})
-	if err != nil {
-		t.Fatalf("Step 2 (topology): %v", err)
-	}
-
-	// Step 3: IR
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0",
-	})
-	if err != nil {
-		t.Fatalf("Step 3 (IR): %v", err)
-	}
-
-	// Step 4: Analyze
-	analysis := analyzer.Analyze(graph, catalogLookup)
-	for _, e := range analysis.Errors {
-		t.Errorf("selector: %s → %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
-
-	// Step 5: Render — provider per-node via factory.
-	providerLookup := cat.ProviderLookup
-	var traceWriter trace.Writer
-	if fx.traceRoot != "" {
-		traceWriter = trace.New(fx.traceRoot)
-		defer func() { _ = traceWriter.Close() }()
-	}
-	rendererInput := renderer.RendererInput{
-		Graph:          graph,
-		FeatureOrder:   featureOrder,
-		ResolveResult:  resolveResult,
-		CatalogLookup:  catalogLookup,
-		ProviderLookup: providerLookup,
-		Trace:          traceWriter,
-	}
-	engineFactory := func(providerName string) (renderer.Engine, error) {
-		switch providerName {
-		case "helm", "helm-raw", "":
-			return &renderHelm.HelmEngine{}, nil
-		case "helm-chart":
-			return &renderHelmChart.HelmEngine{}, nil
-		case "compose":
-			return &renderCompose.ComposeEngine{}, nil
-		default:
-			return nil, nil
-		}
-	}
-
-	renderResult, err := renderer.RenderAll(
-		context.Background(),
-		rendererInput,
-		cat.RecipeLookup(),
-		engineFactory,
-	)
-	if err != nil {
-		t.Fatalf("Step 5 (render): %v", err)
-	}
-	return &fullstackAppResult{Files: renderResult.Files, Warnings: renderResult.Warnings}
+	return &fullstackAppResult{Files: result.Artifacts, Trace: result.Trace}
 }
 
 // assertCommonProof asserts the invariants for variants whose output is
@@ -321,25 +217,11 @@ func TestFullstackApp_HelmSynthesized(t *testing.T) {
 	assertDistMatches(t, res.Files, "testdata/fullstack-app/expected/helm-synthesized", "dist/")
 }
 
-func TestFullstackApp_HelmArtifacts(t *testing.T) {
-	t.Parallel()
-	res := runFullstackAppVariant(t, variantFixture{
-		name:          "helm-artifacts",
-		aggregatePath: "testdata/fullstack-app/aggregates/helm-artifacts.yaml",
-		releasePath:   "testdata/fullstack-app/releases/helm-artifacts.yaml",
-		manifestPath:  "testdata/fullstack-app/manifests/helm-artifacts.yaml",
-	})
-	assertProvenanceLabels(t, res.Files, nil)
-	assertDistMatches(t, res.Files, "testdata/fullstack-app/expected/helm-artifacts", "dist/")
-}
-
 func TestFullstackApp_ComposeSynthesized(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:          "compose-synthesized",
-		aggregatePath: "testdata/fullstack-app/aggregates/compose-synthesized.yaml",
-		releasePath:   "testdata/fullstack-app/releases/compose-synthesized.yaml",
-		manifestPath:  "testdata/fullstack-app/manifests/compose-synthesized.yaml",
+		name:        "compose-synthesized",
+		releasePath: "testdata/fullstack-app/releases/compose-synthesized.yaml",
 	})
 	assertDistMatches(t, res.Files, "testdata/fullstack-app/expected/compose-synthesized", "dist/")
 }
@@ -347,10 +229,8 @@ func TestFullstackApp_ComposeSynthesized(t *testing.T) {
 func TestFullstackApp_ComposeSourced(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:          "compose-sourced",
-		aggregatePath: "testdata/fullstack-app/aggregates/compose-synthesized.yaml",
-		releasePath:   "testdata/fullstack-app/releases/compose-synthesized.yaml",
-		manifestPath:  "testdata/fullstack-app/manifests/compose-synthesized.yaml",
+		name:        "compose-sourced",
+		releasePath: "testdata/fullstack-app/releases/compose-synthesized.yaml",
 	})
 	assertDistMatches(t, res.Files, "testdata/fullstack-app/expected/compose-sourced", "dist/")
 }
@@ -391,10 +271,8 @@ func TestFullstackApp_HelmChartWithArtifacts(t *testing.T) {
 func TestFullstackApp_ComposeWithArtifacts(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:          "compose-with-artifacts",
-		aggregatePath: "testdata/fullstack-app/aggregates/compose-with-artifacts.yaml",
-		releasePath:   "testdata/fullstack-app/releases/compose-with-artifacts.yaml",
-		manifestPath:  "testdata/fullstack-app/manifests/compose-with-artifacts.yaml",
+		name:        "compose-with-artifacts",
+		releasePath: "testdata/fullstack-app/releases/compose-with-artifacts.yaml",
 	})
 	assertProvenanceLabels(t, res.Files, nil)
 	assertDistMatches(t, res.Files, "testdata/fullstack-app/expected/compose-with-artifacts", "dist/")

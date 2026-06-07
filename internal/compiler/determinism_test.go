@@ -5,7 +5,6 @@ package compiler_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,115 +12,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// determinismCompileResult bundles the IR graph and rendered files from one
-// in-process compilation pass. The IR graph is retained alongside the
-// rendered files so the IR-author-order assertion can read it without a
-// second compile.
-type determinismCompileResult struct {
-	Graph *types.IRGraph
-	Files map[string][]byte
-}
-
-// compileInProcess drives the full 5-step pipeline (resolve → topology →
-// IR → analyze → render) against the determinism fixture. No shell-out to
-// `aggrega build` — shell-out introduces environment dependencies and
-// makes flake-debugging harder. Mirrors the harness shape of runFullstackApp
-// in fullstack_app_test.go.
-func compileInProcess(t *testing.T) *determinismCompileResult {
-	t.Helper()
-
-	base := "testdata/determinism/fullcompile/catalog/base"
-	recipesDir := "testdata/determinism/fullcompile/catalog/recipes/helm"
-
-	cat, err := catalog.LoadAll("", base, recipesDir)
-	if err != nil {
-		t.Fatalf("catalog load: %v", err)
-	}
-
-	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: "testdata/determinism/fullcompile/aggregate.yaml",
-		ReleasePath:   "testdata/determinism/fullcompile/release.yaml",
-		ManifestPath:  "testdata/determinism/fullcompile/manifest.yaml",
-	})
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-
-	catalogLookup := cat.CatalogLookup()
-
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			t.Errorf("guard: %s", e.Error())
-		}
-		t.FailNow()
-	}
-
-	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: cat.SubAggregateLoader(),
-	})
-	if err != nil {
-		t.Fatalf("topology: %v", err)
-	}
-
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0-determinism",
-	})
-	if err != nil {
-		t.Fatalf("IR: %v", err)
-	}
-
-	analysis := analyzer.Analyze(graph, catalogLookup)
-	for _, e := range analysis.Errors {
-		t.Errorf("selector: %s → %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
-
-	rendererInput := renderer.RendererInput{
-		Graph:          graph,
-		FeatureOrder:   featureOrder,
-		ResolveResult:  resolveResult,
-		CatalogLookup:  catalogLookup,
-		ProviderLookup: cat.ProviderLookup,
-	}
-	engineFactory := func(providerName string) (renderer.Engine, error) {
-		switch providerName {
-		case "helm", "":
-			return &renderHelm.HelmEngine{}, nil
-		default:
-			return nil, nil
-		}
-	}
-
-	renderResult, err := renderer.RenderAll(
-		context.Background(),
-		rendererInput,
-		cat.RecipeLookup(),
-		engineFactory,
-	)
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	return &determinismCompileResult{
-		Graph: graph,
-		Files: renderResult.Files,
+// determinismFixtureInput names the determinism fixture for the build-faithful
+// harness: the full 5-step pipeline (resolve → topology → IR → analyze →
+// render) with the recipe-resolution-completeness check on, exactly as the CLI
+// build runs it. No shell-out to `aggrega build` — that introduces environment
+// dependencies and makes flake-debugging harder. The Aggregate and Manifest
+// are derived from the Release's spec pointers.
+func determinismFixtureInput() pipelinetest.Input {
+	return pipelinetest.Input{
+		ReleasePath: "testdata/determinism/fullcompile/release.yaml",
+		CatalogPaths: []string{
+			"testdata/determinism/fullcompile/catalog/base",
+			"testdata/determinism/fullcompile/catalog/recipes/helm",
+		},
 	}
 }
 
@@ -133,18 +43,18 @@ func compileInProcess(t *testing.T) *determinismCompileResult {
 func TestDeterministicCompilation_FullPipeline(t *testing.T) {
 	t.Parallel()
 
-	first := compileInProcess(t)
+	first := pipelinetest.Build(t, determinismFixtureInput())
 
 	for i := 1; i < 10; i++ {
-		this := compileInProcess(t)
+		this := pipelinetest.Build(t, determinismFixtureInput())
 
-		if len(first.Files) != len(this.Files) {
-			t.Errorf("iteration %d: file-count mismatch: first %d, later %d", i, len(first.Files), len(this.Files))
+		if len(first.Artifacts) != len(this.Artifacts) {
+			t.Errorf("iteration %d: file-count mismatch: first %d, later %d", i, len(first.Artifacts), len(this.Artifacts))
 			continue
 		}
 
-		for path, firstContent := range first.Files {
-			thisContent, ok := this.Files[path]
+		for path, firstContent := range first.Artifacts {
+			thisContent, ok := this.Artifacts[path]
 			if !ok {
 				t.Errorf("iteration %d: missing file %q (present in first run)", i, path)
 				continue
@@ -178,9 +88,9 @@ func TestDeterministicCompilation_FullPipeline(t *testing.T) {
 func TestDeterministicCompilation_IRAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	result := compileInProcess(t)
+	result := pipelinetest.Build(t, determinismFixtureInput())
 
-	jsonBytes, err := json.Marshal(result.Graph)
+	jsonBytes, err := json.Marshal(result.IRGraph)
 	if err != nil {
 		t.Fatalf("Marshal IRGraph: %v", err)
 	}
@@ -356,6 +266,16 @@ func tokenAsString(tok any) string {
 // preserves slice order. End-to-end, the user-visible JSON edges array's
 // source-field sequence matches the Aggregate's component declaration
 // order rather than alphabetical-by-source.
+//
+// This test builds the IR directly (topology.Build -> ir.BuildIR -> marshal)
+// against an in-memory Aggregate and a recipe-less stub catalog, with no
+// render and no recipe-resolution-completeness check. It does NOT run through
+// the build-faithful harness: the harness is file-based and gated, and the
+// bespoke compositional uses-edge topology has no recipes, so it would halt at
+// resolution before reaching the IR-marshal surface this test inspects. It
+// isolates the IR-build stage's edge ordering — distinct from
+// TestDeterministicCompilation_FullPipeline's rendered-output determinism, and
+// the IR-author-order sibling that rides the build harness on a real fixture.
 func TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder(t *testing.T) {
 	t.Parallel()
 

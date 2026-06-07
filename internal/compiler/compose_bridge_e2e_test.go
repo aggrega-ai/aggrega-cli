@@ -13,122 +13,54 @@
 package compiler_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 )
 
-// TestComposeBridge_CatalogDriven_E2E exercises the canonical catalog
-// entries for core/compose-bridge end-to-end through the full Step 1-5
-// pipeline. Closes the inject-path verification gap that the renderer-
-// level proof case at boundary_fr_proof_test.go does not cover.
+// TestComposeBridge_CatalogDriven_E2E exercises the canonical catalog entries
+// for core/compose-bridge end-to-end through the full Step 1-5 pipeline. Closes
+// the inject-path verification gap that the renderer-level proof case at
+// boundary_fr_proof_test.go does not cover.
 //
-// Fixture shape: a Release with parent boundary "cluster" attaching the
-// bridge feature, two child boundaries "services-net" (api) and "data-net"
-// (db) declaring directory: "{{ .parent_boundary.directory }}". All
-// contributors merge at the parent's evaluated path.
+// It compiles through the build-faithful harness (pipelinetest.Build), so it
+// runs the real pipeline with the CLI build's Options — including Step 4c
+// resolution-completeness. The bridge feature `core/compose-bridge` therefore
+// resolves to its real shipped FeatureRecipe (loaded from aggrega-hub below),
+// which renders the gateway service and rewrites the consumer's DB_HOST — the
+// rendered output this test asserts on, not a hand-built graph.
+//
+// Fixture shape: a Release with parent boundary "cluster" attaching the bridge
+// feature, two child boundaries "services-net" (api) and "data-net" (db)
+// declaring directory: "{{ .parent_boundary.directory }}". All contributors
+// merge at the parent's evaluated path.
 //
 // Asserts:
 //  1. One docker-compose.yaml at dist/cluster/compose/.
 //  2. That file contains services 'api', 'db', and 'aggrega-gw'.
 //  3. The 'api' service's environment.DB_HOST equals 'aggrega-gw:15432'
-//     (the per-consumer injectMapping rewrite — the new value-add over
-//     the renderer-level proof case, which doesn't exercise injectMapping
-//     at all).
+//     (the per-consumer injectMapping rewrite — the value-add over the
+//     renderer-level proof case, which doesn't exercise injectMapping at all).
 func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 	t.Parallel()
 
-	cat, err := catalog.LoadAll("", 
-		"testdata/compose-bridge/catalog/base",
-		"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
-		"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
-		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
-	)
-	if err != nil {
-		t.Fatalf("catalog load: %v", err)
-	}
-
-	resolveResult, err := resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: "testdata/compose-bridge/aggregate.yaml",
-		ReleasePath:   "testdata/compose-bridge/release.yaml",
-		ManifestPath:  "testdata/compose-bridge/manifest.yaml",
+	result := pipelinetest.Build(t, pipelinetest.Input{
+		ReleasePath: "testdata/compose-bridge/release.yaml",
+		CatalogPaths: []string{
+			"testdata/compose-bridge/catalog/base",
+			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
+			"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
+			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
+		},
 	})
-	if err != nil {
-		t.Fatalf("Step 1 (resolve): %v", err)
-	}
-
-	catalogLookup := cat.CatalogLookup()
-
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra)
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			t.Errorf("guard: %s", e.Error())
-		}
-		t.FailNow()
-	}
-
-	topoResult, err := topology.Build(topology.BuildConfig{
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		LoadSubAggregate: cat.SubAggregateLoader(),
-	})
-	if err != nil {
-		t.Fatalf("Step 2 (topology): %v", err)
-	}
-
-	graph, featureOrder, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0-test",
-	})
-	if err != nil {
-		t.Fatalf("Step 3 (IR): %v", err)
-	}
-
-	analysis := analyzer.Analyze(graph, catalogLookup)
-	for _, e := range analysis.Errors {
-		t.Errorf("selector: %s -> %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
-
-	rendererInput := renderer.RendererInput{
-		Graph:          graph,
-		FeatureOrder:   featureOrder,
-		ResolveResult:  resolveResult,
-		CatalogLookup:  catalogLookup,
-		ProviderLookup: cat.ProviderLookup,
-	}
-	engineFactory := func(string) (renderer.Engine, error) {
-		return &renderCompose.ComposeEngine{}, nil
-	}
-
-	renderResult, err := renderer.RenderAll(
-		context.Background(),
-		rendererInput,
-		cat.RecipeLookup(),
-		engineFactory,
-	)
-	if err != nil {
-		t.Fatalf("Step 5 (render): %v", err)
-	}
 
 	// Assertion 1: exactly one docker-compose.yaml at the merged path.
 	const wantPath = "dist/cluster/compose/docker-compose.yaml"
-	body, ok := renderResult.Files[wantPath]
+	body, ok := result.Artifacts[wantPath]
 	if !ok {
-		paths := make([]string, 0, len(renderResult.Files))
-		for p := range renderResult.Files {
+		paths := make([]string, 0, len(result.Artifacts))
+		for p := range result.Artifacts {
 			paths = append(paths, p)
 		}
 		t.Fatalf("expected merged compose at %q; got paths %v", wantPath, paths)
