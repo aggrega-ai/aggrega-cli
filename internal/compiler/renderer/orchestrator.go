@@ -148,7 +148,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Phase B.6 dispatch (which renders the FR's files) re-evaluates the same
 	// provides idempotently. See PrepopulateBoundaryScopeProvides.
 	if input.ResolveResult != nil {
-		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, boundaryFRState); err != nil {
+		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, allProvides, engineFactory, boundaryFRState); err != nil {
 			return nil, err
 		}
 	}
@@ -262,6 +262,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := ExecutePhaseA(tmplCtx, phaseARefs); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
+		// Boundary->component env channel: apply any per-consumer env overrides
+		// a boundary-scope FR emitted (computed in the pre-loop) over this
+		// consumer's injected env. Gated on map membership, so non-named
+		// consumers are untouched; targeted last-wins on exactly the named keys.
+		applyConsumerEnvOverrides(&tmplCtx.Context.Inject, boundaryFRState.ConsumerEnvOverrides[nodeID])
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
 		// after FR injectMapping rewrites.
 		_ = traceWriter.Write(trace.PassPhaseA, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseA))

@@ -75,7 +75,7 @@ func TestBoundaryScopeFRProvides_ResolvesThroughUsesEdge(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, state); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, nil, nil, state); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 	// The pre-pass populated the boundary-scope FR's provides before any
@@ -125,7 +125,7 @@ func TestBoundaryScopeFRProvides_SameTypeTwiceDisambiguates(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, state); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, nil, nil, state); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, state); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, nil, nil, state); err != nil {
 		t.Fatalf("pre-pass: %v", err)
 	}
 	key := boundaryFRKey{BoundaryPath: "cluster", FRInstance: "db"}
@@ -170,7 +170,7 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	factory := func(string) (Engine, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	if err := dispatchBoundaryScopeFR(
 		context.Background(), fr, "db", key, &PhaseBState{}, state,
-		NodeRenderContext{}, factory, graph, release, nil, RendererInput{},
+		NodeRenderContext{}, factory, graph, release, nil, nil, RendererInput{},
 	); err != nil {
 		t.Fatalf("dispatchBoundaryScopeFR: %v", err)
 	}

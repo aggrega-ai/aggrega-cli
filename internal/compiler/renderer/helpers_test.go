@@ -101,7 +101,7 @@ func TestEnrichedEdgeViewFromIREdge_FieldProjection(t *testing.T) {
 		Socket:        "http",
 		OriginFeature: "feat.myco/rewrite",
 	}
-	got := EnrichedEdgeViewFromIREdge(in)
+	got := EnrichedEdgeViewFromIREdge(in, nil)
 	if got.Target != "dst" {
 		t.Errorf("Target = %q; want dst", got.Target)
 	}

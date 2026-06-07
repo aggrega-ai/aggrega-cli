@@ -356,7 +356,7 @@ func phaseB6(
 			boundaryFRState.Dedup[key] = true
 			if err := dispatchBoundaryScopeFR(
 				ctx, fr, ref.InstanceName, key, state, boundaryFRState,
-				nodeCtx, engineFactory, graph, release, boundaryAnnotations, input,
+				nodeCtx, engineFactory, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
 				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope feature %q", nodeID, ref.InstanceName))
 			}

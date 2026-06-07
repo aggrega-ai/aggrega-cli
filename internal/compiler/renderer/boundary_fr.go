@@ -84,15 +84,24 @@ type BoundaryFRState struct {
 	Provides     map[boundaryFRKey]map[string]any
 	Files        map[boundaryFRKey][]EmittedFile
 	ValidatedFRs map[string]error
+
+	// ConsumerEnvOverrides carries per-consumer environment overrides a
+	// boundary-scope FeatureRecipe's resource-gen emits, keyed
+	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
+	// consumer's entries to that consumer's injected env after Phase A,
+	// superseding the uniform injectMapping for those keys. The channel is
+	// generic: it carries opaque string values and does not interpret them.
+	ConsumerEnvOverrides map[string]map[string]string
 }
 
 // NewBoundaryFRState returns a fresh state instance ready for population.
 func NewBoundaryFRState() *BoundaryFRState {
 	return &BoundaryFRState{
-		Dedup:        map[boundaryFRKey]bool{},
-		Provides:     map[boundaryFRKey]map[string]any{},
-		Files:        map[boundaryFRKey][]EmittedFile{},
-		ValidatedFRs: map[string]error{},
+		Dedup:                map[boundaryFRKey]bool{},
+		Provides:             map[boundaryFRKey]map[string]any{},
+		Files:                map[boundaryFRKey][]EmittedFile{},
+		ValidatedFRs:         map[string]error{},
+		ConsumerEnvOverrides: map[string]map[string]string{},
 	}
 }
 
@@ -214,6 +223,7 @@ func dispatchBoundaryScopeFR(
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
+	allProvides NodeProvides,
 	input RendererInput,
 ) error {
 	// 1. Validate FR templates (cached).
@@ -234,7 +244,7 @@ func dispatchBoundaryScopeFR(
 	//       empty per the Release pillar-split). Shared with the pre-loop
 	//       provides pre-pass so both evaluate against an identical context.
 	feat, _ := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
-	frCtx, err := buildBoundaryFRTemplateContext(fr, frInstance, key, graph, release, boundaryAnnotations)
+	frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, frInstance, key, graph, release, boundaryAnnotations)
 	if err != nil {
 		return err
 	}
@@ -320,6 +330,7 @@ func dispatchBoundaryScopeFR(
 // pre-loop provides pre-pass and the Phase B.6 dispatch so both evaluate the
 // FR's templates against an identical context.
 func buildBoundaryFRTemplateContext(
+	allProvides NodeProvides,
 	fr *types.FeatureRecipe,
 	frInstance string,
 	key boundaryFRKey,
@@ -327,7 +338,7 @@ func buildBoundaryFRTemplateContext(
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 ) (*types.TemplateContext, error) {
-	boundaryCtx, err := buildBoundaryContext(key.BoundaryPath, graph, release, boundaryAnnotations)
+	boundaryCtx, err := buildBoundaryContext(allProvides, key.BoundaryPath, graph, release, boundaryAnnotations)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: build context for boundary %q", frInstance, key.BoundaryPath))
 	}
@@ -375,6 +386,8 @@ func PrepopulateBoundaryScopeProvides(
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 	recipeLookup RecipeLookup,
+	allProvides NodeProvides,
+	engineFactory EngineFactory,
 	state *BoundaryFRState,
 ) error {
 	if graph == nil || state == nil {
@@ -399,16 +412,88 @@ func PrepopulateBoundaryScopeProvides(
 				}
 			}
 			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
-			frCtx, err := buildBoundaryFRTemplateContext(fr, instName, key, graph, release, boundaryAnnotations)
+			frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, instName, key, graph, release, boundaryAnnotations)
 			if err != nil {
 				return err
 			}
 			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key); err != nil {
 				return err
 			}
+			// Generic boundary->component env channel: if the FR's provider
+			// engine implements the optional override capability, let it
+			// produce per-consumer env overrides from the (now edge-enriched)
+			// boundary context. The channel is provider-agnostic — it stores
+			// whatever opaque string values the engine returns; it does not
+			// interpret them. Production lives in the provider engine, not here.
+			if engineFactory != nil {
+				eng, engErr := engineFactory(fr.Spec.Provider)
+				if engErr != nil {
+					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", instName))
+				}
+				if overrider, ok := eng.(BoundaryConsumerEnvOverrider); ok {
+					overrides, ovErr := overrider.BoundaryConsumerEnvOverrides(frCtx)
+					if ovErr != nil {
+						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
+					}
+					mergeConsumerEnvOverrides(state, overrides)
+				}
+			}
 		}
 	}
 	return nil
+}
+
+// BoundaryConsumerEnvOverrider is the optional capability a provider engine may
+// implement to drive the boundary->component env channel. Given a boundary-scope
+// FeatureRecipe's edge-enriched template context, it returns per-consumer
+// environment overrides keyed consumer-nodeID -> {envVar: value}. The channel
+// applies each named consumer's entries to that consumer's injected env after
+// Phase A. The contract is provider-agnostic: values are opaque strings the
+// orchestrator carries without interpretation.
+type BoundaryConsumerEnvOverrider interface {
+	BoundaryConsumerEnvOverrides(frCtx *types.TemplateContext) (map[string]map[string]string, error)
+}
+
+// applyConsumerEnvOverrides sets each override key into inject.Env and rebuilds
+// inject.All. Keys are applied in sorted order so any newly-appended Env key
+// lands deterministically (Invariant 8); an existing key is updated in place
+// (OrderedMap.Set preserves position). It is a targeted last-wins on exactly
+// the override keys — other Env keys, and inject.File / inject.Arg, are left
+// byte-identical. A nil/empty override map is a no-op (non-named consumers are
+// untouched). Rebuilding inject.All matches the inject-rehydrate tail.
+func applyConsumerEnvOverrides(inject *types.InjectPipe, overrides map[string]string) {
+	if inject == nil || len(overrides) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(overrides))
+	for k := range overrides {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		inject.Env.Set(k, overrides[k])
+	}
+	inject.All = buildInjectAll(*inject)
+}
+
+// mergeConsumerEnvOverrides merges a producer's per-consumer env-override map
+// into state.ConsumerEnvOverrides. Per (nodeID, envVar) the later writer wins;
+// callers iterate boundary FRs in graph.Spec.BoundaryFeatures order, which is
+// deterministic, so the merge result is deterministic.
+func mergeConsumerEnvOverrides(state *BoundaryFRState, overrides map[string]map[string]string) {
+	if state == nil || len(overrides) == 0 {
+		return
+	}
+	for nodeID, envs := range overrides {
+		dest, ok := state.ConsumerEnvOverrides[nodeID]
+		if !ok {
+			dest = map[string]string{}
+			state.ConsumerEnvOverrides[nodeID] = dest
+		}
+		for k, v := range envs {
+			dest[k] = v
+		}
+	}
 }
 
 // evaluateBoundaryFRTemplates evaluates a boundary-scope FR's locals and
@@ -478,6 +563,7 @@ func evaluateBoundaryFRTemplates(
 //   - FeatureAttachments: features directly attached to the boundary,
 //     parsed from boundary.Features via parseBoundaryFeature equivalent.
 func buildBoundaryContext(
+	allProvides NodeProvides,
 	boundaryPath string,
 	graph *types.IRGraph,
 	release *types.Release,
@@ -530,7 +616,7 @@ func buildBoundaryContext(
 		for _, edge := range graph.Spec.Edges {
 			srcIn := subtreeMembers[edge.Source]
 			tgtIn := subtreeMembers[edge.Target]
-			edgeView := EnrichedEdgeViewFromIREdge(edge)
+			edgeView := EnrichedEdgeViewFromIREdge(edge, allProvides)
 			switch {
 			case srcIn && tgtIn:
 				bc.InternalUsesEdges = append(bc.InternalUsesEdges, edgeView)
@@ -605,12 +691,17 @@ func buildBoundaryContext(
 // converter projects the IR edge's Source/Target/Socket/Alias onto the
 // renderer view so templates can reference `.boundary.*_uses_edges[].
 // target` etc.
-func EnrichedEdgeViewFromIREdge(edge types.IREdge) types.EnrichedEdge {
-	return types.EnrichedEdge{
+func EnrichedEdgeViewFromIREdge(edge types.IREdge, allProvides NodeProvides) types.EnrichedEdge {
+	view := types.EnrichedEdge{
 		Target:        edge.Target,
 		Socket:        edge.Socket,
 		OriginFeature: edge.OriginFeature,
+		Inject:        edge.Inject,
 	}
+	if p, ok := allProvides[edge.Target]; ok {
+		view.Provides = p
+	}
+	return view
 }
 
 // findBoundaryAtPath traverses release.Spec.Boundaries by the path

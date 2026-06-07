@@ -112,7 +112,7 @@ func TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection(t *test
 
 	if err := dispatchBoundaryScopeFR(
 		context.Background(), fr, "bridge", key, &PhaseBState{}, NewBoundaryFRState(),
-		NodeRenderContext{}, factory, graph, release, nil, input,
+		NodeRenderContext{}, factory, graph, release, nil, nil, input,
 	); err != nil {
 		t.Fatalf("dispatchBoundaryScopeFR (remote boundary-scope FR source): %v", err)
 	}
@@ -211,7 +211,7 @@ func TestDispatchBoundaryScopeFR_InfraTemplatedSourceResolvesFromProjectionInfra
 
 	if err := dispatchBoundaryScopeFR(
 		context.Background(), fr, "bridge", key, &PhaseBState{}, NewBoundaryFRState(),
-		NodeRenderContext{}, factory, graph, release, nil, input,
+		NodeRenderContext{}, factory, graph, release, nil, nil, input,
 	); err != nil {
 		t.Fatalf("dispatchBoundaryScopeFR (infra-templated boundary-scope FR source): %v", err)
 	}
@@ -263,7 +263,7 @@ func TestDispatchBoundaryScopeFR_LocalSourceForwardsVerbatim(t *testing.T) {
 
 	if err := dispatchBoundaryScopeFR(
 		context.Background(), fr, "bridge", key, &PhaseBState{}, NewBoundaryFRState(),
-		NodeRenderContext{}, factory, graph, release, nil, input,
+		NodeRenderContext{}, factory, graph, release, nil, nil, input,
 	); err != nil {
 		t.Fatalf("dispatchBoundaryScopeFR (local source): %v", err)
 	}
