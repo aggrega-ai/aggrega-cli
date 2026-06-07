@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"gopkg.in/yaml.v3"
 )
 
 // TestComposeBridge_CatalogDriven_E2E exercises the canonical catalog entries
@@ -32,17 +33,21 @@ import (
 // which renders the gateway service and rewrites the consumer's DB_HOST — the
 // rendered output this test asserts on, not a hand-built graph.
 //
-// Fixture shape: a Release with parent boundary "cluster" attaching the bridge
-// feature, two child boundaries "services-net" (api) and "data-net" (db)
-// declaring directory: "{{ .parent_boundary.directory }}". All contributors
-// merge at the parent's evaluated path.
+// Fixture shape: parent boundary "cluster" attaches the bridge; child
+// "services-net" holds api, child "data-net" holds db + cache (both
+// core/db, port 5432). api uses both — two cross-network edges, a forced port
+// collision. All contributors merge at the parent's evaluated path.
 //
-// Asserts:
+// Asserts a FUNCTIONAL multi-edge bridge:
 //  1. One docker-compose.yaml at dist/cluster/compose/.
-//  2. That file contains services 'api', 'db', and 'aggrega-gw'.
-//  3. The 'api' service's environment.DB_HOST equals 'aggrega-gw:15432'
-//     (the per-consumer injectMapping rewrite — the value-add over the
-//     renderer-level proof case, which doesn't exercise injectMapping at all).
+//  2. Services api, db, cache, aggrega-gw merged.
+//  3. The gateway's generated nginx stream config has one server per bridged
+//     edge, proxy_pass-ing the edge-derived upstream, with the collision
+//     fallback: listen 5432 -> cache:5432, listen 10000 -> db:5432.
+//  4. Each consumer rewrite == its edge's gateway listen port: CACHE_HOST ->
+//     aggrega-gw:5432, DB_HOST -> aggrega-gw:10000.
+//  5. The relay path: aggrega-gw joins the consumer's AND the targets' actual
+//     networks (name-matched), so the bridge actually relays.
 func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 	t.Parallel()
 
@@ -69,34 +74,82 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 
 	merged := string(body)
 
-	// Assertion 2: services api + db + aggrega-gw merged.
-	for _, svcName := range []string{"api:", "db:", "aggrega-gw:"} {
+	// Assertion 2: every component + the gateway merged into one file.
+	for _, svcName := range []string{"api:", "db:", "cache:", "aggrega-gw:"} {
 		if !strings.Contains(merged, svcName) {
 			t.Errorf("merged docker-compose.yaml missing service %q\n--- body ---\n%s", svcName, merged)
 		}
 	}
-	if !strings.Contains(merged, "nginx:alpine") {
-		t.Errorf("expected nginx:alpine (bridge image) in merged compose:\n%s", merged)
-	}
 
-	// Assertion 3: the boundary->component env channel rewrote api.DB_HOST to
-	// the gateway at the edge-derived port. db provides port 5432 and there is
-	// no collision, so the listen port (and thus the rewrite) is 5432.
-	if !strings.Contains(merged, "DB_HOST: aggrega-gw:5432") {
-		t.Errorf("expected api's DB_HOST rewritten to 'aggrega-gw:5432' (edge-derived port):\n%s", merged)
-	}
-
-	// Assertion 4: the gateway carries the compiler-generated nginx stream
-	// config, base64-delivered via command: — one server block listening on the
-	// assigned port and proxy_pass-ing the edge-derived upstream (db:5432). This
-	// is the functional bridge: a revert of the generation would leave aggrega-gw
-	// a bare nginx with no stream config.
+	// Assertion 3: the gateway's compiler-generated nginx stream config (base64
+	// command:) carries one server per bridged edge, proxy_pass-ing the
+	// edge-derived upstream — and the port collision falls back to portBase.
+	// db and cache both provide port 5432; cache claims 5432 (earlier by edge
+	// key), db collides and falls back to portBase 10000. No hand-authored
+	// address anywhere — the proxy_pass targets are the edge-derived hosts.
 	conf := decodeBridgeStreamConfig(t, merged)
-	for _, want := range []string{"stream {", "listen 5432;", "proxy_pass db:5432;"} {
+	for _, want := range []string{
+		"listen 5432;", "proxy_pass cache:5432;",
+		"listen 10000;", "proxy_pass db:5432;",
+	} {
 		if !strings.Contains(conf, want) {
 			t.Errorf("gateway stream config missing %q; decoded config:\n%s", want, conf)
 		}
 	}
+
+	// Assertion 4: each consumer's rewrite equals its edge's gateway listen port
+	// — the two halves agree per edge, collision included.
+	for _, want := range []string{"CACHE_HOST: aggrega-gw:5432", "DB_HOST: aggrega-gw:10000"} {
+		if !strings.Contains(merged, want) {
+			t.Errorf("expected consumer rewrite %q (== gateway listen):\n%s", want, merged)
+		}
+	}
+
+	// Assertion 5: the relay path is complete — aggrega-gw joins the consumer's
+	// network AND the targets' network, matched by NAME against the components'
+	// actual assigned networks (not merely "has two networks"). This proves the
+	// projection's network derivation agrees with the assembler's placement;
+	// without the match the gateway has networks that don't relay.
+	nets := parseServiceNetworks(t, merged)
+	gw := nets["aggrega-gw"]
+	if len(gw) == 0 {
+		t.Fatalf("aggrega-gw has no networks; relay impossible:\n%s", merged)
+	}
+	for _, comp := range []string{"api", "db", "cache"} {
+		for _, n := range nets[comp] {
+			if !sliceContains(gw, n) {
+				t.Errorf("aggrega-gw networks %v must include %s's actual network %q (relay path incomplete)", gw, comp, n)
+			}
+		}
+	}
+}
+
+// parseServiceNetworks unmarshals the merged compose document and returns each
+// service's networks list.
+func parseServiceNetworks(t *testing.T, compose string) map[string][]string {
+	t.Helper()
+	var doc struct {
+		Services map[string]struct {
+			Networks []string `yaml:"networks"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(compose), &doc); err != nil {
+		t.Fatalf("parse compose for service networks: %v", err)
+	}
+	out := map[string][]string{}
+	for name, svc := range doc.Services {
+		out[name] = svc.Networks
+	}
+	return out
+}
+
+func sliceContains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // decodeBridgeStreamConfig pulls the base64-encoded nginx config out of the

@@ -15,5 +15,13 @@ spec:
               env:
                 - in: DB_HOST
                   from: host
+          secondary:
+            target: cache
+            inject:
+              env:
+                - in: CACHE_HOST
+                  from: host
     db:
+      type: core/db
+    cache:
       type: core/db

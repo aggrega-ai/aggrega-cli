@@ -16,7 +16,9 @@ spec:
       main:
         image: api:1.0
         variables:
-          DB_HOST: "{{ .context.inject.env.DB_HOST }}"
+          {{- range $k, $v := .context.inject.env }}
+          {{ $k }}: "{{ $v }}"
+          {{- end }}
         ports:
           p: 8080
     services:

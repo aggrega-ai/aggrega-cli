@@ -6,6 +6,7 @@ package compose
 import (
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -68,6 +69,29 @@ func injectBridgeGateway(merged map[string]any) error {
 		"sh", "-c",
 		fmt.Sprintf("echo %s | base64 -d > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'", encoded),
 	}
+
+	// Attach the gateway to every network its bridged edges span, so it can
+	// reach both the consumer (who resolves aggrega-gw:<port>) and the upstream
+	// (proxy_pass <target>). The network names resolve through the SAME
+	// deriveNodeNetworkName the assembler uses to place the components, so they
+	// match the components' actual networks — without this the gateway has two
+	// networks that don't relay. Sorted for byte-deterministic output; the
+	// assembler appends the gateway's own network on top (appendUnique).
+	netSet := map[string]bool{}
+	for _, r := range resolved {
+		netSet[deriveNodeNetworkName(r.Spec.SrcNS, r.Spec.SrcPath)] = true
+		netSet[deriveNodeNetworkName(r.Spec.TgtNS, r.Spec.TgtPath)] = true
+	}
+	netNames := make([]string, 0, len(netSet))
+	for n := range netSet {
+		netNames = append(netNames, n)
+	}
+	sort.Strings(netNames)
+	nets := make([]any, len(netNames))
+	for i, n := range netNames {
+		nets[i] = n
+	}
+	svc["networks"] = nets
 	return nil
 }
 
