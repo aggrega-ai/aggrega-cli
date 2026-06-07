@@ -617,6 +617,12 @@ func buildBoundaryContext(
 			srcIn := subtreeMembers[edge.Source]
 			tgtIn := subtreeMembers[edge.Target]
 			edgeView := EnrichedEdgeViewFromIREdge(edge, allProvides)
+			// Per-endpoint network inputs (pure data): the endpoints' boundary
+			// paths and raw aggrega.ai/namespace annotation values, so a provider
+			// engine can resolve each endpoint's network and decide whether the
+			// edge crosses a seam. No interpretation here (Invariant 1/6).
+			edgeView.SourceBoundaryPath, edgeView.SourceNamespace = edgeEndpointNetworkInputs(edge.Source, graph, boundaryAnnotations)
+			edgeView.TargetBoundaryPath, edgeView.TargetNamespace = edgeEndpointNetworkInputs(edge.Target, graph, boundaryAnnotations)
 			switch {
 			case srcIn && tgtIn:
 				bc.InternalUsesEdges = append(bc.InternalUsesEdges, edgeView)
@@ -693,6 +699,7 @@ func buildBoundaryContext(
 // target` etc.
 func EnrichedEdgeViewFromIREdge(edge types.IREdge, allProvides NodeProvides) types.EnrichedEdge {
 	view := types.EnrichedEdge{
+		Source:        edge.Source,
 		Target:        edge.Target,
 		Socket:        edge.Socket,
 		OriginFeature: edge.OriginFeature,
@@ -702,6 +709,26 @@ func EnrichedEdgeViewFromIREdge(edge types.IREdge, allProvides NodeProvides) typ
 		view.Provides = p
 	}
 	return view
+}
+
+// edgeEndpointNetworkInputs returns the boundary path and raw
+// aggrega.ai/namespace annotation value for an edge endpoint node, as pure
+// data for a provider engine's network-identity resolution. Empty strings when
+// the node or annotation is absent. The core does not resolve these into a
+// network name — that (sanitize + fallback + compare) is provider-domain.
+func edgeEndpointNetworkInputs(nodeID string, graph *types.IRGraph, boundaryAnnotations map[string]types.OrderedMap[string]) (boundaryPath, namespace string) {
+	if graph == nil {
+		return "", ""
+	}
+	n, ok := graph.Spec.Nodes.Get(nodeID)
+	if !ok {
+		return "", ""
+	}
+	boundaryPath = n.BoundaryPath
+	if anns, ok := boundaryAnnotations[boundaryPath]; ok {
+		namespace, _ = anns.Get(AnnotationNamespace)
+	}
+	return boundaryPath, namespace
 }
 
 // findBoundaryAtPath traverses release.Spec.Boundaries by the path

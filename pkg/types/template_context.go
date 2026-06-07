@@ -290,6 +290,7 @@ func (p InjectPipe) MarshalJSON() ([]byte, error) {
 // EnrichedEdge is an enriched topological edge assembled by the compiler for template consumption.
 // Schema: template-context-v1alpha1.schema.json#/$defs/enriched_edge
 type EnrichedEdge struct {
+	Source          string                         `json:"source,omitempty" yaml:"source,omitempty"`
 	Target          string                         `json:"target" yaml:"target"`
 	Socket          string                         `json:"socket" yaml:"socket"`
 	Provides        OrderedMap[string]             `json:"provides" yaml:"provides"`
@@ -300,6 +301,18 @@ type EnrichedEdge struct {
 	ResolvedVersion string                         `json:"resolved_version,omitempty" yaml:"resolved_version,omitempty"`
 	BoundaryPath    string                         `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty"`
 	OriginFeature   string                         `json:"origin_feature,omitempty" yaml:"origin_feature,omitempty"`
+
+	// Per-endpoint network inputs, carried as pure opaque data for a provider
+	// engine to resolve into a network identity (the compose engine compares
+	// resolved names to decide whether an edge crosses a network seam). The core
+	// does not interpret these. SourceNamespace/TargetNamespace are the raw
+	// `aggrega.ai/namespace` annotation values (empty when absent); the
+	// *BoundaryPath fields are the endpoints' boundary paths used for the
+	// no-namespace fallback.
+	SourceNamespace    string `json:"source_namespace,omitempty" yaml:"source_namespace,omitempty"`
+	SourceBoundaryPath string `json:"source_boundary_path,omitempty" yaml:"source_boundary_path,omitempty"`
+	TargetNamespace    string `json:"target_namespace,omitempty" yaml:"target_namespace,omitempty"`
+	TargetBoundaryPath string `json:"target_boundary_path,omitempty" yaml:"target_boundary_path,omitempty"`
 }
 
 // TemplateMetadata provides Release and compilation identity for deterministic naming.

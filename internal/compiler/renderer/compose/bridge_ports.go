@@ -5,6 +5,63 @@ package compose
 
 import "sort"
 
+// bridgeSpec is the normalized per-edge input shared by both halves of the
+// compose bridge — the gateway command generation (reading the
+// valuesMapping-forwarded edges) and the per-consumer env-override producer
+// (reading the structured boundary edges). Both normalize their input into this
+// shape and run it through resolveBridge, so the listen port and the consumer
+// rewrite agree per edge by construction.
+type bridgeSpec struct {
+	Source       string // consumer node ID (override-map key)
+	Target       string
+	Socket       string
+	SrcNS        string // raw aggrega.ai/namespace of the source endpoint
+	SrcPath      string // source endpoint boundary path (no-namespace fallback)
+	TgtNS        string
+	TgtPath      string
+	UpstreamHost string   // the target's provided host (the proxy_pass target host)
+	TargetPort   int      // the target's own port (default listen port + proxy_pass port)
+	TargetVars   []string // consumer env vars to rewrite (host-carrying inject keys)
+}
+
+func (s bridgeSpec) key() string { return s.Source + "\x00" + s.Target + "\x00" + s.Socket }
+
+// bridgeResolved pairs a bridged edge with its assigned gateway listen port.
+type bridgeResolved struct {
+	Spec       bridgeSpec
+	ListenPort int
+}
+
+// resolveBridge is the single derivation both halves call. It selects the edges
+// that cross a compose network seam (resolved network names differ — never a
+// raw-namespace compare), assigns each a gateway listen port via the shared
+// assignBridgePorts rule, and returns them sorted by stable key (Invariant 8).
+// One derivation, two consumers (gateway listen + consumer rewrite) ⇒ they agree
+// per edge, including portBase-reassigned collisions.
+func resolveBridge(specs []bridgeSpec, portBase int) []bridgeResolved {
+	var bridged []bridgeSpec
+	for _, s := range specs {
+		if deriveNodeNetworkName(s.SrcNS, s.SrcPath) == deriveNodeNetworkName(s.TgtNS, s.TgtPath) {
+			continue
+		}
+		bridged = append(bridged, s)
+	}
+	if len(bridged) == 0 {
+		return nil
+	}
+	bes := make([]bridgeEdge, len(bridged))
+	for i, s := range bridged {
+		bes[i] = bridgeEdge{Key: s.key(), TargetPort: s.TargetPort}
+	}
+	ports := assignBridgePorts(bes, portBase)
+	out := make([]bridgeResolved, len(bridged))
+	for i, s := range bridged {
+		out[i] = bridgeResolved{Spec: s, ListenPort: ports[s.key()]}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Spec.key() < out[j].Spec.key() })
+	return out
+}
+
 // bridgeEdge is the normalized per-edge input to the compose-bridge port rule:
 // a stable ordering key plus the target's own port. Both halves of the bridge
 // normalize their input into this shape before assigning ports — the gateway

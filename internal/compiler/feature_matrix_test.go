@@ -188,8 +188,9 @@ func TestFeatureMatrix_ComposeSourcedWithBridge(t *testing.T) {
 			t.Errorf("merged docker-compose.yaml missing service %q:\n%s", want, dc)
 		}
 	}
-	// Bridge injectMapping should rewrite api's DB_HOST to aggrega-gw:13306.
-	if !strings.Contains(dc, "aggrega-gw:13306") {
-		t.Errorf("merged compose missing aggrega-gw:13306 (bridge injectMapping rewrite):\n%s", dc)
+	// The boundary->component env channel rewrites the consumer's DB_HOST to the
+	// gateway at the edge-derived port (the db target port, 3306; no collision).
+	if !strings.Contains(dc, "aggrega-gw:3306") {
+		t.Errorf("merged compose missing aggrega-gw:3306 (edge-derived bridge rewrite):\n%s", dc)
 	}
 }

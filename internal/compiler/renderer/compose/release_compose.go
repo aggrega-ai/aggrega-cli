@@ -131,16 +131,7 @@ func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.Bounda
 		// we read it directly per-node.
 		for _, nid := range allNodeIDs {
 			ann := info.NodeAnnotations[nid]
-			if v, ok := ann[AnnotationNamespace]; ok && v != "" {
-				networkNameByNode[nid] = sanitizeNetworkName(v)
-				continue
-			}
-			// Fall back to dispatch-path-derived name.
-			if info.BoundaryPath == "" {
-				networkNameByNode[nid] = "default"
-			} else {
-				networkNameByNode[nid] = sanitizeNetworkName(info.BoundaryPath)
-			}
+			networkNameByNode[nid] = deriveNodeNetworkName(ann[AnnotationNamespace], info.BoundaryPath)
 		}
 	}
 
@@ -252,6 +243,25 @@ func sanitizeNetworkName(s string) string {
 		return "default"
 	}
 	return string(out)
+}
+
+// deriveNodeNetworkName resolves the compose network a node lands on, from its
+// `aggrega.ai/namespace` annotation value (empty when absent) and the boundary
+// path used for the fallback. Three branches: a non-empty namespace is
+// sanitized; otherwise an empty boundary path yields "default"; otherwise the
+// boundary path is sanitized. Both the per-node network-assignment loop and the
+// compose-bridge cross-network opt-in filter call THIS function — the network
+// identity is the resolved name, never the raw namespace string — so the
+// bridge's "is this edge cross-network?" decision can never drift from where
+// the nodes are actually assigned.
+func deriveNodeNetworkName(namespace, boundaryPath string) string {
+	if namespace != "" {
+		return sanitizeNetworkName(namespace)
+	}
+	if boundaryPath == "" {
+		return "default"
+	}
+	return sanitizeNetworkName(boundaryPath)
 }
 
 // appendUnique appends s to list only when list does not already contain s.

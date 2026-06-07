@@ -63,6 +63,12 @@ func renderSourced(chartPath string, values map[string]any, nodeCtx renderer.Nod
 	}
 
 	merged := deepMergeOverlay(base, values)
+	// compose-bridge: when the fragment carries the bridge marker, generate the
+	// gateway's nginx stream config and install it as a command:, then strip the
+	// marker. No-op for every non-bridge sourced render.
+	if err := injectBridgeGateway(merged); err != nil {
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: bridge gateway", nodeCtx.NodeID))
+	}
 	origins := buildSingleOriginMap(merged, nodeCtx)
 	injectAggregaLabelsIntoServices(merged, origins)
 

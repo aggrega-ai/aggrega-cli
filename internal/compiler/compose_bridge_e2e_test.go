@@ -13,6 +13,7 @@
 package compiler_test
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -78,14 +79,46 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 		t.Errorf("expected nginx:alpine (bridge image) in merged compose:\n%s", merged)
 	}
 
-	// Assertion 3: per-consumer injectMapping rewrote api.DB_HOST to
-	// "aggrega-gw:15432". This is the inject-path verification — the
-	// renderer-level proof case at boundary_fr_proof_test.go does NOT
-	// exercise injectMapping; this is the first test to cover it.
-	if !strings.Contains(merged, "DB_HOST") {
-		t.Fatalf("expected DB_HOST env var in merged compose (injectMapping should have written it):\n%s", merged)
+	// Assertion 3: the boundary->component env channel rewrote api.DB_HOST to
+	// the gateway at the edge-derived port. db provides port 5432 and there is
+	// no collision, so the listen port (and thus the rewrite) is 5432.
+	if !strings.Contains(merged, "DB_HOST: aggrega-gw:5432") {
+		t.Errorf("expected api's DB_HOST rewritten to 'aggrega-gw:5432' (edge-derived port):\n%s", merged)
 	}
-	if !strings.Contains(merged, "aggrega-gw:15432") {
-		t.Errorf("expected api's DB_HOST to be rewritten to 'aggrega-gw:15432' (per FR injectMapping with .infra.targetVar=DB_HOST + .infra.mappedPort=15432):\n%s", merged)
+
+	// Assertion 4: the gateway carries the compiler-generated nginx stream
+	// config, base64-delivered via command: — one server block listening on the
+	// assigned port and proxy_pass-ing the edge-derived upstream (db:5432). This
+	// is the functional bridge: a revert of the generation would leave aggrega-gw
+	// a bare nginx with no stream config.
+	conf := decodeBridgeStreamConfig(t, merged)
+	for _, want := range []string{"stream {", "listen 5432;", "proxy_pass db:5432;"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("gateway stream config missing %q; decoded config:\n%s", want, conf)
+		}
 	}
+}
+
+// decodeBridgeStreamConfig pulls the base64-encoded nginx config out of the
+// aggrega-gw service's generated command and decodes it.
+func decodeBridgeStreamConfig(t *testing.T, compose string) string {
+	t.Helper()
+	const echoMarker = "echo "
+	i := strings.Index(compose, echoMarker)
+	if i < 0 {
+		t.Fatalf("no bridge gateway command (echo <b64>) in compose:\n%s", compose)
+		return ""
+	}
+	rest := compose[i+len(echoMarker):]
+	j := strings.Index(rest, " | base64 -d")
+	if j < 0 {
+		t.Fatalf("malformed bridge gateway command (no base64 decode) in compose:\n%s", compose)
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rest[:j]))
+	if err != nil {
+		t.Fatalf("bridge gateway command base64 decode: %v", err)
+		return ""
+	}
+	return string(decoded)
 }
