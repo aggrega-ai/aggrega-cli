@@ -176,7 +176,14 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	manifest := manRes.Manifest
+	// Compose the Manifest's extends chain before any downstream lookup reads
+	// its mappings, so the recipe cascade and resolution-completeness pass
+	// operate on the inherited result rather than the child's own entries
+	// alone. A Manifest with no extends reference is returned unchanged.
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	if err != nil {
+		return fmt.Errorf("compose manifest extends: %w", err)
+	}
 	// Build never networks: the registry tier (Tier-3) is nil here, so a
 	// registry-published top-level resolves only through the cache→catalog bridge
 	// (folded into cat.Aggregates above) via catLookup.

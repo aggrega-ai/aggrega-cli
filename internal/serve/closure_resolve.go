@@ -67,7 +67,14 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 			Data:    newErrorData(releasePath, 0, 0),
 		}
 	}
-	manifest := manRes.Manifest
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	if err != nil {
+		return nil, &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: fmt.Sprintf("compose manifest %q extends chain: %v", rel.Spec.Manifest, err),
+			Data:    newErrorData(releasePath, 0, 0),
+		}
+	}
 	// The daemon resolves the top-level Aggregate by same-directory scan or
 	// `./`/`../` file (nil catalog tier): an LSP workspace's Release sits beside
 	// its Aggregate, and a catalog-resident top-level Aggregate is not part of

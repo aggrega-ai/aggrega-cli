@@ -191,7 +191,13 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	manifest := manRes.Manifest
+	// Compose the Manifest's extends chain so the closure walk and recipe
+	// resolution see the inherited mappings rather than the child's own
+	// entries alone. A Manifest with no extends reference is unchanged.
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	if err != nil {
+		return fmt.Errorf("compose manifest extends: %w", err)
+	}
 	// The aggregate resolve is deferred until after the catalog loads (below) so
 	// its identity cascade can reach the catalog tier — pull must resolve the
 	// top-level aggregate the same way build does, or a catalog-resident

@@ -101,7 +101,10 @@ func compile(in Input) (*pipeline.Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}
-	manifest := manRes.Manifest
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	if err != nil {
+		return nil, fmt.Errorf("compose manifest extends chain: %w", err)
+	}
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load aggregate: %w", err)
