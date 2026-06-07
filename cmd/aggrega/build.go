@@ -28,6 +28,7 @@ var (
 	releasePath  string
 	catalogDir   string
 	traceEnabled bool
+	buildDetail  bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -39,6 +40,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringVar(&catalogDir, "catalog", ".", "Directory containing catalog entities")
 	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
+	c.Flags().BoolVar(&buildDetail, "detail", false, "When build performs the implicit auto-pull (no lockfile present, auto_pull enabled), print per resolved entity what that pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no pull this build)")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -101,7 +103,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// Ensure the per-Release lockfile exists (auto-pull when missing + permitted),
 	// returning whether it pre-existed — drift is verified only for a pre-existing
 	// lockfile; a freshly auto-pulled one matches the closure by construction.
-	lockfilePreexisted, err := acquireLockfile(releasePath, catalogDir, wsCfg)
+	lockfilePreexisted, err := acquireLockfile(releasePath, catalogDir, wsCfg, buildDetail)
 	if err != nil {
 		return err
 	}
@@ -367,12 +369,20 @@ func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 	return false
 }
 
-func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Config) (bool, error) {
+func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Config, detail bool) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
 	switch {
 	case statErr == nil:
+		// The lockfile already exists, so build does not pull this run. The
+		// resolution diagnostic is a pull-time surface; with no pull there is
+		// nothing to report, and re-deriving a tier the committed lockfile does
+		// not carry would fabricate one. Note the absence rather than print
+		// nothing, so --detail does not look silently broken.
+		if detail {
+			fmt.Fprintf(os.Stderr, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
+		}
 		return true, nil
 	case stderrors.Is(statErr, os.ErrNotExist):
 		// fall through to auto-pull / halt decision below
@@ -389,7 +399,7 @@ func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Confi
 			lockfilePath, releasePath)
 	}
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, Detail: detail}); err != nil {
 		return false, fmt.Errorf("auto-pull: %w", err)
 	}
 	return false, nil
