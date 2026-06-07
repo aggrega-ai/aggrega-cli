@@ -117,7 +117,8 @@ spec:
 
 // TestSchemaLibrary_SchemaKeysPascalCase verifies the propertyNames
 // pattern on spec.schemas. A non-PascalCase key fails envelope
-// validation; the canonical $id derivation depends on this discipline.
+// validation; entries stay addressable by the host-less
+// `<Library>#/schemas/<Entry>` identity reference, which selects by key.
 func TestSchemaLibrary_SchemaKeysPascalCase(t *testing.T) {
 	t.Parallel()
 	v := schemaLibraryEnvelopeValidator(t)
