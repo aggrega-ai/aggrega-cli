@@ -62,8 +62,6 @@ import (
 	"fmt"
 	"sort"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -143,7 +141,7 @@ func (e *ComposeEngine) SynthesizeWorkload(
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q apply service ports", nodeCtx.NodeID))
 	}
 
-	body, err := marshalDeterministic(&frag)
+	body, err := marshalDeterministic(&frag, nodeCtx.YAMLIndent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
 	}
@@ -570,10 +568,11 @@ func sanitizeServiceName(name string) string {
 	return name
 }
 
-// marshalDeterministic wraps yaml.Marshal at a single call point. yaml.v3
-// sorts map keys alphabetically — synthesised top-level maps (services,
-// volumes, networks) inherit alphabetical-by-derivation-key ordering.
-// byte-identical input produces byte-identical output across compilations.
-func marshalDeterministic(v any) ([]byte, error) {
-	return yaml.Marshal(v)
+// marshalDeterministic routes through the shared indent-aware marshal helper
+// at a single call point. yaml.v3 sorts map keys alphabetically — synthesised
+// top-level maps (services, volumes, networks) inherit alphabetical-by-
+// derivation-key ordering. byte-identical input produces byte-identical output
+// across compilations. indent is the configured YAML indentation width.
+func marshalDeterministic(v any, indent int) ([]byte, error) {
+	return renderer.MarshalYAMLIndent(v, indent)
 }

@@ -1,9 +1,9 @@
 services:
-    api-server:
-        image: app:1.0
-        labels:
-            aggrega.ai/aggregate-name: test-agg
-            aggrega.ai/boundary-path: default
-            aggrega.ai/compiler-version: test
-            aggrega.ai/component-id: api-server
-            aggrega.ai/environment: test-env
+  api-server:
+    image: app:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api-server
+      aggrega.ai/environment: test-env

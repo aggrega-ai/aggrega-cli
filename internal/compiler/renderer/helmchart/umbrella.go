@@ -10,7 +10,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"gopkg.in/yaml.v3"
 )
 
 // AssembleBoundary implements renderer.BoundaryAssembler: it emits the umbrella
@@ -25,7 +24,7 @@ import (
 // uses it as the chart's name. Otherwise the umbrella derives the name
 // from the dispatch path (today's behavior).
 func (e *HelmEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
-	files, err := BuildUmbrella(info.BoundaryPath, info.AggregateName, info.SubCharts, info.ChartName)
+	files, err := BuildUmbrella(info.BoundaryPath, info.AggregateName, info.SubCharts, info.ChartName, info.YAMLIndent)
 	if err != nil {
 		return nil, false, err
 	}
@@ -60,7 +59,7 @@ type umbrellaChart struct {
 // it verbatim as the chart's name — the cascade-driven matching is the
 // merged-path scenario's name source. When empty, BuildUmbrella falls
 // back to the path-derived name (today's behavior).
-func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string) (map[string][]byte, error) {
+func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string, indent int) (map[string][]byte, error) {
 	if boundaryName == "" {
 		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
 	}
@@ -128,12 +127,12 @@ func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 		Dependencies: deps,
 	}
 
-	chartYAML, err := yaml.Marshal(&umbrella)
+	chartYAML, err := renderer.MarshalYAMLIndent(&umbrella, indent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal Chart.yaml")
 	}
 
-	valuesYAML, err := yaml.Marshal(values)
+	valuesYAML, err := renderer.MarshalYAMLIndent(values, indent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal values.yaml")
 	}

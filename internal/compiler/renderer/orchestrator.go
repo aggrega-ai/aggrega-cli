@@ -804,6 +804,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			info := BoundaryInfo{
 				BoundaryPath:           key.Path,
 				AggregateName:          graph.Metadata.AggregateName,
+				YAMLIndent:             input.YAMLIndent,
 				SubCharts:              pd.subCharts,
 				IntermediatesByNode:    pd.intermediates,
 				NodeAnnotations:        pd.nodeAnnotations,
@@ -923,6 +924,7 @@ func buildNodeRenderContext(
 		SyncWave:        node.SyncWave,
 		ResolvedVersion: node.ResolvedVersion,
 		Component:       node.Component,
+		YAMLIndent:      input.YAMLIndent,
 		Provenance: ProvenanceContext{
 			CompilerVersion:  graph.Spec.Provenance.CompilerVersion,
 			AggregateVersion: graph.Spec.Provenance.AggregateVersion,

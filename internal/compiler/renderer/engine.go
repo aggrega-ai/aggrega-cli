@@ -86,6 +86,9 @@ type BoundaryInfo struct {
 	ContributingBoundaries []string
 	Edges                  []IREdgeInfo
 	ChartName              string
+	// YAMLIndent is the indentation width for the assembled artifact (clamped
+	// to [2,9], default 2). Forwarded from RendererInput.
+	YAMLIndent int
 }
 
 // IREdgeInfo is the per-edge view passed to a BoundaryAssembler. Decoupled
@@ -141,6 +144,9 @@ type NodeRenderContext struct {
 	// regular component nodes whose NodeIDs are already alphanumeric.
 	LabelComponentID string
 	Provenance       ProvenanceContext
+	// YAMLIndent is the indentation width for artifacts rendered from this
+	// node (clamped to [2,9], default 2). Forwarded from RendererInput.
+	YAMLIndent int
 }
 
 // ProvenanceContext carries build identity for resource labels.

@@ -43,8 +43,6 @@ import (
 	"fmt"
 	"sort"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -137,7 +135,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 				VolumeClaimTemplates: translateVolumeClaimTemplates(w, nodeCtx.NodeID),
 			},
 		}
-		body, err := marshalDeterministic(&ss)
+		body, err := marshalDeterministic(&ss, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
@@ -156,7 +154,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 				Template: template,
 			},
 		}
-		body, err := marshalDeterministic(&dep)
+		body, err := marshalDeterministic(&dep, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
@@ -170,7 +168,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 	// become volumeClaimTemplates inside the StatefulSet spec).
 	pvcs := translatePersistentPVCs(w, nodeCtx.NodeID, namespace, resourceLabels, resourceAnnotations)
 	for _, pvc := range pvcs {
-		body, err := marshalDeterministic(&pvc)
+		body, err := marshalDeterministic(&pvc, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q pvc marshal", nodeCtx.NodeID))
 		}
@@ -186,7 +184,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 		return nil, err
 	}
 	for _, svc := range services {
-		body, err := marshalDeterministic(&svc)
+		body, err := marshalDeterministic(&svc, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}
@@ -764,10 +762,11 @@ func intsToInt64s(s []int) []int64 {
 	return out
 }
 
-// marshalDeterministic wraps yaml.Marshal at a single call point. yaml.v3's
-// MarshalYAML is invoked recursively on each typed K8s shape; OrderedMap
-// fields preserve author order via OrderedMap.MarshalYAML. byte-identical
-// input produces byte-identical output across compilations.
-func marshalDeterministic(v any) ([]byte, error) {
-	return yaml.Marshal(v)
+// marshalDeterministic routes through the shared indent-aware marshal helper
+// at a single call point. yaml.v3's MarshalYAML is invoked recursively on each
+// typed K8s shape; OrderedMap fields preserve author order via
+// OrderedMap.MarshalYAML. byte-identical input produces byte-identical output
+// across compilations. indent is the configured YAML indentation width.
+func marshalDeterministic(v any, indent int) ([]byte, error) {
+	return renderer.MarshalYAMLIndent(v, indent)
 }

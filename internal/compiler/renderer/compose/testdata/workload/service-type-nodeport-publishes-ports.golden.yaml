@@ -1,11 +1,11 @@
 services:
-    web:
-        image: web:1.0
-        ports:
-            - 8080:8080
-        labels:
-            aggrega.ai/aggregate-name: test-agg
-            aggrega.ai/boundary-path: default
-            aggrega.ai/compiler-version: test
-            aggrega.ai/component-id: web
-            aggrega.ai/environment: test-env
+  web:
+    image: web:1.0
+    ports:
+      - 8080:8080
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: web
+      aggrega.ai/environment: test-env

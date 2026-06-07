@@ -247,7 +247,7 @@ func mappingChildHasAllKeys(metaVal *yaml.Node, key string, entries map[string]s
 // document and silently dropped the rest. Re-marshalling is not byte-faithful (the
 // reason the splice is preferred), but it is the verified-safe path for the
 // documents the splice cannot handle.
-func injectProvenanceRoundTrip(filename, rendered string, labels, annotations map[string]string, usingDefaultDelims bool) ([]byte, artifactInjectOutcome, error) {
+func injectProvenanceRoundTrip(filename, rendered string, labels, annotations map[string]string, usingDefaultDelims bool, indent int) ([]byte, artifactInjectOutcome, error) {
 	dec := yaml.NewDecoder(strings.NewReader(rendered))
 	var docs []*yaml.Node
 	for {
@@ -281,7 +281,7 @@ func injectProvenanceRoundTrip(filename, rendered string, labels, annotations ma
 		if d.Kind == 0 {
 			continue
 		}
-		b, err := yaml.Marshal(d)
+		b, err := MarshalYAMLIndent(d, indent)
 		if err != nil {
 			return nil, artifactInjected, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, "artifact yaml marshal")
 		}

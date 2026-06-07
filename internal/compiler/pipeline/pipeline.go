@@ -420,6 +420,7 @@ func RunPipeline(
 		CatalogLookup:    catalogLookup,
 		MappingLibraries: inputs.MappingLibraries,
 		Trace:            traceWriter,
+		YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
 	}
 	// Build-time source-artifact resolution: when the caller supplies a
 	// lockfile and workspace root, the orchestrator resolves each remote

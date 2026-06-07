@@ -109,7 +109,7 @@ func TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart(t *testing.T) {
 		Version:    "1.0.0", // the spec/component version — the OLD (wrong) source for the dep version
 		Values:     map[string]any{"secret": "s3cr3t"},
 		Source:     src,
-	}}, "")
+	}}, "", 2)
 	if err != nil {
 		t.Fatalf("BuildUmbrella: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart(t *testing.T) {
 	chartYAML, _ := os.ReadFile(filepath.Join(dist, "Chart.yaml"))
 	// Anchor on the alias line so we rewrite the DEPENDENCY version (the bug's
 	// locus), not the umbrella's own version (both are 0.1.0).
-	mismatched := strings.Replace(string(chartYAML), "version: 0.1.0\n      alias: db", "version: 1.0.0\n      alias: db", 1)
+	mismatched := strings.Replace(string(chartYAML), "version: 0.1.0\n    alias: db", "version: 1.0.0\n    alias: db", 1)
 	if mismatched == string(chartYAML) {
 		t.Fatalf("control setup failed to rewrite the dependency version; Chart.yaml=\n%s", chartYAML)
 	}
@@ -161,7 +161,7 @@ func TestUmbrellaSourcedDependencyVersion_MatchesVendoredChart(t *testing.T) {
 		InstanceID: "db",
 		Version:    "1.0.0",
 		Source:     src,
-	}}, "")
+	}}, "", 2)
 	if err != nil {
 		t.Fatalf("BuildUmbrella: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestUmbrellaSourcedDependencyVersion_EmptyVersionHaltsLoud(t *testing.T) {
 	_, err := BuildUmbrella("app", "demo", []renderer.SubChartInfo{{
 		InstanceID: "db",
 		Source:     src,
-	}}, "")
+	}}, "", 2)
 	if err == nil {
 		t.Fatal("expected an error for a vendored Chart.yaml with no version")
 	}

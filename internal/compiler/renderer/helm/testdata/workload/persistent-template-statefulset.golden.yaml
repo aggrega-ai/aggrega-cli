@@ -1,69 +1,69 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-    name: postgres
-    labels:
+  name: postgres
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: postgres
+    aggrega.ai/environment: test-env
+    app: postgres
+    app.kubernetes.io/name: postgres
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      name: ""
+      labels:
         aggrega.ai/aggregate-name: test-agg
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: postgres
         aggrega.ai/environment: test-env
         app: postgres
         app.kubernetes.io/name: postgres
-    annotations:
-        aggrega.ai/boundary-path: default
-spec:
-    replicas: 1
-    selector:
-        matchLabels:
-            app: postgres
-    template:
-        metadata:
-            name: ""
-            labels:
-                aggrega.ai/aggregate-name: test-agg
-                aggrega.ai/compiler-version: test
-                aggrega.ai/component-id: postgres
-                aggrega.ai/environment: test-env
-                app: postgres
-                app.kubernetes.io/name: postgres
-        spec:
-            containers:
-                - name: main
-                  image: db:1.0
-                  ports:
-                    - name: db
-                      containerPort: 5432
-    volumeClaimTemplates:
-        - apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: data
-          spec:
-            accessModes:
-                - ReadWriteOnce
-            resources:
-                requests:
-                    storage: 10Gi
-            storageClassName: gp3
+    spec:
+      containers:
+        - name: main
+          image: db:1.0
+          ports:
+            - name: db
+              containerPort: 5432
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: gp3
 apiVersion: v1
 kind: Service
 metadata:
-    name: postgres-db
-    labels:
-        aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/compiler-version: test
-        aggrega.ai/component-id: postgres
-        aggrega.ai/environment: test-env
-        app: postgres
-        app.kubernetes.io/name: postgres
-    annotations:
-        aggrega.ai/boundary-path: default
+  name: postgres-db
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: postgres
+    aggrega.ai/environment: test-env
+    app: postgres
+    app.kubernetes.io/name: postgres
+  annotations:
+    aggrega.ai/boundary-path: default
 spec:
-    type: ClusterIP
-    clusterIP: None
-    selector:
-        app: postgres
-    ports:
-        - name: db
-          port: 5432
-          targetPort: db
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: db
+      port: 5432
+      targetPort: db

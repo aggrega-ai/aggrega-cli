@@ -422,7 +422,7 @@ spec:
 `)
 	out, err := injectAggregaAnnotations(hookYAML, map[string]string{
 		"aggrega.ai/foo": "bar",
-	}, "5")
+	}, "5", 2)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -448,7 +448,7 @@ data:
 `)
 	out, err := injectAggregaAnnotations(plainYAML, map[string]string{
 		"argocd.argoproj.io/sync-wave": "3",
-	}, "3")
+	}, "3", 2)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -465,7 +465,7 @@ data:
 func TestInjectAggregaAnnotations_EmptyInputs(t *testing.T) {
 	t.Parallel()
 	src := []byte("apiVersion: v1\nkind: Pod\n")
-	out, err := injectAggregaAnnotations(src, nil, "")
+	out, err := injectAggregaAnnotations(src, nil, "", 2)
 	if err != nil {
 		t.Fatalf("empty: %v", err)
 	}
@@ -484,7 +484,7 @@ spec:
   type: ClusterIP
 `)
 	// Manifest has no metadata; merger creates metadata.annotations.
-	out, err := injectAggregaAnnotations(src, map[string]string{"k": "v"}, "")
+	out, err := injectAggregaAnnotations(src, map[string]string{"k": "v"}, "", 2)
 	if err != nil {
 		t.Fatalf("no-metadata: %v", err)
 	}
@@ -507,7 +507,7 @@ kind: Service
 metadata:
   name: svc-1
 `)
-	out, err := injectAggregaAnnotations(src, map[string]string{"a/b": "c"}, "")
+	out, err := injectAggregaAnnotations(src, map[string]string{"a/b": "c"}, "", 2)
 	if err != nil {
 		t.Fatalf("multi-doc: %v", err)
 	}
@@ -535,7 +535,7 @@ metadata:
 `)
 	out, err := injectAggregaAnnotations(src, map[string]string{
 		"aggrega.ai/foo": "new",
-	}, "")
+	}, "", 2)
 	if err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}

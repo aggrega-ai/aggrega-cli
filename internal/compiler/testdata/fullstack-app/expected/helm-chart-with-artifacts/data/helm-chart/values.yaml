@@ -1,5 +1,5 @@
 data-main-db:
-    image: postgres:15
-    ports:
-        - 5432:5432
-    replicas: 1
+  image: postgres:15
+  ports:
+    - 5432:5432
+  replicas: 1

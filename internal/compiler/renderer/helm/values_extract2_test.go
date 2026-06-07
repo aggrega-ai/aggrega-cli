@@ -24,7 +24,7 @@ metadata:
     helm.sh/hook: pre-install
     helm.sh/hook-weight: "1"
 `)
-	out, err := injectAggregaAnnotations(src, map[string]string{}, "9")
+	out, err := injectAggregaAnnotations(src, map[string]string{}, "9", 2)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -49,7 +49,7 @@ metadata:
   annotations:
     helm.sh/hook: post-install
 `)
-	out, err := injectAggregaAnnotations(src, map[string]string{}, "5")
+	out, err := injectAggregaAnnotations(src, map[string]string{}, "5", 2)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}

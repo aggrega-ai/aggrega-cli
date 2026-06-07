@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 // injectAggregaLabels post-processes rendered YAML (possibly multi-document) and
@@ -19,7 +21,7 @@ import (
 //
 // Documents without a metadata map are left untouched (they aren't K8s-shaped).
 // Multi-doc boundaries ("---") are preserved via yaml.Encoder per document.
-func injectAggregaLabels(yamlBytes []byte, labels map[string]string) ([]byte, error) {
+func injectAggregaLabels(yamlBytes []byte, labels map[string]string, indent int) ([]byte, error) {
 	if len(labels) == 0 {
 		return yamlBytes, nil
 	}
@@ -61,7 +63,7 @@ func injectAggregaLabels(yamlBytes []byte, labels map[string]string) ([]byte, er
 			buf.WriteString("---\n")
 		}
 		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(2)
+		enc.SetIndent(renderer.ClampYAMLIndent(indent))
 		if err := enc.Encode(doc); err != nil {
 			return nil, fmt.Errorf("encode rendered YAML: %w", err)
 		}
@@ -156,7 +158,7 @@ func chooseScalarStyle(v string) yaml.Style {
 // resources that already carry a helm.sh/hook annotation (chart-author
 // hook markers). Non-hook resources receive only the always-emit
 // annotations set.
-func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, hookWeight string) ([]byte, error) {
+func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, hookWeight string, indent int) ([]byte, error) {
 	if len(annotations) == 0 && hookWeight == "" {
 		return yamlBytes, nil
 	}
@@ -197,7 +199,7 @@ func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, h
 			buf.WriteString("---\n")
 		}
 		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(2)
+		enc.SetIndent(renderer.ClampYAMLIndent(indent))
 		if err := enc.Encode(doc); err != nil {
 			return nil, fmt.Errorf("encode rendered YAML: %w", err)
 		}

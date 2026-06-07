@@ -4,7 +4,6 @@
 package compose
 
 import (
-	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
@@ -17,13 +16,23 @@ import (
 // generate the gateway's stream config and strips it from the output.
 const bridgeMarkerKey = "x-aggrega-bridge"
 
+// bridgeConfigName is the top-level compose config that carries the gateway's
+// generated nginx stream config; bridgeConfigTarget is where it mounts inside
+// the gateway container (nginx:alpine's default CMD loads this path).
+const (
+	bridgeConfigName   = "aggrega-gw-nginx"
+	bridgeConfigTarget = "/etc/nginx/nginx.conf"
+)
+
 // injectBridgeGateway consumes the bridge marker on a rendered compose fragment,
 // generates the nginx stream config for the bridged (cross-network) edges, and
-// installs it as a `command:` on the aggrega-gw service so nginx actually loads
-// it. The marker is stripped. No-op when absent (every non-bridge render). It
-// shares resolveBridge with the per-consumer env-override producer, so the
-// gateway's `listen` ports match the consumers' rewritten ports per edge —
-// including portBase-reassigned collisions — by construction.
+// delivers it as a mounted compose config: a top-level `configs:` entry with
+// inline content, referenced from the aggrega-gw service's `configs:` so it
+// mounts at /etc/nginx/nginx.conf. The marker is stripped. No-op when absent
+// (every non-bridge render). It shares resolveBridge with the per-consumer
+// env-override producer, so the gateway's `listen` ports match the consumers'
+// rewritten ports per edge — including portBase-reassigned collisions — by
+// construction.
 func injectBridgeGateway(merged map[string]any) error {
 	raw, ok := merged[bridgeMarkerKey]
 	if !ok {
@@ -58,16 +67,28 @@ func injectBridgeGateway(merged map[string]any) error {
 	}
 
 	conf := renderStreamConfig(resolved)
-	encoded := base64.StdEncoding.EncodeToString([]byte(conf))
 	svc, err := bridgeGatewayServiceMap(merged)
 	if err != nil {
 		return err
 	}
-	// base64-decode the compiler-generated config and exec nginx. base64 avoids
-	// fragile shell-escaping of the config's braces/semicolons/newlines.
-	svc["command"] = []any{
-		"sh", "-c",
-		fmt.Sprintf("echo %s | base64 -d > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'", encoded),
+	// Deliver the generated config as a top-level compose config with inline
+	// content, mounted into the gateway as a readable file. nginx:alpine's
+	// default CMD loads /etc/nginx/nginx.conf, so no command override is needed.
+	// Inline content requires Docker Compose >= 2.23.1.
+	//
+	// Docker Compose runs $-interpolation over the whole compose file, including
+	// configs.content — so an nginx `$uN` stream variable would be read as an
+	// (unset) compose variable and substituted blank, corrupting the mounted
+	// config. Escape every `$` as `$$` so Compose emits a literal `$` and nginx
+	// receives its variables intact.
+	configsBlock, _ := merged["configs"].(map[string]any)
+	if configsBlock == nil {
+		configsBlock = map[string]any{}
+		merged["configs"] = configsBlock
+	}
+	configsBlock[bridgeConfigName] = map[string]any{"content": strings.ReplaceAll(conf, "$", "$$")}
+	svc["configs"] = []any{
+		map[string]any{"source": bridgeConfigName, "target": bridgeConfigTarget},
 	}
 
 	// Attach the gateway to every network its bridged edges span, so it can
@@ -100,14 +121,23 @@ func injectBridgeGateway(merged map[string]any) error {
 // assigned port and proxying to the edge-derived upstream host:port. The
 // upstream is a compile-time compose service pointer; compose DNS resolves it at
 // runtime (Invariant 2).
+//
+// A `resolver` directive plus per-server `set $uN <host>:<port>; proxy_pass
+// $uN;` defers upstream resolution to connection time. A bare `proxy_pass
+// <host>` resolves once at startup, so the gateway would die ("host not found
+// in upstream") when it starts before the target — the variable form routes
+// each connection through the resolver instead. 127.0.0.11 is Docker's embedded
+// DNS. Each server's variable name is unique and edge-ordered for determinism.
 func renderStreamConfig(resolved []bridgeResolved) string {
 	var b strings.Builder
 	b.WriteString("events {}\n")
 	b.WriteString("stream {\n")
-	for _, r := range resolved {
+	b.WriteString("  resolver 127.0.0.11 valid=10s;\n")
+	for i, r := range resolved {
 		b.WriteString("  server {\n")
 		fmt.Fprintf(&b, "    listen %d;\n", r.ListenPort)
-		fmt.Fprintf(&b, "    proxy_pass %s:%d;\n", r.Spec.UpstreamHost, r.Spec.TargetPort)
+		fmt.Fprintf(&b, "    set $u%d %s:%d;\n", i, r.Spec.UpstreamHost, r.Spec.TargetPort)
+		fmt.Fprintf(&b, "    proxy_pass $u%d;\n", i)
 		b.WriteString("  }\n")
 	}
 	b.WriteString("}\n")

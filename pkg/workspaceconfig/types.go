@@ -89,11 +89,13 @@ func (w WorkspaceConfig) ResolvedCacheDir() string {
 // the "current Release" for inline diagnostics; HaltOnDeprecated
 // and HaltOnDeprecatedSeverity (reserved for the upcoming
 // deprecation-policy rule) control how the build reacts to
-// deprecated-entity consumption.
+// deprecated-entity consumption. YAMLIndent sets the indentation
+// width of every rendered YAML artifact (default 2, range [2,9]).
 type BuildConfig struct {
 	AuthoringRelease         string `yaml:"authoring_release"`
 	HaltOnDeprecated         bool   `yaml:"halt_on_deprecated"`
 	HaltOnDeprecatedSeverity string `yaml:"halt_on_deprecated_severity"`
+	YAMLIndent               int    `yaml:"yaml_indent"`
 }
 
 // PluginsConfig groups workspace-level Wasm plugin attachments by
@@ -218,6 +220,7 @@ func Default() Config {
 		},
 		Build: BuildConfig{
 			HaltOnDeprecatedSeverity: "error",
+			YAMLIndent:               2,
 		},
 		Lint: LintConfig{
 			PublishingDiscipline: PublishingDisciplineConfig{

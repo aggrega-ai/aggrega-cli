@@ -75,6 +75,7 @@ func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.Bounda
 		Services: map[string]Service{},
 		Volumes:  map[string]Volume{},
 		Networks: map[string]Network{},
+		Configs:  map[string]Config{},
 	}
 
 	// Track which (boundary, nodeID) contributed each service for collision
@@ -154,6 +155,12 @@ func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.Bounda
 			merged.Volumes[k] = v
 		}
 
+		// Configs: union (top-level config declarations, e.g. the
+		// compose-bridge gateway's generated nginx config).
+		for k, v := range frag.Configs {
+			merged.Configs[k] = v
+		}
+
 		// Services: collision-detect, then merge with the network attached.
 		for svcName, svc := range frag.Services {
 			contribsByService[svcName] = append(contribsByService[svcName], serviceContrib{boundary: networkName, nodeID: nid})
@@ -179,7 +186,7 @@ func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.Bounda
 	// services. Edge endpoints not in the dispatch group are skipped.
 	applyDependsOn(&merged, info.Edges, boundaryByService)
 
-	body, err := marshalDeterministic(&merged)
+	body, err := marshalDeterministic(&merged, info.YAMLIndent)
 	if err != nil {
 		return nil, false, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{}, "compose: assemble-boundary marshal")
 	}
@@ -204,6 +211,7 @@ func parseNodeFragment(nodeID string, intermediates []renderer.EmittedFile) (*Co
 		Services: map[string]Service{},
 		Volumes:  map[string]Volume{},
 		Networks: map[string]Network{},
+		Configs:  map[string]Config{},
 	}
 	for _, f := range intermediates {
 		var frag ComposeFile
@@ -218,6 +226,9 @@ func parseNodeFragment(nodeID string, intermediates []renderer.EmittedFile) (*Co
 		}
 		for k, v := range frag.Networks {
 			out.Networks[k] = v
+		}
+		for k, v := range frag.Configs {
+			out.Configs[k] = v
 		}
 	}
 	return out, nil

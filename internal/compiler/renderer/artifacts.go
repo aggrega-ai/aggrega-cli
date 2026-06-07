@@ -349,7 +349,7 @@ func evaluateOneArtifactWithDelims(
 	// handle. The external-delims path gates on Helm-token preservation; a
 	// default-delims parse failure is a CATALOG_ERROR; otherwise skip + warn and
 	// emit the ORIGINAL rendered bytes.
-	body, outcome, rtErr := injectProvenanceRoundTrip(filename, rendered, labels, annotations, usingDefaultDelims)
+	body, outcome, rtErr := injectProvenanceRoundTrip(filename, rendered, labels, annotations, usingDefaultDelims, nodeCtx.YAMLIndent)
 	switch outcome {
 	case artifactInjected:
 		if rtErr != nil {

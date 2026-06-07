@@ -148,11 +148,11 @@ func renderSourced(
 		default:
 			continue
 		}
-		labeled, err := injectAggregaLabels([]byte(content+"\n"), aggregaLabels)
+		labeled, err := injectAggregaLabels([]byte(content+"\n"), aggregaLabels, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, base))
 		}
-		annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight)
+		annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
 		}

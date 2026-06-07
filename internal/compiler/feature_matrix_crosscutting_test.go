@@ -160,7 +160,7 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 		}
 		// Take a bounded window — services in the compose document end
 		// where the next service (alphabetically: api) begins.
-		nextService := strings.Index(mergedCompose[bridgeStart:], "\n    api:")
+		nextService := strings.Index(mergedCompose[bridgeStart:], "\n  api:")
 		bridgeEnd := bridgeStart + len(mergedCompose[bridgeStart:])
 		if nextService > 0 {
 			bridgeEnd = bridgeStart + nextService

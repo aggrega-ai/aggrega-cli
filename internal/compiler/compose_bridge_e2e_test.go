@@ -13,7 +13,6 @@
 package compiler_test
 
 import (
-	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -41,9 +40,10 @@ import (
 // Asserts a FUNCTIONAL multi-edge bridge:
 //  1. One docker-compose.yaml at dist/cluster/compose/.
 //  2. Services api, db, cache, aggrega-gw merged.
-//  3. The gateway's generated nginx stream config has one server per bridged
-//     edge, proxy_pass-ing the edge-derived upstream, with the collision
-//     fallback: listen 5432 -> cache:5432, listen 10000 -> db:5432.
+//  3. The gateway's generated nginx stream config (a mounted compose config,
+//     not a base64 command) has a resolver plus one server per bridged edge
+//     with deferred per-edge resolution (set $uN <host>; proxy_pass $uN), with
+//     the collision fallback: listen 5432 -> cache:5432, listen 10000 -> db:5432.
 //  4. Each consumer rewrite == its edge's gateway listen port: CACHE_HOST ->
 //     aggrega-gw:5432, DB_HOST -> aggrega-gw:10000.
 //  5. The relay path: aggrega-gw joins the consumer's AND the targets' actual
@@ -81,20 +81,33 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 		}
 	}
 
-	// Assertion 3: the gateway's compiler-generated nginx stream config (base64
-	// command:) carries one server per bridged edge, proxy_pass-ing the
-	// edge-derived upstream — and the port collision falls back to portBase.
-	// db and cache both provide port 5432; cache claims 5432 (earlier by edge
-	// key), db collides and falls back to portBase 10000. No hand-authored
-	// address anywhere — the proxy_pass targets are the edge-derived hosts.
-	conf := decodeBridgeStreamConfig(t, merged)
+	// Assertion 3: the gateway's compiler-generated nginx stream config is
+	// delivered as a mounted compose config (not a base64 command), carries the
+	// Docker DNS resolver, and has one server per bridged edge with deferred
+	// per-edge resolution (set $uN <host>:<port>; proxy_pass $uN). The port
+	// collision falls back to portBase: db and cache both provide port 5432;
+	// cache claims 5432 (earlier by edge key), db collides and falls back to
+	// portBase 10000. No hand-authored address — the upstreams are edge-derived.
+	// The $ in nginx stream variables is escaped to $$ so Docker Compose's
+	// interpolation leaves a literal $ in the mounted file (asserting the
+	// un-escaped $uN form is what passes while the deploy fails).
+	conf := bridgeStreamConfigContent(t, merged)
 	for _, want := range []string{
-		"listen 5432;", "proxy_pass cache:5432;",
-		"listen 10000;", "proxy_pass db:5432;",
+		"resolver 127.0.0.11 valid=10s;",
+		"listen 5432;", "set $$u0 cache:5432;", "proxy_pass $$u0;",
+		"listen 10000;", "set $$u1 db:5432;", "proxy_pass $$u1;",
 	} {
 		if !strings.Contains(conf, want) {
-			t.Errorf("gateway stream config missing %q; decoded config:\n%s", want, conf)
+			t.Errorf("gateway stream config missing %q; config content:\n%s", want, conf)
 		}
+	}
+	// No base64 command delivery remains anywhere in the merged document.
+	if strings.Contains(merged, "base64 -d") || strings.Contains(merged, "command:") {
+		t.Errorf("expected no base64 command: delivery; found one:\n%s", merged)
+	}
+	// The gateway mounts the config at nginx's default config path.
+	if !strings.Contains(merged, "target: /etc/nginx/nginx.conf") {
+		t.Errorf("expected aggrega-gw to mount the config at /etc/nginx/nginx.conf:\n%s", merged)
 	}
 
 	// Assertion 4: each consumer's rewrite equals its edge's gateway listen port
@@ -152,26 +165,24 @@ func sliceContains(s []string, v string) bool {
 	return false
 }
 
-// decodeBridgeStreamConfig pulls the base64-encoded nginx config out of the
-// aggrega-gw service's generated command and decodes it.
-func decodeBridgeStreamConfig(t *testing.T, compose string) string {
+// bridgeStreamConfigContent pulls the inline content of the aggrega-gw-nginx
+// top-level compose config — the gateway's compiler-generated nginx stream
+// config, mounted as a file rather than delivered as a base64 command.
+func bridgeStreamConfigContent(t *testing.T, compose string) string {
 	t.Helper()
-	const echoMarker = "echo "
-	i := strings.Index(compose, echoMarker)
-	if i < 0 {
-		t.Fatalf("no bridge gateway command (echo <b64>) in compose:\n%s", compose)
+	var doc struct {
+		Configs map[string]struct {
+			Content string `yaml:"content"`
+		} `yaml:"configs"`
+	}
+	if err := yaml.Unmarshal([]byte(compose), &doc); err != nil {
+		t.Fatalf("parse compose for configs: %v", err)
 		return ""
 	}
-	rest := compose[i+len(echoMarker):]
-	j := strings.Index(rest, " | base64 -d")
-	if j < 0 {
-		t.Fatalf("malformed bridge gateway command (no base64 decode) in compose:\n%s", compose)
+	cfg, ok := doc.Configs["aggrega-gw-nginx"]
+	if !ok {
+		t.Fatalf("no aggrega-gw-nginx config in compose:\n%s", compose)
 		return ""
 	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rest[:j]))
-	if err != nil {
-		t.Fatalf("bridge gateway command base64 decode: %v", err)
-		return ""
-	}
-	return string(decoded)
+	return cfg.Content
 }

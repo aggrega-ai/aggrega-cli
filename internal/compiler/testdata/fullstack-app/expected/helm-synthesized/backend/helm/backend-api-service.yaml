@@ -1,23 +1,23 @@
 apiVersion: v1
 kind: Service
 metadata:
-    name: backend-api
-    namespace: backend-zone
-    labels:
-        aggrega.ai/aggregate-name: fullstack-app
-        aggrega.ai/compiler-version: 0.1.0
-        aggrega.ai/component-id: backend
-        aggrega.ai/environment: production
-        app: backend
-        app.kubernetes.io/name: backend
-    annotations:
-        aggrega.ai/boundary-path: backend-ns
-        aggrega.ai/recipe-uri: helm-api-server-synthesized:1.0.0
+  name: backend-api
+  namespace: backend-zone
+  labels:
+    aggrega.ai/aggregate-name: fullstack-app
+    aggrega.ai/compiler-version: 0.1.0
+    aggrega.ai/component-id: backend
+    aggrega.ai/environment: production
+    app: backend
+    app.kubernetes.io/name: backend
+  annotations:
+    aggrega.ai/boundary-path: backend-ns
+    aggrega.ai/recipe-uri: helm-api-server-synthesized:1.0.0
 spec:
-    type: ClusterIP
-    selector:
-        app: backend
-    ports:
-        - name: web
-          port: 8082
-          targetPort: web
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: web
+      port: 8082
+      targetPort: web

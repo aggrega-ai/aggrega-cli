@@ -262,13 +262,13 @@ func TestReadChartMeta_AllBranches(t *testing.T) {
 func TestBuildUmbrella_AllBranches(t *testing.T) {
 	t.Parallel()
 	// Empty boundary name.
-	_, err := BuildUmbrella("", "", nil, "")
+	_, err := BuildUmbrella("", "", nil, "", 2)
 	if err == nil {
 		t.Errorf("empty boundary should error")
 	}
 
 	// Default name with aggregate prefix.
-	files, err := BuildUmbrella("web", "agg", nil, "")
+	files, err := BuildUmbrella("web", "agg", nil, "", 2)
 	if err != nil {
 		t.Fatalf("default-with-agg: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	}
 
 	// Default name without aggregate.
-	files, err = BuildUmbrella("solo", "", nil, "")
+	files, err = BuildUmbrella("solo", "", nil, "", 2)
 	if err != nil {
 		t.Fatalf("default-no-agg: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	}
 
 	// Override name (cascade).
-	files, err = BuildUmbrella("web", "agg", nil, "override.name")
+	files, err = BuildUmbrella("web", "agg", nil, "override.name", 2)
 	if err != nil {
 		t.Fatalf("override: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 		{InstanceID: "gen-1", Version: "1.0.0", Values: map[string]any{"k": "v"}},
 		{InstanceID: "gen-2", Version: ""}, // empty version → default
 	}
-	files, err = BuildUmbrella("web", "", subCharts, "")
+	files, err = BuildUmbrella("web", "", subCharts, "", 2)
 	if err != nil {
 		t.Fatalf("generative: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	sourcedSC := []renderer.SubChartInfo{
 		{InstanceID: "sourced-i", Version: "1.0.0", Source: tmp},
 	}
-	files, err = BuildUmbrella("web", "", sourcedSC, "")
+	files, err = BuildUmbrella("web", "", sourcedSC, "", 2)
 	if err != nil {
 		t.Fatalf("sourced: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	badSC := []renderer.SubChartInfo{
 		{InstanceID: "bad-i", Source: "/nonexistent/path"},
 	}
-	_, err = BuildUmbrella("web", "", badSC, "")
+	_, err = BuildUmbrella("web", "", badSC, "", 2)
 	if err == nil {
 		t.Errorf("missing source-chart should error")
 	}

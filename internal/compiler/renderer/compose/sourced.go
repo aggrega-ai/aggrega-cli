@@ -72,7 +72,7 @@ func renderSourced(chartPath string, values map[string]any, nodeCtx renderer.Nod
 	origins := buildSingleOriginMap(merged, nodeCtx)
 	injectAggregaLabelsIntoServices(merged, origins)
 
-	body, err := yaml.Marshal(merged)
+	body, err := renderer.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
 	}

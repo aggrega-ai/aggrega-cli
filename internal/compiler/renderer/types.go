@@ -47,6 +47,12 @@ type RendererInput struct {
 	// disables tracing (the orchestrator passes a no-op writer when this
 	// field is unset).
 	Trace trace.Writer
+
+	// YAMLIndent is the indentation width for every rendered YAML artifact.
+	// The orchestrator forwards it onto each NodeRenderContext and
+	// BoundaryInfo so the marshal sites apply one configured width. Clamped
+	// to [2,9] (default 2) at the marshal call; the zero value renders at 2.
+	YAMLIndent int
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

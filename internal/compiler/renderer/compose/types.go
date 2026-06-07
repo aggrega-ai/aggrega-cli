@@ -12,13 +12,14 @@ type ComposeFile struct {
 	Services map[string]Service `yaml:"services,omitempty"`
 	Volumes  map[string]Volume  `yaml:"volumes,omitempty"`
 	Networks map[string]Network `yaml:"networks,omitempty"`
+	Configs  map[string]Config  `yaml:"configs,omitempty"`
 }
 
 // Service is one compose service definition. Fields populated only as needed
 // — omitempty on every field so per-node fragments stay minimal.
 //
 // The set of fields here is the currently synthesisable surface. Expansion
-// (e.g., configs, secrets, deploy) lands as needed in future iterations.
+// (e.g., secrets, deploy) lands as needed in future iterations.
 type Service struct {
 	Image       string            `yaml:"image,omitempty"`
 	Command     []string          `yaml:"command,omitempty"`
@@ -40,6 +41,21 @@ type Service struct {
 	ReadOnly    bool              `yaml:"read_only,omitempty"`
 	CapAdd      []string          `yaml:"cap_add,omitempty"`
 	CapDrop     []string          `yaml:"cap_drop,omitempty"`
+	Configs     []ServiceConfig   `yaml:"configs,omitempty"`
+}
+
+// Config is a top-level compose config declaration with inline content. The
+// content is mounted into a service as a file via a ServiceConfig reference.
+// Inline content requires Docker Compose >= 2.23.1.
+type Config struct {
+	Content string `yaml:"content"`
+}
+
+// ServiceConfig is one entry in a service's configs: list — the long form that
+// mounts a top-level Config at an explicit path inside the container.
+type ServiceConfig struct {
+	Source string `yaml:"source"`
+	Target string `yaml:"target"`
 }
 
 // ServiceVolume is one entry in a service's volumes: list. Compose's "long

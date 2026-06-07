@@ -23,7 +23,7 @@ spec:
 		"aggrega.ai/aggregate-name": "test-app",
 		"aggrega.ai/component-id":   "api",
 	}
-	out, err := injectAggregaLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels, 2)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -50,7 +50,7 @@ spec:
   type: ClusterIP
 `)
 	labels := map[string]string{"aggrega.ai/component-id": "api"}
-	out, err := injectAggregaLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels, 2)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -76,7 +76,7 @@ metadata:
   name: api
 `)
 	labels := map[string]string{"aggrega.ai/component-id": "api"}
-	out, err := injectAggregaLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels, 2)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -99,7 +99,7 @@ metadata:
     aggrega.ai/component-id: stale
 `)
 	labels := map[string]string{"aggrega.ai/component-id": "fresh"}
-	out, err := injectAggregaLabels(in, labels)
+	out, err := injectAggregaLabels(in, labels, 2)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -115,7 +115,7 @@ metadata:
 func TestInjectAggregaLabels_EmptyLabelsIsNoOp(t *testing.T) {
 	t.Parallel()
 	in := []byte("apiVersion: v1\nkind: Deployment\n")
-	out, err := injectAggregaLabels(in, nil)
+	out, err := injectAggregaLabels(in, nil, 2)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}

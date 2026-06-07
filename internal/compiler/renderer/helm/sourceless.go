@@ -12,7 +12,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -86,7 +85,7 @@ func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext)
 		},
 	}
 
-	depYAML, err := yaml.Marshal(&deploy)
+	depYAML, err := renderer.MarshalYAMLIndent(&deploy, nodeCtx.YAMLIndent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 	}
@@ -103,7 +102,7 @@ func renderSourceless(values map[string]any, nodeCtx renderer.NodeRenderContext)
 				Ports:    svcPorts,
 			},
 		}
-		svcYAML, err := yaml.Marshal(&svc)
+		svcYAML, err := renderer.MarshalYAMLIndent(&svc, nodeCtx.YAMLIndent)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}

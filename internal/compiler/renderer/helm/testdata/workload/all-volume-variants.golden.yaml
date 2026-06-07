@@ -1,89 +1,89 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-    name: data-server
-    labels:
+  name: data-server
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: data-server
+    aggrega.ai/environment: test-env
+    app: data-server
+    app.kubernetes.io/name: data-server
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-server
+  template:
+    metadata:
+      name: ""
+      labels:
         aggrega.ai/aggregate-name: test-agg
         aggrega.ai/compiler-version: test
         aggrega.ai/component-id: data-server
         aggrega.ai/environment: test-env
         app: data-server
         app.kubernetes.io/name: data-server
-    annotations:
-        aggrega.ai/boundary-path: default
-spec:
-    replicas: 1
-    selector:
-        matchLabels:
-            app: data-server
-    template:
-        metadata:
-            name: ""
-            labels:
-                aggrega.ai/aggregate-name: test-agg
-                aggrega.ai/compiler-version: test
-                aggrega.ai/component-id: data-server
-                aggrega.ai/environment: test-env
-                app: data-server
-                app.kubernetes.io/name: data-server
-        spec:
-            containers:
-                - name: main
-                  image: app:1.0
-                  ports:
-                    - name: web
-                      containerPort: 8080
-            volumes:
-                - name: cache
-                  emptyDir:
-                    sizeLimit: 100Mi
-                - name: config
-                  configMap:
-                    name: app-config
-                - name: secret-store
-                  secret:
-                    secretName: app-secret
-                - name: data
-                  persistentVolumeClaim:
-                    claimName: data-server-data
+    spec:
+      containers:
+        - name: main
+          image: app:1.0
+          ports:
+            - name: web
+              containerPort: 8080
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 100Mi
+        - name: config
+          configMap:
+            name: app-config
+        - name: secret-store
+          secret:
+            secretName: app-secret
+        - name: data
+          persistentVolumeClaim:
+            claimName: data-server-data
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-    name: data-server-data
-    labels:
-        aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/compiler-version: test
-        aggrega.ai/component-id: data-server
-        aggrega.ai/environment: test-env
-        app: data-server
-        app.kubernetes.io/name: data-server
-    annotations:
-        aggrega.ai/boundary-path: default
+  name: data-server-data
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: data-server
+    aggrega.ai/environment: test-env
+    app: data-server
+    app.kubernetes.io/name: data-server
+  annotations:
+    aggrega.ai/boundary-path: default
 spec:
-    accessModes:
-        - ReadWriteOnce
-    resources:
-        requests:
-            storage: 10Gi
-    storageClassName: gp3
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: gp3
 apiVersion: v1
 kind: Service
 metadata:
-    name: data-server-api
-    labels:
-        aggrega.ai/aggregate-name: test-agg
-        aggrega.ai/compiler-version: test
-        aggrega.ai/component-id: data-server
-        aggrega.ai/environment: test-env
-        app: data-server
-        app.kubernetes.io/name: data-server
-    annotations:
-        aggrega.ai/boundary-path: default
+  name: data-server-api
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: data-server
+    aggrega.ai/environment: test-env
+    app: data-server
+    app.kubernetes.io/name: data-server
+  annotations:
+    aggrega.ai/boundary-path: default
 spec:
-    type: ClusterIP
-    selector:
-        app: data-server
-    ports:
-        - name: web
-          port: 8080
-          targetPort: web
+  type: ClusterIP
+  selector:
+    app: data-server
+  ports:
+    - name: web
+      port: 8080
+      targetPort: web

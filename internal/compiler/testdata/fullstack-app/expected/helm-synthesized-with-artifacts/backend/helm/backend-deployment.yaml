@@ -1,40 +1,40 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-    name: backend
-    namespace: backend-zone
-    labels:
+  name: backend
+  namespace: backend-zone
+  labels:
+    aggrega.ai/aggregate-name: fullstack-app
+    aggrega.ai/compiler-version: 0.1.0
+    aggrega.ai/component-id: backend
+    aggrega.ai/environment: production
+    app: backend
+    app.kubernetes.io/name: backend
+  annotations:
+    aggrega.ai/boundary-path: backend-ns
+    aggrega.ai/recipe-uri: helm-api-server-synthesized-with-artifacts:1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      name: ""
+      labels:
         aggrega.ai/aggregate-name: fullstack-app
         aggrega.ai/compiler-version: 0.1.0
         aggrega.ai/component-id: backend
         aggrega.ai/environment: production
         app: backend
         app.kubernetes.io/name: backend
-    annotations:
-        aggrega.ai/boundary-path: backend-ns
-        aggrega.ai/recipe-uri: helm-api-server-synthesized-with-artifacts:1.0.0
-spec:
-    replicas: 3
-    selector:
-        matchLabels:
-            app: backend
-    template:
-        metadata:
-            name: ""
-            labels:
-                aggrega.ai/aggregate-name: fullstack-app
-                aggrega.ai/compiler-version: 0.1.0
-                aggrega.ai/component-id: backend
-                aggrega.ai/environment: production
-                app: backend
-                app.kubernetes.io/name: backend
-        spec:
-            containers:
-                - name: main
-                  image: api-server:latest
-                  ports:
-                    - name: web
-                      containerPort: 8082
-                  env:
-                    - name: PORT
-                      value: "8082"
+    spec:
+      containers:
+        - name: main
+          image: api-server:latest
+          ports:
+            - name: web
+              containerPort: 8082
+          env:
+            - name: PORT
+              value: "8082"
