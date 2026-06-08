@@ -108,10 +108,10 @@ func TestIsUnderPath(t *testing.T) {
 		{"foo", "foo", true},
 		{"foo.bar", "foo", true},
 		{"foo.bar.baz", "foo", true},
-		{"foo.bar", "foo.b", false},   // siblings sharing prefix do NOT match
-		{"foobar", "foo", false},      // strict path separator required
+		{"foo.bar", "foo.b", false}, // siblings sharing prefix do NOT match
+		{"foobar", "foo", false},    // strict path separator required
 		{"", "foo", false},
-		{"foo", "", false},            // empty parent never matches (defensive)
+		{"foo", "", false}, // empty parent never matches (defensive)
 	}
 
 	for _, c := range cases {
@@ -173,7 +173,7 @@ func TestEvaluateTemplateFalseLiteral(t *testing.T) {
 	t.Parallel()
 
 	tpl := mustParseTemplate(t, `{{ if eq . "x" }}true{{ else }}false{{ end }}`)
-	truthy, err := evaluateTemplate(tpl, "y")
+	truthy, err := evaluateTemplate(tpl, "y", nil)
 	if err != nil {
 		t.Fatalf("evaluateTemplate: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestEvaluateTemplateNumericTruthy(t *testing.T) {
 		{1.5, true},
 	}
 	for _, c := range cases {
-		got, err := evaluateTemplate(tpl, c.data)
+		got, err := evaluateTemplate(tpl, c.data, nil)
 		if err != nil {
 			t.Errorf("evaluateTemplate(%v): %v", c.data, err)
 			continue
@@ -215,7 +215,7 @@ func TestEvaluateTemplateOtherString(t *testing.T) {
 	t.Parallel()
 
 	tpl := mustParseTemplate(t, `{{ . }}`)
-	got, err := evaluateTemplate(tpl, "hello")
+	got, err := evaluateTemplate(tpl, "hello", nil)
 	if err != nil {
 		t.Fatalf("evaluateTemplate: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestEvaluateTemplateEmptyOutput(t *testing.T) {
 	t.Parallel()
 
 	tpl := mustParseTemplate(t, ``)
-	truthy, err := evaluateTemplate(tpl, "anything")
+	truthy, err := evaluateTemplate(tpl, "anything", nil)
 	if err != nil {
 		t.Fatalf("evaluateTemplate: %v", err)
 	}

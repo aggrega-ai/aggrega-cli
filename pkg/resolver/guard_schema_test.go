@@ -143,6 +143,30 @@ func TestGuardSchemaConformance_TwoIndependentViolations(t *testing.T) {
 	}
 }
 
+// TestGuardSchemaConformance_PredicateReadsParameter is the end-to-end proof
+// 10-pre3 deferred: a schema.values predicate that reads a resolved parameter
+// (via param) gates the instance — legal under one parameter set, an
+// ErrSchemaConformance halt under another, the same authored value either way.
+func TestGuardSchemaConformance_PredicateReadsParameter(t *testing.T) {
+	t.Parallel()
+	const schemaYAML = `values:
+  tier:
+    type: string
+    validate: '{{ eq . (param "allowedTier") }}'
+    validateMessage: "tier must equal the allowedTier parameter"
+`
+	catalog := catalogFromComponentSchema(t, schemaYAML)
+	agg := aggWithValues("tier", "gold")
+
+	// allowedTier=gold → conforms.
+	if errs := guardSchemaConformance(agg, catalog, map[string]any{"allowedTier": "gold"}); len(errs) != 0 {
+		t.Fatalf("tier=gold under allowedTier=gold should pass; got %v", errs)
+	}
+	// allowedTier=silver → same value, now violates → exactly one halt.
+	errs := guardSchemaConformance(agg, catalog, map[string]any{"allowedTier": "silver"})
+	requireConformance(t, errs, 1, ".spec.components.svc.values.tier")
+}
+
 // --- Positive ------------------------------------------------------------
 
 func TestGuardSchemaConformance_RequiredWithDefaultNotMissing(t *testing.T) {

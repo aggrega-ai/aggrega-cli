@@ -278,4 +278,20 @@ type validateNode struct {
 // adapter compiles. Matches the convention Recipe valuesMapping: uses
 // so authors get the same surface across schema constraints and
 // rendering templates.
-var sprigFuncs = sprig.HermeticTxtFuncMap()
+//
+// `param` and `parameters` give x-aggrega-when / x-aggrega-validate predicates
+// access to the resolved Aggregate parameter map: `param "X"` returns one
+// parameter's value, `parameters` returns the whole map (e.g.
+// `{{ index (parameters) "X" }}`). They are exposed as functions rather than a
+// data-root field so the dot stays the field value / surrounding object exactly
+// as before — predicates that do not call them render identically. Registered
+// here as placeholders (so templates referencing them parse); the real
+// closures over the per-validation Context.Parameters are bound per evaluation
+// in evaluateTemplate via a template clone, since the parameter map is known
+// only at Validate time, not at compile time.
+var sprigFuncs = func() template.FuncMap {
+	m := sprig.HermeticTxtFuncMap()
+	m["param"] = func(string) any { return nil }
+	m["parameters"] = func() map[string]any { return nil }
+	return m
+}()

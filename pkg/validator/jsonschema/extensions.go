@@ -30,18 +30,18 @@ import (
 //     For each:
 //     - Navigate to the node's instance position.
 //     - Evaluate the pre-compiled template against the parent of the
-//       when-node (the surrounding object scope where sibling fields
-//       live; templates reference siblings via $.fieldname).
+//     when-node (the surrounding object scope where sibling fields
+//     live; templates reference siblings via $.fieldname).
 //     - On truthy: keep the walk's findings for this subtree (the walk
-//       has already validated against the sub-schema rooted at the
-//       subtree, which includes any then: constraints in the
-//       compact-form-emitted shape).
+//     has already validated against the sub-schema rooted at the
+//     subtree, which includes any then: constraints in the
+//     compact-form-emitted shape).
 //     - On falsy + else: present: drop the walk's findings for this
-//       subtree and validate the sub-instance against the pre-resolved
-//       else: branch (findings rebased to the sub-instance's path).
+//     subtree and validate the sub-instance against the pre-resolved
+//     else: branch (findings rebased to the sub-instance's path).
 //     - On falsy + no else: present: drop the walk's findings for this
-//       subtree (no constraint applies when falsy and no else: was
-//       authored — D-001b-2 semantic).
+//     subtree (no constraint applies when falsy and no else: was
+//     authored — D-001b-2 semantic).
 //     Subsequent x-aggrega-when: nodes nested under a falsy outer
 //     branch are skipped (consumed by the outer's filter).
 //
@@ -49,12 +49,20 @@ import (
 //     - Navigate to the node's instance position.
 //     - Evaluate the pre-compiled template against the field value.
 //     - On falsy: append a Finding carrying the x-aggrega-validateMessage:
-//       content.
+//     content.
 //
 //  4. Sort the findings (FieldPath -> Keyword -> Message) per the
 //     deterministic-output invariant.
 func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 	rpt := &Report{}
+
+	// Resolved parameter map exposed to predicate templates via the param /
+	// parameters functions (nil when no Context or no parameters — the
+	// functions then return the zero value / empty map).
+	var params map[string]any
+	if ctx != nil {
+		params = ctx.Parameters
+	}
 
 	// Step 1: deterministic property walk. Validates each property's
 	// sub-instance against its pre-resolved sub-schema in sorted-key
@@ -109,7 +117,7 @@ nextWhen:
 			}
 		}
 
-		truthy, err := evaluateTemplate(wn.tpl, parentInstance)
+		truthy, err := evaluateTemplate(wn.tpl, parentInstance, params)
 		if err != nil {
 			return nil, &AdapterError{
 				Path:    whenPathStr,
@@ -161,7 +169,7 @@ nextValidate:
 			continue
 		}
 
-		truthy, err := evaluateTemplate(vn.tpl, fieldValue)
+		truthy, err := evaluateTemplate(vn.tpl, fieldValue, params)
 		if err != nil {
 			return nil, &AdapterError{
 				Path:    vnPathStr,
@@ -597,14 +605,35 @@ func formatOneOfFailure(matchedIndices []int, total int, failures []string) stri
 // a Go boolean. Numeric outputs are truthy if nonzero. Any non-empty
 // non-falsy string is truthy (standard Go template boolean convention).
 //
-// Parameter context (Context.Parameters) is not yet plumbed into the
-// template scope; current canonical predicate examples use only the
-// field value + surrounding scope. Parameter access through
-// `{{ .parameters.X }}` is a follow-up enhancement once an authoring
-// pattern surfaces that requires it.
-func evaluateTemplate(tpl *template.Template, data any) (bool, error) {
+// The resolved Aggregate parameter map (params) is reachable through the
+// `param` and `parameters` functions — `param "X"` returns one parameter's
+// value, `parameters` the whole map — bound here per evaluation over a clone of
+// the pre-compiled template, since the map is known only at validation time.
+// The data root is untouched, so a predicate that calls neither function
+// renders exactly as before. params is nil when no Context or no parameters was
+// supplied (param then returns nil, parameters an empty map). The clone keeps
+// the shared pre-compiled template free of per-evaluation state.
+func evaluateTemplate(tpl *template.Template, data any, params map[string]any) (bool, error) {
+	clone, err := tpl.Clone()
+	if err != nil {
+		return false, err
+	}
+	clone.Funcs(template.FuncMap{
+		"param": func(key string) any {
+			if params == nil {
+				return nil
+			}
+			return params[key]
+		},
+		"parameters": func() map[string]any {
+			if params == nil {
+				return map[string]any{}
+			}
+			return params
+		},
+	})
 	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
+	if err := clone.Execute(&buf, data); err != nil {
 		return false, err
 	}
 	out := strings.TrimSpace(buf.String())
