@@ -58,6 +58,15 @@ var (
 	// the expected per-mechanism format.
 	ErrInvalidInjectKey = errors.New("invalid inject key")
 
+	// ErrSchemaConformance wraps a developer-authored component-instance
+	// values or infra pillar that does not conform to the catalog
+	// Component's declared schema for that pillar (wrong type, out of
+	// range, missing required-non-defaulted field, or a property the
+	// schema forbids). Validated at Step 1, default-aware: a field the
+	// schema supplies a default for is not "missing". Distinct from
+	// monotonic-narrowing, which stays signal-only.
+	ErrSchemaConformance = errors.New("authored pillar does not conform to its declared schema")
+
 	// ErrCredentialLabelPartition wraps a Feature instance that violates the
 	// credential-label partition rule (credential and non-credential
 	// features must not coexist on a single component without explicit

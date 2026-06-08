@@ -307,7 +307,7 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
 		return fmt.Errorf("Step 1 (annotation expansion): %w", err)
 	}
-	if guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra); len(guardErrs) > 0 {
+	if guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters); len(guardErrs) > 0 {
 		for _, e := range guardErrs {
 			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
 		}

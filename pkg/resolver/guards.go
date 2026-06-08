@@ -50,7 +50,7 @@ type CatalogLookup struct {
 //
 // Returns nil when agg is nil. Individual guards skip silently when their
 // required CatalogLookup function is nil.
-func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra) []*ResolverError {
+func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra, parameters map[string]any) []*ResolverError {
 	var errs []*ResolverError
 	errs = append(errs, guardUsesSocket(agg, catalog)...)
 	errs = append(errs, guardSelfInject(agg, catalog)...)
@@ -59,6 +59,7 @@ func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLook
 	errs = append(errs, guardRequiredFeatures(agg, release, catalog)...)
 	errs = append(errs, guardFeatureMerge(agg, release)...)
 	errs = append(errs, guardRequiredUsesSockets(agg, catalog)...)
-	_ = boundaryInfra // reserved for the .infra pillar validator (Step 1c) once it lands
+	errs = append(errs, guardSchemaConformance(agg, catalog, parameters)...)
+	_ = boundaryInfra // reserved for the infra-pillar conformance gate (validated closed against schema.infra ∪ provider baseSchema) once it lands
 	return errs
 }
