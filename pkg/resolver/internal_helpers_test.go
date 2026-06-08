@@ -131,15 +131,15 @@ func TestPropertyOf_PresentReturnsValue(t *testing.T) {
 //   - terminal segment found → (type, true, false)
 //   - terminal segment absent → (zero, false, false)
 //   - intermediate segment not a map → skippable
-func TestSchemaPropertyType_EveryBranch(t *testing.T) {
+func TestSchemaSubSchemaAtPath_EveryBranch(t *testing.T) {
 	t.Parallel()
 	// (a) Nil schema — skippable.
-	if _, found, skippable := schemaPropertyType(nil, "infra", "port"); found || !skippable {
+	if _, found, skippable := schemaSubSchemaAtPath(nil, "infra", "port"); found || !skippable {
 		t.Errorf("nil schema: got (found=%v, skippable=%v); want (false, true)", found, skippable)
 	}
 	// (b) Pillar absent — skippable.
 	schemaNoPillar := map[string]any{"properties": map[string]any{}}
-	if _, found, skippable := schemaPropertyType(schemaNoPillar, "infra", "port"); found || !skippable {
+	if _, found, skippable := schemaSubSchemaAtPath(schemaNoPillar, "infra", "port"); found || !skippable {
 		t.Errorf("pillar absent: got (found=%v, skippable=%v); want (false, true)", found, skippable)
 	}
 	// (c) Empty path — skippable.
@@ -152,16 +152,19 @@ func TestSchemaPropertyType_EveryBranch(t *testing.T) {
 			},
 		},
 	}
-	if _, found, skippable := schemaPropertyType(schemaWithInfra, "infra", ""); found || !skippable {
+	if _, found, skippable := schemaSubSchemaAtPath(schemaWithInfra, "infra", ""); found || !skippable {
 		t.Errorf("empty path: got (found=%v, skippable=%v); want (false, true)", found, skippable)
 	}
-	// (d) Terminal segment found — (type, true, false).
-	typ, found, skippable := schemaPropertyType(schemaWithInfra, "infra", "port")
-	if !found || skippable || typ != "integer" {
-		t.Errorf("terminal found: got (type=%q, found=%v, skippable=%v); want (integer, true, false)", typ, found, skippable)
+	// (d) Terminal segment found — returns the sub-schema node (true, false).
+	sub, found, skippable := schemaSubSchemaAtPath(schemaWithInfra, "infra", "port")
+	if !found || skippable {
+		t.Errorf("terminal found: got (found=%v, skippable=%v); want (true, false)", found, skippable)
 	}
-	// (e) Terminal segment absent — (zero, false, false).
-	if _, found, skippable := schemaPropertyType(schemaWithInfra, "infra", "missing"); found || skippable {
+	if typ, _ := sub["type"].(string); typ != "integer" {
+		t.Errorf("terminal sub-schema: got type=%q; want integer", typ)
+	}
+	// (e) Terminal segment absent — (nil, false, false).
+	if _, found, skippable := schemaSubSchemaAtPath(schemaWithInfra, "infra", "missing"); found || skippable {
 		t.Errorf("terminal absent: got (found=%v, skippable=%v); want (false, false)", found, skippable)
 	}
 	// (f) Escape hatch mid-walk — skippable.
@@ -172,7 +175,7 @@ func TestSchemaPropertyType_EveryBranch(t *testing.T) {
 			},
 		},
 	}
-	if _, found, skippable := schemaPropertyType(schemaWithEscape, "infra", "port"); found || !skippable {
+	if _, found, skippable := schemaSubSchemaAtPath(schemaWithEscape, "infra", "port"); found || !skippable {
 		t.Errorf("escape hatch: got (found=%v, skippable=%v); want (false, true)", found, skippable)
 	}
 }
@@ -743,7 +746,7 @@ func TestSchemaHasPropertyAtPath_EveryBranch(t *testing.T) {
 		"properties": map[string]any{
 			"infra": map[string]any{
 				"properties": map[string]any{
-					"port":  map[string]any{"type": "integer"},
+					"port":   map[string]any{"type": "integer"},
 					"nested": map[string]any{"properties": map[string]any{"leaf": map[string]any{"type": "string"}}},
 				},
 			},
@@ -878,47 +881,6 @@ func TestToFloat_AcceptsEveryNumericRuntimeType(t *testing.T) {
 		}
 		if ok && got != c.want {
 			t.Errorf("toFloat(%T %v) = %v; want %v", c.value, c.value, got, c.want)
-		}
-	}
-}
-
-// TestValueMatchesSchemaType_CoversEveryDeclaredType pins the schema-
-// type discriminator used during annotation expansion. Mirrors
-// typeMatches but with the JSON Schema vocabulary (`null` accepted as
-// a real type; `object` allows OrderedMap variants).
-func TestValueMatchesSchemaType_CoversEveryDeclaredType(t *testing.T) {
-	t.Parallel()
-	om := types.OrderedMap[any]{}
-	om.Set("k", "v")
-	cases := []struct {
-		declared string
-		value    any
-		want     bool
-	}{
-		{"string", "x", true},
-		{"string", 1, false},
-		{"integer", 42, true},
-		{"integer", "42", false},
-		{"integer", 3.14, false},
-		{"number", 3.14, true},
-		{"number", 42, true},
-		{"number", "1", false},
-		{"boolean", true, true},
-		{"boolean", "true", false},
-		{"object", map[string]any{"k": "v"}, true},
-		{"object", om, true},
-		{"object", &om, true},
-		{"object", "not-an-object", false},
-		{"array", []any{1, 2, 3}, true},
-		{"array", "list", false},
-		{"null", nil, true},
-		{"null", "not-null", false},
-		{"", "anything", true},  // empty declared type accepts any
-		{"???", 42, true}, // unknown declared type accepts any
-	}
-	for _, c := range cases {
-		if got := valueMatchesSchemaType(c.value, c.declared); got != c.want {
-			t.Errorf("valueMatchesSchemaType(%v, %q) = %v; want %v", c.value, c.declared, got, c.want)
 		}
 	}
 }

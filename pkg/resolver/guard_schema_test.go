@@ -49,6 +49,27 @@ func TestGuardSchemaConformance_InheritedConstraintEnforced(t *testing.T) {
 	requireConformance(t, errs, 1, ".spec.components.svc.values")
 }
 
+// TestGuardSchemaConformance_ExtendsPredicateReadsParameter confirms the
+// resolved parameter map reaches predicates evaluated against the composed
+// (effective) schema — i.e. .parameters-in-predicates is honored on the extends
+// surface, not just the authored-schema surface.
+func TestGuardSchemaConformance_ExtendsPredicateReadsParameter(t *testing.T) {
+	t.Parallel()
+	cl := catalogFromComponentSchema(t, "values:\n  name: { type: string, required: true }\n")
+	cl.EffectiveSchema = func(typeURI string) (compactform.Schema, bool) {
+		if typeURI == "app/svc:1.0.0" {
+			return compileTestSchema(t, "values:\n  tier:\n    type: string\n    validate: '{{ eq . (param \"allowedTier\") }}'\n    validateMessage: \"tier must equal allowedTier\"\n"), true
+		}
+		return nil, false
+	}
+	agg := aggWithValues("tier", "gold")
+	if errs := guardSchemaConformance(agg, cl, nil, map[string]any{"allowedTier": "gold"}); len(errs) != 0 {
+		t.Fatalf("tier=gold under allowedTier=gold should pass on the effective schema; got %v", errs)
+	}
+	errs := guardSchemaConformance(agg, cl, nil, map[string]any{"allowedTier": "silver"})
+	requireConformance(t, errs, 1, ".spec.components.svc.values.tier")
+}
+
 // schemaComponentCatalog returns a CatalogLookup whose single Component
 // "app/svc:1.0.0" carries a values schema for the conformance tests:
 //

@@ -257,6 +257,58 @@ func TestAttachmentConformance_InheritedFeatureConstraintEnforced(t *testing.T) 
 	requireConformanceHalt(t, err, ".spec.components.api.features.mon.values")
 }
 
+// TestAttachmentConformance_PredicateReadsParameter confirms the resolved
+// parameter map reaches predicates on the attachment surface: a Feature schema
+// whose value carries a param-reading x-aggrega-validate predicate gates the
+// same attachment value by the resolved parameter (the .parameters-in-predicates
+// delivery, on the Step-3 attachment gate).
+func TestAttachmentConformance_PredicateReadsParameter(t *testing.T) {
+	t.Parallel()
+	cl := resolver.CatalogLookup{
+		Component: func(string) (types.Component, bool) { return types.Component{}, false },
+		Feature: func(typeURI string) (types.Feature, bool) {
+			if typeURI == "core/gated" {
+				return types.Feature{
+					Metadata: types.FeatureMetadata{Name: "core/gated", Version: "1.0.0"},
+					Spec:     types.FeatureSpec{Schema: compileNodeYAML(t, "values:\n  tier:\n    type: string\n    validate: '{{ eq . (param \"allowedTier\") }}'\n    validateMessage: \"tier must equal allowedTier\"\n")},
+				}, true
+			}
+			return types.Feature{}, false
+		},
+	}
+	build := func(allowedTier string) error {
+		nodes := types.OrderedMap[*topology.TopologyNode]{}
+		nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server"})
+		topoResult := &topology.TopologyResult{
+			Nodes:              nodes,
+			FeatureAttachments: map[string][]topology.FeatureAttachment{"api": {feat("g", "core/gated", vmap("tier", "gold"))}},
+			SecretAttachments:  map[string][]topology.SecretAttachment{},
+		}
+		rr := &resolver.ResolveResult{
+			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+			Parameters:    map[string]any{"allowedTier": allowedTier},
+		}
+		_, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: rr, CatalogLookup: cl})
+		return err
+	}
+	if err := build("gold"); err != nil {
+		t.Fatalf("tier=gold under allowedTier=gold should pass; got %v", err)
+	}
+	requireConformanceHalt(t, build("silver"), ".spec.components.api.features.g.values.tier")
+}
+
+// compileNodeYAML parses a compact schema YAML into a yaml.Node (the Feature
+// Spec.Schema authoring shape) for the predicate test.
+func compileNodeYAML(t *testing.T, y string) yaml.Node {
+	t.Helper()
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte(y), &n); err != nil {
+		t.Fatalf("schema fixture parse: %v", err)
+	}
+	return n
+}
+
 // testCompiledFor mirrors the builder's per-type schema compile closure for the
 // unit-level pass test.
 func testCompiledFor(t *testing.T, cat resolver.CatalogLookup) func(string) (compactform.Schema, bool) {

@@ -4,11 +4,13 @@
 package resolver
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // ValidateAnnotationBindingTargets verifies that every path declared in
@@ -216,55 +218,31 @@ func hasEscapeHatch(node map[string]any) bool {
 	return false
 }
 
-// validateSubkeyValueAgainstFeatureSchema verifies that a subkey
-// value's runtime Go type matches the target Feature's spec.schema
-// declared type at the routed pillar+path. Annotation values arrive
-// from YAML decode as primitives (string, int, float64, bool) or
-// composite types (map, slice); the validator checks each against
-// the schema's `type` field.
+// validateSubkeyValueAgainstFeatureSchema validates a bound annotation subkey
+// value against the target Feature's spec.schema sub-schema at the routed
+// pillar+path — full JSON Schema 2020-12 validation (type, enum, pattern,
+// numeric range, nested object/array shape), not a type-only check. The
+// sub-schema is located by walking properties.<pillar>.properties.<segment>...
+// to the terminal node; the value is then validated against that sub-schema
+// through the shared pillar-conformance machinery, carrying the Feature
+// schema's definitional context so a terminal $ref / allOf / oneOf resolves.
 //
-// Compile caching. The compiled JSON Schema 2020-12 form of
-// feature.Spec.Schema arrives via the [featureSchemaCache] supplied
-// by the caller. The cache memoizes one compile per versioned
-// Feature URI per [ExpandAnnotations] invocation, collapsing the
-// fan-out of (component × annotation × subkey) lookups against the
-// same Feature into a single compactform.Compile call. A nil cache
-// receiver falls through to a direct compactform.Compile per call,
-// preserving the uncached behavior for callers that wire the
-// validator without constructing a cache; the in-tree expansion
-// paths always pass a non-nil cache.
+// Compile caching. The compiled form of feature.Spec.Schema arrives via the
+// [featureSchemaCache] supplied by the caller — one compile per versioned
+// Feature URI per [ExpandAnnotations] invocation. A nil/!ok cache result
+// soft-skips (a compile failure is surfaced at catalog load, not here).
 //
-// Returns nil when the value's type matches the schema declaration,
-// when the schema-walker reaches an escape-hatch branch ($ref,
-// patternProperties, oneOf/anyOf/allOf, schema-bodied
-// additionalProperties — soft-skip per the default-to-skip
-// discipline established for the path-target validator), or when the
-// schema's declared property carries no `type` field. Returns an
-// OPS_ERROR-prefixed message naming the subkey, the actual Go type,
-// and the schema-declared type when the value's Go type
-// definitively conflicts with the declared schema type.
-//
-// A missing path under the pillar (segment not listed in
-// properties; no escape hatches) returns an OPS_ERROR naming the
-// subkey as not declared on the Feature schema. This case typically
-// pre-empts via [ValidateAnnotationBindingTargets] at catalog load;
-// the expansion-time check is the defensive backstop for bindings
-// whose paths route to schema properties that the load-time check
-// soft-skipped.
-//
-// Relaxed-default discipline. The two "return nil" branches above
-// (escape-hatch skippable; schema property declares no `type`)
-// extend the path-target validator's default-to-skip philosophy:
-// when the validator is uncertain about the schema constraint,
-// prefer progress over halting. The lever for strict per-subkey
-// type validation is authoring discipline — declare `type` on
-// every property in the Feature's `spec.schema` to opt into strict
-// matching. Properties without a `type` accept any runtime value
-// shape including nested maps; the FeatureRecipe rendering layer
-// handles whatever shape the annotation contribution carries.
-// Authoring docs surface this trade-off explicitly so operators
-// understand that strict type validation is opt-in at the schema
-// authoring site, not the validator's default.
+// Skip vs halt. The default-to-skip discipline is retained ONLY for the
+// navigation step: an escape hatch ($ref / patternProperties / composition /
+// schema-bodied additionalProperties) encountered before the terminal segment
+// leaves the path statically unresolvable, so the validator soft-skips that
+// binding-path pair rather than risk a false halt. Once the terminal sub-schema
+// is located it is validated in full — no type-only relaxation, no soft-skip of
+// a terminal composed shape. A terminal segment absent from an explicit
+// properties map returns an OPS_ERROR naming the undeclared subkey (this case
+// typically pre-empts via [ValidateAnnotationBindingTargets] at catalog load).
+// A value conflicting with the located sub-schema returns an OPS_ERROR naming
+// the subkey, the value, and the failing constraint.
 func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature *types.Feature, pillar, subkey string, value any) error {
 	if feature == nil {
 		return nil
@@ -276,7 +254,7 @@ func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature 
 		// default-to-skip discipline.
 		return nil
 	}
-	declaredType, found, skippable := schemaPropertyType(compiled, pillar, subkey)
+	subSchema, found, skippable := schemaSubSchemaAtPath(compiled, pillar, subkey)
 	if skippable {
 		return nil
 	}
@@ -286,121 +264,104 @@ func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature 
 			subkey, feature.Metadata.Name, pillar, subkey,
 		)
 	}
-	if declaredType == "" {
-		// Property exists but carries no `type` field — accept any
-		// runtime type. Authors who want strict typing declare it on
-		// the schema.
-		return nil
+	terminal := subkey
+	if i := strings.LastIndex(subkey, "."); i >= 0 {
+		terminal = subkey[i+1:]
 	}
-	if !valueMatchesSchemaType(value, declaredType) {
+	if msg, bad := subkeyConformanceFailure(compiled, subSchema, terminal, value); bad {
 		return fmt.Errorf(
-			"OPS_ERROR: annotation subkey %q value %v (Go type %T) does not match Feature %q spec.schema.%s.%s declared type %q",
-			subkey, value, value, feature.Metadata.Name, pillar, subkey, declaredType,
+			"OPS_ERROR: annotation subkey %q value %v does not conform to Feature %q spec.schema.%s.%s: %s",
+			subkey, value, feature.Metadata.Name, pillar, subkey, msg,
 		)
 	}
 	return nil
 }
 
-// schemaPropertyType walks the compiled JSON Schema 2020-12 form
-// along the pillar + dotted-path to retrieve the schema's declared
-// `type` value at the terminal property. Returns
-// (typeString, found, skippable) where:
-//
-//   - found=true, skippable=false → the property exists and the
-//     returned typeString is its declared type (empty if no `type`
-//     declared).
-//   - found=false, skippable=false → the walker reached a properties
-//     node and the terminal segment is absent.
-//   - skippable=true → the walker hit an escape hatch ($ref,
-//     patternProperties, oneOf/anyOf/allOf, schema-bodied
-//     additionalProperties); the caller treats this as a soft no-op.
-func schemaPropertyType(schema compactform.Schema, pillar, path string) (declaredType string, found bool, skippable bool) {
+// schemaSubSchemaAtPath walks the compiled JSON Schema 2020-12 form along the
+// pillar + dotted-path and returns the terminal property's sub-schema node.
+// The contract mirrors the path walker: (sub, true, false) when the path
+// resolves cleanly through explicit `properties` maps; (nil, false, false) when
+// a `properties` node lists no such segment (a real "undeclared" miss);
+// (nil, false, true) when an escape hatch ($ref, patternProperties,
+// oneOf/anyOf/allOf, schema-bodied additionalProperties) on the way leaves the
+// path statically unresolvable. The terminal node is returned verbatim — a
+// terminal $ref/allOf/oneOf is resolved by the validator with the root
+// definitional context, not soft-skipped here.
+func schemaSubSchemaAtPath(schema compactform.Schema, pillar, path string) (sub map[string]any, found bool, skippable bool) {
 	if schema == nil {
-		return "", false, true
+		return nil, false, true
 	}
 	pillarNode, foundPillar := propertyOf(schema, pillar)
 	if !foundPillar {
-		return "", false, true
+		return nil, false, true
 	}
 	current, ok := pillarNode.(map[string]any)
 	if !ok {
-		return "", false, true
+		return nil, false, true
 	}
 	if path == "" {
-		return "", false, true
+		return nil, false, true
 	}
 	segments := strings.Split(path, ".")
 	for i, seg := range segments {
 		if hasEscapeHatch(current) {
-			return "", false, true
+			return nil, false, true
 		}
 		next, ok := propertyOf(current, seg)
 		if !ok {
-			return "", false, false
+			return nil, false, false
 		}
 		nextMap, isMap := next.(map[string]any)
 		if !isMap {
-			return "", false, true
+			return nil, false, true
 		}
 		if i == len(segments)-1 {
-			typ, _ := nextMap["type"].(string)
-			return typ, true, false
+			return nextMap, true, false
 		}
 		current = nextMap
 	}
-	return "", false, true
+	return nil, false, true
 }
 
-// valueMatchesSchemaType reports whether a runtime Go value's type
-// matches the JSON Schema 2020-12 declared type. The mapping
-// follows YAML-decode conventions: integers decode to int, fractional
-// numbers to float64, booleans to bool, strings to string, mappings
-// to map[string]any or types.OrderedMap[any], sequences to []any.
-//
-// The match is strict by design: no type coercion (e.g., "20"
-// against integer is a type mismatch, not a parseable conversion).
-// Authors declare types correctly on the Feature schema or use
-// scalar annotations that pass through as strings.
-func valueMatchesSchemaType(value any, declaredType string) bool {
-	switch declaredType {
-	case "string":
-		_, ok := value.(string)
-		return ok
-	case "integer":
-		switch value.(type) {
-		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-			return true
-		}
-		return false
-	case "number":
-		switch value.(type) {
-		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64,
-			float32, float64:
-			return true
-		}
-		return false
-	case "boolean":
-		_, ok := value.(bool)
-		return ok
-	case "object":
-		if _, ok := value.(map[string]any); ok {
-			return true
-		}
-		if _, ok := value.(types.OrderedMap[any]); ok {
-			return true
-		}
-		if _, ok := value.(*types.OrderedMap[any]); ok {
-			return true
-		}
-		return false
-	case "array":
-		_, ok := value.([]any)
-		return ok
-	case "null":
-		return value == nil
+// subkeyConformanceFailure validates a single bound value against subSchema —
+// the terminal sub-schema located at the binding path — through the shared
+// pillar-conformance machinery: a one-key wrapper {seg: subSchema} validated
+// over {seg: value}, carrying the compiled schema's $defs/definitions so a
+// $ref/allOf/oneOf in subSchema resolves. Unlike the prior type-only check this
+// enforces the full JSON Schema 2020-12 constraint set (enum, pattern, numeric
+// range, nested object/array shape). Returns the leaf-most finding's message
+// and true on a violation; ("", false) when the value conforms or the wrapper
+// does not compile (a malformed schema is surfaced at catalog load, not here).
+func subkeyConformanceFailure(compiled compactform.Schema, subSchema map[string]any, seg string, value any) (string, bool) {
+	wrapper := map[string]any{
+		"type":       "object",
+		"properties": map[string]any{seg: subSchema},
 	}
-	// Unknown declared-type strings (or empty) accept any runtime
-	// type; authors who want strict typing declare a known schema
-	// type at the property.
-	return true
+	if defs, ok := compiled["$defs"]; ok {
+		wrapper["$defs"] = defs
+	}
+	if defs, ok := compiled["definitions"]; ok {
+		wrapper["definitions"] = defs
+	}
+	v, err := newPillarValidator(wrapper)
+	if err != nil {
+		return "", false
+	}
+	raw, err := json.Marshal(map[string]any{seg: value})
+	if err != nil {
+		return "", false
+	}
+	var instance any
+	if err := json.Unmarshal(raw, &instance); err != nil {
+		return "", false
+	}
+	rpt, err := v.Validate(instance, &jsonvalidator.Context{Surround: instance})
+	if err != nil || rpt == nil || len(rpt.Findings) == 0 {
+		return "", false
+	}
+	f := leafmostFindings(rpt.Findings)[0]
+	if f.Keyword != "" {
+		return fmt.Sprintf("%s (%s)", f.Message, f.Keyword), true
+	}
+	return f.Message, true
 }
