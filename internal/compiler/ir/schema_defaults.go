@@ -5,8 +5,21 @@ package ir
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// effectiveComponentSchema returns the composed effective schema for an
+// extends-ing Component, or (nil, false) for a non-extends Component (in which
+// case the caller compiles the authored schema). Routing defaults materialisation
+// through the same effective schema the conformance gate validates against keeps
+// inherited defaults in the rendered output consistent with the validated schema.
+func effectiveComponentSchema(lookup resolver.CatalogLookup, componentType string) (compactform.Schema, bool) {
+	if lookup.EffectiveSchema == nil {
+		return nil, false
+	}
+	return lookup.EffectiveSchema(componentType)
+}
 
 // componentPillarDefaults compiles a Component's schema and returns the declared
 // defaults for the values and infra pillars as nested OrderedMaps. A Component

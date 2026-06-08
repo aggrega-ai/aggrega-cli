@@ -144,7 +144,18 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		if c, ok := featureSchemaCache[featureType]; ok {
 			return c, true
 		}
-		if featureSchemaMiss[featureType] || cfg.CatalogLookup.Feature == nil {
+		if featureSchemaMiss[featureType] {
+			return nil, false
+		}
+		// Prefer the composed effective schema for an extends-ing Feature, so an
+		// inherited constraint is enforced on the attachment.
+		if cfg.CatalogLookup.EffectiveSchema != nil {
+			if eff, ok := cfg.CatalogLookup.EffectiveSchema(featureType); ok {
+				featureSchemaCache[featureType] = eff
+				return eff, true
+			}
+		}
+		if cfg.CatalogLookup.Feature == nil {
 			return nil, false
 		}
 		feat, ok := cfg.CatalogLookup.Feature(featureType)
@@ -198,12 +209,21 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		}
 
 		// Resolved version + schema-declared pillar defaults from catalog.
+		// Prefer the composed effective schema for an extends-ing Component so
+		// inherited defaults materialise into the rendered output (consistent
+		// with the conformance gate validating against the same effective
+		// schema); fall back to the authored schema for a non-extends Component.
 		var valueDefaults, infraDefaults types.OrderedMap[any]
 		if cfg.CatalogLookup.Component != nil {
 			catComp, found := cfg.CatalogLookup.Component(topoNode.ComponentType)
 			if found {
 				irNode.ResolvedVersion = catComp.Metadata.Version
-				valueDefaults, infraDefaults = componentPillarDefaults(catComp, cfg.CatalogLookup.SchemaLibraries)
+				if eff, ok := effectiveComponentSchema(cfg.CatalogLookup, topoNode.ComponentType); ok {
+					valueDefaults = compactform.PillarDefaults(eff, "values")
+					infraDefaults = compactform.PillarDefaults(eff, "infra")
+				} else {
+					valueDefaults, infraDefaults = componentPillarDefaults(catComp, cfg.CatalogLookup.SchemaLibraries)
+				}
 			}
 		}
 

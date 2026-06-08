@@ -7,9 +7,47 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
+
+// compileTestSchema compiles a compact pillar schema to a compactform.Schema,
+// standing in for the composed effective schema the catalog produces for an
+// extends-ing entity.
+func compileTestSchema(t *testing.T, schemaYAML string) compactform.Schema {
+	t.Helper()
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(schemaYAML), &node); err != nil {
+		t.Fatalf("schema fixture parse: %v", err)
+	}
+	compiled, err := compactform.Compile(&node)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	return compiled
+}
+
+// TestGuardSchemaConformance_InheritedConstraintEnforced is the extends proof
+// case: the gate validates an extends-ing Component against its EFFECTIVE
+// (composed) schema, so a parent-declared constraint the child's own schema
+// omits is enforced on the child's instance. The authored Component schema here
+// requires only `name`; the effective schema additionally requires the inherited
+// `tls_enabled`, so an instance omitting it halts — proving the gate prefers the
+// effective schema over the authored slice.
+func TestGuardSchemaConformance_InheritedConstraintEnforced(t *testing.T) {
+	t.Parallel()
+	cl := catalogFromComponentSchema(t, "values:\n  name: { type: string, required: true }\n")
+	cl.EffectiveSchema = func(typeURI string) (compactform.Schema, bool) {
+		if typeURI == "app/svc:1.0.0" {
+			return compileTestSchema(t, "values:\n  name: { type: string, required: true }\n  tls_enabled: { type: boolean, required: true }\n"), true
+		}
+		return nil, false
+	}
+	// name supplied, tls_enabled (inherited, required, no default) omitted.
+	errs := guardSchemaConformance(aggWithValues("name", "api"), cl, nil, nil)
+	requireConformance(t, errs, 1, ".spec.components.svc.values")
+}
 
 // schemaComponentCatalog returns a CatalogLookup whose single Component
 // "app/svc:1.0.0" carries a values schema for the conformance tests:

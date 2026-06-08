@@ -82,6 +82,15 @@ func guardSchemaConformance(
 		if e, seen := compiledCache[compType]; seen {
 			return e.schema, e.ok
 		}
+		// Prefer the composed effective schema for an extends-ing Component, so
+		// an inherited constraint is enforced on the child; fall back to
+		// compiling the authored schema for a non-extends Component.
+		if catalog.EffectiveSchema != nil {
+			if eff, ok := catalog.EffectiveSchema(compType); ok {
+				compiledCache[compType] = compiledEntry{schema: eff, ok: true}
+				return eff, true
+			}
+		}
 		catComp, found := catalog.Component(compType)
 		if !found || catComp.Spec.Schema.Kind == 0 {
 			compiledCache[compType] = compiledEntry{}

@@ -64,6 +64,17 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 		if keys, seen := providesCache[compType]; seen {
 			return keys, resolvedType[compType]
 		}
+		// Prefer the composed effective schema for an extends-ing Component, so
+		// the legal provides-key set includes keys inherited from a parent; fall
+		// back to the authored schema for a non-extends Component.
+		if catalog.EffectiveSchema != nil {
+			if eff, ok := catalog.EffectiveSchema(compType); ok {
+				keys := providesKeysFromEffective(eff)
+				providesCache[compType] = keys
+				resolvedType[compType] = true
+				return keys, true
+			}
+		}
 		catComp, found := catalog.Component(compType)
 		if !found {
 			providesCache[compType] = nil
@@ -309,6 +320,33 @@ func invalidInjectKeyMessage(key, targetType string, declared map[string]bool) s
 //
 // The schema is read as-authored on the resolved Component; cross-document
 // $ref expansion uses the supplied SchemaLibraries map when present.
+// providesKeysFromEffective extracts the declared provides-key set from an
+// already-composed effective schema (the whole-entity compactform schema), by
+// navigating properties.provides.properties. This is the effective-schema
+// analogue of componentProvidesKeys (which compiles the authored provides
+// sub-node directly): the merged schema nests the provides pillar one level
+// deeper under the entity's properties. An absent provides pillar yields the
+// empty set.
+func providesKeysFromEffective(eff compactform.Schema) map[string]bool {
+	keys := map[string]bool{}
+	props, ok := eff["properties"].(map[string]any)
+	if !ok {
+		return keys
+	}
+	provides, ok := props["provides"].(map[string]any)
+	if !ok {
+		return keys
+	}
+	providesProps, ok := provides["properties"].(map[string]any)
+	if !ok {
+		return keys
+	}
+	for k := range providesProps {
+		keys[k] = true
+	}
+	return keys
+}
+
 func componentProvidesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
 	keys := map[string]bool{}
 	node := &comp.Spec.Schema

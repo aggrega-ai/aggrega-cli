@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -137,6 +138,42 @@ func TestGuardInjectKeys_SelfInjectValidFromPasses(t *testing.T) {
 
 	if errs := guardInjectKeys(agg, catalog); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
+	}
+}
+
+// TestGuardInjectKeys_InheritedProvidesAccepted is the extends-composed-provides
+// proof: the legal provides-key set for an
+// extends-ing Component is drawn from its EFFECTIVE (composed) schema, so a
+// from: reference to a provides key declared on the PARENT — absent from the
+// child's own authored schema — resolves rather than halting.
+func TestGuardInjectKeys_InheritedProvidesAccepted(t *testing.T) {
+	t.Parallel()
+
+	agg := &types.Aggregate{}
+	agg.Metadata.Name = "app"
+	agg.Spec.Components = types.OrderedMap[types.ComponentInstance]{}
+	inst := types.ComponentInstance{Type: "core/db:1.0.0"}
+	inst.Inject = &types.InjectBlock{
+		Env: map[string]any{"DB_HOST": map[string]any{"from": "inherited_host"}},
+	}
+	agg.Spec.Components.Set("db", inst)
+
+	catalog := CatalogLookup{
+		// Authored schema provides only "host" — inherited_host is NOT here.
+		Component: func(string) (types.Component, bool) {
+			return componentWithProvides(t, "host"), true
+		},
+		// Composed effective schema additionally carries the inherited key.
+		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
+			if typeURI == "core/db:1.0.0" {
+				return compileTestSchema(t, "provides:\n  host: { type: string }\n  inherited_host: { type: string }\n"), true
+			}
+			return nil, false
+		},
+	}
+
+	if errs := guardInjectKeys(agg, catalog); errs != nil {
+		t.Errorf("inherited provides key must resolve via the effective schema; got %v", errs)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -85,6 +86,17 @@ type Catalog struct {
 	// LintWarnings() and print them to stderr alongside
 	// DeprecationWarnings.
 	lintWarnings []string
+
+	// effectiveSchemas holds the composed (parent+child) schema for each
+	// entity that declares extends:, keyed by metadata.name, in compactform
+	// map form. Populated by ResolveAllExtends from the inheritance JSON-Schema
+	// merge and exposed via resolver.CatalogLookup.EffectiveSchema so the
+	// schema-conformance gate, defaults materialisation, and inject-key
+	// provides extraction validate an extends-ing entity against its inherited
+	// schema rather than its own authored slice. Absent for non-extends
+	// entities — those consumers fall back to compiling the authored schema, so
+	// the non-extends path is unchanged.
+	effectiveSchemas map[string]compactform.Schema
 
 	// entityBytes records the raw YAML bytes each entity was loaded
 	// from, keyed by "<kind>:<identifier>" where identifier matches
@@ -1153,6 +1165,44 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		return feat, ok
 	}
 
+	// CatalogEntry chain lookups that compile each chain entry's authored
+	// schema into the JSON-Schema-merge input, so the inheritance merge phase
+	// composes the chain's pillars into one effective schema.
+	compEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
+		comp, ok := compLookup(uri)
+		if !ok {
+			return validator.CatalogEntry{}, false
+		}
+		return validator.CatalogEntry{
+			URI:        comp.Metadata.Name,
+			Extends:    comp.Spec.Extends,
+			JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, c.SchemaLibraries),
+		}, true
+	}
+	featEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
+		feat, ok := featLookup(uri)
+		if !ok {
+			return validator.CatalogEntry{}, false
+		}
+		return validator.CatalogEntry{
+			URI:        feat.Metadata.Name,
+			Extends:    feat.Spec.Extends,
+			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
+		}, true
+	}
+	storeEffective := func(uri string, composition *validator.ExtendsComposition) {
+		if composition == nil {
+			return
+		}
+		if composition.EffectiveSchema != nil {
+			if c.effectiveSchemas == nil {
+				c.effectiveSchemas = map[string]compactform.Schema{}
+			}
+			c.effectiveSchemas[uri] = composition.EffectiveSchema
+		}
+		c.lintWarnings = append(c.lintWarnings, composition.Narrowings...)
+	}
+
 	compKeys := make([]string, 0, len(c.Components))
 	for k := range c.Components {
 		compKeys = append(compKeys, k)
@@ -1169,6 +1219,22 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			continue
 		}
 		c.Components[name] = resolved
+
+		// Compose the chain's JSON Schemas into the effective schema. The
+		// metadata resolution above already validated cycle/depth/missing-parent,
+		// so the only new error here is a structural JSON-Schema merge failure
+		// (ErrInheritanceMerge); narrowing is signal-only.
+		rootEntry := validator.CatalogEntry{
+			URI:        comp.Metadata.Name,
+			Extends:    comp.Spec.Extends,
+			JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, c.SchemaLibraries),
+		}
+		inh := validator.ResolveInheritance(rootEntry, compEntryLookup)
+		if len(inh.Errors) > 0 {
+			errs = append(errs, inh.Errors...)
+			continue
+		}
+		storeEffective(name, validator.CompositionFromResult(comp.Metadata.Name, inh))
 	}
 
 	featKeys := make([]string, 0, len(c.Features))
@@ -1187,6 +1253,18 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			continue
 		}
 		c.Features[name] = resolved
+
+		rootEntry := validator.CatalogEntry{
+			URI:        feat.Metadata.Name,
+			Extends:    feat.Spec.Extends,
+			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
+		}
+		inh := validator.ResolveInheritance(rootEntry, featEntryLookup)
+		if len(inh.Errors) > 0 {
+			errs = append(errs, inh.Errors...)
+			continue
+		}
+		storeEffective(name, validator.CompositionFromResult(feat.Metadata.Name, inh))
 	}
 
 	return errs
@@ -1214,6 +1292,10 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			return feat, ok
 		},
 		SchemaLibraries: c.SchemaLibraries,
+		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
+			s, ok := c.effectiveSchemas[typeURI]
+			return s, ok
+		},
 	}
 }
 

@@ -225,6 +225,38 @@ func TestAttachmentConformance_FeatureInfraViolation(t *testing.T) {
 	}
 }
 
+// TestAttachmentConformance_InheritedFeatureConstraintEnforced proves the
+// attachment gate (the fourth effective-schema consumer) validates an
+// extends-ing Feature attachment against its COMPOSED schema: a constraint
+// carried only on the effective schema (here a required inherited_flag absent
+// from the Feature's authored schema) is enforced on the attachment.
+func TestAttachmentConformance_InheritedFeatureConstraintEnforced(t *testing.T) {
+	t.Parallel()
+	cl := conformanceFeatureCatalog(t)
+	cl.EffectiveSchema = func(typeURI string) (compactform.Schema, bool) {
+		if typeURI == "core/monitoring" {
+			return compileNode(t, "values:\n  level: { type: string, enum: [info, warn, error] }\n  inherited_flag: { type: boolean, required: true }\n"), true
+		}
+		return nil, false
+	}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server"})
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		// level supplied; inherited_flag (composed-required) omitted.
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {feat("mon", "core/monitoring", vmap("level", "info"))},
+		},
+		SecretAttachments: map[string][]topology.SecretAttachment{},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+	}
+	_, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
+	requireConformanceHalt(t, err, ".spec.components.api.features.mon.values")
+}
+
 // testCompiledFor mirrors the builder's per-type schema compile closure for the
 // unit-level pass test.
 func testCompiledFor(t *testing.T, cat resolver.CatalogLookup) func(string) (compactform.Schema, bool) {

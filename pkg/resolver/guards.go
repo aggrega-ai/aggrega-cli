@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -28,6 +29,15 @@ type CatalogLookup struct {
 	// May be nil in catalog-less or not-yet-primed paths; consumers that need it
 	// guard on nil and fall back to inline-only behavior.
 	SchemaLibraries map[string]types.SchemaLibrary
+	// EffectiveSchema returns the composed (parent+child) schema for an entity
+	// that declares extends:, keyed by type URI, in compactform form. Present
+	// only for extends-ing entities; consumers (the schema-conformance gate,
+	// the inject-key provides extraction) prefer it over compiling the entity's
+	// own authored schema, so an inherited constraint is enforced on a child.
+	// Returns ("", false) — i.e. (nil, false) — for a non-extends entity, which
+	// falls the caller back to its authored schema. May itself be nil in
+	// catalog-less / not-yet-resolved paths.
+	EffectiveSchema func(typeURI string) (compactform.Schema, bool)
 	// ProviderInfraSchema returns the rendering Provider's baseSchema (a JSON
 	// Schema describing the provider's recognised infra/values keys) for the
 	// recipe implementing a component instance, keyed by instance name and

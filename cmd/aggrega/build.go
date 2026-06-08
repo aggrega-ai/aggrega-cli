@@ -248,6 +248,14 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
 	}
 
+	// Surface non-fatal advisory notices — schema-pillar-overlap lint and the
+	// signal-only narrowing-on-extend notices (a child tightening an inherited
+	// constraint is reported, never halted — narrowing enforcement is the
+	// opt-in publishing linter's job).
+	for _, w := range cat.LintWarnings() {
+		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+	}
+
 	// Provider dispatch is the shared enginefactory.Dispatch — the single
 	// source of truth both the CLI build and the build-faithful test harness
 	// use, so a test renders through exactly the engines a real build does.
