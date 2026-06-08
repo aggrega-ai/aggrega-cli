@@ -28,6 +28,15 @@ type CatalogLookup struct {
 	// May be nil in catalog-less or not-yet-primed paths; consumers that need it
 	// guard on nil and fall back to inline-only behavior.
 	SchemaLibraries map[string]types.SchemaLibrary
+	// ProviderInfraSchema returns the rendering Provider's baseSchema (a JSON
+	// Schema describing the provider's recognised infra/values keys) for the
+	// recipe implementing a component instance, keyed by instance name and
+	// component type. It is the source of the provider-layered infra keys (e.g.
+	// replicas) the infra-pillar conformance gate admits alongside the
+	// Component's own schema.infra keys. Returns ("", false) when no recipe or
+	// provider resolves, or the provider declares no baseSchema. May be nil; the
+	// infra gate then admits only the Component schema.infra keys.
+	ProviderInfraSchema func(instanceName, componentType string) (string, bool)
 }
 
 // RunGuards executes the catalog-aware semantic checks of Step 1 against the
@@ -59,7 +68,6 @@ func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLook
 	errs = append(errs, guardRequiredFeatures(agg, release, catalog)...)
 	errs = append(errs, guardFeatureMerge(agg, release)...)
 	errs = append(errs, guardRequiredUsesSockets(agg, catalog)...)
-	errs = append(errs, guardSchemaConformance(agg, catalog, parameters)...)
-	_ = boundaryInfra // reserved for the infra-pillar conformance gate (validated closed against schema.infra ∪ provider baseSchema) once it lands
+	errs = append(errs, guardSchemaConformance(agg, catalog, boundaryInfra, parameters)...)
 	return errs
 }

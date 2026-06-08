@@ -19,8 +19,18 @@ import (
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// wiredLookup builds the catalog lookup the production build path passes into
+// RunPipeline — including the Manifest-aware provider infra-schema resolver the
+// infra-pillar conformance gate needs to admit provider-layered infra keys.
+func wiredLookup(cat *catalog.Catalog, manifest *types.Manifest) resolver.CatalogLookup {
+	lookup := cat.CatalogLookup()
+	lookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
+	return lookup
+}
 
 const (
 	fullstackAggregatePath = "../../../internal/compiler/testdata/fullstack-app/aggregate.yaml"
@@ -83,7 +93,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 			AggregatePath:     fullstackAggregatePath,
 			WorkspaceConfig:   workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(),
+		wiredLookup(cat, manifest),
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		productionEngineFactory,
@@ -186,7 +196,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
+		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
@@ -230,7 +240,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
+		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: true},
 	)
@@ -293,7 +303,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
 		},
-		cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
+		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
 		pipeline.Options{IncludeTrace: true},
 	); err != nil {

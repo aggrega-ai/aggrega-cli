@@ -252,6 +252,8 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// source of truth both the CLI build and the build-faithful test harness
 	// use, so a test renders through exactly the engines a real build does.
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
+	buildLookup := cat.CatalogLookup()
+	buildLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
 		pipeline.Inputs{
@@ -264,7 +266,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 			WorkspaceRoot:     wsRoot,
 			MappingLibraries:  cat.MappingLibraries,
 		},
-		cat.CatalogLookup(),
+		buildLookup,
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		enginefactory.Dispatch,

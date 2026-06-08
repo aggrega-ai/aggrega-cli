@@ -111,6 +111,8 @@ func compile(in Input) (*pipeline.Result, error) {
 	}
 	aggBytes := aggRes.Bytes
 
+	buildLookup := cat.CatalogLookup()
+	buildLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
 		pipeline.Inputs{
@@ -120,7 +122,7 @@ func compile(in Input) (*pipeline.Result, error) {
 			AggregatePath:     aggRes.Path,
 			MappingLibraries:  cat.MappingLibraries,
 		},
-		cat.CatalogLookup(),
+		buildLookup,
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		enginefactory.Dispatch,

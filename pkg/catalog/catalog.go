@@ -1011,6 +1011,38 @@ func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
 	return p, ok
 }
 
+// ProviderInfraSchemaResolver returns a closure mapping a component instance
+// (by instance name and component type) to the baseSchema of the Provider that
+// the recipe implementing that component targets. The resolver-side infra
+// conformance gate uses it to admit provider-layered infra keys (e.g. replicas)
+// alongside a Component's own schema.infra keys.
+//
+// Resolution chains the Manifest-aware recipe lookup (so a name-tier mapping
+// picks the same recipe the build renders through) to the recipe's declared
+// provider to that provider's baseSchema. Returns ("", false) when no recipe or
+// provider resolves, or the provider declares no baseSchema — the caller treats
+// each as "no provider keys to admit". The closure populates
+// resolver.CatalogLookup.ProviderInfraSchema; manifest may be nil, collapsing
+// recipe resolution to the implements-only cascade.
+func (c *Catalog) ProviderInfraSchemaResolver(manifest *types.Manifest) func(string, string) (string, bool) {
+	recipeLookup := c.RecipeLookupWithManifest(manifest)
+	return func(instanceName, componentType string) (string, bool) {
+		recipe, ok := recipeLookup.Recipe(instanceName, componentType)
+		if !ok || recipe == nil {
+			return "", false
+		}
+		provider, ok := c.ProviderLookup(recipe.Spec.Provider)
+		if !ok {
+			return "", false
+		}
+		// Provider resolved → report found=true even when it declares no
+		// baseSchema. The infra gate distinguishes "provider unresolvable"
+		// (skip — the union cannot be formed) from "provider resolved with no
+		// infra keys" (validate infra closed against schema.infra alone).
+		return provider.Spec.BaseSchema, true
+	}
+}
+
 // DeprecationWarnings returns non-fatal notices about deprecated catalog
 // shapes — formatted as a string slice the caller is free to print, log,
 // or escalate to errors as fits its UX. The build command currently prints

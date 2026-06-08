@@ -415,6 +415,8 @@ func pullRun(cfg pullConfig) error {
 	// cannot drift from build-time). aggBytes feeds ResolveFromInputs, which
 	// re-parses internally.
 	aggBytes := aggRes.Bytes
+	pullLookup := cat.CatalogLookup()
+	pullLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
 	rr, topo, err := pipeline.ResolveAndFlatten(
 		context.Background(),
 		pipeline.Inputs{
@@ -423,7 +425,7 @@ func pullRun(cfg pullConfig) error {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
 		},
-		cat.CatalogLookup(),
+		pullLookup,
 		cat.SubAggregateLoader(),
 	)
 	if err != nil {

@@ -301,6 +301,7 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 	defer resolver.PurgeParameters(&resolveResult.Parameters)
 
 	catalogLookup := cat.CatalogLookup()
+	catalogLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(resolveResult.Manifest)
 	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
