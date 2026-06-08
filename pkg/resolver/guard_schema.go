@@ -136,37 +136,59 @@ func guardSchemaConformance(
 	return errs
 }
 
-// validateValuesConformance merges the values pillar's schema defaults into the
-// authored instance (default-awareness) and validates the result against the
-// Component's declared schema.values. Findings map to ResolverErrors wrapping
-// ErrSchemaConformance. Returns nil when the Component declares no values
-// schema, or when the schema genuinely does not compile into a validator.
+// ValidatePillarConformance validates a resolved or authored pillar instance
+// (values or infra) against the named pillar of an already-compiled
+// Component-or-Feature schema, closed. It is the shared schema-conformance
+// entry point: the Step-1 component values gate and the Step-3 Feature/Secret
+// attachment gate both route through it, so an authored schema is interpreted
+// identically wherever the value originates.
 //
-// The validator is fed a definitional-context-preserving wrapper —
-// {type: object, $defs: <root $defs>, properties: {values: <root values schema>}}
-// validated over {values: <instance>} — rather than a bare extracted sub-schema.
-// This keeps a single-document #/$defs $ref or allOf in the values pillar
-// resolvable, so a composed values schema is validated rather than silently
-// skipped.
+// The pillar sub-schema is extracted from compiled; schema-declared defaults for
+// that pillar are merged into the instance (default-aware) before validation;
+// the validator carries the compiled schema's own definitional context so a
+// single-document #/$defs $ref or allOf inside the pillar resolves rather than
+// being skipped; findings are deduped to the leaf-most. Each violation is a
+// *ResolverError wrapping ErrSchemaConformance, its Field rooted at
+// fieldPrefix + "." + <pillar>.<path>, its Message naming schemaLabel.
+//
+// Returns nil when compiled declares no such pillar (nothing to validate), when
+// the instance does not marshal, or when the instance conforms. The returned
+// slice is NOT sorted — callers that aggregate across multiple instances
+// canonicalise the combined output.
+func ValidatePillarConformance(
+	compiled compactform.Schema,
+	pillar string,
+	instance types.OrderedMap[any],
+	parameters map[string]any,
+	entity, fieldPrefix, schemaLabel string,
+) []*ResolverError {
+	pillarSchema, ok := pillarSubSchema(compiled, pillar)
+	if !ok {
+		return nil // no such pillar declared → nothing to validate
+	}
+
+	effective := compactform.MergeSchemaDefaults(instance, compactform.PillarDefaults(compiled, pillar))
+	normalised, err := normalisePillarInstance(effective)
+	if err != nil {
+		return nil // a non-marshalable instance is not a conformance violation
+	}
+
+	return pillarConformanceErrors(
+		pillar, pillarSchema, compiled, normalised, parameters,
+		entity, fieldPrefix, schemaLabel)
+}
+
+// validateValuesConformance validates a component instance's authored values
+// pillar against the Component's declared schema.values, closed and
+// default-aware, via the shared ValidatePillarConformance entry point.
 func validateValuesConformance(
 	compiled compactform.Schema,
 	authored types.OrderedMap[any],
 	parameters map[string]any,
 	entity, componentField string,
 ) []*ResolverError {
-	valuesSchema, ok := pillarSubSchema(compiled, "values")
-	if !ok {
-		return nil // no values schema declared → nothing to validate
-	}
-
-	effective := compactform.MergeSchemaDefaults(authored, compactform.PillarDefaults(compiled, "values"))
-	instance, err := normalisePillarInstance(effective)
-	if err != nil {
-		return nil // a non-marshalable instance is not a conformance violation
-	}
-
-	return pillarConformanceErrors(
-		"values", valuesSchema, compiled, instance, parameters,
+	return ValidatePillarConformance(
+		compiled, "values", authored, parameters,
 		entity, componentField, "the Component schema")
 }
 

@@ -4,11 +4,13 @@
 package ir
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -255,6 +257,71 @@ func collectNodeFeatures(
 	finalizeTopLevelOrigin(result)
 
 	return result, nil
+}
+
+// validateNodeAttachments validates a node's merged Feature and Secret
+// attachment pillars against each attachment's declared catalog schema, closed
+// and default-aware, via the shared resolver.ValidatePillarConformance entry
+// point — the same validator the Step-1 component gate uses, so an authored
+// schema is interpreted identically across surfaces.
+//
+// What is validated is the EFFECTIVE merged result of the 5-Tier Onion Model
+// (the values/infra after collectNodeFeatures folds every tier), not a single
+// pre-merge fragment — so a value made conformant in one tier and illegal by a
+// later tier's override is caught.
+//
+// Feature and Secret attachments resolve their schema through the same Feature
+// catalog lookup (a Secret is a credential-labelled Feature). An attachment
+// whose type has no catalog schema, or whose schema does not declare the pillar,
+// contributes nothing. Attachment infra is closed against the attachment's own
+// schema.infra — there is NO provider union (the component-gate construction):
+// an attachment is an overlay and does not own a rendering provider, so its
+// schema.infra is its complete infra contract. Errors are returned unsorted;
+// joinAttachmentConformance canonicalises the combined set.
+func validateNodeAttachments(
+	nodeID string,
+	feats types.OrderedMap[types.IRFeatureEntry],
+	secrets types.OrderedMap[types.IRSecretEntry],
+	parameters map[string]any,
+	entity string,
+	compiledFor func(featureType string) (compactform.Schema, bool),
+) []*resolver.ResolverError {
+	var errs []*resolver.ResolverError
+	validate := func(attachKind, name, ftype, schemaLabel string, vals, infra types.OrderedMap[any]) {
+		compiled, ok := compiledFor(ftype)
+		if !ok {
+			return
+		}
+		prefix := fmt.Sprintf(".spec.components.%s.%s.%s", nodeID, attachKind, name)
+		errs = append(errs, resolver.ValidatePillarConformance(compiled, "values", vals, parameters, entity, prefix, schemaLabel)...)
+		errs = append(errs, resolver.ValidatePillarConformance(compiled, "infra", infra, parameters, entity, prefix, schemaLabel)...)
+	}
+	for name, entry := range feats.All() {
+		validate("features", name, entry.Type, "the Feature schema", entry.Values, entry.Infra)
+	}
+	for name, entry := range secrets.All() {
+		validate("secrets", name, entry.Type, "the Secret schema", entry.Values, entry.Infra)
+	}
+	return errs
+}
+
+// joinAttachmentConformance canonicalises the collected attachment-conformance
+// violations by (Entity, Field) — byte-identical across runs of the same input,
+// matching the Step-1 gate's ordering — and joins them into one error. The
+// joined error wraps every violation, so errors.Is(err, ErrSchemaConformance)
+// holds for the build halt.
+func joinAttachmentConformance(errs []*resolver.ResolverError) error {
+	sort.SliceStable(errs, func(i, j int) bool {
+		if errs[i].Entity != errs[j].Entity {
+			return errs[i].Entity < errs[j].Entity
+		}
+		return errs[i].Field < errs[j].Field
+	})
+	wrapped := make([]error, len(errs))
+	for i, e := range errs {
+		wrapped[i] = e
+	}
+	return errors.Join(wrapped...)
 }
 
 // mergeContribution folds one Feature contribution into the per-node

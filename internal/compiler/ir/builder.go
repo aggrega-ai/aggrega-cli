@@ -6,9 +6,11 @@ package ir
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -130,6 +132,48 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	featureOrder := make(FeatureOrder)
 	allMarkers := map[string]bool{}
 
+	// Feature/Secret attachment schema-conformance gate (Step 3). The merged
+	// per-attachment values/infra only exist after the 5-Tier merge below, so
+	// this gate runs here rather than in the Step-1 RunGuards. compiledFeature
+	// memoises the compiled Feature schema per type (Secrets resolve through the
+	// same Feature lookup); attachmentConformanceErrs collects across all nodes
+	// for one joined halt.
+	featureSchemaCache := map[string]compactform.Schema{}
+	featureSchemaMiss := map[string]bool{}
+	compiledFeature := func(featureType string) (compactform.Schema, bool) {
+		if c, ok := featureSchemaCache[featureType]; ok {
+			return c, true
+		}
+		if featureSchemaMiss[featureType] || cfg.CatalogLookup.Feature == nil {
+			return nil, false
+		}
+		feat, ok := cfg.CatalogLookup.Feature(featureType)
+		if !ok || feat.Spec.Schema.Kind == 0 {
+			featureSchemaMiss[featureType] = true
+			return nil, false
+		}
+		var opts []compactform.CompileOption
+		if len(cfg.CatalogLookup.SchemaLibraries) > 0 {
+			opts = append(opts, compactform.WithSchemaLibraries(cfg.CatalogLookup.SchemaLibraries))
+		}
+		compiled, err := compactform.Compile(&feat.Spec.Schema, opts...)
+		if err != nil {
+			featureSchemaMiss[featureType] = true
+			return nil, false
+		}
+		featureSchemaCache[featureType] = compiled
+		return compiled, true
+	}
+	var attachmentConformanceErrs []*resolver.ResolverError
+	var attachmentParams map[string]any
+	attachmentEntity := "Aggregate"
+	if res != nil {
+		attachmentParams = res.Parameters
+		if res.Aggregate != nil {
+			attachmentEntity = fmt.Sprintf("Aggregate %s", res.Aggregate.Metadata.Name)
+		}
+	}
+
 	// 1. Build IR nodes in author order (topo.Nodes is OrderedMap-backed).
 	for nodeID, topoNode := range topo.Nodes.All() {
 		if err := ctx.Err(); err != nil {
@@ -214,6 +258,17 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		for _, m := range featResult.Markers {
 			allMarkers[m] = true
 		}
+
+		// Validate the merged attachment pillars against each attachment's
+		// declared Feature/Secret schema (collected across all nodes for one
+		// joined halt below).
+		attachmentConformanceErrs = append(attachmentConformanceErrs,
+			validateNodeAttachments(nodeID, featResult.Features, featResult.Secrets,
+				attachmentParams, attachmentEntity, compiledFeature)...)
+	}
+
+	if len(attachmentConformanceErrs) > 0 {
+		return nil, nil, joinAttachmentConformance(attachmentConformanceErrs)
 	}
 
 	// 2. Convert topology edges to IR edges
