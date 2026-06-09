@@ -319,6 +319,61 @@ func TestRenderSourced_MissingFile_Errors(t *testing.T) {
 	}
 }
 
+// TestRenderSourced_MultiDocumentSourceHalts pins the loud guardrail: a single
+// compose source file carrying `---`-separated documents passes the source
+// resolver's file-count guard, but must not be silently parsed as just its
+// first document. renderSourced halts with a CatalogError naming the
+// multiple-documents condition rather than dropping every document after the
+// first.
+func TestRenderSourced_MultiDocumentSourceHalts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "multi.yaml")
+	body := []byte(strings.TrimLeft(`
+services:
+  app:
+    image: first:1.0
+---
+services:
+  app2:
+    image: second:2.0
+`, "\n"))
+	if err := os.WriteFile(srcPath, body, 0o644); err != nil {
+		t.Fatalf("write multi-doc source: %v", err)
+	}
+	_, err := renderSourced(srcPath, nil, nodeCtxFor("app"))
+	if err == nil {
+		t.Fatal("expected a loud error for a multi-document compose source, got nil (silent first-doc drop)")
+	}
+	if !strings.Contains(err.Error(), "multiple YAML documents") {
+		t.Errorf("expected the multiple-documents catalog error, got: %v", err)
+	}
+}
+
+// TestRenderSourced_SingleDocumentSourceRenders is the non-vacuity counterpart:
+// an ordinary single-document compose file still renders unaffected by the
+// multi-document guard.
+func TestRenderSourced_SingleDocumentSourceRenders(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "single.yaml")
+	body := []byte(strings.TrimLeft(`
+services:
+  app:
+    image: only:1.0
+`, "\n"))
+	if err := os.WriteFile(srcPath, body, 0o644); err != nil {
+		t.Fatalf("write single-doc source: %v", err)
+	}
+	out, err := renderSourced(srcPath, nil, nodeCtxFor("app"))
+	if err != nil {
+		t.Fatalf("single-document source must render, got: %v", err)
+	}
+	if !strings.Contains(string(out["app.compose-fragment.yaml"]), "image: only:1.0") {
+		t.Errorf("single-doc source not rendered:\n%s", out["app.compose-fragment.yaml"])
+	}
+}
+
 func TestCompose_Engine_RegistersAsBoundaryAssembler(t *testing.T) {
 	t.Parallel()
 	var e renderer.Engine = &ComposeEngine{}

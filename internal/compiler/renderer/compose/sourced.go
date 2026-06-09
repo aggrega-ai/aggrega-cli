@@ -22,7 +22,10 @@
 package compose
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,9 +57,26 @@ func renderSourced(chartPath string, values map[string]any, nodeCtx renderer.Nod
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: resolvedPath}, fmt.Sprintf("compose: node %q: read source %q", nodeCtx.NodeID, resolvedPath))
 	}
 
+	// A Compose file is a single YAML document. Decode the first document, then
+	// require the stream to be exhausted: a single file carrying `---`-separated
+	// documents passes the source resolver's file-count guard, but
+	// yaml.Unmarshal would silently keep only the first and drop the rest — a
+	// silent misrender. Halt loudly instead (Loud Guardrails — the compiler does
+	// not assume well-formed input).
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	var base map[string]any
-	if err := yaml.Unmarshal(raw, &base); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, chartPath))
+	if err := dec.Decode(&base); err != nil {
+		if errors.Is(err, io.EOF) {
+			base = map[string]any{} // empty source
+		} else {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, chartPath))
+		}
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath},
+			fmt.Sprintf("compose: node %q: source %q contains multiple YAML documents; a compose file must be a single document", nodeCtx.NodeID, chartPath),
+			nil, nil)
 	}
 	if base == nil {
 		base = map[string]any{}
