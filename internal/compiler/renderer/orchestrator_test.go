@@ -121,6 +121,108 @@ func TestRenderAll_SimpleNode(t *testing.T) {
 	}
 }
 
+// TestRenderAll_ArtifactsOnlyRecipeRendersViaHelm is the end-to-end proof that
+// artifacts-only is a first-class input kind: a Recipe declaring only artifacts:
+// (no source:, no workload:) on a provider that supports standalone artifacts
+// (helm) renders by emitting its declared artifact files — templated against the
+// node context — and synthesises NO primary workload. No ghost compute.
+func TestRenderAll_ArtifactsOnlyRecipeRendersViaHelm(t *testing.T) {
+	t.Parallel()
+	art := types.OrderedMap[types.ArtifactEntry]{}
+	art.Set("networkpolicy.yaml", types.ArtifactEntry{Inline: `apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-netpol-{{ .values.port }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+`})
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "netpol-recipe"},
+					Spec: types.RecipeSpec{
+						Provider:   "helm",
+						Implements: "core/server/api-server",
+						Artifacts:  art,
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+
+	result, err := renderer.RenderAll(context.Background(), testInput(), lookup, testHelmFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var artFile string
+	for k := range result.Files {
+		if strings.Contains(k, "networkpolicy.yaml") {
+			artFile = k
+		}
+		if strings.Contains(k, "deployment.yaml") || strings.Contains(k, "service.yaml") {
+			t.Errorf("artifacts-only node must not synthesise a primary workload, got: %s", k)
+		}
+	}
+	if artFile == "" {
+		t.Fatalf("expected the declared artifact to be emitted, got keys: %v", fileKeys(result.Files))
+	}
+	body := string(result.Files[artFile])
+	if !strings.Contains(body, "kind: NetworkPolicy") {
+		t.Errorf("artifact body not rendered, got:\n%s", body)
+	}
+	// The artifact template was evaluated against the node context (.values.port).
+	if !strings.Contains(body, "api-netpol-8080") {
+		t.Errorf("artifact template not evaluated against node values (.values.port), got:\n%s", body)
+	}
+}
+
+// TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider pins the decline end to
+// end: an artifacts-only Recipe on a provider that does not support standalone
+// artifacts (compose, helm-chart) halts at the central input-kind gate with the
+// uniform capability diagnostic — not a silent skip or a bespoke per-engine
+// message. Uses enginefactory.Dispatch so each provider name resolves to its
+// real engine and its declared capabilities.
+func TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider(t *testing.T) {
+	t.Parallel()
+	for _, provider := range []string{"compose", "helm-chart"} {
+		provider := provider
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			art := types.OrderedMap[types.ArtifactEntry]{}
+			art.Set("cm.yaml", types.ArtifactEntry{Inline: "kind: ConfigMap\n"})
+			lookup := renderer.RecipeLookup{
+				Recipe: func(_, componentType string) (*types.Recipe, bool) {
+					if componentType == "core/server/api-server" {
+						return &types.Recipe{
+							Metadata: types.RecipeMetadata{Name: "art-recipe"},
+							Spec: types.RecipeSpec{
+								Provider:   provider,
+								Implements: "core/server/api-server",
+								Artifacts:  art,
+							},
+						}, true
+					}
+					return nil, false
+				},
+				FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+			}
+			_, err := renderer.RenderAll(context.Background(), testInput(), lookup, enginefactory.Dispatch)
+			if err == nil {
+				t.Fatalf("expected artifacts-only to be declined by provider %q, got nil", provider)
+			}
+			if !strings.Contains(err.Error(), "does not support artifacts-only") {
+				t.Errorf("expected the uniform input-kind gate diagnostic, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestRenderAll_ProvidesResolved(t *testing.T) {
 	t.Parallel()
 
