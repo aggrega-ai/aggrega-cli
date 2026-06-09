@@ -4,7 +4,10 @@
 package helmchart
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -75,8 +78,20 @@ func readChartMeta(chartPath string) (name, version string, err error) {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version"`
 	}
-	if err := yaml.Unmarshal(data, &header); err != nil {
+	// A chart's Chart.yaml is a single YAML document. Decode the first document,
+	// then require the stream to be exhausted: a single yaml.Unmarshal would
+	// silently keep only the first document of a multi-document file, so a
+	// malformed multi-document Chart.yaml must halt loudly (Loud Guardrails),
+	// mirroring the compose sourced single-document enforcement. An empty file
+	// (io.EOF on the first Decode) leaves header zero-valued and falls through
+	// to the empty-name halt below, unchanged.
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&header); err != nil && !errors.Is(err, io.EOF) {
 		return "", "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q", chartPath))
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q contains multiple YAML documents; a chart's Chart.yaml must be a single document", chartPath), nil, nil)
 	}
 	if header.Name == "" {
 		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty name", chartPath), nil, nil)
