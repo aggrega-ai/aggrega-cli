@@ -90,6 +90,7 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	flat := &types.MappingTier{}
 	flat.Type.Set("mariadb-bitnami", "mariadb-bitnami:1.0.0")
 	flat.Type.Set("core/database/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0")
+	flat.Type.Set("core/cache/memcached", "memcached-recipe")
 	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
 	legacy.Components.Type.Set("core/cache/redis", "core/helm/redis-legacy:1.0.0")
 	manifest := &types.Manifest{
@@ -105,6 +106,12 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}{
 		{"short-form flat", "mariadb-bitnami", "mariadb-bitnami:1.0.0", true},
 		{"full-path flat", "core/database/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0", true},
+		// Unversioned mapping value returns verbatim — NOT normalized to a
+		// versioned URI. This is the source-descent join's load-bearing guard: an
+		// unversioned mapping value must stay unversioned so it joins the closure
+		// entity recorded under the same verbatim value, never silently binding to
+		// a versioned entity. A future version-normalization step would break this.
+		{"unversioned flat", "core/cache/memcached", "memcached-recipe", true},
 		{"legacy fallback", "core/cache/redis", "core/helm/redis-legacy:1.0.0", true},
 		{"unmapped type", "core/queue/nats", "", false},
 	}
@@ -134,6 +141,7 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 	flat := &types.MappingTier{}
 	flat.Type.Set("tls-cert", "tls-cert:1.0.0")
 	flat.Type.Set("core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0")
+	flat.Type.Set("core/observability/logs", "logs-fr")
 	legacy := types.ProviderMappings{Features: &types.MappingTier{}}
 	legacy.Features.Type.Set("core/observability/otel", "core/feature-recipe/otel-legacy:1.0.0")
 	manifest := &types.Manifest{
@@ -149,6 +157,11 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}{
 		{"short-form flat", "tls-cert", "tls-cert:1.0.0", true},
 		{"full-path flat", "core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0", true},
+		// Unversioned mapping value returns verbatim — the FeatureRecipe analogue
+		// of the source-descent join guard: an unversioned value must not be
+		// normalized to a versioned URI, or it would bind to a versioned closure
+		// entity it never matched verbatim.
+		{"unversioned flat", "core/observability/logs", "logs-fr", true},
 		{"legacy fallback", "core/observability/otel", "core/feature-recipe/otel-legacy:1.0.0", true},
 		{"unmapped type", "core/queue/nats", "", false},
 	}
