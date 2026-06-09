@@ -15,6 +15,26 @@ import (
 
 var versionJSON bool
 
+// version is the release version stamped at build time via
+// -ldflags "-X main.version=<v>" (scripts/build.sh sets it from
+// `git describe --tags --always --dirty`). It is empty for a plain
+// `go build` / `go install` without the flag; in that case the version
+// falls back to runtime/debug.ReadBuildInfo — the module tag on
+// `go install <module>@vX.Y.Z`, or the literal "(devel)" for a local
+// working-tree build. The ldflags value wins when present so a binary
+// produced by scripts/build.sh carries the tag even though Go does not
+// stamp Main.Version for an in-tree build.
+var version string
+
+// commit is the short revision stamped at build time via
+// -ldflags "-X main.commit=<sha>" (scripts/build.sh sets it from
+// `git rev-parse --short HEAD`). It is preferred over the
+// runtime/debug.ReadBuildInfo `vcs.revision` setting, which go's
+// -buildvcs stamping reports unreliably for a module built inside a git
+// submodule (the gitdir-file indirection makes it lag HEAD). Empty for a
+// plain `go build` without the flag; then `vcs.revision` is used.
+var commit string
+
 // newVersionCmd surfaces the aggrega CLI's build identity. Used by the
 // VS Code extension's startup compatibility check and by operators
 // inspecting a binary by hand.
@@ -86,17 +106,25 @@ func collectVersionInfo() versionInfo {
 		GoVersion: runtime.Version(),
 		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
 	}
+	if version != "" {
+		out.Version = version
+	}
+	if commit != "" {
+		out.Commit = commit
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return out
 	}
-	if info.Main.Version != "" {
+	if version == "" && info.Main.Version != "" {
 		out.Version = info.Main.Version
 	}
-	for _, s := range info.Settings {
-		if s.Key == "vcs.revision" {
-			out.Commit = s.Value
-			break
+	if commit == "" {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" {
+				out.Commit = s.Value
+				break
+			}
 		}
 	}
 	return out
