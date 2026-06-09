@@ -23,6 +23,10 @@ func (e envOverrideStubEngine) Render(context.Context, map[string]any, NodeRende
 	return nil, nil
 }
 
+func (e envOverrideStubEngine) Capabilities() ProviderCapabilities {
+	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+}
+
 func (e envOverrideStubEngine) BoundaryConsumerEnvOverrides(*types.TemplateContext) (map[string]map[string]string, error) {
 	return e.overrides, nil
 }
@@ -36,7 +40,7 @@ func TestApplyConsumerEnvOverrides_NonDisturbance(t *testing.T) {
 
 	inj := &types.InjectPipe{}
 	inj.Env.Set("ALPHA", "from-other-feature") // another feature's injectMapping output
-	inj.Env.Set("FOO_ADDR", "svc-x:original")   // a uses-injected target, pre-override
+	inj.Env.Set("FOO_ADDR", "svc-x:original")  // a uses-injected target, pre-override
 	inj.File.Set("conf", "/etc/app/conf")
 	inj.Arg.Set("flag", "--verbose")
 	inj.All = buildInjectAll(*inj)

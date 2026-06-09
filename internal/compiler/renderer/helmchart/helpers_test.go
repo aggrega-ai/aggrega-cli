@@ -69,8 +69,10 @@ func TestSanitizeChartName_AllReplacements(t *testing.T) {
 	}
 }
 
-// TestHelmEngine_Render_RejectsEmptySource pins the empty-source
-// rejection (sourceless mode unsupported in helmchart).
+// TestHelmEngine_Render_RejectsEmptySource pins the empty-source rejection.
+// helm-chart is sourced-only (Capabilities reports Sourced alone), so the
+// central input-kind gate never dispatches Render for a sourceless recipe;
+// an empty source reaching Render is a defensive internal-error guard.
 func TestHelmEngine_Render_RejectsEmptySource(t *testing.T) {
 	t.Parallel()
 	e := &HelmEngine{}
@@ -79,8 +81,8 @@ func TestHelmEngine_Render_RejectsEmptySource(t *testing.T) {
 	if err == nil {
 		t.Errorf("empty source should reject")
 	}
-	if !strings.Contains(err.Error(), "source is required") {
-		t.Errorf("error should mention source is required; got %v", err)
+	if !strings.Contains(err.Error(), "engine.Render dispatched with no source") {
+		t.Errorf("error should be the defensive no-source internal error; got %v", err)
 	}
 }
 

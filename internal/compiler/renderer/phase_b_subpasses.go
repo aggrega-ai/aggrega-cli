@@ -79,18 +79,12 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode typ
 	return nil
 }
 
-// phaseB1 evaluates Recipe.Spec.ValuesMapping (or ValuesMappingFile) as a
-// Go template against the post–Phase-A inject pipe. Populates
-// state.ResolvedValues. The values dictionary is what the provider engine
-// consumes via engine.Render in the sourced and sourceless rendering paths.
-//
-// Per chapter 16's strict reading, valuesMapping is meaningful only when
-// source is also declared (rule 1). The legacy sourceless-helm path
-// remains supported until the synthesised-mode replacement lands: rule 1
-// is gated, so a Recipe with valuesMapping but no source is accepted at
-// load time and reaches B.1 with a non-empty ValuesMapping. B.1 evaluates
-// it identically in both modes; the engine selects sourced vs sourceless
-// rendering based on whether state.Recipe.Spec.Source is set.
+// phaseB1 evaluates Recipe.Spec.ValuesMapping as a Go template against the
+// post–Phase-A inject pipe, populating state.ResolvedValues — the values
+// dictionary the provider engine consumes via engine.Render in the sourced
+// render path. valuesMapping requires a source (rule 1, enforced at load), so
+// a Recipe reaching B.1 with a non-empty ValuesMapping always also declares a
+// source.
 func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 1
@@ -402,6 +396,20 @@ func phaseB6(
 		}
 		frNodeCtx.Source = resolvedSrc
 
+		// A resource-generating FeatureRecipe that resolves to no source has no
+		// render surface: FeatureRecipes support only the sourced input kind, so
+		// resource generation renders only via a source:. A FeatureRecipe never
+		// synthesises compute from a bare values dict — that would invent compute
+		// the author never declared (Invariant 4). Halt loudly with a
+		// capability-style catalog error rather than dispatch a nil source into
+		// the engine's defensive arm.
+		if srcStr, isStr := resolvedSrc.(string); resolvedSrc == nil || (isStr && srcStr == "") {
+			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				fmt.Sprintf("Step 5 node %q feature %q: resource-generating FeatureRecipe %q has no render surface — a values-only (sourceless) FeatureRecipe cannot render; FeatureRecipes support only the sourced input kind. Declare a source:. (Synthesised and artifacts FeatureRecipe rendering are not yet supported.)",
+					nodeID, ref.InstanceName, fr.Metadata.Name),
+				nil, nil)
+		}
+
 		frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q render", nodeID, ref.InstanceName))
@@ -469,6 +477,18 @@ func phaseB6(
 				return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
 			}
 			frNodeCtx.Source = resolvedSrc
+
+			// A credential (resource-generating) FeatureRecipe that resolves to
+			// no source has no render surface — see the feature-FR dispatch above
+			// for the full rationale (FeatureRecipes are sourced-only; a
+			// FeatureRecipe never synthesises compute from a bare values dict —
+			// Invariant 4). Halt loudly with a capability-style catalog error.
+			if srcStr, isStr := resolvedSrc.(string); resolvedSrc == nil || (isStr && srcStr == "") {
+				return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+					fmt.Sprintf("Step 5 node %q secret %q: resource-generating FeatureRecipe %q has no render surface — a values-only (sourceless) FeatureRecipe cannot render; FeatureRecipes support only the sourced input kind. Declare a source:. (Synthesised and artifacts FeatureRecipe rendering are not yet supported.)",
+						nodeID, secretName, fr.Metadata.Name),
+					nil, nil)
+			}
 
 			frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
 			if err != nil {

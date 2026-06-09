@@ -25,6 +25,14 @@ func (stubEngine) Render(_ context.Context, _ map[string]any, _ NodeRenderContex
 	return nil, nil
 }
 
+// Capabilities satisfies the Engine interface for the test stub. Permissive
+// (all input kinds) so the central gate never declines it — these tests
+// exercise evaluateArtifacts / routing directly, not the gate. Embedded by
+// stubComposeEngine and stubExternalArtifactsEngine, which inherit it.
+func (stubEngine) Capabilities() ProviderCapabilities {
+	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+}
+
 // stubComposeEngine implements both Engine and BoundaryAssembler so the
 // evaluator routes its emissions to Intermediate=true.
 type stubComposeEngine struct{ stubEngine }

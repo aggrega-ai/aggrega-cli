@@ -26,6 +26,10 @@ func (e sourceCaptureEngine) Render(_ context.Context, _ map[string]any, nodeCtx
 	return map[string][]byte{}, nil
 }
 
+func (e sourceCaptureEngine) Capabilities() ProviderCapabilities {
+	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+}
+
 // TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection is the
 // headline source-identity test. It drives the real boundary-scope dispatch
 // (dispatchBoundaryScopeFR) for a FeatureRecipe whose source is REMOTE, with a

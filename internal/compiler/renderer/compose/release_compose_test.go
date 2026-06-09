@@ -330,17 +330,18 @@ func TestCompose_Engine_RegistersAsBoundaryAssembler(t *testing.T) {
 	}
 }
 
-func TestCompose_BareValuesMode_RejectsAtRender(t *testing.T) {
+func TestCompose_NilSource_DefensiveInternalError(t *testing.T) {
 	t.Parallel()
-	// nil source + no Workload (Render reaches this path only when no
-	// Workload is present, since orchestrator Phase B.4 dispatches Workload
-	// to SynthesizeWorkload directly).
+	// A nil source never reaches Render in a valid build: the central
+	// input-kind gate dispatches Render only for sourced recipes and routes
+	// synthesised mode to Phase B.4. There is no bare-values synthesis path,
+	// so this arm is a defensive internal-error guard.
 	_, err := (&ComposeEngine{}).Render(context.Background(), nil, renderer.NodeRenderContext{NodeID: "x"})
 	if err == nil {
-		t.Fatal("expected error for bare-values compose Recipe")
+		t.Fatal("expected a defensive internal error for a nil-source compose render")
 	}
-	if !strings.Contains(err.Error(), "must declare workload: or source:") {
-		t.Errorf("error should explain unsupported shape, got: %v", err)
+	if !strings.Contains(err.Error(), "engine.Render dispatched with no source") {
+		t.Errorf("error should be the defensive no-source internal error, got: %v", err)
 	}
 }
 

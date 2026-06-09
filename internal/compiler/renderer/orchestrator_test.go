@@ -72,11 +72,21 @@ func testRecipeLookup() renderer.RecipeLookup {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Provider:      "helm",
-						Implements:    "core/server/api-server",
-						Provides:      provides,
-						Locals:        locals,
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"], "environment": {"PORT": "8080"}}`},
+						Provider:   "helm",
+						Implements: "core/server/api-server",
+						Provides:   provides,
+						Locals:     locals,
+						// Synthesised mode (a Workload) is the real compute path
+						// for a helm Recipe; the removed renderSourceless
+						// synth-from-bare-values path is gone (Invariant 4).
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: myapp:latest
+    ports:
+      web: 8080
+`},
 					},
 				}, true
 			}
@@ -135,7 +145,14 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "api:latest", "environment": {"DB_HOST": "{{ .context.inject.env.DB_HOST }}"}}`},
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: api:latest
+    variables:
+      DB_HOST: "{{ .context.inject.env.DB_HOST }}"
+`},
 					},
 				}, true
 			case "core/database/postgres":
@@ -144,8 +161,13 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
-						Provides:      provides,
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "postgres:15"}`},
+						Provides: provides,
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: postgres:15
+`},
 					},
 				}, true
 			default:
@@ -269,9 +291,16 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Provider:      "helm-chart",
-						Implements:    "core/server/api-server",
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
+						Provider:   "helm",
+						Implements: "core/server/api-server",
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: myapp:latest
+    ports:
+      web: 8080
+`},
 					},
 				}, true
 			}
@@ -295,48 +324,18 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// The monitoring FeatureRecipe here is values-only (no source): under the
+	// sourced-only FeatureRecipe contract it is a resource-generating FR with no
+	// render surface, so the build halts loudly. (A sourceless FR could produce
+	// its own resources only when FeatureRecipes gain synthesised/artifacts
+	// rendering.) A FeatureRecipe never synthesises a Deployment from bare
+	// values — that would invent compute the author never declared.
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	if err == nil {
+		t.Fatal("expected a loud error for a values-only resource-generating FeatureRecipe, got nil")
 	}
-
-	keys := fileKeys(result.Files)
-
-	// Base Recipe files live at the boundary root (flat-helm output;
-	// per-instance file naming is "<instance>-<kind>.yaml")
-	foundBaseDep := false
-	// FR files live under features/<instance>/ off the boundary root
-	foundFRDep := false
-	frFiles := []string{}
-	for _, k := range keys {
-		if strings.Contains(k, "boundaries/local/default/helm-chart/api-deployment.yaml") &&
-			!strings.Contains(k, "features/") {
-			foundBaseDep = true
-		}
-		if strings.Contains(k, "boundaries/local/default/helm-chart/features/mon/") {
-			frFiles = append(frFiles, k)
-			if strings.Contains(k, "deployment.yaml") {
-				foundFRDep = true
-			}
-		}
-	}
-	if !foundBaseDep {
-		t.Errorf("missing base Recipe deployment at boundary root, got: %v", keys)
-	}
-	if !foundFRDep {
-		t.Errorf("missing FR deployment under features/mon/, got: %v", keys)
-	}
-	if len(frFiles) < 2 {
-		t.Errorf("expected multiple FR files under features/mon/, got %d: %v", len(frFiles), frFiles)
-	}
-
-	// FR rendered image should reflect FR valuesMapping
-	for _, k := range frFiles {
-		if strings.Contains(k, "deployment.yaml") {
-			if !strings.Contains(string(result.Files[k]), "prom/mon:v1") {
-				t.Errorf("FR deployment missing FR image, got:\n%s", result.Files[k])
-			}
-		}
+	if !strings.Contains(err.Error(), "has no render surface") {
+		t.Errorf("expected a 'no render surface' catalog error, got: %v", err)
 	}
 }
 
@@ -443,32 +442,18 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// The credential FeatureRecipe here is values-only (no source): under the
+	// sourced-only FeatureRecipe contract it is a resource-generating FR with no
+	// render surface, so the build halts loudly rather than synthesising a
+	// Deployment from bare values. (A credential FR could generate its own
+	// resources from a workload spec only when FeatureRecipes gain
+	// synthesised/artifacts rendering.)
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	if err == nil {
+		t.Fatal("expected a loud error for a values-only credential FeatureRecipe, got nil")
 	}
-
-	// Credential FR files live under secrets/<secretName>/ off the boundary root
-	var secretDep string
-	for k := range result.Files {
-		if strings.Contains(k, "boundaries/local/default/helm-chart/secrets/root_password/") &&
-			strings.Contains(k, "deployment.yaml") {
-			secretDep = k
-			break
-		}
-	}
-	if secretDep == "" {
-		t.Fatalf("missing credential FR deployment under secrets/root_password/, keys: %v", fileKeys(result.Files))
-	}
-
-	body := string(result.Files[secretDep])
-	// .secret_name propagates into the rendered manifest
-	if !strings.Contains(body, "SECRET_NAME") || !strings.Contains(body, "root_password") {
-		t.Errorf("expected .secret_name=root_password in rendered manifest, got:\n%s", body)
-	}
-	// .inject top-level was built from the IR secret entry's inject block
-	if !strings.Contains(body, "BINDING") || !strings.Contains(body, "ref:root_password") {
-		t.Errorf("expected .inject.env.DB_PASSWORD=ref:root_password in rendered manifest, got:\n%s", body)
+	if !strings.Contains(err.Error(), "has no render surface") {
+		t.Errorf("expected a 'no render surface' catalog error, got: %v", err)
 	}
 }
 
@@ -518,9 +503,17 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Provider:      "helm",
-						Implements:    "core/server/api-server",
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest", "environment": {"DB_PASSWORD": "{{ .context.inject.env.DB_PASSWORD }}", "CACHE_URL": "{{ .context.inject.env.CACHE_URL }}"}}`},
+						Provider:   "helm",
+						Implements: "core/server/api-server",
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: app:latest
+    variables:
+      DB_PASSWORD: "{{ .context.inject.env.DB_PASSWORD }}"
+      CACHE_URL: "{{ .context.inject.env.CACHE_URL }}"
+`},
 					},
 				}, true
 			}

@@ -28,6 +28,15 @@ var (
 	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
 )
 
+// Capabilities reports helm-chart's input-kind support: sourced only. It
+// produces an umbrella chart from a chart source; it does not synthesise from a
+// Workload (no WorkloadSynthesizer) and does not render artifacts-only (as an
+// ExternalArtifactsHandler it injects artifacts into the umbrella chart, which
+// an artifacts-only node lacks). The describe() analog for this engine.
+func (e *HelmEngine) Capabilities() renderer.ProviderCapabilities {
+	return renderer.ProviderCapabilities{Sourced: true}
+}
+
 // HandlesArtifactsExternally satisfies renderer.ExternalArtifactsHandler.
 // The helm-chart engine merges $import:-loaded artifact entries from the
 // Recipe into the chart's templates/ directory rather than emitting
@@ -71,9 +80,13 @@ func (e *HelmEngine) ArtifactDelimiters() (string, string) {
 func (e *HelmEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	s, ok := nodeCtx.Source.(string)
 	if !ok || s == "" {
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID},
-			fmt.Sprintf("helmchart: node %q: source is required (got %s); helm-chart provider supports sourced mode only — for synthesised K8s manifests use the helm provider with workload:",
-				nodeCtx.NodeID, renderer.SourceForDiagnostic(nodeCtx)),
+		// Defensive: the central input-kind gate (orchestrator) dispatches
+		// engine.Render only for sourced mode and declines helm-chart's
+		// synthesised + artifacts-only modes at the gate (Capabilities: Sourced
+		// only), so a nil/empty source never reaches here in a valid build.
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("helmchart: node %q: internal error — engine.Render dispatched with no source; the orchestrator gate restricts helm-chart to sourced mode",
+				nodeCtx.NodeID),
 			nil, nil)
 	}
 	return copySourcedChart(s)

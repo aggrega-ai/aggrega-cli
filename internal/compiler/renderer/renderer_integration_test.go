@@ -104,7 +104,14 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "api:latest", "environment": {"DB_URL": "{{ .context.inject.env.DB_URL }}"}}`},
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: api:latest
+    variables:
+      DB_URL: "{{ .context.inject.env.DB_URL }}"
+`},
 					},
 				}, true
 			case "core/database/postgres":
@@ -113,8 +120,13 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
-						Provides:      provides,
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "pg:15"}`},
+						Provides: provides,
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: pg:15
+`},
 					},
 				}, true
 			default:
@@ -180,7 +192,12 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "r"},
-				Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
+				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: app:latest
+`}},
 			}, true
 		},
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
@@ -251,8 +268,17 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
 				Spec: types.RecipeSpec{
-					// Template reads .values.port and .infra.replicas — the critical flow
-					ValuesMapping: types.ValuesMapping{Inline: `{"image": "api:latest", "ports": ["{{ .values.port }}:{{ .values.port }}"], "replicas": {{ .infra.replicas }}}`},
+					// Synthesised Workload templates read .values.port and
+					// .infra.replicas — the critical values/infra flow.
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+replicas: {{ .infra.replicas }}
+containers:
+  main:
+    image: api:latest
+    ports:
+      web: {{ .values.port }}
+`},
 				},
 			}, true
 		},
@@ -289,6 +315,15 @@ type captureComposerEngine struct {
 
 func (c *captureComposerEngine) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) (map[string][]byte, error) {
 	return nil, nil
+}
+
+// Capabilities: permissive so the central gate admits this fake for the
+// artifact-routing test (which exercises Intermediate routing via the
+// BoundaryAssembler, not the input-kind gate). Real compose declining
+// artifacts-only is asserted in the provider-capability-matrix test against
+// the production engines.
+func (c *captureComposerEngine) Capabilities() renderer.ProviderCapabilities {
+	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {

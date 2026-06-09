@@ -27,55 +27,6 @@ func nodeCtx(id string, source any) renderer.NodeRenderContext {
 	}
 }
 
-func TestHelmEngine_Sourceless_DeploymentAndService(t *testing.T) {
-	t.Parallel()
-	eng := &helm.HelmEngine{}
-	values := map[string]any{
-		"image":       "myapp:1.2.3",
-		"replicas":    float64(3),
-		"ports":       []any{"8080:8080"},
-		"environment": map[string]any{"PORT": "8080"},
-	}
-	files, err := eng.Render(context.Background(), values, nodeCtx("api", nil))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	dep, ok := files["api-deployment.yaml"]
-	if !ok {
-		t.Fatalf("expected api-deployment.yaml, got keys: %v", keys(files))
-	}
-	if !strings.Contains(string(dep), "myapp:1.2.3") {
-		t.Errorf("image not in deployment: %s", dep)
-	}
-	if !strings.Contains(string(dep), "replicas: 3") {
-		t.Errorf("replicas not flowing from values: %s", dep)
-	}
-	if _, ok := files["api-service.yaml"]; !ok {
-		t.Errorf("expected api-service.yaml, got keys: %v", keys(files))
-	}
-}
-
-func TestHelmEngine_Sourceless_NamespaceFromAnnotation(t *testing.T) {
-	t.Parallel()
-	eng := &helm.HelmEngine{}
-	values := map[string]any{
-		"image": "myapp:1.0",
-		"ports": []any{"8080:8080"},
-	}
-	nc := nodeCtx("api", nil)
-	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
-	files, err := eng.Render(context.Background(), values, nc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(string(files["api-deployment.yaml"]), "namespace: backend-zone") {
-		t.Errorf("deployment missing namespace: %s", files["api-deployment.yaml"])
-	}
-	if !strings.Contains(string(files["api-service.yaml"]), "namespace: backend-zone") {
-		t.Errorf("service missing namespace: %s", files["api-service.yaml"])
-	}
-}
-
 func TestHelmEngine_Sourced_NamespaceFromAnnotation(t *testing.T) {
 	t.Parallel()
 	eng := &helm.HelmEngine{}

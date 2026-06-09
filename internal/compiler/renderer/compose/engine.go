@@ -34,6 +34,15 @@ var (
 	_ renderer.BoundaryAssembler   = (*ComposeEngine)(nil)
 )
 
+// Capabilities reports compose's input-kind support: sourced (a compose file)
+// and synthesised (Workload → service fragment via SynthesizeWorkload). compose
+// does NOT render artifacts-only: as a BoundaryAssembler it merges per-node
+// output into docker-compose.yaml services, and an artifacts-only node has none
+// to contribute. The describe() analog for this engine.
+func (e *ComposeEngine) Capabilities() renderer.ProviderCapabilities {
+	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true}
+}
+
 // Render produces a map of relative file paths → YAML bytes for the compose
 // provider. File keys are flat (no subdirectory prefix); the orchestrator
 // prefixes them with `boundaries/<boundary>/`. The Release-level merger
@@ -58,12 +67,14 @@ func (e *ComposeEngine) Render(
 	// Classify source (forwarded by the orchestrator from recipe.spec.source).
 	switch s := nodeCtx.Source.(type) {
 	case nil:
-		// Sourceless without a Workload is an unsupported authoring shape for
-		// the compose provider — Recipes targeting compose either declare
-		// `workload:` (synthesised-mode, dispatched via SynthesizeWorkload) or
-		// `source:` pointing at a compose file (sourced-mode, lands in
-		// Track 2).
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: Recipe must declare workload: or source: for the compose provider; bare values-only mode is not supported", nodeCtx.NodeID), nil, nil)
+		// Defensive: the central input-kind gate (orchestrator) dispatches
+		// engine.Render only for sourced mode (hasSource). compose's synthesised
+		// mode renders in Phase B.4 via SynthesizeWorkload, and compose declines
+		// artifacts-only at the gate (Capabilities: no ArtifactsStandalone), so a
+		// nil source never reaches here in a valid build. Mirrors the default:
+		// arm.
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("compose: node %q: internal error — engine.Render dispatched with no source; the orchestrator gate routes synthesised mode to Phase B.4", nodeCtx.NodeID), nil, nil)
 	case string:
 		if s == "" {
 			return nil, cerrors.Wrap(ErrEmptySource, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("node %q", nodeCtx.NodeID))

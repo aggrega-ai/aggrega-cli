@@ -23,9 +23,9 @@ func TestWriteOutput_CreatesDirsAndWritesFiles(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	files := map[string][]byte{
-		"a/b/c.yaml":   []byte("c-content"),
-		"a/d.yaml":     []byte("d-content"),
-		"top.txt":      []byte("top-content"),
+		"a/b/c.yaml":    []byte("c-content"),
+		"a/d.yaml":      []byte("d-content"),
+		"top.txt":       []byte("top-content"),
 		"e/nested.json": []byte("e-content"),
 	}
 	if err := WriteOutput(tmp, files); err != nil {
@@ -583,4 +583,8 @@ type noopEngine struct{}
 
 func (noopEngine) Render(ctx context.Context, _ map[string]any, _ NodeRenderContext) (map[string][]byte, error) {
 	return nil, nil
+}
+
+func (noopEngine) Capabilities() ProviderCapabilities {
+	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }

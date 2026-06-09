@@ -355,11 +355,41 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("Step 5 node %q source resolution", nodeID))
 		}
-		sourceEmpty := nodeCtx.Source == nil
+		hasSource := nodeCtx.Source != nil
 		if s, ok := nodeCtx.Source.(string); ok && s == "" {
-			sourceEmpty = true
+			hasSource = false
 		}
-		runEngineRender := !(hasWorkload && sourceEmpty)
+		hasArtifacts := recipe != nil && recipe.Spec.Artifacts.Len() > 0
+
+		// Central input-kind gate (the describe()-fed seat). Classify the node's
+		// mode from its declared input kinds and confirm the resolved provider's
+		// engine supports it — once per node, BEFORE any Phase B dispatch
+		// (engine.Render, B.3 artifacts, B.4 synthesis), so an unsupported
+		// (mode, provider) halts loudly before emission. Source > workload >
+		// artifacts precedence: a node with a source: or workload: is
+		// sourced/synthesised even if it ALSO declares artifacts: (those ride
+		// through as composed artifacts and are NOT checked against
+		// ArtifactsStandalone); only a no-source/no-workload node is
+		// artifacts-only.
+		caps := engine.Capabilities()
+		switch {
+		case hasSource:
+			if !caps.Sourced {
+				return nil, unsupportedInputKindError(nodeID, providerName, "sourced", caps)
+			}
+		case hasWorkload:
+			if !caps.Synthesized {
+				return nil, unsupportedInputKindError(nodeID, providerName, "synthesised", caps)
+			}
+		case hasArtifacts:
+			if !caps.ArtifactsStandalone {
+				return nil, unsupportedInputKindError(nodeID, providerName, "artifacts-only", caps)
+			}
+		}
+
+		// engine.Render (the source-based render) runs only for sourced mode;
+		// synthesised renders in Phase B.4, artifacts-only emits in Phase B.3.
+		runEngineRender := hasSource
 		var files map[string][]byte
 		if runEngineRender {
 			var err error
@@ -908,6 +938,41 @@ func resolveSecretRecipes(nodeID string, graph *types.IRGraph, recipeLookup Reci
 		})
 	}
 	return refs
+}
+
+// unsupportedInputKindError is the single uniform diagnostic the central
+// input-kind gate emits when a provider's engine does not support the node's
+// mode. It names the provider, the unsupported mode, the kinds the provider
+// does support, and the remedy — framed as a provider capability, not a
+// "compute mandatory" semantic opinion (Invariant 1).
+func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderCapabilities) error {
+	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf(
+			"node %q: provider %q does not support %s recipes (this provider supports: %s); "+
+				"declare one of the supported input kinds, or target a provider that supports %s",
+			nodeID, providerName, mode, supportedKindsList(caps), mode),
+		nil, nil)
+}
+
+// supportedKindsList renders a provider's supported input kinds for the
+// diagnostic, in source → synthesised → artifacts-only order. Returns "none"
+// when the provider supports no input kind (not expected for a rendering
+// provider).
+func supportedKindsList(caps ProviderCapabilities) string {
+	var kinds []string
+	if caps.Sourced {
+		kinds = append(kinds, "sourced")
+	}
+	if caps.Synthesized {
+		kinds = append(kinds, "synthesised")
+	}
+	if caps.ArtifactsStandalone {
+		kinds = append(kinds, "artifacts-only")
+	}
+	if len(kinds) == 0 {
+		return "none"
+	}
+	return strings.Join(kinds, ", ")
 }
 
 func buildNodeRenderContext(
