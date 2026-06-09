@@ -407,11 +407,19 @@ func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.
 // wrapped with file:line provenance on both sides; the function
 // collects all violations rather than short-circuiting on the first.
 //
+// A mapping whose recipe URI does not resolve in the catalog is skipped here,
+// not reported: a missing/unresolvable recipe is a resolution concern owned by
+// the recipe-resolution path (VerifyRecipeResolution and the catalog lookup),
+// which surfaces it with richer context — including, for an entity skipped at
+// tolerant load, a replay of WHY it went missing. Reporting "not found" here
+// too would preempt that better diagnostic. This function is therefore the
+// found-but-mismatched check only.
+//
 // Returns nil when manifest is nil, when no flat-shape mappings are
-// populated, or when every populated mapping resolves consistently.
-// Legacy v2 mappings are not consistency-checked at this surface —
-// they keep pre-migration semantics (Recipe lookup via spec.implements
-// walking) where the consistency is implicit in the matching rule.
+// populated, or when every resolved mapping is consistent. Legacy v2 mappings
+// are not consistency-checked at this surface — they keep pre-migration
+// semantics (Recipe lookup via spec.implements walking) where the consistency
+// is implicit in the matching rule.
 func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) []error {
 	if manifest == nil {
 		return nil
@@ -422,8 +430,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 		for compType, recipeURI := range manifest.Spec.Mappings.Components.Type.All() {
 			r, ok := c.RecipeByURI(recipeURI)
 			if !ok {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe not found in catalog", compType, recipeURI)))
-				continue
+				continue // missing recipe → resolution path's concern, not a consistency violation
 			}
 			recipeImplements := stripVersion(r.Spec.Implements)
 			expected := stripVersion(compType)
@@ -437,8 +444,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 		for featType, frURI := range manifest.Spec.Mappings.Features.Type.All() {
 			fr, ok := c.FeatureRecipeByURI(frURI)
 			if !ok {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest feature mapping %q -> %q: featurerecipe not found in catalog", featType, frURI)))
-				continue
+				continue // missing featurerecipe → resolution path's concern
 			}
 			frImplements := stripVersion(fr.Spec.Implements)
 			expected := stripVersion(featType)
@@ -448,6 +454,22 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 		}
 	}
 	return errs
+}
+
+// AssertManifestImplementsConsistency runs VerifyManifestImplementsConsistency
+// and joins any violations into a single error (nil when consistent). It is the
+// production halt surface: every caller that gates a build (the CLI build and
+// pull commands, and the build-faithful pipeline harness) calls this so the
+// halt semantics — collect-all-then-join — are identical across all of them.
+// The check is mapping-table-level (mapped type vs the resolved recipe's
+// spec.implements) and runs before IR construction, complementing the post-IR
+// per-node VerifyRecipeResolution.
+func (c *Catalog) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
+	errs := c.VerifyManifestImplementsConsistency(manifest, manifestPath)
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
 }
 
 // flatComponentURI returns the Recipe URI mapped to the given component

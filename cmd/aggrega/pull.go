@@ -219,6 +219,12 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
+	// Verify the Manifest's mapping table is consistent before the closure walk,
+	// so pull halts on a mismatched mapping with the same Loud Guardrail the
+	// build does (lock/build parity).
+	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+		return err
+	}
 
 	workspaceRoot, err := os.Getwd()
 	if err != nil {

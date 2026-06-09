@@ -184,6 +184,12 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	if err != nil {
 		return fmt.Errorf("compose manifest extends: %w", err)
 	}
+	// Verify the Manifest's mapping table is consistent — each mapped type
+	// resolves to a recipe whose spec.implements matches — before any IR build.
+	// A mismatch is a Loud Guardrail halt here, the earliest loud point.
+	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+		return err
+	}
 	// Build never networks: the registry tier (Tier-3) is nil here, so a
 	// registry-published top-level resolves only through the cache→catalog bridge
 	// (folded into cat.Aggregates above) via catLookup.

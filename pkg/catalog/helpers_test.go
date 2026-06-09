@@ -260,8 +260,11 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 }
 
 // TestVerifyManifestImplementsConsistency_EveryArm pins each documented
-// arm: missing recipe, mismatched recipe, matching recipe, missing FR,
-// mismatched FR, matching FR.
+// arm: a missing recipe is SKIPPED (the resolution path owns missing recipes
+// with richer context), a mismatched recipe is reported, a matching recipe
+// passes — same three arms for FeatureRecipes. So a manifest carrying one
+// missing + one mismatched + one matching mapping per kind yields exactly two
+// violations (the two mismatches).
 func TestVerifyManifestImplementsConsistency_EveryArm(t *testing.T) {
 	t.Parallel()
 	c := &Catalog{
@@ -304,8 +307,8 @@ func TestVerifyManifestImplementsConsistency_EveryArm(t *testing.T) {
 	manifest.Spec.Mappings.Features = mtF
 
 	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml")
-	if len(errs) != 4 {
-		t.Errorf("expected 4 violations (2 missing + 2 mismatched); got %d: %v", len(errs), errs)
+	if len(errs) != 2 {
+		t.Errorf("expected 2 violations (2 mismatched; the 2 missing are skipped for the resolution path); got %d: %v", len(errs), errs)
 	}
 }
 

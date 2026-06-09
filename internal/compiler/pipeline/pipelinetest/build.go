@@ -105,6 +105,12 @@ func compile(in Input) (*pipeline.Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compose manifest extends chain: %w", err)
 	}
+	// Gate on Manifest mapping-table consistency exactly as cmd/aggrega/build.go
+	// does — same method, same join-and-halt — so a build-faithful test halts
+	// wherever a real build would.
+	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+		return nil, err
+	}
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load aggregate: %w", err)
