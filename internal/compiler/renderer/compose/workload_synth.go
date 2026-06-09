@@ -94,7 +94,15 @@ func (e *ComposeEngine) SynthesizeWorkload(
 	// preserved across services in the YAML output (compose is map-shaped at
 	// the services: key) — the marshaler sorts alphabetically, the
 	// alphabetical-by-derivation-key choice for synthesised maps.
-	mainServiceName := nodeCtx.NodeID
+	// componentID is the naming basis for the synthesised service, volumes, and
+	// fragment file. It derives from ProvenanceComponentID: the raw NodeID for a
+	// component node (byte-identical to the prior behavior, since LabelComponentID
+	// is empty there), or the sanitized FR-instance id the caller sets for a
+	// FeatureRecipe-synthesised workload — so an FR's service/volumes are named
+	// after the feature instance, not the host component whose NodeID the FR node
+	// carries.
+	componentID := renderer.ProvenanceComponentID(nodeCtx)
+	mainServiceName := componentID
 	mainContainerName, hasMain := pickMainContainerName(w)
 
 	for containerName, c := range w.Containers.All() {
@@ -124,12 +132,12 @@ func (e *ComposeEngine) SynthesizeWorkload(
 	for name, v := range w.Volumes.All() {
 		switch {
 		case v.Persistent != nil:
-			frag.Volumes[volumeName(nodeCtx.NodeID, name)] = Volume{}
+			frag.Volumes[volumeName(componentID, name)] = Volume{}
 		case v.PersistentTemplate != nil:
 			// Degrades to the same shape as persistent; the
 			// pod-level mount declaration carries a warning
 			// comment about the per-replica template loss.
-			frag.Volumes[volumeName(nodeCtx.NodeID, name)] = Volume{}
+			frag.Volumes[volumeName(componentID, name)] = Volume{}
 		}
 	}
 
@@ -148,7 +156,7 @@ func (e *ComposeEngine) SynthesizeWorkload(
 
 	return []renderer.EmittedFile{
 		{
-			Name:         nodeCtx.NodeID + ".compose-fragment.yaml",
+			Name:         componentID + ".compose-fragment.yaml",
 			Body:         body,
 			Intermediate: true,
 		},
@@ -252,7 +260,7 @@ func translateContainer(
 			continue
 		}
 
-		entry := volumeMountEntry(vm, spec, nodeCtx.NodeID)
+		entry := volumeMountEntry(vm, spec, mainServiceName)
 		// Tmpfs is special: compose's `tmpfs:` is a top-level service field,
 		// not a volumes: entry.
 		if entry.Type == "tmpfs" {

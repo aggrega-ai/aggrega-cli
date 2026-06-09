@@ -172,9 +172,10 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 	return values, nil
 }
 
-// isResourceGeneratingFR returns true if the FeatureRecipe carries source or
-// valuesMapping (i.e., it produces its own resources in Phase B). Inject-only
-// FRs return false — they're already handled by Phase A.
+// isResourceGeneratingFR returns true if the FeatureRecipe declares a render
+// input kind — source, valuesMapping, workload, or artifacts — i.e., it
+// produces its own resources in Phase B. Inject-only FRs (only injectMapping)
+// return false — they're already handled by Phase A and render nothing.
 func isResourceGeneratingFR(fr *types.FeatureRecipe) bool {
 	if fr == nil {
 		return false
@@ -189,6 +190,12 @@ func isResourceGeneratingFR(fr *types.FeatureRecipe) bool {
 		}
 	}
 	if !fr.Spec.ValuesMapping.IsEmpty() {
+		return true
+	}
+	if !fr.Spec.Workload.IsEmpty() {
+		return true
+	}
+	if fr.Spec.Artifacts.Len() > 0 {
 		return true
 	}
 	return false

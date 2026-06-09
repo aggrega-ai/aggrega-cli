@@ -10,12 +10,14 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// Recipe-validation sentinels. The seven rules are general Recipe shape rules
-// from chapter 16; the eval-provider constraint is provider-specific and
+// Recipe-validation sentinels. The numbered rules are general Recipe shape
+// rules from chapter 16; the eval-provider constraint is provider-specific and
 // covers the eval mode's mathematical-evaluation-only contract.
 //
-// Rules surfaced at Recipe load time: 1, 2, 3, 5, 6.
-// Rule 4 is enforced after Manifest resolution binds Recipe to Provider.
+// Rules surfaced at Recipe load time: 1, 5.
+// The workload-requires-provider-workloadSchema constraint is enforced at
+// render time by the central input-kind gate (a synthesised Recipe bound to a
+// provider with no workload-synthesis capability halts loudly there).
 // Rule 7 is enforced at emission time (Phase B.5 filename collision detection)
 // and is reserved here so the load-time validator and the emission-time
 // detector share an error shape.
@@ -23,28 +25,19 @@ var (
 	// ErrRecipeRule1: valuesMapping requires source.
 	ErrRecipeRule1 = errors.New("recipe rule 1: valuesMapping requires source")
 
-	// ErrRecipeRule2: source requires valuesMapping.
-	ErrRecipeRule2 = errors.New("recipe rule 2: source requires valuesMapping")
-
-	// ErrRecipeRule4: workload requires the resolved Provider to
-	// declare workloadSchema. Surfaced post-Manifest-resolution by
-	// ValidateRecipeProviderBinding, not at Recipe load time.
-	ErrRecipeRule4 = errors.New("recipe rule 4: workload requires provider workloadSchema")
-
 	// ErrRecipeRule5: at least one input kind must be present.
 	ErrRecipeRule5 = errors.New("recipe rule 5: at least one input kind required")
 
-	// ErrRecipeHelmChartInlineArtifacts: provider helm-chart with inline
-	// artifacts: declared. Helm-chart emits an umbrella chart structure;
-	// the artifacts input kind contributes via physical files (each
-	// artifacts: entry uses { $import: <path> }) that the engine injects
-	// into the chart's templates/ directory pre-render. Inline-string
-	// artifacts entries are rejected for helm-chart. The descriptive
-	// sentinel name (rather than continuing the ErrRecipeRule<N> sequence
-	// used for the cross-provider shape rules 1-7) reflects that this is
-	// a provider-specific constraint, not a member of chapter 16's
-	// numbered rule list.
-	ErrRecipeHelmChartInlineArtifacts = errors.New("recipe helm-chart provider does not support inline artifacts:")
+	// ErrHelmChartInlineArtifacts: the helm-chart provider with an inline
+	// artifacts: entry declared. Helm-chart emits an umbrella chart structure;
+	// the artifacts input kind contributes via physical files (each artifacts:
+	// entry uses { $import: <path> }) that the engine injects into the chart's
+	// templates/ directory pre-render. An inline-string artifact has no home as
+	// a standalone file in an umbrella chart, so it is rejected. This is a
+	// provider-level constraint shared by Recipe and FeatureRecipe (both bind a
+	// provider and may declare artifacts), not a member of any single entity's
+	// numbered rule list — hence the descriptive, entity-neutral sentinel name.
+	ErrHelmChartInlineArtifacts = errors.New("helm-chart provider does not support inline artifacts:")
 
 	// ErrRecipeRule7: emission-time filename collision across input-kind
 	// origins (source output, workload synthesis, artifacts). RESERVED
@@ -80,8 +73,8 @@ type RecipeValidationError struct {
 	// Description is the human-readable rule description (e.g., "valuesMapping
 	// requires source"). Authored by the validator at the call site.
 	Description string
-	// Detail is rule-specific context (for rule 6: the colliding basenames;
-	// for rule 4: the Provider name and missing capability).
+	// Detail is rule-specific context (e.g., for rule 7: the colliding
+	// basenames; for the helm-chart constraint: the offending inline keys).
 	Detail string
 	// Err is the sentinel for errors.Is matching.
 	Err error

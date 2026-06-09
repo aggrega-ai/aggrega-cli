@@ -7,6 +7,10 @@ spec:
   provider: compose
   implements: core/invalid-boundary-fr:1.0.0
   executionScope: boundary
+  # source paired with valuesMapping so the FeatureRecipe passes the
+  # valuesMapping-requires-source load rule and reaches the boundary-scope
+  # template-field validation this fixture exercises.
+  source: ./placeholder
 
   # Invalid: an executionScope:boundary FR template MUST NOT reference
   # per-component-only fields (.context.*, .workload.*, .secret_name,

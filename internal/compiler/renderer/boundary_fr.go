@@ -164,6 +164,19 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 	if fr.Spec.InjectMapping != "" {
 		tmpls = append(tmpls, tmplField{label: "injectMapping", text: fr.Spec.InjectMapping})
 	}
+	// Inline workload / artifacts templates are subject to the same boundary-
+	// scope allowlist (file / library imports defer to render-time validation,
+	// as with valuesMapping above). A boundary-scope FR's synthesised workload
+	// or emitted artifacts reference .boundary.* pillars, never .context.* /
+	// .workload / .secret_name / .inject.
+	if fr.Spec.Workload.Inline != "" {
+		tmpls = append(tmpls, tmplField{label: "workload", text: fr.Spec.Workload.Inline})
+	}
+	for k, v := range fr.Spec.Artifacts.All() {
+		if v.Inline != "" {
+			tmpls = append(tmpls, tmplField{label: "artifacts[" + k + "]", text: v.Inline})
+		}
+	}
 	for k, v := range fr.Spec.Provides.All() {
 		tmpls = append(tmpls, tmplField{label: "provides[" + k + "]", text: v})
 	}
@@ -294,26 +307,19 @@ func dispatchBoundaryScopeFR(
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q valuesMapping", frInstance))
 	}
-	frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q render", frInstance))
-	}
 
-	// 7. Classify emitted files by Intermediate flag and record.
-	_, isAssembler := frEngine.(BoundaryAssembler)
-	emitted := make([]EmittedFile, 0, len(frFiles))
-	names := make([]string, 0, len(frFiles))
-	for p := range frFiles {
-		names = append(names, p)
-	}
-	sort.Strings(names)
-	for _, p := range names {
-		emitted = append(emitted, EmittedFile{
-			Name:         p,
-			Origin:       EmitOriginSource,
-			Body:         frFiles[p],
-			Intermediate: isAssembler,
-		})
+	// 6-7. Render via the SAME input-kind machinery the per-component FR sites
+	// use — the central gate, then sourced engine.Render / synthesised workload
+	// synthesis / artifacts emission — against the boundary-scope context (frCtx
+	// carries .boundary.* pillars, never .context.*; the workload/artifacts
+	// templates were allowlist-checked at validateBoundaryScopeFRTemplate). The
+	// returned EmittedFiles already carry their Intermediate flag for boundary-
+	// assembler routing. instanceLabel is "" so the boundary-disambiguated
+	// LabelComponentID set above stays the resource-naming basis (a per-instance
+	// label would collide across boundaries sharing an FR-instance name).
+	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "")
+	if err != nil {
+		return err
 	}
 	boundaryFRState.Files[key] = emitted
 

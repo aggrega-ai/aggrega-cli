@@ -58,25 +58,18 @@ func TestValidateRecipe_Rule1_ValuesMappingFileImportWithoutSource_Fails(t *test
 	}
 }
 
-// ----- Rule 2: source requires valuesMapping -----
+// ----- Sourced Recipe with no values overlay is valid (chart defaults) -----
 
-func TestValidateRecipe_Rule2_SourceWithValuesMapping_Passes(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("helm")
-	r.Spec.Source = "./chart"
-	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1.0"}`}
-	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected pass, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Rule2_SourceWithoutValuesMapping_Fails(t *testing.T) {
+// A Recipe pointing at a source with no valuesMapping is legitimate — it
+// renders the chart/module with its own defaults and authors no overlay. The
+// compiler does not require an overlay (Invariant 1: it pipes whatever the
+// source produces without policing it).
+func TestValidateRecipe_SourceWithoutValuesMapping_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart" // no valuesMapping
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule2) {
-		t.Fatalf("expected ErrRecipeRule2, got %v", err)
+	if err := validator.ValidateRecipe(r, tFile); err != nil {
+		t.Fatalf("expected pass for source-only Recipe (chart defaults), got %v", err)
 	}
 }
 
@@ -143,8 +136,8 @@ func TestValidateRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
 	r.Spec.Artifacts.Set("inline-cm.yaml", types.ArtifactEntry{Inline: `kind: ConfigMap`})
 
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeHelmChartInlineArtifacts) {
-		t.Fatalf("expected ErrRecipeHelmChartInlineArtifacts, got %v", err)
+	if !errors.Is(err, validator.ErrHelmChartInlineArtifacts) {
+		t.Fatalf("expected ErrHelmChartInlineArtifacts, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "inline-cm.yaml") {
 		t.Errorf("error detail should name the offending inline filename, got %v", err)

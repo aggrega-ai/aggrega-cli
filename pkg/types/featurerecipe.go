@@ -26,27 +26,31 @@ type FeatureRecipeMetadata struct {
 }
 
 // FeatureRecipeSpec defines the provider binding, mapping, and pipeline
-// for a FeatureRecipe. Compared to [RecipeSpec], FeatureRecipes support
-// only the sourced input kind (Source + ValuesMapping); the synthesized
-// (Workload) and artifacts (Artifacts) modes are Recipe-only.
-// ValuesMapping carries one of three modes per its own type
+// for a FeatureRecipe. FeatureRecipes carry the same three input kinds as
+// [RecipeSpec] — sourced (Source + ValuesMapping), synthesized (Workload),
+// and artifacts (Artifacts) — and compose them by addition exactly as a
+// Recipe does. ValuesMapping carries one of three modes per its own type
 // documentation (inline Go template, file $import:, or library $import:).
 //
-// InjectMapping is unique to FeatureRecipes and carries the templated
-// string that maps Aggrega's typed inject block to the provider's
+// InjectMapping is the sole field unique to FeatureRecipes: it carries the
+// templated string that maps Aggrega's typed inject block to the provider's
 // expected delivery format (e.g., Helm value paths, environment-variable
 // names). Where ValuesMapping transforms values data, InjectMapping
-// transforms inject delivery.
+// transforms inject delivery. A FeatureRecipe declaring only InjectMapping
+// (no render input kind) is valid — it contributes Caller-side inject
+// mutation and renders nothing.
 type FeatureRecipeSpec struct {
-	Provider       string             `json:"provider" yaml:"provider"`
-	Implements     string             `json:"implements" yaml:"implements"`
-	Locals         OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
-	Provides       OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	Source         any                `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
-	ValuesMapping  ValuesMapping      `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
-	InjectMapping  string             `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
-	Pipeline       []PipelineStep     `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
-	ExecutionScope string             `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
+	Provider       string                    `json:"provider" yaml:"provider"`
+	Implements     string                    `json:"implements" yaml:"implements"`
+	Locals         OrderedMap[string]        `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
+	Provides       OrderedMap[string]        `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	Source         any                       `json:"source,omitempty" yaml:"source,omitempty"` // string URI or structured object
+	ValuesMapping  ValuesMapping             `json:"valuesMapping,omitempty" yaml:"valuesMapping,omitempty"`
+	Workload       WorkloadTemplate          `json:"workload,omitempty" yaml:"workload,omitempty"`
+	Artifacts      OrderedMap[ArtifactEntry] `json:"artifacts,omitempty,omitzero" yaml:"artifacts,omitempty"`
+	InjectMapping  string                    `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
+	Pipeline       []PipelineStep            `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
+	ExecutionScope string                    `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
 	// Assertions carries build-time cross-field validation as a map of named
 	// Go template rules. Evaluation runs at Step 5b (post-binding, post-
 	// allProvides-evaluation, pre-render); the first rule whose template

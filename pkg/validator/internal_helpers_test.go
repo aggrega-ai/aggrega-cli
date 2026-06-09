@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -102,31 +101,6 @@ func TestHasOverlapEscapeHatch_DetectsEveryEscapeClause(t *testing.T) {
 				t.Errorf("hasOverlapEscapeHatch(%s) = %v; want %v", c.name, got, c.want)
 			}
 		})
-	}
-}
-
-// TestProviderHasWorkloadSchema_NilProviderReturnsFalse pins the
-// nil-Provider guard. A nil pointer returns false rather than panic
-// on the nil dereference.
-func TestProviderHasWorkloadSchema_NilProviderReturnsFalse(t *testing.T) {
-	t.Parallel()
-	if providerHasWorkloadSchema(nil) {
-		t.Errorf("nil Provider should return false")
-	}
-}
-
-// TestProviderHasWorkloadSchema_EmptyAndPopulated pins both observed
-// branches: a Provider whose Spec.WorkloadSchema is empty string
-// returns false; a Provider with non-empty content returns true.
-func TestProviderHasWorkloadSchema_EmptyAndPopulated(t *testing.T) {
-	t.Parallel()
-	empty := &types.Provider{}
-	if providerHasWorkloadSchema(empty) {
-		t.Errorf("empty WorkloadSchema should return false")
-	}
-	populated := &types.Provider{Spec: types.ProviderSpec{WorkloadSchema: "x: y"}}
-	if !providerHasWorkloadSchema(populated) {
-		t.Errorf("populated WorkloadSchema should return true")
 	}
 }
 

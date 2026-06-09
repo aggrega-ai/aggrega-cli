@@ -934,12 +934,27 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	if e.Kind != "FeatureRecipe" {
 		return types.FeatureRecipe{}, fmt.Errorf("expected kind FeatureRecipe, got %q", e.Kind)
 	}
+	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
+		return types.FeatureRecipe{}, err
+	}
 	if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
 		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
 		if err != nil {
 			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
 		}
 		e.Spec.Source = abs
+	}
+	for _, name := range e.Spec.Artifacts.Keys() {
+		entry, _ := e.Spec.Artifacts.Get(name)
+		if entry.Import == "" || filepath.IsAbs(entry.Import) {
+			continue
+		}
+		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
+		if err != nil {
+			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe artifact %q $import target %q", name, entry.Import))
+		}
+		entry.Import = abs
+		e.Spec.Artifacts.Set(name, entry)
 	}
 	return e, nil
 }

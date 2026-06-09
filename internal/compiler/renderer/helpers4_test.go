@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -333,5 +334,29 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	fr3.Spec.InjectMapping = "{{ .boundary.name " // unterminated action
 	if err := validateBoundaryScopeFRTemplate(fr3); err == nil {
 		t.Errorf("a malformed inline template must propagate a parse error, not be skipped")
+	}
+	// workload: and artifacts: inline templates are subject to the same
+	// boundary-scope allowlist. A workload referencing only .boundary.* passes.
+	frWL := &types.FeatureRecipe{}
+	frWL.Metadata.Name = "frWL"
+	frWL.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .boundary.name }}"}
+	if err := validateBoundaryScopeFRTemplate(frWL); err != nil {
+		t.Errorf("boundary-scope workload with .boundary.* should pass: %v", err)
+	}
+	// A workload referencing a per-component-only field is rejected.
+	frWLBad := &types.FeatureRecipe{}
+	frWLBad.Metadata.Name = "frWLBad"
+	frWLBad.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .context.instance_id }}"}
+	if err := validateBoundaryScopeFRTemplate(frWLBad); !errors.Is(err, ErrFRTemplateInvalidField) {
+		t.Errorf("boundary-scope workload referencing .context.* must be rejected, got: %v", err)
+	}
+	// An inline artifact referencing a per-component-only field is rejected.
+	frArtBad := &types.FeatureRecipe{}
+	frArtBad.Metadata.Name = "frArtBad"
+	art := types.OrderedMap[types.ArtifactEntry]{}
+	art.Set("cm.yaml", types.ArtifactEntry{Inline: "data: {{ .secret_name }}"})
+	frArtBad.Spec.Artifacts = art
+	if err := validateBoundaryScopeFRTemplate(frArtBad); !errors.Is(err, ErrFRTemplateInvalidField) {
+		t.Errorf("boundary-scope artifact referencing .secret_name must be rejected, got: %v", err)
 	}
 }

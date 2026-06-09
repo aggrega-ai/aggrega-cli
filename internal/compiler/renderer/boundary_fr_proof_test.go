@@ -446,65 +446,7 @@ func bridgeFRViaValuesMapping(t *testing.T) *types.FeatureRecipe {
 func TestDispatchBoundaryScopeFR_EvaluatesValuesMapping(t *testing.T) {
 	t.Parallel()
 
-	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
-	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster"})
-
-	boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
-	brInfra := types.OrderedMap[any]{}
-	brInfra.Set("mappedPort", 15432)
-	boundaryFeatures.Set("bridge", types.BoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: brInfra})
-	clusterBoundary := types.Boundary{
-		Directory:  "dist/cluster",
-		Features:   boundaryFeatures,
-		Components: types.OrderedMap[types.BoundaryComponent]{},
-		Boundaries: types.OrderedMap[types.Boundary]{},
-	}
-	clusterBoundary.Components.Set("api", types.BoundaryComponent{})
-	clusterBoundary.Components.Set("db", types.BoundaryComponent{})
-	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("cluster", clusterBoundary)
-
-	bridgeInfra := types.OrderedMap[any]{}
-	bridgeInfra.Set("mappedPort", 15432)
-	clusterBFProj := types.OrderedMap[types.IRBoundaryFeature]{}
-	clusterBFProj.Set("bridge", types.IRBoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: bridgeInfra})
-	bfProj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
-	bfProj.Set("cluster", clusterBFProj)
-
-	bi := map[string]*resolver.BoundaryInfra{
-		"api": {BoundaryPath: "cluster", Directory: "dist/cluster"},
-		"db":  {BoundaryPath: "cluster", Directory: "dist/cluster"},
-	}
-
-	bridgeEntry := types.IRFeatureEntry{Type: "core/compose-bridge:1.0.0"}
-	apiFV := types.OrderedMap[types.IRFeatureEntry]{}
-	apiFV.Set("bridge", bridgeEntry)
-	dbFV := types.OrderedMap[types.IRFeatureEntry]{}
-	dbFV.Set("bridge", bridgeEntry)
-	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
-	fvm.Set("api", apiFV)
-	fvm.Set("db", dbFV)
-
-	input := renderer.RendererInput{
-		Graph: &types.IRGraph{
-			Metadata: types.IRMetadata{AggregateName: "compose-bridge-app"},
-			Spec: types.IRSpec{
-				Nodes:                nodes,
-				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
-				InfraMapping:         types.OrderedMap[json.RawMessage]{},
-				FeatureValuesMapping: fvm,
-				BoundaryFeatures:     bfProj,
-				Provenance:           types.IRProvenance{CompilerVersion: "test"},
-			},
-		},
-		FeatureOrder: ir.FeatureOrder{"api": []string{"bridge"}, "db": []string{"bridge"}},
-		ResolveResult: &resolver.ResolveResult{
-			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "compose-bridge-app"}},
-			Release:       &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
-			BoundaryInfra: bi,
-		},
-	}
+	input := composeBridgeBoundaryInput()
 
 	apiRecipe := composeWorkloadRecipe("api", "api:1.0", 8080)
 	dbRecipe := composeWorkloadRecipe("db", "postgres:15", 5432)
@@ -552,4 +494,132 @@ func keysOfFiles(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// composeBridgeBoundaryInput builds the two-node (api, db) single-boundary
+// (cluster) RendererInput with a compose-bridge boundary feature on both nodes.
+// Shared by the boundary-scope FR render proofs.
+func composeBridgeBoundaryInput() renderer.RendererInput {
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
+	nodes.Set("db", types.IRNode{Component: "core/db", BoundaryPath: "cluster"})
+
+	boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
+	brInfra := types.OrderedMap[any]{}
+	brInfra.Set("mappedPort", 15432)
+	boundaryFeatures.Set("bridge", types.BoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: brInfra})
+	clusterBoundary := types.Boundary{
+		Directory:  "dist/cluster",
+		Features:   boundaryFeatures,
+		Components: types.OrderedMap[types.BoundaryComponent]{},
+		Boundaries: types.OrderedMap[types.Boundary]{},
+	}
+	clusterBoundary.Components.Set("api", types.BoundaryComponent{})
+	clusterBoundary.Components.Set("db", types.BoundaryComponent{})
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set("cluster", clusterBoundary)
+
+	bridgeInfra := types.OrderedMap[any]{}
+	bridgeInfra.Set("mappedPort", 15432)
+	clusterBFProj := types.OrderedMap[types.IRBoundaryFeature]{}
+	clusterBFProj.Set("bridge", types.IRBoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: bridgeInfra})
+	bfProj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	bfProj.Set("cluster", clusterBFProj)
+
+	bi := map[string]*resolver.BoundaryInfra{
+		"api": {BoundaryPath: "cluster", Directory: "dist/cluster"},
+		"db":  {BoundaryPath: "cluster", Directory: "dist/cluster"},
+	}
+
+	bridgeEntry := types.IRFeatureEntry{Type: "core/compose-bridge:1.0.0"}
+	apiFV := types.OrderedMap[types.IRFeatureEntry]{}
+	apiFV.Set("bridge", bridgeEntry)
+	dbFV := types.OrderedMap[types.IRFeatureEntry]{}
+	dbFV.Set("bridge", bridgeEntry)
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set("api", apiFV)
+	fvm.Set("db", dbFV)
+
+	return renderer.RendererInput{
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "compose-bridge-app"},
+			Spec: types.IRSpec{
+				Nodes:                nodes,
+				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
+				InfraMapping:         types.OrderedMap[json.RawMessage]{},
+				FeatureValuesMapping: fvm,
+				BoundaryFeatures:     bfProj,
+				Provenance:           types.IRProvenance{CompilerVersion: "test"},
+			},
+		},
+		FeatureOrder: ir.FeatureOrder{"api": []string{"bridge"}, "db": []string{"bridge"}},
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "compose-bridge-app"}},
+			Release:       &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
+			BoundaryInfra: bi,
+		},
+	}
+}
+
+// TestDispatchBoundaryScopeFR_SynthesizesWorkload proves a boundary-scope
+// FeatureRecipe declaring workload: synthesises its own compute once per
+// boundary, through the same machinery the per-component path uses. The
+// compose provider synthesises a service from the Workload; because compose is
+// a BoundaryAssembler the synthesised fragment is merged into the boundary's
+// docker-compose.yaml. The workload template references only .boundary.* /
+// .infra (boundary-scope context — no .context.* smuggled in), and the service
+// is named by the boundary-disambiguated component id.
+func TestDispatchBoundaryScopeFR_SynthesizesWorkload(t *testing.T) {
+	t.Parallel()
+	input := composeBridgeBoundaryInput()
+
+	apiRecipe := composeWorkloadRecipe("api", "api:1.0", 8080)
+	dbRecipe := composeWorkloadRecipe("db", "postgres:15", 5432)
+	bridgeFR := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
+		Spec: types.FeatureRecipeSpec{
+			Provider:       "compose",
+			Implements:     "core/compose-bridge:1.0.0",
+			ExecutionScope: "boundary",
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: gateway:{{ .infra.mappedPort }}
+`},
+		},
+	}
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			switch componentType {
+			case "core/api":
+				return apiRecipe, true
+			case "core/db":
+				return dbRecipe, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if strings.HasPrefix(featureType, "core/compose-bridge") {
+				return bridgeFR, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory())
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	body, ok := result.Files["dist/cluster/compose/docker-compose.yaml"]
+	if !ok {
+		t.Fatalf("expected merged compose at dist/cluster/compose/docker-compose.yaml; got %v", keysOfFiles(result.Files))
+	}
+	s := string(body)
+	// The synthesised workload's image (templated from .infra.mappedPort, a
+	// boundary-scope pillar) must appear in the assembled compose — proving the
+	// boundary-scope FR ran workload synthesis against the boundary context.
+	if !strings.Contains(s, "gateway:15432") {
+		t.Errorf("boundary-scope FR workload not synthesised into merged compose:\n%s", s)
+	}
 }

@@ -371,20 +371,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// through as composed artifacts and are NOT checked against
 		// ArtifactsStandalone); only a no-source/no-workload node is
 		// artifacts-only.
-		caps := engine.Capabilities()
-		switch {
-		case hasSource:
-			if !caps.Sourced {
-				return nil, unsupportedInputKindError(nodeID, providerName, "sourced", caps)
-			}
-		case hasWorkload:
-			if !caps.Synthesized {
-				return nil, unsupportedInputKindError(nodeID, providerName, "synthesised", caps)
-			}
-		case hasArtifacts:
-			if !caps.ArtifactsStandalone {
-				return nil, unsupportedInputKindError(nodeID, providerName, "artifacts-only", caps)
-			}
+		if err := gateInputKind(nodeID, providerName, engine, hasSource, hasWorkload, hasArtifacts); err != nil {
+			return nil, err
 		}
 
 		// engine.Render (the source-based render) runs only for sourced mode;
@@ -938,6 +926,38 @@ func resolveSecretRecipes(nodeID string, graph *types.IRGraph, recipeLookup Reci
 		})
 	}
 	return refs
+}
+
+// gateInputKind is the central input-kind capability gate. It classifies a
+// node's mode from its declared input kinds and confirms the resolved
+// provider's engine supports that mode — once per node, BEFORE any Phase B
+// dispatch (engine.Render, B.3 artifacts, B.4 synthesis), so an unsupported
+// (mode, provider) halts loudly before emission. Source > workload > artifacts
+// precedence: a node with source: or workload: is sourced/synthesised even if
+// it ALSO declares artifacts: (those ride through as composed artifacts and are
+// NOT checked against ArtifactsStandalone); only a no-source/no-workload node
+// is artifacts-only.
+//
+// Both the component render path (RenderAll) and the FeatureRecipe render
+// sites call this, so a Recipe and a FeatureRecipe bound to the same provider
+// gate identically — there is one gate, not a parallel FR track.
+func gateInputKind(nodeID, providerName string, engine Engine, hasSource, hasWorkload, hasArtifacts bool) error {
+	caps := engine.Capabilities()
+	switch {
+	case hasSource:
+		if !caps.Sourced {
+			return unsupportedInputKindError(nodeID, providerName, "sourced", caps)
+		}
+	case hasWorkload:
+		if !caps.Synthesized {
+			return unsupportedInputKindError(nodeID, providerName, "synthesised", caps)
+		}
+	case hasArtifacts:
+		if !caps.ArtifactsStandalone {
+			return unsupportedInputKindError(nodeID, providerName, "artifacts-only", caps)
+		}
+	}
+	return nil
 }
 
 // unsupportedInputKindError is the single uniform diagnostic the central

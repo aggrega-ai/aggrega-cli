@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -396,28 +397,18 @@ func phaseB6(
 		}
 		frNodeCtx.Source = resolvedSrc
 
-		// A resource-generating FeatureRecipe that resolves to no source has no
-		// render surface: FeatureRecipes support only the sourced input kind, so
-		// resource generation renders only via a source:. A FeatureRecipe never
-		// synthesises compute from a bare values dict — that would invent compute
-		// the author never declared (Invariant 4). Halt loudly with a
-		// capability-style catalog error rather than dispatch a nil source into
-		// the engine's defensive arm.
-		if srcStr, isStr := resolvedSrc.(string); resolvedSrc == nil || (isStr && srcStr == "") {
-			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("Step 5 node %q feature %q: resource-generating FeatureRecipe %q has no render surface — a values-only (sourceless) FeatureRecipe cannot render; FeatureRecipes support only the sourced input kind. Declare a source:. (Synthesised and artifacts FeatureRecipe rendering are not yet supported.)",
-					nodeID, ref.InstanceName, fr.Metadata.Name),
-				nil, nil)
-		}
-
-		frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
+		// Return the helper error directly: its internal errors (the central
+		// gate's uniform capability diagnostic, engine.Render failures, and the
+		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
+		// re-wrapping would bury the gate diagnostic the user needs to see.
+		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q render", nodeID, ref.InstanceName))
+			return nil, err
 		}
 
 		prefix := "features/" + ref.InstanceName + "/"
-		for p, c := range frFiles {
-			out[prefix+p] = c
+		for _, f := range frFiles {
+			out[prefix+f.Name] = f.Body
 		}
 	}
 
@@ -478,30 +469,117 @@ func phaseB6(
 			}
 			frNodeCtx.Source = resolvedSrc
 
-			// A credential (resource-generating) FeatureRecipe that resolves to
-			// no source has no render surface — see the feature-FR dispatch above
-			// for the full rationale (FeatureRecipes are sourced-only; a
-			// FeatureRecipe never synthesises compute from a bare values dict —
-			// Invariant 4). Halt loudly with a capability-style catalog error.
-			if srcStr, isStr := resolvedSrc.(string); resolvedSrc == nil || (isStr && srcStr == "") {
-				return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-					fmt.Sprintf("Step 5 node %q secret %q: resource-generating FeatureRecipe %q has no render surface — a values-only (sourceless) FeatureRecipe cannot render; FeatureRecipes support only the sourced input kind. Declare a source:. (Synthesised and artifacts FeatureRecipe rendering are not yet supported.)",
-						nodeID, secretName, fr.Metadata.Name),
-					nil, nil)
-			}
-
-			frFiles, err := frEngine.Render(ctx, frValues, frNodeCtx)
+			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName)
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q render", nodeID, secretName))
+				return nil, err
 			}
 
 			prefix := "secrets/" + secretName + "/"
-			for p, c := range frFiles {
-				out[prefix+p] = c
+			for _, f := range frFiles {
+				out[prefix+f.Name] = f.Body
 			}
 		}
 	}
 
 	state.PhaseReached = 6
 	return out, nil
+}
+
+// renderFeatureRecipeFiles runs the full input-kind render for a resource-
+// generating FeatureRecipe at a per-component site (feature or credential
+// attachment). It mirrors the component render path exactly: the central
+// input-kind gate, then sourced engine.Render / synthesised workload synthesis
+// / artifacts emission via the same Phase B leaf passes (phaseB2/B3/B4) and the
+// same Phase B.5 cross-input-kind filename-collision check. A render-only
+// synthetic Recipe carries the FR's input-kind fields so those passes — which
+// read state.Recipe.Spec.* — operate unchanged; this is reuse of the component
+// machinery, not a parallel FeatureRecipe track. Returns the accumulated
+// EmittedFiles (each carrying its Origin and Intermediate flag); the per-
+// component callers flatten them under features/<instance>/ or secrets/<name>/,
+// while the boundary-scope caller routes them by the Intermediate flag.
+func renderFeatureRecipeFiles(
+	ctx context.Context,
+	frEngine Engine,
+	fr *types.FeatureRecipe,
+	frCtx *types.TemplateContext,
+	frNodeCtx NodeRenderContext,
+	frValues map[string]any,
+	resolvedSrc any,
+	instanceLabel string,
+) ([]EmittedFile, error) {
+	hasSource := resolvedSrc != nil
+	if s, ok := resolvedSrc.(string); ok && s == "" {
+		hasSource = false
+	}
+	hasWorkload := !fr.Spec.Workload.IsEmpty()
+	hasArtifacts := fr.Spec.Artifacts.Len() > 0
+
+	if err := gateInputKind(frNodeCtx.NodeID, fr.Spec.Provider, frEngine, hasSource, hasWorkload, hasArtifacts); err != nil {
+		return nil, err
+	}
+
+	// The synthesised and artifacts paths name their resources after the
+	// feature instance, not the host component whose NodeID the FR node carries
+	// — otherwise an FR-synthesised Deployment would be named for the host and
+	// collide with the host's own workload. We set LabelComponentID (consumed by
+	// ProvenanceComponentID inside the synthesizer and the artifacts provenance
+	// builder) on a copy used only for B.3/B.4; the sourced engine.Render runs
+	// against the unmodified frNodeCtx so existing sourced-FR provenance is
+	// unchanged.
+	synthNodeCtx := frNodeCtx
+	if instanceLabel != "" {
+		synthNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(instanceLabel)
+	}
+
+	synth := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: fr.Metadata.Name, Version: fr.Metadata.Version},
+		Spec: types.RecipeSpec{
+			Provider:      fr.Spec.Provider,
+			Implements:    fr.Spec.Implements,
+			Source:        resolvedSrc,
+			ValuesMapping: fr.Spec.ValuesMapping,
+			Workload:      fr.Spec.Workload,
+			Artifacts:     fr.Spec.Artifacts,
+		},
+	}
+	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, "")
+
+	// Sourced mode hits engine.Render; synthesised renders at B.4, artifacts at
+	// B.3. EmitOriginSource files accumulate by sorted filename for
+	// determinism. The Intermediate flag follows the same rule the component
+	// path uses: a BoundaryAssembler that is not an ExternalArtifactsHandler
+	// consumes Render output as fragment input.
+	if hasSource {
+		files, err := frEngine.Render(ctx, frValues, frNodeCtx)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
+		}
+		_, isAssembler := frEngine.(BoundaryAssembler)
+		_, isExternal := frEngine.(ExternalArtifactsHandler)
+		renderIsIntermediate := isAssembler && !isExternal
+		names := make([]string, 0, len(files))
+		for p := range files {
+			names = append(names, p)
+		}
+		sort.Strings(names)
+		for _, p := range names {
+			state.EmittedFiles = append(state.EmittedFiles, EmittedFile{Name: p, Origin: EmitOriginSource, Body: files[p], Intermediate: renderIsIntermediate})
+		}
+	}
+
+	emptySlots := types.OrderedMap[types.SecretSlot]{}
+	if err := phaseB2(frCtx, state, emptySlots); err != nil {
+		return nil, err
+	}
+	if err := phaseB3(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
+		return nil, err
+	}
+	if err := phaseB4(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
+		return nil, err
+	}
+	if err := phaseB5(state); err != nil {
+		return nil, err
+	}
+
+	return state.EmittedFiles, nil
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -308,15 +309,22 @@ containers:
 		},
 		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/monitoring" {
-				locals := types.OrderedMap[string]{}
-				locals.Set("scrape_target", `{{ .values.tier }}-{{ .values.scrape_port }}`)
+				// A synthesised FeatureRecipe: it declares workload: and the
+				// helm provider synthesises its own compute (a Deployment)
+				// under features/mon/, named after the feature instance.
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 					Spec: types.FeatureRecipeSpec{
-						Provider:      "helm-chart",
-						Implements:    "core/monitoring",
-						Locals:        locals,
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "prom/mon:v1", "ports": ["{{ .values.scrape_port }}:9090"]}`},
+						Provider:   "helm",
+						Implements: "core/monitoring",
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: prom/mon:v1
+    ports:
+      metrics: {{ .values.scrape_port }}
+`},
 					},
 				}, true
 			}
@@ -324,18 +332,33 @@ containers:
 		},
 	}
 
-	// The monitoring FeatureRecipe here is values-only (no source): under the
-	// sourced-only FeatureRecipe contract it is a resource-generating FR with no
-	// render surface, so the build halts loudly. (A sourceless FR could produce
-	// its own resources only when FeatureRecipes gain synthesised/artifacts
-	// rendering.) A FeatureRecipe never synthesises a Deployment from bare
-	// values — that would invent compute the author never declared.
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
-	if err == nil {
-		t.Fatal("expected a loud error for a values-only resource-generating FeatureRecipe, got nil")
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "has no render surface") {
-		t.Errorf("expected a 'no render surface' catalog error, got: %v", err)
+
+	// The synthesised FR Deployment lands under features/mon/, named for the
+	// feature instance ("mon") — not the host node ("api") — so it never
+	// collides with the host's own synthesised workload.
+	var frDep string
+	for k := range result.Files {
+		if strings.Contains(k, "features/mon/") && strings.Contains(k, "deployment.yaml") {
+			frDep = k
+			break
+		}
+	}
+	if frDep == "" {
+		t.Fatalf("missing synthesised FR deployment under features/mon/, keys: %v", fileKeys(result.Files))
+	}
+	if !strings.Contains(frDep, "features/mon/mon-") {
+		t.Errorf("FR deployment should be named for the instance (mon-*), got %q", frDep)
+	}
+	body := string(result.Files[frDep])
+	if !strings.Contains(body, "prom/mon:v1") {
+		t.Errorf("FR deployment missing FR image, got:\n%s", body)
+	}
+	if !strings.Contains(body, "name: mon") {
+		t.Errorf("FR deployment metadata.name should be the instance (mon), got:\n%s", body)
 	}
 }
 
@@ -427,14 +450,23 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 		},
 		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/db-password" {
-				// Credential FR: its valuesMapping references .secret_name AND
+				// Credential FR with artifacts: it emits a Secret manifest
+				// (an artifact-shaped resource) referencing .secret_name and
 				// the top-level .inject map populated by buildSecretInject.
+				art := types.OrderedMap[types.ArtifactEntry]{}
+				art.Set("secret.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .secret_name }}
+stringData:
+  binding: "{{ .inject.env.DB_PASSWORD }}"
+`})
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "db-password"},
 					Spec: types.FeatureRecipeSpec{
-						Provider:      "helm-chart",
-						Implements:    "core/db-password",
-						ValuesMapping: types.ValuesMapping{Inline: `{"image": "pw-gen:v1", "environment": {"SECRET_NAME": "{{ .secret_name }}", "BINDING": "{{ .inject.env.DB_PASSWORD }}"}}`},
+						Provider:   "helm",
+						Implements: "core/db-password",
+						Artifacts:  art,
 					},
 				}, true
 			}
@@ -442,18 +474,166 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 		},
 	}
 
-	// The credential FeatureRecipe here is values-only (no source): under the
-	// sourced-only FeatureRecipe contract it is a resource-generating FR with no
-	// render surface, so the build halts loudly rather than synthesising a
-	// Deployment from bare values. (A credential FR could generate its own
-	// resources from a workload spec only when FeatureRecipes gain
-	// synthesised/artifacts rendering.)
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
-	if err == nil {
-		t.Fatal("expected a loud error for a values-only credential FeatureRecipe, got nil")
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "has no render surface") {
-		t.Errorf("expected a 'no render surface' catalog error, got: %v", err)
+
+	// The credential FR artifact lands under secrets/<secretName>/.
+	var secretArt string
+	for k := range result.Files {
+		if strings.Contains(k, "secrets/root_password/") && strings.Contains(k, "secret.yaml") {
+			secretArt = k
+			break
+		}
+	}
+	if secretArt == "" {
+		t.Fatalf("missing credential FR artifact under secrets/root_password/, keys: %v", fileKeys(result.Files))
+	}
+	body := string(result.Files[secretArt])
+	// .secret_name propagates into the rendered manifest.
+	if !strings.Contains(body, "name: root_password") {
+		t.Errorf("expected .secret_name=root_password in rendered manifest, got:\n%s", body)
+	}
+	// .inject top-level was built from the IR secret entry's inject block.
+	if !strings.Contains(body, "ref:root_password") {
+		t.Errorf("expected .inject.env.DB_PASSWORD=ref:root_password in rendered manifest, got:\n%s", body)
+	}
+}
+
+// monitoringFeatureInput builds a RendererInput with a single "mon" feature
+// (core/monitoring) attached to node "api", carrying a scrape_port value.
+// Shared by the FeatureRecipe composed-kind and gate tests.
+func monitoringFeatureInput(t *testing.T) renderer.RendererInput {
+	t.Helper()
+	input := testInput()
+	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+		vals := types.OrderedMap[any]{}
+		vals.Set("scrape_port", float64(9090))
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("mon", types.IRFeatureEntry{Type: "core/monitoring", Values: vals})
+		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"mon"}}
+	return input
+}
+
+// hostWorkloadRecipeLookup returns a RecipeLookup whose host api-server Recipe
+// synthesises a trivial workload, with featureRecipe supplying the monitoring
+// FR under test.
+func hostWorkloadRecipeLookup(fr *types.FeatureRecipe) renderer.RecipeLookup {
+	return renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType == "core/server/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec: types.RecipeSpec{
+						Provider:   "helm",
+						Implements: "core/server/api-server",
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: myapp:latest
+`},
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if featureType == "core/monitoring" {
+				return fr, true
+			}
+			return nil, false
+		},
+	}
+}
+
+// TestRenderAll_FeatureRecipeComposedWorkloadAndArtifacts proves a FeatureRecipe
+// composes input kinds exactly as a Recipe does: a single FR declaring both
+// workload: and artifacts: emits the synthesised Deployment AND the artifact,
+// both under features/<instance>/.
+func TestRenderAll_FeatureRecipeComposedWorkloadAndArtifacts(t *testing.T) {
+	t.Parallel()
+	input := monitoringFeatureInput(t)
+	art := types.OrderedMap[types.ArtifactEntry]{}
+	art.Set("scrape-config.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scrape-config
+data:
+  port: "{{ .values.scrape_port }}"
+`})
+	fr := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
+		Spec: types.FeatureRecipeSpec{
+			Provider:   "helm",
+			Implements: "core/monitoring",
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: prom/mon:v1
+`},
+			Artifacts: art,
+		},
+	}
+	result, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), testHelmFactory())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	foundWorkload, foundArtifact := false, false
+	for k := range result.Files {
+		if !strings.Contains(k, "features/mon/") {
+			continue
+		}
+		if strings.Contains(k, "deployment.yaml") {
+			foundWorkload = true
+		}
+		if strings.Contains(k, "scrape-config.yaml") {
+			foundArtifact = true
+		}
+	}
+	if !foundWorkload {
+		t.Errorf("composed FR missing synthesised workload under features/mon/, keys: %v", fileKeys(result.Files))
+	}
+	if !foundArtifact {
+		t.Errorf("composed FR missing artifact under features/mon/, keys: %v", fileKeys(result.Files))
+	}
+}
+
+// TestRenderAll_FeatureRecipeUnsupportedInputKindGated proves the FeatureRecipe
+// render path runs the same central input-kind gate the component path does: a
+// FR declaring workload: bound to the helm-chart provider (which does not
+// implement workload synthesis) halts loudly with the uniform capability
+// diagnostic — not a silent skip or an engine internal error.
+func TestRenderAll_FeatureRecipeUnsupportedInputKindGated(t *testing.T) {
+	t.Parallel()
+	input := monitoringFeatureInput(t)
+	fr := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
+		Spec: types.FeatureRecipeSpec{
+			Provider:   "helm-chart",
+			Implements: "core/monitoring",
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: prom/mon:v1
+`},
+		},
+	}
+	// enginefactory.Dispatch routes helm-chart to the real helm-chart engine,
+	// whose Capabilities report Sourced only.
+	_, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), enginefactory.Dispatch)
+	if err == nil {
+		t.Fatal("expected a gate error for a synthesised FR on a sourced-only provider, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not support synthesised") {
+		t.Errorf("expected the uniform input-kind gate diagnostic, got: %v", err)
 	}
 }
 

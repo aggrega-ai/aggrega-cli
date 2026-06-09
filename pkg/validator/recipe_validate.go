@@ -15,10 +15,13 @@ import (
 // Recipe is admitted to the catalog map. Returns a *RecipeValidationError
 // (or nil on pass).
 //
-// Rules enforced here: 1, 2, 3, 5, 6 (chapter 16).
-// Rule 4 is enforced separately by ValidateRecipeProviderBinding after
-// Manifest resolution binds Recipe → Provider.
-// Rule 7 is enforced at emission time by Phase B.5.
+// Rules enforced here: 1, 5 (chapter 16), plus the eval-provider and
+// helm-chart provider constraints.
+// The workload-requires-provider-workloadSchema constraint is enforced at
+// render time by the central input-kind gate (a synthesised Recipe bound to a
+// provider that does not implement workload synthesis halts loudly there).
+// Rule 7 (cross-input-kind filename collision) is enforced at emission time by
+// Phase B.5.
 //
 // The eval-provider carve-out is two-sided:
 //
@@ -36,9 +39,6 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	}
 
 	if err := validateRecipeRule1(r, sourcePath); err != nil {
-		return err
-	}
-	if err := validateRecipeRule2(r, sourcePath); err != nil {
 		return err
 	}
 	if err := validateRecipeRule5(r, sourcePath); err != nil {
@@ -60,16 +60,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 // is to migrate the inline content to a file and reference it via
 // {$import:}.
 func validateRecipeHelmChartProvider(r *types.Recipe, sourcePath string) error {
-	if r.Spec.Provider != "helm-chart" || r.Spec.Artifacts.Len() == 0 {
-		return nil
-	}
-	var inlineKeys []string
-	for _, name := range r.Spec.Artifacts.Keys() {
-		entry, _ := r.Spec.Artifacts.Get(name)
-		if entry.Inline != "" {
-			inlineKeys = append(inlineKeys, name)
-		}
-	}
+	inlineKeys := helmChartInlineArtifactKeys(r.Spec.Provider, r.Spec.Artifacts)
 	if len(inlineKeys) == 0 {
 		return nil
 	}
@@ -79,9 +70,35 @@ func validateRecipeHelmChartProvider(r *types.Recipe, sourcePath string) error {
 		Version:     r.Metadata.Version,
 		Rule:        "helm-chart-inline-artifacts",
 		Description: "provider helm-chart does not support inline artifact entries",
-		Detail:      fmt.Sprintf("inline artifacts: %s; migrate the content to a file and reference it via {$import: <path>} so the file can be injected into the chart's templates/ directory", strings.Join(inlineKeys, ", ")),
-		Err:         ErrRecipeHelmChartInlineArtifacts,
+		Detail:      helmChartInlineArtifactsDetail(inlineKeys),
+		Err:         ErrHelmChartInlineArtifacts,
 	}
+}
+
+// helmChartInlineArtifactKeys returns the artifacts: map keys that use inline
+// content under the helm-chart provider — the one unsupportable artifacts
+// sub-case (an umbrella chart has no home for a standalone inline artifact; the
+// file must be {$import:}-ed so it lands in the chart's templates/). Empty
+// result means no violation. Shared by the Recipe and FeatureRecipe validators
+// so the provider constraint is enforced identically and at load for both.
+func helmChartInlineArtifactKeys(provider string, artifacts types.OrderedMap[types.ArtifactEntry]) []string {
+	if provider != "helm-chart" || artifacts.Len() == 0 {
+		return nil
+	}
+	var inlineKeys []string
+	for _, name := range artifacts.Keys() {
+		entry, _ := artifacts.Get(name)
+		if entry.Inline != "" {
+			inlineKeys = append(inlineKeys, name)
+		}
+	}
+	return inlineKeys
+}
+
+// helmChartInlineArtifactsDetail formats the shared remedy message naming the
+// offending inline keys.
+func helmChartInlineArtifactsDetail(inlineKeys []string) string {
+	return fmt.Sprintf("inline artifacts: %s; migrate the content to a file and reference it via {$import: <path>} so the file can be injected into the chart's templates/ directory", strings.Join(inlineKeys, ", "))
 }
 
 // validateRecipeEvalProvider enforces the eval-provider constraint: input-kind
@@ -137,29 +154,6 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 		Description: "valuesMapping requires source",
 		Detail:      "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
 		Err:         ErrRecipeRule1,
-	}
-}
-
-// validateRecipeRule2: source requires valuesMapping.
-//
-// A Recipe pointing at a Source with no valuesMapping has no overlay to
-// apply; the Recipe authors no Aggrega-side contribution beyond the raw
-// chart/module content.
-func validateRecipeRule2(r *types.Recipe, sourcePath string) error {
-	if sourceIsEmpty(r.Spec.Source) {
-		return nil
-	}
-	if !r.Spec.ValuesMapping.IsEmpty() {
-		return nil
-	}
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "2",
-		Description: "source requires valuesMapping",
-		Detail:      "declare a valuesMapping alongside source, or use a different input kind (workload, artifacts)",
-		Err:         ErrRecipeRule2,
 	}
 }
 

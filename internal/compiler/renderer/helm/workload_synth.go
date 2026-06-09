@@ -75,16 +75,19 @@ func (e *HelmEngine) SynthesizeWorkload(
 
 	labels := buildAggregaLabels(nodeCtx)
 	annotations := buildAggregaAnnotations(nodeCtx)
-	// File-key prefix derived uniformly with the sourced/sourceless paths via
-	// ProvenanceComponentID. Synthetic boundary-FR NodeIDs (with marker syntax
-	// `<>:@`) do not reach Phase B.4 synthesis today — HelmEngine.Render
-	// dispatches only sourced/sourceless — so for every node that reaches here
-	// LabelComponentID is empty and this resolves to the raw NodeID
-	// (byte-identical keys). Deriving it the same way keeps one rule across all
-	// four helm file-key sites, so the key stays filesystem-safe if synthesis
-	// ever becomes boundary-reachable.
-	keyID := renderer.ProvenanceComponentID(nodeCtx)
-	selectorLabels := map[string]string{"app": nodeCtx.NodeID}
+	// componentID is the single naming basis for every synthesized resource —
+	// file keys, selector labels, metadata.name, and the per-resource sub-names
+	// (containers, PVCs, services). It derives from ProvenanceComponentID:
+	// LabelComponentID when set, else the raw NodeID. For a component node
+	// LabelComponentID is empty, so this is the raw NodeID (byte-identical to
+	// the prior behavior). For a FeatureRecipe-synthesized workload the caller
+	// sets LabelComponentID to the sanitized FR-instance id, so the workload is
+	// named after the feature instance rather than the host component (whose
+	// NodeID the FR node otherwise carries) — this is what keeps an FR's
+	// synthesized Deployment from colliding with the host's own workload, and
+	// keeps a boundary-scope FR's marker-syntax NodeID out of K8s names.
+	componentID := renderer.ProvenanceComponentID(nodeCtx)
+	selectorLabels := map[string]string{"app": componentID}
 	resourceLabels := mergeLabels(selectorLabels, labels)
 	resourceAnnotations := nilIfEmpty(annotations)
 	namespace := renderer.NamespaceFromAnnotations(nodeCtx.Annotations)
@@ -92,17 +95,17 @@ func (e *HelmEngine) SynthesizeWorkload(
 	var out []renderer.EmittedFile
 
 	// Containers: translate each in author-order.
-	containers, err := translateContainers(w, nodeCtx.NodeID)
+	containers, err := translateContainers(w, componentID)
 	if err != nil {
 		return nil, err
 	}
-	initContainers, err := translateInitContainers(w, nodeCtx.NodeID)
+	initContainers, err := translateInitContainers(w, componentID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Pod-spec volumes (excludes persistentTemplate variants).
-	podVolumes := translatePodVolumes(w, nodeCtx.NodeID)
+	podVolumes := translatePodVolumes(w, componentID)
 
 	// Pod-level configuration: scheduling, podSecurityContext,
 	// serviceAccount, restartPolicy.
@@ -127,12 +130,12 @@ func (e *HelmEngine) SynthesizeWorkload(
 		ss := StatefulSet{
 			APIVersion: k8sStatefulSetAPIVersion,
 			Kind:       "StatefulSet",
-			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: StatefulSetSpec{
 				Replicas:             &replicas,
 				Selector:             &LabelSelector{MatchLabels: selectorLabels},
 				Template:             template,
-				VolumeClaimTemplates: translateVolumeClaimTemplates(w, nodeCtx.NodeID),
+				VolumeClaimTemplates: translateVolumeClaimTemplates(w, componentID),
 			},
 		}
 		body, err := marshalDeterministic(&ss, nodeCtx.YAMLIndent)
@@ -140,14 +143,14 @@ func (e *HelmEngine) SynthesizeWorkload(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
-			Name: keyID + "-statefulset.yaml",
+			Name: componentID + "-statefulset.yaml",
 			Body: body,
 		})
 	} else {
 		dep := Deployment{
 			APIVersion: k8sDeploymentAPIVersion,
 			Kind:       "Deployment",
-			Metadata:   ObjectMeta{Name: nodeCtx.NodeID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: DeploymentSpec{
 				Replicas: &replicas,
 				Selector: &LabelSelector{MatchLabels: selectorLabels},
@@ -159,14 +162,14 @@ func (e *HelmEngine) SynthesizeWorkload(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
 		out = append(out, renderer.EmittedFile{
-			Name: keyID + "-deployment.yaml",
+			Name: componentID + "-deployment.yaml",
 			Body: body,
 		})
 	}
 
 	// PVCs: one per persistent volume (NOT persistentTemplate; those
 	// become volumeClaimTemplates inside the StatefulSet spec).
-	pvcs := translatePersistentPVCs(w, nodeCtx.NodeID, namespace, resourceLabels, resourceAnnotations)
+	pvcs := translatePersistentPVCs(w, componentID, namespace, resourceLabels, resourceAnnotations)
 	for _, pvc := range pvcs {
 		body, err := marshalDeterministic(&pvc, nodeCtx.YAMLIndent)
 		if err != nil {
@@ -179,7 +182,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 	}
 
 	// Services: one per Workload.Services entry, in author-order.
-	services, err := translateServices(w, nodeCtx.NodeID, namespace, selectorLabels, resourceLabels, resourceAnnotations)
+	services, err := translateServices(w, componentID, namespace, selectorLabels, resourceLabels, resourceAnnotations)
 	if err != nil {
 		return nil, err
 	}
