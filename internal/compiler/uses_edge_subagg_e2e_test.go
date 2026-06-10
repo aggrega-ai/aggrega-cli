@@ -115,3 +115,28 @@ func TestUsesEdgeSubagg_UndeclaredSocketHalts(t *testing.T) {
 		t.Fatalf("want ErrUnknownUsesSocket for an undeclared socket on a sub-aggregate component; got %v", err)
 	}
 }
+
+// TestUsesEdgeSubagg_SubsystemWideFeatureProjects pins that a feature attached
+// subsystem-wide INSIDE a sub-aggregate projects its uses edge into the IR,
+// with the target namespaced to the flattened node ID — it was silently dropped
+// before the cascade was captured at flatten time against the sub-aggregate's
+// own subsystem tree.
+func TestUsesEdgeSubagg_SubsystemWideFeatureProjects(t *testing.T) {
+	t.Parallel()
+	result := pipelinetest.Build(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-scopefeat.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	var found bool
+	for _, e := range result.IRGraph.Spec.Edges {
+		if e.Source == "data.svc" && e.Socket == "peer" && e.OriginFeature == "core/sidecar" {
+			found = true
+			if e.Target != "data.store3" {
+				t.Errorf("subsystem-wide feature edge target = %q, want %q (childPrefix-namespaced)", e.Target, "data.store3")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected subsystem-wide-feature edge data.svc/peer (origin core/sidecar); got edges %v", result.IRGraph.Spec.Edges)
+	}
+}

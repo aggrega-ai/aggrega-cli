@@ -11,72 +11,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestFindComponent_TopLevel pins the top-level branch of the
-// component lookup. A component declared directly under
-// spec.components resolves without descending into subsystems.
-func TestFindComponent_TopLevel(t *testing.T) {
-	t.Parallel()
-	agg := &types.Aggregate{}
-	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server"})
-	got := findComponent(agg, "api")
-	if got == nil {
-		t.Fatal("expected non-nil ComponentInstance; got nil")
-	}
-	if got.Type != "core/server" {
-		t.Errorf("expected core/server; got %q", got.Type)
-	}
-}
-
-// TestFindComponent_SubsystemNested pins the subsystem-descent branch.
-// A component declared inside a subsystem resolves via the recursive
-// findComponentInSubsystem walker.
-func TestFindComponent_SubsystemNested(t *testing.T) {
-	t.Parallel()
-	agg := &types.Aggregate{}
-	innerComps := types.OrderedMap[types.ComponentInstance]{}
-	innerComps.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
-	inner := types.Subsystem{Components: innerComps}
-	agg.Spec.Subsystems.Set("data", inner)
-	got := findComponent(agg, "db")
-	if got == nil {
-		t.Fatal("expected non-nil ComponentInstance from subsystem")
-	}
-	if got.Type != "core/database/postgres" {
-		t.Errorf("expected postgres; got %q", got.Type)
-	}
-}
-
-// TestFindComponent_DeepNested pins the recursive descent into nested
-// subsystems. A component declared under a sub-subsystem resolves
-// through two levels of recursion.
-func TestFindComponent_DeepNested(t *testing.T) {
-	t.Parallel()
-	agg := &types.Aggregate{}
-	leafComps := types.OrderedMap[types.ComponentInstance]{}
-	leafComps.Set("deep", types.ComponentInstance{Type: "core/server"})
-	leaf := types.Subsystem{Components: leafComps}
-	midSubs := types.OrderedMap[types.Subsystem]{}
-	midSubs.Set("leaf-sub", leaf)
-	mid := types.Subsystem{Subsystems: midSubs}
-	agg.Spec.Subsystems.Set("outer", mid)
-	got := findComponent(agg, "deep")
-	if got == nil {
-		t.Fatal("expected non-nil from deep-nested subsystem")
-	}
-}
-
-// TestFindComponent_NotFoundReturnsNil pins the not-found path:
-// a name absent from top-level components AND every subsystem
-// returns nil rather than panic. The Build pipeline's edge phase
-// relies on this contract.
-func TestFindComponent_NotFoundReturnsNil(t *testing.T) {
-	t.Parallel()
-	agg := &types.Aggregate{}
-	if got := findComponent(agg, "missing"); got != nil {
-		t.Errorf("expected nil; got %+v", got)
-	}
-}
-
 // TestCopyVisited_DeepCopy pins the deep-copy contract of the
 // cycle-detection map duplicator. The result must be writable
 // without affecting the source.
@@ -290,7 +224,7 @@ func TestFlattenSubsystem_NestedSubsystemRecursion(t *testing.T) {
 		FeatureAttachments: map[string][]FeatureAttachment{},
 		SecretAttachments:  map[string][]SecretAttachment{},
 	}
-	if err := flattenSubsystem(result, "", ".outer", "", mid); err != nil {
+	if err := flattenSubsystem(result, "", ".outer", "", mid, nil); err != nil {
 		t.Fatalf("flattenSubsystem: %v", err)
 	}
 	if _, ok := result.Nodes.Get("leaf"); !ok {

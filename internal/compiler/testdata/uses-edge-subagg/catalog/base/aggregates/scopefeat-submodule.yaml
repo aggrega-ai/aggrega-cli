@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: scopefeat-submodule
+  version: "1.0.0"
+spec:
+  components:
+    store3:
+      type: core/db
+  subsystems:
+    tier:
+      # A subsystem-wide feature inside the sub-aggregate, carrying a uses edge
+      # to a sub-aggregate-root sibling. The root-walk subsystemFeatureUses misses
+      # it today (it walks the root Aggregate's subsystems, not the sub-aggregate's).
+      features:
+        shared:
+          type: core/sidecar
+          uses:
+            peer:
+              link:
+                target: store3
+      components:
+        svc:
+          type: core/api

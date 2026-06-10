@@ -111,7 +111,7 @@ func flattenAggregate(
 	// Walk subsystems in author order (recursive)
 	for subName, sub := range agg.Spec.Subsystems.All() {
 		subPath := qualifiedID(subsystemPath, subName)
-		if err := flattenSubsystem(result, prefix, subPath, sourceFile, sub); err != nil {
+		if err := flattenSubsystem(result, prefix, subPath, sourceFile, sub, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -185,29 +185,49 @@ func flattenAggregate(
 // node map would overwrite an existing entry. The collision is impossible
 // by current schema (root-level instance names cannot contain dots) but
 // the guard defends against future schema loosening or validation bypass.
-func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile string, sub types.Subsystem) error {
+func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile string, sub types.Subsystem, ancestorScopeFeatures []scopeFeatureUses) error {
+	// Extend the inherited subsystem-feature cascade with this subsystem's own
+	// subsystem-wide features (author order), so a component at this level —
+	// and every nested level — carries the features of all subsystems on its
+	// path. Mirrors the outer-to-inner accumulation the edge pass previously
+	// recomputed by walking the root Aggregate; capturing it here against the
+	// subsystem tree actually being flattened is what makes it correct for a
+	// sub-aggregate's own subsystems.
+	// Build a fresh slice (do not append into the ancestor's backing array, or
+	// sibling subsystems would see each other's features through a shared array).
+	scopeFeatures := make([]scopeFeatureUses, len(ancestorScopeFeatures), len(ancestorScopeFeatures)+sub.Features.Len())
+	copy(scopeFeatures, ancestorScopeFeatures)
+	for fname, feat := range sub.Features.All() {
+		scopeFeatures = append(scopeFeatures, scopeFeatureUses{
+			instanceName: fname,
+			featureType:  feat.Type,
+			uses:         feat.Uses,
+		})
+	}
+
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
 		if existing, exists := result.Nodes.Get(nodeID); exists {
 			return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 		}
 		result.Nodes.Set(nodeID, &TopologyNode{
-			InstanceID:      nodeID,
-			ComponentType:   comp.Type,
-			Values:          comp.Values,
-			SelfInject:      comp.Inject,
-			Uses:            comp.Uses,
-			SubsystemPath:   subsystemPath,
-			SourceAggregate: prefix,
-			SourceFile:      sourceFile,
+			InstanceID:       nodeID,
+			ComponentType:    comp.Type,
+			Values:           comp.Values,
+			SelfInject:       comp.Inject,
+			Uses:             comp.Uses,
+			ScopeFeatureUses: scopeFeatures,
+			SubsystemPath:    subsystemPath,
+			SourceAggregate:  prefix,
+			SourceFile:       sourceFile,
 		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
 
-	// Recurse into nested subsystems
+	// Recurse into nested subsystems, carrying the accumulated cascade.
 	for subName, nested := range sub.Subsystems.All() {
 		nestedPath := subsystemPath + "." + subName
-		if err := flattenSubsystem(result, prefix, nestedPath, sourceFile, nested); err != nil {
+		if err := flattenSubsystem(result, prefix, nestedPath, sourceFile, nested, scopeFeatures); err != nil {
 			return err
 		}
 	}

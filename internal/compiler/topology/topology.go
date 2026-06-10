@@ -88,7 +88,16 @@ type TopologyNode struct {
 	// makes edge normalisation uniform across root, subsystem, and sub-aggregate
 	// origins.
 	Uses            types.OrderedMap[types.UsesSocketValue]
-	SubsystemPath   string
+	// ScopeFeatureUses is the cascade of subsystem-wide feature attachments that
+	// apply to this node — accumulated during flattening from every subsystem on
+	// the node's path (outer to inner, author order), carried on the node so the
+	// edge pass projects them without re-walking a subsystem tree. Carrying it
+	// here (rather than walking the root Aggregate at edge time) is what makes
+	// subsystem-wide features declared inside a sub-aggregate project correctly:
+	// the cascade is captured against the sub-aggregate's own tree at flatten
+	// time, and the node's SourceAggregate prefix namespaces the edge targets.
+	ScopeFeatureUses []scopeFeatureUses
+	SubsystemPath    string
 	BoundaryPath    string
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
 	// SourceFile is the Aggregate file where this node was authored,
@@ -393,24 +402,30 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			}
 		}
 
-		// Scope-wide feature uses. A feature attached subsystem-wide or
-		// boundary-wide contributes its uses-edge from every component in
-		// the scope — the "every component here depends on shared target
-		// D" pattern declared once at the scope rather than repeated on
-		// each component. The edge stamps the scope feature as its origin,
-		// so the consumer is injected the target's provides exactly as for
-		// a per-component feature uses-edge. The scope feature's own
-		// values/infra cascade is handled separately in the IR builder and
-		// is unaffected by this edge projection. Edges flow in
-		// outer-to-inner cascade order, author order within each level,
-		// mirroring the IR feature cascade.
-		for _, sf := range subsystemFeatureUses(agg, node.SubsystemPath) {
+		// Scope-wide feature uses. A feature attached subsystem-wide
+		// contributes its uses-edge from every component in the scope — the
+		// "every component here depends on shared target D" pattern declared
+		// once at the scope rather than repeated on each component. The edge
+		// stamps the scope feature as its origin, so the consumer is injected
+		// the target's provides exactly as for a per-component feature
+		// uses-edge. The scope feature's own values/infra cascade is handled
+		// separately in the IR builder and is unaffected by this edge
+		// projection. The applicable cascade is carried on the node
+		// (ScopeFeatureUses), accumulated at flatten time against the subsystem
+		// tree actually flattened — so a subsystem-wide feature inside a
+		// sub-aggregate projects correctly — in outer-to-inner cascade order,
+		// author order within each level. Targets are namespaced with the
+		// node's prefix (identity for root/subsystem).
+		for _, sf := range node.ScopeFeatureUses {
 			if sf.uses.Len() == 0 {
 				continue
 			}
 			subEdges, err := normalizeUses(sf.uses, nodeID, sf.featureType, sf.instanceName)
 			if err != nil {
 				return nil, err
+			}
+			for i := range subEdges {
+				subEdges[i].Target = qualifiedID(node.SourceAggregate, subEdges[i].Target)
 			}
 			edges = append(edges, subEdges...)
 		}
@@ -625,35 +640,6 @@ type scopeFeatureUses struct {
 	uses         types.OrderedMap[types.UsesSocketValue]
 }
 
-// subsystemFeatureUses walks the subsystem chain named by subsystemPath
-// (the dotted path stamped on each node during flattening) from outer to
-// inner, returning every subsystem-level feature attachment in author
-// order. Mirrors the IR feature cascade's subsystem level so the uses-edge
-// projection and the values/infra cascade agree on which features apply to
-// a node and in what order.
-func subsystemFeatureUses(agg *types.Aggregate, subsystemPath string) []scopeFeatureUses {
-	if agg == nil {
-		return nil
-	}
-	parts := splitScopePath(subsystemPath)
-	if len(parts) == 0 {
-		return nil
-	}
-	var result []scopeFeatureUses
-	current := agg.Spec.Subsystems
-	for _, part := range parts {
-		sub, ok := current.Get(part)
-		if !ok {
-			break
-		}
-		for fname, feat := range sub.Features.All() {
-			result = append(result, scopeFeatureUses{instanceName: fname, featureType: feat.Type, uses: feat.Uses})
-		}
-		current = sub.Subsystems
-	}
-	return result
-}
-
 // boundaryFeatureUses walks the Release boundary chain named by
 // boundaryPath (the "/"-joined boundary-name chain stamped on each node)
 // from outer to inner, returning every boundary-wide feature attachment in
@@ -724,38 +710,3 @@ func splitScopePath(path string) []string {
 	return parts
 }
 
-// findComponent looks up a ComponentInstance by its (unflattened) name in
-// the root Aggregate's top-level components and subsystem hierarchy. Does
-// not search sub-aggregates: they have already been flattened into the
-// nodes map by Phase 1 and their components are addressed by dot-notation
-// IDs that don't appear as keys in the root Aggregate's spec.Components.
-// findComponent's nodeID parameter is therefore expected to name either a
-// top-level root-aggregate component or a subsystem-nested component;
-// nodeIDs containing a dot from sub-aggregate imports return nil here
-// (deliberate — those nodes carry no Component metadata visible at the
-// root level, so the per-node `uses` lookup in Build's edge phase
-// correctly skips them).
-func findComponent(agg *types.Aggregate, name string) *types.ComponentInstance {
-	if comp, ok := agg.Spec.Components.Get(name); ok {
-		return &comp
-	}
-	// Search subsystems
-	for _, sub := range agg.Spec.Subsystems.All() {
-		if c := findComponentInSubsystem(sub, name); c != nil {
-			return c
-		}
-	}
-	return nil
-}
-
-func findComponentInSubsystem(sub types.Subsystem, name string) *types.ComponentInstance {
-	if comp, ok := sub.Components.Get(name); ok {
-		return &comp
-	}
-	for _, nested := range sub.Subsystems.All() {
-		if c := findComponentInSubsystem(nested, name); c != nil {
-			return c
-		}
-	}
-	return nil
-}
