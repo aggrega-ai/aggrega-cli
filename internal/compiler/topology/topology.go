@@ -5,6 +5,7 @@ package topology
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -432,11 +433,12 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					}
 					if idx >= 0 {
 						// Configure an existing edge: merge infra only, never
-						// retarget. A conflicting target is left for the guardrail
-						// pass; skip the infra merge so a rejected retarget never
-						// half-applies.
+						// retarget. A conflicting target is a Loud Guardrail — the
+						// developer owns the architecture they declared.
 						if entry.Target != "" && entry.Target != edges[idx].Target {
-							continue
+							return nil, fmt.Errorf(
+								"release edge %s/%s/%s retargets developer-declared target %q to %q: %w",
+								nodeID, socket, alias, edges[idx].Target, entry.Target, ErrReleaseEdgeRetarget)
 						}
 						if entry.Infra.Len() > 0 {
 							merged := types.OrderedMap[any]{}
@@ -451,9 +453,14 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 						continue
 					}
 					// No matching edge: create one when a target is given,
-					// stamped Release-origin. A targetless unmatched entry is a
-					// dangling/undeclared case the guardrail pass surfaces.
+					// stamped Release-origin. A targetless unmatched entry is an
+					// undeclared-socket case the resolver guard surfaces at Step 1.
 					if entry.Target != "" {
+						if _, exists := flat.Nodes.Get(entry.Target); !exists {
+							return nil, fmt.Errorf(
+								"release edge %s/%s/%s targets %q, which is not a component in the topology: %w",
+								nodeID, socket, alias, entry.Target, ErrReleaseEdgeDanglingTarget)
+						}
 						edges = append(edges, NormalizedEdge{
 							Source:        nodeID,
 							Target:        entry.Target,

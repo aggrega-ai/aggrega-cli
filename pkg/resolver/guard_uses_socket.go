@@ -9,6 +9,102 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// releaseEdgeEntry is one operator-authored per-edge connection collected from
+// a Release: the consuming node ID, the socket and alias the entry sits under,
+// the boundary path it was authored in (for diagnostics), and the entry itself.
+type releaseEdgeEntry struct {
+	nodeID       string
+	socket       string
+	alias        string
+	boundaryPath string
+	entry        types.ReleaseUsesEntry
+}
+
+// collectReleaseEdgeEntries walks the Release boundary tree (outer to inner,
+// author order) and flattens every per-edge `uses` entry on every boundary
+// component into a deterministic slice. Shared by the Step-1 guards that need
+// the Release edge surface — undeclared-socket validation and per-edge infra
+// conformance — so both agree on which entries exist and in what order.
+func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
+	if release == nil {
+		return nil
+	}
+	var out []releaseEdgeEntry
+	var walk func(path string, b types.Boundary)
+	walk = func(path string, b types.Boundary) {
+		for nodeID, bc := range b.Components.All() {
+			for socket, aliases := range bc.Uses.All() {
+				for alias, e := range aliases.All() {
+					out = append(out, releaseEdgeEntry{
+						nodeID:       nodeID,
+						socket:       socket,
+						alias:        alias,
+						boundaryPath: path,
+						entry:        e,
+					})
+				}
+			}
+		}
+		for name, nested := range b.Boundaries.All() {
+			child := name
+			if path != "" {
+				child = path + "/" + name
+			}
+			walk(child, nested)
+		}
+	}
+	for name, b := range release.Spec.Boundaries.All() {
+		walk(name, b)
+	}
+	return out
+}
+
+// guardReleaseUsesSocket is the Release-side mirror of guardUsesSocket: it
+// validates that every socket a Release per-edge `uses` entry names exists in
+// the consuming component's catalog usesSchema, firing ErrUnknownUsesSocket per
+// undeclared socket. The check shifts left to Step 1 — where the resolver owns
+// the socket-allowlist machinery and the catalog — so a Release wiring an edge
+// into a non-existent socket halts before topology draws it.
+//
+// The consuming node's component type is resolved from the Aggregate's
+// resolver-visible instances (top-level + subsystem). A Release edge on a node
+// whose type the resolver cannot see — a sub-aggregate component, which loads
+// only at topology — skips here; that coverage boundary is shared with the
+// per-edge conformance gate.
+func guardReleaseUsesSocket(agg *types.Aggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
+	if agg == nil || release == nil || catalog.Component == nil {
+		return nil
+	}
+	entity := fmt.Sprintf("Release %s", release.Metadata.Name)
+	typeOf := map[string]string{}
+	for _, p := range collectComponentInstances(agg) {
+		typeOf[p.name] = p.inst.Type
+	}
+
+	var errs []*ResolverError
+	for _, ref := range collectReleaseEdgeEntries(release) {
+		compType, ok := typeOf[ref.nodeID]
+		if !ok {
+			continue
+		}
+		catComp, found := catalog.Component(compType)
+		if !found {
+			continue
+		}
+		if _, ok := catComp.Spec.UsesSchema.Get(ref.socket); !ok {
+			errs = append(errs, &ResolverError{
+				Entity: entity,
+				Field:  fmt.Sprintf(".spec.boundaries[%q].components[%q].uses[%q]", ref.boundaryPath, ref.nodeID, ref.socket),
+				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
+					ref.socket, compType, catComp.Spec.UsesSchema.Keys()),
+				Err: ErrUnknownUsesSocket,
+			})
+		}
+	}
+	sortResolverErrors(errs)
+	return errs
+}
+
 // guardUsesSocket validates that every socket name in uses blocks exists as a key
 // in the source catalog entity's usesSchema. Components without usesSchema cannot
 // accept uses declarations. This guarantees that every edge drawn in Step 2 has a

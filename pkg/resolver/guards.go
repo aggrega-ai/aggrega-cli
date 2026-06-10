@@ -61,6 +61,9 @@ type CatalogLookup struct {
 //  5. requiredFeatures completeness — each declared requirement satisfied.
 //  6. Release feature merge — type agreement on dual-declared features.
 //  7. Required uses-socket population — usesSchema.required enforcement.
+//  8. Schema conformance — authored values/infra pillars match the declared schema.
+//  9. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
+//  10. Per-edge conformance — per-edge values/infra match the socket's per-edge schema.
 //
 // All violations are collected; no guard short-circuits the others. Within a
 // guard, errors sort by (Entity, Field) for byte-identical output across
@@ -72,6 +75,7 @@ type CatalogLookup struct {
 func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra, parameters map[string]any) []*ResolverError {
 	var errs []*ResolverError
 	errs = append(errs, guardUsesSocket(agg, catalog)...)
+	errs = append(errs, guardReleaseUsesSocket(agg, release, catalog)...)
 	errs = append(errs, guardSelfInject(agg, catalog)...)
 	errs = append(errs, guardInjectKeys(agg, catalog)...)
 	errs = append(errs, guardCredentialPartition(agg, catalog)...)
@@ -79,5 +83,6 @@ func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLook
 	errs = append(errs, guardFeatureMerge(agg, release)...)
 	errs = append(errs, guardRequiredUsesSockets(agg, catalog)...)
 	errs = append(errs, guardSchemaConformance(agg, catalog, boundaryInfra, parameters)...)
+	errs = append(errs, guardEdgeConformance(agg, release, catalog, parameters)...)
 	return errs
 }

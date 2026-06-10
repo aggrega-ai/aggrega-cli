@@ -4,6 +4,7 @@
 package topology
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -436,11 +437,11 @@ func TestBuild_ReleaseCreatesEdgeForUnmatchedSocket(t *testing.T) {
 	}
 }
 
-// TestBuild_ReleaseConflictingTargetLeavesEdgeUntouched pins the configure
-// arm's no-retarget discipline: a Release entry that names a target differing
-// from an existing edge's target neither retargets nor merges infra — the
-// edge is left intact for the downstream guardrail to detect the retarget.
-func TestBuild_ReleaseConflictingTargetLeavesEdgeUntouched(t *testing.T) {
+// TestBuild_ReleaseConflictingTargetHalts pins the no-retarget Loud Guardrail:
+// a Release entry that names a target differing from an existing
+// developer-declared edge's target halts with ErrReleaseEdgeRetarget — the
+// developer owns the architecture they declared.
+func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
 	uses := types.OrderedMap[types.UsesSocketValue]{}
@@ -449,9 +450,32 @@ func TestBuild_ReleaseConflictingTargetLeavesEdgeUntouched(t *testing.T) {
 	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
 	agg.Spec.Components.Set("other", types.ComponentInstance{Type: "core/database/postgres"})
 
+	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "other"}))
+	rr := &resolver.ResolveResult{
+		Aggregate:     agg,
+		Release:       rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+	}
+	_, err := Build(BuildConfig{ResolveResult: rr})
+	if !errors.Is(err, ErrReleaseEdgeRetarget) {
+		t.Fatalf("want ErrReleaseEdgeRetarget; got %v", err)
+	}
+}
+
+// TestBuild_ReleaseSameTargetConfigures pins the configure-vs-retarget
+// distinction: a Release entry naming the SAME target as an existing edge is a
+// configure (merge infra), not a retarget — no halt, infra merges.
+func TestBuild_ReleaseSameTargetConfigures(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+
 	relInfra := types.OrderedMap[any]{}
 	relInfra.Set("x", 1)
-	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "other", Infra: relInfra}))
+	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "db", Infra: relInfra}))
 	rr := &resolver.ResolveResult{
 		Aggregate:     agg,
 		Release:       rel,
@@ -459,17 +483,34 @@ func TestBuild_ReleaseConflictingTargetLeavesEdgeUntouched(t *testing.T) {
 	}
 	result, err := Build(BuildConfig{ResolveResult: rr})
 	if err != nil {
-		t.Fatalf("Build: %v", err)
+		t.Fatalf("same-target configure must not halt; got %v", err)
 	}
 	e := findEdge(result.Edges, "api", "databases", "db")
 	if e == nil {
 		t.Fatalf("expected edge api/databases/db; got %v", result.Edges)
 	}
-	if e.Target != "db" {
-		t.Errorf("Target = %q, want db (conflicting Release target must not retarget)", e.Target)
+	if v, ok := e.Infra.Get("x"); !ok || v != 1 {
+		t.Errorf("same-target configure should merge infra; infra.x = %v (ok=%v)", v, ok)
 	}
-	if _, ok := e.Infra.Get("x"); ok {
-		t.Errorf("infra merged on a conflicting-target entry; merge must be skipped")
+}
+
+// TestBuild_ReleaseDanglingTargetHalts pins the dangling-target Loud Guardrail:
+// a Release entry wiring a new edge to a non-existent component halts with
+// ErrReleaseEdgeDanglingTarget.
+func TestBuild_ReleaseDanglingTargetHalts(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server"})
+
+	rel := mkReleaseUses("api", relSocketAlias("caches", "primary", types.ReleaseUsesEntry{Target: "ghost"}))
+	rr := &resolver.ResolveResult{
+		Aggregate:     agg,
+		Release:       rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+	}
+	_, err := Build(BuildConfig{ResolveResult: rr})
+	if !errors.Is(err, ErrReleaseEdgeDanglingTarget) {
+		t.Fatalf("want ErrReleaseEdgeDanglingTarget; got %v", err)
 	}
 }
 

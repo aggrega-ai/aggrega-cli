@@ -69,6 +69,19 @@ type UsesSchemaEntry struct {
 	Selector string   `json:"selector" yaml:"selector"`
 	Required bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject   []string `json:"inject,omitempty" yaml:"inject,omitempty"`
+
+	// ValueSchema is the per-edge developer-config contract for this socket:
+	// the JSON Schema 2020-12 content an edge's `values` block (authored in
+	// the Aggregate) is validated against. InfraSchema is the operator-config
+	// counterpart for an edge's `infra` block (authored in the Release). Both
+	// accept the same three authoring modes as the entity-level Schema field
+	// (inline content / `$import` / `$ref`), dispatched by compactform.Compile.
+	// Omission means the socket declares no per-edge contract for that pillar;
+	// any edge config for that pillar is then unvalidated (opt-in conformance).
+	// These contracts are per-edge and are not composed into the consuming
+	// node's own values schema.
+	ValueSchema yaml.Node `json:"valueSchema,omitempty" yaml:"valueSchema,omitempty"`
+	InfraSchema yaml.Node `json:"infraSchema,omitempty" yaml:"infraSchema,omitempty"`
 }
 
 // SecretSlot declares one credential slot in a Component or Feature secretsSchema.

@@ -145,6 +145,129 @@ func guardSchemaConformance(
 	return errs
 }
 
+// guardEdgeConformance validates per-edge connection-scoped config against the
+// source socket's declared per-edge contract, closed. A developer-authored
+// `values` block on a verbose `uses` entry (Aggregate) is validated against the
+// socket's valueSchema; an operator-authored `infra` block on a Release `uses`
+// entry is validated against the socket's infraSchema. Both route through the
+// shared [ValidatePillarConformance] entry — the same one the component and
+// attachment gates use — so an authored per-edge schema is interpreted
+// identically wherever the value originates. Default-aware and parameter-aware
+// via that shared entry. A socket that declares no contract for the pillar
+// skips (opt-in conformance). Each violation wraps ErrSchemaConformance, its
+// Field naming the edge (consumer, socket, alias), the pillar, and the leaf
+// path.
+//
+// The Release infra walk resolves the consuming node's component type from the
+// Aggregate's resolver-visible instances (top-level and subsystem components).
+// A Release edge on a node the resolver cannot see a type for — a sub-aggregate
+// component, which loads only at topology — skips here; that coverage boundary
+// is the same one the undeclared-socket guard carries.
+func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, parameters map[string]any) []*ResolverError {
+	if agg == nil || catalog.Component == nil {
+		return nil
+	}
+	var errs []*ResolverError
+
+	// Developer per-edge values: walk every component instance's verbose uses
+	// entries (top-level + subsystem) in author order.
+	aggEntity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
+	for _, p := range collectComponentInstances(agg) {
+		for socket, sv := range p.inst.Uses.All() {
+			for alias, e := range sv.Verbose.All() {
+				if e.Values.Len() == 0 {
+					continue
+				}
+				compiled, ok := compileSocketPillarSchema(catalog, p.inst.Type, socket, "values")
+				if !ok {
+					continue
+				}
+				field := fmt.Sprintf(".spec.components[%q].uses[%q][%q]", p.name, socket, alias)
+				errs = append(errs, ValidatePillarConformance(
+					compiled, "values", e.Values, parameters,
+					aggEntity, field, "the socket valueSchema")...)
+			}
+		}
+	}
+
+	// Operator per-edge infra: walk Release boundary uses entries.
+	if release != nil {
+		relEntity := fmt.Sprintf("Release %s", release.Metadata.Name)
+		typeOf := map[string]string{}
+		for _, p := range collectComponentInstances(agg) {
+			typeOf[p.name] = p.inst.Type
+		}
+		for _, ref := range collectReleaseEdgeEntries(release) {
+			if ref.entry.Infra.Len() == 0 {
+				continue
+			}
+			compType, ok := typeOf[ref.nodeID]
+			if !ok {
+				continue
+			}
+			compiled, ok := compileSocketPillarSchema(catalog, compType, ref.socket, "infra")
+			if !ok {
+				continue
+			}
+			field := fmt.Sprintf(".spec.boundaries[%q].components[%q].uses[%q][%q]",
+				ref.boundaryPath, ref.nodeID, ref.socket, ref.alias)
+			errs = append(errs, ValidatePillarConformance(
+				compiled, "infra", ref.entry.Infra, parameters,
+				relEntity, field, "the socket infraSchema")...)
+		}
+	}
+
+	sortResolverErrors(errs)
+	return errs
+}
+
+// compileSocketPillarSchema compiles a socket's per-edge contract for one
+// pillar so it can be fed to the shared [ValidatePillarConformance] entry,
+// which expects a pillar-keyed schema (properties.<pillar>). The socket's
+// valueSchema / infraSchema is authored as bare pillar content (a field →
+// constraint map), so it is wrapped under a synthetic <pillar> key before
+// compilation. Returns false when the component type is unknown, the socket is
+// undeclared, the socket declares no schema for the pillar (Kind == 0), or the
+// content fails to compile.
+func compileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar string) (compactform.Schema, bool) {
+	catComp, found := catalog.Component(compType)
+	if !found {
+		return nil, false
+	}
+	sock, ok := catComp.Spec.UsesSchema.Get(socket)
+	if !ok {
+		return nil, false
+	}
+	var node *yaml.Node
+	switch pillar {
+	case "values":
+		node = &sock.ValueSchema
+	case "infra":
+		node = &sock.InfraSchema
+	default:
+		return nil, false
+	}
+	if node.Kind == 0 {
+		return nil, false
+	}
+	wrapper := &yaml.Node{
+		Kind: yaml.MappingNode,
+		Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: pillar},
+			node,
+		},
+	}
+	var opts []compactform.CompileOption
+	if len(catalog.SchemaLibraries) > 0 {
+		opts = append(opts, compactform.WithSchemaLibraries(catalog.SchemaLibraries))
+	}
+	compiled, err := compactform.Compile(wrapper, opts...)
+	if err != nil {
+		return nil, false
+	}
+	return compiled, true
+}
+
 // ValidatePillarConformance validates a resolved or authored pillar instance
 // (values or infra) against the named pillar of an already-compiled
 // Component-or-Feature schema, closed. It is the shared schema-conformance

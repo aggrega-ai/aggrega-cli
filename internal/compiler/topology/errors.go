@@ -36,6 +36,23 @@ var (
 	// chain.
 	ErrMaxDepth = errors.New("max sub-aggregate nesting depth exceeded")
 
+	// ErrReleaseEdgeRetarget fires from the Release edge pass when a Release
+	// per-edge `uses` entry whose (consumer, socket, alias) matches an existing
+	// developer-declared edge supplies a different target. A Release may
+	// configure an edge (add per-edge infra) or wire an edge into a
+	// declared-but-unbound socket, but it may not redirect an edge the developer
+	// already declared — the developer owns the architecture they authored. A
+	// Release entry that names the same target, or omits the target, is a
+	// configure and is permitted. The wrapped error names the edge and both the
+	// declared and the Release-supplied target.
+	ErrReleaseEdgeRetarget = errors.New("release edge retargets a developer-declared edge")
+
+	// ErrReleaseEdgeDanglingTarget fires from the Release edge pass when a
+	// Release per-edge `uses` entry wires a new edge to a target component that
+	// is not present in the resolved topology. The wrapped error names the edge
+	// and the missing target so the operator can correct the reference.
+	ErrReleaseEdgeDanglingTarget = errors.New("release edge target does not exist")
+
 	// ErrSubAggregateNameCollision fires from flattenAggregate when a Set
 	// operation on the flat node map would overwrite an existing entry —
 	// a condition impossible by the current Aggregate schema (root-level

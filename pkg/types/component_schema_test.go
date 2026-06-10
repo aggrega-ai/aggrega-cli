@@ -142,3 +142,82 @@ spec:
 		t.Errorf("round-trip lost $ref URI; output:\n%s", string(out))
 	}
 }
+
+// TestUsesSchemaEntry_ValueInfraSchema_RoundTrip pins the per-edge socket
+// contract fields: a usesSchema socket declaring inline valueSchema and
+// infraSchema round-trips through YAML, populating both yaml.Node fields,
+// alongside the socket's selector.
+func TestUsesSchemaEntry_ValueInfraSchema_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	in := `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server/api
+  version: "1.0.0"
+spec:
+  usesSchema:
+    databases:
+      selector: "component.aggrega.ai/type=stateful-server"
+      valueSchema:
+        pool_size: { type: integer, minimum: 1, maximum: 100 }
+      infraSchema:
+        storage_class: { type: string }
+`
+	var c Component
+	if err := yaml.Unmarshal([]byte(in), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	entry, ok := c.Spec.UsesSchema.Get("databases")
+	if !ok {
+		t.Fatal("usesSchema socket `databases` not populated")
+	}
+	if entry.ValueSchema.Kind == 0 {
+		t.Error("ValueSchema not populated from `valueSchema:` field")
+	}
+	if entry.InfraSchema.Kind == 0 {
+		t.Error("InfraSchema not populated from `infraSchema:` field")
+	}
+
+	out, err := yaml.Marshal(&c)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	outStr := string(out)
+	for _, frag := range []string{"valueSchema", "pool_size", "infraSchema", "storage_class"} {
+		if !strings.Contains(outStr, frag) {
+			t.Errorf("round-trip lost fragment %q; output:\n%s", frag, outStr)
+		}
+	}
+}
+
+// TestUsesSchemaEntry_SchemaFields_OmitemptyEludeZeroValue verifies a socket
+// authored without valueSchema/infraSchema emits no spurious null lines.
+func TestUsesSchemaEntry_SchemaFields_OmitemptyEludeZeroValue(t *testing.T) {
+	t.Parallel()
+
+	in := `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server/api
+  version: "1.0.0"
+spec:
+  usesSchema:
+    databases:
+      selector: "component.aggrega.ai/type=stateful-server"
+`
+	var c Component
+	if err := yaml.Unmarshal([]byte(in), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := yaml.Marshal(&c)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	outStr := string(out)
+	for _, frag := range []string{"valueSchema", "infraSchema"} {
+		if strings.Contains(outStr, frag) {
+			t.Errorf("unexpected %q in output for socket without per-edge schema:\n%s", frag, outStr)
+		}
+	}
+}

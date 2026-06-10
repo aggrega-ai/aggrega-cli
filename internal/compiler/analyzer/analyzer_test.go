@@ -115,6 +115,40 @@ func TestAnalyze_SelectorFail(t *testing.T) {
 	}
 }
 
+// TestAnalyze_SelectorFail_ReleaseCreatedEdge pins that the Step-4 selector
+// gate is origin-agnostic: a Release-created edge (OriginRelease) violating its
+// source socket's selector surfaces the same AnalysisError as a developer
+// edge — the analyzer walks all IR edges with no special-casing by origin.
+func TestAnalyze_SelectorFail_ReleaseCreatedEdge(t *testing.T) {
+	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set(types.ComponentTypeLabel, "resource")
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("cache", types.IRNode{Component: "core/redis", Labels: labels2})
+
+	graph := &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: nodes,
+			Edges: []types.IREdge{
+				// Origin-agnostic: this edge was wired by a Release.
+				{Source: "api", Target: "cache", Socket: "databases", OriginRelease: true},
+			},
+		},
+	}
+
+	result := Analyze(graph, analyzerCatalog())
+	if len(result.Errors) != 1 {
+		t.Fatalf("expected 1 selector error for a Release-created edge, got %d", len(result.Errors))
+	}
+	e := result.Errors[0]
+	if e.Source != "api" || e.Target != "cache" || e.Socket != "databases" {
+		t.Errorf("error: %+v", e)
+	}
+}
+
 func analyzerCatalogWithFeature(feat types.Feature) resolver.CatalogLookup {
 	base := analyzerCatalog()
 	return resolver.CatalogLookup{
