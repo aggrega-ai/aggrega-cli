@@ -312,7 +312,14 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 		for _, e := range guardErrs {
 			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
 		}
-		return fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
+		// Mirror the pipeline boundary: carry the per-violation slice so the
+		// guard sentinel is errors.Is-recoverable; the summary text is
+		// unchanged ("Step 1: N guard violation(s)").
+		return &resolver.MultiResolverError{
+			Entity:     "Step 1",
+			Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
+			Violations: guardErrs,
+		}
 	}
 
 	topoResult, err := topology.Build(topology.BuildConfig{

@@ -246,7 +246,16 @@ func ResolveAndFlatten(
 		for _, e := range guardErrs {
 			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
 		}
-		return resolveResult, nil, fmt.Errorf("Step 1: %d guard violation(s)", len(guardErrs))
+		// Carry the per-violation slice on the returned error so a caller can
+		// errors.Is the specific guard sentinel at the pipeline boundary
+		// (parity with the analyzer path, which joins). The summary text is
+		// unchanged: MultiResolverError.Error() renders "Step 1: N guard
+		// violation(s)".
+		return resolveResult, nil, &resolver.MultiResolverError{
+			Entity:     "Step 1",
+			Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
+			Violations: guardErrs,
+		}
 	}
 
 	if err := ctx.Err(); err != nil {

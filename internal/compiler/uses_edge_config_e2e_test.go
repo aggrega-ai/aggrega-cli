@@ -19,6 +19,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 const usesEdgeMergedPath = "dist/cluster/compose/docker-compose.yaml"
@@ -117,17 +118,16 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 		t.Parallel()
 		// release-bad-infra.yaml is identical to the green positive release
 		// except the per-edge infra pool_size is 999 (the socket infraSchema
-		// caps it at 100). So a Step-1 guard halt here is the per-edge infra
-		// conformance violation. The pipeline summarises Step-1 guard violations
-		// as a count without wrapping the underlying sentinel (see the deferred
-		// observation), so this asserts the surfaced form — exactly one Step-1
-		// guard violation — rather than errors.Is(ErrSchemaConformance).
+		// caps it at 100) — an out-of-range per-edge infra conformance
+		// violation. The Step-1 guard halt is errors.Is-recoverable at the
+		// pipeline boundary; the count-substring check stays as belt-and-braces
+		// that exactly one guard fired (the only authored delta from green).
 		_, err := pipelinetest.BuildE(t, pipelinetest.Input{
 			ReleasePath:  "testdata/uses-edge-config/release-bad-infra.yaml",
 			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 		})
-		if err == nil {
-			t.Fatal("want a Step-1 conformance halt for an out-of-range per-edge infra; got nil")
+		if !errors.Is(err, resolver.ErrSchemaConformance) {
+			t.Fatalf("want ErrSchemaConformance for an out-of-range per-edge infra; got %v", err)
 		}
 		if !strings.Contains(err.Error(), "1 guard violation") {
 			t.Fatalf("want exactly one Step-1 guard violation; got %v", err)
