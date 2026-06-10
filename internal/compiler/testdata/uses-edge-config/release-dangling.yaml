@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-dangling
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # Wires the caches socket to a component that does not exist — a
+          # dangling Release-edge target.
+          uses:
+            caches:
+              primary:
+                target: ghost-cache
+        db: {}
+        redis: {}

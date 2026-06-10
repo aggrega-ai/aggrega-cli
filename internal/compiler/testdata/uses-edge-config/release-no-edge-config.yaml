@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-bare
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      # Identical deployment, but the operator attaches no per-edge config and
+      # wires no extra edge. Used to prove the target (db) renders identically
+      # whether or not a consumer attaches per-edge config.
+      components:
+        api: {}
+        db: {}
+        redis: {}

@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-retarget
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # The developer wired databases.main -> db. Naming a different target
+          # here is a retarget of a developer-declared edge — a hard halt.
+          uses:
+            databases:
+              main:
+                target: redis
+        db: {}
+        redis: {}

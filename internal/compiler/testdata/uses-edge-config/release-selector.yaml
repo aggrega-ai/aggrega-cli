@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-selector
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # Wires the caches socket (selector: type=cache) to db (type=
+          # stateful-server). The Release-created edge fails the socket selector
+          # at the analyzer gate exactly as an Aggregate-authored edge would —
+          # the gate is origin-agnostic.
+          uses:
+            caches:
+              primary:
+                target: db
+        db: {}
+        redis: {}

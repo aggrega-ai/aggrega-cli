@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: uses-edge-config-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      # Developer wires the databases socket and tunes the connection with
+      # per-edge `values` (conforming to the socket's valueSchema). The `caches`
+      # socket is declared on the component but left unbound here — the Release
+      # may wire it.
+      uses:
+        databases:
+          main:
+            target: db
+            values:
+              protocol: grpc
+              statement_cache: 200
+    db:
+      type: core/db
+    redis:
+      type: core/cache

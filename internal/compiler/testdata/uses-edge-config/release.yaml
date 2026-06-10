@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # Operator configures the developer-declared databases edge with
+          # per-edge `infra` (a configure, not a retarget — same/omitted target),
+          # and wires the declared-but-unbound `caches` socket to an existing
+          # component (an edge creation within a declared socket).
+          uses:
+            databases:
+              main:
+                infra:
+                  pool_size: 50
+                  tls_mode: mutual
+            caches:
+              primary:
+                target: redis
+                infra:
+                  pool_size: 25
+        db: {}
+        redis: {}

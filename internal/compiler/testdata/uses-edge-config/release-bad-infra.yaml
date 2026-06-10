@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-bad-infra
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # pool_size 999 exceeds the socket infraSchema maximum (100) — a
+          # per-edge infra conformance violation.
+          uses:
+            databases:
+              main:
+                infra:
+                  pool_size: 999
+        db: {}
+        redis: {}

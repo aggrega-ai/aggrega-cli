@@ -1,0 +1,34 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-recipe
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/api
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 8080
+  # The workload reads connection-scoped per-edge config from the topology pipe:
+  # developer `values` and operator `infra` on the `databases` edge (alias "main"),
+  # and operator `infra` on the Release-wired `caches` edge (alias "primary"). The
+  # nested `with` guards keep rendering clean when an edge or pillar is absent
+  # (the fields are omitempty in the enriched edge).
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: api:1.0
+        variables:
+          DB_PROTOCOL: '{{ with index .context.uses "main" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}'
+          DB_POOL_SIZE: '{{ with index .context.uses "main" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
+          DB_TLS_MODE: '{{ with index .context.uses "main" }}{{ with .infra }}{{ .tls_mode }}{{ end }}{{ end }}'
+          CACHE_POOL: '{{ with index .context.uses "primary" }}{{ with .infra }}{{ .pool_size }}{{ end }}{{ end }}'
+        ports:
+          p: 8080
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          p: 8080

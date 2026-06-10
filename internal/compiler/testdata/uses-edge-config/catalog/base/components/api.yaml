@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/api
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  usesSchema:
+    databases:
+      selector: "component.aggrega.ai/type=stateful-server"
+      inject: ["env"]
+      valueSchema:
+        protocol: { type: string, enum: [grpc, http], default: grpc }
+        statement_cache: { type: integer, minimum: 0, default: 0 }
+      infraSchema:
+        pool_size: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        tls_mode: { type: string, enum: [disable, require, mutual], default: require }
+    caches:
+      required: false
+      selector: "component.aggrega.ai/type=cache"
+      infraSchema:
+        pool_size: { type: integer, minimum: 1, default: 5 }
+  schema:
+    provides:
+      host: { type: string, required: true }
+      port: { type: integer, required: true }

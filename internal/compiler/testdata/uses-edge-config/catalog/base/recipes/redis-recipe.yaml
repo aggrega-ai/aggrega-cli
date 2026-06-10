@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: redis-recipe
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/cache
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 6379
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: redis:7
+        ports:
+          p: 6379
+    services:
+      cache:
+        type: ClusterIP
+        ports:
+          p: 6379
