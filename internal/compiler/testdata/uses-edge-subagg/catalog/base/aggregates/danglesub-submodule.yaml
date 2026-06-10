@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: danglesub-submodule
+  version: "1.0.0"
+spec:
+  components:
+    svc:
+      type: core/api
+      uses:
+        databases:
+          main:
+            target: ghost   # no such component — a dangling sub-aggregate edge

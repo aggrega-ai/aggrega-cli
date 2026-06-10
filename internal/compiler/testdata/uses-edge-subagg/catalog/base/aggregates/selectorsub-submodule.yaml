@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selectorsub-submodule
+  version: "1.0.0"
+spec:
+  components:
+    svc:
+      type: core/api
+      uses:
+        databases:                 # socket selector: type=stateful-server
+          main:
+            target: cache          # core/cache is type=cache — wrong type
+    cache:
+      type: core/cache

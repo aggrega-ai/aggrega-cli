@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata: { name: dangle-release, environment: local, version: "1.0.0" }
+spec:
+  aggregate: dangle-app
+  manifest: subagg-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        data.svc: {}

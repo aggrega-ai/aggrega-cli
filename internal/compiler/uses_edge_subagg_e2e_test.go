@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -205,5 +206,72 @@ func TestUsesEdgeSubagg_PredicateHaltsUnderSubAggParams(t *testing.T) {
 	})
 	if !errors.Is(err, resolver.ErrSchemaConformance) {
 		t.Fatalf("want ErrSchemaConformance: mode 'fast' violates the predicate under allowed_mode 'slow'; got %v", err)
+	}
+}
+
+// TestUsesEdgeSubagg_DanglingTargetHalts pins the origin-agnostic dangling
+// sweep at depth: a sub-aggregate component wiring an edge to a non-existent
+// target halts with ErrDanglingUsesTarget (the target namespaces to data.ghost,
+// which is not a node).
+func TestUsesEdgeSubagg_DanglingTargetHalts(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-dangle.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if !errors.Is(err, topology.ErrDanglingUsesTarget) {
+		t.Fatalf("want ErrDanglingUsesTarget for a dangling sub-aggregate edge; got %v", err)
+	}
+}
+
+// TestUsesEdgeSubagg_SelectorTripsOnWrongType pins the origin-agnostic selector
+// gate at depth: a sub-aggregate edge through the databases socket (selector
+// type=stateful-server) to a core/cache target (type=cache) trips the analyzer
+// selector check. The reserved selector sentinel is not wrapped, so the
+// diagnostic surfaces in the build error message.
+func TestUsesEdgeSubagg_SelectorTripsOnWrongType(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-selector.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if err == nil {
+		t.Fatal("want a selector violation for a wrong-typed sub-aggregate target; got nil")
+	}
+	if !strings.Contains(err.Error(), "selector") {
+		t.Fatalf("want a selector-violation diagnostic; got %v", err)
+	}
+}
+
+// TestUsesEdgeSubagg_Deterministic pins Invariant 8 across the flattening
+// boundary: repeated builds of the sub-aggregate fixture produce byte-identical
+// rendered output and edge ordering.
+func TestUsesEdgeSubagg_Deterministic(t *testing.T) {
+	t.Parallel()
+	build := func() (string, []string) {
+		r := pipelinetest.Build(t, pipelinetest.Input{
+			ReleasePath:  "testdata/uses-edge-subagg/release.yaml",
+			CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+		})
+		edges := make([]string, 0, len(r.IRGraph.Spec.Edges))
+		for _, e := range r.IRGraph.Spec.Edges {
+			edges = append(edges, e.Source+"|"+e.Socket+"|"+e.Alias+"|"+e.Target)
+		}
+		return string(r.Artifacts["dist/cluster/compose/docker-compose.yaml"]), edges
+	}
+	firstOut, firstEdges := build()
+	for i := 0; i < 3; i++ {
+		out, edges := build()
+		if out != firstOut {
+			t.Errorf("run %d: rendered output drifted", i)
+		}
+		if len(edges) != len(firstEdges) {
+			t.Fatalf("run %d: edge count drift %d vs %d", i, len(edges), len(firstEdges))
+		}
+		for j := range edges {
+			if edges[j] != firstEdges[j] {
+				t.Errorf("run %d: edge order drift at %d: %q vs %q", i, j, edges[j], firstEdges[j])
+			}
+		}
 	}
 }

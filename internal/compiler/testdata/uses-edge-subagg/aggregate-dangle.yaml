@@ -1,0 +1,6 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata: { name: dangle-app, version: "1.0.0" }
+spec:
+  aggregates:
+    data: { type: danglesub-submodule }
