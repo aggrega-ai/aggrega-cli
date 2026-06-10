@@ -575,22 +575,20 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 // flattened sub-aggregate components (nodes with a non-empty SourceAggregate)
 // and their edges. Root and subsystem components are guarded at Step 1; this
 // closes the coverage gap for components that exist only after sub-aggregate
-// flattening. Validation is predicate-inert (structural constraints only):
-// the sub-aggregate's own resolved parameter context is not available here, so
-// conditional x-aggrega-when / x-aggrega-validate predicates are not evaluated.
-// Returns violations in flat.Nodes author order then edge order — deterministic.
+// flattening. Each sub-aggregate node carries its own resolved parameter map
+// (ResolvedParameters), so conformance is fully parameter-aware: conditional
+// x-aggrega-when / x-aggrega-validate predicates evaluate against the
+// sub-aggregate's parameter context, the same as root components evaluate
+// against theirs. Returns violations in flat.Nodes author order then edge
+// order — deterministic.
 func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg BuildConfig) []*resolver.ResolverError {
 	catalog := cfg.CatalogLookup
 	if catalog.Component == nil {
 		return nil
 	}
-	var params map[string]any
 	entity := "Aggregate"
-	if cfg.ResolveResult != nil {
-		params = cfg.ResolveResult.Parameters
-		if cfg.ResolveResult.Aggregate != nil {
-			entity = fmt.Sprintf("Aggregate %s", cfg.ResolveResult.Aggregate.Metadata.Name)
-		}
+	if cfg.ResolveResult != nil && cfg.ResolveResult.Aggregate != nil {
+		entity = fmt.Sprintf("Aggregate %s", cfg.ResolveResult.Aggregate.Metadata.Name)
 	}
 
 	var errs []*resolver.ResolverError
@@ -605,30 +603,33 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				entity, fmt.Sprintf(".%s.uses", nodeID), node.Uses, node.ComponentType, catalog)...)
 		}
 
-		// Component values (structural).
+		// Component values — validated against the sub-aggregate's own resolved
+		// parameter context (carried on the node), so parameter-dependent
+		// predicates evaluate correctly rather than predicate-inert.
 		if compiled, ok := resolver.CompileComponentSchema(catalog, node.ComponentType); ok {
-			errs = append(errs, resolver.ValidatePillarConformanceStructural(
-				compiled, "values", node.Values, params, entity,
+			errs = append(errs, resolver.ValidatePillarConformance(
+				compiled, "values", node.Values, node.ResolvedParameters, entity,
 				fmt.Sprintf(".%s", nodeID), "the Component schema")...)
 		}
 
-		// Per-edge developer values (structural), authored on the node's uses.
+		// Per-edge developer values authored on the node's uses.
 		for socket, sv := range node.Uses.All() {
 			for alias, e := range sv.Verbose.All() {
 				if e.Values.Len() == 0 {
 					continue
 				}
 				if compiled, ok := resolver.CompileSocketPillarSchema(catalog, node.ComponentType, socket, "values"); ok {
-					errs = append(errs, resolver.ValidatePillarConformanceStructural(
-						compiled, "values", e.Values, params, entity,
+					errs = append(errs, resolver.ValidatePillarConformance(
+						compiled, "values", e.Values, node.ResolvedParameters, entity,
 						fmt.Sprintf(".%s.uses[%q][%q]", nodeID, socket, alias), "the socket valueSchema")...)
 				}
 			}
 		}
 	}
 
-	// Per-edge operator infra (structural): the Release-merged infra lives on the
-	// resolved edge. Validate edges whose source is a sub-aggregate node.
+	// Per-edge operator infra: the Release-merged infra lives on the resolved
+	// edge. Validate edges whose source is a sub-aggregate node, against the
+	// source node's resolved parameter context.
 	for _, e := range edges {
 		if e.Infra.Len() == 0 {
 			continue
@@ -638,8 +639,8 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			continue
 		}
 		if compiled, ok := resolver.CompileSocketPillarSchema(catalog, src.ComponentType, e.Socket, "infra"); ok {
-			errs = append(errs, resolver.ValidatePillarConformanceStructural(
-				compiled, "infra", e.Infra, params, entity,
+			errs = append(errs, resolver.ValidatePillarConformance(
+				compiled, "infra", e.Infra, src.ResolvedParameters, entity,
 				fmt.Sprintf(".%s.uses[%q][%q]", e.Source, e.Socket, e.Alias), "the socket infraSchema")...)
 		}
 	}

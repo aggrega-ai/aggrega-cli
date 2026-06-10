@@ -176,3 +176,34 @@ func TestUsesEdgeSubagg_ParamContractViolationHalts(t *testing.T) {
 		t.Fatalf("want ErrParameterContractViolation for an out-of-enum sub-aggregate param; got %v", err)
 	}
 }
+
+// TestUsesEdgeSubagg_PredicatePassesUnderSubAggParams pins predicate-aware
+// conformance for sub-aggregate components: a value legal under the
+// sub-aggregate's resolved parameters passes. The gated component's mode value
+// "fast" must equal the allowed_mode parameter, which the parent sets to "fast".
+func TestUsesEdgeSubagg_PredicatePassesUnderSubAggParams(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-predsub-ok.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if err != nil {
+		t.Fatalf("value legal under the sub-aggregate's params should pass; got %v", err)
+	}
+}
+
+// TestUsesEdgeSubagg_PredicateHaltsUnderSubAggParams pins the other half: the
+// same value, illegal under a different sub-aggregate parameter value, halts.
+// The parent sets allowed_mode "slow"; the component's mode "fast" fails the
+// x-aggrega-validate predicate — evaluated against the SUB-AGGREGATE's params
+// (it was silently skipped before predicate-aware conformance).
+func TestUsesEdgeSubagg_PredicateHaltsUnderSubAggParams(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-predsub-bad.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if !errors.Is(err, resolver.ErrSchemaConformance) {
+		t.Fatalf("want ErrSchemaConformance: mode 'fast' violates the predicate under allowed_mode 'slow'; got %v", err)
+	}
+}

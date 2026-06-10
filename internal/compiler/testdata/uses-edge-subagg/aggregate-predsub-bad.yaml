@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: predsub-bad-app
+  version: "1.0.0"
+spec:
+  aggregates:
+    data:
+      type: predsub-submodule
+      parameters:
+        allowed_mode: slow

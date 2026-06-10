@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/gated
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      mode:
+        type: string
+        validate: '{{ eq . (param "allowed_mode") }}'
+        validateMessage: "mode must equal the allowed_mode parameter"
+    provides:
+      host: { type: string, required: true }
+      port: { type: integer, required: true }

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: predsub-submodule
+  version: "1.0.0"
+spec:
+  parameters:
+    allowed_mode:
+      type: string
+      default: fast
+  components:
+    g:
+      type: core/gated
+      values:
+        mode: fast
