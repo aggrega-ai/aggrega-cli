@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: badsocket-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: badsocket-app
+  manifest: subagg-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        mod.bad: {}
+        mod.store2: {}

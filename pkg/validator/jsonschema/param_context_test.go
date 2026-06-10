@@ -141,3 +141,52 @@ tier:
 		t.Errorf("param with no parameters should yield nil and fail the eq; got %v", rpt.Findings)
 	}
 }
+
+// TestSkipPredicates_InertConditionalStructuralFires pins predicate-inert mode:
+// a when-gated then: constraint that fires normally is dropped under
+// SkipPredicates (the conditional is treated as not-applicable, NOT evaluated),
+// while an unconditional structural constraint still fires.
+func TestSkipPredicates_InertConditionalStructuralFires(t *testing.T) {
+	t.Parallel()
+	src := `
+plain: { type: integer }
+secret:
+  when: '{{ eq (param "env") "prod" }}'
+  then:
+    value: { type: string, required: true }
+`
+	v, err := New(mustCompileAndConvert(t, src))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// secret present but missing the then-required value (conditional violation).
+	condOnly := map[string]any{"secret": map[string]any{}}
+
+	// Baseline (env=prod, predicates ON): the then: constraint applies → finding(s).
+	base, err := v.Validate(condOnly, &Context{Parameters: map[string]any{"env": "prod"}})
+	if err != nil {
+		t.Fatalf("Validate baseline: %v", err)
+	}
+	if len(base.Findings) == 0 {
+		t.Fatal("baseline: env=prod should make the then: constraint apply")
+	}
+
+	// Predicate-inert: the conditional must be dropped — no findings for this instance.
+	inert, err := v.Validate(condOnly, &Context{Parameters: map[string]any{"env": "prod"}, SkipPredicates: true})
+	if err != nil {
+		t.Fatalf("Validate inert: %v", err)
+	}
+	if len(inert.Findings) != 0 {
+		t.Errorf("SkipPredicates must drop the conditional then: constraint; got %v", inert.Findings)
+	}
+
+	// Unconditional structural constraint still fires under SkipPredicates.
+	structural := map[string]any{"plain": "not-an-int"}
+	rpt, err := v.Validate(structural, &Context{Parameters: map[string]any{"env": "prod"}, SkipPredicates: true})
+	if err != nil {
+		t.Fatalf("Validate structural: %v", err)
+	}
+	if len(rpt.Findings) == 0 {
+		t.Error("unconditional type violation must still fire under SkipPredicates")
+	}
+}

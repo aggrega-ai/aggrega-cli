@@ -121,7 +121,7 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	for compName, comp := range agg.Spec.Components.All() {
 		// Validate component uses against Component usesSchema
 		if comp.Uses.Len() > 0 && catalog.Component != nil {
-			errs = append(errs, validateUsesAgainstSchema(
+			errs = append(errs, ValidateUsesAgainstSchema(
 				entity,
 				fmt.Sprintf(".spec.components[%q].uses", compName),
 				comp.Uses,
@@ -178,7 +178,7 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 
 	for compName, comp := range sub.Components.All() {
 		if comp.Uses.Len() > 0 && catalog.Component != nil {
-			errs = append(errs, validateUsesAgainstSchema(
+			errs = append(errs, ValidateUsesAgainstSchema(
 				entity,
 				fmt.Sprintf("%s.components[%q].uses", path, compName),
 				comp.Uses,
@@ -222,7 +222,7 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 	return errs
 }
 
-// validateUsesAgainstSchema validates a component instance's uses block
+// ValidateUsesAgainstSchema validates a component instance's uses block
 // against the catalog Component's usesSchema. Two failure modes:
 //
 //   - The catalog Component declares no usesSchema (empty). Any uses
@@ -236,7 +236,7 @@ func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog 
 //
 // Silently returns nil when the component type is not in the catalog —
 // unknown-type reporting belongs to other guards.
-func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], compType string, catalog CatalogLookup) []*ResolverError {
+func ValidateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], compType string, catalog CatalogLookup) []*ResolverError {
 	catComp, found := catalog.Component(compType)
 	if !found {
 		return nil // catalog not available, skip
@@ -272,7 +272,7 @@ func validateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[t
 }
 
 // validateFeatureUsesAgainstSchema is the Feature-side mirror of
-// validateUsesAgainstSchema. Same two failure modes (no usesSchema =
+// ValidateUsesAgainstSchema. Same two failure modes (no usesSchema =
 // declarations rejected; non-empty usesSchema = each socket must exist
 // as a key) and same silent-skip on unknown catalog Feature type. Used
 // for both feature attachments (.features) and secret attachments

@@ -46,6 +46,16 @@ type Context struct {
 	// parent object, Surround is the parent object's instance value.
 	// At the root, Surround is the instance itself.
 	Surround any
+
+	// SkipPredicates requests predicate-inert validation: the conditional
+	// extension keywords (x-aggrega-when: / x-aggrega-validate:) are NOT
+	// evaluated, and every when-gated constraint is treated as not-applicable
+	// (its findings are dropped without evaluating the predicate). Only the
+	// unconditional structural constraints (type, range, enum, required,
+	// closed-ness) produce findings. This is for callers that lack the correct
+	// parameter context for the predicates and must validate structure only
+	// rather than evaluate predicates against a wrong (or empty) context.
+	SkipPredicates bool
 }
 
 // New constructs a Validator for the given schema. Eager pre-resolution:

@@ -80,6 +80,21 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 	// patterns that the walk covers fully.
 	a.deterministicWalk(instance, "", rpt)
 
+	// Predicate-inert mode: the caller lacks the correct parameter context for
+	// the conditional extensions, so do not evaluate them. The deterministic
+	// walk (Step 1) already validated the unconditional structural constraints;
+	// here every when-gated subtree is dropped as not-applicable (the same
+	// drop the falsy branch performs, but without evaluating the predicate —
+	// so a conditional constraint neither fires unconditionally nor is checked
+	// against a wrong context), and x-aggrega-validate is skipped entirely.
+	if ctx != nil && ctx.SkipPredicates {
+		for _, wn := range a.whenNodes {
+			rpt.Findings = filterOutPath(rpt.Findings, joinPath(wn.instancePath))
+		}
+		rpt.sort()
+		return rpt, nil
+	}
+
 	// Step 2: x-aggrega-when: filter pass.
 	// Process shallowest-first so an outer falsy predicate consumes
 	// any nested predicates inside its (no-longer-applicable) then:

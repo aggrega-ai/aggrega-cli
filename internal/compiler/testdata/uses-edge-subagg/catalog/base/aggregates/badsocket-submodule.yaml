@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: badsocket-submodule
+  version: "1.0.0"
+spec:
+  components:
+    # `bad` authors a socket the core/api usesSchema does not declare
+    # (valid sockets are databases / caches). The target exists (store2),
+    # so the dangling sweep passes and the undeclared-socket guard is what
+    # fires — proving the socket allowlist now covers sub-aggregate components.
+    bad:
+      type: core/api
+      uses:
+        nonexistent:
+          x:
+            target: store2
+    store2:
+      type: core/db

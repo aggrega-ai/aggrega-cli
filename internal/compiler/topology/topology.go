@@ -511,6 +511,24 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
+	// Guard sub-aggregate components post-flatten. The Step-1 resolver guards
+	// see only the root Aggregate's Components + Subsystems, never the loaded
+	// sub-aggregate components — which exist only here, after flattening. Run
+	// the exported resolver validators over the sub-aggregate nodes (and their
+	// edges) so their sockets, values, and per-edge config are checked like any
+	// other. Predicate-inert: the sub-aggregate's own parameter context is not
+	// resolved, so only context-independent structural constraints are checked
+	// (conditional x-aggrega predicates are validated where the context exists).
+	if cfg.ResolveResult != nil {
+		if subErrs := guardSubAggregateNodes(flat, edges, cfg); len(subErrs) > 0 {
+			return nil, &resolver.MultiResolverError{
+				Entity:     "Step 2 (sub-aggregate conformance)",
+				Summary:    fmt.Sprintf("%d sub-aggregate guard violation(s)", len(subErrs)),
+				Violations: subErrs,
+			}
+		}
+	}
+
 	return &TopologyResult{
 		Nodes:              flat.Nodes,
 		Edges:              edges,
@@ -518,6 +536,81 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		SecretAttachments:  flat.SecretAttachments,
 		ExportedComponents: flat.ExportedComponents,
 	}, nil
+}
+
+// guardSubAggregateNodes runs the resolver's conformance validators over the
+// flattened sub-aggregate components (nodes with a non-empty SourceAggregate)
+// and their edges. Root and subsystem components are guarded at Step 1; this
+// closes the coverage gap for components that exist only after sub-aggregate
+// flattening. Validation is predicate-inert (structural constraints only):
+// the sub-aggregate's own resolved parameter context is not available here, so
+// conditional x-aggrega-when / x-aggrega-validate predicates are not evaluated.
+// Returns violations in flat.Nodes author order then edge order — deterministic.
+func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg BuildConfig) []*resolver.ResolverError {
+	catalog := cfg.CatalogLookup
+	if catalog.Component == nil {
+		return nil
+	}
+	var params map[string]any
+	entity := "Aggregate"
+	if cfg.ResolveResult != nil {
+		params = cfg.ResolveResult.Parameters
+		if cfg.ResolveResult.Aggregate != nil {
+			entity = fmt.Sprintf("Aggregate %s", cfg.ResolveResult.Aggregate.Metadata.Name)
+		}
+	}
+
+	var errs []*resolver.ResolverError
+	for nodeID, node := range flat.Nodes.All() {
+		if node.SourceAggregate == "" {
+			continue // root / subsystem components are guarded at Step 1
+		}
+
+		// Socket allowlist: every uses socket must exist in the component's usesSchema.
+		if node.Uses.Len() > 0 {
+			errs = append(errs, resolver.ValidateUsesAgainstSchema(
+				entity, fmt.Sprintf(".%s.uses", nodeID), node.Uses, node.ComponentType, catalog)...)
+		}
+
+		// Component values (structural).
+		if compiled, ok := resolver.CompileComponentSchema(catalog, node.ComponentType); ok {
+			errs = append(errs, resolver.ValidatePillarConformanceStructural(
+				compiled, "values", node.Values, params, entity,
+				fmt.Sprintf(".%s", nodeID), "the Component schema")...)
+		}
+
+		// Per-edge developer values (structural), authored on the node's uses.
+		for socket, sv := range node.Uses.All() {
+			for alias, e := range sv.Verbose.All() {
+				if e.Values.Len() == 0 {
+					continue
+				}
+				if compiled, ok := resolver.CompileSocketPillarSchema(catalog, node.ComponentType, socket, "values"); ok {
+					errs = append(errs, resolver.ValidatePillarConformanceStructural(
+						compiled, "values", e.Values, params, entity,
+						fmt.Sprintf(".%s.uses[%q][%q]", nodeID, socket, alias), "the socket valueSchema")...)
+				}
+			}
+		}
+	}
+
+	// Per-edge operator infra (structural): the Release-merged infra lives on the
+	// resolved edge. Validate edges whose source is a sub-aggregate node.
+	for _, e := range edges {
+		if e.Infra.Len() == 0 {
+			continue
+		}
+		src, ok := flat.Nodes.Get(e.Source)
+		if !ok || src.SourceAggregate == "" {
+			continue
+		}
+		if compiled, ok := resolver.CompileSocketPillarSchema(catalog, src.ComponentType, e.Socket, "infra"); ok {
+			errs = append(errs, resolver.ValidatePillarConformanceStructural(
+				compiled, "infra", e.Infra, params, entity,
+				fmt.Sprintf(".%s.uses[%q][%q]", e.Source, e.Socket, e.Alias), "the socket infraSchema")...)
+		}
+	}
+	return errs
 }
 
 // scopeFeatureUses carries the three fields the edge projection needs

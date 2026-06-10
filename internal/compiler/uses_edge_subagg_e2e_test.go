@@ -10,10 +10,12 @@
 package compiler_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 const subaggCatalog = "testdata/uses-edge-config/catalog/base"
@@ -80,5 +82,36 @@ func TestUsesEdgeSubagg_PerEdgeConfigReachesConsumer(t *testing.T) {
 		if !strings.Contains(merged, want) {
 			t.Errorf("sub-aggregate consumer output missing %q\n--- merged ---\n%s", want, merged)
 		}
+	}
+}
+
+// TestUsesEdgeSubagg_NonConformingInfraHalts pins the post-flatten guard
+// coverage: a non-conforming per-edge infra (pool_size 999 over the socket
+// max of 100) on a sub-aggregate component's edge now halts with
+// ErrSchemaConformance. It built clean before sub-aggregate guard coverage —
+// this is the probe from the verification run, now caught.
+func TestUsesEdgeSubagg_NonConformingInfraHalts(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-bad-infra.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if !errors.Is(err, resolver.ErrSchemaConformance) {
+		t.Fatalf("want ErrSchemaConformance for an out-of-range per-edge infra on a sub-aggregate edge; got %v", err)
+	}
+}
+
+// TestUsesEdgeSubagg_UndeclaredSocketHalts pins socket-allowlist coverage for
+// sub-aggregate components: a component inside a sub-aggregate authoring a
+// socket its type's usesSchema does not declare halts with ErrUnknownUsesSocket
+// (the target exists, so this is the socket guard, not the dangling sweep).
+func TestUsesEdgeSubagg_UndeclaredSocketHalts(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-badsocket.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if !errors.Is(err, resolver.ErrUnknownUsesSocket) {
+		t.Fatalf("want ErrUnknownUsesSocket for an undeclared socket on a sub-aggregate component; got %v", err)
 	}
 }

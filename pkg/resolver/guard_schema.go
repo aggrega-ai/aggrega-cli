@@ -82,31 +82,9 @@ func guardSchemaConformance(
 		if e, seen := compiledCache[compType]; seen {
 			return e.schema, e.ok
 		}
-		// Prefer the composed effective schema for an extends-ing Component, so
-		// an inherited constraint is enforced on the child; fall back to
-		// compiling the authored schema for a non-extends Component.
-		if catalog.EffectiveSchema != nil {
-			if eff, ok := catalog.EffectiveSchema(compType); ok {
-				compiledCache[compType] = compiledEntry{schema: eff, ok: true}
-				return eff, true
-			}
-		}
-		catComp, found := catalog.Component(compType)
-		if !found || catComp.Spec.Schema.Kind == 0 {
-			compiledCache[compType] = compiledEntry{}
-			return nil, false
-		}
-		var opts []compactform.CompileOption
-		if len(catalog.SchemaLibraries) > 0 {
-			opts = append(opts, compactform.WithSchemaLibraries(catalog.SchemaLibraries))
-		}
-		compiled, err := compactform.Compile(&catComp.Spec.Schema, opts...)
-		if err != nil {
-			compiledCache[compType] = compiledEntry{}
-			return nil, false
-		}
-		compiledCache[compType] = compiledEntry{schema: compiled, ok: true}
-		return compiled, true
+		compiled, ok := CompileComponentSchema(catalog, compType)
+		compiledCache[compType] = compiledEntry{schema: compiled, ok: ok}
+		return compiled, ok
 	}
 
 	var errs []*ResolverError
@@ -178,7 +156,7 @@ func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog 
 				if e.Values.Len() == 0 {
 					continue
 				}
-				compiled, ok := compileSocketPillarSchema(catalog, p.inst.Type, socket, "values")
+				compiled, ok := CompileSocketPillarSchema(catalog, p.inst.Type, socket, "values")
 				if !ok {
 					continue
 				}
@@ -205,7 +183,7 @@ func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog 
 			if !ok {
 				continue
 			}
-			compiled, ok := compileSocketPillarSchema(catalog, compType, ref.socket, "infra")
+			compiled, ok := CompileSocketPillarSchema(catalog, compType, ref.socket, "infra")
 			if !ok {
 				continue
 			}
@@ -221,7 +199,7 @@ func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog 
 	return errs
 }
 
-// compileSocketPillarSchema compiles a socket's per-edge contract for one
+// CompileSocketPillarSchema compiles a socket's per-edge contract for one
 // pillar so it can be fed to the shared [ValidatePillarConformance] entry,
 // which expects a pillar-keyed schema (properties.<pillar>). The socket's
 // valueSchema / infraSchema is authored as bare pillar content (a field →
@@ -229,7 +207,7 @@ func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog 
 // compilation. Returns false when the component type is unknown, the socket is
 // undeclared, the socket declares no schema for the pillar (Kind == 0), or the
 // content fails to compile.
-func compileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar string) (compactform.Schema, bool) {
+func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar string) (compactform.Schema, bool) {
 	catComp, found := catalog.Component(compType)
 	if !found {
 		return nil, false
@@ -294,6 +272,63 @@ func ValidatePillarConformance(
 	parameters map[string]any,
 	entity, fieldPrefix, schemaLabel string,
 ) []*ResolverError {
+	return validatePillarConformance(compiled, pillar, instance, parameters, entity, fieldPrefix, schemaLabel, false)
+}
+
+// ValidatePillarConformanceStructural is the predicate-inert variant of
+// ValidatePillarConformance: it validates the unconditional structural
+// constraints (type, range, enum, required, closed-ness) but does NOT evaluate
+// the conditional extension predicates (x-aggrega-when / x-aggrega-validate).
+// It is for callers that lack the correct parameter context for those
+// predicates and must therefore validate structure only rather than evaluate
+// them against a wrong or empty context. Same diagnostics and default-awareness
+// as the full entry; only predicate evaluation is suppressed.
+func ValidatePillarConformanceStructural(
+	compiled compactform.Schema,
+	pillar string,
+	instance types.OrderedMap[any],
+	parameters map[string]any,
+	entity, fieldPrefix, schemaLabel string,
+) []*ResolverError {
+	return validatePillarConformance(compiled, pillar, instance, parameters, entity, fieldPrefix, schemaLabel, true)
+}
+
+// CompileComponentSchema compiles a Component type's declared schema for
+// conformance validation, preferring the composed effective schema for an
+// extends-ing Component (so an inherited constraint is enforced on the child)
+// and falling back to compiling the authored schema for a non-extends
+// Component. Returns (nil, false) when the catalog has no such component, the
+// component declares no schema, or compilation fails. Uncached — callers that
+// validate many instances of the same type should memoise.
+func CompileComponentSchema(catalog CatalogLookup, compType string) (compactform.Schema, bool) {
+	if catalog.EffectiveSchema != nil {
+		if eff, ok := catalog.EffectiveSchema(compType); ok {
+			return eff, true
+		}
+	}
+	catComp, found := catalog.Component(compType)
+	if !found || catComp.Spec.Schema.Kind == 0 {
+		return nil, false
+	}
+	var opts []compactform.CompileOption
+	if len(catalog.SchemaLibraries) > 0 {
+		opts = append(opts, compactform.WithSchemaLibraries(catalog.SchemaLibraries))
+	}
+	compiled, err := compactform.Compile(&catComp.Spec.Schema, opts...)
+	if err != nil {
+		return nil, false
+	}
+	return compiled, true
+}
+
+func validatePillarConformance(
+	compiled compactform.Schema,
+	pillar string,
+	instance types.OrderedMap[any],
+	parameters map[string]any,
+	entity, fieldPrefix, schemaLabel string,
+	skipPredicates bool,
+) []*ResolverError {
 	pillarSchema, ok := pillarSubSchema(compiled, pillar)
 	if !ok {
 		return nil // no such pillar declared → nothing to validate
@@ -307,7 +342,7 @@ func ValidatePillarConformance(
 
 	return pillarConformanceErrors(
 		pillar, pillarSchema, compiled, normalised, parameters,
-		entity, fieldPrefix, schemaLabel)
+		entity, fieldPrefix, schemaLabel, skipPredicates)
 }
 
 // validateValuesConformance validates a component instance's authored values
@@ -352,7 +387,7 @@ func validateInfraConformance(
 
 	return pillarConformanceErrors(
 		"infra", union, compiled, instance, parameters,
-		entity, componentField, "the declared infra schema")
+		entity, componentField, "the declared infra schema", false)
 }
 
 // buildInfraUnion constructs the closed schema a component's resolved infra is
@@ -519,6 +554,7 @@ func pillarConformanceErrors(
 	instance any,
 	parameters map[string]any,
 	entity, componentField, schemaLabel string,
+	skipPredicates bool,
 ) []*ResolverError {
 	wrapper := map[string]any{
 		"type":       "object",
@@ -540,7 +576,7 @@ func pillarConformanceErrors(
 		return nil // a genuinely uncompilable schema is surfaced at catalog load, not here
 	}
 
-	rpt, err := v.Validate(wrapped, &jsonvalidator.Context{Parameters: parameters, Surround: wrapped})
+	rpt, err := v.Validate(wrapped, &jsonvalidator.Context{Parameters: parameters, Surround: wrapped, SkipPredicates: skipPredicates})
 	if err != nil || rpt == nil || len(rpt.Findings) == 0 {
 		return nil
 	}
