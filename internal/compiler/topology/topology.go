@@ -455,12 +455,9 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					// No matching edge: create one when a target is given,
 					// stamped Release-origin. A targetless unmatched entry is an
 					// undeclared-socket case the resolver guard surfaces at Step 1.
+					// Target existence is enforced by the origin-agnostic
+					// dangling-target sweep below, not here.
 					if entry.Target != "" {
-						if _, exists := flat.Nodes.Get(entry.Target); !exists {
-							return nil, fmt.Errorf(
-								"release edge %s/%s/%s targets %q, which is not a component in the topology: %w",
-								nodeID, socket, alias, entry.Target, ErrReleaseEdgeDanglingTarget)
-						}
 						edges = append(edges, NormalizedEdge{
 							Source:        nodeID,
 							Target:        entry.Target,
@@ -472,6 +469,20 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					}
 				}
 			}
+		}
+	}
+
+	// Origin-agnostic dangling-target guardrail. Every edge — developer-authored
+	// (Aggregate), Feature-projected, or Release-wired — must point at a node
+	// that exists in the resolved topology. A dangling target is a Loud Guardrail
+	// (Invariant 4), not a silent drop: an unresolved target would otherwise
+	// leave the consumer's inject silently empty. Walks in author order and halts
+	// on the first dangling edge for deterministic output.
+	for _, e := range edges {
+		if _, exists := flat.Nodes.Get(e.Target); !exists {
+			return nil, fmt.Errorf(
+				"uses edge %s/%s/%s targets %q, which is not a component in the topology: %w",
+				e.Source, e.Socket, e.Alias, e.Target, ErrDanglingUsesTarget)
 		}
 	}
 

@@ -411,6 +411,11 @@ func TestBuild_DeterministicEdgeOrder(t *testing.T) {
 	components.Set("z-svc", types.ComponentInstance{Type: "t", Uses: uses})
 	components.Set("a-svc", types.ComponentInstance{Type: "t", Uses: uses2})
 	components.Set("m-svc", types.ComponentInstance{Type: "t", Uses: uses3})
+	// The three services wire socket "s" to "target"; declare it so the edges
+	// resolve (the origin-agnostic dangling-target guardrail requires every edge
+	// target to be a real node). It carries no uses, so it adds no edge — the
+	// ordering assertion below is unaffected.
+	components.Set("target", types.ComponentInstance{Type: "t"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{

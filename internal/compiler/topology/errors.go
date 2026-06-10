@@ -47,11 +47,17 @@ var (
 	// declared and the Release-supplied target.
 	ErrReleaseEdgeRetarget = errors.New("release edge retargets a developer-declared edge")
 
-	// ErrReleaseEdgeDanglingTarget fires from the Release edge pass when a
-	// Release per-edge `uses` entry wires a new edge to a target component that
-	// is not present in the resolved topology. The wrapped error names the edge
-	// and the missing target so the operator can correct the reference.
-	ErrReleaseEdgeDanglingTarget = errors.New("release edge target does not exist")
+	// ErrDanglingUsesTarget fires when a `uses` edge names a target component
+	// that is not present in the resolved topology — origin-agnostic: a
+	// developer-authored Aggregate edge and a Release-wired edge are checked
+	// alike. A dangling target is a Loud Guardrail, not a silent drop: an edge
+	// to a non-existent target would otherwise vanish and leave the consumer's
+	// inject silently empty. The wrapped error names the consuming node, the
+	// socket, the alias, and the missing target so the author can correct the
+	// reference. The check is the structural sibling of the uses-socket
+	// allowlist (the socket must be declared and the target must resolve before
+	// an edge is type-checked at Step 4).
+	ErrDanglingUsesTarget = errors.New("uses edge target does not exist")
 
 	// ErrSubAggregateNameCollision fires from flattenAggregate when a Set
 	// operation on the flat node map would overwrite an existing entry —

@@ -151,8 +151,8 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 			ReleasePath:  "testdata/uses-edge-config/release-dangling.yaml",
 			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 		})
-		if !errors.Is(err, topology.ErrReleaseEdgeDanglingTarget) {
-			t.Fatalf("want ErrReleaseEdgeDanglingTarget for a Release edge to a non-existent target; got %v", err)
+		if !errors.Is(err, topology.ErrDanglingUsesTarget) {
+			t.Fatalf("want ErrDanglingUsesTarget for a Release edge to a non-existent target; got %v", err)
 		}
 	})
 

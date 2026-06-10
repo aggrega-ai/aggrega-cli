@@ -494,9 +494,9 @@ func TestBuild_ReleaseSameTargetConfigures(t *testing.T) {
 	}
 }
 
-// TestBuild_ReleaseDanglingTargetHalts pins the dangling-target Loud Guardrail:
-// a Release entry wiring a new edge to a non-existent component halts with
-// ErrReleaseEdgeDanglingTarget.
+// TestBuild_ReleaseDanglingTargetHalts pins the dangling-target Loud Guardrail
+// for a Release-wired edge: a Release entry wiring a new edge to a non-existent
+// component halts with ErrDanglingUsesTarget.
 func TestBuild_ReleaseDanglingTargetHalts(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
@@ -509,8 +509,26 @@ func TestBuild_ReleaseDanglingTargetHalts(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
 	}
 	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrReleaseEdgeDanglingTarget) {
-		t.Fatalf("want ErrReleaseEdgeDanglingTarget; got %v", err)
+	if !errors.Is(err, ErrDanglingUsesTarget) {
+		t.Fatalf("want ErrDanglingUsesTarget; got %v", err)
+	}
+}
+
+// TestBuild_AggregateDanglingTargetHalts pins that the dangling-target guardrail
+// is origin-agnostic: a developer-authored Aggregate edge to a non-existent
+// target halts with the same ErrDanglingUsesTarget as the Release-wired case —
+// no silent drop.
+func TestBuild_AggregateDanglingTargetHalts(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"ghost-db"}})
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
+
+	rr := &resolver.ResolveResult{Aggregate: agg}
+	_, err := Build(BuildConfig{ResolveResult: rr})
+	if !errors.Is(err, ErrDanglingUsesTarget) {
+		t.Fatalf("want ErrDanglingUsesTarget for a dangling Aggregate edge; got %v", err)
 	}
 }
 
