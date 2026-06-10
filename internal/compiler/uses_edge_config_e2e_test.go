@@ -17,6 +17,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -159,15 +160,18 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 	t.Run("selector_origin_agnostic", func(t *testing.T) {
 		t.Parallel()
 		// A Release-CREATED edge is checked by the Step-4 selector gate exactly
-		// like an Aggregate edge. The gate surfaces violations as analyzer
-		// records joined into the build error (the reserved selector sentinel is
-		// not wrapped), so assert the surfaced message rather than errors.Is.
+		// like an Aggregate edge. The gate wraps ErrSelectorViolation into the
+		// joined build error, so the violation class is errors.Is-recoverable
+		// at the pipeline boundary; the message check stays as belt-and-braces.
 		_, err := pipelinetest.BuildE(t, pipelinetest.Input{
 			ReleasePath:  "testdata/uses-edge-config/release-selector.yaml",
 			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 		})
 		if err == nil {
 			t.Fatal("want a selector-violation halt for a Release-created edge to a wrong-typed target; got nil")
+		}
+		if !errors.Is(err, analyzer.ErrSelectorViolation) {
+			t.Fatalf("want errors.Is(err, ErrSelectorViolation); got %v", err)
 		}
 		if !strings.Contains(err.Error(), "selector") {
 			t.Fatalf("want a selector-violation diagnostic; got %v", err)

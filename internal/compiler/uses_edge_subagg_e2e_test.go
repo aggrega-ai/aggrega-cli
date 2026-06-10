@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -227,8 +228,9 @@ func TestUsesEdgeSubagg_DanglingTargetHalts(t *testing.T) {
 // TestUsesEdgeSubagg_SelectorTripsOnWrongType pins the origin-agnostic selector
 // gate at depth: a sub-aggregate edge through the databases socket (selector
 // type=stateful-server) to a core/cache target (type=cache) trips the analyzer
-// selector check. The reserved selector sentinel is not wrapped, so the
-// diagnostic surfaces in the build error message.
+// selector check. The gate wraps ErrSelectorViolation into the joined build
+// error, so the violation class is errors.Is-recoverable at the pipeline
+// boundary even when the failing edge originates inside a sub-aggregate.
 func TestUsesEdgeSubagg_SelectorTripsOnWrongType(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
@@ -237,6 +239,9 @@ func TestUsesEdgeSubagg_SelectorTripsOnWrongType(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("want a selector violation for a wrong-typed sub-aggregate target; got nil")
+	}
+	if !errors.Is(err, analyzer.ErrSelectorViolation) {
+		t.Fatalf("want errors.Is(err, ErrSelectorViolation); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "selector") {
 		t.Fatalf("want a selector-violation diagnostic; got %v", err)

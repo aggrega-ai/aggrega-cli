@@ -80,6 +80,11 @@ type AnalysisError struct {
 	// .spec.subsystems.*) yield an empty Field rather than a path that
 	// names the wrong authoring site.
 	Field string
+	// Sentinel is the domain sentinel this violation wraps. ToCompilerError
+	// surfaces it as the CompilerError's inner error so callers can detect
+	// the violation class with errors.Is at the pipeline boundary. The
+	// selector and appliesTo emission sites set it to ErrSelectorViolation.
+	Sentinel error
 }
 
 // lastSegment returns the authored local component key from a flattened
@@ -143,16 +148,18 @@ func (e AnalysisError) Error() string {
 // resolver to thread file-path metadata onto IRNode, which is a separate
 // future improvement.
 //
-// The CompilerError carries no inner-error chain (AnalysisError doesn't
-// wrap a domain sentinel today); errors.Is matching against AnalysisError
-// continues to work via type assertion at the formatter dispatch.
+// The CompilerError wraps e.Sentinel as its inner error, so a violation
+// class is detectable with errors.Is at the pipeline boundary (the build
+// error joins these CompilerErrors and errors.Is traverses the chain).
+// Selector and appliesTo violations carry ErrSelectorViolation. When
+// Sentinel is nil the inner chain is empty, matching the prior behavior.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	return cerrors.New(
 		cerrors.DeveloperError,
 		cerrors.SourceLocation{File: e.Source},
 		e.Error(),
 		nil,
-		nil,
+		e.Sentinel,
 	)
 }
 

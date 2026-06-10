@@ -6,15 +6,14 @@ package analyzer
 import "errors"
 
 var (
-	// ErrSelectorViolation is the ABI-stable sentinel reserved for the
+	// ErrSelectorViolation is the ABI-stable sentinel for the
 	// usesSchema-selector and Feature-appliesTo cross-node type-safety
-	// checks Step 4 performs. The current implementation surfaces every
-	// individual violation as an [AnalysisError] entry on
-	// [AnalysisResult].Errors rather than wrapping this sentinel; the
-	// sentinel exists for callers that prefer errors.Is-based detection
-	// of the violation class and for future emission sites that may
-	// elevate selector violations from structured records to wrapped
-	// errors.
+	// checks Step 4 performs. Each violation is recorded as an
+	// [AnalysisError] entry on [AnalysisResult].Errors with this sentinel
+	// in its Sentinel field; [AnalysisError.ToCompilerError] wraps it as
+	// the CompilerError's inner error, so the joined build error is
+	// errors.Is-recoverable at the pipeline boundary. Both the selector
+	// and the appliesTo checks carry this one sentinel.
 	ErrSelectorViolation = errors.New("selector violation")
 
 	// ErrCatalogLookup is the ABI-stable sentinel reserved for catalog

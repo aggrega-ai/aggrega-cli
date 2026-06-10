@@ -79,6 +79,7 @@ func validateAppliesTo(ctx context.Context, graph *types.IRGraph, catalogLookup 
 					),
 					OriginFile: sourceFileFor(graph, nodeID),
 					Field:      appliesToFieldPath(nodeID, instance, node.SubsystemPath),
+					Sentinel:   ErrSelectorViolation,
 				})
 			}
 		}

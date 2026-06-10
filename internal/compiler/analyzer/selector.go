@@ -93,6 +93,7 @@ func validateSelectors(ctx context.Context, graph *types.IRGraph, catalogLookup 
 				Message:    fmt.Sprintf("selector parse error: %v", err),
 				OriginFile: sourceFileFor(graph, edge.Source),
 				Field:      selectorFieldPath(edge.Source, edge.Socket, sourceNode.SubsystemPath),
+				Sentinel:   ErrSelectorViolation,
 			})
 			continue
 		}
@@ -109,6 +110,7 @@ func validateSelectors(ctx context.Context, graph *types.IRGraph, catalogLookup 
 				),
 				OriginFile: sourceFileFor(graph, edge.Source),
 				Field:      selectorFieldPath(edge.Source, edge.Socket, sourceNode.SubsystemPath),
+				Sentinel:   ErrSelectorViolation,
 			})
 		}
 	}
