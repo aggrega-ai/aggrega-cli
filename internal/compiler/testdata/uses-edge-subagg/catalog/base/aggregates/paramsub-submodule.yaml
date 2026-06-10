@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: paramsub-submodule
+  version: "1.0.0"
+spec:
+  # The sub-aggregate's own parameter contract; the parent fulfils it via
+  # SubAggregate.Parameters. The default is overridden by the parent below.
+  parameters:
+    proto:
+      type: string
+      enum: [grpc, http]
+      default: grpc
+  components:
+    svc:
+      type: core/api
+      uses:
+        databases:
+          main:
+            target: store
+            values:
+              # Templated against the sub-aggregate's resolved parameters.
+              protocol: "{{ .parameters.proto }}"
+              statement_cache: 10
+    store:
+      type: core/db

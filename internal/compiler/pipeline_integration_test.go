@@ -268,11 +268,11 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 	topoResult, err := topology.Build(topology.BuildConfig{
 		ResolveResult: res,
 		CatalogLookup: catalog,
-		LoadSubAggregate: func(typeName string) (*types.Aggregate, string, error) {
+		LoadSubAggregate: func(typeName string, _ map[string]any) (*types.Aggregate, string, map[string]any, error) {
 			if typeName == "modules/data-layer" {
-				return childAgg, "", nil
+				return childAgg, "", nil, nil
 			}
-			return nil, "", fmt.Errorf("unknown: %s", typeName)
+			return nil, "", nil, fmt.Errorf("unknown: %s", typeName)
 		},
 	})
 	if err != nil {

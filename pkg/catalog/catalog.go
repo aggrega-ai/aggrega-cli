@@ -1411,13 +1411,80 @@ func (c *Catalog) AggregateLookup() resolver.AggregateLookup {
 // needing to recompose the diagnostic. The path return threads source-file
 // provenance through flatten so per-node IR records can carry it.
 func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
-	return func(typeName string) (*types.Aggregate, string, error) {
+	return func(typeName string, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error) {
 		agg, ok := c.Aggregates[typeName]
 		if !ok {
-			return nil, "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
+			return nil, "", nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
 		}
-		return &agg, RelativeToWorkspace(c.workspaceRoot, c.aggregateSources[typeName]), nil
+		// The return path (TopologyNode provenance) always comes from
+		// aggregateSources, exactly as before — decoupled from raw-byte
+		// acquisition, so a cache-bridged sub-aggregate (bytes, no path) or a
+		// failed re-read does not lose source provenance.
+		absPath := c.aggregateSources[typeName]
+		returnPath := RelativeToWorkspace(c.workspaceRoot, absPath)
+		raw := c.subAggregateRawBytes(typeName, absPath)
+		return resolveSubAggregateParameters(typeName, raw, absPath, returnPath, agg, parentParams)
 	}
+}
+
+// subAggregateRawBytes returns the raw YAML bytes of a loaded sub-aggregate
+// (needed for byte-level parameter interpolation). A cache-bridged / registry
+// sub-aggregate retains its verified bytes; a local-filesystem one is re-read
+// from absPath. Returns nil when neither is available (the loader then falls
+// back to the already-parsed, un-interpolated Aggregate).
+func (c *Catalog) subAggregateRawBytes(typeName, absPath string) []byte {
+	if b, ok := c.entityBytes[entityBytesKey("Aggregate", typeName)]; ok && len(b) > 0 {
+		return b
+	}
+	if absPath != "" {
+		if data, err := os.ReadFile(absPath); err == nil {
+			return data
+		}
+	}
+	return nil
+}
+
+// resolveSubAggregateParameters runs the parameter lifecycle for one
+// sub-aggregate import: it fulfils the sub-aggregate's own `spec.parameters`
+// contract with the parent-supplied params (defaults applied, contract
+// validated), interpolates the sub-aggregate's `{{ .parameters.X }}` templates
+// against the resolved map, and re-parses the interpolated bytes into the
+// authoritative Aggregate. It mirrors the root parameter-resolution lifecycle
+// (merge, validate, interpolate, single-pass), one level in. Returns the
+// interpolated Aggregate, the
+// workspace-relative source path, and the resolved parameter map (carried onto
+// the sub-aggregate's nodes for predicate-aware conformance). Shared by the
+// Catalog and LazyLookup loaders.
+//
+// When no raw bytes are available (neither path nor cache bytes — not expected
+// for a genuinely loaded aggregate), it falls back to the already-parsed,
+// un-interpolated Aggregate so the build does not break; the resolved map is
+// then empty.
+func resolveSubAggregateParameters(typeName string, raw []byte, absPath, returnPath string, fallback types.Aggregate, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error) {
+	if len(raw) == 0 {
+		return &fallback, returnPath, nil, nil
+	}
+	contract, err := resolver.LoadAggregateParameterContractFromBytes(raw, absPath)
+	if err != nil {
+		return nil, "", nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: absPath}, fmt.Sprintf("sub-aggregate %q parameter contract", typeName))
+	}
+	resolved := resolver.ApplyParameterDefaults(contract, parentParams)
+	if verrs := resolver.ValidateParametersAgainstContract(contract, resolved, absPath); len(verrs) > 0 {
+		return nil, "", nil, &resolver.MultiResolverError{
+			Entity:     fmt.Sprintf("sub-aggregate %s", typeName),
+			Summary:    fmt.Sprintf("%d parameter contract violation(s)", len(verrs)),
+			Violations: verrs,
+		}
+	}
+	interpolated, err := resolver.InterpolateParameters(raw, resolved)
+	if err != nil {
+		return nil, "", nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: absPath}, fmt.Sprintf("sub-aggregate %q parameter interpolation", typeName))
+	}
+	agg, err := resolver.LoadAggregateFromBytes(interpolated, absPath)
+	if err != nil {
+		return nil, "", nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: absPath}, fmt.Sprintf("sub-aggregate %q parse (post-interpolation)", typeName))
+	}
+	return agg, returnPath, resolved, nil
 }
 
 // RelativeToWorkspace returns absPath rendered relative to

@@ -140,3 +140,39 @@ func TestUsesEdgeSubagg_SubsystemWideFeatureProjects(t *testing.T) {
 		t.Fatalf("expected subsystem-wide-feature edge data.svc/peer (origin core/sidecar); got edges %v", result.IRGraph.Spec.Edges)
 	}
 }
+
+// TestUsesEdgeSubagg_ParamMaterializes pins sub-aggregate parameter resolution:
+// a sub-aggregate component's templated value ({{ .parameters.proto }}) is
+// interpolated from the parent-supplied SubAggregate.Parameters (overriding the
+// sub-aggregate's own default), reaching the consumer's rendered output.
+func TestUsesEdgeSubagg_ParamMaterializes(t *testing.T) {
+	t.Parallel()
+	result := pipelinetest.Build(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-paramsub.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	merged := string(result.Artifacts["dist/cluster/compose/docker-compose.yaml"])
+	// The parent passed proto: http (overriding the sub-aggregate default grpc);
+	// the templated protocol value must materialize to "http", reaching DB_PROTOCOL.
+	if !strings.Contains(merged, "http") {
+		t.Errorf("sub-aggregate param did not materialize (want protocol http in output)\n--- merged ---\n%s", merged)
+	}
+	if strings.Contains(merged, "{{") {
+		t.Errorf("un-interpolated template leaked into output:\n%s", merged)
+	}
+}
+
+// TestUsesEdgeSubagg_ParamContractViolationHalts pins that the sub-aggregate's
+// own parameter contract is enforced against the parent-supplied fulfillment:
+// proto "ftp" (outside the sub-aggregate's enum) halts with
+// ErrParameterContractViolation.
+func TestUsesEdgeSubagg_ParamContractViolationHalts(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-paramsub-badparam.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if !errors.Is(err, resolver.ErrParameterContractViolation) {
+		t.Fatalf("want ErrParameterContractViolation for an out-of-enum sub-aggregate param; got %v", err)
+	}
+}

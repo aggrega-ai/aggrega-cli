@@ -380,7 +380,7 @@ func TestLoad_SubAggregateLoader(t *testing.T) {
 
 	loader := c.SubAggregateLoader()
 
-	agg, path, err := loader("db-module")
+	agg, path, _, err := loader("db-module", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestLoad_SubAggregateLoader(t *testing.T) {
 		t.Error("AggregateSourceFile(nonexistent) reported ok; expected false")
 	}
 
-	_, _, err = loader("nonexistent")
+	_, _, _, err = loader("nonexistent", nil)
 	if err == nil {
 		t.Error("expected error for nonexistent aggregate")
 	}

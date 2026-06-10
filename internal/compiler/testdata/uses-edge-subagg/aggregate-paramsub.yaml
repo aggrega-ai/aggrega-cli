@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: paramsub-app
+  version: "1.0.0"
+spec:
+  aggregates:
+    data:
+      type: paramsub-submodule
+      parameters:
+        proto: http   # overrides the sub-aggregate's default (grpc)

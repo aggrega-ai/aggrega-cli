@@ -61,7 +61,7 @@ func TestMergeExtraAggregatesFolds(t *testing.T) {
 	}
 
 	// SubAggregateLoader resolves it with empty provenance — no panic, honest empty.
-	agg, path, serr := c.SubAggregateLoader()("app")
+	agg, path, _, serr := c.SubAggregateLoader()("app", nil)
 	if serr != nil {
 		t.Fatalf("SubAggregateLoader: %v", serr)
 	}

@@ -97,7 +97,14 @@ type TopologyNode struct {
 	// the cascade is captured against the sub-aggregate's own tree at flatten
 	// time, and the node's SourceAggregate prefix namespaces the edge targets.
 	ScopeFeatureUses []scopeFeatureUses
-	SubsystemPath    string
+	// ResolvedParameters is the per-sub-aggregate parameter map (the parent's
+	// SubAggregate.Parameters fulfilling the sub-aggregate's own contract,
+	// defaults applied) resolved when the sub-aggregate was loaded. Nil for
+	// root/subsystem nodes (the root parameter map is threaded separately). It
+	// is the context the post-flatten conformance pass evaluates a sub-aggregate
+	// node's parameter-dependent predicates against, instead of the root context.
+	ResolvedParameters map[string]any
+	SubsystemPath      string
 	BoundaryPath    string
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
 	// SourceFile is the Aggregate file where this node was authored,
@@ -209,11 +216,22 @@ type SecretAttachment struct {
 // function whenever it encounters a `spec.aggregates` entry that names a
 // sub-aggregate type to import.
 //
-// Returns the loaded Aggregate together with the filesystem path it was
-// loaded from. The path threads through flatten into TopologyNode.SourceFile
-// so per-node IR records carry source-file provenance for per-file
-// diagnostic filtering. The path may be empty when the loader returns a
-// synthetic Aggregate (test fixtures) — consumers must tolerate empty.
+// parentParams is the parent-supplied SubAggregate.Parameters for this
+// import (the fulfillment of the sub-aggregate's own `spec.parameters`
+// contract). The loader resolves the sub-aggregate's parameters from it
+// (defaults + contract validation), interpolates the sub-aggregate's
+// `{{ .parameters.X }}` templates against the resolved map, and returns the
+// interpolated Aggregate plus that resolved map. The map is the context the
+// post-flatten conformance pass evaluates the sub-aggregate's
+// parameter-dependent predicates against; it is carried onto each of the
+// sub-aggregate's nodes. Returns an empty map when the sub-aggregate declares
+// no parameters.
+//
+// Returns the (interpolated) Aggregate together with the filesystem path it
+// was loaded from. The path threads through flatten into
+// TopologyNode.SourceFile so per-node IR records carry source-file provenance
+// for per-file diagnostic filtering. The path may be empty when the loader
+// returns a synthetic Aggregate (test fixtures) — consumers must tolerate empty.
 //
 // The callback indirection — rather than a direct *catalog.Catalog
 // reference — keeps the topology package free of any catalog-package
@@ -221,7 +239,7 @@ type SecretAttachment struct {
 // fixtures without spinning up a filesystem catalog. The production
 // caller wires `cat.SubAggregateLoader()` from pkg/catalog (see
 // pkg/catalog/catalog.go for the adapter pattern documentation).
-type SubAggregateLoader func(typeName string) (*types.Aggregate, string, error)
+type SubAggregateLoader func(typeName string, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error)
 
 // BuildConfig is the input bundle for Build. Three fields, all required:
 //
@@ -312,7 +330,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	agg := cfg.ResolveResult.Aggregate
 
 	// 1. Flatten
-	flat, err := flattenAggregate(agg, "", "", cfg.RootAggregateFile, cfg.LoadSubAggregate, map[string]bool{}, 0)
+	flat, err := flattenAggregate(agg, "", "", cfg.RootAggregateFile, cfg.LoadSubAggregate, map[string]bool{}, 0, nil)
 	if err != nil {
 		return nil, err
 	}

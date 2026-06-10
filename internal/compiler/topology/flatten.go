@@ -69,6 +69,20 @@ type flattenResult struct {
 // normalizeUses. The two graphs are unrelated and the cycle rules
 // differ deliberately — runtime back-edges are a legitimate authoring
 // shape (multi-agent loops); inclusion cycles are authoring bugs.
+// plainParams converts a sub-aggregate's authored parameter fulfillment
+// (OrderedMap[any]) into the plain map[string]any the resolver parameter
+// machinery consumes. Nil/empty in → nil out.
+func plainParams(m types.OrderedMap[any]) map[string]any {
+	if m.Len() == 0 {
+		return nil
+	}
+	out := make(map[string]any, m.Len())
+	for k, v := range m.All() {
+		out[k] = v
+	}
+	return out
+}
+
 func flattenAggregate(
 	agg *types.Aggregate,
 	prefix string,
@@ -77,6 +91,7 @@ func flattenAggregate(
 	loader SubAggregateLoader,
 	visited map[string]bool,
 	depth int,
+	params map[string]any,
 ) (*flattenResult, error) {
 	if depth > maxSubAggregateDepth {
 		return nil, cerrors.Wrap(ErrMaxDepth, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("depth %d at prefix %q", depth, prefix))
@@ -96,14 +111,15 @@ func flattenAggregate(
 			return nil, cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 		}
 		result.Nodes.Set(nodeID, &TopologyNode{
-			InstanceID:      nodeID,
-			ComponentType:   comp.Type,
-			Values:          comp.Values,
-			SelfInject:      comp.Inject,
-			Uses:            comp.Uses,
-			SubsystemPath:   subsystemPath,
-			SourceAggregate: prefix,
-			SourceFile:      sourceFile,
+			InstanceID:         nodeID,
+			ComponentType:      comp.Type,
+			Values:             comp.Values,
+			SelfInject:         comp.Inject,
+			Uses:               comp.Uses,
+			ResolvedParameters: params,
+			SubsystemPath:      subsystemPath,
+			SourceAggregate:    prefix,
+			SourceFile:         sourceFile,
 		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
@@ -111,7 +127,7 @@ func flattenAggregate(
 	// Walk subsystems in author order (recursive)
 	for subName, sub := range agg.Spec.Subsystems.All() {
 		subPath := qualifiedID(subsystemPath, subName)
-		if err := flattenSubsystem(result, prefix, subPath, sourceFile, sub, nil); err != nil {
+		if err := flattenSubsystem(result, prefix, subPath, sourceFile, sub, nil, params); err != nil {
 			return nil, err
 		}
 	}
@@ -125,7 +141,7 @@ func flattenAggregate(
 				return nil, cerrors.Wrap(ErrSubAggregateLoad, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("circular sub-aggregate reference %q at %q", subAgg.Type, childPrefix))
 			}
 
-			childAgg, childSourceFile, err := loader(subAgg.Type)
+			childAgg, childSourceFile, childParams, err := loader(subAgg.Type, plainParams(subAgg.Parameters))
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad))
 			}
@@ -133,7 +149,7 @@ func flattenAggregate(
 			childVisited := copyVisited(visited)
 			childVisited[subAgg.Type] = true
 
-			childResult, err := flattenAggregate(childAgg, childPrefix, "", childSourceFile, loader, childVisited, depth+1)
+			childResult, err := flattenAggregate(childAgg, childPrefix, "", childSourceFile, loader, childVisited, depth+1, childParams)
 			if err != nil {
 				return nil, err
 			}
@@ -185,7 +201,7 @@ func flattenAggregate(
 // node map would overwrite an existing entry. The collision is impossible
 // by current schema (root-level instance names cannot contain dots) but
 // the guard defends against future schema loosening or validation bypass.
-func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile string, sub types.Subsystem, ancestorScopeFeatures []scopeFeatureUses) error {
+func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile string, sub types.Subsystem, ancestorScopeFeatures []scopeFeatureUses, params map[string]any) error {
 	// Extend the inherited subsystem-feature cascade with this subsystem's own
 	// subsystem-wide features (author order), so a component at this level —
 	// and every nested level — carries the features of all subsystems on its
@@ -211,15 +227,16 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 			return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 		}
 		result.Nodes.Set(nodeID, &TopologyNode{
-			InstanceID:       nodeID,
-			ComponentType:    comp.Type,
-			Values:           comp.Values,
-			SelfInject:       comp.Inject,
-			Uses:             comp.Uses,
-			ScopeFeatureUses: scopeFeatures,
-			SubsystemPath:    subsystemPath,
-			SourceAggregate:  prefix,
-			SourceFile:       sourceFile,
+			InstanceID:         nodeID,
+			ComponentType:      comp.Type,
+			Values:             comp.Values,
+			SelfInject:         comp.Inject,
+			Uses:               comp.Uses,
+			ScopeFeatureUses:   scopeFeatures,
+			ResolvedParameters: params,
+			SubsystemPath:      subsystemPath,
+			SourceAggregate:    prefix,
+			SourceFile:         sourceFile,
 		})
 		collectAttachments(result, nodeID, comp, 0)
 	}
@@ -227,7 +244,7 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 	// Recurse into nested subsystems, carrying the accumulated cascade.
 	for subName, nested := range sub.Subsystems.All() {
 		nestedPath := subsystemPath + "." + subName
-		if err := flattenSubsystem(result, prefix, nestedPath, sourceFile, nested, scopeFeatures); err != nil {
+		if err := flattenSubsystem(result, prefix, nestedPath, sourceFile, nested, scopeFeatures, params); err != nil {
 			return err
 		}
 	}

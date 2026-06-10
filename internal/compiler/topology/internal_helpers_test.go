@@ -224,7 +224,7 @@ func TestFlattenSubsystem_NestedSubsystemRecursion(t *testing.T) {
 		FeatureAttachments: map[string][]FeatureAttachment{},
 		SecretAttachments:  map[string][]SecretAttachment{},
 	}
-	if err := flattenSubsystem(result, "", ".outer", "", mid, nil); err != nil {
+	if err := flattenSubsystem(result, "", ".outer", "", mid, nil, nil); err != nil {
 		t.Fatalf("flattenSubsystem: %v", err)
 	}
 	if _, ok := result.Nodes.Get("leaf"); !ok {

@@ -231,11 +231,11 @@ spec:
 	ll := NewLazyLookup(dir, "", []string{dir}, nil)
 	load := ll.SubAggregateLoader()
 
-	agg, _, err := load("demo/sub")
+	agg, _, _, err := load("demo/sub", nil)
 	if err != nil || agg == nil {
 		t.Fatalf("SubAggregateLoader should resolve the enumerated aggregate; err=%v", err)
 	}
-	if _, _, err := load("demo/missing"); err == nil {
+	if _, _, _, err := load("demo/missing", nil); err == nil {
 		t.Error("a missing sub-aggregate must be a fatal error per the loader contract")
 	}
 }
