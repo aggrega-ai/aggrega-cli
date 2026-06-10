@@ -303,7 +303,8 @@ type EnrichedEdge struct {
 	OriginFeature   string                         `json:"origin_feature,omitempty" yaml:"origin_feature,omitempty"`
 	// OriginRelease is true for a Release-created edge (authorship marker,
 	// mirroring IREdge). Values / Infra carry the resolved per-connection
-	// config, opaque to the core, projected at .uses.<socket>.<alias>.{values,infra}.
+	// config, opaque to the core, projected at
+	// .context.uses.<alias>.{values,infra} (the uses map is alias-keyed).
 	OriginRelease bool            `json:"origin_release,omitempty" yaml:"origin_release,omitempty"`
 	Values        OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 	Infra         OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
