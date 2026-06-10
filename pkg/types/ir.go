@@ -152,8 +152,21 @@ type IREdge struct {
 	// Feature. It locates a boundary-scope FeatureRecipe's resolved provides
 	// by instance when a consumer's uses edge references them, disambiguating
 	// two attachments of the same Feature type on one boundary.
-	OriginFeatureInstance string                         `json:"origin_feature_instance,omitempty"`
-	Inject                OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
+	OriginFeatureInstance string `json:"origin_feature_instance,omitempty"`
+	// OriginRelease is true when this edge was created by a Release wiring a
+	// declared-but-unbound socket to an existing component. It marks edge
+	// AUTHORSHIP, not configuration: a developer- or Feature-declared edge that
+	// a Release merely supplied infra for keeps its origin (OriginRelease false)
+	// and carries the Release infra in Infra. OriginFeature set => Feature;
+	// OriginRelease true => Release; neither => Aggregate.
+	OriginRelease bool `json:"origin_release,omitempty"`
+	// Values and Infra carry the resolved per-connection config for this edge,
+	// validated at Step 1 against the target socket's valueSchema / infraSchema
+	// and projected into the consuming node's render context at
+	// .uses.<socket>.<alias>.values / .infra. Opaque to the core.
+	Values OrderedMap[any]                `json:"values,omitempty,omitzero"`
+	Infra  OrderedMap[any]                `json:"infra,omitempty,omitzero"`
+	Inject OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 }
 
 // IRFeatureEntry is one feature attached to a node in the feature_values_mapping.

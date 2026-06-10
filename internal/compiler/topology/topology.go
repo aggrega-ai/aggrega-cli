@@ -139,6 +139,19 @@ type NormalizedEdge struct {
 	// one boundary, letting a boundary-scope FeatureRecipe's resolved
 	// provides be located by instance rather than by the ambiguous type.
 	OriginFeatureInstance string
+	// OriginRelease is true when this edge was created by a Release wiring a
+	// declared-but-unbound socket to an existing component. It marks AUTHORSHIP,
+	// not configuration: an edge a Release merely supplied infra for keeps its
+	// origin and carries the Release infra in Infra. The IR builder copies this
+	// into IREdge.OriginRelease.
+	OriginRelease bool
+	// Values / Infra carry the resolved per-connection config: Values from the
+	// verbose Aggregate uses entry; Infra from the Aggregate entry and/or merged
+	// from a Release per-edge entry. Opaque OrderedMaps the core does not
+	// interpret — the conformance gate (Step 1) validates them and the renderer
+	// projects them at .uses.<socket>.<alias>.{values,infra}.
+	Values types.OrderedMap[any]
+	Infra  types.OrderedMap[any]
 }
 
 // FeatureAttachment pairs a feature instance name with its FeatureInstance
@@ -389,6 +402,72 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
+	// 6. Release per-edge uses surface. Within Architect-declared sockets the
+	// Release may configure an existing edge (merge per-edge infra) and/or
+	// create an edge into a declared-but-unbound socket pointing at an existing
+	// component. This pass does data plumbing only: merge infra and append
+	// created edges. It NEVER retargets — a Release entry whose (node, socket,
+	// alias) matches an existing edge but names a conflicting target is left
+	// untouched here so the Step-4 guardrail can detect the retarget against the
+	// intact BoundaryComponent.Uses and halt (skipping the infra merge in that
+	// case keeps a rejected retarget from half-applying). Conformance (Step 1),
+	// dangling-target, and undeclared-socket halts are not this pass's concern.
+	// Determinism: nodes in flat.Nodes author order; sockets and aliases in
+	// OrderedMap author order; created edges append after the Aggregate/Feature
+	// edges.
+	if cfg.ResolveResult != nil && cfg.ResolveResult.Release != nil {
+		for nodeID, node := range flat.Nodes.All() {
+			ruses, ok := releaseComponentUses(cfg.ResolveResult.Release.Spec.Boundaries, node.BoundaryPath, nodeID)
+			if !ok {
+				continue
+			}
+			for socket, aliases := range ruses.All() {
+				for alias, entry := range aliases.All() {
+					idx := -1
+					for i := range edges {
+						if edges[i].Source == nodeID && edges[i].Socket == socket && edges[i].Alias == alias {
+							idx = i
+							break
+						}
+					}
+					if idx >= 0 {
+						// Configure an existing edge: merge infra only, never
+						// retarget. A conflicting target is left for the guardrail
+						// pass; skip the infra merge so a rejected retarget never
+						// half-applies.
+						if entry.Target != "" && entry.Target != edges[idx].Target {
+							continue
+						}
+						if entry.Infra.Len() > 0 {
+							merged := types.OrderedMap[any]{}
+							for k, v := range edges[idx].Infra.All() {
+								merged.Set(k, v)
+							}
+							for k, v := range entry.Infra.All() {
+								merged.Set(k, v)
+							}
+							edges[idx].Infra = merged
+						}
+						continue
+					}
+					// No matching edge: create one when a target is given,
+					// stamped Release-origin. A targetless unmatched entry is a
+					// dangling/undeclared case the guardrail pass surfaces.
+					if entry.Target != "" {
+						edges = append(edges, NormalizedEdge{
+							Source:        nodeID,
+							Target:        entry.Target,
+							Socket:        socket,
+							Alias:         alias,
+							Infra:         entry.Infra,
+							OriginRelease: true,
+						})
+					}
+				}
+			}
+		}
+	}
+
 	return &TopologyResult{
 		Nodes:              flat.Nodes,
 		Edges:              edges,
@@ -461,6 +540,28 @@ func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPa
 		current = boundary.Boundaries
 	}
 	return result
+}
+
+// releaseComponentUses walks the Release boundary chain named by boundaryPath
+// (the same walk boundaryFeatureUses uses) and returns the per-edge uses
+// surface the Release authored on the BoundaryComponent for nodeID, if any. A
+// component is declared in exactly one boundary along its chain, so the first
+// level whose Components carry a non-empty Uses for nodeID wins. Returns false
+// when no Release component-edge surface applies to the node.
+func releaseComponentUses(boundaries types.OrderedMap[types.Boundary], boundaryPath, nodeID string) (types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]], bool) {
+	parts := splitScopePath(boundaryPath)
+	current := boundaries
+	for _, part := range parts {
+		boundary, ok := current.Get(part)
+		if !ok {
+			break
+		}
+		if bc, ok := boundary.Components.Get(nodeID); ok && bc.Uses.Len() > 0 {
+			return bc.Uses, true
+		}
+		current = boundary.Boundaries
+	}
+	return types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]]{}, false
 }
 
 // splitScopePath splits a subsystem (dot-joined) or boundary (slash-joined)

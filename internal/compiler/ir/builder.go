@@ -301,6 +301,9 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			Alias:                 e.Alias,
 			OriginFeature:         e.OriginFeature,
 			OriginFeatureInstance: e.OriginFeatureInstance,
+			OriginRelease:         e.OriginRelease,
+			Values:                e.Values,
+			Infra:                 e.Infra,
 			Inject:                convertInjectBlock(e.Inject),
 		}
 		irEdges = append(irEdges, irEdge)

@@ -102,5 +102,7 @@ func buildVerboseEdge(source, socket, alias string, entry types.VerboseUsesEntry
 		Inject:                entry.Inject,
 		OriginFeature:         originFeature,
 		OriginFeatureInstance: originFeatureInstance,
+		Values:                entry.Values,
+		Infra:                 entry.Infra,
 	}
 }

@@ -296,3 +296,232 @@ func TestFlattenSubsystem_NestedSubsystemRecursion(t *testing.T) {
 		t.Errorf("expected leaf node to flatten; got nodes: %v", result.Nodes.Keys())
 	}
 }
+
+// mkReleaseUses builds a Release whose boundary "prod" declares the given
+// per-edge uses surface on component nodeID, exercising the Release pass of
+// Build (a Release configures/wires edges on the components an Aggregate
+// declares).
+func mkReleaseUses(nodeID string, uses types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]]) *types.Release {
+	comps := types.OrderedMap[types.BoundaryComponent]{}
+	comps.Set(nodeID, types.BoundaryComponent{Uses: uses})
+	b := types.Boundary{Components: comps}
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set("prod", b)
+	rel := &types.Release{}
+	rel.Spec.Boundaries = boundaries
+	return rel
+}
+
+// relSocketAlias wraps a single (socket, alias, entry) into the two-level
+// socket->alias->entry shape the Release uses surface carries.
+func relSocketAlias(socket, alias string, entry types.ReleaseUsesEntry) types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]] {
+	aliases := types.OrderedMap[types.ReleaseUsesEntry]{}
+	aliases.Set(alias, entry)
+	uses := types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]]{}
+	uses.Set(socket, aliases)
+	return uses
+}
+
+// findEdge returns the first edge matching (source, socket, alias), or nil.
+func findEdge(edges []NormalizedEdge, source, socket, alias string) *NormalizedEdge {
+	for i := range edges {
+		if edges[i].Source == source && edges[i].Socket == socket && edges[i].Alias == alias {
+			return &edges[i]
+		}
+	}
+	return nil
+}
+
+// TestBuild_ComponentUsesValuesInfraFlowToEdge pins the developer-authored
+// per-edge values/infra arm: a verbose `uses` entry carrying values and infra
+// projects those maps onto the produced edge.
+func TestBuild_ComponentUsesValuesInfraFlowToEdge(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	values := types.OrderedMap[any]{}
+	values.Set("pool_size", 20)
+	infra := types.OrderedMap[any]{}
+	infra.Set("storage_class", "fast")
+	verbose.Set("db", types.VerboseUsesEntry{Target: "db", Values: values, Infra: infra})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+
+	result, err := Build(BuildConfig{ResolveResult: &resolver.ResolveResult{Aggregate: agg}})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	e := findEdge(result.Edges, "api", "databases", "db")
+	if e == nil {
+		t.Fatalf("expected edge api/databases/db; got %v", result.Edges)
+	}
+	if v, ok := e.Values.Get("pool_size"); !ok || v != 20 {
+		t.Errorf("edge values.pool_size = %v (ok=%v), want 20", v, ok)
+	}
+	if v, ok := e.Infra.Get("storage_class"); !ok || v != "fast" {
+		t.Errorf("edge infra.storage_class = %v (ok=%v), want fast", v, ok)
+	}
+}
+
+// TestBuild_ReleaseInfraMergesOntoExistingEdge pins the Release pass's
+// configure arm: a Release entry matching an existing edge by
+// (consumer, socket, alias) merges its infra onto that edge without
+// retargeting and without marking the edge Release-origin.
+func TestBuild_ReleaseInfraMergesOntoExistingEdge(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+
+	relInfra := types.OrderedMap[any]{}
+	relInfra.Set("pool_size", 20)
+	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Infra: relInfra}))
+
+	rr := &resolver.ResolveResult{
+		Aggregate:     agg,
+		Release:       rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+	}
+	result, err := Build(BuildConfig{ResolveResult: rr})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	e := findEdge(result.Edges, "api", "databases", "db")
+	if e == nil {
+		t.Fatalf("expected edge api/databases/db; got %v", result.Edges)
+	}
+	if v, ok := e.Infra.Get("pool_size"); !ok || v != 20 {
+		t.Errorf("merged infra.pool_size = %v (ok=%v), want 20", v, ok)
+	}
+	if e.Target != "db" {
+		t.Errorf("Target = %q, want db (merge must not retarget)", e.Target)
+	}
+	if e.OriginRelease {
+		t.Errorf("OriginRelease = true on a configured existing edge; want false")
+	}
+}
+
+// TestBuild_ReleaseCreatesEdgeForUnmatchedSocket pins the Release pass's wire
+// arm: a Release entry naming a target into a socket the Aggregate left
+// unwired creates a new edge stamped OriginRelease.
+func TestBuild_ReleaseCreatesEdgeForUnmatchedSocket(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server"})
+	agg.Spec.Components.Set("cache", types.ComponentInstance{Type: "core/cache/redis"})
+
+	rel := mkReleaseUses("api", relSocketAlias("caches", "primary", types.ReleaseUsesEntry{Target: "cache"}))
+	rr := &resolver.ResolveResult{
+		Aggregate:     agg,
+		Release:       rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+	}
+	result, err := Build(BuildConfig{ResolveResult: rr})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	e := findEdge(result.Edges, "api", "caches", "primary")
+	if e == nil {
+		t.Fatalf("expected Release-created edge api/caches/primary; got %v", result.Edges)
+	}
+	if e.Target != "cache" {
+		t.Errorf("Target = %q, want cache", e.Target)
+	}
+	if !e.OriginRelease {
+		t.Errorf("OriginRelease = false on a Release-created edge; want true")
+	}
+}
+
+// TestBuild_ReleaseConflictingTargetLeavesEdgeUntouched pins the configure
+// arm's no-retarget discipline: a Release entry that names a target differing
+// from an existing edge's target neither retargets nor merges infra — the
+// edge is left intact for the downstream guardrail to detect the retarget.
+func TestBuild_ReleaseConflictingTargetLeavesEdgeUntouched(t *testing.T) {
+	t.Parallel()
+	agg := &types.Aggregate{}
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	agg.Spec.Components.Set("other", types.ComponentInstance{Type: "core/database/postgres"})
+
+	relInfra := types.OrderedMap[any]{}
+	relInfra.Set("x", 1)
+	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "other", Infra: relInfra}))
+	rr := &resolver.ResolveResult{
+		Aggregate:     agg,
+		Release:       rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+	}
+	result, err := Build(BuildConfig{ResolveResult: rr})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	e := findEdge(result.Edges, "api", "databases", "db")
+	if e == nil {
+		t.Fatalf("expected edge api/databases/db; got %v", result.Edges)
+	}
+	if e.Target != "db" {
+		t.Errorf("Target = %q, want db (conflicting Release target must not retarget)", e.Target)
+	}
+	if _, ok := e.Infra.Get("x"); ok {
+		t.Errorf("infra merged on a conflicting-target entry; merge must be skipped")
+	}
+}
+
+// TestBuild_ReleaseEdgeSliceDeterministic pins determinism of the edge slice
+// across repeated builds, including Release-created edges: identical input
+// yields a byte-identical edge ordering (Invariant 8).
+func TestBuild_ReleaseEdgeSliceDeterministic(t *testing.T) {
+	t.Parallel()
+	build := func() []NormalizedEdge {
+		agg := &types.Aggregate{}
+		uses := types.OrderedMap[types.UsesSocketValue]{}
+		uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
+		agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
+		agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+		agg.Spec.Components.Set("cache", types.ComponentInstance{Type: "core/cache/redis"})
+		agg.Spec.Components.Set("queue", types.ComponentInstance{Type: "core/queue"})
+
+		// Two Release-created edges under distinct sockets, in author order.
+		aliasesA := types.OrderedMap[types.ReleaseUsesEntry]{}
+		aliasesA.Set("primary", types.ReleaseUsesEntry{Target: "cache"})
+		aliasesB := types.OrderedMap[types.ReleaseUsesEntry]{}
+		aliasesB.Set("jobs", types.ReleaseUsesEntry{Target: "queue"})
+		ru := types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]]{}
+		ru.Set("caches", aliasesA)
+		ru.Set("queues", aliasesB)
+		rel := mkReleaseUses("api", ru)
+
+		rr := &resolver.ResolveResult{
+			Aggregate:     agg,
+			Release:       rel,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+		}
+		result, err := Build(BuildConfig{ResolveResult: rr})
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		return result.Edges
+	}
+
+	first := build()
+	key := func(e NormalizedEdge) string {
+		return e.Source + "|" + e.Socket + "|" + e.Alias + "|" + e.Target
+	}
+	for run := 0; run < 3; run++ {
+		got := build()
+		if len(got) != len(first) {
+			t.Fatalf("edge count drift: run %d has %d edges, first had %d", run, len(got), len(first))
+		}
+		for i := range got {
+			if key(got[i]) != key(first[i]) {
+				t.Errorf("edge order drift at %d (run %d): %q vs %q", i, run, key(got[i]), key(first[i]))
+			}
+		}
+	}
+}

@@ -447,8 +447,8 @@ func TestConvertInjectBlock_AdditionalIteration(t *testing.T) {
 }
 
 // TestConvertInjectBlock_CoreOnlyUnchanged pins the bare-three-mechanism
-// behaviour. The new Additional iteration is a no-op when Additional is
-// empty; the result shape matches the pre-WI behaviour.
+// behaviour. The Additional iteration is a no-op when Additional is
+// empty; the result carries only the three core mechanisms.
 func TestConvertInjectBlock_CoreOnlyUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -582,5 +582,67 @@ func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
 	}
 	if graph != nil {
 		t.Errorf("expected nil graph on validation halt, got non-nil")
+	}
+}
+
+// TestBuildIR_EdgeCarriesValuesInfraAndOrigin pins the edge-conversion arm of
+// BuildIR: a topology NormalizedEdge carrying per-edge values, infra, and the
+// Release-origin marker projects all three onto the emitted IREdge.
+func TestBuildIR_EdgeCarriesValuesInfraAndOrigin(t *testing.T) {
+	t.Parallel()
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, "server")
+	labels2 := types.OrderedMap[string]{}
+	labels2.Set(types.ComponentTypeLabel, "stateful-server")
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels})
+	nodes.Set("main-db", &topology.TopologyNode{InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: labels2})
+
+	edgeValues := types.OrderedMap[any]{}
+	edgeValues.Set("pool_size", 20)
+	edgeInfra := types.OrderedMap[any]{}
+	edgeInfra.Set("storage_class", "fast")
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		Edges: []topology.NormalizedEdge{
+			{
+				Source: "api", Target: "main-db", Socket: "databases", Alias: "main-db",
+				Values: edgeValues, Infra: edgeInfra, OriginRelease: true,
+			},
+		},
+		FeatureAttachments: map[string][]topology.FeatureAttachment{},
+		SecretAttachments:  map[string][]topology.SecretAttachment{},
+	}
+	resolveResult := &resolver.ResolveResult{
+		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test-app", Version: "1.0.0"}},
+		Release: &types.Release{
+			Metadata: types.ReleaseMetadata{Name: "test-release", Version: "1.0.0", Environment: "local"},
+			Spec:     types.ReleaseSpec{Boundaries: types.OrderedMap[types.Boundary]{}},
+		},
+		Manifest:      &types.Manifest{Metadata: types.ManifestMetadata{Version: "1.0.0"}},
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "local/default"}},
+	}
+
+	graph, _, err := BuildIR(BuildIRConfig{
+		Topology:        topoResult,
+		ResolveResult:   resolveResult,
+		CatalogLookup:   testCatalog(),
+		CompilerVersion: "0.1.0",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(graph.Spec.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(graph.Spec.Edges))
+	}
+	e := graph.Spec.Edges[0]
+	if !e.OriginRelease {
+		t.Errorf("OriginRelease = false; want true")
+	}
+	if v, ok := e.Values.Get("pool_size"); !ok || v != 20 {
+		t.Errorf("edge values.pool_size = %v (ok=%v), want 20", v, ok)
+	}
+	if v, ok := e.Infra.Get("storage_class"); !ok || v != "fast" {
+		t.Errorf("edge infra.storage_class = %v (ok=%v), want fast", v, ok)
 	}
 }

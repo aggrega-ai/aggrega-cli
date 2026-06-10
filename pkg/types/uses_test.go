@@ -362,3 +362,67 @@ caches:
 		t.Errorf("verbose alias order = %v, want [primary fallback]", cKeys)
 	}
 }
+
+// TestVerboseUsesEntry_ValuesInfra_RoundTrip pins connection-scoped per-edge
+// values/infra through both marshalers: a verbose entry carrying values and
+// infra round-trips (YAML and JSON) preserving the keys, the nested content,
+// and author order, alongside target/inject.
+func TestVerboseUsesEntry_ValuesInfra_RoundTrip(t *testing.T) {
+	t.Parallel()
+	const src = `{target: corp-db, values: {pool_size: 20, mode: ro}, infra: {storage_class: fast}}`
+
+	checkEntry := func(t *testing.T, e VerboseUsesEntry) {
+		if e.Target != "corp-db" {
+			t.Errorf("Target = %q, want corp-db", e.Target)
+		}
+		if got := e.Values.Keys(); len(got) != 2 || got[0] != "pool_size" || got[1] != "mode" {
+			t.Errorf("values key order = %v, want [pool_size mode]", got)
+		}
+		if v, ok := e.Values.Get("mode"); !ok || v != "ro" {
+			t.Errorf("values.mode = %v (ok=%v), want ro", v, ok)
+		}
+		if v, ok := e.Infra.Get("storage_class"); !ok || v != "fast" {
+			t.Errorf("infra.storage_class = %v (ok=%v), want fast", v, ok)
+		}
+	}
+
+	// YAML: unmarshal -> marshal -> unmarshal, asserting both decoded forms.
+	var y VerboseUsesEntry
+	if err := yaml.Unmarshal([]byte(src), &y); err != nil {
+		t.Fatalf("YAML unmarshal: %v", err)
+	}
+	checkEntry(t, y)
+	yOut, err := yaml.Marshal(y)
+	if err != nil {
+		t.Fatalf("YAML marshal: %v", err)
+	}
+	var y2 VerboseUsesEntry
+	if err := yaml.Unmarshal(yOut, &y2); err != nil {
+		t.Fatalf("YAML re-unmarshal: %v", err)
+	}
+	checkEntry(t, y2)
+
+	// JSON: same loop.
+	var j VerboseUsesEntry
+	if err := json.Unmarshal([]byte(`{"target":"corp-db","values":{"pool_size":20,"mode":"ro"},"infra":{"storage_class":"fast"}}`), &j); err != nil {
+		t.Fatalf("JSON unmarshal: %v", err)
+	}
+	checkEntry(t, j)
+	jOut, err := json.Marshal(j)
+	if err != nil {
+		t.Fatalf("JSON marshal: %v", err)
+	}
+	var j2 VerboseUsesEntry
+	if err := json.Unmarshal(jOut, &j2); err != nil {
+		t.Fatalf("JSON re-unmarshal: %v", err)
+	}
+	checkEntry(t, j2)
+
+	// An entry with no values/infra stays zero (IsZero true for a bare target? no —
+	// target is set; but values/infra must be empty and omitted from output).
+	var empty VerboseUsesEntry
+	_ = yaml.Unmarshal([]byte(`{target: x}`), &empty)
+	if empty.Values.Len() != 0 || empty.Infra.Len() != 0 {
+		t.Errorf("omitted values/infra should be empty; got values=%d infra=%d", empty.Values.Len(), empty.Infra.Len())
+	}
+}

@@ -74,11 +74,11 @@ type AnnotationBuckets struct {
 //
 // Schema: template-context-v1alpha1.schema.json context.inject
 type InjectPipe struct {
-	Env        OrderedMap[string]                 `json:"env,omitempty,omitzero" yaml:"env,omitempty"`
-	File       OrderedMap[string]                 `json:"file,omitempty,omitzero" yaml:"file,omitempty"`
-	Arg        OrderedMap[string]                 `json:"arg,omitempty,omitzero" yaml:"arg,omitempty"`
-	All        OrderedMap[string]                 `json:"all,omitempty,omitzero" yaml:"all,omitempty"`
-	Additional OrderedMap[OrderedMap[string]]     `json:"-" yaml:"-"`
+	Env        OrderedMap[string]             `json:"env,omitempty,omitzero" yaml:"env,omitempty"`
+	File       OrderedMap[string]             `json:"file,omitempty,omitzero" yaml:"file,omitempty"`
+	Arg        OrderedMap[string]             `json:"arg,omitempty,omitzero" yaml:"arg,omitempty"`
+	All        OrderedMap[string]             `json:"all,omitempty,omitzero" yaml:"all,omitempty"`
+	Additional OrderedMap[OrderedMap[string]] `json:"-" yaml:"-"`
 }
 
 // UnmarshalYAML decodes a mapping node into the InjectPipe, dispatching env /
@@ -301,6 +301,12 @@ type EnrichedEdge struct {
 	ResolvedVersion string                         `json:"resolved_version,omitempty" yaml:"resolved_version,omitempty"`
 	BoundaryPath    string                         `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty"`
 	OriginFeature   string                         `json:"origin_feature,omitempty" yaml:"origin_feature,omitempty"`
+	// OriginRelease is true for a Release-created edge (authorship marker,
+	// mirroring IREdge). Values / Infra carry the resolved per-connection
+	// config, opaque to the core, projected at .uses.<socket>.<alias>.{values,infra}.
+	OriginRelease bool            `json:"origin_release,omitempty" yaml:"origin_release,omitempty"`
+	Values        OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Infra         OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 
 	// Per-endpoint network inputs, carried as pure opaque data for a provider
 	// engine to resolve into a network identity (the compose engine compares

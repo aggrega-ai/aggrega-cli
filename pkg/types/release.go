@@ -105,6 +105,26 @@ type BoundaryComponent struct {
 	Infra       OrderedMap[any]              `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 	Features    OrderedMap[BoundaryFeature]  `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Secrets     OrderedMap[BoundaryFeature]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	// Uses is the operator edge surface, socket-keyed then alias-keyed (the
+	// same topology shape as the Aggregate uses block). Within Architect-
+	// declared sockets the Release may wire a declared-but-unbound socket to an
+	// existing component (target) and/or supply per-edge infra. It carries no
+	// values (the Release values: ban). Distinct from [BoundaryFeature.Uses],
+	// which is the feature-attachment topology, not the component-edge surface.
+	Uses OrderedMap[OrderedMap[ReleaseUsesEntry]] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
+}
+
+// ReleaseUsesEntry is one operator-authored per-edge connection within a
+// [BoundaryComponent.Uses] socket. It may set Target (to create an edge into a
+// declared-but-unbound socket, pointing at an existing component) and/or Infra
+// (per-edge operator config validated against the socket infraSchema). It has
+// no Values field by construction — the Release values: ban holds at the edge
+// surface. Retargeting a developer-declared edge is rejected at build (a Loud
+// Guardrail), not represented here.
+// Schema: release-v1alpha1.schema.json#/$defs/release_uses_block
+type ReleaseUsesEntry struct {
+	Target string          `json:"target,omitempty" yaml:"target,omitempty"`
+	Infra  OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 }
 
 // BoundaryFeature is a feature or secret attachment within a Release boundary.

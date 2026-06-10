@@ -59,6 +59,17 @@ type VerboseUsesEntry struct {
 	// resulting edge. Nil when the source omits the `inject:` field or
 	// uses the bare-string shorthand.
 	Inject *InjectBlock `yaml:"inject,omitempty" json:"inject,omitempty"`
+
+	// Values carries per-connection developer config for this edge,
+	// validated against the target socket's valueSchema by the Step-1
+	// conformance gate and projected into the consuming node's render
+	// context at .uses.<socket>.<alias>.values. Empty when omitted.
+	Values OrderedMap[any] `yaml:"values,omitempty" json:"values,omitempty,omitzero"`
+
+	// Infra carries per-connection infra config for this edge, validated
+	// against the target socket's infraSchema. An Aggregate edge may seed
+	// it; a Release edge surface may supply it. Empty when omitted.
+	Infra OrderedMap[any] `yaml:"infra,omitempty" json:"infra,omitempty,omitzero"`
 }
 
 // UnmarshalYAML on UsesSocketValue dispatches on the YAML node kind.
@@ -179,8 +190,10 @@ func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 	case yaml.MappingNode:
 		// Use a separate alias type to avoid recursion into our own UnmarshalYAML.
 		type plain struct {
-			Target string       `yaml:"target,omitempty"`
-			Inject *InjectBlock `yaml:"inject,omitempty"`
+			Target string          `yaml:"target,omitempty"`
+			Inject *InjectBlock    `yaml:"inject,omitempty"`
+			Values OrderedMap[any] `yaml:"values,omitempty"`
+			Infra  OrderedMap[any] `yaml:"infra,omitempty"`
 		}
 		var p plain
 		if err := node.Decode(&p); err != nil {
@@ -188,6 +201,8 @@ func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 		}
 		e.Target = p.Target
 		e.Inject = p.Inject
+		e.Values = p.Values
+		e.Infra = p.Infra
 		return nil
 	default:
 		return fmt.Errorf("VerboseUsesEntry: expected scalar or mapping at line %d, got kind %d", node.Line, node.Kind)
@@ -213,8 +228,10 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 	case '{':
 		// Use a separate alias type to avoid recursion into our own UnmarshalJSON.
 		type plain struct {
-			Target string       `json:"target,omitempty"`
-			Inject *InjectBlock `json:"inject,omitempty"`
+			Target string          `json:"target,omitempty"`
+			Inject *InjectBlock    `json:"inject,omitempty"`
+			Values OrderedMap[any] `json:"values,omitempty,omitzero"`
+			Infra  OrderedMap[any] `json:"infra,omitempty,omitzero"`
 		}
 		var p plain
 		if err := json.Unmarshal(data, &p); err != nil {
@@ -222,6 +239,8 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 		}
 		e.Target = p.Target
 		e.Inject = p.Inject
+		e.Values = p.Values
+		e.Infra = p.Infra
 		return nil
 	default:
 		preview := trimmed
@@ -237,10 +256,12 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 // always emits the full form.
 func (e VerboseUsesEntry) MarshalYAML() (any, error) {
 	type plain struct {
-		Target string       `yaml:"target,omitempty"`
-		Inject *InjectBlock `yaml:"inject,omitempty"`
+		Target string          `yaml:"target,omitempty"`
+		Inject *InjectBlock    `yaml:"inject,omitempty"`
+		Values OrderedMap[any] `yaml:"values,omitempty"`
+		Infra  OrderedMap[any] `yaml:"infra,omitempty"`
 	}
-	return plain{Target: e.Target, Inject: e.Inject}, nil
+	return plain{Target: e.Target, Inject: e.Inject, Values: e.Values, Infra: e.Infra}, nil
 }
 
 // MarshalJSON emits the canonical mapping form `{ target?, inject? }`.
@@ -248,13 +269,15 @@ func (e VerboseUsesEntry) MarshalYAML() (any, error) {
 // always emits the full form.
 func (e VerboseUsesEntry) MarshalJSON() ([]byte, error) {
 	type plain struct {
-		Target string       `json:"target,omitempty"`
-		Inject *InjectBlock `json:"inject,omitempty"`
+		Target string          `json:"target,omitempty"`
+		Inject *InjectBlock    `json:"inject,omitempty"`
+		Values OrderedMap[any] `json:"values,omitempty,omitzero"`
+		Infra  OrderedMap[any] `json:"infra,omitempty,omitzero"`
 	}
-	return json.Marshal(plain{Target: e.Target, Inject: e.Inject})
+	return json.Marshal(plain{Target: e.Target, Inject: e.Inject, Values: e.Values, Infra: e.Infra})
 }
 
 // IsZero reports whether the entry is empty.
 func (e VerboseUsesEntry) IsZero() bool {
-	return e.Target == "" && e.Inject == nil
+	return e.Target == "" && e.Inject == nil && e.Values.Len() == 0 && e.Infra.Len() == 0
 }
