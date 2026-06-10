@@ -80,6 +80,14 @@ type TopologyNode struct {
 	Labels          types.OrderedMap[string]
 	Values          types.OrderedMap[any]
 	SelfInject      *types.InjectBlock // Component-level self-inject (carried to IR for Pass 2a)
+	// Uses is the component's authored `uses` block, carried onto the node so
+	// the edge-normalisation pass can read it directly. Sub-aggregate components
+	// are not present in the root Aggregate, so resolving their `uses` by name
+	// against the root would drop their edges; carrying the block on the node
+	// (alongside SourceAggregate, the prefix used to namespace edge targets)
+	// makes edge normalisation uniform across root, subsystem, and sub-aggregate
+	// origins.
+	Uses            types.OrderedMap[types.UsesSocketValue]
 	SubsystemPath   string
 	BoundaryPath    string
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
@@ -332,17 +340,28 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// in internal/compiler/ir/doc.go).
 	var edges []NormalizedEdge
 	for nodeID, node := range flat.Nodes.All() {
-		// Component uses
-		comp := findComponent(agg, nodeID)
-		if comp != nil && comp.Uses.Len() > 0 {
-			compEdges, err := normalizeUses(comp.Uses, nodeID, "", "")
+		// Component uses. Read the authored block from the node (carried during
+		// flattening) rather than resolving by name against the root Aggregate —
+		// sub-aggregate components are not in the root, so a root lookup would
+		// drop their edges. Targets are namespaced with the node's sub-aggregate
+		// prefix so a locally-authored target resolves to its flattened node ID
+		// (qualifiedID with an empty prefix is the identity, so root and
+		// subsystem targets are unchanged).
+		if node.Uses.Len() > 0 {
+			compEdges, err := normalizeUses(node.Uses, nodeID, "", "")
 			if err != nil {
 				return nil, err
+			}
+			for i := range compEdges {
+				compEdges[i].Target = qualifiedID(node.SourceAggregate, compEdges[i].Target)
 			}
 			edges = append(edges, compEdges...)
 		}
 
-		// 5. Feature uses (create edges with OriginFeature)
+		// 5. Feature uses (create edges with OriginFeature). A feature attached
+		// to a sub-aggregate component is authored inside that sub-aggregate, so
+		// its uses targets are local — namespaced with the node's prefix the same
+		// way component-edge targets are (identity for root/subsystem nodes).
 		if feats, ok := flat.FeatureAttachments[nodeID]; ok {
 			for _, fa := range feats {
 				if fa.Feature.Uses.Len() > 0 {
@@ -350,18 +369,24 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					if err != nil {
 						return nil, err
 					}
+					for i := range featEdges {
+						featEdges[i].Target = qualifiedID(node.SourceAggregate, featEdges[i].Target)
+					}
 					edges = append(edges, featEdges...)
 				}
 			}
 		}
 
-		// Secret uses
+		// Secret uses (same local-target namespacing as feature attachments).
 		if secs, ok := flat.SecretAttachments[nodeID]; ok {
 			for _, sa := range secs {
 				if sa.Secret.Uses.Len() > 0 {
 					secEdges, err := normalizeUses(sa.Secret.Uses, nodeID, sa.Secret.Type, sa.InstanceName)
 					if err != nil {
 						return nil, err
+					}
+					for i := range secEdges {
+						secEdges[i].Target = qualifiedID(node.SourceAggregate, secEdges[i].Target)
 					}
 					edges = append(edges, secEdges...)
 				}

@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: edge-cfg-submodule
+  version: "1.0.0"
+spec:
+  components:
+    # Consumer lives inside the sub-aggregate; it wires the databases socket
+    # (declared on core/api with a per-edge valueSchema/infraSchema) to the
+    # sibling store, with conforming developer values. The Release will attach
+    # per-edge infra to this edge — the case under characterization.
+    consumer:
+      type: core/api
+      uses:
+        databases:
+          main:
+            target: store
+            values:
+              protocol: grpc
+              statement_cache: 100
+      # A feature attached to a sub-aggregate component, itself carrying a uses
+      # edge to a sibling (store). Characterizes the feature-attachment edge
+      # path across the flattening boundary: the edge must enter the topology
+      # with its target namespaced to the flattened node ID (data.store).
+      features:
+        peering:
+          type: core/sidecar
+          uses:
+            peer:
+              link:
+                target: store
+    store:
+      type: core/db

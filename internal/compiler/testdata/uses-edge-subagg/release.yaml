@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: subagg-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: subagg-app
+  manifest: subagg-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        # Configure (conforming) per-edge infra on the sub-aggregate consumer's
+        # databases edge. Proves the Release merge reaches a flattened
+        # sub-aggregate node's edge once that edge exists.
+        data.consumer:
+          uses:
+            databases:
+              main:
+                infra:
+                  pool_size: 50
+                  tls_mode: mutual
+        data.store: {}
