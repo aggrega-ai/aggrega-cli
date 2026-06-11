@@ -65,7 +65,7 @@ func formatCompilerError(err error) string {
 	// renders.
 	var ce *cerrors.CompilerError
 	if stderrors.As(err, &ce) && ce != nil {
-		return renderCompilerError(ce)
+		return renderCompilerErrorChain(ce)
 	}
 	var re *resolver.ResolverError
 	if stderrors.As(err, &re) && re != nil {
@@ -88,6 +88,97 @@ func formatCompilerError(err error) string {
 		return formatCompilerError(ae.ToCompilerError())
 	}
 	return err.Error()
+}
+
+// renderCompilerErrorChain renders the head envelope in the documented
+// shape, then walks its wrap chain so every nested *CompilerError frame
+// reaches the terminal: each nested envelope renders as an indented
+// "caused by:" continuation carrying its own category tag, source
+// pointer, and message — the innermost file-pointed frame is always
+// visible, and a phase-context wrap can no longer swallow the specific
+// diagnostic beneath it.
+//
+// Walk rules:
+//   - A nested envelope adding nothing beyond the previously rendered
+//     frame (same category, same source, message equal to or contained
+//     in the previous frame's message) is deduplicated, not repeated.
+//   - Non-envelope links (fmt wraps) are traversed without rendering;
+//     the chain's TERMINAL non-envelope error renders as a final
+//     continuation only when its text is not already part of the
+//     output (a sentinel's explanation must not vanish when the frames
+//     don't carry it).
+//   - A multi-error link (errors.Join nested under an envelope) ends
+//     the walk; rendering its sub-errors is outside the frame-chain
+//     contract.
+//
+// Rendering is read-only on the chain — errors.Is / errors.As behavior
+// is untouched.
+func renderCompilerErrorChain(head *cerrors.CompilerError) string {
+	if head == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(renderCompilerError(head))
+	prev := head
+	depth := 0
+	link := head.Wrap
+	for link != nil {
+		if _, isMulti := link.(interface{ Unwrap() []error }); isMulti {
+			break
+		}
+		if ce, ok := link.(*cerrors.CompilerError); ok {
+			if ce == nil {
+				break
+			}
+			if !frameRedundant(prev, ce) {
+				depth++
+				b.WriteString(indentCausedBy(renderCompilerError(ce), depth))
+			}
+			prev = ce
+			link = ce.Wrap
+			continue
+		}
+		next := stderrors.Unwrap(link)
+		if next == nil {
+			if txt := link.Error(); txt != "" && !strings.Contains(b.String(), txt) {
+				b.WriteString(indentCausedBy(txt, depth+1))
+			}
+			break
+		}
+		link = next
+	}
+	return b.String()
+}
+
+// frameRedundant reports whether a nested envelope adds no information
+// beyond the previously rendered frame: same category, same source
+// pointer, and a message the previous frame's message already contains
+// (equality included). Expression or pillar context on the nested frame
+// always counts as new information.
+func frameRedundant(prev, next *cerrors.CompilerError) bool {
+	if next.Expression != "" || len(next.Context) > 0 {
+		return false
+	}
+	return next.Category == prev.Category &&
+		next.Source.String() == prev.Source.String() &&
+		strings.Contains(prev.Message, next.Message)
+}
+
+// indentCausedBy lays a rendered frame (or terminal-error text) out as a
+// "caused by:" continuation: every line indented per nesting depth, the
+// first line prefixed with the continuation marker.
+func indentCausedBy(block string, depth int) string {
+	pad := strings.Repeat("  ", depth)
+	var b strings.Builder
+	for i, ln := range strings.Split(block, "\n") {
+		b.WriteString("\n")
+		b.WriteString(pad)
+		if i == 0 {
+			b.WriteString("caused by: ")
+		}
+		b.WriteString(ln)
+	}
+	return b.String()
 }
 
 // renderCompilerError formats a *CompilerError per the documented
