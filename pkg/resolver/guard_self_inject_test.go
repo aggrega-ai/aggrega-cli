@@ -124,15 +124,14 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 }
 
 // TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape pins
-// the regression-fix path. Pre-WI, the verbose-form `uses:` socket value
-// post-YAML-unmarshal is *types.OrderedMap[any] (per the OrderedMap[any]
-// round-trip migration); the InjectBlock's Env / File / Arg payloads
-// nested inside that verbose entry are also *types.OrderedMap[any]. The
-// pre-WI collectUsesInjectDeliveryKeys did socketRaw.(map[string]any)
-// which failed on the OrderedMap shape and silently skipped the socket,
-// missing inject-key collisions in verbose-form uses. This test
-// constructs the post-migration shape directly and asserts that collision
-// detection fires through the typed-wrapper migration.
+// the unmarshaled shape the guard must handle: a verbose-form `uses:`
+// socket value arrives post-YAML-unmarshal as *types.OrderedMap[any], and
+// the InjectBlock's Env / File / Arg payloads nested inside that verbose
+// entry are also *types.OrderedMap[any]. A key-collection walk that
+// asserts plain map[string]any would silently skip the socket and miss
+// inject-key collisions in verbose-form uses. This test constructs the
+// unmarshaled shape directly and asserts that collision detection fires
+// on it.
 func TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape(t *testing.T) {
 	t.Parallel()
 	envMap := types.NewOrderedMap[any]()
