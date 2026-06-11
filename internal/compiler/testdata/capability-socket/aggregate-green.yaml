@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: capability-socket-green
+  version: "1.0.0"
+spec:
+  components:
+    tool:
+      type: core/ai-tool/retrieval
+      uses:
+        target_datastore:
+          db:
+            target: vdb
+    vdb:
+      type: core/datastore/vector-db

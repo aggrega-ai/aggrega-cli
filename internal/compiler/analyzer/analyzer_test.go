@@ -406,6 +406,105 @@ func TestAnalyze_AppliesToParseError(t *testing.T) {
 	}
 }
 
+// capabilityAxisCatalog mirrors the standard-library shape of a tool
+// component whose socket constrains the capability axis: the socket
+// selector is a set-membership expression over a per-category capability
+// label rather than the operational type label. Targets: one datastore
+// carrying an in-set engine value, one carrying an out-of-set value.
+func capabilityAxisCatalog() resolver.CatalogLookup {
+	return resolver.CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			switch typeURI {
+			case "core/ai-tool/retrieval":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "function")
+				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
+				usesSchema.Set("target_datastore", types.UsesSchemaEntry{
+					Selector: "datastore.aggrega.ai/engine in (vector, episodic, semantic-memory)",
+					Required: true,
+				})
+				return types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/ai-tool/retrieval", Labels: labels},
+					Spec:     types.ComponentSpec{UsesSchema: usesSchema},
+				}, true
+			case "core/datastore/vector-db":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "stateful-server")
+				labels.Set("datastore.aggrega.ai/engine", "vector")
+				return types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/datastore/vector-db", Labels: labels},
+				}, true
+			case "core/datastore/relational-db":
+				labels := types.OrderedMap[string]{}
+				labels.Set(types.ComponentTypeLabel, "stateful-server")
+				labels.Set("datastore.aggrega.ai/engine", "relational")
+				return types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/datastore/relational-db", Labels: labels},
+				}, true
+			default:
+				return types.Component{}, false
+			}
+		},
+		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
+	}
+}
+
+func capabilityAxisGraph(engineValue string) *types.IRGraph {
+	toolLabels := types.OrderedMap[string]{}
+	toolLabels.Set(types.ComponentTypeLabel, "function")
+	dbLabels := types.OrderedMap[string]{}
+	dbLabels.Set(types.ComponentTypeLabel, "stateful-server")
+	dbLabels.Set("datastore.aggrega.ai/engine", engineValue)
+	dbComponent := "core/datastore/vector-db"
+	if engineValue != "vector" {
+		dbComponent = "core/datastore/relational-db"
+	}
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("tool", types.IRNode{Component: "core/ai-tool/retrieval", Labels: toolLabels})
+	nodes.Set("db", types.IRNode{Component: dbComponent, Labels: dbLabels})
+	return &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes: nodes,
+			Edges: []types.IREdge{
+				{Source: "tool", Target: "db", Socket: "target_datastore"},
+			},
+		},
+	}
+}
+
+// TestAnalyze_CapabilityAxisSocket_Green pins the passing leg of the
+// capability-axis socket contract: a set-membership selector over a
+// per-category capability label admits a target whose label value is in
+// the set.
+func TestAnalyze_CapabilityAxisSocket_Green(t *testing.T) {
+	t.Parallel()
+	result := Analyze(capabilityAxisGraph("vector"), capabilityAxisCatalog())
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors for in-set engine value, got %d: %+v", len(result.Errors), result.Errors)
+	}
+}
+
+// TestAnalyze_CapabilityAxisSocket_Red pins the failing leg: a target
+// whose capability-label value falls outside the selector's set trips
+// the Step-4 gate with the ErrSelectorViolation sentinel.
+func TestAnalyze_CapabilityAxisSocket_Red(t *testing.T) {
+	t.Parallel()
+	result := Analyze(capabilityAxisGraph("relational"), capabilityAxisCatalog())
+	if len(result.Errors) != 1 {
+		t.Fatalf("expected 1 selector error for out-of-set engine value, got %d: %+v", len(result.Errors), result.Errors)
+	}
+	e := result.Errors[0]
+	if e.Sentinel == nil || !errors.Is(e.Sentinel, ErrSelectorViolation) {
+		t.Errorf("sentinel: %v, want ErrSelectorViolation", e.Sentinel)
+	}
+	if e.Source != "tool" || e.Target != "db" || e.Socket != "target_datastore" {
+		t.Errorf("error fields: %+v", e)
+	}
+	if e.Selector != "datastore.aggrega.ai/engine in (vector, episodic, semantic-memory)" {
+		t.Errorf("selector: %q", e.Selector)
+	}
+}
+
 func TestAnalyze_PathsCalculated(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}

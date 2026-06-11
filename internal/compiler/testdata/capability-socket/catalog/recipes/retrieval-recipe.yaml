@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: retrieval-recipe
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/ai-tool/retrieval
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: retrieval-tool:1
+        variables:
+          TOP_K: "{{ .values.top_k }}"

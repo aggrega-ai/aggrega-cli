@@ -6,7 +6,6 @@ package catalog
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -27,12 +26,11 @@ func TestLintWarnings_NilReceiverAndPopulated(t *testing.T) {
 	}
 }
 
-// TestDeprecationWarnings_ComponentsAndFeatures pins both deprecation
-// paths: Components with deprecated secretNames + no secretsSchema;
-// Features with the same shape. Empty maps produce no warnings.
-func TestDeprecationWarnings_ComponentsAndFeatures(t *testing.T) {
+// TestDeprecationWarnings_NoActiveRules pins the attach-point contract:
+// with no deprecation rules active, the function returns nothing for an
+// empty catalog and for a populated one alike.
+func TestDeprecationWarnings_NoActiveRules(t *testing.T) {
 	t.Parallel()
-	// Empty catalog.
 	c := &Catalog{
 		Components: map[string]types.Component{},
 		Features:   map[string]types.Feature{},
@@ -41,38 +39,13 @@ func TestDeprecationWarnings_ComponentsAndFeatures(t *testing.T) {
 		t.Errorf("empty catalog should produce no warnings; got %v", got)
 	}
 
-	// Component with deprecated secretNames.
-	depComp := types.Component{}
-	depComp.Metadata.Name = "comp/deprecated"
-	depComp.Spec.SecretNames = []string{"old-secret"}
-	c.Components["comp/deprecated"] = depComp
+	comp := types.Component{}
+	comp.Metadata.Name = "comp/modern"
+	comp.Spec.SecretsSchema.Set("slot", types.SecretSlot{})
+	c.Components["comp/modern"] = comp
 
-	// Feature with deprecated secretNames.
-	depFeat := types.Feature{}
-	depFeat.Metadata.Name = "feat/deprecated"
-	depFeat.Spec.SecretNames = []string{"old-secret"}
-	c.Features["feat/deprecated"] = depFeat
-
-	// Modern: secretsSchema populated → no deprecation warning.
-	modernComp := types.Component{}
-	modernComp.Metadata.Name = "comp/modern"
-	modernComp.Spec.SecretNames = []string{"old-name"}
-	modernComp.Spec.SecretsSchema.Set("slot", types.SecretSlot{})
-	c.Components["comp/modern"] = modernComp
-
-	got := c.DeprecationWarnings()
-	if len(got) != 2 {
-		t.Fatalf("expected 2 warnings; got %d (%v)", len(got), got)
-	}
-	saw := strings.Join(got, "\n")
-	if !strings.Contains(saw, "comp/deprecated") {
-		t.Errorf("component warning missing")
-	}
-	if !strings.Contains(saw, "feat/deprecated") {
-		t.Errorf("feature warning missing")
-	}
-	if strings.Contains(saw, "comp/modern") {
-		t.Errorf("modern component should not warn")
+	if got := c.DeprecationWarnings(); len(got) != 0 {
+		t.Errorf("no active rules: populated catalog should produce no warnings; got %v", got)
 	}
 }
 

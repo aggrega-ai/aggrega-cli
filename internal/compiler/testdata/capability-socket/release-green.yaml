@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: capability-socket-release-green
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: capability-socket-green
+  manifest: capability-socket-manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        tool: {}
+        vdb: {}

@@ -249,7 +249,7 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 		return withSkipContext(fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs)), skipped)
 	}
 
-	// Surface non-fatal deprecation notices (e.g. legacy secretNames usage).
+	// Surface non-fatal deprecation notices about deprecated catalog shapes.
 	for _, w := range cat.DeprecationWarnings() {
 		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
 	}

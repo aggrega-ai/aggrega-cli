@@ -45,7 +45,6 @@ type ComponentMetadata struct {
 // unified validation surface.
 type ComponentSpec struct {
 	Extends          string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretNames      []string                    `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema. Kept as a fallback during transition.
 	SecretsSchema    OrderedMap[SecretSlot]      `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
 	RequiredFeatures []string                    `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
 	Inject           []string                    `json:"inject,omitempty" yaml:"inject,omitempty"` // Allowlist of allowed self-inject mechanisms (e.g., ["env", "file"]). Omission = Black-Box (no self-inject).

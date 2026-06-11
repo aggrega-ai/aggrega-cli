@@ -58,7 +58,7 @@ func TestResolveComponentExtends_NoExtends(t *testing.T) {
 	}
 }
 
-func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
+func TestResolveComponentExtends_MergesLabelsAndListFields(t *testing.T) {
 	t.Parallel()
 	labels := types.OrderedMap[string]{}
 	labels.Set(types.ComponentTypeLabel, "server")
@@ -72,9 +72,8 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 			Labels:  labels,
 		},
 		Spec: types.ComponentSpec{
-			SecretNames: []string{"root_password"},
-			Inject:      []string{"env"},
-			UsesSchema:  usesSchema,
+			Inject:     []string{"env"},
+			UsesSchema: usesSchema,
 			Schema: mustParseSchema(t, `values:
   port: { type: integer, minimum: 1024 }
 `),
@@ -91,10 +90,9 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 			Labels:  labels2, // overrides parent tier=base
 		},
 		Spec: types.ComponentSpec{
-			Extends:     "core/compute/server",
-			SecretNames: []string{"api_token"},
-			Inject:      []string{"env", "file"},
-			UsesSchema:  usesSchema2,
+			Extends:    "core/compute/server",
+			Inject:     []string{"env", "file"},
+			UsesSchema: usesSchema2,
 			Schema: mustParseSchema(t, `values:
   name: { type: string }
 `),
@@ -121,11 +119,6 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	tierLbl, _ := got.Metadata.Labels.Get("tier")
 	if tierLbl != "prod" {
 		t.Errorf("child should win on tier, got %q", tierLbl)
-	}
-
-	// Concatenated + deduped secret names
-	if len(got.Spec.SecretNames) != 2 {
-		t.Errorf("expected 2 secretNames, got %v", got.Spec.SecretNames)
 	}
 
 	// Inject dedupes "env"

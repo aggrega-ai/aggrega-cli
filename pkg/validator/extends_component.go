@@ -16,7 +16,7 @@ type FeatureLookup func(uri string) (types.Feature, bool)
 
 // ResolveComponentExtends returns a fully-merged Component after walking the
 // extends chain. Labels/Annotations maps are deep-merged (child wins per key),
-// list fields (SecretNames, Inject, RequiredFeatures) are concatenated and
+// list fields (Inject, RequiredFeatures) are concatenated and
 // deduplicated, UsesSchema entries are merged (child entry overrides parent on
 // the same socket name). Returns the original component unchanged when
 // Spec.Extends == "".
@@ -160,7 +160,6 @@ func mergeComponent(parent, child types.Component) types.Component {
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
 
-	out.Spec.SecretNames = concatDedupeString(parent.Spec.SecretNames, child.Spec.SecretNames)
 	out.Spec.SecretsSchema = mergeSecretsSchema(parent.Spec.SecretsSchema, child.Spec.SecretsSchema)
 	out.Spec.RequiredFeatures = concatDedupeString(parent.Spec.RequiredFeatures, child.Spec.RequiredFeatures)
 	out.Spec.Inject = concatDedupeString(parent.Spec.Inject, child.Spec.Inject)
@@ -173,7 +172,6 @@ func mergeFeature(parent, child types.Feature) types.Feature {
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
 
-	out.Spec.SecretNames = concatDedupeString(parent.Spec.SecretNames, child.Spec.SecretNames)
 	out.Spec.SecretsSchema = mergeSecretsSchema(parent.Spec.SecretsSchema, child.Spec.SecretsSchema)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
 	return out

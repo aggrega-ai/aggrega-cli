@@ -47,7 +47,6 @@ type FeatureMetadata struct {
 // bridge synthesis composes the three into the unified validation surface.
 type FeatureSpec struct {
 	Extends          string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretNames      []string                    `json:"secretNames,omitempty" yaml:"secretNames,omitempty"` // Deprecated: use SecretsSchema.
 	SecretsSchema    OrderedMap[SecretSlot]      `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
 	AppliesTo        string                      `json:"appliesTo,omitempty" yaml:"appliesTo,omitempty"`
 	AppliesToAnyOf   []SelectorTerm              `json:"appliesToAnyOf,omitempty" yaml:"appliesToAnyOf,omitempty"`

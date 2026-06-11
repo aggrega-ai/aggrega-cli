@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/datastore/relational-db
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "stateful-server"
+    component.aggrega.ai/category: "datastore"
+    datastore.aggrega.ai/engine: "relational"
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }
+      port: { type: integer, required: true }

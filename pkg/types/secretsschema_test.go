@@ -56,40 +56,18 @@ spec:
 	}
 }
 
-func TestSecretsSchema_LegacySecretNamesStillParses(t *testing.T) {
+// TestSecretsSchema_UnknownSecretNamesKeyIgnoredAtParse pins the
+// types-layer posture for the retired secretNames key: yaml.Unmarshal
+// drops unknown keys, so a stray secretNames contributes nothing to the
+// parsed spec. The loud rejection of the key is JSON-schema
+// validation's job, not the unmarshaler's.
+func TestSecretsSchema_UnknownSecretNamesKeyIgnoredAtParse(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
 apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/legacy
-  version: "1.0.0"
-  labels:
-    component.aggrega.ai/type: server
-spec:
-  secretNames: [root_password, api_token]
-`)
-	var comp Component
-	if err := yaml.Unmarshal(src, &comp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(comp.Spec.SecretNames) != 2 {
-		t.Errorf("secretNames: %v", comp.Spec.SecretNames)
-	}
-	if comp.Spec.SecretsSchema.Len() != 0 {
-		t.Errorf("expected no SecretsSchema on legacy component, got %v", comp.Spec.SecretsSchema.Keys())
-	}
-}
-
-func TestSecretsSchema_BothFieldsCoexist(t *testing.T) {
-	t.Parallel()
-	// Both legacy secretNames and new secretsSchema present — both should parse
-	// (consumption-site precedence is WI-2's concern).
-	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
-kind: Component
-metadata:
-  name: core/mixed
+  name: core/stray
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: server
@@ -103,8 +81,8 @@ spec:
 	if err := yaml.Unmarshal(src, &comp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(comp.Spec.SecretNames) != 1 || comp.Spec.SecretNames[0] != "old_key" {
-		t.Errorf("SecretNames: %v", comp.Spec.SecretNames)
+	if comp.Spec.SecretsSchema.Len() != 1 {
+		t.Errorf("secretsSchema should parse; got %v", comp.Spec.SecretsSchema.Keys())
 	}
 	newKey, _ := comp.Spec.SecretsSchema.Get("new_key")
 	if !newKey.Required {

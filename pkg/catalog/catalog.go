@@ -1081,14 +1081,12 @@ func (c *Catalog) ProviderInfraSchemaResolver(manifest *types.Manifest) func(str
 // presence of a warning never blocks Catalog use. Iteration is sorted by
 // entity name within each kind so the message stream is deterministic.
 //
-// Current scope. Flags Components and Features that declare the legacy
-// secretNames field while leaving the richer secretsSchema empty —
-// authors should migrate to secretsSchema. New deprecation rules attach
-// here: each rule reads its own catalog state, formats one message per
-// affected entity, and appends to msgs. The function is the single
-// point where "what counts as a deprecated catalog shape" lives; rules
-// living elsewhere risk drifting out of the build command's warning
-// stream.
+// Current scope. No deprecation rules are active. New deprecation rules
+// attach here: each rule reads its own catalog state, formats one
+// message per affected entity, and appends to the returned slice. The
+// function is the single point where "what counts as a deprecated
+// catalog shape" lives; rules living elsewhere risk drifting out of the
+// build command's warning stream.
 // LintWarnings returns non-fatal advisory diagnostics accumulated
 // during catalog load. Today's lint surface is schema-pillar-overlap:
 // a warning fires when a Component or Feature declares the same
@@ -1109,30 +1107,7 @@ func (c *Catalog) LintWarnings() []string {
 }
 
 func (c *Catalog) DeprecationWarnings() []string {
-	var msgs []string
-	compNames := make([]string, 0, len(c.Components))
-	for name := range c.Components {
-		compNames = append(compNames, name)
-	}
-	sort.Strings(compNames)
-	for _, name := range compNames {
-		comp := c.Components[name]
-		if len(comp.Spec.SecretNames) > 0 && comp.Spec.SecretsSchema.Len() == 0 {
-			msgs = append(msgs, fmt.Sprintf("Component %q uses deprecated secretNames; migrate to secretsSchema", name))
-		}
-	}
-	featNames := make([]string, 0, len(c.Features))
-	for name := range c.Features {
-		featNames = append(featNames, name)
-	}
-	sort.Strings(featNames)
-	for _, name := range featNames {
-		feat := c.Features[name]
-		if len(feat.Spec.SecretNames) > 0 && feat.Spec.SecretsSchema.Len() == 0 {
-			msgs = append(msgs, fmt.Sprintf("Feature %q uses deprecated secretNames; migrate to secretsSchema", name))
-		}
-	}
-	return msgs
+	return nil
 }
 
 // ResolveAllExtends walks every Component and Feature in the catalog and
