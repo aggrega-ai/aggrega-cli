@@ -424,17 +424,18 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 		return l.tier1Resolution("Feature", f.Metadata.Name, f.Metadata.Version, version), true
 	}
 	// Recipe / FeatureRecipe lookups go through RecipeByURI /
-	// FeatureRecipeByURI which already implement the three-form
-	// precedence against the metadata.name-keyed view (catalog.Recipes
-	// is keyed by spec.implements internally; the public API rebuilds
-	// the metadata.name view per call). The closure walker passes
-	// recipe URIs as metadata.name + version (per Manifest mapping
-	// values), not as spec.implements.
+	// FeatureRecipeByURI, which implement the provider-qualified /
+	// bare-name resolution ladder over the identity-keyed maps. The
+	// closure walker passes recipe URIs per Manifest mapping values
+	// (bare or provider-qualified), never spec.implements. The retained
+	// bytes are keyed by the full provider-scoped identity, so the
+	// digest below is the resolved entity's own bytes even when another
+	// provider ships a recipe of the same name.
 	if r, ok := l.catalog.RecipeByURI(uri); ok {
-		return l.tier1Resolution("Recipe", r.Metadata.Name, r.Metadata.Version, version), true
+		return l.tier1Resolution("Recipe", recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version), r.Metadata.Version, version), true
 	}
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
-		return l.tier1Resolution("FeatureRecipe", fr.Metadata.Name, fr.Metadata.Version, version), true
+		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
 	}
 	if p, ok := l.catalog.Providers[lookupName]; ok {
 		return l.tier1Resolution("Provider", p.Metadata.Name, p.Metadata.Version, version), true

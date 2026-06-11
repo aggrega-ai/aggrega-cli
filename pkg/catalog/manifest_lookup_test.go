@@ -21,9 +21,9 @@ func fakeRecipe(uri, implements string) types.Recipe {
 	}
 }
 
-// fakeCatalog builds a Catalog populated with the given recipes. The
-// Recipes map is keyed by spec.implements per the catalog's existing
-// convention; RecipeByURI walks the map by metadata.name URI.
+// fakeCatalog builds a Catalog populated with the given recipes, keyed by
+// the provider-scoped identity the loader uses; RecipeByURI resolves
+// qualified and bare URI forms against it.
 func fakeCatalog(recipes ...types.Recipe) *Catalog {
 	c := &Catalog{
 		Components:     map[string]types.Component{},
@@ -34,7 +34,7 @@ func fakeCatalog(recipes ...types.Recipe) *Catalog {
 		Providers:      map[string]types.Provider{},
 	}
 	for _, r := range recipes {
-		c.Recipes[recipeURIKey(r.Metadata.Name, r.Metadata.Version)] = r
+		c.Recipes[recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version)] = r
 	}
 	return c
 }

@@ -103,7 +103,10 @@ func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, 
 	}
 	sort.Strings(recipeNames)
 	for _, name := range recipeNames {
-		if _, ok := inClosure[catalog.EntityNameFromURI(name)]; !ok {
+		// Closure membership is by the entity's metadata.name (the form
+		// closure entity URIs carry), not by the identity map key, which
+		// additionally carries the provider segment.
+		if _, ok := inClosure[cat.Recipes[name].Metadata.Name]; !ok {
 			continue
 		}
 		if tmpl, ok := valuesMappingImportDirective(cat.Recipes[name].Spec.ValuesMapping); ok {
@@ -117,7 +120,7 @@ func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, 
 	}
 	sort.Strings(frNames)
 	for _, name := range frNames {
-		if _, ok := inClosure[catalog.EntityNameFromURI(name)]; !ok {
+		if _, ok := inClosure[cat.FeatureRecipes[name].Metadata.Name]; !ok {
 			continue
 		}
 		if tmpl, ok := valuesMappingImportDirective(cat.FeatureRecipes[name].Spec.ValuesMapping); ok {

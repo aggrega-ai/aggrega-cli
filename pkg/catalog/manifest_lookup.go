@@ -33,11 +33,13 @@ var ErrManifestImplementsMismatch = errors.New("manifest mapping entry's recipe 
 var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous")
 
 // ErrDuplicateRecipeIdentity fires when two catalog recipes (or feature
-// recipes) share the same identity — metadata.name plus version. The catalog is
-// keyed by identity so multiple recipes implementing one component type coexist;
-// a genuine duplicate identity is an authoring collision surfaced loudly at load
-// rather than silently shadowed.
-var ErrDuplicateRecipeIdentity = errors.New("duplicate recipe identity (metadata.name + version) in the catalog")
+// recipes) share the same identity — spec.provider plus metadata.name plus
+// version. The catalog is keyed by identity so multiple recipes implementing
+// one component type coexist, and two providers may each ship a recipe of
+// the same name and version; a genuine duplicate identity (same provider,
+// same name, same version) is an authoring collision surfaced loudly at
+// load rather than silently shadowed.
+var ErrDuplicateRecipeIdentity = errors.New("duplicate recipe identity (spec.provider + metadata.name + version) in the catalog")
 
 // ErrAmbiguousImplements fires when a component/feature type carries no Manifest
 // mapping yet more than one catalog recipe implements it — the compiler cannot
@@ -52,15 +54,32 @@ var ErrAmbiguousImplements = errors.New("multiple recipes implement this type an
 // rendered output.
 var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance; map its type in the Manifest or add a recipe implementing it")
 
-// recipeURIKey is the catalog's identity key for a recipe or feature recipe:
-// metadata.name joined with version as "name:version" (the same URI form
-// Manifest mapping values and the closure walker use). A versionless entity
-// keys on its bare name.
+// recipeURIKey composes the bare "name:version" URI form Manifest mapping
+// values and the closure walker use. A versionless entity keys on its bare
+// name. The catalog's identity key wraps this with the provider segment —
+// see recipeIdentityKey.
 func recipeURIKey(name, version string) string {
 	if version == "" {
 		return name
 	}
 	return name + ":" + version
+}
+
+// recipeIdentityKey is the catalog's identity key for a recipe or feature
+// recipe: "provider/name:version". The provider segment is the entity's
+// spec.provider. Identity is provider-scoped because the catalog tree
+// (recipe/{provider}/{name}/) and the registry identity
+// (recipe/{provider}/{name}:{version}) both are: two providers may each
+// ship a recipe of the same name and version, and the naming convention
+// keeps the provider out of metadata.name. An entity with an empty
+// provider keys on the flat "name:version" form, so a
+// malformed-but-loading entity keeps a stable identity rather than
+// gaining a leading slash.
+func recipeIdentityKey(provider, name, version string) string {
+	if provider == "" {
+		return recipeURIKey(name, version)
+	}
+	return provider + "/" + recipeURIKey(name, version)
 }
 
 // versionTolerantTypeGet resolves a component / feature TYPE to its mapped recipe
@@ -196,49 +215,125 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 }
 
 // RecipeByURI resolves a Manifest mapping value (a Recipe URI) to its catalog
-// Recipe. The catalog is keyed by identity (metadata.name:version), so an exact
-// `name:version` URI is a direct map get; an unversioned URI (or a versioned URI
-// whose exact version is absent) resolves by recipe NAME when exactly one
-// version carries that name. Two versions under one name make an unversioned URI
-// ambiguous — that misses here and is surfaced as a loud resolution halt
-// upstream rather than silently picking a version.
+// Recipe. The catalog is keyed by provider-scoped identity
+// ("provider/name:version"), and the URI may name the recipe at any of three
+// precision levels, tried in order:
+//
+//  1. Provider-qualified exact ("terraform/mariadb-rds:1.0.0") — a direct
+//     map get on the identity key.
+//  2. Provider-qualified by scan — the segment before the first "/" is
+//     treated as a provider candidate; within that provider the name (and
+//     version, when given) must match exactly one entity. A versioned URI
+//     whose exact version is absent falls back to a version-blind scan
+//     within the provider, preserving the version-tolerant posture the bare
+//     form has always had.
+//  3. Bare ("mariadb-rds:1.0.0" or "mariadb-rds") — a scan across every
+//     provider, version-exact first, then version-blind; exactly one match
+//     resolves.
+//
+// Any level that finds more than one candidate is a miss, never a silent
+// pick — ambiguity surfaces as a loud resolution halt upstream (the same
+// contract the unversioned-ambiguity path has always had, extended to the
+// provider dimension). The "/" split cannot misread a bare reference:
+// recipe names contain no "/" per the catalog naming convention, and a
+// failed provider interpretation falls through to bare resolution anyway.
 func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 	if r, ok := c.Recipes[uri]; ok {
 		return r, true
 	}
-	name := stripVersion(uri)
-	var match types.Recipe
-	n := 0
-	for _, r := range c.Recipes {
-		if r.Metadata.Name == name {
-			match = r
-			n++
+	if provider, rest, found := strings.Cut(uri, "/"); found {
+		name, version, _ := splitVersionedURI(rest)
+		if r, ok := matchOneRecipe(c.Recipes, provider, name, version); ok {
+			return r, true
+		}
+		if version != "" {
+			if r, ok := matchOneRecipe(c.Recipes, provider, name, ""); ok {
+				return r, true
+			}
 		}
 	}
-	if n == 1 {
-		return match, true
+	name, version, _ := splitVersionedURI(uri)
+	if r, ok := matchOneRecipe(c.Recipes, "", name, version); ok {
+		return r, true
+	}
+	if version != "" {
+		if r, ok := matchOneRecipe(c.Recipes, "", name, ""); ok {
+			return r, true
+		}
 	}
 	return types.Recipe{}, false
 }
 
-// FeatureRecipeByURI is the FeatureRecipe analogue of RecipeByURI.
+// matchOneRecipe scans the identity map for entities matching the given
+// predicates (empty provider or version = wildcard) and returns the match
+// only when it is unique. Map-iteration order is irrelevant: the result is
+// gated on the count, not the encounter order.
+func matchOneRecipe(rs map[string]types.Recipe, provider, name, version string) (types.Recipe, bool) {
+	var match types.Recipe
+	n := 0
+	for _, r := range rs {
+		if provider != "" && r.Spec.Provider != provider {
+			continue
+		}
+		if r.Metadata.Name != name {
+			continue
+		}
+		if version != "" && r.Metadata.Version != version {
+			continue
+		}
+		match = r
+		n++
+	}
+	return match, n == 1
+}
+
+// FeatureRecipeByURI is the FeatureRecipe analogue of RecipeByURI; the
+// resolution ladder is identical.
 func (c *Catalog) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
 	if fr, ok := c.FeatureRecipes[uri]; ok {
 		return fr, true
 	}
-	name := stripVersion(uri)
-	var match types.FeatureRecipe
-	n := 0
-	for _, fr := range c.FeatureRecipes {
-		if fr.Metadata.Name == name {
-			match = fr
-			n++
+	if provider, rest, found := strings.Cut(uri, "/"); found {
+		name, version, _ := splitVersionedURI(rest)
+		if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, provider, name, version); ok {
+			return fr, true
+		}
+		if version != "" {
+			if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, provider, name, ""); ok {
+				return fr, true
+			}
 		}
 	}
-	if n == 1 {
-		return match, true
+	name, version, _ := splitVersionedURI(uri)
+	if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, "", name, version); ok {
+		return fr, true
+	}
+	if version != "" {
+		if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, "", name, ""); ok {
+			return fr, true
+		}
 	}
 	return types.FeatureRecipe{}, false
+}
+
+// matchOneFeatureRecipe is the FeatureRecipe twin of matchOneRecipe.
+func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, version string) (types.FeatureRecipe, bool) {
+	var match types.FeatureRecipe
+	n := 0
+	for _, fr := range frs {
+		if provider != "" && fr.Spec.Provider != provider {
+			continue
+		}
+		if fr.Metadata.Name != name {
+			continue
+		}
+		if version != "" && fr.Metadata.Version != version {
+			continue
+		}
+		match = fr
+		n++
+	}
+	return match, n == 1
 }
 
 // implementsSatisfies reports whether a recipe declaring spec.implements==impl
@@ -278,7 +373,7 @@ func matchRecipeByImplements(recipes map[string]types.Recipe, componentType stri
 	for _, r := range recipes {
 		if implementsSatisfies(r.Spec.Implements, componentType) {
 			match = r
-			ids = append(ids, recipeURIKey(r.Metadata.Name, r.Metadata.Version))
+			ids = append(ids, recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)
@@ -296,7 +391,7 @@ func matchFeatureRecipeByImplements(frs map[string]types.FeatureRecipe, featureT
 	for _, fr := range frs {
 		if implementsSatisfies(fr.Spec.Implements, featureType) {
 			match = fr
-			ids = append(ids, recipeURIKey(fr.Metadata.Name, fr.Metadata.Version))
+			ids = append(ids, recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)

@@ -233,7 +233,7 @@ type LazyLookup struct {
 
 	// Recipe / FeatureRecipe / Aggregate sets enumerated TOLERANTLY from the
 	// catalog directories on first need (buildRecipeIndex). Recipes are keyed by
-	// identity (metadata.name:version), the same key the eager catalog uses, so
+	// identity (provider/name:version), the same key the eager catalog uses, so
 	// the re-homed matcher resolves identically. A recipe/FR/aggregate whose body
 	// won't parse (or whose identity collides) is SKIPPED with a warning and a
 	// recorded reason rather than aborting the walk — so a broken UNUSED recipe is
@@ -662,26 +662,26 @@ func (l *LazyLookup) buildRecipeIndex() {
 					l.recordRecipeSkip(path, perr)
 					return nil
 				}
-				key := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+				key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
 				if _, dup := l.recipes[key]; dup {
 					l.recordRecipeSkip(path, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
 					return nil
 				}
 				l.recipes[key] = e
-				l.entityBytes[entityBytesKey("Recipe", e.Metadata.Name)] = data
+				l.entityBytes[entityBytesKey("Recipe", key)] = data
 			case "FeatureRecipe":
 				e, perr := parseFeatureRecipeEntity(data, path)
 				if perr != nil {
 					l.recordRecipeSkip(path, perr)
 					return nil
 				}
-				key := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+				key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
 				if _, dup := l.featureRecipes[key]; dup {
 					l.recordRecipeSkip(path, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
 					return nil
 				}
 				l.featureRecipes[key] = e
-				l.entityBytes[entityBytesKey("FeatureRecipe", e.Metadata.Name)] = data
+				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = data
 			case "Aggregate":
 				e, perr := parseAggregateEntity(data)
 				if perr != nil {

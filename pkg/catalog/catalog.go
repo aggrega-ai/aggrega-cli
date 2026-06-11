@@ -44,8 +44,8 @@ import (
 type Catalog struct {
 	Components       map[string]types.Component
 	Features         map[string]types.Feature
-	Recipes          map[string]types.Recipe         // keyed by identity (metadata.name:version)
-	FeatureRecipes   map[string]types.FeatureRecipe  // keyed by identity (metadata.name:version)
+	Recipes          map[string]types.Recipe         // keyed by identity (provider/name:version)
+	FeatureRecipes   map[string]types.FeatureRecipe  // keyed by identity (provider/name:version)
 	Aggregates       map[string]types.Aggregate      // keyed by metadata.name
 	Providers        map[string]types.Provider       // keyed by metadata.name (e.g. "helm", "helm-chart")
 	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
@@ -775,23 +775,23 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		rKey := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+		rKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
 		if _, dup := c.Recipes[rKey]; dup {
 			return cerrors.Wrap(ErrDuplicateRecipeIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe identity %q already declared", rKey))
 		}
 		c.Recipes[rKey] = e
-		c.entityBytes[entityBytesKey("Recipe", e.Metadata.Name)] = data
+		c.entityBytes[entityBytesKey("Recipe", rKey)] = data
 	case "FeatureRecipe":
 		e, err := parseFeatureRecipeEntity(data, path)
 		if err != nil {
 			return err
 		}
-		frKey := recipeURIKey(e.Metadata.Name, e.Metadata.Version)
+		frKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
 		if _, dup := c.FeatureRecipes[frKey]; dup {
 			return cerrors.Wrap(ErrDuplicateRecipeIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("feature recipe identity %q already declared", frKey))
 		}
 		c.FeatureRecipes[frKey] = e
-		c.entityBytes[entityBytesKey("FeatureRecipe", e.Metadata.Name)] = data
+		c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = data
 	case "Aggregate":
 		e, err := parseAggregateEntity(data)
 		if err != nil {
