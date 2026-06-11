@@ -11,6 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -20,6 +23,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
 // PullResult holds the bytes pulled from a target plus the OCI
@@ -37,21 +41,23 @@ type PullResult struct {
 //
 // Error mapping:
 //   - target reports "not found" → wrapped ErrFetchNotFound
+//   - authentication required, rejected, or no stored credential for
+//     the registry → wrapped ErrFetchUnauthorized
 //   - content digest mismatch between manifest and fetched bytes →
 //     wrapped ErrFetchIntegrity
 //
-// Wrapping of oras-go's raw transport errors (401/403 → unauthorized,
-// DNS/TCP failures → network unreachable) is intentionally minimal
-// at this moment; the richer per-condition mapping arrives at
-// the follow-up implementation that wires both fetch axes into the
-// diagnostic surface uniformly. Until then, callers can still match
-// against the sentinels in errors.go via errors.Is once they wrap
-// their own diagnostic context.
+// Remaining raw transport errors (DNS/TCP failures → network
+// unreachable) pass through unmapped; callers can still match the
+// sentinels in errors.go via errors.Is once they wrap their own
+// diagnostic context.
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullResult, error) {
 	manifestDesc, err := target.Resolve(ctx, tag)
 	if err != nil {
 		if errors.Is(err, errdef.ErrNotFound) {
 			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound)
+		}
+		if isUnauthorized(err) {
+			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized)
 		}
 		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
 	}
@@ -143,11 +149,19 @@ func Push(ctx context.Context, target oras.Target, tag string, mediaType string,
 // The returned repository targets the full reference path; the
 // `tag` argument to Pull / Push selects the specific version within
 // that repository.
+//
+// A reference whose registry host is loopback (localhost, 127.0.0.0/8,
+// ::1 — with or without a port) is contacted over plain HTTP, so a
+// local development registry works without TLS provisioning. The
+// detection is host-based and automatic: plaintext can only ever go to
+// the local machine, and every non-loopback host keeps HTTPS exactly
+// as before. There is no configuration surface for this.
 func NewRemoteRepository(reference string) (*remote.Repository, error) {
 	repo, err := remote.NewRepository(reference)
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse reference %q: %w", reference, err)
 	}
+	repo.PlainHTTP = isLoopbackRegistry(repo.Reference.Registry)
 
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
@@ -158,6 +172,42 @@ func NewRemoteRepository(reference string) (*remote.Repository, error) {
 		Credential: credentials.Credential(store),
 	}
 	return repo, nil
+}
+
+// isUnauthorized reports whether a raw oras-go error represents an
+// authentication failure: the registry answered 401/403, or the
+// credential store holds no entry for a registry that demands basic
+// auth. Both conditions have the same operator remediation (log in to
+// the registry), so both map to ErrFetchUnauthorized.
+func isUnauthorized(err error) bool {
+	if errors.Is(err, auth.ErrBasicCredentialNotFound) {
+		return true
+	}
+	var ec *errcode.ErrorResponse
+	if errors.As(err, &ec) {
+		return ec.StatusCode == http.StatusUnauthorized || ec.StatusCode == http.StatusForbidden
+	}
+	return false
+}
+
+// isLoopbackRegistry reports whether an OCI registry host (the
+// reference segment before the first "/", which may carry a port and
+// may bracket an IPv6 literal) addresses the local machine: the
+// "localhost" name, or any loopback IP literal (127.0.0.0/8, ::1).
+// Names other than "localhost" are NOT resolved — a DNS name that
+// happens to point at 127.0.0.1 stays HTTPS, keeping the plaintext
+// decision independent of resolver state.
+func isLoopbackRegistry(registry string) bool {
+	host := registry
+	if h, _, err := net.SplitHostPort(registry); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // descriptorFromManifest parses an OCI image manifest's JSON bytes

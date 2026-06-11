@@ -8,11 +8,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/memory"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
@@ -242,4 +245,88 @@ func TestListTagsRejectsNonTagListerTarget(t *testing.T) {
 	// memory.Store DOES implement TagLister, so we rely on that as
 	// the positive case (the previous test above) and document the
 	// negative case via the type assertion in the helper body.
+}
+
+// TestNewRemoteRepository_LoopbackPlainHTTP pins the loopback plain-HTTP
+// contract: references whose registry host addresses the local machine
+// are contacted over plain HTTP (a local dev registry needs no TLS);
+// every other host keeps HTTPS. Detection is host-literal-based — a DNS
+// name other than "localhost" stays HTTPS even if it resolves to
+// loopback.
+func TestNewRemoteRepository_LoopbackPlainHTTP(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		ref       string
+		plainHTTP bool
+	}{
+		{"localhost:5000/smoke/component/x", true},
+		{"localhost/smoke/component/x", true},
+		{"127.0.0.1:5000/smoke/component/x", true},
+		{"127.0.0.1/smoke/component/x", true},
+		{"127.9.8.7:5000/smoke/component/x", true}, // 127.0.0.0/8
+		{"[::1]:5000/smoke/component/x", true},
+		{"hub.aggrega.ai/component/core/compute/server", false},
+		{"registry.example.com:5000/x/y", false},
+		{"10.0.0.7:5000/x/y", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ref, func(t *testing.T) {
+			t.Parallel()
+			repo, err := oci.NewRemoteRepository(tc.ref)
+			if err != nil {
+				t.Fatalf("NewRemoteRepository(%q): %v", tc.ref, err)
+			}
+			if repo.PlainHTTP != tc.plainHTTP {
+				t.Errorf("PlainHTTP for %q = %v, want %v", tc.ref, repo.PlainHTTP, tc.plainHTTP)
+			}
+		})
+	}
+}
+
+// failingTarget is a ReadOnlyTarget whose Resolve always returns the
+// configured error — the seam for pinning Pull's raw-error → sentinel
+// mapping without a network.
+type failingTarget struct {
+	err error
+}
+
+func (f failingTarget) Resolve(context.Context, string) (ocispec.Descriptor, error) {
+	return ocispec.Descriptor{}, f.err
+}
+func (f failingTarget) Fetch(context.Context, ocispec.Descriptor) (io.ReadCloser, error) {
+	return nil, f.err
+}
+func (f failingTarget) Exists(context.Context, ocispec.Descriptor) (bool, error) {
+	return false, f.err
+}
+
+// TestPull_UnauthorizedMapping pins the authentication-failure mapping:
+// a missing stored credential and a registry 401/403 both surface as
+// ErrFetchUnauthorized (the operator remediation is the same — log in),
+// while unrelated transport errors pass through unmapped.
+func TestPull_UnauthorizedMapping(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		err          error
+		unauthorized bool
+	}{
+		{"credential not found", auth.ErrBasicCredentialNotFound, true},
+		{"registry 401", &errcode.ErrorResponse{StatusCode: http.StatusUnauthorized}, true},
+		{"registry 403", &errcode.ErrorResponse{StatusCode: http.StatusForbidden}, true},
+		{"registry 500", &errcode.ErrorResponse{StatusCode: http.StatusInternalServerError}, false},
+		{"plain transport error", errors.New("dial tcp: connection refused"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := oci.Pull(context.Background(), failingTarget{err: tc.err}, "1.0.0")
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if got := errors.Is(err, oci.ErrFetchUnauthorized); got != tc.unauthorized {
+				t.Errorf("errors.Is(ErrFetchUnauthorized) = %v, want %v (err: %v)", got, tc.unauthorized, err)
+			}
+		})
+	}
 }
