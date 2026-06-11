@@ -145,16 +145,17 @@ metadata:
   name: core/test-feature
   version: "1.0.0"
 spec:
-  appliesTo:
-    z-key: z-value
-    a-key: a-value
-    m-key: m-value
+  appliesTo: "tier in (critical, production)"
+  appliesToAnyOf:
+    - z-key: z-value
+      a-key: a-value
+      m-key: m-value
   schema:
     values: {}
 `)
 	assertEntityRoundTrip[Feature](
 		t, src,
-		func(f *Feature) []string { return f.Spec.AppliesTo.Keys() },
+		func(f *Feature) []string { return f.Spec.AppliesToAnyOf[0].Labels.Keys() },
 		[]string{"z-key", "a-key", "m-key"},
 	)
 }

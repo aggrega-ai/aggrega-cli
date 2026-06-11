@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Tests for the structured-selector entry points (MatchLabels,
-// MatchExpressions, MatchAnyOf) — the surface Feature catalog YAML lands on
-// via Feature.Spec.AppliesTo, AppliesToExpressions, and AppliesToAnyOf.
-// Coverage is per-operator (one positive and one negative case per K8s
-// operator In/NotIn/Exists/DoesNotExist) plus the asymmetric missing-key
-// behaviour ("In" fails, "NotIn" succeeds) and the OR-between-terms /
-// AND-within-term semantics of MatchAnyOf. Tables are laid out one row per
-// behaviour so a regression renames itself in the failure output.
+// Tests for the non-string-entry-point matchers (MatchLabels, MatchAnyOf) —
+// the surface Feature catalog YAML lands on via Feature.Spec.AppliesToAnyOf
+// and the flat-map arm of its items. Coverage is one row per behaviour so a
+// regression renames itself in the failure output: equality-only AND for
+// MatchLabels; OR-between-items, per-arm dispatch (string arm through the
+// selector grammar, map arm through equality), the empty-list
+// "no constraint" contract, and parse-error surfacing for MatchAnyOf.
+// Per-operator coverage for the string grammar (including the asymmetric
+// missing-key behaviour of In / NotIn) lives in selector_test.go on the
+// MatchString path.
 
 package selector
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -59,100 +62,6 @@ func TestMatchLabels(t *testing.T) {
 	}
 }
 
-func TestMatchExpressions(t *testing.T) {
-	t.Parallel()
-
-	labels := makeLabels(
-		"component.aggrega.ai/type", "server",
-		"env", "prod",
-	)
-
-	tests := []struct {
-		name  string
-		exprs []types.LabelSelectorRequirement
-		want  bool
-	}{
-		{"nil matches all", nil, true},
-		{"empty matches all", []types.LabelSelectorRequirement{}, true},
-		{
-			"In match",
-			[]types.LabelSelectorRequirement{{Key: "env", Operator: "In", Values: []string{"prod", "staging"}}},
-			true,
-		},
-		{
-			"In no match",
-			[]types.LabelSelectorRequirement{{Key: "env", Operator: "In", Values: []string{"dev", "staging"}}},
-			false,
-		},
-		{
-			"NotIn match",
-			[]types.LabelSelectorRequirement{{Key: "env", Operator: "NotIn", Values: []string{"dev", "staging"}}},
-			true,
-		},
-		{
-			"NotIn no match",
-			[]types.LabelSelectorRequirement{{Key: "env", Operator: "NotIn", Values: []string{"prod", "staging"}}},
-			false,
-		},
-		{
-			"Exists match",
-			[]types.LabelSelectorRequirement{{Key: "env", Operator: "Exists"}},
-			true,
-		},
-		{
-			"Exists no match",
-			[]types.LabelSelectorRequirement{{Key: "missing", Operator: "Exists"}},
-			false,
-		},
-		{
-			"DoesNotExist match",
-			[]types.LabelSelectorRequirement{{Key: "missing", Operator: "DoesNotExist"}},
-			true,
-		},
-		{
-			"DoesNotExist no match",
-			[]types.LabelSelectorRequirement{{Key: "env", Operator: "DoesNotExist"}},
-			false,
-		},
-		{
-			"multiple AND all pass",
-			[]types.LabelSelectorRequirement{
-				{Key: "env", Operator: "In", Values: []string{"prod"}},
-				{Key: "component.aggrega.ai/type", Operator: "In", Values: []string{"server", "worker"}},
-			},
-			true,
-		},
-		{
-			"multiple AND one fails",
-			[]types.LabelSelectorRequirement{
-				{Key: "env", Operator: "In", Values: []string{"prod"}},
-				{Key: "component.aggrega.ai/type", Operator: "In", Values: []string{"worker"}},
-			},
-			false,
-		},
-		{
-			"NotIn missing key matches",
-			[]types.LabelSelectorRequirement{{Key: "absent", Operator: "NotIn", Values: []string{"a"}}},
-			true,
-		},
-		{
-			"In missing key fails",
-			[]types.LabelSelectorRequirement{{Key: "absent", Operator: "In", Values: []string{"a"}}},
-			false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := MatchExpressions(tt.exprs, labels)
-			if got != tt.want {
-				t.Errorf("MatchExpressions() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMatchAnyOf(t *testing.T) {
 	t.Parallel()
 
@@ -169,68 +78,92 @@ func TestMatchAnyOf(t *testing.T) {
 		{"nil matches all", nil, true},
 		{"empty matches all", []types.SelectorTerm{}, true},
 		{
-			"single term matches",
-			[]types.SelectorTerm{{MatchLabels: makeLabels("env", "prod")}},
+			"single map item matches",
+			[]types.SelectorTerm{types.MapTerm(makeLabels("env", "prod"))},
 			true,
 		},
 		{
-			"single term fails",
-			[]types.SelectorTerm{{MatchLabels: makeLabels("env", "staging")}},
+			"single map item fails",
+			[]types.SelectorTerm{types.MapTerm(makeLabels("env", "staging"))},
 			false,
 		},
 		{
-			"OR first matches",
-			[]types.SelectorTerm{
-				{MatchLabels: makeLabels("env", "prod")},
-				{MatchLabels: makeLabels("env", "staging")},
-			},
+			"single string item matches",
+			[]types.SelectorTerm{types.StringTerm("env in (prod, staging)")},
 			true,
 		},
 		{
-			"OR second matches",
+			"single string item fails",
+			[]types.SelectorTerm{types.StringTerm("env in (dev, staging)")},
+			false,
+		},
+		{
+			"string item ANDs within the item",
+			[]types.SelectorTerm{types.StringTerm("env=prod, component.aggrega.ai/type=worker")},
+			false,
+		},
+		{
+			"OR across mixed arms, second matches",
 			[]types.SelectorTerm{
-				{MatchLabels: makeLabels("env", "staging")},
-				{MatchLabels: makeLabels("env", "prod")},
+				types.MapTerm(makeLabels("env", "staging")),
+				types.StringTerm("component.aggrega.ai/type in (server, worker)"),
 			},
 			true,
 		},
 		{
 			"OR none match",
 			[]types.SelectorTerm{
-				{MatchLabels: makeLabels("env", "staging")},
-				{MatchLabels: makeLabels("env", "dev")},
+				types.MapTerm(makeLabels("env", "staging")),
+				types.StringTerm("component.aggrega.ai/type=worker"),
 			},
 			false,
 		},
 		{
-			"term with matchLabels AND matchExpressions",
-			[]types.SelectorTerm{
-				{
-					MatchLabels:      makeLabels("env", "prod"),
-					MatchExpressions: []types.LabelSelectorRequirement{{Key: "component.aggrega.ai/type", Operator: "In", Values: []string{"server"}}},
-				},
-			},
+			"empty string item matches all (no constraint)",
+			[]types.SelectorTerm{types.StringTerm("")},
 			true,
-		},
-		{
-			"term matchLabels pass but matchExpressions fail",
-			[]types.SelectorTerm{
-				{
-					MatchLabels:      makeLabels("env", "prod"),
-					MatchExpressions: []types.LabelSelectorRequirement{{Key: "component.aggrega.ai/type", Operator: "In", Values: []string{"worker"}}},
-				},
-			},
-			false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := MatchAnyOf(tt.terms, labels)
+			got, err := MatchAnyOf(tt.terms, labels)
+			if err != nil {
+				t.Fatalf("MatchAnyOf() error = %v", err)
+			}
 			if got != tt.want {
 				t.Errorf("MatchAnyOf() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestMatchAnyOf_ParseError pins the loud-guardrail contract: a malformed
+// string item surfaces the parse error rather than silently changing the
+// disjunction, and evaluation is short-circuiting in author order — an
+// item that matches before the malformed one is reached satisfies the
+// disjunction without an error.
+func TestMatchAnyOf_ParseError(t *testing.T) {
+	t.Parallel()
+
+	labels := makeLabels("env", "prod")
+
+	_, err := MatchAnyOf([]types.SelectorTerm{
+		types.StringTerm("env in (prod"), // unclosed set: the parser's hard error
+	}, labels)
+	if err == nil {
+		t.Fatal("malformed string item should surface a parse error")
+	}
+	if !strings.Contains(err.Error(), "selector") {
+		t.Errorf("parse error should come from the selector parser; got %v", err)
+	}
+
+	got, err := MatchAnyOf([]types.SelectorTerm{
+		types.MapTerm(makeLabels("env", "prod")), // matches first
+		types.StringTerm("env in (prod"),         // never reached
+	}, labels)
+	if err != nil || !got {
+		t.Errorf("match before malformed item should short-circuit: got=%v err=%v", got, err)
 	}
 }

@@ -23,8 +23,7 @@ metadata:
   name: core/monitoring/scrape
   version: "1.0.0"
 spec:
-  appliesTo:
-    component.aggrega.ai/type: server
+  appliesTo: "component.aggrega.ai/type=server"
   schema:
     values:
       scrape_port: { type: integer, minimum: 1024, maximum: 65535 }

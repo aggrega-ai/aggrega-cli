@@ -126,10 +126,11 @@ metadata:
   name: core/monitoring
   version: "1.0.0"
 spec:
-  appliesTo:
-    zone: prod
-    access: internal
-    mesh: enabled
+  appliesTo: "zone=prod, access=internal"
+  appliesToAnyOf:
+    - zone: prod
+      access: internal
+      mesh: enabled
 `)
 
 	var feat Feature
@@ -137,10 +138,16 @@ spec:
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
+	if feat.Spec.AppliesTo != "zone=prod, access=internal" {
+		t.Errorf("AppliesTo = %q, want the authored selector string", feat.Spec.AppliesTo)
+	}
+	if len(feat.Spec.AppliesToAnyOf) != 1 || !feat.Spec.AppliesToAnyOf[0].IsMap() {
+		t.Fatalf("AppliesToAnyOf = %+v, want one flat-map item", feat.Spec.AppliesToAnyOf)
+	}
 	want := []string{"zone", "access", "mesh"}
-	got := feat.Spec.AppliesTo.Keys()
+	got := feat.Spec.AppliesToAnyOf[0].Labels.Keys()
 	if !slices.Equal(got, want) {
-		t.Errorf("AppliesTo keys = %v, want %v", got, want)
+		t.Errorf("AppliesToAnyOf[0] keys = %v, want %v", got, want)
 	}
 }
 

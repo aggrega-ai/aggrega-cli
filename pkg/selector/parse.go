@@ -13,10 +13,8 @@ import (
 // the only valid values; callers compare against the constants and never
 // against the underlying string. The string-typed backing exists only so the
 // constants double as the literal tokens emitted by the string-selector
-// parser ("=", "!=", "in", "notin"); structured-selector callers using
-// types.LabelSelectorRequirement supply the K8s-API operator names ("In",
-// "NotIn", "Exists", "DoesNotExist") which match.go handles directly without
-// going through this Operator type.
+// parser ("=", "!=", "in", "notin"); the Exists / DoesNotExist pair has no
+// surface token of its own (a bare key and a "!key" prefix produce them).
 type Operator string
 
 const (
@@ -35,10 +33,11 @@ const (
 // NotIn carry one or more.
 //
 // Requirement is the internal currency of the string-selector path
-// (Parse → matchRequirement in selector.go). Callers using structured
-// selectors via Feature appliesTo* fields work in
-// types.LabelSelectorRequirement / types.SelectorTerm directly and never
-// construct Requirement.
+// (Parse → matchRequirement in selector.go). Callers never construct
+// Requirement directly; every selector surface — `usesSchema.selector`,
+// Feature `appliesTo`, and the string-form items of `appliesToAnyOf` —
+// reaches it through Parse. The flat-map arm of an `appliesToAnyOf` item
+// bypasses Requirement entirely via MatchLabels.
 type Requirement struct {
 	Key      string
 	Operator Operator

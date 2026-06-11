@@ -5,6 +5,7 @@ package analyzer
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -164,13 +165,10 @@ func analyzerCatalogWithFeature(feat types.Feature) resolver.CatalogLookup {
 
 func TestAnalyze_AppliesToPass(t *testing.T) {
 	t.Parallel()
-	appliesTo := types.OrderedMap[string]{}
-	appliesTo.Set(types.ComponentTypeLabel, "server")
-
 	feat := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
 		Spec: types.FeatureSpec{
-			AppliesTo: appliesTo,
+			AppliesTo: types.ComponentTypeLabel + "=server",
 		},
 	}
 	labels := types.OrderedMap[string]{}
@@ -199,13 +197,10 @@ func TestAnalyze_AppliesToPass(t *testing.T) {
 
 func TestAnalyze_AppliesToFail(t *testing.T) {
 	t.Parallel()
-	appliesTo := types.OrderedMap[string]{}
-	appliesTo.Set(types.ComponentTypeLabel, "server")
-
 	feat := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
 		Spec: types.FeatureSpec{
-			AppliesTo: appliesTo,
+			AppliesTo: types.ComponentTypeLabel + "=server",
 		},
 	}
 	labels := types.OrderedMap[string]{}
@@ -242,38 +237,172 @@ func TestAnalyze_AppliesToFail(t *testing.T) {
 	}
 }
 
-func TestAnalyze_AppliesToExpressions(t *testing.T) {
+// appliesToGraph builds the one-node, one-attachment graph the appliesTo
+// tests share: node "worker" labeled with the given type value, carrying
+// Feature instance "mon" of type "core/monitoring".
+func appliesToGraph(typeValue string) *types.IRGraph {
+	labels := types.OrderedMap[string]{}
+	labels.Set(types.ComponentTypeLabel, typeValue)
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("worker", types.IRNode{Component: "core/server/api-server", Labels: labels})
+
+	inner := types.OrderedMap[types.IRFeatureEntry]{}
+	inner.Set("mon", types.IRFeatureEntry{Type: "core/monitoring"})
+	outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	outer.Set("worker", inner)
+
+	return &types.IRGraph{
+		Spec: types.IRSpec{
+			Nodes:                nodes,
+			FeatureValuesMapping: outer,
+		},
+	}
+}
+
+// TestAnalyze_AppliesToStringOperators covers the string grammar's
+// operator forms at the analyzer level against a node labeled
+// type=worker: set membership, negated set, equality, inequality,
+// bare-key existence, and !key absence, plus multi-requirement AND.
+func TestAnalyze_AppliesToStringOperators(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		appliesTo string
+		wantErrs  int
+	}{
+		{"in set match", types.ComponentTypeLabel + " in (server, worker)", 0},
+		{"in set no match", types.ComponentTypeLabel + " in (server, task)", 1},
+		{"notin set match", types.ComponentTypeLabel + " notin (server, task)", 0},
+		{"equality no match", types.ComponentTypeLabel + "=server", 1},
+		{"inequality match", types.ComponentTypeLabel + "!=server", 0},
+		{"bare key exists match", types.ComponentTypeLabel, 0},
+		{"absent key match", "!compliance.aggrega.ai/data-class", 0},
+		{"absent key no match", "!" + types.ComponentTypeLabel, 1},
+		{"comma AND one fails", types.ComponentTypeLabel + "=worker, env=prod", 1},
+		{"empty selector matches all", "", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			feat := types.Feature{
+				Metadata: types.FeatureMetadata{Name: "core/monitoring"},
+				Spec:     types.FeatureSpec{AppliesTo: tt.appliesTo},
+			}
+			result := Analyze(appliesToGraph("worker"), analyzerCatalogWithFeature(feat))
+			if len(result.Errors) != tt.wantErrs {
+				t.Errorf("appliesTo %q: expected %d errors, got %d: %+v",
+					tt.appliesTo, tt.wantErrs, len(result.Errors), result.Errors)
+			}
+		})
+	}
+}
+
+// TestAnalyze_AppliesToAnyOf covers the OR surface at the analyzer
+// level: polymorphic items (string-form and flat-map), any single
+// matching item satisfying the attachment, and the AND across the two
+// envelopes when both are declared.
+func TestAnalyze_AppliesToAnyOf(t *testing.T) {
+	t.Parallel()
+
+	serverMap := types.OrderedMap[string]{}
+	serverMap.Set(types.ComponentTypeLabel, "server")
+
+	tests := []struct {
+		name     string
+		spec     types.FeatureSpec
+		wantErrs int
+	}{
+		{
+			"string item matches",
+			types.FeatureSpec{AppliesToAnyOf: []types.SelectorTerm{
+				types.StringTerm(types.ComponentTypeLabel + " in (worker, task)"),
+			}},
+			0,
+		},
+		{
+			"map item fails, string item matches",
+			types.FeatureSpec{AppliesToAnyOf: []types.SelectorTerm{
+				types.MapTerm(serverMap),
+				types.StringTerm(types.ComponentTypeLabel + "=worker"),
+			}},
+			0,
+		},
+		{
+			"no item matches",
+			types.FeatureSpec{AppliesToAnyOf: []types.SelectorTerm{
+				types.MapTerm(serverMap),
+				types.StringTerm(types.ComponentTypeLabel + "=task"),
+			}},
+			1,
+		},
+		{
+			"both envelopes AND: appliesTo fails, anyOf matches",
+			types.FeatureSpec{
+				AppliesTo: "env=prod",
+				AppliesToAnyOf: []types.SelectorTerm{
+					types.StringTerm(types.ComponentTypeLabel + "=worker"),
+				},
+			},
+			1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			feat := types.Feature{
+				Metadata: types.FeatureMetadata{Name: "core/monitoring"},
+				Spec:     tt.spec,
+			}
+			result := Analyze(appliesToGraph("worker"), analyzerCatalogWithFeature(feat))
+			if len(result.Errors) != tt.wantErrs {
+				t.Errorf("expected %d errors, got %d: %+v", tt.wantErrs, len(result.Errors), result.Errors)
+			}
+		})
+	}
+}
+
+// TestAnalyze_AppliesToParseError pins the parse-error surfacing the
+// appliesTo path shares with the usesSchema selector validator: a
+// malformed selector produces an [AnalysisError] with the
+// "selector parse error" message and the [ErrSelectorViolation]
+// sentinel, never a silent skip.
+func TestAnalyze_AppliesToParseError(t *testing.T) {
 	t.Parallel()
 
 	feat := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
 		Spec: types.FeatureSpec{
-			AppliesToExpressions: []types.LabelSelectorRequirement{
-				{Key: types.ComponentTypeLabel, Operator: "In", Values: []string{"server", "worker"}},
-			},
+			AppliesTo: types.ComponentTypeLabel + " in (server", // unclosed set
 		},
 	}
-	labels := types.OrderedMap[string]{}
-	labels.Set(types.ComponentTypeLabel, "worker")
-	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("worker", types.IRNode{Component: "core/server/api-server", Labels: labels})
-
-	graph := &types.IRGraph{
-		Spec: types.IRSpec{
-			Nodes: nodes,
-			FeatureValuesMapping: func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
-				inner := types.OrderedMap[types.IRFeatureEntry]{}
-				inner.Set("mon", types.IRFeatureEntry{Type: "core/monitoring"})
-				outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
-				outer.Set("worker", inner)
-				return outer
-			}(),
-		},
+	result := Analyze(appliesToGraph("worker"), analyzerCatalogWithFeature(feat))
+	if len(result.Errors) != 1 {
+		t.Fatalf("expected 1 error, got %d: %+v", len(result.Errors), result.Errors)
+	}
+	e := result.Errors[0]
+	if !strings.Contains(e.Message, "selector parse error") {
+		t.Errorf("message: %q, want a selector parse error", e.Message)
+	}
+	if e.Sentinel == nil || !errors.Is(e.Sentinel, ErrSelectorViolation) {
+		t.Errorf("sentinel: %v, want ErrSelectorViolation", e.Sentinel)
+	}
+	if e.Source != "worker" || e.Target != "mon" {
+		t.Errorf("error fields: %+v", e)
 	}
 
-	result := Analyze(graph, analyzerCatalogWithFeature(feat))
-	if len(result.Errors) != 0 {
-		t.Errorf("expected 0 errors (worker matches In [server, worker]), got %d: %+v", len(result.Errors), result.Errors)
+	// The same contract holds for a malformed string item inside
+	// appliesToAnyOf.
+	feat.Spec = types.FeatureSpec{
+		AppliesToAnyOf: []types.SelectorTerm{
+			types.StringTerm(types.ComponentTypeLabel + " in (server"),
+		},
+	}
+	result = Analyze(appliesToGraph("worker"), analyzerCatalogWithFeature(feat))
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0].Message, "selector parse error") {
+		t.Errorf("anyOf parse error: %+v", result.Errors)
 	}
 }
 
@@ -445,11 +574,6 @@ func TestValidateSelectors_FeatureOriginatedEdgeReadsFeatureUsesSchema(t *testin
 	}
 }
 
-// TestFormatAppliesTo_MultiLabelOutput pins the multi-label branch of
-// formatAppliesTo's diagnostic shaping. Two or more labels render in
-// stable alphabetical order joined by comma. The function also surfaces
-// optional count-form suffixes for appliesToExpressions and
-// appliesToAnyOf when those structured-form lists are non-empty.
 func TestValidateSelectors_PopulatesOriginFileFromSourceNode(t *testing.T) {
 	t.Parallel()
 	// Two nodes authored in different files, both fail the same selector
@@ -509,13 +633,10 @@ func TestValidateSelectors_PopulatesOriginFileFromSourceNode(t *testing.T) {
 
 func TestValidateAppliesTo_PopulatesOriginFileFromAttachingNode(t *testing.T) {
 	t.Parallel()
-	appliesTo := types.OrderedMap[string]{}
-	appliesTo.Set(types.ComponentTypeLabel, "server")
-
 	feat := types.Feature{
 		Metadata: types.FeatureMetadata{Name: "core/monitoring"},
 		Spec: types.FeatureSpec{
-			AppliesTo: appliesTo,
+			AppliesTo: types.ComponentTypeLabel + "=server",
 		},
 	}
 
@@ -568,25 +689,25 @@ func TestValidateAppliesTo_PopulatesOriginFileFromAttachingNode(t *testing.T) {
 	}
 }
 
-func TestFormatAppliesTo_MultiLabelOutput(t *testing.T) {
+func TestFormatAppliesTo_SummaryOutput(t *testing.T) {
 	t.Parallel()
-	appliesTo := types.OrderedMap[string]{}
-	appliesTo.Set("component.aggrega.ai/type", "server")
-	appliesTo.Set("compliance.aggrega.ai/tier", "pci-dss")
 	spec := types.FeatureSpec{
-		AppliesTo:            appliesTo,
-		AppliesToExpressions: []types.LabelSelectorRequirement{{Key: "k", Operator: "In", Values: []string{"v"}}},
-		AppliesToAnyOf:       []types.SelectorTerm{{}, {}},
+		AppliesTo: "component.aggrega.ai/type=server, compliance.aggrega.ai/tier=pci-dss",
+		AppliesToAnyOf: []types.SelectorTerm{
+			types.StringTerm("env=prod"),
+			types.MapTerm(types.OrderedMap[string]{}),
+		},
 	}
 	out := formatAppliesTo(spec)
 	for _, want := range []string{
-		"component.aggrega.ai/type=server",
-		"compliance.aggrega.ai/tier=pci-dss",
-		"appliesToExpressions[1]",
+		`appliesTo:"component.aggrega.ai/type=server, compliance.aggrega.ai/tier=pci-dss"`,
 		"appliesToAnyOf[2]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("formatAppliesTo output missing %q; got: %s", want, out)
 		}
+	}
+	if empty := formatAppliesTo(types.FeatureSpec{}); empty != "" {
+		t.Errorf("no-constraint spec should summarize empty; got %q", empty)
 	}
 }

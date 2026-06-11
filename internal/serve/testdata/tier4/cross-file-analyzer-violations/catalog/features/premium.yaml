@@ -4,8 +4,7 @@ metadata:
   name: example/premium
   version: "1.0.0"
 spec:
-  appliesTo:
-    component.aggrega.ai/type: "premium-server"
+  appliesTo: "component.aggrega.ai/type=premium-server"
   schema:
     values:
       tier: { type: string, default: "gold" }

@@ -15,9 +15,8 @@
 //     entry for the socket being filled.
 //   - Feature appliesTo constraints on every Feature attachment —
 //     the target node's labels must satisfy the Feature catalog
-//     entity's appliesTo / appliesToExpressions / appliesToAnyOf
-//     constraints (AND across the three forms; an omitted constraint
-//     is vacuously satisfied).
+//     entity's appliesTo / appliesToAnyOf constraints (AND across the
+//     two surfaces; an omitted constraint is vacuously satisfied).
 //
 // Both checks delegate label matching to pkg/selector.
 //

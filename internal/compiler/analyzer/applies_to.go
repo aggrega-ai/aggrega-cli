@@ -18,13 +18,20 @@ import (
 // classes Step 4 runs: the Feature appliesTo check on every attached
 // Feature instance. For each (nodeID, featureInstance) pair in the
 // IR's FeatureValuesMapping the function looks up the Feature catalog
-// entity by type and evaluates the three appliesTo forms against the
+// entity by type and evaluates the two appliesTo surfaces against the
 // target node's labels.
 //
-// Semantics. AND across appliesTo, appliesToExpressions, and
-// appliesToAnyOf — all three must hold for the attachment to be valid;
-// an omitted form is vacuously satisfied. Matching delegates to
-// pkg/selector (MatchLabels / MatchExpressions / MatchAnyOf).
+// Semantics. AND across appliesTo (a string-form selector; requirements
+// inside the string AND together) and appliesToAnyOf (OR across items) —
+// both must hold for the attachment to be valid; an omitted surface is
+// vacuously satisfied (an empty selector string parses to zero
+// requirements; an empty items list matches everything). Matching
+// delegates to pkg/selector (MatchString / MatchAnyOf).
+//
+// A selector that fails to parse produces its own [AnalysisError] with a
+// "selector parse error" message — the same convention the usesSchema
+// selector validator uses — rather than being swallowed or conflated
+// with a label mismatch.
 //
 // Skip cases. Target-node misses and catalog Feature misses silently
 // continue (defense-in-depth; Step 1's resolver guards prevent the
@@ -66,9 +73,25 @@ func validateAppliesTo(ctx context.Context, graph *types.IRGraph, catalogLookup 
 				continue
 			}
 
-			if !selector.MatchLabels(feat.Spec.AppliesTo, node.Labels) ||
-				!selector.MatchExpressions(feat.Spec.AppliesToExpressions, node.Labels) ||
-				!selector.MatchAnyOf(feat.Spec.AppliesToAnyOf, node.Labels) {
+			strMatch, strErr := selector.MatchString(feat.Spec.AppliesTo, node.Labels)
+			anyMatch, anyErr := selector.MatchAnyOf(feat.Spec.AppliesToAnyOf, node.Labels)
+			if parseErr := strErr; parseErr != nil || anyErr != nil {
+				if parseErr == nil {
+					parseErr = anyErr
+				}
+				errs = append(errs, AnalysisError{
+					Source:     nodeID,
+					Target:     instance,
+					Selector:   formatAppliesTo(feat.Spec),
+					Message:    fmt.Sprintf("selector parse error: %v", parseErr),
+					OriginFile: sourceFileFor(graph, nodeID),
+					Field:      appliesToFieldPath(nodeID, instance, node.SubsystemPath),
+					Sentinel:   ErrSelectorViolation,
+				})
+				continue
+			}
+
+			if !strMatch || !anyMatch {
 				errs = append(errs, AnalysisError{
 					Source:   nodeID,
 					Target:   instance,
@@ -90,26 +113,15 @@ func validateAppliesTo(ctx context.Context, graph *types.IRGraph, catalogLookup 
 
 // formatAppliesTo produces a short, deterministic single-line summary
 // of a Feature's appliesTo constraint set for the [AnalysisError]
-// Selector field. Format: "appliesTo{k1=v1,k2=v2}" with full
-// key/value pairs alphabetical-by-key, optionally followed by
-// "appliesToExpressions[N]" and "appliesToAnyOf[N]" carrying counts
-// rather than content. The structured-form count-only treatment keeps
-// error messages compact when a Feature carries many match-expressions
-// or anyOf terms.
+// Selector field. Format: the appliesTo selector string verbatim in
+// quotes ("appliesTo:\"tier in (a, b)\"" — it is already a compact
+// single line), optionally followed by "appliesToAnyOf[N]" carrying the
+// item count rather than content. The count-only anyOf treatment keeps
+// error messages compact when a Feature carries many disjuncts.
 func formatAppliesTo(spec types.FeatureSpec) string {
 	var parts []string
-	if spec.AppliesTo.Len() > 0 {
-		keys := spec.AppliesTo.Keys()
-		sort.Strings(keys)
-		pairs := make([]string, 0, len(keys))
-		for _, k := range keys {
-			v, _ := spec.AppliesTo.Get(k)
-			pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
-		}
-		parts = append(parts, "appliesTo{"+strings.Join(pairs, ",")+"}")
-	}
-	if len(spec.AppliesToExpressions) > 0 {
-		parts = append(parts, fmt.Sprintf("appliesToExpressions[%d]", len(spec.AppliesToExpressions)))
+	if spec.AppliesTo != "" {
+		parts = append(parts, fmt.Sprintf("appliesTo:%q", spec.AppliesTo))
 	}
 	if len(spec.AppliesToAnyOf) > 0 {
 		parts = append(parts, fmt.Sprintf("appliesToAnyOf[%d]", len(spec.AppliesToAnyOf)))

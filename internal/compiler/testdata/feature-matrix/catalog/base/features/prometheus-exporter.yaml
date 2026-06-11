@@ -4,8 +4,7 @@ metadata:
   name: core/prometheus-exporter
   version: "1.0.0"
 spec:
-  appliesTo:
-    component.aggrega.ai/type: "server"
+  appliesTo: "component.aggrega.ai/type=server"
   schema:
     values:
       scrapePath: { type: string, default: "/metrics" }
