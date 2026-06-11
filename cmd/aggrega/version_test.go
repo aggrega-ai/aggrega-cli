@@ -64,6 +64,52 @@ func TestVersionJSONShape(t *testing.T) {
 	}
 }
 
+// TestNormalizeVersion pins the v-less version contract: tag-shaped
+// values lose the leading "v"; sentinels, bare hashes, and already
+// v-less values pass through unchanged.
+func TestNormalizeVersion(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"v0.1.2", "0.1.2"},
+		{"0.1.2", "0.1.2"},
+		{"v0.1.2-dev+abc123f", "0.1.2-dev+abc123f"},
+		{"v0.1.0-5-gabc1234", "0.1.0-5-gabc1234"},
+		{"(devel)", "(devel)"},
+		{"(unknown)", "(unknown)"},
+		{"abc123f", "abc123f"},
+		{"v", "v"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeVersion(c.in); got != c.want {
+			t.Errorf("normalizeVersion(%q) = %q; want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestVersionStampedVLess pins that a v-prefixed ldflags stamp is
+// reported v-less on the JSON wire shape the extension consumes.
+func TestVersionStampedVLess(t *testing.T) {
+	orig := version
+	version = "v9.9.9"
+	defer func() { version = orig }()
+
+	var buf bytes.Buffer
+	if err := runVersion(&buf, true); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
+	var info struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &info); err != nil {
+		t.Fatalf("unmarshal: %v (raw: %s)", err, buf.String())
+	}
+	if info.Version != "9.9.9" {
+		t.Errorf("stamped v9.9.9 should report as 9.9.9; got %q", info.Version)
+	}
+}
+
 // TestVersionJSONIsValidJSON guards against accidental shape drift
 // that would still be syntactically valid Go (e.g., a struct field
 // rename) but break the extension's parse. Decodes into a permissive

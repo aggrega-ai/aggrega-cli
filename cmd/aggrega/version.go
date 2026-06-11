@@ -16,14 +16,15 @@ import (
 var versionJSON bool
 
 // version is the release version stamped at build time via
-// -ldflags "-X main.version=<v>" (scripts/build.sh sets it from
+// -ldflags "-X main.version=<v>" (the build scripts set it from
 // `git describe --tags --always --dirty`). It is empty for a plain
 // `go build` / `go install` without the flag; in that case the version
 // falls back to runtime/debug.ReadBuildInfo — the module tag on
 // `go install <module>@vX.Y.Z`, or the literal "(devel)" for a local
 // working-tree build. The ldflags value wins when present so a binary
-// produced by scripts/build.sh carries the tag even though Go does not
-// stamp Main.Version for an in-tree build.
+// produced by the build scripts carries the tag even though Go does not
+// stamp Main.Version for an in-tree build. Whatever the source, the
+// reported version string is v-less (see normalizeVersion).
 var version string
 
 // commit is the short revision stamped at build time via
@@ -49,10 +50,11 @@ the output is a structured JSON object suitable for programmatic
 consumption (the VS Code extension uses this form to read the
 binary's version at activation time).
 
-Version values come from runtime/debug.ReadBuildInfo: tagged release
-builds report the module tag (e.g., v1.0.0); source builds report
-the literal "(devel)". Operators who see "(devel)" know they are
-running an unreleased build.`,
+Version strings are v-less (1.0.0, not v1.0.0), homogeneous with the
+version form catalog entities use. Tagged release builds report the
+release version; source builds report the literal "(devel)".
+Operators who see "(devel)" know they are running an unreleased
+build.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runVersion(cmd.OutOrStdout(), versionJSON)
 		},
@@ -114,6 +116,7 @@ func collectVersionInfo() versionInfo {
 	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
+		out.Version = normalizeVersion(out.Version)
 		return out
 	}
 	if version == "" && info.Main.Version != "" {
@@ -127,5 +130,22 @@ func collectVersionInfo() versionInfo {
 			}
 		}
 	}
+	out.Version = normalizeVersion(out.Version)
 	return out
+}
+
+// normalizeVersion strips the leading "v" from tag-shaped version
+// values (v0.1.2 → 0.1.2) so every surface reports the same v-less
+// form regardless of which build path supplied the value — ldflags
+// stamping or the module tag from ReadBuildInfo. Git tags keep their
+// v prefix (Go module resolution requires vX.Y.Z tags); the prefix is
+// a tag-naming concern, not part of the version string humans and
+// tools read. Values not shaped like a v-prefixed version — the
+// "(devel)" and "(unknown)" sentinels, bare commit hashes — pass
+// through unchanged.
+func normalizeVersion(s string) string {
+	if len(s) >= 2 && s[0] == 'v' && s[1] >= '0' && s[1] <= '9' {
+		return s[1:]
+	}
+	return s
 }
