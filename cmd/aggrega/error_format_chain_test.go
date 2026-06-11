@@ -146,6 +146,72 @@ func TestFormatCompilerError_JoinOfNestedChains(t *testing.T) {
 	}
 }
 
+// TestFormatCompilerError_MultiErrorLink_Step4cShape mirrors the
+// production shape exactly: the Step 4c envelope around the
+// resolution-completeness verifier's errors.Join, whose sub-errors are
+// fmt-wrapped sentinels. Every joined sub-error must render beneath the
+// enclosing frame with a count header; errors.Is keeps traversing.
+func TestFormatCompilerError_MultiErrorLink_Step4cShape(t *testing.T) {
+	t.Parallel()
+	ambiguity := fmt.Errorf(
+		"%w: component %q (type %q): recipes [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0] all implement it",
+		catalog.ErrAmbiguousImplements, "db", "core/database/mariadb:1.0.0")
+	noRecipe := fmt.Errorf(
+		"%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it",
+		catalog.ErrNoRecipeResolved, "metrics", "core/metrics:1.0.0")
+	join := stderrors.Join(ambiguity, noRecipe)
+	head := cerrors.Wrap(join, cerrors.CatalogError,
+		cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
+
+	got := formatCompilerError(head)
+	for _, want := range []string{
+		"Step 4c (recipe resolution)",
+		"caused by (2):",
+		"cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0",
+		"all implement it",
+		"no Manifest mapping and no feature recipe implements it",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Step-4c shape missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if !stderrors.Is(head, catalog.ErrAmbiguousImplements) || !stderrors.Is(head, catalog.ErrNoRecipeResolved) {
+		t.Error("errors.Is must keep traversing through the multi-error link")
+	}
+}
+
+// TestFormatCompilerError_DepthComposition pins that the Join walker and
+// the frame walker compose at both levels: a top-level Join of [an
+// envelope whose chain contains a Join, a plain envelope] renders every
+// piece.
+func TestFormatCompilerError_DepthComposition(t *testing.T) {
+	t.Parallel()
+	innerJoin := stderrors.Join(
+		stderrors.New("sub one failed"),
+		cerrors.Wrap(nil, cerrors.DeveloperError,
+			cerrors.SourceLocation{File: "deep.yaml"}, "sub two failed"),
+	)
+	withNestedJoin := cerrors.Wrap(innerJoin, cerrors.CatalogError,
+		cerrors.SourceLocation{}, "phase with forked failures")
+	plain := cerrors.Wrap(nil, cerrors.OpsError,
+		cerrors.SourceLocation{File: "release.yaml"}, "independent failure")
+
+	got := formatCompilerError(stderrors.Join(withNestedJoin, plain))
+	for _, want := range []string{
+		"phase with forked failures",
+		"caused by (2):",
+		"sub one failed",
+		"sub two failed",
+		"deep.yaml",
+		"independent failure",
+		"\n---\n", // the top-level Join separator
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("depth composition missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+}
+
 // TestFormatCompilerError_FmtLinkBetweenFrames pins that a fmt-wrapped
 // link between two envelopes does not break the walk: both envelope
 // frames render.

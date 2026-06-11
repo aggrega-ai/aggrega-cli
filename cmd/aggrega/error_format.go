@@ -107,9 +107,14 @@ func formatCompilerError(err error) string {
 //     continuation only when its text is not already part of the
 //     output (a sentinel's explanation must not vanish when the frames
 //     don't carry it).
-//   - A multi-error link (errors.Join nested under an envelope) ends
-//     the walk; rendering its sub-errors is outside the frame-chain
-//     contract.
+//   - A multi-error link (errors.Join nested under an envelope) renders
+//     every joined sub-error: a "caused by (N):" header, then each
+//     sub-error through the full formatCompilerError recursion (its own
+//     frame walk, multi-error walk, and conversion branches), separated
+//     by the same "---" rule the top-level Join rendering uses. The walk
+//     ends at the link — the chain forks there and each sub-chain owns
+//     its own tail. Recursion terminates because sub-errors are
+//     independent chains re-entering branches that terminate.
 //
 // Rendering is read-only on the chain — errors.Is / errors.As behavior
 // is untouched.
@@ -123,7 +128,24 @@ func renderCompilerErrorChain(head *cerrors.CompilerError) string {
 	depth := 0
 	link := head.Wrap
 	for link != nil {
-		if _, isMulti := link.(interface{ Unwrap() []error }); isMulti {
+		if me, isMulti := link.(interface{ Unwrap() []error }); isMulti {
+			subs := me.Unwrap()
+			rendered := make([]string, 0, len(subs))
+			for _, sub := range subs {
+				if s := formatCompilerError(sub); s != "" {
+					rendered = append(rendered, s)
+				}
+			}
+			if len(rendered) > 0 {
+				pad := strings.Repeat("  ", depth+1)
+				fmt.Fprintf(&b, "\n%scaused by (%d):", pad, len(rendered))
+				for i, block := range rendered {
+					if i > 0 {
+						fmt.Fprintf(&b, "\n%s---", pad)
+					}
+					b.WriteString(indentBlock(block, depth+2))
+				}
+			}
 			break
 		}
 		if ce, ok := link.(*cerrors.CompilerError); ok {
@@ -162,6 +184,20 @@ func frameRedundant(prev, next *cerrors.CompilerError) bool {
 	return next.Category == prev.Category &&
 		next.Source.String() == prev.Source.String() &&
 		strings.Contains(prev.Message, next.Message)
+}
+
+// indentBlock indents every line of a rendered block per nesting depth,
+// each on its own line — the layout for the sub-error blocks beneath a
+// "caused by (N):" header.
+func indentBlock(block string, depth int) string {
+	pad := strings.Repeat("  ", depth)
+	var b strings.Builder
+	for _, ln := range strings.Split(block, "\n") {
+		b.WriteString("\n")
+		b.WriteString(pad)
+		b.WriteString(ln)
+	}
+	return b.String()
 }
 
 // indentCausedBy lays a rendered frame (or terminal-error text) out as a
