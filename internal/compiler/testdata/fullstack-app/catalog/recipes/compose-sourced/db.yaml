@@ -5,7 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: compose
-  implements: core/database/postgres
+  implements: core/datastore/postgres
   source: ./sources/db.yaml
   provides:
     host: "{{ .context.instance_id }}"

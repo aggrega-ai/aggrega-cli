@@ -6,7 +6,7 @@ metadata:
 spec:
   components:
     dbclient:
-      type: core/server/web-ui
+      type: core/compute/web-ui
       annotations:
         db-pool:
           db_name: "prod-db"

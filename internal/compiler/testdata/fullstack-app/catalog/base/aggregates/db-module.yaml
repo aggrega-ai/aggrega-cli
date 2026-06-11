@@ -6,7 +6,7 @@ metadata:
 spec:
   components:
     main-db:
-      type: core/database/postgres
+      type: core/datastore/postgres
       values:
         database_name: app_production
   exported_components:

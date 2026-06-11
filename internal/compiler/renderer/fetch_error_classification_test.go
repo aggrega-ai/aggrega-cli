@@ -33,7 +33,7 @@ func TestRenderAll_FetchErrorCategoryOnMissingLockfileEntry(t *testing.T) {
 	// sourcecache.LookupAndExtract and bottoms out with
 	// ErrFetchNotFound.
 
-	input := integrationInput(t, root, "core/server/api-server", "api", "helm", "sha256:nope", "oci://nonexistent/chart", "9.9.9")
+	input := integrationInput(t, root, "core/compute/api-server", "api", "helm", "sha256:nope", "oci://nonexistent/chart", "9.9.9")
 	// Drop the populated SourceArtifacts entry — the integration helper
 	// seeds one; for this test we want NO entry matching the Recipe.
 	input.Lockfile = &lockfile.Lockfile{
@@ -86,7 +86,7 @@ func TestRenderAll_FetchErrorIncludesRemediationOnTamperedArchive(t *testing.T) 
 		t.Fatalf("tamper write: %v", err)
 	}
 
-	input := integrationInput(t, root, "core/server/api-server", "api", "helm", digest, "oci://r/c", "1.0.0")
+	input := integrationInput(t, root, "core/compute/api-server", "api", "helm", digest, "oci://r/c", "1.0.0")
 	lookup := structuredSourceRecipeLookup("helm", "helm-oci-chart", "oci://r/c", "1.0.0")
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())

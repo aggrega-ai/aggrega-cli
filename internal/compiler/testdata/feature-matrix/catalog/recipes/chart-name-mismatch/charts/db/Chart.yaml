@@ -1,4 +1,4 @@
 apiVersion: v2
 name: db
 version: 0.1.0
-description: feature-matrix chart-name-mismatch fixture chart for core/database/mariadb.
+description: feature-matrix chart-name-mismatch fixture chart for core/datastore/mariadb.

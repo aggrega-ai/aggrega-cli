@@ -118,13 +118,13 @@ metadata:
   name: myco/r
   version: 1.0.0
 spec:
-  implements: core/server/api
+  implements: core/compute/api
   provider: helm
   source: /absolute/path
   valuesMapping: '{"image": "x:latest"}'
 `
 	_ = c.indexFile([]byte(src), "/some/dir/r.yaml")
-	if r, _, ok := matchRecipeByImplements(c.Recipes, "core/server/api"); ok {
+	if r, _, ok := matchRecipeByImplements(c.Recipes, "core/compute/api"); ok {
 		if s, _ := r.Spec.Source.(string); s != "/absolute/path" {
 			t.Errorf("absolute source rewritten unexpectedly: %q", s)
 		}

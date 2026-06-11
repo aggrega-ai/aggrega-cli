@@ -65,13 +65,13 @@ func TestTrace_NonBlockingContract_50Nodes(t *testing.T) {
 	const boundaryPath = "perf-bench"
 
 	// Build a 50-node IRGraph: single boundary, no edges, no FRs. Nodes
-	// share Component "core/server/api-server"; Recipe is the same shared
+	// share Component "core/compute/api-server"; Recipe is the same shared
 	// stub returned by the closure-based RecipeLookup below.
 	nodes := types.OrderedMap[types.IRNode]{}
 	for i := 0; i < numNodes; i++ {
 		nodeID := fmt.Sprintf("node-%02d", i)
 		nodes.Set(nodeID, types.IRNode{
-			Component:       "core/server/api-server",
+			Component:       "core/compute/api-server",
 			BoundaryPath:    boundaryPath,
 			ResolvedVersion: "1.0.0",
 		})

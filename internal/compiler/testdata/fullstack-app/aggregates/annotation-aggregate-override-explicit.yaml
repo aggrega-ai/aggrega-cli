@@ -8,21 +8,21 @@ spec:
     data:
       components:
         reader:
-          type: core/server/web-ui
+          type: core/compute/web-ui
           features:
             db-pool:
               type: feature.myco/db-pool
               values:
                 db_name: "shared-db"
         writer:
-          type: core/server/web-ui
+          type: core/compute/web-ui
           features:
             db-pool:
               type: feature.myco/db-pool
               values:
                 db_name: "shared-db"
         admin:
-          type: core/server/web-ui
+          type: core/compute/web-ui
           features:
             db-pool:
               type: feature.myco/db-pool

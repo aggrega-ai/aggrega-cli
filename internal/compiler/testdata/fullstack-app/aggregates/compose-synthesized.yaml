@@ -6,13 +6,13 @@ metadata:
 spec:
   components:
     api:
-      type: core/server/api-server
+      type: core/compute/api-server
       infra:
         port: 8080
       uses:
         databases:
           - db
     db:
-      type: core/database/postgres
+      type: core/datastore/postgres
       values:
         database_name: app

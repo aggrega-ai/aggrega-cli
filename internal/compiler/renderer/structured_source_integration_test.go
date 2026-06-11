@@ -47,7 +47,7 @@ func TestRenderAll_BuildsStructuredHelmSource(t *testing.T) {
 	digest := integrationDigest(blob)
 	seedIntegrationCacheSlot(t, root, "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 
-	input := integrationInput(t, root, "core/server/api-server", "api", "helm", digest, "oci://r/c", "1.0.0")
+	input := integrationInput(t, root, "core/compute/api-server", "api", "helm", digest, "oci://r/c", "1.0.0")
 	lookup := structuredSourceRecipeLookup("helm", "helm-oci-chart", "oci://r/c", "1.0.0")
 	factory := testHelmFactory()
 
@@ -77,7 +77,7 @@ func TestRenderAll_BuildsStructuredHelmChartSource(t *testing.T) {
 	digest := integrationDigest(blob)
 	seedIntegrationCacheSlot(t, root, "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 
-	input := integrationInput(t, root, "core/server/api-server", "api", "helm-chart", digest, "oci://r/c", "1.0.0")
+	input := integrationInput(t, root, "core/compute/api-server", "api", "helm-chart", digest, "oci://r/c", "1.0.0")
 	lookup := structuredSourceRecipeLookup("helm-chart", "helm-oci-chart", "oci://r/c", "1.0.0")
 	factory := func(string) (renderer.Engine, error) { return &renderHelmChart.HelmEngine{}, nil }
 
@@ -109,7 +109,7 @@ func TestRenderAll_BuildsStructuredComposeSource(t *testing.T) {
 	digest := integrationDigest(blob)
 	seedIntegrationCacheSlot(t, root, "compose-https-fragment", "https://example.com/compose.yaml", "1.0.0", blob, digest)
 
-	input := integrationInputCompose(t, root, "core/server/api-server", "api", digest, "https://example.com/compose.yaml", "1.0.0")
+	input := integrationInputCompose(t, root, "core/compute/api-server", "api", digest, "https://example.com/compose.yaml", "1.0.0")
 	lookup := structuredSourceRecipeLookup("compose", "compose-https-fragment", "https://example.com/compose.yaml", "1.0.0")
 	factory := func(string) (renderer.Engine, error) { return &renderCompose.ComposeEngine{}, nil }
 
@@ -247,14 +247,14 @@ func integrationInputCompose(t *testing.T, workspaceRoot, componentType, nodeID,
 func structuredSourceRecipeLookup(provider, kind, url, version string) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType != "core/server/api-server" {
+			if componentType != "core/compute/api-server" {
 				return nil, false
 			}
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
 					Provider:   provider,
-					Implements: "core/server/api-server",
+					Implements: "core/compute/api-server",
 					Source: map[string]any{
 						"kind":    kind,
 						"url":     url,

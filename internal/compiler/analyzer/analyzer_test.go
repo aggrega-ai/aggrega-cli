@@ -17,26 +17,26 @@ func analyzerCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/server/api-server":
+			case "core/compute/api-server":
 				labels := types.OrderedMap[string]{}
 				labels.Set(types.ComponentTypeLabel, "server")
 				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
 				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/server/api-server",
+						Name:   "core/compute/api-server",
 						Labels: labels,
 					},
 					Spec: types.ComponentSpec{
 						UsesSchema: usesSchema,
 					},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				labels2 := types.OrderedMap[string]{}
 				labels2.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/database/postgres",
+						Name:   "core/datastore/postgres",
 						Labels: labels2,
 					},
 				}, true
@@ -66,8 +66,8 @@ func TestAnalyze_SelectorPass(t *testing.T) {
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "stateful-server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
-	nodes.Set("main-db", types.IRNode{Component: "core/database/postgres", Labels: labels2})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels})
+	nodes.Set("main-db", types.IRNode{Component: "core/datastore/postgres", Labels: labels2})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
@@ -91,7 +91,7 @@ func TestAnalyze_SelectorFail(t *testing.T) {
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "resource")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels})
 	nodes.Set("cache", types.IRNode{Component: "core/redis", Labels: labels2})
 
 	graph := &types.IRGraph{
@@ -127,7 +127,7 @@ func TestAnalyze_SelectorFail_ReleaseCreatedEdge(t *testing.T) {
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "resource")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels})
 	nodes.Set("cache", types.IRNode{Component: "core/redis", Labels: labels2})
 
 	graph := &types.IRGraph{
@@ -174,7 +174,7 @@ func TestAnalyze_AppliesToPass(t *testing.T) {
 	labels := types.OrderedMap[string]{}
 	labels.Set(types.ComponentTypeLabel, "server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
@@ -206,7 +206,7 @@ func TestAnalyze_AppliesToFail(t *testing.T) {
 	labels := types.OrderedMap[string]{}
 	labels.Set(types.ComponentTypeLabel, "stateful-server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("db", types.IRNode{Component: "core/database/postgres", Labels: labels})
+	nodes.Set("db", types.IRNode{Component: "core/datastore/postgres", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
@@ -244,7 +244,7 @@ func appliesToGraph(typeValue string) *types.IRGraph {
 	labels := types.OrderedMap[string]{}
 	labels.Set(types.ComponentTypeLabel, typeValue)
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("worker", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("worker", types.IRNode{Component: "core/compute/api-server", Labels: labels})
 
 	inner := types.OrderedMap[types.IRFeatureEntry]{}
 	inner.Set("mon", types.IRFeatureEntry{Type: "core/monitoring"})
@@ -409,9 +409,9 @@ func TestAnalyze_AppliesToParseError(t *testing.T) {
 func TestAnalyze_PathsCalculated(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("gateway", types.IRNode{Component: "core/server/api-server"})
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server"})
-	nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
+	nodes.Set("gateway", types.IRNode{Component: "core/compute/api-server"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server"})
+	nodes.Set("db", types.IRNode{Component: "core/datastore/postgres"})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
@@ -447,7 +447,7 @@ func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 	labels := types.OrderedMap[string]{}
 	labels.Set("a", "b")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", ResolvedVersion: "1.0.0", Labels: labels})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", ResolvedVersion: "1.0.0", Labels: labels})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
@@ -464,7 +464,7 @@ func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 		t.Errorf("expected 1 policy node, got %d", len(result.PolicyInput.Graph.Nodes))
 	}
 	pn := result.PolicyInput.Graph.Nodes["api"]
-	if pn.Component != "core/server/api-server" || pn.ResolvedVersion != "1.0.0" {
+	if pn.Component != "core/compute/api-server" || pn.ResolvedVersion != "1.0.0" {
 		t.Errorf("policy node: %+v", pn)
 	}
 }
@@ -548,7 +548,7 @@ func TestValidateSelectors_FeatureOriginatedEdgeReadsFeatureUsesSchema(t *testin
 	targetLabels := types.OrderedMap[string]{}
 	targetLabels.Set(types.ComponentTypeLabel, "resource")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels})
 	nodes.Set("backing", types.IRNode{Component: "core/redis", Labels: targetLabels})
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{
@@ -587,12 +587,12 @@ func TestValidateSelectors_PopulatesOriginFileFromSourceNode(t *testing.T) {
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("api-root", types.IRNode{
-		Component:  "core/server/api-server",
+		Component:  "core/compute/api-server",
 		Labels:     apiLabels,
 		SourceFile: "/workspace/root.yaml",
 	})
 	nodes.Set("api-sub", types.IRNode{
-		Component:  "core/server/api-server",
+		Component:  "core/compute/api-server",
 		Labels:     apiLabels,
 		SourceFile: "/workspace/sub.yaml",
 	})
@@ -645,12 +645,12 @@ func TestValidateAppliesTo_PopulatesOriginFileFromAttachingNode(t *testing.T) {
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("db-root", types.IRNode{
-		Component:  "core/database/postgres",
+		Component:  "core/datastore/postgres",
 		Labels:     mismatch,
 		SourceFile: "/workspace/root.yaml",
 	})
 	nodes.Set("db-sub", types.IRNode{
-		Component:  "core/database/postgres",
+		Component:  "core/datastore/postgres",
 		Labels:     mismatch,
 		SourceFile: "/workspace/sub.yaml",
 	})

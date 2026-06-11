@@ -64,7 +64,7 @@ func TestFormatCompilerError_ThreeFrameChain(t *testing.T) {
 		cerrors.SourceLocation{File: "aggregate.yaml", Line: 7},
 		"socket selector does not match any component")
 	middle := cerrors.Wrap(innermost, cerrors.CatalogError,
-		cerrors.SourceLocation{File: "catalog/component/core/server/base.yaml"},
+		cerrors.SourceLocation{File: "catalog/component/core/compute/server.yaml"},
 		"resolving uses socket")
 	head := cerrors.Wrap(middle, cerrors.OpsError,
 		cerrors.SourceLocation{}, "release wiring")
@@ -155,7 +155,7 @@ func TestFormatCompilerError_MultiErrorLink_Step4cShape(t *testing.T) {
 	t.Parallel()
 	ambiguity := fmt.Errorf(
 		"%w: component %q (type %q): recipes [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0] all implement it",
-		catalog.ErrAmbiguousImplements, "db", "core/database/mariadb:1.0.0")
+		catalog.ErrAmbiguousImplements, "db", "core/datastore/mariadb:1.0.0")
 	noRecipe := fmt.Errorf(
 		"%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it",
 		catalog.ErrNoRecipeResolved, "metrics", "core/metrics:1.0.0")

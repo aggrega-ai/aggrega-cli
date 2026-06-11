@@ -21,8 +21,8 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "stateful-server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default", CatalogAnnotations: catalogAnnotations, ReleaseAnnotations: releaseAnnotations})
-	nodes.Set("db", types.IRNode{Component: "core/database/postgres", Labels: labels2, ResolvedVersion: "2.0.0"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default", CatalogAnnotations: catalogAnnotations, ReleaseAnnotations: releaseAnnotations})
+	nodes.Set("db", types.IRNode{Component: "core/datastore/postgres", Labels: labels2, ResolvedVersion: "2.0.0"})
 	valuesMapping := types.OrderedMap[json.RawMessage]{}
 	valuesMapping.Set("api", json.RawMessage(`{"port":8080}`))
 	infraMapping := types.OrderedMap[json.RawMessage]{}
@@ -172,7 +172,7 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
+	nodes.Set("db", types.IRNode{Component: "core/datastore/postgres"})
 
 	graph := &types.IRGraph{
 		Metadata: types.IRMetadata{AggregateName: "t"},

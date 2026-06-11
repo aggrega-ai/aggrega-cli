@@ -25,9 +25,9 @@ func selfInjectCatalog() CatalogLookup {
 					Metadata: types.ComponentMetadata{Name: "core/api-with-ssm"},
 					Spec:     types.ComponentSpec{Inject: []string{"env", "ssm_param"}},
 				}, true
-			case "core/database/postgres": // Black-Box: no spec.inject
+			case "core/datastore/postgres": // Black-Box: no spec.inject
 				return types.Component{
-					Metadata: types.ComponentMetadata{Name: "core/database/postgres"},
+					Metadata: types.ComponentMetadata{Name: "core/datastore/postgres"},
 					Spec:     types.ComponentSpec{},
 				}, true
 			default:
@@ -58,7 +58,7 @@ func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("db", types.ComponentInstance{Type: "core/database/postgres", Inject: &types.InjectBlock{Env: map[string]any{"X": "1"}}})
+	components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres", Inject: &types.InjectBlock{Env: map[string]any{"X": "1"}}})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{
@@ -172,7 +172,7 @@ func TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape(t *te
 func TestGuardSelfInject_NoInjectNilPasses(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},

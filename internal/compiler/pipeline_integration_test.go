@@ -19,7 +19,7 @@ func integrationCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/server/api-server":
+			case "core/compute/api-server":
 				labels := types.OrderedMap[string]{}
 				labels.Set(types.ComponentTypeLabel, "server")
 				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
@@ -27,7 +27,7 @@ func integrationCatalog() resolver.CatalogLookup {
 				usesSchema.Set("tools", types.UsesSchemaEntry{Selector: "tool.aggrega.ai/impact=read-only"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/server/api-server",
+						Name:    "core/compute/api-server",
 						Version: "1.0.0",
 						Labels:  labels,
 					},
@@ -35,12 +35,12 @@ func integrationCatalog() resolver.CatalogLookup {
 						UsesSchema: usesSchema,
 					},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				labels2 := types.OrderedMap[string]{}
 				labels2.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/database/postgres",
+						Name:    "core/datastore/postgres",
 						Version: "2.0.0",
 						Labels:  labels2,
 					},
@@ -176,8 +176,8 @@ func TestPipeline_SimpleTopology(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"main-db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
-	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	components.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "simple-app", Version: "1.0.0"},
 		Spec: types.AggregateSpec{
@@ -211,8 +211,8 @@ func TestPipeline_PolymorphicUses(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
-	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	components.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "poly-app"},
 		Spec: types.AggregateSpec{
@@ -237,7 +237,7 @@ func TestPipeline_PolymorphicUses(t *testing.T) {
 func TestPipeline_SubAggregateFlattening(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("child-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("child-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	exportedComponents := types.OrderedMap[string]{}
 	exportedComponents.Set("db", "child-db")
 
@@ -251,7 +251,7 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"data-mod.child-db"}})
 	components2 := types.OrderedMap[types.ComponentInstance]{}
-	components2.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	components2.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
 	aggregates := types.OrderedMap[types.SubAggregate]{}
 	aggregates.Set("data-mod", types.SubAggregate{Type: "modules/data-layer"})
 	agg := &types.Aggregate{
@@ -328,7 +328,7 @@ func TestPipeline_FeatureUsesCreatesEdge(t *testing.T) {
 	// The feature uses should create an edge with OriginFeature.
 	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Uses: uses})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "feat-app"},
 		Spec: types.AggregateSpec{
@@ -363,7 +363,7 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 	secrets := types.OrderedMap[types.SecretInstance]{}
 	secrets.Set("creds", types.SecretInstance{Type: "core/db-creds", Values: values2})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features, Secrets:
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features, Secrets:
 
 	// Secret should be in secrets (credential partition)
 	secrets})
@@ -409,7 +409,7 @@ func TestPipeline_SelectorViolation(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"cache"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
 	components.Set("cache", types.ComponentInstance{Type: "core/redis"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "bad-app"},
@@ -436,7 +436,7 @@ func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("feat", types.FeatureInstance{Type: "type-a", Values: values})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "mismatch-app"},
 		Spec: types.AggregateSpec{
@@ -479,10 +479,10 @@ func TestPipeline_DeterministicOutput(t *testing.T) {
 	uses3 := types.OrderedMap[types.UsesSocketValue]{}
 	uses3.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("z-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
-	components.Set("a-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses2})
-	components.Set("m-svc", types.ComponentInstance{Type: "core/server/api-server", Uses: uses3})
-	components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("z-svc", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	components.Set("a-svc", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses2})
+	components.Set("m-svc", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses3})
+	components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "det-app"},
 		Spec: types.AggregateSpec{

@@ -9,12 +9,12 @@ spec:
       type: db-module
   components:
     backend:
-      type: core/server/api-server
+      type: core/compute/api-server
       uses:
         databases:
           - data.main-db
     frontend:
-      type: core/server/web-ui
+      type: core/compute/web-ui
       uses:
         apis:
           my-api:

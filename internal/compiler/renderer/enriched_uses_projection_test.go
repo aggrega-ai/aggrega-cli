@@ -25,8 +25,8 @@ func projOM(pairs ...any) types.OrderedMap[any] {
 // context so the safety assertion is not trivially empty.
 func projGraph(edgeValues, edgeInfra types.OrderedMap[any]) *types.IRGraph {
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", ResolvedVersion: "1.0.0"})
-	nodes.Set("db", types.IRNode{Component: "core/database/postgres", ResolvedVersion: "2.0.0"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", ResolvedVersion: "1.0.0"})
+	nodes.Set("db", types.IRNode{Component: "core/datastore/postgres", ResolvedVersion: "2.0.0"})
 	nodes.Set("cache", types.IRNode{Component: "core/cache/redis", ResolvedVersion: "1.0.0"})
 	nodes.Set("log", types.IRNode{Component: "core/log/sink", ResolvedVersion: "1.0.0"})
 	return &types.IRGraph{

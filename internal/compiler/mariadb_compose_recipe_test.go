@@ -57,7 +57,7 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
 
 	cat, err := catalog.LoadAll("", 
-		"../../../aggrega-hub/aggrega-catalog/component/core/database",
+		"../../../aggrega-hub/aggrega-catalog/component/core/datastore",
 		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb",
 		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
 	)
@@ -67,7 +67,7 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("db", types.IRNode{
-		Component:    "core/database/mariadb:1.0.0",
+		Component:    "core/datastore/mariadb:1.0.0",
 		BoundaryPath: "default",
 	})
 

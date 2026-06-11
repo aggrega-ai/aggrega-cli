@@ -66,7 +66,7 @@ func EnrichReport(r *Report, schema map[string]any, consumerFile string) *Report
 //
 //	validation failed at /spec/values/displayName
 //	  resolved from: BaseComponents#/schemas/BaseComponentParameter
-//	  referenced from: aggrega-hub/aggrega-catalog/component/core/database/base.yaml
+//	  referenced from: aggrega-hub/aggrega-catalog/component/core/datastore/base.yaml
 //
 // Callers wiring the validator's output into user-facing diagnostics
 // invoke FormatEnriched per finding. Callers consuming Findings

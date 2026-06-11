@@ -8,7 +8,7 @@ spec:
     data:
       components:
         dbclient:
-          type: core/server/web-ui
+          type: core/compute/web-ui
           features:
             db-pool:
               type: feature.myco/db-pool

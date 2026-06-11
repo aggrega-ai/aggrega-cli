@@ -55,7 +55,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Components) != 1 {
 		t.Errorf("expected 1 component, got %d", len(c.Components))
 	}
-	if _, ok := c.Components["core/server/api-server"]; !ok {
+	if _, ok := c.Components["core/compute/api-server"]; !ok {
 		t.Error("missing core/api-server component")
 	}
 
@@ -69,7 +69,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Recipes) != 1 {
 		t.Errorf("expected 1 recipe, got %d", len(c.Recipes))
 	}
-	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/server/api-server"); !ok {
+	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/compute/api-server"); !ok {
 		t.Error("missing recipe implementing core/api-server")
 	}
 
@@ -324,7 +324,7 @@ func TestLoad_CatalogLookup(t *testing.T) {
 
 	lookup := c.CatalogLookup()
 
-	comp, found := lookup.Component("core/server/api-server")
+	comp, found := lookup.Component("core/compute/api-server")
 	if !found {
 		t.Fatal("expected to find core/api-server")
 	}
@@ -356,7 +356,7 @@ func TestLoad_RecipeLookup(t *testing.T) {
 
 	lookup := c.RecipeLookup()
 
-	r, found := lookup.Recipe("", "core/server/api-server")
+	r, found := lookup.Recipe("", "core/compute/api-server")
 	if !found {
 		t.Fatal("expected to find recipe for core/api-server")
 	}
@@ -468,7 +468,7 @@ func TestResolveAllExtends_ComponentChain(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "base.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/base
+  name: core/compute/server
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: server
@@ -482,12 +482,12 @@ spec:
 	if err := os.WriteFile(filepath.Join(dir, "api.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/api
+  name: core/compute/api
   version: "1.0.0"
   labels:
     tier: prod
 spec:
-  extends: core/server/base
+  extends: core/compute/server
   schema:
     values:
       port: { type: integer, maximum: 65535 }
@@ -501,7 +501,7 @@ spec:
 	}
 
 	// Before resolution: child has its own Schema populated.
-	if cat.Components["core/server/api"].Spec.Schema.Kind == 0 {
+	if cat.Components["core/compute/api"].Spec.Schema.Kind == 0 {
 		t.Fatal("child component missing schema before resolution")
 	}
 
@@ -510,7 +510,7 @@ spec:
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 
-	resolved := cat.Components["core/server/api"]
+	resolved := cat.Components["core/compute/api"]
 	typeLabel, _ := resolved.Metadata.Labels.Get("component.aggrega.ai/type")
 	if typeLabel != "server" {
 		t.Errorf("expected inherited type label, got %v", resolved.Metadata.Labels.Keys())

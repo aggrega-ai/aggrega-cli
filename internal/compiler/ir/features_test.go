@@ -74,7 +74,7 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 	t.Parallel()
 	values := types.OrderedMap[any]{}
 	values.Set("enabled", true)
-	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"}
+	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
@@ -408,7 +408,7 @@ func TestCollectNodeFeatures_MarkersDeduplicatedAndSorted(t *testing.T) {
 
 func TestCollectNodeFeatures_ProvenanceExplicit_Tier1(t *testing.T) {
 	t.Parallel()
-	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"}
+	apiNode := &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{

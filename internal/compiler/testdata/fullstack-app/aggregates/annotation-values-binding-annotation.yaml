@@ -10,4 +10,4 @@ spec:
         db-pool: "values-only-db"
       components:
         dbclient:
-          type: core/server/web-ui
+          type: core/compute/web-ui

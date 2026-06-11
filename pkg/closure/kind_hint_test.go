@@ -121,7 +121,7 @@ spec:
   mappings:
     components:
       type:
-        core/database/mariadb:1.0.0: mariadb-bitnami:1.0.0
+        core/datastore/mariadb:1.0.0: mariadb-bitnami:1.0.0
     features:
       type:
         app/literal-credential:1.0.0: literal-credential-helm:1.0.0
@@ -130,7 +130,7 @@ spec:
 	cfg := workspaceconfig.Default()
 	lookup := &fakeLookup{
 		entities: map[string]closure.Resolution{
-			"core/database/mariadb:1.0.0":   resolutionOK("1.0.0", "sha256:a", "tier1-local"),
+			"core/datastore/mariadb:1.0.0":   resolutionOK("1.0.0", "sha256:a", "tier1-local"),
 			"mariadb-bitnami:1.0.0":         resolutionOK("1.0.0", "sha256:b", "tier1-local"),
 			"app/literal-credential:1.0.0":  resolutionOK("1.0.0", "sha256:c", "tier1-local"),
 			"literal-credential-helm:1.0.0": resolutionOK("1.0.0", "sha256:d", "tier1-local"),
@@ -150,7 +150,7 @@ spec:
 	cases := map[string]string{
 		"mariadb-bitnami:1.0.0":         "recipe",         // components-mapping value
 		"literal-credential-helm:1.0.0": "feature_recipe", // features-mapping value
-		"core/database/mariadb:1.0.0":   "",               // mapping key — a Component, no hint
+		"core/datastore/mariadb:1.0.0":   "",               // mapping key — a Component, no hint
 		"app/literal-credential:1.0.0":  "",               // mapping key — a Feature, no hint
 	}
 	for uri, want := range cases {

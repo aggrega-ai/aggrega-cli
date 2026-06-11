@@ -73,7 +73,7 @@ spec:
 	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/mariadb
+  name: core/datastore/mariadb
   version: 1.0.0
 spec:
   schema:
@@ -109,7 +109,7 @@ spec:
 	primed := lazy.AsCatalogLookup()
 
 	// --- Resolution parity: eager == primed-lazy for every fixture URI. ---
-	components := []string{"core/base", "core/child", "core/database/mariadb"}
+	components := []string{"core/base", "core/child", "core/datastore/mariadb"}
 	for _, uri := range components {
 		ec, eok := eager.Component(uri)
 		lc, lok := primed.Component(uri)
@@ -139,7 +139,7 @@ spec:
 	}
 
 	// Positive semantic invariant — the materialization INPUT is present and correct.
-	// The cross-library $ref in core/database/mariadb is NOT expanded at this
+	// The cross-library $ref in core/datastore/mariadb is NOT expanded at this
 	// (CatalogLookup) level; it expands downstream at IR build. So a pure eager==lazy
 	// DeepEqual over the raw-$ref components could pass even if the resolved library
 	// silently lost the default the $ref targets (both identically wrong). Assert the

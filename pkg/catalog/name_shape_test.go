@@ -66,24 +66,24 @@ func TestComponentNameShape_MatchesThreeKebabSegments(t *testing.T) {
 		want  bool
 	}{
 		// Hub catalog fixtures
-		{"core/database/mariadb", true},
-		{"core/server/ai-gateway", true},
-		{"core/model/azure-openai", true},
+		{"core/datastore/mariadb", true},
+		{"core/gateway/ai-gateway", true},
+		{"core/ai-model/azure-openai", true},
 		{"core/messaging/base", true},
-		{"core/pipeline/ai-pipeline", true},
+		{"core/ai-pipeline/base", true},
 		// Wrong segment count
 		{"core/database", false},
 		{"mariadb", false},
-		{"core/database/mariadb/extra", false},
+		{"core/datastore/mariadb/extra", false},
 		// Wrong character class
 		{"Core/database/mariadb", false},
-		{"core/database/Mariadb", false},
-		{"core/database/_mariadb", false},
-		{"core/database/mariadb_v2", false},
+		{"core/datastore/Mariadb", false},
+		{"core/datastore/_mariadb", false},
+		{"core/datastore/mariadb_v2", false},
 		// Empty segment
 		{"core//mariadb", false},
 		{"/database/mariadb", false},
-		{"core/database/", false},
+		{"core/datastore/", false},
 	}
 	for _, tc := range cases {
 		if got := ComponentNameShapeRe.MatchString(tc.input); got != tc.want {
@@ -301,7 +301,7 @@ func TestExportedStringConstants_GoRuntimeParity(t *testing.T) {
 	fixtures := []string{
 		"aggrega.ai/namespace",
 		"feature.aggrega.ai/kind",
-		"core/database/mariadb",
+		"core/datastore/mariadb",
 		"core/cryptographic-signature",
 		"mariadb-bitnami",
 		"dotenv-secret",

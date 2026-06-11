@@ -84,7 +84,7 @@ spec:
 const xrefConsumerYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/mariadb
+  name: core/datastore/mariadb
   version: 1.0.0
 spec:
   schema:

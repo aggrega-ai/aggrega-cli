@@ -78,8 +78,8 @@ var ReservedFeatureAggregaAIPrefixRe = regexp.MustCompile(ReservedFeatureAggrega
 // match the per-entity reference pages.
 
 // ComponentNameShape matches three kebab-case segments separated by
-// "/". Example matches: "core/database/mariadb",
-// "core/server/ai-gateway", "core/model/azure-openai".
+// "/". Example matches: "core/datastore/mariadb",
+// "core/gateway/ai-gateway", "core/ai-model/azure-openai".
 const ComponentNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 
 // FeatureNameShape matches two kebab-case segments separated by "/".

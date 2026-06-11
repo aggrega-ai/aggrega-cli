@@ -52,7 +52,7 @@ func TestCheckProvidesSelfContainment_StringLiteralOK(t *testing.T) {
 func TestEvaluateAllProvides_Simple(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
+	nodes.Set("db", types.IRNode{Component: "core/datastore/postgres"})
 
 	graph := &types.IRGraph{
 		Spec: types.IRSpec{

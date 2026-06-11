@@ -15,8 +15,8 @@ import (
 )
 
 // TestManifestImplementsConsistency_HaltsOnMismatch pins the production halt
-// path: a Manifest that maps core/server/api-server to the web-ui recipe (whose
-// spec.implements is core/server/web-ui) is mapping-table-inconsistent, and the
+// path: a Manifest that maps core/compute/api-server to the web-ui recipe (whose
+// spec.implements is core/compute/web-ui) is mapping-table-inconsistent, and the
 // build-faithful pipeline — gating exactly as the CLI build/pull do — halts with
 // ErrManifestImplementsMismatch before IR construction. The consistency check
 // was previously declared and unit-tested but unwired; this proves it now gates

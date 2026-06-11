@@ -21,7 +21,7 @@ import (
 func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server"})
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
@@ -61,7 +61,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", BoundaryPath: "local"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", BoundaryPath: "local"})
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
@@ -95,12 +95,12 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 		},
 	}
 	// Add db node for provides
-	input.Graph.Spec.Nodes.Set("db", types.IRNode{Component: "core/database/postgres"})
+	input.Graph.Spec.Nodes.Set("db", types.IRNode{Component: "core/datastore/postgres"})
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, ct string) (*types.Recipe, bool) {
 			switch ct {
-			case "core/server/api-server":
+			case "core/compute/api-server":
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
@@ -114,7 +114,7 @@ containers:
 `},
 					},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				provides := types.OrderedMap[string]{}
 				provides.Set("host", "original-host.svc")
 				return &types.Recipe{
@@ -169,7 +169,7 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 	labels := types.OrderedMap[string]{}
 	labels.Set("component.aggrega.ai/type", "server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, BoundaryPath: "prod/eks", ResolvedVersion: "1.0.0"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels, BoundaryPath: "prod/eks", ResolvedVersion: "1.0.0"})
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
@@ -240,7 +240,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 	labels := types.OrderedMap[string]{}
 	labels.Set("component.aggrega.ai/type", "server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, BoundaryPath: "local"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels, BoundaryPath: "local"})
 	valuesMapping := types.OrderedMap[json.RawMessage]{}
 	valuesMapping.Set("api", valuesRaw)
 	infraMapping := types.OrderedMap[json.RawMessage]{}

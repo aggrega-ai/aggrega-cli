@@ -6,6 +6,6 @@ metadata:
 spec:
   components:
     app1:
-      type: core/server/web-ui
+      type: core/compute/web-ui
     app2:
-      type: core/server/web-ui
+      type: core/compute/web-ui

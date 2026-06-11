@@ -43,8 +43,8 @@ func TestBuild_SimpleTopology(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"main-db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Uses: uses})
-	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	components.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
@@ -55,21 +55,21 @@ func TestBuild_SimpleTopology(t *testing.T) {
 	catalog := resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/server/api-server":
+			case "core/compute/api-server":
 				labels := types.OrderedMap[string]{}
 				labels.Set(types.ComponentTypeLabel, "server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/server/api-server",
+						Name:   "core/compute/api-server",
 						Labels: labels,
 					},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				labels2 := types.OrderedMap[string]{}
 				labels2.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:   "core/database/postgres",
+						Name:   "core/datastore/postgres",
 						Labels: labels2,
 					},
 				}, true
@@ -150,8 +150,8 @@ func TestBuild_FeatureUsesCreatesEdge(t *testing.T) {
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("monitoring", types.FeatureInstance{Type: "core/monitoring", Uses: uses})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features})
-	components.Set("metrics-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features})
+	components.Set("metrics-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
@@ -220,9 +220,9 @@ spec:
               - shared-cache
       components:
         x:
-          type: core/server/api-server
+          type: core/compute/api-server
         y:
-          type: core/server/api-server
+          type: core/compute/api-server
 `
 	var agg types.Aggregate
 	if err := yaml.Unmarshal([]byte(aggYAML), &agg); err != nil {
@@ -262,9 +262,9 @@ metadata:
 spec:
   components:
     x:
-      type: core/server/api-server
+      type: core/compute/api-server
     y:
-      type: core/server/api-server
+      type: core/compute/api-server
     shared-cache:
       type: core/redis
 `
@@ -319,7 +319,7 @@ spec:
 func TestBuild_BoundaryPath(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server"})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server"})
 
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},

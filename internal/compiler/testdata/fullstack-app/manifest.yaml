@@ -11,6 +11,6 @@ spec:
   mappings:
     components:
       type:
-        core/server/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
-        core/server/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
-        core/database/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+        core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
+        core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0

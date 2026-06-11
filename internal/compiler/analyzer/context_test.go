@@ -77,7 +77,7 @@ func TestValidateSelectorsPopulatesFieldLocator(t *testing.T) {
 	wrongLabels.Set(types.ComponentTypeLabel, "resource")
 
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: serverLabels})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: serverLabels})
 	nodes.Set("cache", types.IRNode{Component: "core/redis", Labels: wrongLabels})
 
 	graph := &types.IRGraph{
@@ -118,7 +118,7 @@ func TestValidateSelectorsSubsystemNestedYieldsNoFieldLocator(t *testing.T) {
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	// "db" is authored inside subsystem "data" — SubsystemPath is set.
-	nodes.Set("db", types.IRNode{Component: "core/server/api-server", Labels: serverLabels, SubsystemPath: "data"})
+	nodes.Set("db", types.IRNode{Component: "core/compute/api-server", Labels: serverLabels, SubsystemPath: "data"})
 	nodes.Set("cache", types.IRNode{Component: "core/redis", Labels: wrongLabels})
 
 	graph := &types.IRGraph{

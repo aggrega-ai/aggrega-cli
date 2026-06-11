@@ -293,7 +293,7 @@ func TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder(t 
 	components.Set("z-svc", types.ComponentInstance{Type: "core/server", Uses: usesZ})
 	components.Set("a-svc", types.ComponentInstance{Type: "core/server", Uses: usesA})
 	components.Set("m-svc", types.ComponentInstance{Type: "core/server", Uses: usesM})
-	components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "edge-author-order-test", Version: "1.0.0"},
 		Spec: types.AggregateSpec{
@@ -356,7 +356,7 @@ func TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder(t 
 
 // edgeAuthorOrderCatalog stubs the minimum CatalogLookup needed by the
 // edge-author-order test. core/server declares a usesSchema with a
-// "databases" socket; core/database/postgres has the matching label.
+// "databases" socket; core/datastore/postgres has the matching label.
 func edgeAuthorOrderCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
@@ -370,11 +370,11 @@ func edgeAuthorOrderCatalog() resolver.CatalogLookup {
 					Metadata: types.ComponentMetadata{Name: "core/server", Version: "1.0.0", Labels: labels},
 					Spec:     types.ComponentSpec{UsesSchema: usesSchema},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				labels := types.OrderedMap[string]{}
 				labels.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
-					Metadata: types.ComponentMetadata{Name: "core/database/postgres", Version: "1.0.0", Labels: labels},
+					Metadata: types.ComponentMetadata{Name: "core/datastore/postgres", Version: "1.0.0", Labels: labels},
 				}, true
 			default:
 				return types.Component{}, false

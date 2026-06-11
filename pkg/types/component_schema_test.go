@@ -21,7 +21,7 @@ func TestComponent_SchemaField_RoundTripInlineContent(t *testing.T) {
 	in := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/api
+  name: core/compute/api
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: server
@@ -70,7 +70,7 @@ func TestComponent_SchemaField_OmitemptyEludesZeroValue(t *testing.T) {
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Component",
 		Metadata: ComponentMetadata{
-			Name:    "core/server/api",
+			Name:    "core/compute/api",
 			Version: "1.0.0",
 		},
 	}
@@ -95,7 +95,7 @@ func TestComponent_SchemaField_AcceptsImportShape(t *testing.T) {
 	in := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/api
+  name: core/compute/api
   version: "1.0.0"
 spec:
   schema:
@@ -124,7 +124,7 @@ func TestComponent_SchemaField_AcceptsRefShape(t *testing.T) {
 	in := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/api
+  name: core/compute/api
   version: "1.0.0"
 spec:
   schema:
@@ -153,7 +153,7 @@ func TestUsesSchemaEntry_ValueInfraSchema_RoundTrip(t *testing.T) {
 	in := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/api
+  name: core/compute/api
   version: "1.0.0"
 spec:
   usesSchema:
@@ -199,7 +199,7 @@ func TestUsesSchemaEntry_SchemaFields_OmitemptyEludeZeroValue(t *testing.T) {
 	in := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/api
+  name: core/compute/api
   version: "1.0.0"
 spec:
   usesSchema:

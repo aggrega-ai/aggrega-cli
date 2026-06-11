@@ -4,13 +4,13 @@ metadata:
   name: implements-mismatch-manifest
   version: "1.0.0"
 spec:
-  # Deliberately inconsistent: core/server/api-server is mapped to the web-ui
-  # recipe, whose spec.implements is core/server/web-ui — a mapping-table
+  # Deliberately inconsistent: core/compute/api-server is mapped to the web-ui
+  # recipe, whose spec.implements is core/compute/web-ui — a mapping-table
   # implements mismatch the build/pull consistency check must halt on. The
   # other two mappings are consistent.
   mappings:
     components:
       type:
-        core/server/api-server: helm-web-ui-synthesized-with-artifacts:1.0.0
-        core/server/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
-        core/database/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+        core/compute/api-server: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0

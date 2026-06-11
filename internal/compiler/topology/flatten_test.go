@@ -44,7 +44,7 @@ import (
 func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server"})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server"})
 	components.Set("worker", types.ComponentInstance{Type: "core/worker"})
 
 	agg := &types.Aggregate{
@@ -66,7 +66,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 	if !hasAPI || apiNode == nil || !hasWorker || workerNode == nil {
 		t.Error("expected api and worker nodes")
 	}
-	if apiNode.ComponentType != "core/server/api-server" {
+	if apiNode.ComponentType != "core/compute/api-server" {
 		t.Errorf("api type: %q", apiNode.ComponentType)
 	}
 }
@@ -74,7 +74,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("main-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	subsystems := types.OrderedMap[types.Subsystem]{}
 	subsystems.Set("data-layer", types.Subsystem{Components: components})
 
@@ -101,7 +101,7 @@ func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("deep-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("deep-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	subsystems2 := types.OrderedMap[types.Subsystem]{}
 	subsystems2.Set("inner", types.Subsystem{Components: components})
 	subsystems := types.OrderedMap[types.Subsystem]{}
@@ -130,7 +130,7 @@ func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 func TestFlattenAggregate_SubAggregate(t *testing.T) {
 	t.Parallel()
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("child-db", types.ComponentInstance{Type: "core/database/postgres"})
+	components.Set("child-db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	exportedComponents := types.OrderedMap[string]{}
 	exportedComponents.Set("db", "child-db")
 
@@ -142,7 +142,7 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 		},
 	}
 	components2 := types.OrderedMap[types.ComponentInstance]{}
-	components2.Set("api", types.ComponentInstance{Type: "core/server/api-server"})
+	components2.Set("api", types.ComponentInstance{Type: "core/compute/api-server"})
 	aggregates := types.OrderedMap[types.SubAggregate]{}
 	aggregates.Set("data-module", types.SubAggregate{Type: "modules/data-layer"})
 
@@ -228,7 +228,7 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 	secrets := types.OrderedMap[types.SecretInstance]{}
 	secrets.Set("db-creds", types.SecretInstance{Type: "core/db-credentials"})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/server/api-server", Features: features, Secrets: secrets})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features, Secrets: secrets})
 
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},

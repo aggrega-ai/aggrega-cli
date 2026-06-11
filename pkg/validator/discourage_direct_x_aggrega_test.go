@@ -31,13 +31,13 @@ func TestDiscourageDirectXAggregaInSchema_FiresOnSelector(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	DiscourageDirectXAggregaInSchema("core/server/api", &node)
+	DiscourageDirectXAggregaInSchema("core/compute/api", &node)
 
 	out := buf.String()
 	if !strings.Contains(out, "x-aggrega-selector") {
 		t.Errorf("expected warning naming x-aggrega-selector; got %q", out)
 	}
-	if !strings.Contains(out, "core/server/api") {
+	if !strings.Contains(out, "core/compute/api") {
 		t.Errorf("expected warning naming the entity; got %q", out)
 	}
 	if !strings.Contains(out, "usesSchema") {
@@ -66,7 +66,7 @@ func TestDiscourageDirectXAggregaInSchema_FiresOnInject(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	DiscourageDirectXAggregaInSchema("core/server/api", &node)
+	DiscourageDirectXAggregaInSchema("core/compute/api", &node)
 
 	out := buf.String()
 	if !strings.Contains(out, "x-aggrega-inject") {
@@ -98,7 +98,7 @@ provides:
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	DiscourageDirectXAggregaInSchema("core/server/api", &node)
+	DiscourageDirectXAggregaInSchema("core/compute/api", &node)
 
 	if buf.Len() != 0 {
 		t.Errorf("expected no warning on clean content; got %q", buf.String())

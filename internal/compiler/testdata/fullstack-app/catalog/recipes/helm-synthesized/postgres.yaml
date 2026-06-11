@@ -5,7 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: helm
-  implements: core/database/postgres
+  implements: core/datastore/postgres
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "5432"

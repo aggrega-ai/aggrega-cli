@@ -44,25 +44,25 @@ func testCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			switch typeURI {
-			case "core/server/api-server":
+			case "core/compute/api-server":
 				labels := types.OrderedMap[string]{}
 				labels.Set(types.ComponentTypeLabel, "server")
 				annotations := types.OrderedMap[string]{}
 				annotations.Set("catalog.aggrega.ai/tier", "standard")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:        "core/server/api-server",
+						Name:        "core/compute/api-server",
 						Version:     "1.0.0",
 						Labels:      labels,
 						Annotations: annotations,
 					},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				labels2 := types.OrderedMap[string]{}
 				labels2.Set(types.ComponentTypeLabel, "stateful-server")
 				return types.Component{
 					Metadata: types.ComponentMetadata{
-						Name:    "core/database/postgres",
+						Name:    "core/datastore/postgres",
 						Version: "2.0.0",
 						Labels:  labels2,
 					},
@@ -96,8 +96,8 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "stateful-server")
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels, Values: values})
-	nodes.Set("main-db", &topology.TopologyNode{InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: labels2})
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server", Labels: labels, Values: values})
+	nodes.Set("main-db", &topology.TopologyNode{InstanceID: "main-db", ComponentType: "core/datastore/postgres", Labels: labels2})
 	topoResult := &topology.TopologyResult{
 		Nodes: nodes,
 		Edges: []topology.NormalizedEdge{
@@ -143,7 +143,7 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 	if apiNode.ResolvedVersion != "1.0.0" {
 		t.Errorf("api resolved version: %q", apiNode.ResolvedVersion)
 	}
-	if apiNode.Component != "core/server/api-server" {
+	if apiNode.Component != "core/compute/api-server" {
 		t.Errorf("api component: %q", apiNode.Component)
 	}
 
@@ -202,7 +202,7 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 	values2 := types.OrderedMap[any]{}
 	values2.Set("path", "/secret")
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels})
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server", Labels: labels})
 	topoResult := &topology.TopologyResult{
 		Nodes: nodes,
 		Edges: nil,
@@ -277,8 +277,8 @@ func TestBuildIR_SyncWave(t *testing.T) {
 	// SyncWave overrides do not exist; the boundary IS the wave-authoring
 	// unit.
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/database/postgres"})
-	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"})
+	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/datastore/postgres"})
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server"})
 	topoResult := &topology.TopologyResult{
 		Nodes:              nodes,
 		Edges:              nil,
@@ -321,7 +321,7 @@ func TestBuildIR_SyncWave_DefaultZero(t *testing.T) {
 	// A node whose boundary omits syncWave (or has none assigned) gets
 	// IRNode.SyncWave == 0, matching every comparable tool's default.
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("svc", &topology.TopologyNode{InstanceID: "svc", ComponentType: "core/server/api-server"})
+	nodes.Set("svc", &topology.TopologyNode{InstanceID: "svc", ComponentType: "core/compute/api-server"})
 	topoResult := &topology.TopologyResult{
 		Nodes:              nodes,
 		Edges:              nil,
@@ -358,7 +358,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 	t.Parallel()
 
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server"})
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server"})
 	topoResult := &topology.TopologyResult{
 		Nodes:              nodes,
 		Edges:              nil,
@@ -544,7 +544,7 @@ func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
 
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{
-		Type: "core/server/api-server",
+		Type: "core/compute/api-server",
 		Inject: &types.InjectBlock{
 			Env: []any{
 				map[string]any{"in": "DB_URL", "from": "connection.url", "value": "literal-text"},
@@ -595,8 +595,8 @@ func TestBuildIR_EdgeCarriesValuesInfraAndOrigin(t *testing.T) {
 	labels2 := types.OrderedMap[string]{}
 	labels2.Set(types.ComponentTypeLabel, "stateful-server")
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server/api-server", Labels: labels})
-	nodes.Set("main-db", &topology.TopologyNode{InstanceID: "main-db", ComponentType: "core/database/postgres", Labels: labels2})
+	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/compute/api-server", Labels: labels})
+	nodes.Set("main-db", &topology.TopologyNode{InstanceID: "main-db", ComponentType: "core/datastore/postgres", Labels: labels2})
 
 	edgeValues := types.OrderedMap[any]{}
 	edgeValues.Set("pool_size", 20)

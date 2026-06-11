@@ -5,7 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: helm-chart
-  implements: core/database/mariadb
+  implements: core/datastore/mariadb
   source: ./charts/db
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"

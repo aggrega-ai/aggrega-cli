@@ -6,6 +6,6 @@ metadata:
 spec:
   components:
     child-db:
-      type: core/database/postgres
+      type: core/datastore/postgres
   exported_components:
     db: child-db

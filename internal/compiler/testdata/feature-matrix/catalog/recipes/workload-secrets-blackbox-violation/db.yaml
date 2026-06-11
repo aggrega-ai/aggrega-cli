@@ -5,7 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   provider: helm
-  implements: core/database/mariadb
+  implements: core/datastore/mariadb
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     port: "{{ optional .infra `port` 3306 }}"

@@ -43,13 +43,13 @@ func fakeCatalog(recipes ...types.Recipe) *Catalog {
 func TestRecipeByURI_DirectMatch(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-bitnami", "core/database/postgres"),
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
 	r, ok := c.RecipeByURI("core/helm/postgres-bitnami")
 	if !ok {
 		t.Fatal("expected RecipeByURI hit")
 	}
-	if r.Spec.Implements != "core/database/postgres" {
+	if r.Spec.Implements != "core/datastore/postgres" {
 		t.Errorf("wrong recipe resolved: %q", r.Spec.Implements)
 	}
 }
@@ -60,17 +60,17 @@ func TestRecipeByURI_DirectMatch(t *testing.T) {
 func TestRecipeLookupWithManifest_FlatShape(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-bitnami", "core/database/postgres"),
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
 	flatComponents := &types.MappingTier{}
-	flatComponents.Type.Set("core/database/postgres", "core/helm/postgres-bitnami")
+	flatComponents.Type.Set("core/datastore/postgres", "core/helm/postgres-bitnami")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flatComponents},
 		},
 	}
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("", "core/database/postgres")
+	r, ok := lookup.Recipe("", "core/datastore/postgres")
 	if !ok {
 		t.Fatal("expected flat-shape dispatch to hit")
 	}
@@ -89,7 +89,7 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	t.Parallel()
 	flat := &types.MappingTier{}
 	flat.Type.Set("mariadb-bitnami", "mariadb-bitnami:1.0.0")
-	flat.Type.Set("core/database/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0")
+	flat.Type.Set("core/datastore/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0")
 	flat.Type.Set("core/cache/memcached", "memcached-recipe")
 	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
 	legacy.Components.Type.Set("core/cache/redis", "core/helm/redis-legacy:1.0.0")
@@ -105,7 +105,7 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 		wantOK                  bool
 	}{
 		{"short-form flat", "mariadb-bitnami", "mariadb-bitnami:1.0.0", true},
-		{"full-path flat", "core/database/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0", true},
+		{"full-path flat", "core/datastore/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0", true},
 		// Unversioned mapping value returns verbatim — NOT normalized to a
 		// versioned URI. This is the source-descent join's load-bearing guard: an
 		// unversioned mapping value must stay unversioned so it joins the closure
@@ -186,10 +186,10 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-bitnami", "core/database/postgres"),
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
 	legacyHelm := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacyHelm.Components.Type.Set("core/database/postgres", "core/helm/postgres-bitnami")
+	legacyHelm.Components.Type.Set("core/datastore/postgres", "core/helm/postgres-bitnami")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{},
@@ -197,7 +197,7 @@ func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
 	}
 	manifest.Spec.Mappings.Legacy.Set("helm", legacyHelm)
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("", "core/database/postgres")
+	r, ok := lookup.Recipe("", "core/datastore/postgres")
 	if !ok {
 		t.Fatal("expected legacy-shape dispatch to hit")
 	}
@@ -213,16 +213,16 @@ func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
 func TestRecipeLookupWithManifest_MatchImplementsFinalFallback(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-bitnami", "core/database/postgres"),
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
 	// Empty Manifest mappings — neither flat nor legacy populated.
 	manifest := &types.Manifest{Spec: types.ManifestSpec{}}
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("", "core/database/postgres")
+	r, ok := lookup.Recipe("", "core/datastore/postgres")
 	if !ok {
 		t.Fatal("expected matchImplements fallback to hit")
 	}
-	if r.Spec.Implements != "core/database/postgres" {
+	if r.Spec.Implements != "core/datastore/postgres" {
 		t.Errorf("wrong recipe resolved: %q", r.Spec.Implements)
 	}
 }
@@ -236,13 +236,13 @@ func TestRecipeLookupWithManifest_MatchImplementsFinalFallback(t *testing.T) {
 func TestRecipeLookupWithManifest_FlatWinsOverLegacy(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-flat", "core/database/postgres-A"),
-		fakeRecipe("core/helm/postgres-legacy", "core/database/postgres-B"),
+		fakeRecipe("core/helm/postgres-flat", "core/datastore/postgres-A"),
+		fakeRecipe("core/helm/postgres-legacy", "core/datastore/postgres-B"),
 	)
 	flatComponents := &types.MappingTier{}
-	flatComponents.Type.Set("core/database/postgres-A", "core/helm/postgres-flat")
+	flatComponents.Type.Set("core/datastore/postgres-A", "core/helm/postgres-flat")
 	legacyHelm := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacyHelm.Components.Type.Set("core/database/postgres-A", "core/helm/postgres-legacy")
+	legacyHelm.Components.Type.Set("core/datastore/postgres-A", "core/helm/postgres-legacy")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flatComponents},
@@ -250,7 +250,7 @@ func TestRecipeLookupWithManifest_FlatWinsOverLegacy(t *testing.T) {
 	}
 	manifest.Spec.Mappings.Legacy.Set("helm", legacyHelm)
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, _ := lookup.Recipe("", "core/database/postgres-A")
+	r, _ := lookup.Recipe("", "core/datastore/postgres-A")
 	if r.Metadata.Name != "core/helm/postgres-flat" {
 		t.Errorf("expected flat-shape to win; got %q", r.Metadata.Name)
 	}
@@ -262,10 +262,10 @@ func TestRecipeLookupWithManifest_FlatWinsOverLegacy(t *testing.T) {
 func TestVerifyManifestImplementsConsistency_PassOnMatch(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-bitnami", "core/database/postgres"),
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
 	flatComponents := &types.MappingTier{}
-	flatComponents.Type.Set("core/database/postgres", "core/helm/postgres-bitnami")
+	flatComponents.Type.Set("core/datastore/postgres", "core/helm/postgres-bitnami")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flatComponents},
@@ -283,10 +283,10 @@ func TestVerifyManifestImplementsConsistency_PassOnMatch(t *testing.T) {
 func TestVerifyManifestImplementsConsistency_FailOnMismatch(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/wrong-recipe", "core/database/mysql"),
+		fakeRecipe("core/helm/wrong-recipe", "core/datastore/mysql"),
 	)
 	flatComponents := &types.MappingTier{}
-	flatComponents.Type.Set("core/database/postgres", "core/helm/wrong-recipe")
+	flatComponents.Type.Set("core/datastore/postgres", "core/helm/wrong-recipe")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flatComponents},
@@ -321,9 +321,9 @@ func TestVerifyManifestImplementsConsistency_NilManifest(t *testing.T) {
 func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 	t.Parallel()
 	flat := &types.MappingTier{}
-	flat.Type.Set("core/database/mariadb:1.0.0", "mariadb-bitnami:1.0.0") // versioned key
+	flat.Type.Set("core/datastore/mariadb:1.0.0", "mariadb-bitnami:1.0.0") // versioned key
 	flat.Type.Set("core/cache/redis", "redis-helm:1.0.0")                 // unversioned key
-	flat.Type.Set("core/database/postgres:2.0.0", "postgres-helm:2.0.0")  // versioned key
+	flat.Type.Set("core/datastore/postgres:2.0.0", "postgres-helm:2.0.0")  // versioned key
 	flat.Type.Set("core/queue/nats", "nats-helm:1.0.0")                   // unversioned key
 	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
 	legacy.Components.Type.Set("core/legacy/thing:1.0.0", "thing-legacy:1.0.0")
@@ -338,11 +338,11 @@ func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 		name, compType, wantURI string
 		wantOK                  bool
 	}{
-		{"unversioned type, versioned key (the unblock)", "core/database/mariadb", "mariadb-bitnami:1.0.0", true},
+		{"unversioned type, versioned key (the unblock)", "core/datastore/mariadb", "mariadb-bitnami:1.0.0", true},
 		{"versioned type, unversioned key (reverse)", "core/cache/redis:3.1.0", "redis-helm:1.0.0", true},
-		{"versioned type, versioned key (exact, unchanged)", "core/database/postgres:2.0.0", "postgres-helm:2.0.0", true},
+		{"versioned type, versioned key (exact, unchanged)", "core/datastore/postgres:2.0.0", "postgres-helm:2.0.0", true},
 		{"unversioned type, unversioned key (exact, unchanged)", "core/queue/nats", "nats-helm:1.0.0", true},
-		{"version mismatch, base matches", "core/database/postgres:9.9.9", "postgres-helm:2.0.0", true},
+		{"version mismatch, base matches", "core/datastore/postgres:9.9.9", "postgres-helm:2.0.0", true},
 		{"legacy version-tolerant", "core/legacy/thing", "thing-legacy:1.0.0", true},
 	}
 	for _, tc := range cases {
@@ -407,21 +407,21 @@ func TestFeatureRecipeURI_VersionTolerant(t *testing.T) {
 func TestComponentRecipeURI_AmbiguousVersionKeys(t *testing.T) {
 	t.Parallel()
 	flat := &types.MappingTier{}
-	flat.Type.Set("core/database/mariadb:1.0.0", "mariadb-v1:1.0.0")
-	flat.Type.Set("core/database/mariadb:2.0.0", "mariadb-v2:2.0.0")
+	flat.Type.Set("core/datastore/mariadb:1.0.0", "mariadb-v1:1.0.0")
+	flat.Type.Set("core/datastore/mariadb:2.0.0", "mariadb-v2:2.0.0")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flat},
 		},
 	}
 
-	if _, ok, err := ComponentRecipeURI(manifest, "", "core/database/mariadb"); err == nil {
+	if _, ok, err := ComponentRecipeURI(manifest, "", "core/datastore/mariadb"); err == nil {
 		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
 	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
 		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
 	}
 
-	uri, ok, err := ComponentRecipeURI(manifest, "", "core/database/mariadb:2.0.0")
+	uri, ok, err := ComponentRecipeURI(manifest, "", "core/datastore/mariadb:2.0.0")
 	if err != nil {
 		t.Fatalf("unexpected error on exact-version match: %v", err)
 	}
@@ -622,17 +622,17 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 func TestNameTier_PrecedenceWithVersionTolerantType(t *testing.T) {
 	t.Parallel()
 	comp := &types.MappingTier{}
-	comp.Type.Set("core/database/mariadb:1.0.0", "recipe-typed") // versioned type key
+	comp.Type.Set("core/datastore/mariadb:1.0.0", "recipe-typed") // versioned type key
 	comp.Name.Set("db-primary", "recipe-named")                  // per-instance override
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}},
 	}
 	// Name wins even though the type tier would version-tolerantly match.
-	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/database/mariadb"); !ok || uri != "recipe-named" {
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/datastore/mariadb"); !ok || uri != "recipe-named" {
 		t.Errorf("name must win over version-tolerant type: got %q ok=%v; want recipe-named", uri, ok)
 	}
 	// No name override -> version-tolerant type match still resolves.
-	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/database/mariadb"); !ok || uri != "recipe-typed" {
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/datastore/mariadb"); !ok || uri != "recipe-typed" {
 		t.Errorf("no-name lookup must keep version-tolerant type: got %q ok=%v; want recipe-typed", uri, ok)
 	}
 }
@@ -642,15 +642,15 @@ func TestNameTier_PrecedenceWithVersionTolerantType(t *testing.T) {
 func TestNameTier_LegacyShape(t *testing.T) {
 	t.Parallel()
 	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacy.Components.Type.Set("core/database/mariadb", "recipe-typed-legacy")
+	legacy.Components.Type.Set("core/datastore/mariadb", "recipe-typed-legacy")
 	legacy.Components.Name.Set("db-primary", "recipe-named-legacy")
 	manifest := &types.Manifest{}
 	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
 
-	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/database/mariadb"); !ok || uri != "recipe-named-legacy" {
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/datastore/mariadb"); !ok || uri != "recipe-named-legacy" {
 		t.Errorf("legacy-shape name override must resolve: got %q ok=%v; want recipe-named-legacy", uri, ok)
 	}
-	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/database/mariadb"); !ok || uri != "recipe-typed-legacy" {
+	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/datastore/mariadb"); !ok || uri != "recipe-typed-legacy" {
 		t.Errorf("legacy-shape sibling -> type: got %q ok=%v; want recipe-typed-legacy", uri, ok)
 	}
 }

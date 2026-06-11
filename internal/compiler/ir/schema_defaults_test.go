@@ -24,7 +24,7 @@ func TestComponentPillarDefaults_RealSchema(t *testing.T) {
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/mariadb
+  name: core/datastore/mariadb
   version: "1.0.0"
 spec:
   schema:
@@ -91,7 +91,7 @@ func TestComponentPillarDefaults_WholePillarRefYieldsNothing(t *testing.T) {
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/server/base
+  name: core/compute/server
   version: "1.0.0"
 spec:
   schema:
@@ -156,7 +156,7 @@ spec:
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/mariadb
+  name: core/datastore/mariadb
   version: "1.0.0"
 spec:
   schema:
@@ -203,7 +203,7 @@ spec:
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/mariadb-flavored
+  name: core/datastore/mariadb-flavored
   version: "1.0.0"
 spec:
   schema:
@@ -229,7 +229,7 @@ spec:
 // TestComponentPillarDefaults_ModelComponentPatternMaterializes verifies the shipped
 // fix against the standard library's pervasive model-component shape: a pillar that
 // `$ref`s BaseComponents#/schemas/BaseModelParameter (carrying a base default) plus a
-// sibling flavor property carrying its own default — the shape core/model/openai and
+// sibling flavor property carrying its own default — the shape core/ai-model/openai and
 // its siblings (anthropic, gemini, mistral, bedrock, …) use. Self-contained in-test
 // (uncoupled from catalog content so it cannot drift), but shaped to the real
 // catalog composition. strict_response_format is openai's real sibling; its boolean
@@ -252,7 +252,7 @@ spec:
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/model/openai
+  name: core/ai-model/openai
   version: "1.0.0"
 spec:
   schema:
@@ -306,7 +306,7 @@ spec:
 	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/mariadb
+  name: core/datastore/mariadb
   version: "1.0.0"
 spec:
   schema:

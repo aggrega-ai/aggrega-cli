@@ -10,10 +10,10 @@ spec:
         db-pool: "shared-db"
       components:
         reader:
-          type: core/server/web-ui
+          type: core/compute/web-ui
         writer:
-          type: core/server/web-ui
+          type: core/compute/web-ui
         admin:
-          type: core/server/web-ui
+          type: core/compute/web-ui
           annotations:
             db-pool: "admin-db"

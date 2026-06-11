@@ -84,7 +84,7 @@ func TestRecipeLookup_HitAndMiss(t *testing.T) {
 		FeatureRecipes: map[string]types.FeatureRecipe{},
 	}
 	r := types.Recipe{}
-	r.Spec.Implements = "core/server/api-server"
+	r.Spec.Implements = "core/compute/api-server"
 	c.Recipes[recipeURIKey(r.Metadata.Name, r.Metadata.Version)] = r
 
 	fr := types.FeatureRecipe{}
@@ -92,7 +92,7 @@ func TestRecipeLookup_HitAndMiss(t *testing.T) {
 	c.FeatureRecipes[recipeURIKey(fr.Metadata.Name, fr.Metadata.Version)] = fr
 
 	lookup := c.RecipeLookup()
-	gotR, ok := lookup.Recipe("", "core/server/api-server")
+	gotR, ok := lookup.Recipe("", "core/compute/api-server")
 	if !ok || gotR == nil {
 		t.Errorf("recipe hit should return non-nil + true")
 	}

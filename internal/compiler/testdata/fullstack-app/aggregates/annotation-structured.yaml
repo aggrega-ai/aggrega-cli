@@ -6,4 +6,4 @@ metadata:
 spec:
   components:
     dbclient:
-      type: core/server/web-ui
+      type: core/compute/web-ui

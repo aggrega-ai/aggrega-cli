@@ -139,7 +139,7 @@ func TestBuild_ComponentUsesProducesEdges(t *testing.T) {
 		Compact: []string{"db"},
 	})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
-	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	rr := &resolver.ResolveResult{Aggregate: agg}
 	result, err := Build(BuildConfig{ResolveResult: rr})
 	if err != nil {
@@ -282,7 +282,7 @@ func TestBuild_ComponentUsesValuesInfraFlowToEdge(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
-	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 
 	result, err := Build(BuildConfig{ResolveResult: &resolver.ResolveResult{Aggregate: agg}})
 	if err != nil {
@@ -310,7 +310,7 @@ func TestBuild_ReleaseInfraMergesOntoExistingEdge(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
-	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 
 	relInfra := types.OrderedMap[any]{}
 	relInfra.Set("pool_size", 20)
@@ -381,8 +381,8 @@ func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
-	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
-	agg.Spec.Components.Set("other", types.ComponentInstance{Type: "core/database/postgres"})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
+	agg.Spec.Components.Set("other", types.ComponentInstance{Type: "core/datastore/postgres"})
 
 	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "other"}))
 	rr := &resolver.ResolveResult{
@@ -405,7 +405,7 @@ func TestBuild_ReleaseSameTargetConfigures(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
-	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 
 	relInfra := types.OrderedMap[any]{}
 	relInfra.Set("x", 1)
@@ -476,7 +476,7 @@ func TestBuild_ReleaseEdgeSliceDeterministic(t *testing.T) {
 		uses := types.OrderedMap[types.UsesSocketValue]{}
 		uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 		agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
-		agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/database/postgres"})
+		agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 		agg.Spec.Components.Set("cache", types.ComponentInstance{Type: "core/cache/redis"})
 		agg.Spec.Components.Set("queue", types.ComponentInstance{Type: "core/queue"})
 

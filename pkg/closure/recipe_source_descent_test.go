@@ -654,8 +654,8 @@ func TestDescendRejectsProvidesInsideTemplateInvocation(t *testing.T) {
 
 // TestVersionTolerantMappingJoinsSourceDescent drives the full source-descent
 // join across the package boundary: a component whose authored type is
-// UNVERSIONED (`core/database/mariadb`) against a VERSIONED Manifest mapping key
-// (`core/database/mariadb:1.0.0`) — the idiomatic shape where the Aggregate
+// UNVERSIONED (`core/datastore/mariadb`) against a VERSIONED Manifest mapping key
+// (`core/datastore/mariadb:1.0.0`) — the idiomatic shape where the Aggregate
 // authors a bare type and the Manifest pins a version. ComponentRecipeURI
 // resolves the type version-tolerantly to the recipe URI; pull keys
 // perEntityInfra by that URI; the URI joins the closure entity, so the recipe's
@@ -665,11 +665,11 @@ func TestDescendRejectsProvidesInsideTemplateInvocation(t *testing.T) {
 // fetch is exercised manually against the example workspace.
 func TestVersionTolerantMappingJoinsSourceDescent(t *testing.T) {
 	t.Parallel()
-	const authoredType = "core/database/mariadb" // unversioned, as the Aggregate authors it
+	const authoredType = "core/datastore/mariadb" // unversioned, as the Aggregate authors it
 	const recipeURI = "hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0"
 
 	flat := &types.MappingTier{}
-	flat.Type.Set("core/database/mariadb:1.0.0", recipeURI) // versioned key — the idiomatic shape
+	flat.Type.Set("core/datastore/mariadb:1.0.0", recipeURI) // versioned key — the idiomatic shape
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: flat}},
 	}

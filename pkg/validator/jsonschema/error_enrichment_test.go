@@ -34,13 +34,13 @@ func TestEnrichFinding_AnnotationPresent(t *testing.T) {
 		Keyword:   "type",
 		Message:   "expected string; got integer",
 	}
-	EnrichFinding(f, schema, "catalog/component/core/database/base.yaml")
+	EnrichFinding(f, schema, "catalog/component/core/datastore/base.yaml")
 
 	if f.LibrarySource != "BaseComponents#/schemas/BaseComponentParameter" {
 		t.Errorf("LibrarySource = %q; want BaseComponents#/schemas/BaseComponentParameter", f.LibrarySource)
 	}
-	if f.ConsumerFile != "catalog/component/core/database/base.yaml" {
-		t.Errorf("ConsumerFile = %q; want catalog/component/core/database/base.yaml", f.ConsumerFile)
+	if f.ConsumerFile != "catalog/component/core/datastore/base.yaml" {
+		t.Errorf("ConsumerFile = %q; want catalog/component/core/datastore/base.yaml", f.ConsumerFile)
 	}
 }
 

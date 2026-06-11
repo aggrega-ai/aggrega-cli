@@ -18,6 +18,6 @@ spec:
                 - in: DB_PORT
                   from: port
     db:
-      type: core/database/mariadb
+      type: core/datastore/mariadb
       values:
         database: app

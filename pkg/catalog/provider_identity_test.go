@@ -42,7 +42,7 @@ metadata:
   version: 1.0.0
 spec:
   provider: %s
-  implements: core/database/mariadb:1.0.0
+  implements: core/datastore/mariadb:1.0.0
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
@@ -191,11 +191,11 @@ func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 	t.Parallel()
 	v2 := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "2.0.0"},
-		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/database/mariadb"},
+		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/datastore/mariadb"},
 	}
 	v1 := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/database/mariadb"},
+		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/datastore/mariadb"},
 	}
 
 	one := fakeCatalog(v1)
@@ -228,23 +228,23 @@ func TestRecipeLookupWithManifest_ProviderQualifiedMapping(t *testing.T) {
 	t.Parallel()
 	tf := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/database/mariadb"},
+		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/datastore/mariadb"},
 	}
 	cf := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "cloudformation", Implements: "core/database/mariadb"},
+		Spec:     types.RecipeSpec{Provider: "cloudformation", Implements: "core/datastore/mariadb"},
 	}
 	c := fakeCatalog(tf, cf)
 
 	flatComponents := &types.MappingTier{}
-	flatComponents.Type.Set("core/database/mariadb", "terraform/mariadb-rds:1.0.0")
+	flatComponents.Type.Set("core/datastore/mariadb", "terraform/mariadb-rds:1.0.0")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flatComponents},
 		},
 	}
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("", "core/database/mariadb")
+	r, ok := lookup.Recipe("", "core/datastore/mariadb")
 	if !ok {
 		t.Fatal("provider-qualified mapping should resolve")
 	}
@@ -255,7 +255,7 @@ func TestRecipeLookupWithManifest_ProviderQualifiedMapping(t *testing.T) {
 	// Without a mapping, the implements-search sees BOTH recipes and
 	// misses (the loud >1 ambiguity contract, surfaced upstream).
 	bare := c.RecipeLookupWithManifest(nil)
-	if _, ok := bare.Recipe("", "core/database/mariadb"); ok {
+	if _, ok := bare.Recipe("", "core/datastore/mariadb"); ok {
 		t.Error("two implementing recipes with no mapping should miss (ambiguous)")
 	}
 }

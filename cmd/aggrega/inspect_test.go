@@ -250,7 +250,7 @@ func TestIsPathInput(t *testing.T) {
 		{"release.yaml", true},
 		{"release.yml", true},
 		{"core/server", false},
-		{"core/server/api-server", false},
+		{"core/compute/api-server", false},
 		{"some-name", false},
 	}
 	for _, c := range cases {

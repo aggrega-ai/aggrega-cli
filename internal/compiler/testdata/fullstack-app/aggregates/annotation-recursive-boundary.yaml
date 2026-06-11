@@ -6,8 +6,8 @@ metadata:
 spec:
   components:
     edge:
-      type: core/server/web-ui
+      type: core/compute/web-ui
     mid:
-      type: core/server/web-ui
+      type: core/compute/web-ui
     core:
-      type: core/server/web-ui
+      type: core/compute/web-ui

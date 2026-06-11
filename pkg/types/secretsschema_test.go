@@ -15,7 +15,7 @@ func TestSecretsSchema_YAMLRoundTrip(t *testing.T) {
 apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
-  name: core/database/postgres
+  name: core/datastore/postgres
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: stateful-server

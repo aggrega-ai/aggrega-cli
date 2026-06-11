@@ -34,7 +34,7 @@ func testInput() renderer.RendererInput {
 	labels := types.OrderedMap[string]{}
 	labels.Set("component.aggrega.ai/type", "server")
 	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/server/api-server", Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default"})
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default"})
 	valuesMapping := types.OrderedMap[json.RawMessage]{}
 	valuesMapping.Set("api", json.RawMessage(`{"port":8080}`))
 	return renderer.RendererInput{
@@ -64,7 +64,7 @@ func testInput() renderer.RendererInput {
 func testRecipeLookup() renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				provides := types.OrderedMap[string]{}
 				provides.Set("host", `{{ .context.instance_id }}.svc.cluster.local`)
 				provides.Set("service_port", `8080`)
@@ -74,7 +74,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
-						Implements: "core/server/api-server",
+						Implements: "core/compute/api-server",
 						Provides:   provides,
 						Locals:     locals,
 						// Synthesised mode (a Workload) is the real compute path
@@ -140,12 +140,12 @@ spec:
 `})
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "netpol-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
-						Implements: "core/server/api-server",
+						Implements: "core/compute/api-server",
 						Artifacts:  art,
 					},
 				}, true
@@ -198,12 +198,12 @@ func TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider(t *testing.T) {
 			art.Set("cm.yaml", types.ArtifactEntry{Inline: "kind: ConfigMap\n"})
 			lookup := renderer.RecipeLookup{
 				Recipe: func(_, componentType string) (*types.Recipe, bool) {
-					if componentType == "core/server/api-server" {
+					if componentType == "core/compute/api-server" {
 						return &types.Recipe{
 							Metadata: types.RecipeMetadata{Name: "art-recipe"},
 							Spec: types.RecipeSpec{
 								Provider:   provider,
-								Implements: "core/server/api-server",
+								Implements: "core/compute/api-server",
 								Artifacts:  art,
 							},
 						}, true
@@ -230,7 +230,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 	dbLabels := types.OrderedMap[string]{}
 	dbLabels.Set("component.aggrega.ai/type", "stateful-server")
 	input.Graph.Spec.Nodes.Set("db", types.IRNode{
-		Component: "core/database/postgres",
+		Component: "core/datastore/postgres",
 		Labels:    dbLabels,
 	})
 	envInj := types.OrderedMap[string]{}
@@ -244,7 +244,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			switch componentType {
-			case "core/server/api-server":
+			case "core/compute/api-server":
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
@@ -258,7 +258,7 @@ containers:
 `},
 					},
 				}, true
-			case "core/database/postgres":
+			case "core/datastore/postgres":
 				provides := types.OrderedMap[string]{}
 				provides.Set("host", `{{ .context.instance_id }}.svc.cluster.local`)
 				return &types.Recipe{
@@ -338,7 +338,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 
 	input := testInput()
 	input.Graph.Spec.Nodes.Set("z-worker", types.IRNode{Component: "core/worker"})
-	input.Graph.Spec.Nodes.Set("a-db", types.IRNode{Component: "core/database/postgres"})
+	input.Graph.Spec.Nodes.Set("a-db", types.IRNode{Component: "core/datastore/postgres"})
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
@@ -390,12 +390,12 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
-						Implements: "core/server/api-server",
+						Implements: "core/compute/api-server",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -479,7 +479,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec:     types.RecipeSpec{ValuesMapping: types.ValuesMapping{Inline: `{"image": "app:latest"}`}},
@@ -538,12 +538,12 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:      "helm-chart",
-						Implements:    "core/server/api-server",
+						Implements:    "core/compute/api-server",
 						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
 					},
 				}, true
@@ -628,12 +628,12 @@ func monitoringFeatureInput(t *testing.T) renderer.RendererInput {
 func hostWorkloadRecipeLookup(fr *types.FeatureRecipe) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
-						Implements: "core/server/api-server",
+						Implements: "core/compute/api-server",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -781,12 +781,12 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
 						Provider:   "helm",
-						Implements: "core/server/api-server",
+						Implements: "core/compute/api-server",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
 containers:
@@ -909,7 +909,7 @@ func TestStep4b_AssertionFailureHaltsEvaluator(t *testing.T) {
 	input := testInput()
 
 	failingComponent := types.Component{
-		Metadata: types.ComponentMetadata{Name: "core/server/api-server"},
+		Metadata: types.ComponentMetadata{Name: "core/compute/api-server"},
 		Spec: types.ComponentSpec{
 			Assertions: buildOrderedMap(map[string]string{
 				"test_assert": `{{ fail "component-assertion-smoke-fired" }}`,
@@ -918,7 +918,7 @@ func TestStep4b_AssertionFailureHaltsEvaluator(t *testing.T) {
 	}
 	catalogLookup := resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
-			if typeURI == "core/server/api-server" {
+			if typeURI == "core/compute/api-server" {
 				return failingComponent, true
 			}
 			return types.Component{}, false
@@ -953,12 +953,12 @@ func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
 	input := testInput()
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			if componentType == "core/server/api-server" {
+			if componentType == "core/compute/api-server" {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe-failing"},
 					Spec: types.RecipeSpec{
 						Provider:      "helm",
-						Implements:    "core/server/api-server",
+						Implements:    "core/compute/api-server",
 						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest"}`},
 						Assertions: buildOrderedMap(map[string]string{
 							"recipe_assert": `{{ fail "recipe-assertion-smoke-fired" }}`,

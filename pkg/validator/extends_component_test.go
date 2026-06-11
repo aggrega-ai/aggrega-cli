@@ -67,7 +67,7 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{
-			Name:    "core/server/base",
+			Name:    "core/compute/server",
 			Version: "1.0.0",
 			Labels:  labels,
 		},
@@ -86,12 +86,12 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	usesSchema2.Set("caches", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=resource"})
 	child := types.Component{
 		Metadata: types.ComponentMetadata{
-			Name:    "core/server/api",
+			Name:    "core/compute/api",
 			Version: "1.0.0",
 			Labels:  labels2, // overrides parent tier=base
 		},
 		Spec: types.ComponentSpec{
-			Extends:     "core/server/base",
+			Extends:     "core/compute/server",
 			SecretNames: []string{"api_token"},
 			Inject:      []string{"env", "file"},
 			UsesSchema:  usesSchema2,
@@ -102,7 +102,7 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	}
 
 	lookup := func(uri string) (types.Component, bool) {
-		if uri == "core/server/base" {
+		if uri == "core/compute/server" {
 			return parent, true
 		}
 		return types.Component{}, false
@@ -150,7 +150,7 @@ func TestResolveComponentExtends_MergesLabelsAndSecretNames(t *testing.T) {
 	}
 
 	// Identity stays child's
-	if got.Metadata.Name != "core/server/api" {
+	if got.Metadata.Name != "core/compute/api" {
 		t.Errorf("identity should be child's name, got %q", got.Metadata.Name)
 	}
 }

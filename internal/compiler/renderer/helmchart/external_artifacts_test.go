@@ -96,7 +96,7 @@ spec:
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("api", types.IRNode{
-		Component:    "core/server/api-server",
+		Component:    "core/compute/api-server",
 		BoundaryPath: "production",
 	})
 
