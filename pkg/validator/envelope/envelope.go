@@ -54,6 +54,14 @@ const (
 	KindAggregaConfig  Kind = "AggregaConfig"
 	KindLockfile       Kind = "Lockfile"
 	KindWorkload       Kind = "Workload"
+	// KindIR is the emitted intermediate representation. It is an
+	// OUTPUT-side, TEST-ONLY kind: no loader calls ValidateBytes/
+	// ValidateInstance with it, so it creates no runtime gate (a gate is
+	// a call site, never map membership). It exists so the schema↔struct
+	// alignment suite can validate emitted IR against ir-v1alpha1 through
+	// the one validation component. Do not wire it into a parse path —
+	// runtime emit-validation is deliberately not part of the pipeline.
+	KindIR Kind = "IR"
 )
 
 // schemaSource maps each kind to its embedded schema document.
@@ -71,6 +79,7 @@ var schemaSource = map[Kind]string{
 	KindAggregaConfig:  schemas.AggregaConfigV1alpha1,
 	KindLockfile:       schemas.LockfileV1alpha1,
 	KindWorkload:       clischemas.WorkloadJSONSchema,
+	KindIR:             schemas.IRSchemaV1alpha1,
 }
 
 // compiled caches one compiled validator per kind. Catalog loads

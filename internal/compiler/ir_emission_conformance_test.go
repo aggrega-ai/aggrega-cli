@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+// Emitted-IR conformance — the output-side twin of the document-envelope
+// gate. Every end-to-end fixture build's emitted IR document is validated
+// against ir-v1alpha1.schema.json at test time, making pkg/types/ir.go's
+// "strictly mirrors ir-v1alpha1.schema.json" claim executable. This is a
+// TEST-time check only: runtime emit-validation is deliberately not part
+// of the pipeline (the compiler trusts its own IR builder).
+package compiler_test
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+)
+
+// TestEmittedIRConformsToSchema builds each green e2e fixture through the
+// real pipeline, marshals the emitted IRGraph, and validates it against
+// the IR schema through the one validation component. The fixture set
+// spans the distinct e2e trees (synthesis + sourced, sub-aggregates,
+// per-edge config, capability-axis sockets, boundary features).
+func TestEmittedIRConformsToSchema(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		releasePath  string
+		catalogPaths []string
+	}{
+		{"capability-socket", "testdata/capability-socket/release-green.yaml", []string{"testdata/capability-socket/catalog"}},
+		{"scope-feature-uses", "testdata/scope-feature-uses/release.yaml", []string{"testdata/scope-feature-uses/catalog/base"}},
+		{"uses-edge-config", "testdata/uses-edge-config/release.yaml", []string{"testdata/uses-edge-config/catalog/base"}},
+		{"uses-edge-subagg", "testdata/uses-edge-subagg/release.yaml", []string{"testdata/uses-edge-config/catalog/base", "testdata/uses-edge-subagg/catalog/base"}},
+		{"compose-bridge", "testdata/compose-bridge/release.yaml", []string{
+			"testdata/compose-bridge/catalog/base",
+			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
+			"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
+			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
+		}},
+		{"determinism-fullcompile", "testdata/determinism/fullcompile/release.yaml", []string{"testdata/determinism/fullcompile/catalog/base", "testdata/determinism/fullcompile/catalog/recipes/helm"}},
+		{"fullstack-helm-synthesized", "testdata/fullstack-app/releases/helm-synthesized.yaml", []string{"testdata/fullstack-app/catalog/base", "testdata/fullstack-app/catalog/recipes/helm-synthesized"}},
+		{"fullstack-compose-synthesized", "testdata/fullstack-app/releases/compose-synthesized.yaml", []string{"testdata/fullstack-app/catalog/base", "testdata/fullstack-app/catalog/recipes/compose-synthesized"}},
+		{"feature-matrix-compose-synthesized", "testdata/feature-matrix/releases/compose-synthesized.yaml", []string{"testdata/feature-matrix/catalog/base", "testdata/feature-matrix/catalog/recipes/compose-synthesized"}},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			result := pipelinetest.Build(t, pipelinetest.Input{
+				ReleasePath:  c.releasePath,
+				CatalogPaths: c.catalogPaths,
+			})
+			if result.IRGraph == nil {
+				t.Fatalf("%s: pipeline produced no IR graph", c.name)
+			}
+			raw, err := json.Marshal(result.IRGraph)
+			if err != nil {
+				t.Fatalf("%s: marshal IR: %v", c.name, err)
+			}
+			var instance any
+			if err := json.Unmarshal(raw, &instance); err != nil {
+				t.Fatalf("%s: re-decode IR: %v", c.name, err)
+			}
+			findings, err := envelope.ValidateInstance(envelope.KindIR, instance)
+			if err != nil {
+				t.Fatalf("%s: IR schema engine error: %v", c.name, err)
+			}
+			if len(findings) > 0 {
+				t.Errorf("%s: emitted IR violates ir-v1alpha1.schema.json (%d finding(s)); the ir.go hand-mirror has drifted from the schema:\n%s\n--- first findings ---\n%+v",
+					c.name, len(findings), raw, findings[:min(4, len(findings))])
+			}
+		})
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

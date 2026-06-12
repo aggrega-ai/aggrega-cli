@@ -32,6 +32,11 @@ func buildProvenance(res *resolver.ResolveResult, compilerVersion string) types.
 	prov := types.IRProvenance{
 		SchemaVersion:   types.IRAPIVersion,
 		CompilerVersion: compilerVersion,
+		// source_identifiers is a schema-required array; emit a present
+		// empty array rather than a nil slice (which marshals as null and
+		// violates the IR schema) so the provenance record is iterable by
+		// GitOps consumers even when no source artifacts contributed.
+		SourceIdentifiers: []string{},
 	}
 	if res.Aggregate != nil {
 		prov.AggregateVersion = res.Aggregate.Metadata.Version
