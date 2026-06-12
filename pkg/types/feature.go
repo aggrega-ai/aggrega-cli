@@ -11,57 +11,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Feature is a modular operational feature that binds dynamically to components.
-// Schema: feature-v1alpha1.schema.json
-type Feature struct {
-	APIVersion string          `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string          `json:"kind" yaml:"kind"`
-	Metadata   FeatureMetadata `json:"metadata" yaml:"metadata"`
-	Spec       FeatureSpec     `json:"spec" yaml:"spec"`
-}
+//go:generate go run ../../internal/tools/typegen feature_gen.go
 
-// FeatureMetadata carries identity and optional labels for a Feature.
-// The label feature.aggrega.ai/kind with value "secret" marks this as a credential Feature.
-type FeatureMetadata struct {
-	Name        string             `json:"name" yaml:"name"`
-	Version     string             `json:"version" yaml:"version"`
-	Description string             `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer       `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string             `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string             `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string             `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string           `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool               `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-	Labels      OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
-	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-}
-
-// FeatureSpec defines the validation, targeting, and interoperability of a catalog Feature.
-//
-// Schema carries the free-form pillars (values / infra / provides) as JSON
-// Schema 2020-12 content with the same three-mode authoring surface as
-// ComponentSpec.Schema (inline content; {$import: <path>} for single-file
-// replacement; {$ref: <Library>#/schemas/<name>} for SchemaLibrary
-// references by bare-name identity — version from the per-Release lockfile,
-// no registry host). UsesSchema and SecretsSchema cover the fixed-shape pillars;
-// bridge synthesis composes the three into the unified validation surface.
-type FeatureSpec struct {
-	Extends          string                      `json:"extends,omitempty" yaml:"extends,omitempty"`
-	SecretsSchema    OrderedMap[SecretSlot]      `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
-	AppliesTo        string                      `json:"appliesTo,omitempty" yaml:"appliesTo,omitempty"`
-	AppliesToAnyOf   []SelectorTerm              `json:"appliesToAnyOf,omitempty" yaml:"appliesToAnyOf,omitempty"`
-	Interoperability *Interoperability           `json:"interoperability,omitempty" yaml:"interoperability,omitempty"`
-	UsesSchema       OrderedMap[UsesSchemaEntry] `json:"usesSchema,omitempty,omitzero" yaml:"usesSchema,omitempty"`
-	Schema           yaml.Node                   `json:"schema,omitempty" yaml:"schema,omitempty"`
-	// Assertions carries build-time cross-field validation as a map of named
-	// Go template rules. Evaluation runs at Step 4b (post-resolution, post-
-	// analyzer-gate, pre-render); the first rule whose template invokes
-	// {{ fail "message" }} halts the build. Per-instance: a Feature with
-	// N attachments produces N evaluations. Strict reference semantics
-	// via missingkey=error. See internal/compiler/renderer/assertions.go
-	// and internal/compiler/renderer/assertions_step4b.go.
-	Assertions OrderedMap[string] `json:"assertions,omitempty,omitzero" yaml:"assertions,omitempty"`
-}
+// Feature's struct declarations (Feature, FeatureMetadata, FeatureSpec)
+// are generated into feature_gen.go from the published feature-v1alpha1
+// schema; their godoc is the schema's descriptions. This hand-written
+// companion holds the polymorphic SelectorTerm (with its custom
+// marshalers — the generator emits a []SelectorTerm field referencing it
+// but never the type itself) and the Interoperability nested struct the
+// generated spec references by pointer. The shared Maintainer type the
+// generated metadata references lives in common.go; the shared SecretSlot
+// and UsesSchemaEntry value types live in component.go.
 
 // SelectorTerm is one item in appliesToAnyOf (OR logic between items). An
 // item carries exactly one of two arms, following the authored shape: a

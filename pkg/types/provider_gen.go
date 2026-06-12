@@ -8,7 +8,7 @@
 
 package types
 
-// Provider Global plugin registrar mapping a rendering engine name to an executable.
+// Provider The global plugin registrar mapping a rendering engine name to an executable.
 type Provider struct {
 	APIVersion string           `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string           `json:"kind" yaml:"kind"`
