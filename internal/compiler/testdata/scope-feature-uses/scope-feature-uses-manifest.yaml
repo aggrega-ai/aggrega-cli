@@ -3,4 +3,12 @@ kind: Manifest
 metadata:
   name: scope-feature-uses-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type:
+        core/api: api-recipe:1.0.0
+        core/db: db-recipe:1.0.0
+    features:
+      type:
+        core/shared-backend: shared-backend-compose:1.0.0

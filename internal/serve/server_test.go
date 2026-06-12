@@ -249,6 +249,8 @@ kind: Component
 metadata:
   name: invalidate-test/comp
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec: {}
 `
 	yamlPath := filepath.Join(componentDir, "comp.yaml")

@@ -6,10 +6,9 @@ package validator
 import (
 	"encoding/json"
 
-	libschema "github.com/google/jsonschema-go/jsonschema"
 
-	jsonschemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
@@ -32,39 +31,6 @@ func ValidateWorkload(
 ) error {
 	if w == nil {
 		return nil
-	}
-
-	// Unmarshal the embedded JSON Schema into a library Schema.
-	// The embedded schema is verified to parse by
-	// pkg/schemas/jsonschema/workload_test.go:TestWorkloadJSONSchemaParses;
-	// a failure here would mean an embed regression, surfaced as a
-	// single finding rather than a panic.
-	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(jsonschemas.WorkloadJSONSchema), schema); err != nil {
-		return &WorkloadValidationError{
-			Path:          recipePath,
-			RecipeName:    recipeName,
-			RecipeVersion: recipeVersion,
-			Stage:         "schema",
-			Findings: []WorkloadValidationFinding{{
-				Constraint: "embedded Workload JSON Schema failed to parse: " + err.Error(),
-			}},
-			Err: ErrWorkloadValidation,
-		}
-	}
-
-	v, err := jsonvalidator.New(schema)
-	if err != nil {
-		return &WorkloadValidationError{
-			Path:          recipePath,
-			RecipeName:    recipeName,
-			RecipeVersion: recipeVersion,
-			Stage:         "schema",
-			Findings: []WorkloadValidationFinding{{
-				Constraint: "embedded Workload JSON Schema failed to resolve: " + err.Error(),
-			}},
-			Err: ErrWorkloadValidation,
-		}
 	}
 
 	// Marshal the typed Workload to JSON, then unmarshal as a generic
@@ -98,7 +64,11 @@ func ValidateWorkload(
 		}
 	}
 
-	rpt, err := v.Validate(instance, nil)
+	// The shared envelope component owns the compiled Workload schema
+	// (one compile, cached across recipes); engine-level failures —
+	// including an embed regression — surface as a single finding
+	// rather than a panic.
+	findings, err := envelope.ValidateInstance(envelope.KindWorkload, instance)
 	if err != nil {
 		return &WorkloadValidationError{
 			Path:          recipePath,
@@ -112,7 +82,7 @@ func ValidateWorkload(
 		}
 	}
 
-	if len(rpt.Findings) == 0 {
+	if len(findings) == 0 {
 		return nil
 	}
 
@@ -121,7 +91,7 @@ func ValidateWorkload(
 		RecipeName:    recipeName,
 		RecipeVersion: recipeVersion,
 		Stage:         "schema",
-		Findings:      findingsToWorkloadFindings(rpt.Findings),
+		Findings:      findingsToWorkloadFindings(findings),
 		Err:           ErrWorkloadValidation,
 	}
 }

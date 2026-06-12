@@ -32,12 +32,6 @@ func TestUsesSocketValue_RoundTrip_YAML(t *testing.T) {
 			wantTarget:     "corp-hr",
 		},
 		{
-			name:           "verbose form bare-string shorthand",
-			yamlIn:         `{"my-db": "target-name"}`,
-			wantVerboseLen: 1,
-			wantTarget:     "target-name",
-		},
-		{
 			name:   "null produces zero value",
 			yamlIn: `null`,
 		},
@@ -108,12 +102,6 @@ func TestUsesSocketValue_RoundTrip_JSON(t *testing.T) {
 			wantTarget:     "corp-hr",
 		},
 		{
-			name:           "verbose form bare-string shorthand",
-			jsonIn:         `{"my-db":"target-name"}`,
-			wantVerboseLen: 1,
-			wantTarget:     "target-name",
-		},
-		{
 			name:   "null produces zero value",
 			jsonIn: `null`,
 		},
@@ -170,11 +158,6 @@ func TestVerboseUsesEntry_RoundTrip_YAML(t *testing.T) {
 		wantTarget string
 		wantInject bool
 	}{
-		{
-			name:       "scalar shorthand",
-			yamlIn:     `target-name`,
-			wantTarget: "target-name",
-		},
 		{
 			name:       "mapping with target only",
 			yamlIn:     `{target: corp-db}`,
@@ -236,11 +219,6 @@ func TestVerboseUsesEntry_RoundTrip_JSON(t *testing.T) {
 		wantTarget string
 		wantInject bool
 	}{
-		{
-			name:       "string shorthand",
-			jsonIn:     `"target-name"`,
-			wantTarget: "target-name",
-		},
 		{
 			name:       "object with target only",
 			jsonIn:     `{"target":"corp-db"}`,
@@ -307,7 +285,8 @@ caches:
     inject:
       env:
         CACHE_URL: host
-  fallback: redis-2
+  fallback:
+    target: redis-2
 `
 	var m OrderedMap[UsesSocketValue]
 	if err := yaml.Unmarshal([]byte(yamlIn), &m); err != nil {

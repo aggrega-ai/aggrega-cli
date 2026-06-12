@@ -146,6 +146,8 @@ kind: Component
 metadata:
   name: BadName
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -185,6 +187,7 @@ metadata:
   name: core/compute/api-server
   version: 1.0.0
   labels:
+    component.aggrega.ai/type: server
     component.aggrega.ai/category: compute
 spec:
   schema:

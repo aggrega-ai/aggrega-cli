@@ -24,9 +24,15 @@ kind: Release
 metadata:
   name: ` + name + `
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: ./aggregate.yaml
   manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api: {}
 `
 }
 

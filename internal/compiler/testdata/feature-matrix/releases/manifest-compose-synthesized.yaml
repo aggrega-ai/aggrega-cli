@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: feature-matrix-manifest-compose-synthesized
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/datastore/mariadb: feature-matrix-db-compose-synth:1.0.0
+        core/server: feature-matrix-api-compose-synth:1.0.0

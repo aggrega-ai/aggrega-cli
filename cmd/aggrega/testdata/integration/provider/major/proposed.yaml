@@ -4,5 +4,5 @@ metadata:
   name: helm
   version: 1.0.0
 spec:
-  baseSchema:
+  baseSchema: |
     a: 1

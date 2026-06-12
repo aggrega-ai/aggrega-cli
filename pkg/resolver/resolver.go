@@ -4,6 +4,8 @@
 package resolver
 
 import (
+	"errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"fmt"
 	"os"
 
@@ -216,6 +218,12 @@ func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 	interpolated, err := InterpolateParameters(in.AggregateRawBytes, params)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate the interpolated document's envelope before typed
+	// unmarshal — post-interpolation is the final authored shape.
+	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, interpolated, in.AggregatePath); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+		return nil, &ResolverError{Entity: "Aggregate", Field: in.AggregatePath, Message: eerr.Error(), Err: eerr}
 	}
 
 	// Unmarshal interpolated Aggregate

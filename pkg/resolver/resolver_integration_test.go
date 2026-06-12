@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"errors"
 	"fmt"
 	"os"
@@ -90,9 +91,12 @@ func TestResolve_Integration(t *testing.T) {
 			},
 		},
 		{
-			name:     "dot in instance name produces ErrInvalidInstanceName",
+			// The document envelope owns dotted-name rejection on the loader
+			// path (the Aggregate schema's component key pattern); the
+			// instance-name validator still guards constructed inputs.
+			name:     "dot in instance name fails the document envelope",
 			fixtures: "bad-name",
-			wantErr:  ErrInvalidInstanceName,
+			wantErr:  envelope.ErrEntityEnvelope,
 		},
 		{
 			name:    "missing aggregate file produces ErrYAMLLoad",

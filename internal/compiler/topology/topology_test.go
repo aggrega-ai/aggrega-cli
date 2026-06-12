@@ -206,6 +206,7 @@ apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
   name: test-app
+  version: 1.0.0
 spec:
   components:
     shared-cache:
@@ -259,6 +260,7 @@ apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
   name: test-app
+  version: 1.0.0
 spec:
   components:
     x:
@@ -274,6 +276,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test-app
   manifest: test

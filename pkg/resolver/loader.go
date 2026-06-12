@@ -4,11 +4,13 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,6 +46,9 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 // for callers that already hold the bytes (the same-directory triad scan) and
 // must not read the file a second time.
 func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+		return nil, &ResolverError{Entity: "Aggregate", Field: path, Message: eerr.Error(), Err: eerr}
+	}
 	var agg types.Aggregate
 	if err := yaml.Unmarshal(data, &agg); err != nil {
 		return nil, &ResolverError{
@@ -66,6 +71,9 @@ func LoadRelease(path string) (*types.Release, error) {
 			Message: fmt.Sprintf("failed to read file: %v", err),
 			Err:     ErrYAMLLoad,
 		}
+	}
+	if _, eerr := envelope.ValidateBytes(envelope.KindRelease, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+		return nil, &ResolverError{Entity: "Release", Field: path, Message: eerr.Error(), Err: eerr}
 	}
 	var rel types.Release
 	if err := yaml.Unmarshal(data, &rel); err != nil {
@@ -106,6 +114,9 @@ func LoadManifest(path string) (*types.Manifest, error) {
 // attributing any error to path. It is the read-free core of LoadManifest, for
 // callers that already hold the bytes (the same-directory triad scan).
 func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindManifest, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+		return nil, &ResolverError{Entity: "Manifest", Field: path, Message: eerr.Error(), Err: eerr}
+	}
 	var man types.Manifest
 	if err := yaml.Unmarshal(data, &man); err != nil {
 		return nil, &ResolverError{

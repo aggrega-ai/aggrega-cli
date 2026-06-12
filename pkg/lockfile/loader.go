@@ -4,17 +4,13 @@
 package lockfile
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
-	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
-	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
-	schemas "github.com/aggrega-ai/aggrega-schemas"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // ErrLockfileInvalid wraps every structural-validation failure
@@ -82,31 +78,22 @@ func LoadLockfile(path string) (*Lockfile, []Diagnostic, error) {
 		return nil, nil, fmt.Errorf("lockfile: read %s: %w", path, err)
 	}
 
-	var instance any
-	if err := yaml.Unmarshal(data, &instance); err != nil {
-		return nil, nil, fmt.Errorf("lockfile: parse %s: %w", path, err)
-	}
-	if instance == nil {
-		return nil, nil, fmt.Errorf("lockfile: %s: document is empty", path)
-	}
-	instance = normaliseYAML(instance)
-
-	v, err := newValidator()
-	if err != nil {
-		return nil, nil, fmt.Errorf("lockfile: schema build: %w", err)
-	}
-	report, err := v.Validate(instance, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("lockfile: validate %s: %w", path, err)
-	}
-	if len(report.Findings) > 0 {
-		f := report.Findings[0]
+	instance, err := envelope.ValidateBytes(envelope.KindLockfile, data, path)
+	var envErr *envelope.Error
+	if errors.As(err, &envErr) {
+		f := envErr.Findings[0]
+		if f.Message == "document is empty" {
+			return nil, nil, fmt.Errorf("lockfile: %s: document is empty", path)
+		}
 		fieldPath := f.FieldPath
 		if fieldPath == "" {
 			fieldPath = "(root)"
 		}
 		return nil, nil, fmt.Errorf("lockfile: %s: %s: %s: %w",
 			path, fieldPath, f.Message, ErrLockfileInvalid)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("lockfile: parse %s: %w", path, err)
 	}
 
 	diagnostics := walkDiagnostics(instance)
@@ -220,75 +207,3 @@ func libraryConsumerDiagnostics(root map[string]any, section string) []Diagnosti
 	return out
 }
 
-// newValidator compiles the lockfile schema bytes into a Validator.
-// The schema source lives in the aggrega-schemas Go module
-// (schemas.LockfileV1alpha1); aggrega-cli imports it rather than
-// carrying a local JSON copy. The schema is small (~300 LOC of
-// JSON) and compiles in microseconds; per-call compilation keeps
-// the package import graph small. Callers loading multiple
-// lockfiles in a hot loop would cache the validator; the current
-// expected call shape is once per build invocation.
-func newValidator() (jsonvalidator.Validator, error) {
-	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.LockfileV1alpha1), schema); err != nil {
-		return nil, fmt.Errorf("decode embedded schema: %w", err)
-	}
-	v, err := jsonvalidator.New(schema)
-	if err != nil {
-		return nil, fmt.Errorf("compile embedded schema: %w", err)
-	}
-	return v, nil
-}
-
-// normaliseYAML walks the value yaml.Unmarshal produced for an `any`
-// destination and applies two transformations needed before the
-// JSON Schema validator can consume the document:
-//
-//   - map[interface{}]interface{} → map[string]any. yaml.v3 produces
-//     map[string]any directly for keys that are all strings, but
-//     legacy paths or mixed-key documents may return the broader
-//     map type which the validator's walker does not consume.
-//
-//   - time.Time → RFC 3339 string. yaml.v3 auto-detects ISO-8601
-//     timestamp literals and produces time.Time values when
-//     unmarshalling into `any`. The schema declares the
-//     `generated_at` field as `type: "string"` with `format:
-//     "date-time"`; without this normalisation the validator
-//     reports "type: ... has type object, want string" because
-//     time.Time marshals as an object. The conversion preserves the
-//     wire format the schema documents.
-//
-//     Convention enforced here: every timestamp in the lockfile
-//     crosses the JSON Schema validator as an RFC 3339 string. A
-//     future schema evolution that wants a typed time.Time field
-//     would fight this normalisation — adding such a field needs
-//     a corresponding carve-out in normaliseYAML or a per-field
-//     type tag on the validator.
-func normaliseYAML(v any) any {
-	switch val := v.(type) {
-	case map[any]any:
-		out := make(map[string]any, len(val))
-		for k, vv := range val {
-			if ks, ok := k.(string); ok {
-				out[ks] = normaliseYAML(vv)
-			}
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(val))
-		for k, vv := range val {
-			out[k] = normaliseYAML(vv)
-		}
-		return out
-	case []any:
-		out := make([]any, len(val))
-		for i, item := range val {
-			out[i] = normaliseYAML(item)
-		}
-		return out
-	case time.Time:
-		return val.UTC().Format(time.RFC3339)
-	default:
-		return v
-	}
-}

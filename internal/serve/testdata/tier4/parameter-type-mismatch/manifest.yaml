@@ -3,4 +3,7 @@ kind: Manifest
 metadata:
   name: tier4-param-mismatch-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type: {}

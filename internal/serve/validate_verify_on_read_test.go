@@ -137,7 +137,10 @@ kind: Manifest
 metadata:
   name: app-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type: {}
 `)
 
 	releasePath := filepath.Join(tmp, "release.yaml")

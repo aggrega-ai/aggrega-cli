@@ -253,7 +253,7 @@ func TestUsesSocketValue_UnmarshalYAML_AllNodeKinds(t *testing.T) {
 	}
 	// MappingNode → Verbose.
 	var mapping UsesSocketValue
-	if err := yaml.Unmarshal([]byte(`{primary: backend}`), &mapping); err != nil {
+	if err := yaml.Unmarshal([]byte(`{primary: {target: backend}}`), &mapping); err != nil {
 		t.Fatalf("mapping: %v", err)
 	}
 	if mapping.Verbose.Len() == 0 {
@@ -291,7 +291,7 @@ func TestUsesSocketValue_UnmarshalJSON_AllDispatches(t *testing.T) {
 		t.Errorf("array → Compact: got %+v", seq.Compact)
 	}
 	var mapping UsesSocketValue
-	if err := mapping.UnmarshalJSON([]byte(`{"primary":"backend"}`)); err != nil {
+	if err := mapping.UnmarshalJSON([]byte(`{"primary":{"target":"backend"}}`)); err != nil {
 		t.Errorf("object: %v", err)
 	}
 	if mapping.Verbose.Len() == 0 {

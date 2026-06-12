@@ -3,4 +3,9 @@ kind: Manifest
 metadata:
   name: compose-bridge-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type:
+        core/api: api-recipe:1.0.0
+        core/db: db-recipe:1.0.0

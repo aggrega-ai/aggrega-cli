@@ -34,6 +34,7 @@ func TestThreeTierLookup_OnComposedManifest(t *testing.T) {
 kind: Manifest
 metadata:
   name: prod
+  version: 1.0.0
 spec:
   mappings:
     components:
@@ -47,6 +48,7 @@ spec:
 kind: Manifest
 metadata:
   name: local
+  version: 1.0.0
 spec:
   extends: ./prod.yaml
   mappings:

@@ -48,6 +48,7 @@ spec:
 kind: Manifest
 metadata:
   name: m
+  version: 1.0.0
 spec:
   mappings:
     components:
@@ -61,6 +62,7 @@ metadata:
   name: core/server
   labels:
     component.aggrega.ai/type: "server"
+  version: 1.0.0
 spec:
   schema:
     values:
@@ -70,6 +72,7 @@ spec:
 kind: Provider
 metadata:
   name: bogus-provider
+  version: 1.0.0
 spec: {}
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1

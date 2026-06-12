@@ -86,6 +86,7 @@ metadata:
   name: core/server
   version: "1.0.0"
   labels:
+    component.aggrega.ai/type: server
     zebra: z
     alpha: a
     mid: m
@@ -104,7 +105,7 @@ spec:
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	wantLabels := []string{"zebra", "alpha", "mid"}
+	wantLabels := []string{"component.aggrega.ai/type", "zebra", "alpha", "mid"}
 	gotLabels := comp.Metadata.Labels.Keys()
 	if !slices.Equal(gotLabels, wantLabels) {
 		t.Errorf("Labels keys = %v, want %v", gotLabels, wantLabels)

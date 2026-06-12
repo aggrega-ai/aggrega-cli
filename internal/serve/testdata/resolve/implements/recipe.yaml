@@ -6,4 +6,9 @@ metadata:
 spec:
   implements: core/cache
   provider: helm
-  pipeline: []
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: x:1

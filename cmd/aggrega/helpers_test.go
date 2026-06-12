@@ -208,6 +208,8 @@ kind: Component
 metadata:
   name: core/server
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -259,6 +261,9 @@ func TestInspectComponentFile_WithExtends(t *testing.T) {
 kind: Component
 metadata:
   name: child
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   extends: parent
   schema:

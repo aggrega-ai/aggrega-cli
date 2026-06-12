@@ -4,7 +4,7 @@ metadata:
   name: core/cache
   version: "1.0.0"
   labels:
-    component.aggrega.ai/type: "cache"
+    component.aggrega.ai/type: resource
 spec:
   inject: ["env"]
   schema:

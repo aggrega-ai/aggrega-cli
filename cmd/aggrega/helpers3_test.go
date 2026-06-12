@@ -49,6 +49,7 @@ spec:
 kind: Manifest
 metadata:
   name: m
+  version: 1.0.0
 spec:
   mappings:
     annotations:
@@ -68,6 +69,7 @@ metadata:
   name: core/server
   labels:
     component.aggrega.ai/type: "server"
+  version: 1.0.0
 spec:
   schema:
     values:
@@ -77,6 +79,7 @@ spec:
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec:
   baseSchema: |
     type: object
@@ -135,13 +138,18 @@ spec:
 kind: Manifest
 metadata:
   name: m
-spec: {}
+  version: 1.0.0
+spec:
+  mappings:
+    components:
+      type: {}
 `)
 	catalogRoot := filepath.Join(root, "catalog")
 	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec: {}
 `)
 
@@ -170,6 +178,9 @@ func TestRunBuild_CatalogExtendsError(t *testing.T) {
 kind: Component
 metadata:
   name: child
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   extends: nonexistent-parent
   schema:
@@ -180,6 +191,7 @@ spec:
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec: {}
 `)
 	// Minimal release pointing to nothing — we expect failure earlier
@@ -233,6 +245,7 @@ func TestInspectReleaseFile_MalformedRelease(t *testing.T) {
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec: {}
 `)
 	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), catalogRoot)
@@ -280,6 +293,7 @@ spec:
 kind: Manifest
 metadata:
   name: m
+  version: 1.0.0
 spec:
   mappings:
     components:
@@ -293,6 +307,7 @@ metadata:
   name: core/server
   labels:
     component.aggrega.ai/type: "server"
+  version: 1.0.0
 spec:
   schema:
     values:
@@ -302,6 +317,7 @@ spec:
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec:
   baseSchema: |
     type: object

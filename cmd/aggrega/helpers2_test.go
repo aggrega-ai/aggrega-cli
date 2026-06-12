@@ -185,6 +185,7 @@ metadata:
   name: core/server
   labels:
     component.aggrega.ai/type: "server"
+  version: 1.0.0
 spec:
   schema:
     values:
@@ -194,6 +195,7 @@ spec:
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec:
   baseSchema: |
     type: object

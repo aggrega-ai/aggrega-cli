@@ -414,17 +414,14 @@ func TestUsesSocketValue_UnmarshalJSON_RejectsEmptyAndInvalid(t *testing.T) {
 }
 
 // TestVerboseUsesEntry_UnmarshalJSON_AllDispatches pins the JSON
-// dispatch for VerboseUsesEntry: string scalar → bare-string shorthand
-// populates Target; object → struct form; empty / other → error.
+// dispatch for VerboseUsesEntry: string scalar → rejected (single-form
+// alias contract); object → struct form; empty / other → error.
 func TestVerboseUsesEntry_UnmarshalJSON_AllDispatches(t *testing.T) {
 	t.Parallel()
-	// Bare-string shorthand.
+	// Bare-string target: rejected.
 	var e VerboseUsesEntry
-	if err := e.UnmarshalJSON([]byte(`"target-x"`)); err != nil {
-		t.Fatalf("string: %v", err)
-	}
-	if e.Target != "target-x" {
-		t.Errorf("Target = %q; want target-x", e.Target)
+	if err := e.UnmarshalJSON([]byte(`"target-x"`)); err == nil {
+		t.Fatal("string target must be rejected (single-form alias contract)")
 	}
 	// Object form.
 	var e2 VerboseUsesEntry

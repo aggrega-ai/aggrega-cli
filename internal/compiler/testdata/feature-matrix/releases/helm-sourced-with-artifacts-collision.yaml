@@ -6,7 +6,7 @@ metadata:
   version: "1.0.0"
 spec:
   aggregate: ../aggregate.yaml
-  manifest: ../manifest.yaml
+  manifest: feature-matrix-manifest-helm-sourced-with-artifacts-collision
   boundaries:
     app:
       directory: ./dist/app

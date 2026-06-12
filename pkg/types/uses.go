@@ -181,12 +181,7 @@ func (v UsesSocketValue) IsZero() bool {
 func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
-		var s string
-		if err := node.Decode(&s); err != nil {
-			return fmt.Errorf("VerboseUsesEntry: decoding shorthand at line %d: %w", node.Line, err)
-		}
-		e.Target = s
-		return nil
+		return fmt.Errorf("VerboseUsesEntry: bare-string target at line %d; an alias maps to an entry object — use {target: %q}", node.Line, node.Value)
 	case yaml.MappingNode:
 		// Use a separate alias type to avoid recursion into our own UnmarshalYAML.
 		type plain struct {
@@ -219,12 +214,7 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 	}
 	switch trimmed[0] {
 	case '"':
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return fmt.Errorf("VerboseUsesEntry: decoding shorthand: %w", err)
-		}
-		e.Target = s
-		return nil
+		return fmt.Errorf("VerboseUsesEntry: bare-string target %s; an alias maps to an entry object — use {\"target\": ...}", string(trimmed))
 	case '{':
 		// Use a separate alias type to avoid recursion into our own UnmarshalJSON.
 		type plain struct {

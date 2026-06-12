@@ -19,7 +19,7 @@ spec:
         tls_mode: { type: string, enum: [disable, require, mutual], default: require }
     caches:
       required: false
-      selector: "component.aggrega.ai/type=cache"
+      selector: "component.aggrega.ai/type=resource"
       infraSchema:
         pool_size: { type: integer, minimum: 1, default: 5 }
   schema:

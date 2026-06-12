@@ -7,3 +7,8 @@ metadata:
 spec:
   aggregate: ./aggregate.yaml
   manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        database_url: {}

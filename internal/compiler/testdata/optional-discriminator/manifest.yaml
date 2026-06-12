@@ -3,4 +3,8 @@ kind: Manifest
 metadata:
   name: optional-discriminator-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type:
+        local/scaler: scaler-recipe:1.0.0

@@ -3,4 +3,8 @@ kind: Manifest
 metadata:
   name: subagg-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    features:
+      type:
+        core/sidecar: sidecar-fr:1.0.0

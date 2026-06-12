@@ -4,16 +4,13 @@
 package workspaceconfig
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 
-	libschema "github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
-	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
-	schemas "github.com/aggrega-ai/aggrega-schemas"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // ErrConfigInvalid wraps every structural-validation failure raised
@@ -93,24 +90,17 @@ func Load(path string) (Config, error) {
 // file once and validates once, instead of paying the YAML parse
 // cost twice when both validation and overlay-into-seed are needed.
 func validateBytes(data []byte, path string) error {
-	var instance any
-	if err := yaml.Unmarshal(data, &instance); err != nil {
+	var probe any
+	if err := yaml.Unmarshal(data, &probe); err != nil {
 		return fmt.Errorf("workspaceconfig: parse %s: %w", path, err)
 	}
-	if instance == nil {
+	if probe == nil {
 		return nil
 	}
-	instance = normaliseYAML(instance)
-	v, err := newValidator()
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: schema build: %w", err)
-	}
-	report, err := v.Validate(instance, nil)
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: validate %s: %w", path, err)
-	}
-	if len(report.Findings) > 0 {
-		f := report.Findings[0]
+	_, err := envelope.ValidateBytes(envelope.KindAggregaConfig, data, path)
+	var envErr *envelope.Error
+	if errors.As(err, &envErr) {
+		f := envErr.Findings[0]
 		fieldPath := f.FieldPath
 		if fieldPath == "" {
 			fieldPath = "(root)"
@@ -118,59 +108,9 @@ func validateBytes(data []byte, path string) error {
 		return fmt.Errorf("workspaceconfig: %s: %s: %s: %w",
 			path, fieldPath, f.Message, ErrConfigInvalid)
 	}
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: validate %s: %w", path, err)
+	}
 	return nil
 }
 
-// newValidator compiles the aggrega-config schema bytes into a
-// Validator. The schema source lives in the aggrega-schemas Go
-// module (schemas.AggregaConfigV1alpha1); aggrega-cli imports it
-// rather than carrying a local JSON copy. The schema is small
-// (~250 LOC of JSON) and compiles in microseconds; per-call
-// compilation keeps the package import graph small. Callers loading
-// multiple workspaces in a hot loop would cache the validator; the
-// current expected call shape is once per build invocation.
-func newValidator() (jsonvalidator.Validator, error) {
-	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1alpha1), schema); err != nil {
-		return nil, fmt.Errorf("decode embedded schema: %w", err)
-	}
-	v, err := jsonvalidator.New(schema)
-	if err != nil {
-		return nil, fmt.Errorf("compile embedded schema: %w", err)
-	}
-	return v, nil
-}
-
-// normaliseYAML walks the value yaml.Unmarshal produced for an `any`
-// destination and converts every map[interface{}]interface{} into
-// map[string]any. yaml.v3 produces map[string]any directly for keys
-// that are all strings, but legacy paths or mixed-key documents may
-// return the broader map type which the JSON Schema validator's
-// walker does not consume. The validator expects map[string]any;
-// this normalisation aligns the two layers.
-func normaliseYAML(v any) any {
-	switch val := v.(type) {
-	case map[any]any:
-		out := make(map[string]any, len(val))
-		for k, vv := range val {
-			if ks, ok := k.(string); ok {
-				out[ks] = normaliseYAML(vv)
-			}
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(val))
-		for k, vv := range val {
-			out[k] = normaliseYAML(vv)
-		}
-		return out
-	case []any:
-		out := make([]any, len(val))
-		for i, item := range val {
-			out[i] = normaliseYAML(item)
-		}
-		return out
-	default:
-		return v
-	}
-}

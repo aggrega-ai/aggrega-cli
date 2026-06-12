@@ -4,7 +4,6 @@ metadata:
   name: core/invalid-boundary-fr
   version: "1.0.0"
 spec:
-  scope: boundary
   schema:
     values:
       enabled: { type: boolean, default: true }

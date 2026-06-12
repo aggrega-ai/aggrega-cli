@@ -97,6 +97,8 @@ kind: Component
 metadata:
   name: core/compute/api
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     $import: ./schemas/api-server.schema.yaml
@@ -126,6 +128,8 @@ kind: Component
 metadata:
   name: core/compute/api
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     $ref: oci://hub.aggrega.ai/aggrega/datastores@1.0.0#/schemas/MariaDBPayload
@@ -155,6 +159,8 @@ kind: Component
 metadata:
   name: core/compute/api
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   usesSchema:
     databases:
@@ -201,6 +207,8 @@ kind: Component
 metadata:
   name: core/compute/api
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   usesSchema:
     databases:

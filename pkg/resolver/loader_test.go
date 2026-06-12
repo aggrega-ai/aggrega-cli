@@ -146,6 +146,9 @@ spec:
       annotations:
         aggrega.ai/forbidden-binding:
           feature: core/forbidden:1.0.0
+          maps:
+            infra:
+              - target
 `
 	os.WriteFile(f, []byte(yaml), 0644)
 

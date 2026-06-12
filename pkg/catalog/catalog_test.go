@@ -34,6 +34,7 @@
 package catalog
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"errors"
 	"os"
 	"path/filepath"
@@ -235,8 +236,11 @@ spec:
 	if err == nil {
 		t.Fatal("expected error for non-scalar mapping entry; got nil")
 	}
-	if !errors.Is(err, types.ErrMappingEntryNotScalar) {
-		t.Errorf("expected ErrMappingEntryNotScalar in chain; got %v", err)
+	// The document envelope owns the non-scalar rejection on the loader
+	// path (the MappingLibrary schema types entries as strings); the
+	// typed ErrMappingEntryNotScalar still guards constructed inputs.
+	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+		t.Errorf("expected ErrEntityEnvelope in chain; got %v", err)
 	}
 }
 
@@ -485,6 +489,7 @@ metadata:
   name: core/compute/api
   version: "1.0.0"
   labels:
+    component.aggrega.ai/type: server
     tier: prod
 spec:
   extends: core/compute/server

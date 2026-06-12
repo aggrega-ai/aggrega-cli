@@ -142,6 +142,7 @@ func TestProviderSchemaValidation_MalformedBaseSchema(t *testing.T) {
 kind: Provider
 metadata:
   name: helm
+  version: 1.0.0
 spec:
   baseSchema: |
     ::: not yaml :::
@@ -167,6 +168,9 @@ func TestLoadAll_DuplicateKeysLastWins(t *testing.T) {
 kind: Component
 metadata:
   name: shared
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:

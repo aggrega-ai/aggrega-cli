@@ -26,6 +26,8 @@ kind: Component
 metadata:
   name: core/datastore/mariadb
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -93,6 +95,8 @@ kind: Component
 metadata:
   name: core/compute/server
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     $defs:
@@ -158,6 +162,8 @@ kind: Component
 metadata:
   name: core/datastore/mariadb
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -205,6 +211,8 @@ kind: Component
 metadata:
   name: core/datastore/mariadb-flavored
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -254,6 +262,8 @@ kind: Component
 metadata:
   name: core/ai-model/openai
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -308,6 +318,8 @@ kind: Component
 metadata:
   name: core/datastore/mariadb
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:

@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
@@ -407,7 +408,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
-		if comp, err := parseComponentEntity(bytes); err == nil {
+		if comp, err := parseComponentEntity(bytes, uri); err == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return comp, true
 		}
@@ -419,7 +420,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 	}
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
-		if comp, perr := parseComponentEntity(bytes); perr == nil {
+		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return comp, true
 		}
@@ -435,7 +436,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 		return feat, true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if feat, err := parseFeatureEntity(bytes); err == nil {
+		if feat, err := parseFeatureEntity(bytes, uri); err == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return feat, true
 		}
@@ -446,7 +447,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 	}
 	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
 	if err == nil && bytes != nil {
-		if feat, perr := parseFeatureEntity(bytes); perr == nil {
+		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return feat, true
 		}
@@ -468,7 +469,7 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 	if err != nil {
 		return types.Component{}, false
 	}
-	comp, perr := parseComponentEntity(data)
+	comp, perr := parseComponentEntity(data, path)
 	if perr != nil {
 		return types.Component{}, false
 	}
@@ -488,7 +489,7 @@ func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	if err != nil {
 		return types.Feature{}, false
 	}
-	feat, perr := parseFeatureEntity(data)
+	feat, perr := parseFeatureEntity(data, path)
 	if perr != nil {
 		return types.Feature{}, false
 	}
@@ -596,7 +597,7 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil || hdr.Kind != "SchemaLibrary" {
 				return nil
 			}
-			lib, perr := parseSchemaLibraryEntity(data)
+			lib, perr := parseSchemaLibraryEntity(data, path)
 			if perr != nil {
 				if firstErr == nil {
 					firstErr = perr
@@ -683,7 +684,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 				l.featureRecipes[key] = e
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = data
 			case "Aggregate":
-				e, perr := parseAggregateEntity(data)
+				e, perr := parseAggregateEntity(data, path)
 				if perr != nil {
 					l.recordRecipeSkip(path, perr)
 					return nil
@@ -696,6 +697,10 @@ func (l *LazyLookup) buildRecipeIndex() {
 				l.aggregateSources[e.Metadata.Name] = path
 				l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
 			case "Provider":
+				if _, eerr := envelope.ValidateBytes(envelope.KindProvider, data, path); eerr != nil {
+					l.recordRecipeSkip(path, eerr)
+					return nil
+				}
 				var e types.Provider
 				if uerr := yaml.Unmarshal(data, &e); uerr != nil {
 					l.recordRecipeSkip(path, uerr)
@@ -708,7 +713,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 				l.providers[e.Metadata.Name] = e
 				l.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
 			case "MappingLibrary":
-				e, perr := parseMappingLibraryEntity(data)
+				e, perr := parseMappingLibraryEntity(data, path)
 				if perr != nil {
 					l.recordRecipeSkip(path, perr)
 					return nil
@@ -950,7 +955,7 @@ func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (c
 		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-1-catalog"), true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if comp, err := parseComponentEntity(bytes); err == nil {
+		if comp, err := parseComponentEntity(bytes, uri); err == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-2-cache"), true
 		}
@@ -958,7 +963,7 @@ func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (c
 		return closure.Resolution{}, false
 	}
 	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri); err == nil && bytes != nil {
-		if comp, perr := parseComponentEntity(bytes); perr == nil {
+		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-3-pull"), true
 		}
@@ -973,7 +978,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (clo
 		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-1-catalog"), true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if feat, err := parseFeatureEntity(bytes); err == nil {
+		if feat, err := parseFeatureEntity(bytes, uri); err == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-2-cache"), true
 		}
@@ -981,7 +986,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (clo
 		return closure.Resolution{}, false
 	}
 	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri); err == nil && bytes != nil {
-		if feat, perr := parseFeatureEntity(bytes); perr == nil {
+		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-3-pull"), true
 		}

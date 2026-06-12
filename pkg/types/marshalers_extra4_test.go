@@ -4,6 +4,7 @@
 package types
 
 import (
+	"strings"
 	"encoding/json"
 	"testing"
 
@@ -86,17 +87,18 @@ func TestUsesSocketValue_UnmarshalJSON_LongPreviewBranch(t *testing.T) {
 }
 
 // TestVerboseUsesEntry_UnmarshalYAML_BareStringFromScalar pins the
-// scalar dispatch arm: a scalar node populates Target with the
-// scalar's string value.
+// single-form alias contract at the type layer: a scalar node is
+// rejected — an alias maps to an entry object ({target: ...}).
 func TestVerboseUsesEntry_UnmarshalYAML_BareStringFromScalar(t *testing.T) {
 	t.Parallel()
 	var e VerboseUsesEntry
 	node := &yaml.Node{Kind: yaml.ScalarNode, Value: "target-bare"}
-	if err := e.UnmarshalYAML(node); err != nil {
-		t.Fatalf("scalar: %v", err)
+	err := e.UnmarshalYAML(node)
+	if err == nil {
+		t.Fatal("scalar target must be rejected")
 	}
-	if e.Target != "target-bare" {
-		t.Errorf("Target = %q; want target-bare", e.Target)
+	if !strings.Contains(err.Error(), "bare-string target") {
+		t.Errorf("err = %v; want the bare-string rejection", err)
 	}
 }
 

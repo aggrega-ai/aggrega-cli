@@ -7,8 +7,6 @@ spec:
   components:
     api:
       type: core/compute/api-server
-      infra:
-        port: 8080
       uses:
         databases:
           - db

@@ -63,6 +63,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -109,6 +110,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -151,6 +153,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -210,6 +213,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -268,6 +272,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -337,6 +342,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -384,6 +390,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -425,6 +432,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -484,6 +492,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -524,6 +533,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -558,6 +568,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -600,6 +611,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -637,6 +649,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -678,6 +691,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -731,6 +745,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -792,6 +807,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -990,6 +1006,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test
@@ -1528,6 +1545,7 @@ kind: Release
 metadata:
   name: test
   version: "1.0.0"
+  environment: testing
 spec:
   aggregate: test
   manifest: test

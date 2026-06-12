@@ -24,6 +24,7 @@ func TestLoadAggregateParameterContract_EnvelopeRejection_BadType(t *testing.T) 
 kind: Aggregate
 metadata:
   name: test
+  version: 1.0.0
 spec:
   parameters:
     bad:
@@ -58,6 +59,7 @@ func TestLoadAggregateParameterContract_EnvelopeRejection_BadMinLength(t *testin
 kind: Aggregate
 metadata:
   name: test
+  version: 1.0.0
 spec:
   parameters:
     name:
@@ -89,6 +91,7 @@ func TestLoadAggregateParameterContract_EnvelopeAccepts_ValidContract(t *testing
 kind: Aggregate
 metadata:
   name: test
+  version: 1.0.0
 spec:
   parameters:
     port:
@@ -203,6 +206,7 @@ func TestValidateParameterContractEnvelope_Determinism(t *testing.T) {
 kind: Aggregate
 metadata:
   name: test
+  version: 1.0.0
 spec:
   parameters:
     bad1:

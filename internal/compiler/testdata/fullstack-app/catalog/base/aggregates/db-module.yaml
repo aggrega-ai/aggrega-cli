@@ -9,5 +9,5 @@ spec:
       type: core/datastore/postgres
       values:
         database_name: app_production
-  exported_components:
+  exportedComponents:
     public_db: main-db

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: fullstack-manifest-helm-synthesized-with-artifacts
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
+        core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+    features:
+      type:
+        core/k8s-dns-resolver: k8s-dns-patcher:1.0.0
+        feature.myco/db-pool: db-pool-patcher:1.0.0
+        feature.myco/rewrite-host: rewrite-host-patcher:1.0.0

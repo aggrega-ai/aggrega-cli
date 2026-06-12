@@ -11,4 +11,5 @@ spec:
       type: core/api
       uses:
         backend:
-          hr-db: db
+          hr-db:
+            target: db

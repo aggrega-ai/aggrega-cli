@@ -5,6 +5,7 @@ metadata:
   version: 1.0.0
   description: initial draft
   labels:
+    component.aggrega.ai/type: server
     component.aggrega.ai/category: compute
 spec:
   schema:

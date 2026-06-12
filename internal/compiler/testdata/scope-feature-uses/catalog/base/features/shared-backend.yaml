@@ -16,4 +16,5 @@ spec:
   # delivering the resolved connection over the env pillar.
   usesSchema:
     backend:
+      selector: "component.aggrega.ai/type=stateful-server"
       inject: [env]

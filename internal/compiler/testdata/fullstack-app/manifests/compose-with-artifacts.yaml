@@ -3,4 +3,13 @@ kind: Manifest
 metadata:
   name: compose-with-artifacts-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type:
+        core/raw/manifest: compose-raw-fragments-with-artifacts:1.0.0
+    features:
+      type:
+        core/k8s-dns-resolver: k8s-dns-patcher:1.0.0
+        feature.myco/db-pool: db-pool-patcher:1.0.0
+        feature.myco/rewrite-host: rewrite-host-patcher:1.0.0

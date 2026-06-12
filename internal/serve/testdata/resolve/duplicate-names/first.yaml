@@ -2,5 +2,7 @@ apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
   name: core/duplicate
+  labels:
+    component.aggrega.ai/type: server
   version: 1.0.0
 spec: {}

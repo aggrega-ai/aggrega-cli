@@ -67,7 +67,10 @@ type variantFixture struct {
 // runFullstackAppVariant for variants that don't override the Release.
 func runFullstackApp(t *testing.T, variant string) *fullstackAppResult {
 	t.Helper()
-	return runFullstackAppVariant(t, variantFixture{name: variant})
+	return runFullstackAppVariant(t, variantFixture{
+		name:        variant,
+		releasePath: "testdata/fullstack-app/releases/" + variant + ".yaml",
+	})
 }
 
 // runFullstackAppVariant compiles a per-variant fixture through the build-
@@ -84,13 +87,10 @@ func runFullstackAppVariant(t *testing.T, fx variantFixture) *fullstackAppResult
 	recipesDir := filepath.Join("testdata/fullstack-app/catalog/recipes", fx.name)
 	releasePath := fx.releasePath
 	if releasePath == "" {
-		// The per-variant default Release pins no component recipes (its
-		// Manifest is spec-empty): each variant test loads one recipe
-		// sub-directory, so implements-fallback resolves unambiguously. The
-		// sibling release.yaml/manifest.yaml pair pins recipes for the
-		// full-catalog pipeline test and is not build-faithful for a single-
-		// variant load.
-		releasePath = "testdata/fullstack-app/release-by-implements.yaml"
+		// Each variant has its own Release/Manifest pair naming exactly the
+		// recipes its recipe sub-directory ships — recipe selection is
+		// explicit mapping, never load-order or fallback.
+		releasePath = "testdata/fullstack-app/releases/" + fx.name + ".yaml"
 	}
 
 	result := pipelinetest.Build(t, pipelinetest.Input{
@@ -229,8 +229,7 @@ func TestFullstackApp_ComposeSynthesized(t *testing.T) {
 func TestFullstackApp_ComposeSourced(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
-		name:        "compose-sourced",
-		releasePath: "testdata/fullstack-app/releases/compose-synthesized.yaml",
+		name: "compose-sourced",
 	})
 	assertDistMatches(t, res.Files, "testdata/fullstack-app/expected/compose-sourced", "dist/")
 }

@@ -50,6 +50,8 @@ kind: Component
 metadata:
   name: core/base
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -62,6 +64,8 @@ kind: Component
 metadata:
   name: core/child
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   extends: core/base
   schema:
@@ -75,6 +79,8 @@ kind: Component
 metadata:
   name: core/datastore/mariadb
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     infra:

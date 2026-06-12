@@ -4,9 +4,15 @@ metadata:
   name: prod-manifest-by-implements
   version: "1.0.0"
 spec:
-  # No component recipe pins: each per-variant test loads exactly one recipe
-  # sub-directory, so every component/feature type has a single implementer
-  # and resolves unambiguously by implements-fallback. (The sibling
-  # manifest.yaml pins recipes because the full-catalog pipeline test loads
-  # all variants at once and needs deterministic disambiguation.)
-  {}
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
+        core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+        core/raw/manifest: compose-raw-fragments-with-artifacts:1.0.0
+    features:
+      type:
+        core/k8s-dns-resolver: k8s-dns-patcher:1.0.0
+        feature.myco/db-pool: db-pool-patcher:1.0.0
+        feature.myco/rewrite-host: rewrite-host-patcher:1.0.0

@@ -51,6 +51,8 @@ kind: Component
 metadata:
   name: core/api-server
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -335,6 +337,7 @@ kind: Release
 metadata:
   name: smoke-rel
   version: 1.0.0
+  environment: testing
 spec:
   aggregate: smoke
   manifest: smoke
@@ -382,6 +385,8 @@ kind: Component
 metadata:
   name: core/api-server
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:
@@ -422,6 +427,8 @@ kind: Component
 metadata:
   name: core/api-server
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:

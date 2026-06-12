@@ -25,6 +25,8 @@ kind: Component
 metadata:
   name: app/svc
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec:
   usesSchema:
     databases:

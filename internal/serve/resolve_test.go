@@ -60,11 +60,11 @@ func TestResolveExtendsValueFindsParentComponent(t *testing.T) {
 	srv.stderr = drainStderr()
 	validateFile(t, srv, childPath, childContent)
 
-	// Cursor on "core/web-server" — line 6 (spec.extends value), char 14.
+	// Cursor on "core/web-server" — line 8 (spec.extends value), char 14.
 	var in, out bytes.Buffer
 	in.Write(framedRequest(2, "aggrega/resolve", resolveParams{
 		URI:      childPath,
-		Position: yamlpos.Position{Line: 6, Character: 14},
+		Position: yamlpos.Position{Line: 8, Character: 14},
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
@@ -473,11 +473,11 @@ func TestResolveUsesTargetBareStringShorthandFindsSibling(t *testing.T) {
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, aggContent)
 
-	// Cursor on "db" value in "hr-db: db": line 13 (0-based), char 17.
+	// Cursor on "db" in "hr-db: {target: db}": line 14 (0-based), char 21.
 	var in, out bytes.Buffer
 	in.Write(framedRequest(2, "aggrega/resolve", resolveParams{
 		URI:      aggPath,
-		Position: yamlpos.Position{Line: 13, Character: 17},
+		Position: yamlpos.Position{Line: 14, Character: 21},
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
@@ -753,11 +753,11 @@ func TestResolveReleaseAggregatePathFindsAggregate(t *testing.T) {
 	srv.stderr = drainStderr()
 	validateFile(t, srv, releasePath, releaseContent)
 
-	// Cursor on "app" in spec.aggregate: line 6 (0-based), char 14.
+	// Cursor on "app" in spec.aggregate: line 7 (0-based), char 14.
 	var in, out bytes.Buffer
 	in.Write(framedRequest(2, "aggrega/resolve", resolveParams{
 		URI:      releasePath,
-		Position: yamlpos.Position{Line: 6, Character: 14},
+		Position: yamlpos.Position{Line: 7, Character: 14},
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
@@ -782,11 +782,11 @@ func TestResolveReleaseManifestPathFindsManifest(t *testing.T) {
 	srv.stderr = drainStderr()
 	validateFile(t, srv, releasePath, releaseContent)
 
-	// Cursor on "app-manifest" in spec.manifest: line 7 (0-based), char 13.
+	// Cursor on "app-manifest" in spec.manifest: line 8 (0-based), char 13.
 	var in, out bytes.Buffer
 	in.Write(framedRequest(2, "aggrega/resolve", resolveParams{
 		URI:      releasePath,
-		Position: yamlpos.Position{Line: 7, Character: 13},
+		Position: yamlpos.Position{Line: 8, Character: 13},
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {

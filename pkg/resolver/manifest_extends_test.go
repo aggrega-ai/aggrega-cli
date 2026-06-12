@@ -24,6 +24,7 @@ const prodManifest = `apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
 metadata:
   name: prod
+  version: 1.0.0
 spec:
   mappings:
     components:
@@ -74,6 +75,7 @@ func TestResolveManifestExtends_ShallowKeyReplacement(t *testing.T) {
 kind: Manifest
 metadata:
   name: local
+  version: 1.0.0
 spec:
   extends: ./prod.yaml
   mappings:
@@ -139,6 +141,7 @@ func TestResolveManifestExtends_MultiLevelChildWins(t *testing.T) {
 kind: Manifest
 metadata:
   name: root
+  version: 1.0.0
 spec:
   mappings:
     components:
@@ -150,6 +153,7 @@ spec:
 kind: Manifest
 metadata:
   name: mid
+  version: 1.0.0
 spec:
   extends: ./root.yaml
   mappings:
@@ -162,6 +166,7 @@ spec:
 kind: Manifest
 metadata:
   name: leaf
+  version: 1.0.0
 spec:
   extends: ./mid.yaml
   mappings:
@@ -198,6 +203,7 @@ func TestResolveManifestExtends_Cycle(t *testing.T) {
 kind: Manifest
 metadata:
   name: a
+  version: 1.0.0
 spec:
   extends: ./b.yaml
   mappings:
@@ -209,6 +215,7 @@ spec:
 kind: Manifest
 metadata:
   name: b
+  version: 1.0.0
 spec:
   extends: ./a.yaml
   mappings:
@@ -239,6 +246,7 @@ func TestResolveManifestExtends_UnresolvableParent(t *testing.T) {
 kind: Manifest
 metadata:
   name: child
+  version: 1.0.0
 spec:
   extends: ./does-not-exist.yaml
   mappings:

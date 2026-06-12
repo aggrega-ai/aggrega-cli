@@ -3,4 +3,10 @@ kind: Manifest
 metadata:
   name: capability-socket-manifest
   version: "1.0.0"
-spec: {}
+spec:
+  mappings:
+    components:
+      type:
+        core/ai-tool/retrieval: retrieval-recipe:1.0.0
+        core/datastore/relational-db: relational-db-recipe:1.0.0
+        core/datastore/vector-db: vector-db-recipe:1.0.0

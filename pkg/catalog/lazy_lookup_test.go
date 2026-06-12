@@ -132,6 +132,8 @@ kind: Component
 metadata:
   name: test/cached-component
   version: "2.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec: {}
 `
 
@@ -220,6 +222,8 @@ kind: Component
 metadata:
   name: test/registry-component
   version: "3.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec: {}
 `
 	puller := newMockPuller()
@@ -252,6 +256,7 @@ metadata:
   name: test/base
   version: "1.0.0"
   labels:
+    component.aggrega.ai/type: server
     inherited-key: parent-value
 spec: {}
 `
@@ -261,6 +266,7 @@ metadata:
   name: test/derived
   version: "1.0.0"
   labels:
+    component.aggrega.ai/type: server
     child-key: child-value
 spec:
   extends: test/base
@@ -296,6 +302,8 @@ kind: Component
 metadata:
   name: test/hotcache-component
   version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
 spec: {}
 `
 	puller := newMockPuller()

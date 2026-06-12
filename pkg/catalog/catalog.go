@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -265,7 +266,7 @@ func (c *Catalog) MergeExtraLibraries(extraSchemas, extraMappings map[string][]b
 				name))
 			continue
 		}
-		lib, perr := parseSchemaLibraryEntity(extraSchemas[name])
+		lib, perr := parseSchemaLibraryEntity(extraSchemas[name], "lockfile-pinned:"+name)
 		if perr != nil {
 			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged SchemaLibrary %q", name))
 		}
@@ -280,7 +281,7 @@ func (c *Catalog) MergeExtraLibraries(extraSchemas, extraMappings map[string][]b
 				name))
 			continue
 		}
-		lib, perr := parseMappingLibraryEntity(extraMappings[name])
+		lib, perr := parseMappingLibraryEntity(extraMappings[name], "lockfile-pinned:"+name)
 		if perr != nil {
 			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged MappingLibrary %q", name))
 		}
@@ -751,7 +752,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		// and lazy backings cannot drift. The pillar-shape + body validation runs at
 		// Pass 2 via validateSchemaPillarsPass (it needs the complete SchemaLibraries
 		// map for cross-document $ref expansion, so it cannot run per-file here).
-		e, err := parseComponentEntity(data)
+		e, err := parseComponentEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
@@ -759,7 +760,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.componentSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Component", e.Metadata.Name)] = data
 	case "Feature":
-		e, err := parseFeatureEntity(data)
+		e, err := parseFeatureEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Feature")
 		}
@@ -793,7 +794,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.FeatureRecipes[frKey] = e
 		c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = data
 	case "Aggregate":
-		e, err := parseAggregateEntity(data)
+		e, err := parseAggregateEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
@@ -801,6 +802,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.aggregateSources[e.Metadata.Name] = path
 		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
 	case "Provider":
+		if _, eerr := envelope.ValidateBytes(envelope.KindProvider, data, path); eerr != nil {
+			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+		}
 		var e types.Provider
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
@@ -816,13 +820,16 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		// guard at publish time, and the InstantiateTemplate post-substitution scan
 		// closes the parametric-introduction route at instantiation time. Sharing
 		// the scan is what gives the lazy backing reject-parity for libraries.
-		e, err := parseSchemaLibraryEntity(data)
+		e, err := parseSchemaLibraryEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "load SchemaLibrary")
 		}
 		c.SchemaLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("SchemaLibrary", e.Metadata.Name)] = data
 	case "MappingLibrary":
+		if _, eerr := envelope.ValidateBytes(envelope.KindMappingLibrary, data, path); eerr != nil {
+			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+		}
 		var e types.MappingLibrary
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal MappingLibrary")
@@ -849,7 +856,10 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 // ResolveAllExtends; lazy in Component()); library-dependent pillar validation
 // (validateSchemaPillarsPass) needs the complete SchemaLibraries map and is not a
 // per-entity step.
-func parseComponentEntity(data []byte) (types.Component, error) {
+func parseComponentEntity(data []byte, path string) (types.Component, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindComponent, data, path); err != nil {
+		return types.Component{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
+	}
 	var e types.Component
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.Component{}, err
@@ -862,7 +872,10 @@ func parseComponentEntity(data []byte) (types.Component, error) {
 }
 
 // parseFeatureEntity mirrors parseComponentEntity for the Feature surface.
-func parseFeatureEntity(data []byte) (types.Feature, error) {
+func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindFeature, data, path); err != nil {
+		return types.Feature{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
+	}
 	var e types.Feature
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.Feature{}, err
@@ -889,6 +902,9 @@ func parseFeatureEntity(data []byte) (types.Feature, error) {
 // distinct message; ValidateRecipe already returns a shaped error) so a single
 // `return err` at the caller preserves byte-identical diagnostics.
 func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindRecipe, data, path); eerr != nil {
+		return types.Recipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+	}
 	var e types.Recipe
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
@@ -927,6 +943,9 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 // Recipe parse minus those two steps. Self-wraps its failures like
 // parseRecipeEntity.
 func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+	}
 	var e types.FeatureRecipe
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
@@ -962,7 +981,10 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 // parseAggregateEntity is the single per-entity Aggregate resolution: unmarshal
 // plus kind-check. Mirrors parseComponentEntity (returns the raw error; the
 // indexing caller wraps the unmarshal failure with "unmarshal Aggregate").
-func parseAggregateEntity(data []byte) (types.Aggregate, error) {
+func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindAggregate, data, path); err != nil {
+		return types.Aggregate{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
+	}
 	var e types.Aggregate
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.Aggregate{}, err
@@ -980,7 +1002,10 @@ func parseAggregateEntity(data []byte) (types.Aggregate, error) {
 // libraries directly (no longer Prime-copied from an already-validated eager
 // Catalog): an invalid library the eager build rejects is rejected by the lazy
 // resolution too.
-func parseSchemaLibraryEntity(data []byte) (types.SchemaLibrary, error) {
+func parseSchemaLibraryEntity(data []byte, path string) (types.SchemaLibrary, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindSchemaLibrary, data, path); err != nil {
+		return types.SchemaLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
+	}
 	var e types.SchemaLibrary
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.SchemaLibrary{}, err
@@ -1008,7 +1033,10 @@ func parseSchemaLibraryEntity(data []byte) (types.SchemaLibrary, error) {
 // load (their content, including any cross-library `$import:`, resolves at
 // Recipe / FeatureRecipe render time). Used by the build-side bridge so a
 // lockfile-pinned remote MappingLibrary is parsed identically to a local one.
-func parseMappingLibraryEntity(data []byte) (types.MappingLibrary, error) {
+func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindMappingLibrary, data, path); err != nil {
+		return types.MappingLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
+	}
 	var e types.MappingLibrary
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.MappingLibrary{}, err

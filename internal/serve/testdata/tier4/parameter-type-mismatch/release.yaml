@@ -9,3 +9,8 @@ spec:
   manifest: ./manifest.yaml
   parameters:
     port: "not-an-integer"
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        port: {}

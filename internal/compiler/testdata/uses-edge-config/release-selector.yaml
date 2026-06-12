@@ -12,7 +12,7 @@ spec:
       directory: ./dist/cluster
       components:
         api:
-          # Wires the caches socket (selector: type=cache) to db (type=
+          # Wires the caches socket (selector: type=resource) to db (type=
           # stateful-server). The Release-created edge fails the socket selector
           # at the analyzer gate exactly as an Aggregate-authored edge would —
           # the gate is origin-agnostic.

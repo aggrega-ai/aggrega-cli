@@ -4,6 +4,7 @@ metadata:
   name: core/compute/narrowing-parent
   version: 1.0.0
   labels:
+    component.aggrega.ai/type: server
     component.aggrega.ai/category: compute
 spec:
   schema:
