@@ -282,12 +282,16 @@ func scanReleaseDir(releaseDir string) (*triadIndex, error) {
 func (idx *triadIndex) unresolvable(kind, ref string) error {
 	for _, s := range idx.skipped {
 		if s.name == ref {
-			return fmt.Errorf("%w: needed %s %q is the unparseable file %s: %v", ErrTriadRefUnresolvable, kind, ref, s.path, s.reason)
+			// Wrap the skip reason with %w (not %v) so a sentinel the loader
+			// attached — notably envelope.ErrEntityEnvelope — stays
+			// errors.Is-recoverable through the by-name triad scan, matching
+			// the by-path loaders' recoverability.
+			return fmt.Errorf("%w: needed %s %q is the unparseable file %s: %w", ErrTriadRefUnresolvable, kind, ref, s.path, s.reason)
 		}
 	}
 	for _, s := range idx.skipped {
 		if s.name == "" {
-			return fmt.Errorf("%w: %s %q not found; unparseable file %s could not be indexed and may be it: %v", ErrTriadRefUnresolvable, kind, ref, s.path, s.reason)
+			return fmt.Errorf("%w: %s %q not found; unparseable file %s could not be indexed and may be it: %w", ErrTriadRefUnresolvable, kind, ref, s.path, s.reason)
 		}
 	}
 	return fmt.Errorf("%w: no %s named %q in the Release directory, catalog, or registry", ErrTriadRefUnresolvable, kind, ref)
