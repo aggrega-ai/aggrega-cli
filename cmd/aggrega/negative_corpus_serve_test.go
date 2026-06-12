@@ -311,3 +311,236 @@ func stringify(v any) string {
 	}
 	return ""
 }
+
+// serveValidateScan starts the daemon over the given workspace files,
+// initializes, validates validateFile, and returns the flattened text of
+// every response/notification it reads (up to a few). Used by the 06e3
+// per-file envelope rows, whose diagnostics arrive on the validate
+// RESPONSE (the envelope leg early-returns) rather than a publish
+// notification.
+func serveValidateScan(t *testing.T, files map[string]string, validateFile string) string {
+	t.Helper()
+	bin := buildServeBinary(t)
+	ws := t.TempDir()
+	if _, ok := files[".aggrega-config.yaml"]; !ok {
+		files[".aggrega-config.yaml"] = "workspace: {}\n"
+	}
+	for name, content := range files {
+		p := filepath.Join(ws, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	cmd := exec.Command(bin, "serve")
+	cmd.Dir = ws
+	cmd.Stderr = os.Stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	t.Cleanup(func() { _ = stdin.Close(); _ = cmd.Wait() })
+	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
+		t.Fatalf("write initialize: %v", err)
+	}
+	if initResp := readOneResponse(t, stdout, 5*time.Second); initResp["error"] != nil {
+		t.Fatalf("initialize returned error: %+v", initResp)
+	}
+	vfPath := filepath.Join(ws, validateFile)
+	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
+		"file":    vfPath,
+		"content": files[validateFile],
+	})); err != nil {
+		t.Fatalf("write validate: %v", err)
+	}
+	var all strings.Builder
+	for i := 0; i < 4; i++ {
+		msg := readOneResponse(t, stdout, 10*time.Second)
+		all.WriteString(serializeForScan(msg))
+		all.WriteByte('\n')
+		if id, ok := msg["id"].(float64); ok && id == 2 {
+			break // the validate response — diagnostics (if any) are here
+		}
+	}
+	return all.String()
+}
+
+const minimalManifest = `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: m
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/server: server-recipe:1.0.0
+`
+
+// TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic — row (a): a
+// Release the cascade does NOT anchor (ambiguous two-Release workspace)
+// carrying the Invariant-5 values ban, validated directly, surfaces an
+// envelope diagnostic on its own file. Red today (Tier-4 returns nil for
+// a non-active file → shows clean); green with the per-file leg.
+func TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic(t *testing.T) {
+	badRelease := `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: rel-b
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: a
+  manifest: m
+  boundaries:
+    main:
+      directory: ./dist
+      components:
+        api:
+          values:
+            port: 9999
+`
+	otherRelease := `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: rel-a
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: a
+  manifest: m
+  boundaries:
+    main:
+      directory: ./dist
+      components:
+        api:
+          infra:
+            replicas: 1
+`
+	// Two Release files → step-2 ambiguous → no anchor → validating the
+	// bad one is a non-anchoring-file validate.
+	scan := serveValidateScan(t, map[string]string{
+		"release-a.yaml": otherRelease,
+		"release-b.yaml": badRelease,
+		"manifest.yaml":  minimalManifest,
+	}, "release-b.yaml")
+	if !strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("non-anchoring Release values-ban produced no envelope diagnostic on its own file:\n%s", scan)
+	}
+}
+
+// TestNegativeCorpusServe_CatalogComponentGetsDiagnostic — row (b): a
+// catalog Component with a junk spec key, validated directly, surfaces an
+// envelope diagnostic on its file. Red today (catalog entities are never
+// a per-file validate subject); green with the per-file leg.
+func TestNegativeCorpusServe_CatalogComponentGetsDiagnostic(t *testing.T) {
+	comp := `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  bogusKey: nope
+  schema:
+    values:
+      port: { type: integer }
+`
+	scan := serveValidateScan(t, map[string]string{"component.yaml": comp}, "component.yaml")
+	if !strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("catalog Component junk key produced no envelope diagnostic on its file:\n%s", scan)
+	}
+}
+
+// TestNegativeCorpusServe_ForeignYAMLNoEnvelopeDiagnostic — row (c): the
+// non-aggrega guard. A foreign YAML document (a Helm chart template)
+// produces ZERO envelope diagnostics — the daemon never lint-bombs
+// foreign YAML.
+func TestNegativeCorpusServe_ForeignYAMLNoEnvelopeDiagnostic(t *testing.T) {
+	chartTemplate := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-web
+spec:
+  replicas: {{ .Values.replicaCount }}
+  template:
+    spec:
+      containers:
+        - name: web
+          image: "{{ .Values.image }}"
+`
+	scan := serveValidateScan(t, map[string]string{"templates/deployment.yaml": chartTemplate}, "templates/deployment.yaml")
+	if strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("foreign YAML wrongly produced an envelope diagnostic (the guard failed):\n%s", scan)
+	}
+}
+
+// TestNegativeCorpusServe_CleanAggregateStillTier4 — row (d), the
+// regression: an envelope-CLEAN active Aggregate falls through the
+// per-file envelope leg to its Tier-4 semantic validation. The fixture's
+// parameter type mismatch is a Step-1 pillar (content) issue, not an
+// envelope one; the leg must NOT fire (no "violates its envelope schema")
+// and the Tier-4 diagnostic about the parameter must still surface —
+// proving envelope-clean does not short-circuit Tier-4.
+func TestNegativeCorpusServe_CleanAggregateStillTier4(t *testing.T) {
+	agg := `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-param-mismatch
+  version: "1.0.0"
+spec:
+  parameters:
+    port:
+      type: integer
+      required: true
+  components: {}
+`
+	release := `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: tier4-param-mismatch-release
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  parameters:
+    port: "not-an-integer"
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        port: {}
+`
+	manifest := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: tier4-param-mismatch-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type: {}
+`
+	scan := serveValidateScan(t, map[string]string{
+		"aggregate.yaml": agg,
+		"release.yaml":   release,
+		"manifest.yaml":  manifest,
+	}, "aggregate.yaml")
+	if strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("envelope-clean active Aggregate wrongly produced an envelope diagnostic (the leg should not fire / not short-circuit Tier-4):\n%s", scan)
+	}
+	if !strings.Contains(scan, "port") {
+		t.Fatalf("clean active Aggregate did not receive its Tier-4 parameter diagnostic (Tier-4 fall-through broken):\n%s", scan)
+	}
+}

@@ -111,7 +111,7 @@ func TestServeAggregaValidateParseOnlyReturnsDiagnostics(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "x.yaml")
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n"
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n"
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}

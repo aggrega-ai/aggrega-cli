@@ -228,7 +228,7 @@ func TestHandleValidateEmits1002WhenCascadeExhausted(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    file,
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n",
+		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: ambiguous\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 
@@ -269,7 +269,7 @@ func TestHandleValidateNoReleaseScaffoldReturnsTier1(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    file,
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nspec:\n  components: {}\n",
+		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: scaffold\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 

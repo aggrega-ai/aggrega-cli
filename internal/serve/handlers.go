@@ -206,6 +206,18 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		return validateResult{Diagnostics: []Diagnostic{diag}}, nil
 	}
 	s.parseCache.Put(params.File, &doc, []byte(params.Content))
+	// Per-file document-envelope validation on the buffer: any classifiable
+	// aggrega document (not just the active Aggregate) gets the same
+	// envelope verdict the CLI gives it, on its own file, at the offending
+	// key, on unsaved content. Findings early-return — which short-circuits
+	// Tier-4 for the active Aggregate (a structurally invalid buffer makes
+	// the disk-based semantic pipeline's verdict misleading) and is the
+	// honest coverage for every other file. Foreign YAML and envelope-clean
+	// documents fall through to the existing flow unchanged.
+	if diags, hasFindings := s.envelopeDiagnosticsForBuffer([]byte(params.Content), &doc); hasFindings {
+		s.diagnostics[params.File] = diags
+		return validateResult{Diagnostics: diags}, nil
+	}
 	if s.activeRelease == nil {
 		// A Release the cascade FOUND but could not load (envelope
 		// violation, parse failure) is distinct from a genuinely-absent
