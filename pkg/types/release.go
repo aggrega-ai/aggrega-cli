@@ -3,42 +3,16 @@
 
 package types
 
-// Release binds an Aggregate to a Manifest and routes components into recursive boundaries.
-// Schema: release-v1alpha1.schema.json
-type Release struct {
-	APIVersion string          `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string          `json:"kind" yaml:"kind"`
-	Metadata   ReleaseMetadata `json:"metadata" yaml:"metadata"`
-	Spec       ReleaseSpec     `json:"spec" yaml:"spec"`
-}
+//go:generate go run ../../internal/tools/typegen release_gen.go
 
-// ReleaseMetadata carries identity for a Release, including the target environment.
-type ReleaseMetadata struct {
-	Name        string       `json:"name" yaml:"name"`
-	Environment string       `json:"environment" yaml:"environment"`
-	Version     string       `json:"version" yaml:"version"`
-	Description string       `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string       `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string       `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string       `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string     `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-}
-
-// ReleaseSpec defines the aggregate reference, manifest, parameters, and
-// boundary routing. Boundaries' SyncWave fields carry per-boundary
-// deployment-ordering integers; the IR builder reads each boundary's
-// SyncWave and propagates it to every contained node. Boundaries is
-// the only required field — every Release must declare at least one
-// boundary, since a Release with no boundaries has nothing to route into.
-type ReleaseSpec struct {
-	Aggregate  string               `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
-	Manifest   string               `json:"manifest,omitempty" yaml:"manifest,omitempty"`
-	Extends    string               `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Parameters ParametersBlock      `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	Boundaries OrderedMap[Boundary] `json:"boundaries" yaml:"boundaries"`
-}
+// Release's struct declarations (Release, ReleaseMetadata, ReleaseSpec) are
+// generated into release_gen.go from the published release-v1alpha1 schema;
+// their godoc is the schema's descriptions. This hand-written companion holds
+// the routing types the generated spec references — Boundary (recursive),
+// BoundaryComponent, BoundaryFeature, ReleaseUsesEntry, AggregateRouting — and
+// ParametersBlock (content-shape dispatch). Boundaries' SyncWave fields carry
+// per-boundary deployment-ordering integers the IR builder propagates to every
+// contained node; boundaries is the only required spec field.
 
 // Boundary is a recursive logical box into which components are routed.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary

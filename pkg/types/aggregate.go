@@ -3,47 +3,16 @@
 
 package types
 
-// Aggregate is the recursive, parameterized AI architecture — both the root application and reusable module.
-// Schema: aggregate-v1alpha1.schema.json
-type Aggregate struct {
-	APIVersion string            `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string            `json:"kind" yaml:"kind"`
-	Metadata   AggregateMetadata `json:"metadata" yaml:"metadata"`
-	Defs       []string          `json:"defs,omitempty" yaml:"defs,omitempty"` // YAML anchor definitions for DRY
-	Spec       AggregateSpec     `json:"spec" yaml:"spec"`
-}
+//go:generate go run ../../internal/tools/typegen aggregate_gen.go
 
-// AggregateMetadata carries identity, versioning, and optional metadata for an Aggregate.
-type AggregateMetadata struct {
-	Name        string       `json:"name" yaml:"name"`
-	Version     string       `json:"version" yaml:"version"`
-	Description string       `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string       `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string       `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string       `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string     `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-	// Labels are module-level duck-typing labels for catalog discovery and policy evaluation.
-	// They describe the Aggregate's identity as a reusable module and do NOT cascade to child
-	// component nodes. Component labels come exclusively from the Component catalog entity.
-	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
-}
-
-// AggregateSpec defines the components, sub-aggregates, subsystems, and
-// parameters. Annotations live on per-instance carriers: [Subsystem] and
-// [ComponentInstance] both carry an Annotations field for Developer-side
-// authoring of annotation-driven Feature shortcuts. The IR's per-node
-// annotation buckets that derive from this entity are sourced from those
-// per-instance fields; AggregateSpec itself carries no top-level
-// Annotations.
-type AggregateSpec struct {
-	Parameters         OrderedMap[any]               `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
-	Aggregates         OrderedMap[SubAggregate]      `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
-	ExportedComponents OrderedMap[string]            `json:"exportedComponents,omitempty,omitzero" yaml:"exportedComponents,omitempty"`
-	Subsystems         OrderedMap[Subsystem]         `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
-	Components         OrderedMap[ComponentInstance] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
-}
+// Aggregate's struct declarations (Aggregate, AggregateMetadata, AggregateSpec)
+// are generated into aggregate_gen.go from the published aggregate-v1alpha1
+// schema; their godoc is the schema's descriptions. This hand-written companion
+// holds the per-instance carrier types the generated spec references —
+// SubAggregate, Subsystem, and ComponentInstance — which carry the
+// Annotations / Uses / Inject / Secrets surfaces and their polymorphic decode.
+// Annotations live on those per-instance carriers; AggregateSpec itself carries
+// no top-level Annotations.
 
 // SubAggregate is a nested aggregate acting as an imported module.
 // Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates

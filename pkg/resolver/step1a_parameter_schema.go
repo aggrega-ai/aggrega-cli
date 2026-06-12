@@ -21,6 +21,11 @@ import (
 // specifically the whole `{type: object, additionalProperties:
 // {oneOf: [...]}}` shape, NOT the inner per-parameter `oneOf` alone.
 //
+// The mirror includes the `x-aggrega-go-type` marker the canonical carries on
+// the parameters node — it names the Go field type for struct generation and
+// is inert to JSON Schema validation; it is present here only to keep this
+// literal byte-equivalent to the canonical subtree.
+//
 // The literal exists because aggregate-v1alpha1.schema.json carries the
 // parameter contract inline at `properties.spec.properties.parameters`
 // rather than under a named `$defs/parameter_contract` slot —
@@ -37,6 +42,7 @@ import (
 // directed message naming the canonical path.
 const parameterContractSchemaJSON = `{
   "type": "object",
+  "x-aggrega-go-type": "OrderedMap[any]",
   "description": "Global environment contract. Each entry is a typed-contract object authoring the compact-form vocabulary subset (type, description, default, enum, min/max, minLength/maxLength, pattern, format, validate, validateMessage, required, items, valuesType, properties). Nested structure is expressed via the typed-form properties: sub-field. Release fulfillment may be inline (parameters: {...}) or single-source file import (parameters: {$import: <path>}); Step 1a validates the merged map against this contract before parameter interpolation. See aggrega-docs/language-reference/entities/aggregate.md for the full vocabulary.",
   "additionalProperties": {
     "type": "object",
