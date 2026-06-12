@@ -44,9 +44,25 @@ type cascadeAttempt struct {
 	// but the named file failed to load.
 	AuthoringReleaseLoadError error
 
+	// AuthoringReleasePath is the resolved path Step 1 attempted, kept
+	// so a found-but-invalid authoring_release can be squiggled on the
+	// file (the load error alone does not carry its own path).
+	AuthoringReleasePath string
+
 	// ReleaseCandidatesFound is the number of Release YAML files
 	// discovered by the Step 2 workspace walk.
 	ReleaseCandidatesFound int
+
+	// SingleReleaseLoadError is non-nil when Step 2's single candidate
+	// was found but failed to load. Symmetric with the Step 1/3 load-
+	// error fields; before this capture Step 2's failure was dropped to
+	// stderr only, leaving the common one-Release workspace's
+	// found-but-invalid case with no structured record.
+	SingleReleaseLoadError error
+
+	// SingleReleaseCandidatePath is the path of Step 2's single
+	// candidate, kept so its load failure can be squiggled on the file.
+	SingleReleaseCandidatePath string
 
 	// MarkerFilePresent records whether the .aggrega/active-release
 	// marker existed (Step 3 was attempted).
@@ -59,6 +75,37 @@ type cascadeAttempt struct {
 	// MarkerFileLoadError is non-nil when Step 3 was attempted but
 	// the marker's target file failed to load.
 	MarkerFileLoadError error
+
+	// MarkerResolvedPath is the resolved path the marker target pointed
+	// at, kept so a found-but-invalid marker target can be squiggled on
+	// the file (MarkerFileTarget is the raw, possibly relative, target).
+	MarkerResolvedPath string
+}
+
+// failedReleaseCandidate is a Release file the cascade found but could
+// not load — a found-but-invalid candidate, distinct from a
+// genuinely-absent Release.
+type failedReleaseCandidate struct {
+	Path string
+	Err  error
+}
+
+// failedReleaseCandidates returns every found-but-invalid Release the
+// cascade encountered, across all three load steps, so each can be
+// surfaced as an editor diagnostic on its own file. Empty when no step
+// found a file that failed to load (the genuinely-absent case).
+func (a cascadeAttempt) failedReleaseCandidates() []failedReleaseCandidate {
+	var out []failedReleaseCandidate
+	if a.AuthoringReleaseLoadError != nil && a.AuthoringReleasePath != "" {
+		out = append(out, failedReleaseCandidate{Path: a.AuthoringReleasePath, Err: a.AuthoringReleaseLoadError})
+	}
+	if a.SingleReleaseLoadError != nil && a.SingleReleaseCandidatePath != "" {
+		out = append(out, failedReleaseCandidate{Path: a.SingleReleaseCandidatePath, Err: a.SingleReleaseLoadError})
+	}
+	if a.MarkerFileLoadError != nil && a.MarkerResolvedPath != "" {
+		out = append(out, failedReleaseCandidate{Path: a.MarkerResolvedPath, Err: a.MarkerFileLoadError})
+	}
+	return out
 }
 
 // runManifestCascade executes the four-step disambiguation cascade
@@ -90,6 +137,7 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 			return rel, path, attempt
 		}
 		attempt.AuthoringReleaseLoadError = err
+		attempt.AuthoringReleasePath = path
 		fmt.Fprintf(stderr, "  cascade: step 1 authoring_release=%q failed to load: %v\n", path, err)
 	}
 
@@ -102,6 +150,8 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 			attempt.ResolvedStep = 2
 			return rel, candidates[0], attempt
 		}
+		attempt.SingleReleaseLoadError = err
+		attempt.SingleReleaseCandidatePath = candidates[0]
 		fmt.Fprintf(stderr, "  cascade: step 2 single Release %q failed to load: %v\n", candidates[0], err)
 	}
 
@@ -119,6 +169,7 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 				return rel, resolved, attempt
 			}
 			attempt.MarkerFileLoadError = lerr
+			attempt.MarkerResolvedPath = resolved
 			fmt.Fprintf(stderr, "  cascade: step 3 marker target %q failed to load: %v\n", resolved, lerr)
 		}
 	}
@@ -276,7 +327,11 @@ func (s *Server) cascadeAttemptFullTrace() string {
 	case 0:
 		lines = append(lines, "  step 2 (single-Release heuristic): zero Release files found in workspace")
 	case 1:
-		lines = append(lines, "  step 2 (single-Release heuristic): one Release file found — would have resolved here if step 1 did not")
+		if a.SingleReleaseLoadError != nil {
+			lines = append(lines, fmt.Sprintf("  step 2 (single-Release heuristic): one Release file found at %s but it failed to load — %v", a.SingleReleaseCandidatePath, a.SingleReleaseLoadError))
+		} else {
+			lines = append(lines, "  step 2 (single-Release heuristic): one Release file found — would have resolved here if step 1 did not")
+		}
 	default:
 		lines = append(lines, fmt.Sprintf("  step 2 (single-Release heuristic): ambiguous — %d Release files found, no marker selected one", a.ReleaseCandidatesFound))
 	}

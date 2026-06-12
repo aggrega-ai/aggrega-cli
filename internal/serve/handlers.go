@@ -207,14 +207,21 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	}
 	s.parseCache.Put(params.File, &doc, []byte(params.Content))
 	if s.activeRelease == nil {
-		// Two sub-cases:
-		//   (a) cascade exhausted but Release files exist in the workspace
-		//       → operator's authoring needs a deliberate choice; emit 1002
-		//       so the extension surfaces the remediation toast.
-		//   (b) no Release files in the workspace at all → catalog-only or
-		//       scaffold case; Tier-1 diagnostics suffice. No spurious
-		//       toast.
-		if s.cascadeAttempt.ReleaseCandidatesFound > 0 {
+		// A Release the cascade FOUND but could not load (envelope
+		// violation, parse failure) is distinct from a genuinely-absent
+		// Release: squiggle it on its own file via the same publish
+		// channel lockfile-drift uses, so the Operator authoring a broken
+		// Release sees the error there rather than only in stderr. Covers
+		// all three cascade load steps (authoring_release / single-Release
+		// heuristic / marker target).
+		failed := s.publishCascadeFailureDiagnostics()
+		// Three sub-cases:
+		//   (a) cascade exhausted but Release files exist, OR a found-but-
+		//       invalid candidate exists → operator's authoring needs a
+		//       deliberate choice; emit 1002 so the extension toasts.
+		//   (b) no Release files and nothing found-but-invalid → catalog-only
+		//       or scaffold case; Tier-1 diagnostics suffice. No spurious toast.
+		if s.cascadeAttempt.ReleaseCandidatesFound > 0 || failed > 0 {
 			return validateResult{}, s.emitReleaseNotResolvedEnvelope(params.File)
 		}
 		s.diagnostics[params.File] = nil
@@ -229,6 +236,25 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	}
 	s.diagnostics[params.File] = diags
 	return validateResult{Diagnostics: diags}, nil
+}
+
+// publishCascadeFailureDiagnostics surfaces every found-but-invalid
+// anchoring Release the cascade encountered as an editor diagnostic on
+// its own file, then pushes it via the same aggrega/publishDiagnostics
+// channel lockfile-drift uses. Returns the number of failed candidates
+// published. The load error already carries the rendered, path-pointed
+// envelope detail (the same text the CLI shows); the diagnostic anchors
+// at 1:1 because a document-envelope finding is schema-pointed, not
+// line-mapped (matching the Tier-D / lockfile-drift fallback position).
+func (s *Server) publishCascadeFailureDiagnostics() int {
+	failed := s.cascadeAttempt.failedReleaseCandidates()
+	for _, fc := range failed {
+		s.diagnostics[fc.Path] = []Diagnostic{
+			{Line: 1, Column: 1, Severity: "error", Message: fc.Err.Error()},
+		}
+		_ = s.publishDiagnostics(fc.Path)
+	}
+	return len(failed)
 }
 
 // emitReleaseNotResolvedEnvelope constructs the 1002 jsonRPCError

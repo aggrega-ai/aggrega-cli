@@ -24,6 +24,141 @@ import (
 	"time"
 )
 
+// TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic is the
+// sibling row the negative-authoring corpus recorded as a finding: a
+// Release the cascade FINDS but cannot load (here, the Invariant-5
+// values-on-boundary-component ban) must surface as a diagnostic ON THE
+// RELEASE FILE, not vanish into a generic release-not-resolved error with
+// the detail only on stderr. Red against the pre-fix daemon (1002 +
+// stderr, no diagnostic); green after — the daemon pushes an
+// aggrega/publishDiagnostics for the Release file carrying the rendered
+// envelope text.
+func TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic(t *testing.T) {
+	bin := buildServeBinary(t)
+	ws := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(ws, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	write(".aggrega-config.yaml", "workspace: {}\n")
+	// The single fault lives on the Release: values: on a boundary
+	// component (Invariant-5). The Aggregate is valid — single-fault.
+	releasePath := filepath.Join(ws, "release.yaml")
+	write("release.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: corpus-rel
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: corpus-app
+  manifest: corpus-manifest
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api:
+          values:
+            port: 9999
+`)
+	agg := `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: corpus-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server
+      values:
+        port: 8080
+`
+	write("aggregate.yaml", agg)
+
+	cmd := exec.Command(bin, "serve")
+	cmd.Dir = ws
+	cmd.Stderr = os.Stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	})
+	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
+		t.Fatalf("write initialize: %v", err)
+	}
+	if initResp := readOneResponse(t, stdout, 5*time.Second); initResp["error"] != nil {
+		t.Fatalf("initialize returned error: %+v", initResp)
+	}
+	// Validating the (valid) Aggregate is enough to trigger the anchoring
+	// attempt; the malformed Release surfaces via publishDiagnostics on the
+	// Release file.
+	aggPath := filepath.Join(ws, "aggregate.yaml")
+	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
+		"file":    aggPath,
+		"content": agg,
+	})); err != nil {
+		t.Fatalf("write validate: %v", err)
+	}
+	const wantText = "violates its envelope schema"
+	found := false
+	for i := 0; i < 6 && !found; i++ {
+		msg := readOneResponse(t, stdout, 10*time.Second)
+		// Match the publishDiagnostics NOTIFICATION specifically — not any
+		// message containing the text. The 1002 error response's enriched
+		// cascade trace also carries the path + envelope text, so a loose
+		// substring scan would pass even if the squiggle never published
+		// (proven by disabling the publish leg). Require: method ==
+		// aggrega/publishDiagnostics, params.file == the Release path, and a
+		// diagnostic whose message carries the envelope text.
+		if diagnosticPublishedFor(msg, releasePath, wantText) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("daemon did not PUBLISH an envelope diagnostic on the Release file %q (%q) — a malformed anchoring Release still de-anchors silently (the 1002 trace alone does not count)", releasePath, wantText)
+	}
+}
+
+// diagnosticPublishedFor reports whether msg is an aggrega/publishDiagnostics
+// notification targeting file with a diagnostic message containing wantText.
+func diagnosticPublishedFor(msg map[string]any, file, wantText string) bool {
+	if m, _ := msg["method"].(string); m != "aggrega/publishDiagnostics" {
+		return false
+	}
+	params, ok := msg["params"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if f, _ := params["file"].(string); f != file {
+		return false
+	}
+	diags, ok := params["diagnostics"].([]any)
+	if !ok {
+		return false
+	}
+	for _, d := range diags {
+		dm, ok := d.(map[string]any)
+		if !ok {
+			continue
+		}
+		if msgText, _ := dm["message"].(string); strings.Contains(msgText, wantText) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestNegativeCorpusServe_EnvelopeDiagnostic(t *testing.T) {
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
