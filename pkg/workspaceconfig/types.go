@@ -13,7 +13,7 @@
 // envelope), distinguishing it from catalog content which carries
 // the envelope. The Config type and the workspace file's wire
 // format are pinned by the aggrega-config-v1alpha1 JSON Schema in
-// aggrega-schemas/json-schemas/.
+// aggrega-schemas/json/.
 //
 // Several documented defaults are NOT the Go zero-value:
 // default_registry = "hub.aggrega.ai", cache_dir = ".aggrega/cache",
@@ -151,7 +151,7 @@ type LintConfig struct {
 // zeroes this field on the returned Config.
 //
 // JSON marshalling matches the schema's Policies $def in
-// aggrega-schemas/json-schemas/wasm-linter-v1alpha1.schema.json.
+// aggrega-schemas/json/wasm-linter-v1alpha1.schema.json.
 // The publishing-linter Wasm plugin consumes a JSON object with the
 // same field set; the symmetry is pinned at unit-test time by
 // pkg/validator's TestPoliciesRoundTripThroughSchema. Adding or

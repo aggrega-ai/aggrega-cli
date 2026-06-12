@@ -135,7 +135,7 @@ spec:
 func TestParameterContractSchema_NoDrift(t *testing.T) {
 	t.Parallel()
 
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "aggregate-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "aggregate-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("aggregate-v1alpha1.schema.json not reachable at %s: %v", schemaPath, err)

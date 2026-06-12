@@ -15,7 +15,7 @@ import (
 // consumes per the wasm-linter-v1alpha1 schema. The struct shape
 // mirrors aggrega-pdk-rust's LinterInput field-for-field; the
 // canonical wire contract is the schema at
-// aggrega-schemas/json-schemas/wasm-linter-v1alpha1.schema.json.
+// aggrega-schemas/json/wasm-linter-v1alpha1.schema.json.
 //
 // Proposed and Previous carry the parsed YAML entity structure (the
 // caller converts YAML → JSON before invocation; the plugin never

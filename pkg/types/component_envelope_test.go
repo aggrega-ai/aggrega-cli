@@ -16,7 +16,7 @@ import (
 
 func componentEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "component-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "component-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("Component envelope schema not reachable at %s: %v", schemaPath, err)

@@ -16,7 +16,7 @@ import (
 
 func featureEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "feature-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "feature-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("Feature envelope schema not reachable at %s: %v", schemaPath, err)

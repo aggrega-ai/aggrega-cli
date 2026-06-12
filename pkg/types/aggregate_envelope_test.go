@@ -18,7 +18,7 @@ import (
 // the sibling aggrega-schemas repo and constructs a Validator over it.
 func aggregateEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "aggregate-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "aggregate-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("Aggregate envelope schema not reachable at %s: %v", schemaPath, err)

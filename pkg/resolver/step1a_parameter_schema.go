@@ -17,7 +17,7 @@ import (
 // parameterContractSchemaJSON is the hardcoded map-level sub-schema for
 // the Aggregate `spec.parameters:` block. It mirrors the canonical
 // `properties.spec.properties.parameters` subtree of
-// `aggrega-schemas/json-schemas/aggregate-v1alpha1.schema.json` —
+// `aggrega-schemas/json/aggregate-v1alpha1.schema.json` —
 // specifically the whole `{type: object, additionalProperties:
 // {oneOf: [...]}}` shape, NOT the inner per-parameter `oneOf` alone.
 //

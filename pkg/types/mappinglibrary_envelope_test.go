@@ -23,12 +23,12 @@ import (
 //
 // Path is stable within the umbrella workspace: from
 // aggrega-cli/pkg/types/, the schema sits at
-// ../../../aggrega-schemas/json-schemas/mappinglibrary-v1alpha1.schema.json.
+// ../../../aggrega-schemas/json/mappinglibrary-v1alpha1.schema.json.
 // The helper t.Skipf's gracefully if the schema is unreachable (standalone
 // aggrega-cli development environment without the sibling repo).
 func mappingLibraryEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "mappinglibrary-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "mappinglibrary-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("MappingLibrary envelope schema not reachable at %s; envelope-validation tests skipped in this environment: %v", schemaPath, err)

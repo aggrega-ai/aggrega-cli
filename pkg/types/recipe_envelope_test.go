@@ -22,11 +22,11 @@ import (
 //
 // Path is stable within the umbrella workspace: from
 // aggrega-cli/pkg/types/, the schema sits at
-// ../../../aggrega-schemas/json-schemas/recipe-v1alpha1.schema.json.
+// ../../../aggrega-schemas/json/recipe-v1alpha1.schema.json.
 // The helper t.Skipf's gracefully if the schema is unreachable.
 func recipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "recipe-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "recipe-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("Recipe envelope schema not reachable at %s; envelope-validation tests skipped in this environment: %v", schemaPath, err)
@@ -44,7 +44,7 @@ func recipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 
 func featureRecipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json-schemas", "featurerecipe-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "featurerecipe-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("FeatureRecipe envelope schema not reachable at %s: %v", schemaPath, err)

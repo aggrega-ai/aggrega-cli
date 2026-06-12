@@ -8,7 +8,7 @@
 // etc.).
 //
 // The embedded sources mirror the canonical public schemas under
-// aggrega-schemas/json-schemas/ (e.g., workload-v1alpha1.schema.json)
+// aggrega-schemas/json/ (e.g., workload-v1alpha1.schema.json)
 // so the in-binary and out-of-band schemas stay synchronized: the
 // public schema is the source of truth; this package's files are
 // copies kept aligned by convention.

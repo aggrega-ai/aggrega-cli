@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/aggrega-ai/aggrega-schemas v0.0.0-00010101000000-000000000000
+	github.com/aggrega-ai/aggrega-schemas v0.1.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
@@ -129,5 +129,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-replace github.com/aggrega-ai/aggrega-schemas => ../aggrega-schemas

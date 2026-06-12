@@ -110,7 +110,7 @@ const AggregateNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 
 // SchemaLibraryNameShape matches a PascalCase single identifier. This
 // pattern is also enforced by the JSON Schema envelope at
-// aggrega-schemas/json-schemas/schemalibrary-v1alpha1.schema.json;
+// aggrega-schemas/json/schemalibrary-v1alpha1.schema.json;
 // structural validation rejects non-conforming names at parse time.
 // Example matches: "BaseComponents", "AIDatastores", "WebPrimitives".
 const SchemaLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`

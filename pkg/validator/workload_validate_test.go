@@ -121,7 +121,7 @@ func TestValidateWorkload_AllServiceTypesValid(t *testing.T) {
 		w := minimalWorkload()
 		// The JSON Schema requires services to declare at least one port.
 		// The public Workload schema at
-		// aggrega-schemas/json-schemas/workload-v1alpha1.schema.json
+		// aggrega-schemas/json/workload-v1alpha1.schema.json
 		// marks ports as required; the new validator honors that. Supply
 		// a representative port per service type so the test verifies
 		// type-discriminant acceptance, not ports-presence.

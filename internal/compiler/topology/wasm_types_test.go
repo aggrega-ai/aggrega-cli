@@ -24,7 +24,7 @@ import (
 // checkouts that do not vendor the schemas submodule.
 func mutatorSchemaValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json-schemas", "wasm-mutator-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-mutator-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("wasm-mutator schema not reachable at %s: %v", schemaPath, err)
@@ -156,7 +156,7 @@ func TestMutatorOutput_RoundTripJSONSchema(t *testing.T) {
 // "Go struct grew a field, schema didn't" drift directly.
 func TestMutatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json-schemas", "wasm-mutator-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-mutator-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Skipf("wasm-mutator schema not reachable at %s: %v", schemaPath, err)
