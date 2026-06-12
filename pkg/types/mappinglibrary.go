@@ -19,41 +19,15 @@ import (
 // failure without parsing the formatted error text.
 var ErrMappingEntryNotScalar = errors.New("mappinglibrary: entry body must be a string scalar")
 
-// MappingLibrary is the typed Go representation of the aggrega.ai/v1alpha1
-// MappingLibrary catalog entity. The entity holds reusable Go template
-// fragments that Recipes and FeatureRecipes consume at render time via
-// `valuesMapping: { $import: ... }` directives. Tier 3 in the entity-tier
-// model — opt-in for catalogs that need cross-Recipe mapping reuse.
-//
-// Schema: mappinglibrary-v1alpha1.schema.json (in the aggrega-schemas repo).
-type MappingLibrary struct {
-	APIVersion string                 `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string                 `json:"kind" yaml:"kind"`
-	Metadata   MappingLibraryMetadata `json:"metadata" yaml:"metadata"`
-	Spec       MappingLibrarySpec     `json:"spec" yaml:"spec"`
-}
+//go:generate go run ../../internal/tools/typegen mappinglibrary_gen.go
 
-// MappingLibraryMetadata carries identity for a MappingLibrary. The name
-// field enforces PascalCase at the JSON Schema envelope level
-// (`^[A-Z][A-Za-z0-9]*$`); the Go-side struct doesn't re-validate that
-// constraint — the envelope validation at parse time is authoritative.
-type MappingLibraryMetadata struct {
-	Name        string             `json:"name" yaml:"name"`
-	Version     string             `json:"version" yaml:"version"`
-	Description string             `json:"description,omitempty" yaml:"description,omitempty"`
-	Labels      OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
-	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-}
-
-// MappingLibrarySpec carries the library's content: the required mappings
-// map. OrderedMap-backed so author-order survives YAML/JSON round-trips
-// and the emit path is determinism-stable. No `mappingsJsonnet:` sibling
-// field; the envelope schema rejects unknown spec siblings via
-// `additionalProperties: false` so the single-authoring-mode posture is
-// enforced at load time.
-type MappingLibrarySpec struct {
-	Mappings OrderedMap[MappingEntry] `json:"mappings" yaml:"mappings"`
-}
+// MappingLibrary's struct declarations (MappingLibrary, MappingLibraryMetadata,
+// MappingLibrarySpec) are generated into mappinglibrary_gen.go from the
+// published mappinglibrary-v1alpha1 schema; their godoc is the schema's
+// descriptions. This hand-written companion holds the MappingEntry type the
+// generated spec references — its custom UnmarshalYAML/MarshalYAML captures the
+// Go-template fragment body verbatim — plus the ErrMappingEntryNotScalar
+// sentinel above.
 
 // MappingEntry is one named mapping in the library's mappings map. Body
 // is the Go template fragment captured verbatim at MappingLibrary load.

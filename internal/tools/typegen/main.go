@@ -52,8 +52,13 @@ type kindSource struct {
 }
 
 var kindSources = map[string]kindSource{
-	"provider_gen.go": {"Provider", schemas.ProviderV1alpha1},
-	"feature_gen.go":  {"Feature", schemas.FeatureV1alpha1},
+	"provider_gen.go":       {"Provider", schemas.ProviderV1alpha1},
+	"feature_gen.go":        {"Feature", schemas.FeatureV1alpha1},
+	"manifest_gen.go":       {"Manifest", schemas.ManifestV1alpha1},
+	"recipe_gen.go":         {"Recipe", schemas.RecipeV1alpha1},
+	"featurerecipe_gen.go":  {"FeatureRecipe", schemas.FeatureRecipeV1alpha1},
+	"schemalibrary_gen.go":  {"SchemaLibrary", schemas.SchemaLibraryV1alpha1},
+	"mappinglibrary_gen.go": {"MappingLibrary", schemas.MappingLibraryV1alpha1},
 }
 
 // knownImports maps a package selector that may appear in an x-aggrega-go-type

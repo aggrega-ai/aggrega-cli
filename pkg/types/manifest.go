@@ -9,17 +9,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Manifest is the global mapping artifact connecting Developer-side type
-// references in the Aggregate to concrete Ops-side Recipe / FeatureRecipe
-// implementations.
-// Schema: manifest-v1alpha1.schema.json
-type Manifest struct {
-	APIVersion string           `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string           `json:"kind" yaml:"kind"`
-	Metadata   ManifestMetadata `json:"metadata" yaml:"metadata"`
-	Defs       []string         `json:"defs,omitempty" yaml:"defs,omitempty"` // YAML anchor definitions for DRY
-	Spec       ManifestSpec     `json:"spec" yaml:"spec"`
-}
+//go:generate go run ../../internal/tools/typegen manifest_gen.go
+
+// Manifest's struct declarations (Manifest, ManifestMetadata, ManifestSpec)
+// are generated into manifest_gen.go from the published manifest-v1alpha1
+// schema; their godoc is the schema's descriptions. This hand-written
+// companion holds the discriminated-union mapping types the generated spec
+// references — ManifestMappings (with its custom flat-vs-legacy
+// UnmarshalYAML/MarshalYAML), MappingTier, ProviderMappings, AnnotationBinding,
+// and AnnotationBindingMaps.
 
 // AnnotationBinding declares how an annotation key in a Manifest's
 // annotation registry routes to a Feature attachment's pillar fields.
@@ -139,28 +137,7 @@ func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
 	return "", false
 }
 
-// ManifestMetadata carries identity for a Manifest entity.
-type ManifestMetadata struct {
-	Name        string       `json:"name" yaml:"name"`
-	Version     string       `json:"version" yaml:"version"`
-	Description string       `json:"description,omitempty" yaml:"description,omitempty"`
-	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	License     string       `json:"license,omitempty" yaml:"license,omitempty"`
-	Repository  string       `json:"repository,omitempty" yaml:"repository,omitempty"`
-	Home        string       `json:"home,omitempty" yaml:"home,omitempty"`
-	Keywords    []string     `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	Deprecated  bool         `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
-}
-
-// ManifestSpec carries the Manifest's mapping declarations under a
-// discriminated-union surface (Mappings) plus optional base inheritance.
-type ManifestSpec struct {
-	Extends  string          `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Mappings ManifestMappings `json:"mappings" yaml:"mappings"`
-}
-
-// ManifestMappings captures the two coexisting Manifest mapping shapes
-// during the migration window:
+// ManifestMappings captures the two coexisting Manifest mapping shapes:
 //
 //   - Flat shape: reserved top-level keys `components` and `features`
 //     under `mappings:` carry component-type / feature-type URIs mapped
@@ -173,17 +150,14 @@ type ManifestSpec struct {
 //     `components` / `features` sub-sections.
 //
 // Dispatch precedence at consumption time is flat > legacy >
-// matchImplements-walking-spec.implements (pre-migration fallback).
-// Each layer is the active path for fixtures that opt in. Authors
-// authoring partial-migration Manifests can mix flat entries and
-// legacy entries; flat entries take precedence on overlapping
+// matchImplements-walking-spec.implements. Each layer is the active path
+// for fixtures that opt in. Authors can mix flat entries and legacy
+// entries in one Manifest; flat entries take precedence on overlapping
 // component types.
 //
-// Provider-name discriminator constraint (transitional): provider
-// entities cannot be named "components" or "features" while the
-// legacy shape is still accepted, because the discriminator would
-// mis-route. The constraint dissolves when downstream WIs complete
-// the legacy-shape retirement.
+// Provider-name discriminator constraint: a provider entity cannot be
+// named "components" or "features" while the legacy shape is accepted,
+// because the discriminator would mis-route.
 type ManifestMappings struct {
 	// Components and Features carry the flat-shape mappings.
 	Components *MappingTier `json:"components,omitempty" yaml:"components,omitempty"`
@@ -198,9 +172,9 @@ type ManifestMappings struct {
 	// future JSON-marshal consumer of Manifest would need a parallel
 	// MarshalJSON to unify the discriminated union under `mappings:`
 	// the same way MarshalYAML does today. There are no JSON-marshal
-	// consumers of Manifest in production code at this WI's close;
-	// the tag pairing prevents asymmetric wire shapes if one ships
-	// later without the parallel MarshalJSON.
+	// consumers of Manifest in production code today; the tag pairing
+	// prevents asymmetric wire shapes if one ships later without the
+	// parallel MarshalJSON.
 	Legacy OrderedMap[ProviderMappings] `json:"-" yaml:"-"`
 }
 

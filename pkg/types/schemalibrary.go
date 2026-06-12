@@ -7,40 +7,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SchemaLibrary is the typed Go representation of the aggrega.ai/v1alpha1
-// SchemaLibrary catalog entity. The entity holds reusable JSON Schema 2020-12
-// definitions plus optional parameterized helpers (`$templates:`). Tier 3 in
-// the entity-tier model — opt-in for catalogs that need cross-Component
-// schema reuse.
-//
-// Schema: schemalibrary-v1alpha1.schema.json (in the aggrega-schemas repo).
-type SchemaLibrary struct {
-	APIVersion string                `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string                `json:"kind" yaml:"kind"`
-	Metadata   SchemaLibraryMetadata `json:"metadata" yaml:"metadata"`
-	Spec       SchemaLibrarySpec     `json:"spec" yaml:"spec"`
-}
+//go:generate go run ../../internal/tools/typegen schemalibrary_gen.go
 
-// SchemaLibraryMetadata carries identity for a SchemaLibrary. The name field
-// enforces PascalCase at the JSON Schema envelope level (`^[A-Z][A-Za-z0-9]*$`);
-// the Go-side struct doesn't re-validate that constraint — the envelope
-// validation at parse time is authoritative.
-type SchemaLibraryMetadata struct {
-	Name        string             `json:"name" yaml:"name"`
-	Version     string             `json:"version" yaml:"version"`
-	Description string             `json:"description,omitempty" yaml:"description,omitempty"`
-	Labels      OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
-	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-}
-
-// SchemaLibrarySpec carries the library's content: the required schemas map
-// plus the optional templates map. Both are OrderedMap-backed so author-
-// order survives YAML/JSON round-trips and the emit path is determinism-
-// stable.
-type SchemaLibrarySpec struct {
-	Schemas   OrderedMap[SchemaEntry]   `json:"schemas" yaml:"schemas"`
-	Templates OrderedMap[TemplateEntry] `json:"templates,omitempty,omitzero" yaml:"templates,omitempty"`
-}
+// SchemaLibrary's struct declarations (SchemaLibrary, SchemaLibraryMetadata,
+// SchemaLibrarySpec) are generated into schemalibrary_gen.go from the
+// published schemalibrary-v1alpha1 schema; their godoc is the schema's
+// descriptions. This hand-written companion holds the content-shape entry
+// types the generated spec references — SchemaEntry and TemplateEntry (each
+// with custom UnmarshalYAML/MarshalYAML capturing raw yaml.Node content) and
+// the ParamDecl template-parameter declaration.
 
 // SchemaEntry is one named schema in the library's schemas map. Content is
 // carried as yaml.Node so the parser dispatch (compact form vs JSON Schema
