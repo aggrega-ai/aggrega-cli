@@ -40,7 +40,7 @@ func guardRequiredUsesSockets(na types.NormalizedAggregate, catalog CatalogLooku
 			}
 			errs = append(errs, &ResolverError{
 				Entity:  fmt.Sprintf("Component %q (instance %q)", comp.Metadata.Name, pair.name),
-				Field:   fmt.Sprintf(".components.%s.uses.%s", pair.name, socketName),
+				Field:   fmt.Sprintf("%s.uses[%q]", componentFieldPath(pair.subsystemPath, pair.name, pair.synthesized), socketName),
 				Message: fmt.Sprintf("required uses socket %q has no entries in component %q", socketName, pair.name),
 				Err:     ErrMissingRequiredSocket,
 			})

@@ -47,11 +47,37 @@ func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 	if !errors.Is(errs[0], ErrMissingRequiredSocket) {
 		t.Errorf("expected ErrMissingRequiredSocket, got %v", errs[0].Err)
 	}
-	if !strings.Contains(errs[0].Field, ".components.api.uses.databases") {
+	// Top-level component folds into the synthesized default → the locator is
+	// the root shape the author typed (with `.spec` and bracket-quoted), never
+	// the bare `.components.api` the site emitted before joining the shared
+	// flag-aware path helper.
+	if errs[0].Field != `.spec.components["api"].uses["databases"]` {
 		t.Errorf("field: %q", errs[0].Field)
 	}
 	if !strings.Contains(errs[0].Message, "databases") {
 		t.Errorf("message: %q", errs[0].Message)
+	}
+}
+
+// TestGuardRequiredUsesSockets_RealSubsystemRendersQualified is the accuracy
+// proof: a missing-required-socket error on a component in a DECLARED subsystem
+// renders the qualified locator, not the flattened `.components.<name>` the site
+// emitted before routing through the flag-aware helper. RED before the fix
+// (dropped both `.spec` and the subsystem path), GREEN after.
+func TestGuardRequiredUsesSockets_RealSubsystemRendersQualified(t *testing.T) {
+	t.Parallel()
+	subComps := types.OrderedMap[types.ComponentInstance]{}
+	subComps.Set("worker", types.ComponentInstance{Type: "core/compute/api"})
+	subs := types.OrderedMap[types.Subsystem]{}
+	subs.Set("data", types.Subsystem{Components: subComps})
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Subsystems: subs}}
+
+	errs := guardRequiredUsesSockets(normalized(t, agg), requiredSocketCatalog())
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %+v", len(errs), errs)
+	}
+	if errs[0].Field != `.spec.subsystems.data.components["worker"].uses["databases"]` {
+		t.Errorf("real subsystem component must render qualified; got %q", errs[0].Field)
 	}
 }
 

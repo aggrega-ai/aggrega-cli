@@ -48,8 +48,8 @@ type AggregateSpec struct {
 	Aggregates OrderedMap[SubAggregate] `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 	// ExportedComponents The Public API Interface. Maps an exposed public name to an internal component ID. Parent Aggregates importing this module reference components by these public names.
 	ExportedComponents OrderedMap[string] `json:"exportedComponents,omitempty,omitzero" yaml:"exportedComponents,omitempty"`
-	// Subsystems Logical groupings of developer intent.
+	// Subsystems Named logical groupings of an Aggregate's components into subsystems. Mutually exclusive with top-level components — declaring both is rejected. A subsystem the author names default is an ordinary declared subsystem, distinct from the synthesized default the compiler creates for a components-only Aggregate.
 	Subsystems OrderedMap[Subsystem] `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
-	// Components The map of logical atomic components that make up this aggregate.
+	// Components The map of logical atomic components that make up this Aggregate, authored directly at the top level. Top-level components and subsystems are mutually exclusive — declaring both is rejected. When components are authored here (without subsystems), the compiler folds them into a synthesized default subsystem at load, so every downstream pass sees a uniform subsystem-bearing structure; the synthesized default is marked as such in the IR.
 	Components OrderedMap[ComponentInstance] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 }
