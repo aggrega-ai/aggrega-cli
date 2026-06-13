@@ -84,6 +84,10 @@ func LoadRelease(path string) (*types.Release, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
+	// Desugar a top-level components surface into the synthesized `default`
+	// boundary at load, so every downstream consumer sees a uniform
+	// boundary-bearing Release.
+	NormalizeReleaseScopes(&rel)
 	return &rel, nil
 }
 

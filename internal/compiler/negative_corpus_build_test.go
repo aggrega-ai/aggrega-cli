@@ -239,6 +239,33 @@ spec: {}
 		{name: "release-unknown-spec-key", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
 			wf.release = injectReleaseSpecKey()
 		}},
+		// Default-scopes mutual exclusivity: a Release declaring BOTH a
+		// top-level components surface AND named boundaries is rejected at the
+		// envelope gate (the schema's not/allOf XOR). No new sentinel — the
+		// envelope reject carries it.
+		{name: "release-components-and-boundaries-both", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+			wf.release = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: corpus-rel
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: corpus-app
+  manifest: corpus-manifest
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api:
+          infra:
+            replicas: 1
+  components:
+    api:
+      infra:
+        replicas: 1
+`
+		}},
 		// --- Invariant-5 ban set (permanent rows, each loud) ---
 		{name: "inv5-release-values-on-boundary-component", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
 			wf.release = `apiVersion: aggrega.ai/v1alpha1

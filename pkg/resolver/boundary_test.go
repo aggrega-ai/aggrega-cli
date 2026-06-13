@@ -58,3 +58,74 @@ func TestWireBoundaryInfra_BoundaryComponentAnnotationsOverride(t *testing.T) {
 		t.Errorf("worker namespace: want inherited backend-zone, got %q", got)
 	}
 }
+
+func newComps(names ...string) types.OrderedMap[types.BoundaryComponent] {
+	var m types.OrderedMap[types.BoundaryComponent]
+	for _, n := range names {
+		m.Set(n, types.BoundaryComponent{})
+	}
+	return m
+}
+
+// TestNormalizeReleaseScopes pins the load-time desugaring of the top-level
+// components surface into a synthesized `default` boundary.
+func TestNormalizeReleaseScopes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("components-only synthesizes a marked default holding the components", func(t *testing.T) {
+		rel := &types.Release{}
+		rel.Spec.Components = newComps("api", "worker")
+		resolver.NormalizeReleaseScopes(rel)
+
+		if got := rel.Spec.Boundaries.Len(); got != 1 {
+			t.Fatalf("want exactly 1 synthesized boundary; got %d", got)
+		}
+		if keys := rel.Spec.Boundaries.Keys(); len(keys) == 0 || keys[0] != "default" {
+			t.Fatalf("synthesized boundary must be named 'default' and ordered first; keys=%v", keys)
+		}
+		b, _ := rel.Spec.Boundaries.Get("default")
+		if !b.Synthesized {
+			t.Error("synthesized boundary must carry Synthesized=true")
+		}
+		if b.Components.Len() != 2 {
+			t.Errorf("synthesized default must hold the 2 top-level components; got %d", b.Components.Len())
+		}
+		if rel.Spec.Components.Len() != 0 {
+			t.Errorf("top-level components must move into the boundary (cleared); got %d", rel.Spec.Components.Len())
+		}
+	})
+
+	t.Run("a declared boundary is a no-op (never marked synthesized)", func(t *testing.T) {
+		rel := &types.Release{}
+		var b types.OrderedMap[types.Boundary]
+		b.Set("main", types.Boundary{Components: newComps("api")})
+		rel.Spec.Boundaries = b
+		resolver.NormalizeReleaseScopes(rel)
+
+		if _, ok := rel.Spec.Boundaries.Get("default"); ok {
+			t.Error("must not synthesize a default when boundaries are declared")
+		}
+		main, _ := rel.Spec.Boundaries.Get("main")
+		if main.Synthesized {
+			t.Error("a declared boundary must never be marked Synthesized")
+		}
+	})
+
+	t.Run("empty release synthesizes nothing", func(t *testing.T) {
+		rel := &types.Release{}
+		resolver.NormalizeReleaseScopes(rel)
+		if rel.Spec.Boundaries.Len() != 0 {
+			t.Errorf("no components and no boundaries must synthesize nothing; got %d", rel.Spec.Boundaries.Len())
+		}
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		rel := &types.Release{}
+		rel.Spec.Components = newComps("api")
+		resolver.NormalizeReleaseScopes(rel)
+		resolver.NormalizeReleaseScopes(rel)
+		if rel.Spec.Boundaries.Len() != 1 {
+			t.Errorf("a second call must be a no-op; got %d boundaries", rel.Spec.Boundaries.Len())
+		}
+	})
+}

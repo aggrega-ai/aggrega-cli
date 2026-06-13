@@ -200,6 +200,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			Component:            topoNode.ComponentType,
 			SubsystemPath:        topoNode.SubsystemPath,
 			BoundaryPath:         topoNode.BoundaryPath,
+			SynthesizedBoundary:  topoNode.SynthesizedBoundary,
 			CatalogAnnotations:   catalogAnnotations,
 			ReleaseAnnotations:   releaseAnnotations,
 			AggregateAnnotations: aggregateAnnotations,

@@ -106,6 +106,11 @@ type TopologyNode struct {
 	ResolvedParameters map[string]any
 	SubsystemPath      string
 	BoundaryPath    string
+	// SynthesizedBoundary is true when BoundaryPath names the compiler-
+	// synthesized `default` boundary (a Release authored with top-level
+	// components rather than named boundaries). Derived provenance carried onto
+	// the IR node; routes output to dist/ flat.
+	SynthesizedBoundary bool
 	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
 	// SourceFile is the Aggregate file where this node was authored,
 	// stamped verbatim from BuildConfig.RootAggregateFile (root-tier
@@ -352,6 +357,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	for nodeID, node := range flat.Nodes.All() {
 		if bi, ok := cfg.ResolveResult.BoundaryInfra[nodeID]; ok && bi != nil {
 			node.BoundaryPath = bi.BoundaryPath
+			node.SynthesizedBoundary = bi.Synthesized
 		}
 	}
 

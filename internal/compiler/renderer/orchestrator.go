@@ -1087,7 +1087,13 @@ func computeFinalPath(
 
 	// Evaluate directory:
 	var evalDir string
-	if bi == nil || bi.Directory == "" {
+	if bi != nil && bi.Synthesized {
+		// The compiler-synthesized `default` boundary emits flat to dist/ —
+		// no "boundaries/<bp>" segregation segment. Keyed on the provenance
+		// flag, NOT the name: a boundary a user explicitly named "default"
+		// has Synthesized == false and still segregates to boundaries/default.
+		evalDir = ""
+	} else if bi == nil || bi.Directory == "" {
 		// Default: today's per-boundary segregation. No template eval needed.
 		evalDir = "boundaries/" + bp
 	} else {

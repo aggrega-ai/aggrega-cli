@@ -54,6 +54,16 @@ type Boundary struct {
 	Boundaries  OrderedMap[Boundary]          `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
 	Components  OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 	Aggregates  OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
+
+	// Synthesized marks a boundary the compiler created rather than the
+	// author — the `default` boundary synthesized for a Release that declares
+	// top-level components instead of named boundaries. It is derived
+	// provenance, never authored: the json/yaml `-` tags keep it out of the
+	// authoring surface entirely, and it is set only by NormalizeReleaseScopes.
+	// Read at the output-directory site to route the boundary's artifacts to
+	// dist/ flat, and carried onto the IR node so the synthesized default is
+	// distinguishable from a boundary a user explicitly named "default".
+	Synthesized bool `json:"-" yaml:"-"`
 }
 
 // BoundaryComponent is a component instance routed into a boundary with
