@@ -4,13 +4,30 @@
 package resolver
 
 import (
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
+
+// resolvedComponent fetches a component from the resolved (normalized)
+// Aggregate. A top-level components surface folds into the synthesized
+// `default` subsystem at load, so a root-authored component resolves there;
+// this helper looks in both places so the integration assertions read the
+// component regardless of which scope holds it.
+func resolvedComponent(agg *types.Aggregate, name string) (types.ComponentInstance, bool) {
+	if c, ok := agg.Spec.Components.Get(name); ok {
+		return c, true
+	}
+	if def, ok := agg.Spec.Subsystems.Get("default"); ok {
+		return def.Components.Get(name)
+	}
+	return types.ComponentInstance{}, false
+}
 
 func TestResolve_Integration(t *testing.T) {
 	tests := []struct {
@@ -31,10 +48,10 @@ func TestResolve_Integration(t *testing.T) {
 				if result.Aggregate.Metadata.Name != "test-app" {
 					t.Errorf("expected name test-app, got %s", result.Aggregate.Metadata.Name)
 				}
-				if _, ok := result.Aggregate.Spec.Components.Get("web"); !ok {
+				if _, ok := resolvedComponent(result.Aggregate, "web"); !ok {
 					t.Error("expected component 'web'")
 				}
-				if _, ok := result.Aggregate.Spec.Components.Get("worker"); !ok {
+				if _, ok := resolvedComponent(result.Aggregate, "worker"); !ok {
 					t.Error("expected component 'worker'")
 				}
 				if result.Release == nil {
@@ -54,7 +71,7 @@ func TestResolve_Integration(t *testing.T) {
 			wantErr:  nil,
 			validate: func(t *testing.T, result *ResolveResult) {
 				t.Helper()
-				comp, ok := result.Aggregate.Spec.Components.Get("api")
+				comp, ok := resolvedComponent(result.Aggregate, "api")
 				if !ok {
 					t.Fatal("expected component 'api'")
 				}
@@ -211,7 +228,7 @@ spec:
 
 	// The imported parameter values flow into the Aggregate's
 	// templated values via the standard interpolation path.
-	comp, _ := result.Aggregate.Spec.Components.Get("api")
+	comp, _ := resolvedComponent(result.Aggregate, "api")
 	if comp.Values.Len() == 0 {
 		t.Fatal("expected interpolated values on api component")
 	}
@@ -233,7 +250,7 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 	}
 
 	// Verify parameters were interpolated (not raw template expressions)
-	comp, _ := result.Aggregate.Spec.Components.Get("api")
+	comp, _ := resolvedComponent(result.Aggregate, "api")
 	ttl, _ := comp.Values.Get("cache_ttl_seconds")
 	ttlStr := fmt.Sprint(ttl)
 	if ttlStr == "{{ .parameters.cache_ttl_seconds | default \"3000\" }}" {
@@ -275,11 +292,11 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 // the variants.
 func TestResolve_ParameterDefaultBackfill_E2E(t *testing.T) {
 	cases := []struct {
-		name         string
-		releaseFile  string
-		wantTimeout  string
-		wantDBHost   string
-		dbHostNote   string
+		name        string
+		releaseFile string
+		wantTimeout string
+		wantDBHost  string
+		dbHostNote  string
 	}{
 		{
 			name:        "case1_omit_parent_synthesizes_and_fills",
@@ -319,7 +336,7 @@ func TestResolve_ParameterDefaultBackfill_E2E(t *testing.T) {
 				t.Fatalf("Resolve: %v", err)
 			}
 
-			comp, ok := result.Aggregate.Spec.Components.Get("api")
+			comp, ok := resolvedComponent(result.Aggregate, "api")
 			if !ok {
 				t.Fatalf("component api missing from resolved Aggregate")
 			}
@@ -372,7 +389,7 @@ spec:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	comp, _ := result.Aggregate.Spec.Components.Get("api")
+	comp, _ := resolvedComponent(result.Aggregate, "api")
 	ttl, _ := comp.Values.Get("cache_ttl_seconds")
 	if fmt.Sprint(ttl) != "3000" {
 		t.Errorf("expected Sprig default 3000, got %v", ttl)

@@ -162,7 +162,7 @@ func TestValidateInjectBlock_AdditionalMechanisms(t *testing.T) {
 func TestValidateInjectBlocks_NilAggregate(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateInjectBlocks(nil, nil); err != nil {
+	if err := ValidateInjectBlocks(normalized(t, nil), nil); err != nil {
 		t.Errorf("nil Aggregate should short-circuit silently; got %v", err)
 	}
 }
@@ -198,7 +198,7 @@ func TestValidateAggregate_TierThreeFeatureInject_BothPresent(t *testing.T) {
 		},
 	}
 
-	err := ValidateInjectBlocks(agg, nil)
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
 	if err == nil {
 		t.Fatalf("expected error on Tier 3 feature inject both-present, got nil")
 	}
@@ -236,7 +236,7 @@ func TestValidateAggregate_NestedSubsystems(t *testing.T) {
 
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Subsystems: subsystems}}
 
-	err := ValidateInjectBlocks(agg, nil)
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
 	if err == nil {
 		t.Fatalf("expected error on nested-subsystem component-inject both-present, got nil")
 	}
@@ -274,7 +274,7 @@ func TestValidateAggregate_FeatureInstance_NestedUses(t *testing.T) {
 
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
-	err := ValidateInjectBlocks(agg, nil)
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
 	if err == nil {
 		t.Fatalf("expected error on feature-instance nested-uses both-present, got nil")
 	}
@@ -311,7 +311,7 @@ func TestValidateAggregate_FeatureInstance_NestedSecrets(t *testing.T) {
 
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
-	err := ValidateInjectBlocks(agg, nil)
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
 	if err == nil {
 		t.Fatalf("expected error on feature-instance nested-secrets both-present, got nil")
 	}
@@ -351,7 +351,7 @@ func TestValidateAggregate_SecretInstance_NestedUses(t *testing.T) {
 
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
-	err := ValidateInjectBlocks(agg, nil)
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
 	if err == nil {
 		t.Fatalf("expected error on secret-instance nested-uses both-present, got nil")
 	}

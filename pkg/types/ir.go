@@ -84,13 +84,20 @@ type IRNode struct {
 	SyncWave        int                `json:"sync_wave,omitempty"`
 	BoundaryPath    string             `json:"boundary_path,omitempty"`
 	SubsystemPath   string             `json:"subsystem_path,omitempty"`
+	// SynthesizedSubsystem is true when SubsystemPath names the compiler-
+	// synthesized `default` subsystem — created for an Aggregate that declares
+	// top-level components rather than named subsystems. Derived provenance,
+	// never authored; distinguishes the synthesized default from a subsystem a
+	// user explicitly named "default". Independent of SynthesizedBoundary.
+	// Omitted (false) for authored subsystems.
+	SynthesizedSubsystem bool `json:"synthesized_subsystem,omitempty"`
 	// SynthesizedBoundary is true when BoundaryPath names the compiler-
 	// synthesized `default` boundary — created for a Release that declares
 	// top-level components rather than named boundaries. Derived provenance,
 	// never authored; distinguishes the synthesized default from a boundary a
 	// user explicitly named "default". Omitted (false) for authored boundaries.
 	SynthesizedBoundary bool             `json:"synthesized_boundary,omitempty"`
-	CatalogMetadata *CatalogMetadata   `json:"catalog_metadata,omitempty"`
+	CatalogMetadata     *CatalogMetadata `json:"catalog_metadata,omitempty"`
 	// CatalogAnnotations, ReleaseAnnotations, and AggregateAnnotations
 	// carry the renderer-facing Scalar projection of the post-cascade
 	// annotation set for this IR node, partitioned by authoring side.

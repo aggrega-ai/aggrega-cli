@@ -241,7 +241,7 @@ func ResolveAndFlatten(
 		return resolveResult, nil, fmt.Errorf("Step 1 (annotation expansion): %w", err)
 	}
 
-	guardErrs := resolver.RunGuards(resolveResult.Aggregate, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+	guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
 	if len(guardErrs) > 0 {
 		for _, e := range guardErrs {
 			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)

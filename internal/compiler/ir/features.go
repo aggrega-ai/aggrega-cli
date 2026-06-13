@@ -186,7 +186,7 @@ func collectNodeFeatures(
 	// to the subsystem's components, not to the subsystem's own Features
 	// map. Tier 3 stays explicit-only.
 	if topoNode.SubsystemPath != "" {
-		subsystemFeatures := collectSubsystemFeatures(resolveResult.Aggregate, topoNode.SubsystemPath)
+		subsystemFeatures := collectSubsystemFeatures(types.Normalize(resolveResult.Aggregate), topoNode.SubsystemPath)
 		for _, sf := range subsystemFeatures {
 			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
 				return nil, err
@@ -656,7 +656,8 @@ type namedBoundaryFeature struct {
 // a subsystem-path the topology asserts but the resolved Aggregate no
 // longer contains (a defensive condition; should not happen on a clean
 // pipeline) returns the partial outer-tier list rather than panicking.
-func collectSubsystemFeatures(agg *types.Aggregate, subsystemPath string) []namedFeature {
+func collectSubsystemFeatures(na types.NormalizedAggregate, subsystemPath string) []namedFeature {
+	agg := na.Aggregate()
 	parts := splitPath(subsystemPath)
 	if len(parts) == 0 {
 		return nil

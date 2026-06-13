@@ -33,7 +33,8 @@ import (
 // are skipped (no self-inject to validate); component types not in the
 // catalog are silently skipped — unknown-type reporting belongs to
 // other guards.
-func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
+func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
@@ -41,7 +42,7 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		comp := p.inst
 		base := componentFieldPath(p.subsystemPath, p.name)
 		if comp.Inject == nil {

@@ -82,7 +82,7 @@ func TestGuardCredentialPartition_CorrectPlacement(t *testing.T) {
 		},
 	}
 
-	errs := guardCredentialPartition(agg, testCatalog())
+	errs := guardCredentialPartition(normalized(t, agg), testCatalog())
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors for correct placement, got %d: %v", len(errs), errs[0].Error())
 	}
@@ -100,7 +100,7 @@ func TestGuardCredentialPartition_CredentialInFeatures(t *testing.T) {
 		},
 	}
 
-	errs := guardCredentialPartition(agg, testCatalog())
+	errs := guardCredentialPartition(normalized(t, agg), testCatalog())
 	if len(errs) == 0 {
 		t.Fatal("expected error for credential Feature in features: block")
 	}
@@ -121,7 +121,7 @@ func TestGuardCredentialPartition_NonCredentialInSecrets(t *testing.T) {
 		},
 	}
 
-	errs := guardCredentialPartition(agg, testCatalog())
+	errs := guardCredentialPartition(normalized(t, agg), testCatalog())
 	if len(errs) == 0 {
 		t.Fatal("expected error for non-credential Feature in secrets: block")
 	}
@@ -144,7 +144,7 @@ func TestGuardRequiredFeatures_AllSatisfied(t *testing.T) {
 		},
 	}
 
-	errs := guardRequiredFeatures(agg, nil, testCatalog())
+	errs := guardRequiredFeatures(normalized(t, agg), nil, testCatalog())
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors when required features satisfied, got: %v", errs[0].Error())
 	}
@@ -160,7 +160,7 @@ func TestGuardRequiredFeatures_Missing(t *testing.T) {
 		},
 	}
 
-	errs := guardRequiredFeatures(agg, nil, testCatalog())
+	errs := guardRequiredFeatures(normalized(t, agg), nil, testCatalog())
 	if len(errs) == 0 {
 		t.Fatal("expected error for missing required feature")
 	}
@@ -190,7 +190,7 @@ func TestGuardRequiredFeatures_SatisfiedByRelease(t *testing.T) {
 		},
 	}
 
-	errs := guardRequiredFeatures(agg, release, testCatalog())
+	errs := guardRequiredFeatures(normalized(t, agg), release, testCatalog())
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors when Release satisfies required feature, got: %v", errs[0].Error())
 	}
@@ -206,7 +206,7 @@ func TestGuardRequiredFeatures_NoRequirements(t *testing.T) {
 		},
 	}
 
-	errs := guardRequiredFeatures(agg, nil, testCatalog())
+	errs := guardRequiredFeatures(normalized(t, agg), nil, testCatalog())
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors for component without requiredFeatures, got: %v", errs[0].Error())
 	}
@@ -239,7 +239,7 @@ func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
 		},
 	}
 
-	errs := guardFeatureMerge(agg, release)
+	errs := guardFeatureMerge(normalized(t, agg), release)
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors for matching types, got: %v", errs[0].Error())
 	}
@@ -268,7 +268,7 @@ func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
 		},
 	}
 
-	errs := guardFeatureMerge(agg, release)
+	errs := guardFeatureMerge(normalized(t, agg), release)
 	if len(errs) == 0 {
 		t.Fatal("expected error for type mismatch")
 	}
@@ -291,7 +291,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 		},
 	}
 
-	errs := RunGuards(agg, nil, testCatalog(), nil, nil)
+	errs := RunGuards(normalized(t, agg), nil, testCatalog(), nil, nil)
 	if len(errs) < 2 {
 		t.Fatalf("expected at least 2 violations (credential + required), got %d", len(errs))
 	}
@@ -315,7 +315,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 }
 
 func TestRunGuards_NilInputs(t *testing.T) {
-	errs := RunGuards(nil, nil, CatalogLookup{}, nil, nil)
+	errs := RunGuards(normalized(t, nil), nil, CatalogLookup{}, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for nil inputs, got %d", len(errs))
 	}

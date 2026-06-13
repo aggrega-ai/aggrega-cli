@@ -62,11 +62,12 @@ import (
 // other guards). A Component with no values schema has no values to validate;
 // a component with no boundary infra has no infra to validate.
 func guardSchemaConformance(
-	agg *types.Aggregate,
+	na types.NormalizedAggregate,
 	catalog CatalogLookup,
 	boundaryInfra map[string]*BoundaryInfra,
 	parameters map[string]any,
 ) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
@@ -88,7 +89,7 @@ func guardSchemaConformance(
 	}
 
 	var errs []*ResolverError
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		compiled, ok := compiledFor(p.inst.Type)
 		if !ok {
 			continue
@@ -141,7 +142,8 @@ func guardSchemaConformance(
 // A Release edge on a node the resolver cannot see a type for — a sub-aggregate
 // component, which loads only at topology — skips here; that coverage boundary
 // is the same one the undeclared-socket guard carries.
-func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, parameters map[string]any) []*ResolverError {
+func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, parameters map[string]any) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
@@ -150,7 +152,7 @@ func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog 
 	// Developer per-edge values: walk every component instance's verbose uses
 	// entries (top-level + subsystem) in author order.
 	aggEntity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		for socket, sv := range p.inst.Uses.All() {
 			for alias, e := range sv.Verbose.All() {
 				if e.Values.Len() == 0 {
@@ -172,7 +174,7 @@ func guardEdgeConformance(agg *types.Aggregate, release *types.Release, catalog 
 	if release != nil {
 		relEntity := fmt.Sprintf("Release %s", release.Metadata.Name)
 		typeOf := map[string]string{}
-		for _, p := range collectComponentInstances(agg) {
+		for _, p := range collectComponentInstances(na) {
 			typeOf[p.name] = p.inst.Type
 		}
 		for _, ref := range collectReleaseEdgeEntries(release) {

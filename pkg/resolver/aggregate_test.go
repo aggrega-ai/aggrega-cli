@@ -44,7 +44,7 @@ spec:
         api:
           type: core/server:1.0.0
 `)
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 	entry, ok := got["subsystems.data.components.api"]
 	if !ok {
 		t.Fatalf("subsystems.data.components.api missing from result; got keys: %v", keysOfStringMap(got))
@@ -69,10 +69,10 @@ spec:
       annotations:
         feature.myco/rewrite-host: "api.example.com"
 `)
-	got := WireAggregateAnnotations(agg)
-	entry, ok := got["components.api"]
+	got := WireAggregateAnnotations(normalized(t, agg))
+	entry, ok := got["subsystems.default.components.api"]
 	if !ok {
-		t.Fatalf("components.api missing from result; got keys: %v", keysOfStringMap(got))
+		t.Fatalf("subsystems.default.components.api missing from result; got keys: %v", keysOfStringMap(got))
 	}
 	val, ok := entry.Get("feature.myco/rewrite-host")
 	if !ok {
@@ -102,7 +102,7 @@ spec:
         worker:
           type: core/server:1.0.0
 `)
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 	for _, path := range []string{
 		"subsystems.data.components.api",
 		"subsystems.data.components.worker",
@@ -143,7 +143,7 @@ spec:
         worker:
           type: core/server:1.0.0
 `)
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 
 	api, _ := got["subsystems.data.components.api"]
 	apiVal, _ := api.Get("feature.myco/db-pool")
@@ -179,7 +179,7 @@ spec:
             leaf:
               type: core/server:1.0.0
 `)
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 	path := "subsystems.outer.subsystems.middle.components.leaf"
 	entry, ok := got[path]
 	if !ok {
@@ -212,7 +212,7 @@ spec:
         worker:
           type: core/server:1.0.0
 `)
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 
 	api, _ := got["subsystems.data.components.api"]
 	if _, present := api.Get("feature.myco/db-pool"); present {
@@ -253,7 +253,7 @@ spec:
             inner-comp:
               type: core/server:1.0.0
 `)
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 
 	innerPath := "subsystems.outer.subsystems.analytics.components.inner-comp"
 	inner, ok := got[innerPath]
@@ -299,8 +299,8 @@ spec:
         worker:
           type: core/server:1.0.0
 `
-	first := WireAggregateAnnotations(loadAggregate(t, src))
-	second := WireAggregateAnnotations(loadAggregate(t, src))
+	first := WireAggregateAnnotations(normalized(t, loadAggregate(t, src)))
+	second := WireAggregateAnnotations(normalized(t, loadAggregate(t, src)))
 
 	// Same component-path key set across runs.
 	firstKeys := keysOfStringMap(first)
@@ -383,7 +383,7 @@ spec:
 		t.Errorf("pool_size subkey = %v, want 20", poolSize)
 	}
 
-	got := WireAggregateAnnotations(agg)
+	got := WireAggregateAnnotations(normalized(t, agg))
 	apiAnnotations, ok := got["subsystems.data.components.api"]
 	if !ok {
 		t.Fatalf("subsystems.data.components.api missing from walker output")

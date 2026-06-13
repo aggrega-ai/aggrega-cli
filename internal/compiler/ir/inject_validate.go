@@ -120,7 +120,8 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 // at a time. nil resolution targets (nil Aggregate or nil Release)
 // short-circuit silently — IR build's existing nil-handling already
 // surfaces those at upstream layers.
-func ValidateInjectBlocks(agg *types.Aggregate, _ *types.Release) error {
+func ValidateInjectBlocks(na types.NormalizedAggregate, _ *types.Release) error {
+	agg := na.Aggregate()
 	if agg == nil {
 		return nil
 	}

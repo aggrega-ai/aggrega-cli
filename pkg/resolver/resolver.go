@@ -5,8 +5,8 @@ package resolver
 
 import (
 	"errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"fmt"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -237,8 +237,15 @@ func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 		}
 	}
 
+	// Normalize the re-parsed (post-interpolation) Aggregate — the same step the
+	// parse cores apply — and store the normalized value so flatten/IR see the
+	// synthesized `default` subsystem. Normalize is non-mutating; the local agg
+	// stays raw and is replaced by the normalized result.
+	na := types.Normalize(&agg)
+	agg = *na.Aggregate()
+
 	// Validate instance names
-	nameErrs := ValidateInstanceNames(&agg)
+	nameErrs := ValidateInstanceNames(na)
 	if len(nameErrs) > 0 {
 		return nil, nameErrs[0]
 	}

@@ -24,7 +24,8 @@ import (
 // in the catalog are treated as non-credential — an unknown type in the
 // secrets: block produces a partition error; an unknown type in features:
 // is left to other guards (uses-socket, requiredFeatures) to surface.
-func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
+func guardCredentialPartition(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Feature == nil {
 		return nil
 	}
@@ -32,7 +33,7 @@ func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*Re
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		comp := p.inst
 		base := componentFieldPath(p.subsystemPath, p.name)
 		// Check features: block — must NOT contain credential Features

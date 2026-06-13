@@ -31,7 +31,8 @@ import (
 // context here.
 //
 // Returns nil when agg is nil.
-func WireAggregateAnnotations(agg *types.Aggregate) map[string]types.OrderedMap[string] {
+func WireAggregateAnnotations(na types.NormalizedAggregate) map[string]types.OrderedMap[string] {
+	agg := na.Aggregate()
 	if agg == nil {
 		return nil
 	}

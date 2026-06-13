@@ -70,4 +70,15 @@ var (
 	// entry's source aggregate so the diagnostic points the author at the
 	// precise authoring position.
 	ErrSubAggregateNameCollision = errors.New("flattened node ID collision")
+
+	// ErrUnnormalizedAggregate fires at the topology entry when an Aggregate
+	// reaches flatten carrying BOTH a non-empty top-level components surface AND
+	// a synthesized `default` subsystem — an impossible state for an Aggregate
+	// born through the normalization core (Normalize folds the root into the
+	// default and clears it). It signals a bypass: a hand-built `types.Aggregate`
+	// literal or a load path that skipped the parse core. This is an
+	// internal-invariant breach, not an authoring error — a Loud Guardrail
+	// (Invariant 4) backstopping the NormalizedAggregate newtype rather than
+	// silently flattening a half-normalized graph.
+	ErrUnnormalizedAggregate = errors.New("aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)")
 )

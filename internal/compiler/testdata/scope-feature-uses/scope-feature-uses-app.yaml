@@ -4,10 +4,11 @@ metadata:
   name: scope-feature-uses-app
   version: "1.0.0"
 spec:
-  components:
-    db:
-      type: core/db
   subsystems:
+    data:
+      components:
+        db:
+          type: core/db
     tier:
       # A subsystem-wide feature carrying a `uses` edge. The feature is the
       # vehicle: every component in `tier` (here, api) gains a backend edge to

@@ -28,7 +28,8 @@ import (
 // whose catalog entry has an empty requiredFeatures array. Errors sort
 // by (Entity, Field) for byte-identical output. Returns nil when agg is
 // nil or catalog.Component is nil.
-func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
+func guardRequiredFeatures(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
@@ -36,7 +37,7 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		compName, comp := p.name, p.inst
 		base := componentFieldPath(p.subsystemPath, p.name)
 		catComp, found := catalog.Component(comp.Type)

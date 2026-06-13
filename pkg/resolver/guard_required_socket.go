@@ -13,13 +13,14 @@ import (
 // populates each `required: true` socket declared by its Component's usesSchema.
 // Emits ErrMissingRequiredSocket per missing or empty socket. Walks the Aggregate
 // top-level components plus all ComponentInstances reachable through Subsystems.
-func guardRequiredUsesSockets(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
+func guardRequiredUsesSockets(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
 
 	var errs []*ResolverError
-	instances := collectComponentInstances(agg)
+	instances := collectComponentInstances(na)
 	for _, pair := range instances {
 		comp, ok := catalog.Component(pair.inst.Type)
 		if !ok {

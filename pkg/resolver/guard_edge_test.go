@@ -100,7 +100,7 @@ func om(pairs ...any) types.OrderedMap[any] {
 func TestGuardEdgeConformance_ValuesConforming(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("pool_size", 20))
-	if errs := guardEdgeConformance(agg, nil, edgeSchemaCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil); len(errs) != 0 {
 		t.Fatalf("conforming per-edge values should not halt; got %v", errs)
 	}
 }
@@ -111,7 +111,7 @@ func TestGuardEdgeConformance_ValuesConforming(t *testing.T) {
 func TestGuardEdgeConformance_ValuesTypoHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("pool_sze", 20)) // typo'd key
-	errs := guardEdgeConformance(agg, nil, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil)
 	requireConformance(t, errs, 1, `.spec.components["svc"].uses["databases"]["main"]`)
 }
 
@@ -120,7 +120,7 @@ func TestGuardEdgeConformance_ValuesTypoHalts(t *testing.T) {
 func TestGuardEdgeConformance_ValuesOutOfRangeHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("pool_size", 9999)) // maximum 100
-	errs := guardEdgeConformance(agg, nil, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil)
 	requireConformance(t, errs, 1, `.spec.components["svc"].uses["databases"]["main"].values.pool_size`)
 }
 
@@ -130,7 +130,7 @@ func TestGuardEdgeConformance_ValuesOutOfRangeHalts(t *testing.T) {
 func TestGuardEdgeConformance_NoSchemaSocketSkips(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("plain", "main", om("anything", "goes"))
-	if errs := guardEdgeConformance(agg, nil, edgeSchemaCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil); len(errs) != 0 {
 		t.Fatalf("socket with no per-edge schema should skip; got %v", errs)
 	}
 }
@@ -143,7 +143,7 @@ func TestGuardEdgeConformance_ReleaseInfraConforming(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("databases", "main", om("storage_class", "fast"))
-	if errs := guardEdgeConformance(agg, rel, edgeSchemaCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil); len(errs) != 0 {
 		t.Fatalf("conforming per-edge infra should not halt; got %v", errs)
 	}
 }
@@ -154,7 +154,7 @@ func TestGuardEdgeConformance_ReleaseInfraTypoHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("databases", "main", om("storage_clas", "fast")) // typo'd key
-	errs := guardEdgeConformance(agg, rel, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil)
 	requireConformance(t, errs, 1, `.spec.boundaries["prod"].components["svc"].uses["databases"]["main"]`)
 }
 
@@ -166,7 +166,7 @@ func TestGuardReleaseUsesSocket_DeclaredSocketPasses(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("databases", "main", om("storage_class", "fast"))
-	if errs := guardReleaseUsesSocket(agg, rel, edgeSchemaCatalog(t)); len(errs) != 0 {
+	if errs := guardReleaseUsesSocket(normalized(t, agg), rel, edgeSchemaCatalog(t)); len(errs) != 0 {
 		t.Fatalf("Release edge on a declared socket should pass; got %v", errs)
 	}
 }
@@ -178,7 +178,7 @@ func TestGuardReleaseUsesSocket_UndeclaredSocketHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("caches", "primary", om("x", "y")) // no such socket
-	errs := guardReleaseUsesSocket(agg, rel, edgeSchemaCatalog(t))
+	errs := guardReleaseUsesSocket(normalized(t, agg), rel, edgeSchemaCatalog(t))
 	if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket) {
 		t.Fatalf("want exactly 1 ErrUnknownUsesSocket; got %v", errs)
 	}
@@ -202,7 +202,7 @@ func TestGuardReleaseUsesSocket_UnknownNodeSkips(t *testing.T) {
 	rel := &types.Release{Metadata: types.ReleaseMetadata{Name: "demo-prod"}}
 	rel.Spec.Boundaries = boundaries
 
-	if errs := guardReleaseUsesSocket(agg, rel, edgeSchemaCatalog(t)); len(errs) != 0 {
+	if errs := guardReleaseUsesSocket(normalized(t, agg), rel, edgeSchemaCatalog(t)); len(errs) != 0 {
 		t.Fatalf("unresolved-node Release edge should skip; got %v", errs)
 	}
 }

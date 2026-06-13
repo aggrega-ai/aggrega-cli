@@ -40,7 +40,7 @@ func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 			Components: components,
 		},
 	}
-	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
+	errs := guardRequiredUsesSockets(normalized(t, agg), requiredSocketCatalog())
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %+v", len(errs), errs)
 	}
@@ -69,7 +69,7 @@ func TestGuardRequiredUsesSockets_OptionalMissingOK(t *testing.T) {
 			Components: components,
 		},
 	}
-	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
+	errs := guardRequiredUsesSockets(normalized(t, agg), requiredSocketCatalog())
 	if len(errs) != 0 {
 		t.Errorf("expected no errors, got %+v", errs)
 	}
@@ -87,7 +87,7 @@ func TestGuardRequiredUsesSockets_CompactListFormPopulates(t *testing.T) {
 			Components: components,
 		},
 	}
-	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
+	errs := guardRequiredUsesSockets(normalized(t, agg), requiredSocketCatalog())
 	if len(errs) != 0 {
 		t.Errorf("compact list form should satisfy required socket, got %+v", errs)
 	}
@@ -104,7 +104,7 @@ func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 			Components: components,
 		},
 	}
-	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
+	errs := guardRequiredUsesSockets(normalized(t, agg), requiredSocketCatalog())
 	if len(errs) != 1 {
 		t.Fatalf("empty verbose map should count as not-populated, got %+v", errs)
 	}
@@ -124,7 +124,7 @@ func TestGuardRequiredUsesSockets_SubsystemRecursion(t *testing.T) {
 			Subsystems: subsystems,
 		},
 	}
-	errs := guardRequiredUsesSockets(agg, requiredSocketCatalog())
+	errs := guardRequiredUsesSockets(normalized(t, agg), requiredSocketCatalog())
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error from subsystem-nested component, got %+v", errs)
 	}

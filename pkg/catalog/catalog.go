@@ -13,10 +13,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"gopkg.in/yaml.v3"
 )
 
@@ -991,7 +991,12 @@ func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
 	if e.Kind != "Aggregate" {
 		return types.Aggregate{}, fmt.Errorf("expected kind Aggregate, got %q", e.Kind)
 	}
-	return e, nil
+	// Single normalization core: fold a top-level components surface into the
+	// synthesized `default` subsystem at birth (the same step
+	// LoadAggregateFromBytes applies), so every downstream consumer sees the
+	// uniform subsystems-only shape. Normalize is non-mutating; return the
+	// normalized value it produced.
+	return *types.Normalize(&e).Aggregate(), nil
 }
 
 // parseSchemaLibraryEntity is the single per-entity SchemaLibrary resolution shared

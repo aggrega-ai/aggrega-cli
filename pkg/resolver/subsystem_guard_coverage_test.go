@@ -49,7 +49,7 @@ func TestSubsystemGuardCoverage_SelfInject(t *testing.T) {
 		Type:   "core/datastore/postgres",
 		Inject: &types.InjectBlock{Env: map[string]any{"X": "1"}},
 	})
-	requireSubsystemHalt(t, guardSelfInject(agg, selfInjectCatalog()), ErrSelfInjectForbidden, subsysDBPath)
+	requireSubsystemHalt(t, guardSelfInject(normalized(t, agg), selfInjectCatalog()), ErrSelfInjectForbidden, subsysDBPath)
 }
 
 // TestSubsystemGuardCoverage_Credential — a credential-labeled Feature in the
@@ -67,7 +67,7 @@ func TestSubsystemGuardCoverage_Credential(t *testing.T) {
 		}
 		return types.Feature{}, false
 	}}
-	requireSubsystemHalt(t, guardCredentialPartition(agg, cat), ErrCredentialLabelPartition, subsysDBPath)
+	requireSubsystemHalt(t, guardCredentialPartition(normalized(t, agg), cat), ErrCredentialLabelPartition, subsysDBPath)
 }
 
 // TestSubsystemGuardCoverage_Required — an unsatisfied requiredFeature on a
@@ -82,7 +82,7 @@ func TestSubsystemGuardCoverage_Required(t *testing.T) {
 		}
 		return types.Component{}, false
 	}}
-	requireSubsystemHalt(t, guardRequiredFeatures(agg, &types.Release{}, cat), ErrMissingRequiredFeature, subsysDBPath)
+	requireSubsystemHalt(t, guardRequiredFeatures(normalized(t, agg), &types.Release{}, cat), ErrMissingRequiredFeature, subsysDBPath)
 }
 
 // TestSubsystemGuardCoverage_Merge — a feature-type merge conflict on a
@@ -103,18 +103,43 @@ func TestSubsystemGuardCoverage_Merge(t *testing.T) {
 	rel := &types.Release{}
 	rel.Spec.Boundaries = boundaries
 
-	requireSubsystemHalt(t, guardFeatureMerge(agg, rel), ErrFeatureMergeConflict, subsysDBPath)
+	requireSubsystemHalt(t, guardFeatureMerge(normalized(t, agg), rel), ErrFeatureMergeConflict, subsysDBPath)
 }
 
-// TestCollectComponentInstances_CompleteAndPathAware pins the walker's
-// equivalence guarantee: it yields every component instance — root + nested
-// subsystems — each tagged with its dotted subsystem path, and componentFieldPath
-// renders the accurate nested locator. This is the structural-completeness the
-// routed consumers rely on (one walk == the prior dual-walk's full set).
-func TestCollectComponentInstances_CompleteAndPathAware(t *testing.T) {
+// TestCollectComponentInstances_RootOnlyFoldsToDefault pins the walker's
+// completeness over a root-only aggregate: Normalize folds the top-level
+// components into the synthesized `default` subsystem, so the walker yields every
+// instance tagged with subsystemPath "default" and componentFieldPath renders the
+// accurate `default` locator.
+func TestCollectComponentInstances_RootOnlyFoldsToDefault(t *testing.T) {
 	t.Parallel()
 	root := types.OrderedMap[types.ComponentInstance]{}
 	root.Set("a", types.ComponentInstance{Type: "x"})
+	root.Set("b", types.ComponentInstance{Type: "x"})
+	root.Set("c", types.ComponentInstance{Type: "x"})
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: root}}
+
+	got := collectComponentInstances(normalized(t, agg))
+	if len(got) != 3 {
+		t.Fatalf("walker must yield every root instance (folded into default); want 3, got %d", len(got))
+	}
+	for _, p := range got {
+		if p.subsystemPath != "default" {
+			t.Errorf("%s: root component must fold into the synthesized default subsystem; want subsystemPath %q, got %q", p.name, "default", p.subsystemPath)
+		}
+	}
+	if got := componentFieldPath("default", "a"); got != `.spec.subsystems.default.components["a"]` {
+		t.Errorf("default path render: got %q", got)
+	}
+}
+
+// TestCollectComponentInstances_SubsystemsPathAware pins the walker's
+// path-awareness over a subsystems-bearing aggregate (Normalize is a no-op): it
+// yields every component instance — including nested subsystems — each tagged
+// with its dotted subsystem path, and componentFieldPath renders the accurate
+// nested locator.
+func TestCollectComponentInstances_SubsystemsPathAware(t *testing.T) {
+	t.Parallel()
 	innerComps := types.OrderedMap[types.ComponentInstance]{}
 	innerComps.Set("c", types.ComponentInstance{Type: "x"})
 	innerSubs := types.OrderedMap[types.Subsystem]{}
@@ -123,13 +148,13 @@ func TestCollectComponentInstances_CompleteAndPathAware(t *testing.T) {
 	svcComps.Set("b", types.ComponentInstance{Type: "x"})
 	subs := types.OrderedMap[types.Subsystem]{}
 	subs.Set("svc", types.Subsystem{Components: svcComps, Subsystems: innerSubs})
-	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: root, Subsystems: subs}}
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Subsystems: subs}}
 
-	got := collectComponentInstances(agg)
-	if len(got) != 3 {
-		t.Fatalf("walker must yield every instance (root + subsystems); want 3, got %d", len(got))
+	got := collectComponentInstances(normalized(t, agg))
+	if len(got) != 2 {
+		t.Fatalf("walker must yield every subsystem instance (nested included); want 2, got %d", len(got))
 	}
-	wantPath := map[string]string{"a": "", "b": "svc", "c": "svc.inner"}
+	wantPath := map[string]string{"b": "svc", "c": "svc.inner"}
 	for _, p := range got {
 		if wantPath[p.name] != p.subsystemPath {
 			t.Errorf("%s: want subsystemPath %q; got %q", p.name, wantPath[p.name], p.subsystemPath)
@@ -137,8 +162,5 @@ func TestCollectComponentInstances_CompleteAndPathAware(t *testing.T) {
 	}
 	if got := componentFieldPath("svc.inner", "c"); got != `.spec.subsystems.svc.subsystems.inner.components["c"]` {
 		t.Errorf("nested path render: got %q", got)
-	}
-	if got := componentFieldPath("", "a"); got != `.spec.components["a"]` {
-		t.Errorf("root path render: got %q", got)
 	}
 }

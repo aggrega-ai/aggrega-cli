@@ -75,11 +75,11 @@ type TopologyResult struct {
 //     pipe, not a graph relationship); the renderer's self-inject pass
 //     consumes it for component-self template evaluation.
 type TopologyNode struct {
-	InstanceID      string
-	ComponentType   string
-	Labels          types.OrderedMap[string]
-	Values          types.OrderedMap[any]
-	SelfInject      *types.InjectBlock // Component-level self-inject (carried to IR for Pass 2a)
+	InstanceID    string
+	ComponentType string
+	Labels        types.OrderedMap[string]
+	Values        types.OrderedMap[any]
+	SelfInject    *types.InjectBlock // Component-level self-inject (carried to IR for Pass 2a)
 	// Uses is the component's authored `uses` block, carried onto the node so
 	// the edge-normalisation pass can read it directly. Sub-aggregate components
 	// are not present in the root Aggregate, so resolving their `uses` by name
@@ -87,7 +87,7 @@ type TopologyNode struct {
 	// (alongside SourceAggregate, the prefix used to namespace edge targets)
 	// makes edge normalisation uniform across root, subsystem, and sub-aggregate
 	// origins.
-	Uses            types.OrderedMap[types.UsesSocketValue]
+	Uses types.OrderedMap[types.UsesSocketValue]
 	// ScopeFeatureUses is the cascade of subsystem-wide feature attachments that
 	// apply to this node — accumulated during flattening from every subsystem on
 	// the node's path (outer to inner, author order), carried on the node so the
@@ -105,13 +105,19 @@ type TopologyNode struct {
 	// node's parameter-dependent predicates against, instead of the root context.
 	ResolvedParameters map[string]any
 	SubsystemPath      string
-	BoundaryPath    string
+	// SynthesizedSubsystem is true when SubsystemPath names the compiler-
+	// synthesized `default` subsystem (an Aggregate authored with top-level
+	// components rather than named subsystems). Derived provenance carried onto
+	// the IR node; independent of SynthesizedBoundary (a node may be synthesized
+	// on either axis or both).
+	SynthesizedSubsystem bool
+	BoundaryPath         string
 	// SynthesizedBoundary is true when BoundaryPath names the compiler-
 	// synthesized `default` boundary (a Release authored with top-level
 	// components rather than named boundaries). Derived provenance carried onto
 	// the IR node; routes output to dist/ flat.
 	SynthesizedBoundary bool
-	SourceAggregate string // prefix of the sub-aggregate that contributed this node ("" = root)
+	SourceAggregate     string // prefix of the sub-aggregate that contributed this node ("" = root)
 	// SourceFile is the Aggregate file where this node was authored,
 	// stamped verbatim from BuildConfig.RootAggregateFile (root-tier
 	// nodes) or from the path the SubAggregateLoader returned
@@ -333,6 +339,19 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 // participate in cancellation.
 func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error) {
 	agg := cfg.ResolveResult.Aggregate
+
+	// Loud guardrail (Invariant 4): an Aggregate born through the normalization
+	// core never carries top-level components alongside a `default` subsystem —
+	// Normalize folds the root into the default and clears it, and the
+	// authored-both shape is rejected at the envelope XOR. Reaching flatten in
+	// that state is a normalization bypass (a hand-built literal, or a load path
+	// that skipped the parse core). Fail loud rather than silently flatten a
+	// half-normalized graph. An internal-invariant breach, not an authoring error.
+	if agg != nil {
+		if _, hasDefault := agg.Spec.Subsystems.Get("default"); hasDefault && agg.Spec.Components.Len() > 0 {
+			return nil, fmt.Errorf("%w: construct aggregates through the normalization core (types.Normalize via the parse path), not a hand-built literal", ErrUnnormalizedAggregate)
+		}
+	}
 
 	// 1. Flatten
 	flat, err := flattenAggregate(agg, "", "", cfg.RootAggregateFile, cfg.LoadSubAggregate, map[string]bool{}, 0, nil)
@@ -734,4 +753,3 @@ func splitScopePath(path string) []string {
 	}
 	return parts
 }
-

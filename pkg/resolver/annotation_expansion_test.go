@@ -1393,7 +1393,7 @@ spec:
               type: core/server:1.0.0
 `
 	agg := loadTestAggregate(t, aggSrc)
-	walked := WireAggregateAnnotations(agg)
+	walked := WireAggregateAnnotations(normalized(t, agg))
 
 	rr := &ResolveResult{
 		Manifest:             loadValuesManifest(t),

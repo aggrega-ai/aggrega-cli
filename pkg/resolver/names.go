@@ -46,7 +46,8 @@ var targetRefPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 // this function.
 //
 // Returns nil when agg is nil.
-func ValidateInstanceNames(agg *types.Aggregate) []*ResolverError {
+func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil {
 		return nil
 	}

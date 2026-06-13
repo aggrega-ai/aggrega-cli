@@ -71,13 +71,14 @@ func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
 // whose type the resolver cannot see — a sub-aggregate component, which loads
 // only at topology — skips here; that coverage boundary is shared with the
 // per-edge conformance gate.
-func guardReleaseUsesSocket(agg *types.Aggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
+func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || release == nil || catalog.Component == nil {
 		return nil
 	}
 	entity := fmt.Sprintf("Release %s", release.Metadata.Name)
 	typeOf := map[string]string{}
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		typeOf[p.name] = p.inst.Type
 	}
 
@@ -109,7 +110,8 @@ func guardReleaseUsesSocket(agg *types.Aggregate, release *types.Release, catalo
 // in the source catalog entity's usesSchema. Components without usesSchema cannot
 // accept uses declarations. This guarantees that every edge drawn in Step 2 has a
 // corresponding usesSchema entry with a selector for Step 4 validation.
-func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
+func guardUsesSocket(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil {
 		return nil
 	}
@@ -120,7 +122,7 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	// One complete walk (root + all subsystems) via the shared instance
 	// walker; the authoring path comes from componentFieldPath so a subsystem
 	// component's diagnostics point at .spec.subsystems.<…>.components[…].
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		comp := p.inst
 		base := componentFieldPath(p.subsystemPath, p.name)
 

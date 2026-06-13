@@ -119,7 +119,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// here covers schema-bypass paths (in-memory fixtures, programmatic
 	// catalog builders) per ErrInjectEntryAmbiguous's contract.
 	if res != nil {
-		if err := ValidateInjectBlocks(res.Aggregate, res.Release); err != nil {
+		if err := ValidateInjectBlocks(types.Normalize(res.Aggregate), res.Release); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -199,6 +199,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			Labels:               topoNode.Labels,
 			Component:            topoNode.ComponentType,
 			SubsystemPath:        topoNode.SubsystemPath,
+			SynthesizedSubsystem: topoNode.SynthesizedSubsystem,
 			BoundaryPath:         topoNode.BoundaryPath,
 			SynthesizedBoundary:  topoNode.SynthesizedBoundary,
 			CatalogAnnotations:   catalogAnnotations,

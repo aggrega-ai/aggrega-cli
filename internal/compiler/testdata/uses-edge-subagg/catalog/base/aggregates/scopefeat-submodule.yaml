@@ -4,10 +4,11 @@ metadata:
   name: scopefeat-submodule
   version: "1.0.0"
 spec:
-  components:
-    store3:
-      type: core/db
   subsystems:
+    data:
+      components:
+        store3:
+          type: core/db
     tier:
       # A subsystem-wide feature inside the sub-aggregate, carrying a uses edge
       # to a sub-aggregate-root sibling. The root-walk subsystemFeatureUses misses

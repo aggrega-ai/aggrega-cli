@@ -212,6 +212,28 @@ spec:
 `
 		}},
 		// --- triad envelope classes ---
+		// Default-scopes mutual exclusivity (Aggregate side, symmetric to the
+		// Release XOR): top-level components AND named subsystems both non-empty
+		// is rejected at the envelope gate's not/allOf. No new sentinel.
+		{name: "aggregate-components-and-subsystems-both", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: corpus-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server
+      values:
+        port: 8080
+  subsystems:
+    extra:
+      components:
+        worker:
+          type: core/server
+`
+		}},
 		{name: "aggregate-unknown-spec-key", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate

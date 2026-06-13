@@ -42,13 +42,14 @@ import (
 // catalog-less paths skip the check rather than erroring. Instances whose type
 // is not in the catalog are skipped; unknown-type reporting belongs to other
 // guards.
-func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverError {
+func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
 
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
-	instances := collectComponentInstances(agg)
+	instances := collectComponentInstances(na)
 
 	// Instance name → declared type, for resolving uses targets to a Component.
 	typeByInstance := make(map[string]string, len(instances))

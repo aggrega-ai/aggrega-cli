@@ -49,7 +49,7 @@ func TestGuardSelfInject_WhiteBoxAccepted(t *testing.T) {
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	if len(errs) != 0 {
 		t.Errorf("expected 0 errors, got %d: %v", len(errs), errs[0])
 	}
@@ -66,7 +66,7 @@ func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	if len(errs) == 0 {
 		t.Fatal("expected error for Black-Box self-inject")
 	}
@@ -86,7 +86,7 @@ func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	if len(errs) == 0 {
 		t.Fatal("expected error for forbidden mechanism")
 	}
@@ -111,7 +111,7 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	found := false
 	for _, e := range errs {
 		if errors.Is(e, ErrInjectKeyCollision) {
@@ -156,7 +156,7 @@ func TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape(t *te
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	found := false
 	for _, e := range errs {
 		if errors.Is(e, ErrInjectKeyCollision) {
@@ -180,7 +180,7 @@ func TestGuardSelfInject_NoInjectNilPasses(t *testing.T) {
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	if len(errs) != 0 {
 		t.Errorf("expected 0 errors, got %d", len(errs))
 	}
@@ -213,7 +213,7 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 		},
 	}
 
-	errs := guardSelfInject(agg, selfInjectCatalog())
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 
 	// Expect exactly two ErrInjectKeyCollision errors — one per offending
 	// mechanism path, mirroring the rule-3 emission granularity.
@@ -229,8 +229,8 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 
 	// Both colliding mechanism paths must surface — env and ssm_param.
 	wantFields := map[string]bool{
-		`.spec.components["api"].inject.env["DB_URL"]`:       false,
-		`.spec.components["api"].inject.ssm_param["DB_URL"]`: false,
+		`.spec.subsystems.default.components["api"].inject.env["DB_URL"]`:       false,
+		`.spec.subsystems.default.components["api"].inject.ssm_param["DB_URL"]`: false,
 	}
 	for _, e := range collisions {
 		if _, ok := wantFields[e.Field]; ok {
@@ -249,14 +249,14 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 	for _, e := range collisions {
 		msg := e.Error()
 		switch e.Field {
-		case `.spec.components["api"].inject.env["DB_URL"]`:
+		case `.spec.subsystems.default.components["api"].inject.env["DB_URL"]`:
 			if !strings.Contains(msg, "ssm_param") {
 				t.Errorf("env diagnostic missing ssm_param in others slot: %s", msg)
 			}
 			if strings.Contains(msg, "mechanism(s) [env") {
 				t.Errorf("env diagnostic includes self in others slot: %s", msg)
 			}
-		case `.spec.components["api"].inject.ssm_param["DB_URL"]`:
+		case `.spec.subsystems.default.components["api"].inject.ssm_param["DB_URL"]`:
 			if !strings.Contains(msg, "env") {
 				t.Errorf("ssm_param diagnostic missing env in others slot: %s", msg)
 			}

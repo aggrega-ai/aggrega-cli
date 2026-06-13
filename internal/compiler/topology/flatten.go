@@ -227,16 +227,17 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 			return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 		}
 		result.Nodes.Set(nodeID, &TopologyNode{
-			InstanceID:         nodeID,
-			ComponentType:      comp.Type,
-			Values:             comp.Values,
-			SelfInject:         comp.Inject,
-			Uses:               comp.Uses,
-			ScopeFeatureUses:   scopeFeatures,
-			ResolvedParameters: params,
-			SubsystemPath:      subsystemPath,
-			SourceAggregate:    prefix,
-			SourceFile:         sourceFile,
+			InstanceID:           nodeID,
+			ComponentType:        comp.Type,
+			Values:               comp.Values,
+			SelfInject:           comp.Inject,
+			Uses:                 comp.Uses,
+			ScopeFeatureUses:     scopeFeatures,
+			ResolvedParameters:   params,
+			SubsystemPath:        subsystemPath,
+			SynthesizedSubsystem: sub.Synthesized,
+			SourceAggregate:      prefix,
+			SourceFile:           sourceFile,
 		})
 		collectAttachments(result, nodeID, comp, 0)
 	}

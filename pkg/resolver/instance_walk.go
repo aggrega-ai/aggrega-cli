@@ -49,11 +49,16 @@ func componentFieldPath(subsystemPath, name string) string {
 // across runs of the same input (instance names are unique within an Aggregate's
 // tree, so the node ID — qualifiedID(prefix, name), not subsystem-scoped — and
 // the sort key are unambiguous).
-func collectComponentInstances(agg *types.Aggregate) []instancePair {
-	var out []instancePair
-	for name, inst := range agg.Spec.Components.All() {
-		out = append(out, instancePair{name: name, inst: inst, subsystemPath: ""})
+func collectComponentInstances(na types.NormalizedAggregate) []instancePair {
+	agg := na.Aggregate()
+	if agg == nil {
+		return nil
 	}
+	var out []instancePair
+	// Subsystems-only: a top-level components surface has been folded into the
+	// synthesized `default` subsystem by [types.Normalize], so iterating
+	// subsystems is complete — the defensive root pass is gone. The
+	// NormalizedAggregate newtype is what licenses this collapse.
 	collectFromSubsystems("", agg.Spec.Subsystems, &out)
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out

@@ -25,7 +25,7 @@ func TestValidateInstanceNames_ValidNames(t *testing.T) {
 		},
 	}
 
-	errs := ValidateInstanceNames(agg)
+	errs := ValidateInstanceNames(normalized(t, agg))
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors for valid names, got %d: %v", len(errs), errs[0].Error())
 	}
@@ -41,7 +41,7 @@ func TestValidateInstanceNames_DotRejected(t *testing.T) {
 		},
 	}
 
-	errs := ValidateInstanceNames(agg)
+	errs := ValidateInstanceNames(normalized(t, agg))
 	if len(errs) == 0 {
 		t.Fatal("expected error for dot in instance name")
 	}
@@ -60,7 +60,7 @@ func TestValidateInstanceNames_SpaceRejected(t *testing.T) {
 		},
 	}
 
-	errs := ValidateInstanceNames(agg)
+	errs := ValidateInstanceNames(normalized(t, agg))
 	if len(errs) == 0 {
 		t.Fatal("expected error for space in instance name")
 	}
@@ -76,7 +76,7 @@ func TestValidateInstanceNames_SpecialCharsRejected(t *testing.T) {
 		},
 	}
 
-	errs := ValidateInstanceNames(agg)
+	errs := ValidateInstanceNames(normalized(t, agg))
 	if len(errs) == 0 {
 		t.Fatal("expected error for special char in instance name")
 	}
@@ -94,7 +94,7 @@ func TestValidateInstanceNames_NestedSubsystem(t *testing.T) {
 		},
 	}
 
-	errs := ValidateInstanceNames(agg)
+	errs := ValidateInstanceNames(normalized(t, agg))
 	if len(errs) == 0 {
 		t.Fatal("expected error for dot in nested component name")
 	}
@@ -112,7 +112,7 @@ func TestValidateInstanceNames_FeatureNames(t *testing.T) {
 		},
 	}
 
-	errs := ValidateInstanceNames(agg)
+	errs := ValidateInstanceNames(normalized(t, agg))
 	if len(errs) == 0 {
 		t.Fatal("expected error for dot in feature instance name")
 	}
@@ -148,7 +148,7 @@ func TestValidateTargetRef_Invalid(t *testing.T) {
 }
 
 func TestValidateInstanceNames_Nil(t *testing.T) {
-	errs := ValidateInstanceNames(nil)
+	errs := ValidateInstanceNames(normalized(t, nil))
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for nil aggregate, got %d", len(errs))
 	}

@@ -36,8 +36,20 @@ spec:
 	if agg.Metadata.Version != "1.0.0" {
 		t.Errorf("expected version 1.0.0, got %s", agg.Metadata.Version)
 	}
-	if _, ok := agg.Spec.Components.Get("web"); !ok {
-		t.Error("expected component 'web'")
+	// Load normalizes: a top-level components surface folds into the
+	// synthesized `default` subsystem (root cleared).
+	if agg.Spec.Components.Len() != 0 {
+		t.Errorf("top-level components must fold into the default subsystem; got %d", agg.Spec.Components.Len())
+	}
+	def, ok := agg.Spec.Subsystems.Get("default")
+	if !ok {
+		t.Fatal("expected a synthesized 'default' subsystem holding the top-level components")
+	}
+	if !def.Synthesized {
+		t.Error("the synthesized default subsystem must be marked Synthesized")
+	}
+	if _, ok := def.Components.Get("web"); !ok {
+		t.Error("expected component 'web' in the synthesized default subsystem")
 	}
 }
 
@@ -345,4 +357,3 @@ spec:
 		t.Fatalf("distinct (path, pillar) pairs on the same Feature should be accepted; got error: %v", err)
 	}
 }
-

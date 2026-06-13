@@ -42,11 +42,11 @@ func componentNoSchema() types.Component {
 // TestGuardInjectKeys_NilInputsReturnNil verifies boundary behavior.
 func TestGuardInjectKeys_NilInputsReturnNil(t *testing.T) {
 	t.Parallel()
-	if errs := guardInjectKeys(nil, CatalogLookup{}); errs != nil {
+	if errs := guardInjectKeys(normalized(t, nil), CatalogLookup{}); errs != nil {
 		t.Errorf("expected nil errors on nil agg; got %v", errs)
 	}
 	agg := &types.Aggregate{}
-	if errs := guardInjectKeys(agg, CatalogLookup{Component: nil}); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), CatalogLookup{Component: nil}); errs != nil {
 		t.Errorf("expected nil errors on nil catalog.Component; got %v", errs)
 	}
 }
@@ -66,7 +66,7 @@ func TestGuardInjectKeys_NoInjectIsClean(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(agg, catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
@@ -94,7 +94,7 @@ func TestGuardInjectKeys_SelfInjectFromTypoHalts(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(agg, catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
@@ -136,7 +136,7 @@ func TestGuardInjectKeys_SelfInjectValidFromPasses(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(agg, catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
@@ -172,7 +172,7 @@ func TestGuardInjectKeys_InheritedProvidesAccepted(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(agg, catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
 		t.Errorf("inherited provides key must resolve via the effective schema; got %v", errs)
 	}
 }
@@ -211,7 +211,7 @@ func TestGuardInjectKeys_UsesCrossInjectTypoHalts(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(agg, catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
@@ -258,7 +258,7 @@ func TestGuardInjectKeys_UsesCrossInjectValidPasses(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(agg, catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
@@ -291,7 +291,7 @@ func TestGuardInjectKeys_CustomMechanismCovered(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(agg, catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
@@ -327,7 +327,7 @@ func TestGuardInjectKeys_NoProvidesRejectsEveryFrom(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(agg, catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog)
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 errors (every from: rejected); got %d (%v)", len(errs), errs)
 	}
@@ -360,7 +360,7 @@ func TestGuardInjectKeys_UnknownTargetTypeSkipped(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(agg, catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
 		t.Errorf("expected nil errors for unknown type; got %v", errs)
 	}
 }

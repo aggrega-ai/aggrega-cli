@@ -24,7 +24,8 @@ import (
 // the Release may add features absent from the Aggregate (per the
 // boundary-feature semantics). Errors sort by (Entity, Field) for
 // byte-identical output. Returns nil when either input is nil.
-func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*ResolverError {
+func guardFeatureMerge(na types.NormalizedAggregate, release *types.Release) []*ResolverError {
+	agg := na.Aggregate()
 	if agg == nil || release == nil {
 		return nil
 	}
@@ -32,7 +33,7 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for _, p := range collectComponentInstances(agg) {
+	for _, p := range collectComponentInstances(na) {
 		compName, comp := p.name, p.inst
 		base := componentFieldPath(p.subsystemPath, p.name)
 		releaseFeatures := collectReleaseBoundaryFeaturesForComponent(release.Spec.Boundaries, compName)

@@ -72,17 +72,17 @@ type CatalogLookup struct {
 //
 // Returns nil when agg is nil. Individual guards skip silently when their
 // required CatalogLookup function is nil.
-func RunGuards(agg *types.Aggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra, parameters map[string]any) []*ResolverError {
+func RunGuards(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra, parameters map[string]any) []*ResolverError {
 	var errs []*ResolverError
-	errs = append(errs, guardUsesSocket(agg, catalog)...)
-	errs = append(errs, guardReleaseUsesSocket(agg, release, catalog)...)
-	errs = append(errs, guardSelfInject(agg, catalog)...)
-	errs = append(errs, guardInjectKeys(agg, catalog)...)
-	errs = append(errs, guardCredentialPartition(agg, catalog)...)
-	errs = append(errs, guardRequiredFeatures(agg, release, catalog)...)
-	errs = append(errs, guardFeatureMerge(agg, release)...)
-	errs = append(errs, guardRequiredUsesSockets(agg, catalog)...)
-	errs = append(errs, guardSchemaConformance(agg, catalog, boundaryInfra, parameters)...)
-	errs = append(errs, guardEdgeConformance(agg, release, catalog, parameters)...)
+	errs = append(errs, guardUsesSocket(na, catalog)...)
+	errs = append(errs, guardReleaseUsesSocket(na, release, catalog)...)
+	errs = append(errs, guardSelfInject(na, catalog)...)
+	errs = append(errs, guardInjectKeys(na, catalog)...)
+	errs = append(errs, guardCredentialPartition(na, catalog)...)
+	errs = append(errs, guardRequiredFeatures(na, release, catalog)...)
+	errs = append(errs, guardFeatureMerge(na, release)...)
+	errs = append(errs, guardRequiredUsesSockets(na, catalog)...)
+	errs = append(errs, guardSchemaConformance(na, catalog, boundaryInfra, parameters)...)
+	errs = append(errs, guardEdgeConformance(na, release, catalog, parameters)...)
 	return errs
 }

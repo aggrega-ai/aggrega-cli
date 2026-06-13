@@ -57,6 +57,15 @@ type Subsystem struct {
 	Features   OrderedMap[FeatureInstance]   `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 	Subsystems OrderedMap[Subsystem]         `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
 	Components OrderedMap[ComponentInstance] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
+
+	// Synthesized marks a subsystem the compiler created rather than the
+	// author — the `default` subsystem synthesized for an Aggregate that
+	// declares top-level components instead of named subsystems. Derived
+	// provenance, never authored: the json/yaml `-` tags keep it off the
+	// authoring surface, and it is set only by [Normalize]. Carried onto the
+	// IR node so the synthesized default is distinguishable from a subsystem a
+	// user explicitly named "default". Symmetric to [Boundary.Synthesized].
+	Synthesized bool `json:"-" yaml:"-"`
 }
 
 // ComponentInstance is one logical node in the aggregate topology (Developer-authored).
@@ -87,3 +96,54 @@ type ComponentInstance struct {
 	// through the infra pillar halt at annotation expansion time.
 	Annotations OrderedMap[*AnnotationValue] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 }
+
+// NormalizedAggregate wraps an [Aggregate] that has passed [Normalize] — its
+// top-level components folded into the synthesized `default` subsystem, so the
+// root component map is empty and every component lives under a subsystem. The
+// unexported field plus the sole constructor make "normalized" a compile-time
+// invariant: a function taking a NormalizedAggregate cannot be handed a raw,
+// un-normalized aggregate. Consumers that iterate or guard an Aggregate take
+// this type; they read the underlying value via [NormalizedAggregate.Aggregate].
+//
+// The symmetric Release-side posture is the single Release parse core; the
+// Aggregate carries the stronger newtype because it has many more
+// component-iterating consumers.
+type NormalizedAggregate struct {
+	agg *Aggregate
+}
+
+// Normalize is the SOLE constructor for [NormalizedAggregate]. When the
+// Aggregate declares top-level components and no named subsystems, it
+// synthesizes one subsystem named "default" holding those components, inserted
+// first (ahead of any named subsystem, so flatten/IR node order is unchanged),
+// marked [Subsystem.Synthesized], and clears the top-level components — they now
+// live in the subsystem. The mutual exclusivity of components and subsystems is
+// enforced upstream at the document-envelope gate; this runs only on the
+// components-only shape and is a no-op for a subsystems-bearing or empty
+// Aggregate. Idempotent: a second call finds subsystems already present and
+// returns.
+//
+// NON-MUTATING: when synthesis is needed it operates on a shallow copy of the
+// Aggregate and wraps the copy, leaving the caller's *Aggregate untouched. A
+// sole constructor that gutted its input would make every caller still holding
+// the original a latent aliasing bug; returning a copy dissolves that hazard by
+// construction. The copy reassigns only Spec.Subsystems and Spec.Components
+// (the moved components map is shared read-only into the synthesized default,
+// never mutated), so iteration order is preserved and determinism holds.
+func Normalize(agg *Aggregate) NormalizedAggregate {
+	if agg == nil || agg.Spec.Subsystems.Len() > 0 || agg.Spec.Components.Len() == 0 {
+		return NormalizedAggregate{agg: agg}
+	}
+	cp := *agg
+	def := Subsystem{Components: agg.Spec.Components, Synthesized: true}
+	var subs OrderedMap[Subsystem]
+	subs.Set("default", def)
+	cp.Spec.Subsystems = subs
+	cp.Spec.Components = OrderedMap[ComponentInstance]{}
+	return NormalizedAggregate{agg: &cp}
+}
+
+// Aggregate returns the underlying normalized aggregate for read access. The
+// returned pointer is the normalized value (root folded into `default`); it is
+// exposed for field reads, not for re-wrapping a mutated copy as normalized.
+func (n NormalizedAggregate) Aggregate() *Aggregate { return n.agg }

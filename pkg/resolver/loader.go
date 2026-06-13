@@ -58,7 +58,11 @@ func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) 
 			Err:     ErrYAMLLoad,
 		}
 	}
-	return &agg, nil
+	// Single normalization core: fold a top-level components surface into the
+	// synthesized `default` subsystem at birth, so every downstream consumer
+	// sees the uniform subsystems-only shape. Normalize is non-mutating; return
+	// the normalized value it produced.
+	return types.Normalize(&agg).Aggregate(), nil
 }
 
 // LoadRelease reads and unmarshals a Release YAML file.
