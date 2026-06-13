@@ -214,7 +214,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// the disk-based semantic pipeline's verdict misleading) and is the
 	// honest coverage for every other file. Foreign YAML and envelope-clean
 	// documents fall through to the existing flow unchanged.
-	if diags, hasFindings := s.envelopeDiagnosticsForBuffer([]byte(params.Content), &doc); hasFindings {
+	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(params.File, []byte(params.Content), &doc); hasFindings {
 		s.diagnostics[params.File] = diags
 		return validateResult{Diagnostics: diags}, nil
 	}

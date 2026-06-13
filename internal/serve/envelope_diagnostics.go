@@ -5,10 +5,12 @@ package serve
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -19,8 +21,8 @@ import (
 // AggregaConfig / Lockfile / Workload / IR are deliberately absent — the
 // first two carry no apiVersion+kind envelope to classify on (they are
 // flat-top-level documents, so this apiVersion+kind mechanism
-// structurally cannot reach them — editor validation of those by
-// filename is a separate mechanism), and Workload/IR are not
+// structurally cannot reach them — those two are classified by filename
+// instead, see classifyByFilename), and Workload/IR are not
 // editor-authored standalone documents.
 var entityKindByName = map[string]envelope.Kind{
 	"Component":      envelope.KindComponent,
@@ -77,16 +79,47 @@ func classifyAggregaDocument(doc *yaml.Node) (envelope.Kind, bool) {
 	return k, ok
 }
 
+// classifyByFilename classifies the two flat-top-level aggrega documents
+// that carry no apiVersion+kind envelope and so cannot be reached by
+// classifyAggregaDocument: the workspace config and the active Release's
+// lockfile. The workspace config is the fixed, unique name
+// ".aggrega-config.yaml". The lockfile is matched by correlation to the
+// active Release — only the basename that lockfile.PathFor derives from
+// activeReleasePath classifies as a lockfile; with no active Release,
+// nothing does. The bare ".lock" extension is deliberately NOT used: it
+// belongs to many foreign ecosystems (Cargo.lock, flake.lock,
+// poetry.lock, yarn.lock, Gemfile.lock, …), none of which is an aggrega
+// lockfile, and validating them against the lockfile schema would
+// lint-bomb foreign files. Correlation keeps the editor's single-anchor
+// model — only the active Release's documents are validated — and never
+// touches another ecosystem's lockfile.
+func (s *Server) classifyByFilename(file string) (envelope.Kind, bool) {
+	base := filepath.Base(file)
+	if base == ".aggrega-config.yaml" {
+		return envelope.KindAggregaConfig, true
+	}
+	if s.activeReleasePath != "" && base == filepath.Base(lockfile.PathFor(s.activeReleasePath)) {
+		return envelope.KindLockfile, true
+	}
+	return "", false
+}
+
 // envelopeDiagnosticsForBuffer runs the document-envelope gate over the
 // editor BUFFER content for a classifiable aggrega document and returns
-// its findings as per-file diagnostics. The second return is true only
-// when the document is an aggrega entity AND the envelope rejected it —
+// its findings as per-file diagnostics. Classification is by filename
+// first (the workspace config and the active Release's lockfile, which
+// carry no apiVersion+kind envelope) and then by the document's
+// apiVersion+kind (the ten authored entity kinds). The second return is
+// true only when the document classifies AND the envelope rejected it —
 // the signal the caller uses to early-return (which short-circuits Tier-4
 // for the active Aggregate and is the coverage for every other file).
 // Foreign YAML and envelope-clean documents return (nil, false), so the
 // caller falls through to its existing flow unchanged.
-func (s *Server) envelopeDiagnosticsForBuffer(content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
-	kind, ok := classifyAggregaDocument(doc)
+func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
+	kind, ok := s.classifyByFilename(file)
+	if !ok {
+		kind, ok = classifyAggregaDocument(doc)
+	}
 	if !ok {
 		return nil, false
 	}

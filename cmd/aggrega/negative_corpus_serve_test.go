@@ -319,6 +319,16 @@ func stringify(v any) string {
 // RESPONSE (the envelope leg early-returns) rather than a publish
 // notification.
 func serveValidateScan(t *testing.T, files map[string]string, validateFile string) string {
+	return serveValidateScanBuffer(t, files, validateFile, files[validateFile])
+}
+
+// serveValidateScanBuffer is serveValidateScan with an explicit editor
+// buffer distinct from the on-disk content. It models live editing — the
+// daemon starts against the (valid) files on disk, then validates an
+// unsaved buffer. Needed where the on-disk document must be valid for the
+// daemon to start (the workspace config) while the buffer under test is
+// not.
+func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile, buffer string) string {
 	t.Helper()
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
@@ -358,7 +368,7 @@ func serveValidateScan(t *testing.T, files map[string]string, validateFile strin
 	vfPath := filepath.Join(ws, validateFile)
 	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
 		"file":    vfPath,
-		"content": files[validateFile],
+		"content": buffer,
 	})); err != nil {
 		t.Fatalf("write validate: %v", err)
 	}
@@ -542,5 +552,84 @@ spec:
 	}
 	if !strings.Contains(scan, "port") {
 		t.Fatalf("clean active Aggregate did not receive its Tier-4 parameter diagnostic (Tier-4 fall-through broken):\n%s", scan)
+	}
+}
+
+// activeReleaseFixture is a clean Aggregate/Release/Manifest triad with a
+// single Release file, so the daemon's disambiguation cascade anchors it
+// and populates activeReleasePath (= <ws>/release.yaml) — the prerequisite
+// for the active Release's lockfile (<ws>/release.lock) to classify.
+func activeReleaseFixture() map[string]string {
+	return map[string]string{
+		"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: lf-app
+  version: "1.0.0"
+spec:
+  components: {}
+`,
+		"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: lf-rel
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components: {}
+`,
+		"manifest.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: lf-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type: {}
+`,
+	}
+}
+
+// TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic — the workspace
+// config carries no apiVersion+kind envelope, so the entity classifier
+// cannot reach it; filename classification does. The on-disk config must
+// be valid for the daemon to start, so the invalid document is supplied as
+// the editor BUFFER. Red before this leg: the classifier skipped it; green
+// now.
+func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
+	badConfigBuffer := "workspace:\n  offline: \"notabool\"\n"
+	scan := serveValidateScanBuffer(t, map[string]string{}, ".aggrega-config.yaml", badConfigBuffer)
+	if !strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("invalid .aggrega-config.yaml buffer produced no envelope diagnostic on its file:\n%s", scan)
+	}
+}
+
+// TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic — the active
+// Release's lockfile, also envelope-less, classifies by correlation to the
+// anchored Release. A junk lockfile buffer squiggles live. Red before this
+// leg; green now.
+func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
+	badLockfileBuffer := "version: 1\nrelease: 123\ngenerated_at: \"2026-01-01T00:00:00Z\"\n"
+	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "release.lock", badLockfileBuffer)
+	if !strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("invalid active-release lockfile buffer produced no envelope diagnostic on its file:\n%s", scan)
+	}
+}
+
+// TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic — the
+// foreign-.lock guard at the daemon level: with a Release anchored (so
+// release.lock WOULD classify), a different .lock file (another
+// ecosystem's lockfile) does NOT classify and is never validated against
+// the lockfile schema — zero envelope diagnostics.
+func TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic(t *testing.T) {
+	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "Cargo.lock", "a: 1\n")
+	if strings.Contains(scan, "violates its envelope schema") {
+		t.Fatalf("foreign .lock wrongly produced an envelope diagnostic (the foreign-.lock guard failed):\n%s", scan)
 	}
 }
