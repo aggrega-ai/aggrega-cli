@@ -32,13 +32,15 @@ func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*Re
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components.All() {
+	for _, p := range collectComponentInstances(agg) {
+		comp := p.inst
+		base := componentFieldPath(p.subsystemPath, p.name)
 		// Check features: block — must NOT contain credential Features
 		for featName, feat := range comp.Features.All() {
 			if isCredentialFeature(feat.Type, catalog) {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
-					Field:   fmt.Sprintf(".spec.components[%q].features[%q]", compName, featName),
+					Field:   fmt.Sprintf("%s.features[%q]", base, featName),
 					Message: fmt.Sprintf("Feature %q has label %s=%s and must be in secrets: block, not features:", feat.Type, types.FeatureKindLabel, types.FeatureKindSecret),
 					Err:     ErrCredentialLabelPartition,
 				})
@@ -50,7 +52,7 @@ func guardCredentialPartition(agg *types.Aggregate, catalog CatalogLookup) []*Re
 			if !isCredentialFeature(sec.Type, catalog) {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
-					Field:   fmt.Sprintf(".spec.components[%q].secrets[%q]", compName, secName),
+					Field:   fmt.Sprintf("%s.secrets[%q]", base, secName),
 					Message: fmt.Sprintf("Feature %q does not have label %s=%s and cannot be in secrets: block", sec.Type, types.FeatureKindLabel, types.FeatureKindSecret),
 					Err:     ErrCredentialLabelPartition,
 				})

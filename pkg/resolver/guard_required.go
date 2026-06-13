@@ -36,7 +36,9 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components.All() {
+	for _, p := range collectComponentInstances(agg) {
+		compName, comp := p.name, p.inst
+		base := componentFieldPath(p.subsystemPath, p.name)
 		catComp, found := catalog.Component(comp.Type)
 		if !found {
 			continue
@@ -58,7 +60,7 @@ func guardRequiredFeatures(agg *types.Aggregate, release *types.Release, catalog
 			if !attachedTypes[required] {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
-					Field:   fmt.Sprintf(".spec.components[%q]", compName),
+					Field:   base,
 					Message: fmt.Sprintf("component type %q requires feature %q but it is not attached", comp.Type, required),
 					Err:     ErrMissingRequiredFeature,
 				})

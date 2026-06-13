@@ -1092,7 +1092,10 @@ func TestGuardUsesSocket_SubsystemRecursionWithSocketViolations(t *testing.T) {
 			return types.Component{}, false
 		},
 	}
-	errs := guardUsesSocketSubsystem("Aggregate", ".spec.subsystems.outer", outerSub, catalog)
+	rootSubs := types.OrderedMap[types.Subsystem]{}
+	rootSubs.Set("outer", outerSub)
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Subsystems: rootSubs}}
+	errs := guardUsesSocket(agg, catalog)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error from undeclared socket; got %d (%v)", len(errs), errs)
 	}

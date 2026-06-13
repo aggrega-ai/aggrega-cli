@@ -90,7 +90,8 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	var errs []*ResolverError
 
 	for _, p := range instances {
-		compName, comp := p.name, p.inst
+		comp := p.inst
+		base := componentFieldPath(p.subsystemPath, p.name)
 
 		// Self-inject `from:` references resolve against the host's own provides.
 		if comp.Inject != nil {
@@ -100,7 +101,7 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 					if !ownKeys[ref.providesKey] {
 						errs = append(errs, &ResolverError{
 							Entity:  entity,
-							Field:   fmt.Sprintf(".spec.components[%q].inject.%s[%q]", compName, ref.mechanism, ref.deliveryKey),
+							Field:   fmt.Sprintf("%s.inject.%s[%q]", base, ref.mechanism, ref.deliveryKey),
 							Message: invalidInjectKeyMessage(ref.providesKey, comp.Type, ownKeys),
 							Err:     ErrInvalidInjectKey,
 						})
@@ -131,7 +132,7 @@ func guardInjectKeys(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 					if !targetKeys[ref.providesKey] {
 						errs = append(errs, &ResolverError{
 							Entity:  entity,
-							Field:   fmt.Sprintf(".spec.components[%q].uses[%q][%q].inject.%s[%q]", compName, socket, alias, ref.mechanism, ref.deliveryKey),
+							Field:   fmt.Sprintf("%s.uses[%q][%q].inject.%s[%q]", base, socket, alias, ref.mechanism, ref.deliveryKey),
 							Message: invalidInjectKeyMessage(ref.providesKey, targetType, targetKeys),
 							Err:     ErrInvalidInjectKey,
 						})

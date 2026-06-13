@@ -32,7 +32,9 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components.All() {
+	for _, p := range collectComponentInstances(agg) {
+		compName, comp := p.name, p.inst
+		base := componentFieldPath(p.subsystemPath, p.name)
 		releaseFeatures := collectReleaseBoundaryFeaturesForComponent(release.Spec.Boundaries, compName)
 
 		for featName, aggFeat := range comp.Features.All() {
@@ -44,7 +46,7 @@ func guardFeatureMerge(agg *types.Aggregate, release *types.Release) []*Resolver
 			if relFeat.Type != "" && aggFeat.Type != "" && relFeat.Type != aggFeat.Type {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
-					Field:   fmt.Sprintf(".spec.components[%q].features[%q]", compName, featName),
+					Field:   fmt.Sprintf("%s.features[%q]", base, featName),
 					Message: fmt.Sprintf("feature type mismatch: Aggregate declares %q but Release declares %q", aggFeat.Type, relFeat.Type),
 					Err:     ErrFeatureMergeConflict,
 				})

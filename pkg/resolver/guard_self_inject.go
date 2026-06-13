@@ -41,7 +41,9 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	for compName, comp := range agg.Spec.Components.All() {
+	for _, p := range collectComponentInstances(agg) {
+		comp := p.inst
+		base := componentFieldPath(p.subsystemPath, p.name)
 		if comp.Inject == nil {
 			continue
 		}
@@ -55,7 +57,7 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 		if len(catComp.Spec.Inject) == 0 {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
-				Field:   fmt.Sprintf(".spec.components[%q].inject", compName),
+				Field:   fmt.Sprintf("%s.inject", base),
 				Message: fmt.Sprintf("component type %q has no spec.inject allowlist (Black-Box pattern) — self-inject is not allowed", comp.Type),
 				Err:     ErrSelfInjectForbidden,
 			})
@@ -74,7 +76,7 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 			if !allowed[mech] {
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
-					Field:   fmt.Sprintf(".spec.components[%q].inject.%s", compName, mech),
+					Field:   fmt.Sprintf("%s.inject.%s", base, mech),
 					Message: fmt.Sprintf("mechanism %q not in component type %q spec.inject allowlist %v", mech, comp.Type, catComp.Spec.Inject),
 					Err:     ErrSelfInjectForbidden,
 				})
@@ -89,7 +91,7 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				if contains(usesKeys[mech], key) {
 					errs = append(errs, &ResolverError{
 						Entity:  entity,
-						Field:   fmt.Sprintf(".spec.components[%q].inject.%s[%q]", compName, mech, key),
+						Field:   fmt.Sprintf("%s.inject.%s[%q]", base, mech, key),
 						Message: fmt.Sprintf("delivery key %q in mechanism %q is declared in both component self-inject and uses-inject", key, mech),
 						Err:     ErrInjectKeyCollision,
 					})
@@ -128,7 +130,7 @@ func guardSelfInject(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				}
 				errs = append(errs, &ResolverError{
 					Entity:  entity,
-					Field:   fmt.Sprintf(".spec.components[%q].inject.%s[%q]", compName, mech, key),
+					Field:   fmt.Sprintf("%s.inject.%s[%q]", base, mech, key),
 					Message: fmt.Sprintf("delivery key %q in mechanism %q collides with declaration in mechanism(s) %v", key, mech, others),
 					Err:     ErrInjectKeyCollision,
 				})

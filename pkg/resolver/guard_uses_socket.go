@@ -117,13 +117,18 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	// Walk components in author order (OrderedMap iteration)
-	for compName, comp := range agg.Spec.Components.All() {
+	// One complete walk (root + all subsystems) via the shared instance
+	// walker; the authoring path comes from componentFieldPath so a subsystem
+	// component's diagnostics point at .spec.subsystems.<…>.components[…].
+	for _, p := range collectComponentInstances(agg) {
+		comp := p.inst
+		base := componentFieldPath(p.subsystemPath, p.name)
+
 		// Validate component uses against Component usesSchema
 		if comp.Uses.Len() > 0 && catalog.Component != nil {
 			errs = append(errs, ValidateUsesAgainstSchema(
 				entity,
-				fmt.Sprintf(".spec.components[%q].uses", compName),
+				base+".uses",
 				comp.Uses,
 				comp.Type,
 				catalog,
@@ -136,7 +141,7 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				if feat.Uses.Len() > 0 {
 					errs = append(errs, validateFeatureUsesAgainstSchema(
 						entity,
-						fmt.Sprintf(".spec.components[%q].features[%q].uses", compName, featName),
+						fmt.Sprintf("%s.features[%q].uses", base, featName),
 						feat.Uses,
 						feat.Type,
 						catalog,
@@ -148,7 +153,7 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				if sec.Uses.Len() > 0 {
 					errs = append(errs, validateFeatureUsesAgainstSchema(
 						entity,
-						fmt.Sprintf(".spec.components[%q].secrets[%q].uses", compName, secName),
+						fmt.Sprintf("%s.secrets[%q].uses", base, secName),
 						sec.Uses,
 						sec.Type,
 						catalog,
@@ -156,69 +161,9 @@ func guardUsesSocket(agg *types.Aggregate, catalog CatalogLookup) []*ResolverErr
 				}
 			}
 		}
-	}
-
-	// Walk subsystems recursively (author order)
-	for subName, sub := range agg.Spec.Subsystems.All() {
-		errs = append(errs, guardUsesSocketSubsystem(entity, ".spec.subsystems."+subName, sub, catalog)...)
 	}
 
 	sortResolverErrors(errs)
-	return errs
-}
-
-// guardUsesSocketSubsystem applies the same uses-socket validation as the
-// top-level pass to every component, feature-attachment, and secret-attachment
-// inside a subsystem. Recurses into nested subsystems. Path strings build up
-// the dotted-aggregate-path used in error Field locators
-// (.spec.subsystems.<name>.components[...]). Errors are returned unsorted;
-// the caller (guardUsesSocket) sorts the combined output once at the end.
-func guardUsesSocketSubsystem(entity, path string, sub types.Subsystem, catalog CatalogLookup) []*ResolverError {
-	var errs []*ResolverError
-
-	for compName, comp := range sub.Components.All() {
-		if comp.Uses.Len() > 0 && catalog.Component != nil {
-			errs = append(errs, ValidateUsesAgainstSchema(
-				entity,
-				fmt.Sprintf("%s.components[%q].uses", path, compName),
-				comp.Uses,
-				comp.Type,
-				catalog,
-			)...)
-		}
-
-		if catalog.Feature != nil {
-			for featName, feat := range comp.Features.All() {
-				if feat.Uses.Len() > 0 {
-					errs = append(errs, validateFeatureUsesAgainstSchema(
-						entity,
-						fmt.Sprintf("%s.components[%q].features[%q].uses", path, compName, featName),
-						feat.Uses,
-						feat.Type,
-						catalog,
-					)...)
-				}
-			}
-
-			for secName, sec := range comp.Secrets.All() {
-				if sec.Uses.Len() > 0 {
-					errs = append(errs, validateFeatureUsesAgainstSchema(
-						entity,
-						fmt.Sprintf("%s.components[%q].secrets[%q].uses", path, compName, secName),
-						sec.Uses,
-						sec.Type,
-						catalog,
-					)...)
-				}
-			}
-		}
-	}
-
-	// Recurse into nested subsystems
-	for nestedName, nested := range sub.Subsystems.All() {
-		errs = append(errs, guardUsesSocketSubsystem(entity, path+".subsystems."+nestedName, nested, catalog)...)
-	}
-
 	return errs
 }
 
