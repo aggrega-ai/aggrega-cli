@@ -128,7 +128,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	var releaseParameters map[string]any
 	if input.ResolveResult != nil {
 		releaseParameters = input.ResolveResult.Parameters
-		_, perBoundaryAnnotations = resolver.WireBoundaryInfra(input.ResolveResult.Release)
+		_, perBoundaryAnnotations = resolver.WireBoundaryInfra(types.NormalizeRelease(input.ResolveResult.Release))
 		var err error
 		boundaryDirEvals, err = evaluateAllBoundaryDirectories(input.ResolveResult.Release, releaseParameters, perBoundaryAnnotations)
 		if err != nil {

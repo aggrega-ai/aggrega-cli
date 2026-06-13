@@ -183,6 +183,21 @@ func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 	release := in.Release
 	manifest := in.Manifest
 
+	// Loud guardrail (Invariant 4): a Release born through the normalization core
+	// never carries top-level components alongside a `default` boundary —
+	// NormalizeRelease folds the root into the default and clears it, and the
+	// authored-both shape is envelope-rejected. Reaching resolve in that state is
+	// a normalization bypass (a hand-built literal, or a load path that skipped
+	// the parse core). Assert here, at the earliest point every boundary consumer
+	// (WireBoundaryInfra below, the release guards, the renderer) sits behind, so
+	// none of them silently misses a components-only Release's components. An
+	// internal-invariant breach, not an authoring error.
+	if release != nil {
+		if _, hasDefault := release.Spec.Boundaries.Get("default"); hasDefault && release.Spec.Components.Len() > 0 {
+			return nil, fmt.Errorf("%w: construct releases through the normalization core (types.NormalizeRelease via the load path), not a hand-built literal", ErrUnnormalizedRelease)
+		}
+	}
+
 	// Load parameters' $import: target if present (mode 2). Inline
 	// content (mode 1) flows through MergeParameters directly.
 	var externalParams map[string]any
@@ -250,8 +265,10 @@ func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 		return nil, nameErrs[0]
 	}
 
-	// Wire boundary infra (per-component) plus per-boundary annotations cascade
-	boundaryInfra, boundaryAnnotations := WireBoundaryInfra(release)
+	// Wire boundary infra (per-component) plus per-boundary annotations cascade.
+	// release is already normalized at load; NormalizeRelease here is the
+	// idempotent wrap producing the NormalizedRelease the walker requires.
+	boundaryInfra, boundaryAnnotations := WireBoundaryInfra(types.NormalizeRelease(release))
 
 	// Parameter map flows through to the renderer via ResolveResult.Parameters.
 	// Active-purge runs at end-of-pipeline. Callers using pipeline.RunPipeline

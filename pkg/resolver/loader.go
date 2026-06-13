@@ -88,11 +88,11 @@ func LoadRelease(path string) (*types.Release, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
-	// Desugar a top-level components surface into the synthesized `default`
-	// boundary at load, so every downstream consumer sees a uniform
-	// boundary-bearing Release.
-	NormalizeReleaseScopes(&rel)
-	return &rel, nil
+	// Single normalization core: fold a top-level components surface into the
+	// synthesized `default` boundary at birth, so every downstream consumer sees
+	// the uniform boundary-bearing shape. NormalizeRelease is non-mutating;
+	// return the normalized value it produced.
+	return types.NormalizeRelease(&rel).Release(), nil
 }
 
 // LoadManifest reads and unmarshals a Manifest YAML file. The loader

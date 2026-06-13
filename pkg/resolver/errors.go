@@ -112,6 +112,19 @@ var (
 	// corresponding Aggregate declaration (closed-contract policy).
 	// Surfaced at Step 1a.
 	ErrParameterContractViolation = errors.New("parameter contract violated")
+
+	// ErrUnnormalizedRelease fires at the resolve entry when a Release arrives
+	// with a non-empty top-level components surface AND a synthesized `default`
+	// boundary — an impossible state for a Release born through the normalization
+	// core (`types.NormalizeRelease` folds the root into the default and clears
+	// it), and the authored-both shape is envelope-rejected. It signals a bypass:
+	// a hand-built `types.Release` literal or a load path that skipped the parse
+	// core. An internal-invariant breach (a Loud Guardrail, Invariant 4)
+	// backstopping the `NormalizedRelease` newtype. Asserted at ResolveFromInputs
+	// entry — the earliest point every boundary consumer (WireBoundaryInfra, the
+	// release guards, the renderer via rr.Release) sits behind — so one check
+	// protects the whole pipeline, not just the renderer.
+	ErrUnnormalizedRelease = errors.New("release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)")
 )
 
 // ResolverError carries entity and field context alongside a sentinel error.
@@ -163,11 +176,11 @@ func (e *ResolverError) Unwrap() error {
 // violations wraps that sentinel — Unwrap returns the slice as a
 // []error per Go 1.20+ multi-error convention.
 type MultiResolverError struct {
-	Entity     string            // e.g. "Aggregate my-app"
-	Field      string            // typically a parent JSON-path like ".spec.parameters"
-	Summary    string            // multi-line human-readable description
-	Sentinel   error             // domain sentinel for errors.Is on the parent (e.g., ErrParameterContractViolation)
-	Violations []*ResolverError  // per-violation slice with structured Field locators preserved
+	Entity     string           // e.g. "Aggregate my-app"
+	Field      string           // typically a parent JSON-path like ".spec.parameters"
+	Summary    string           // multi-line human-readable description
+	Sentinel   error            // domain sentinel for errors.Is on the parent (e.g., ErrParameterContractViolation)
+	Violations []*ResolverError // per-violation slice with structured Field locators preserved
 }
 
 // Error returns the multi-line summary so callers reading err.Error()

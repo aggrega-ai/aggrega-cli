@@ -59,7 +59,7 @@ type Boundary struct {
 	// author — the `default` boundary synthesized for a Release that declares
 	// top-level components instead of named boundaries. It is derived
 	// provenance, never authored: the json/yaml `-` tags keep it out of the
-	// authoring surface entirely, and it is set only by NormalizeReleaseScopes.
+	// authoring surface entirely, and it is set only by NormalizeRelease.
 	// Read at the output-directory site to route the boundary's artifacts to
 	// dist/ flat, and carried onto the IR node so the synthesized default is
 	// distinguishable from a boundary a user explicitly named "default".
@@ -137,3 +137,46 @@ type AggregateRouting struct {
 	Components OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 	Aggregates OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
 }
+
+// NormalizedRelease wraps a [Release] that has passed [NormalizeRelease] — its
+// top-level components folded into the synthesized `default` boundary, so the
+// root component map is empty and every component lives under a boundary. The
+// unexported field plus the sole constructor make "normalized" a compile-time
+// invariant: a function taking a NormalizedRelease cannot be handed a raw,
+// un-normalized Release. Symmetric to [NormalizedAggregate].
+type NormalizedRelease struct {
+	rel *Release
+}
+
+// NormalizeRelease is the SOLE constructor for [NormalizedRelease]. When the
+// Release declares top-level components and no named boundaries, it synthesizes
+// one boundary named "default" holding those components, inserted first (so
+// emission/flatten order is unchanged), marked [Boundary.Synthesized], and
+// clears the top-level components — they now live in the boundary. The mutual
+// exclusivity of components and boundaries is enforced upstream at the
+// document-envelope gate; this runs only on the components-only shape and is a
+// no-op for a boundaries-bearing or empty Release. Idempotent.
+//
+// NON-MUTATING: when synthesis is needed it operates on a shallow copy of the
+// Release and wraps the copy, leaving the caller's *Release untouched — a sole
+// constructor that gutted its input would make every caller still holding the
+// original a latent aliasing bug. Only Spec.Boundaries and Spec.Components are
+// reassigned on the copy (the moved components map is shared read-only into the
+// synthesized default), so iteration order is preserved and determinism holds.
+func NormalizeRelease(rel *Release) NormalizedRelease {
+	if rel == nil || rel.Spec.Boundaries.Len() > 0 || rel.Spec.Components.Len() == 0 {
+		return NormalizedRelease{rel: rel}
+	}
+	cp := *rel
+	def := Boundary{Components: rel.Spec.Components, Synthesized: true}
+	var boundaries OrderedMap[Boundary]
+	boundaries.Set("default", def)
+	cp.Spec.Boundaries = boundaries
+	cp.Spec.Components = OrderedMap[BoundaryComponent]{}
+	return NormalizedRelease{rel: &cp}
+}
+
+// Release returns the underlying normalized Release for read access. The
+// returned pointer is the normalized value (root folded into `default`); it is
+// exposed for field reads, not for re-wrapping a mutated copy as normalized.
+func (n NormalizedRelease) Release() *Release { return n.rel }

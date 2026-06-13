@@ -66,3 +66,65 @@ func TestNormalize(t *testing.T) {
 		}
 	})
 }
+
+func relComps(names ...string) OrderedMap[BoundaryComponent] {
+	var m OrderedMap[BoundaryComponent]
+	for _, n := range names {
+		m.Set(n, BoundaryComponent{})
+	}
+	return m
+}
+
+// TestNormalizeRelease pins the Release sole constructor: non-mutating, folds a
+// top-level components surface into an ordered-first synthesized `default`
+// boundary, idempotent, nil-safe. Symmetric to TestNormalize.
+func TestNormalizeRelease(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-mutating: the caller's release is untouched", func(t *testing.T) {
+		rel := &Release{}
+		rel.Spec.Components = relComps("api", "worker")
+		nr := NormalizeRelease(rel)
+
+		if rel.Spec.Components.Len() != 2 || rel.Spec.Boundaries.Len() != 0 {
+			t.Errorf("NormalizeRelease must not mutate its input; caller sees components=%d boundaries=%d", rel.Spec.Components.Len(), rel.Spec.Boundaries.Len())
+		}
+		n := nr.Release()
+		if n.Spec.Components.Len() != 0 {
+			t.Errorf("normalized view: root components must be folded away; got %d", n.Spec.Components.Len())
+		}
+		def, ok := n.Spec.Boundaries.Get("default")
+		if !ok || !def.Synthesized || def.Components.Len() != 2 {
+			t.Errorf("normalized view must carry a synthesized default holding the 2 components; ok=%v synthesized=%v len=%d", ok, def.Synthesized, def.Components.Len())
+		}
+		if keys := n.Spec.Boundaries.Keys(); len(keys) == 0 || keys[0] != "default" {
+			t.Errorf("the synthesized default must be ordered first; keys=%v", keys)
+		}
+	})
+
+	t.Run("a declared boundary is a no-op (never synthesizes)", func(t *testing.T) {
+		rel := &Release{}
+		var b OrderedMap[Boundary]
+		b.Set("main", Boundary{Components: relComps("api")})
+		rel.Spec.Boundaries = b
+		if _, ok := NormalizeRelease(rel).Release().Spec.Boundaries.Get("default"); ok {
+			t.Error("must not synthesize a default when boundaries are declared")
+		}
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		rel := &Release{}
+		rel.Spec.Components = relComps("api")
+		first := NormalizeRelease(rel).Release()
+		second := NormalizeRelease(first).Release()
+		if second.Spec.Boundaries.Len() != 1 {
+			t.Errorf("a second NormalizeRelease must be a no-op; got %d boundaries", second.Spec.Boundaries.Len())
+		}
+	})
+
+	t.Run("nil-safe", func(t *testing.T) {
+		if NormalizeRelease(nil).Release() != nil {
+			t.Error("NormalizeRelease(nil) must wrap nil without panic")
+		}
+	})
+}

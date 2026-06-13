@@ -88,33 +88,8 @@ type BoundaryInfra struct {
 // the recursive descent order.
 //
 // Returns (nil, nil) when release is nil.
-//
-// NormalizeReleaseScopes desugars the top-level components surface into a
-// synthesized `default` boundary, so this walk and every downstream pass see a
-// uniform Release with at least one boundary. When the Release declares
-// top-level `spec.components` and no named `spec.boundaries`, it synthesizes one
-// boundary named "default" holding those components, marked
-// [types.Boundary.Synthesized], and clears the top-level components (they now
-// live in the boundary). The boundary is the only one, so it is trivially first
-// in iteration order.
-//
-// The mutual exclusivity of `components` and `boundaries` is enforced upstream
-// at the document-envelope gate (the schema rejects both non-empty); this runs
-// only on the components-only shape and is a no-op for a boundaries-bearing or
-// empty Release. Idempotent: a second call finds boundaries already present and
-// returns.
-func NormalizeReleaseScopes(rel *types.Release) {
-	if rel == nil || rel.Spec.Boundaries.Len() > 0 || rel.Spec.Components.Len() == 0 {
-		return
-	}
-	def := types.Boundary{Components: rel.Spec.Components, Synthesized: true}
-	var boundaries types.OrderedMap[types.Boundary]
-	boundaries.Set("default", def)
-	rel.Spec.Boundaries = boundaries
-	rel.Spec.Components = types.OrderedMap[types.BoundaryComponent]{}
-}
-
-func WireBoundaryInfra(release *types.Release) (map[string]*BoundaryInfra, map[string]types.OrderedMap[string]) {
+func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, map[string]types.OrderedMap[string]) {
+	release := nr.Release()
 	if release == nil {
 		return nil, nil
 	}
