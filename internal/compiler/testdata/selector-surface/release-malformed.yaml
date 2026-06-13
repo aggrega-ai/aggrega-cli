@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: selector-surface-malformed-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-malformed.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        web:
+          infra:
+            replicas: 1

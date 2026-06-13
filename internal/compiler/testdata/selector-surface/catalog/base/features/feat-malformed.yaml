@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/feat-malformed
+  version: "1.0.0"
+spec:
+  # Malformed selector: an unclosed set-operator value list. The selector
+  # parser rejects it, surfacing a "selector parse error" at appliesTo
+  # validation rather than a label mismatch.
+  appliesTo: "tier.aggrega.ai/zone in (frontend"
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

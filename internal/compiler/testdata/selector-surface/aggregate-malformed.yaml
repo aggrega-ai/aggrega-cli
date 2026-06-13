@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-surface-malformed
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/web
+      # core/feat-malformed has an unparseable appliesTo selector. The build
+      # halts with a selector parse error at appliesTo validation.
+      features:
+        bad:
+          type: core/feat-malformed

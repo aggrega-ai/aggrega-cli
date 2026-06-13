@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-surface-attach
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/web
+      # Six features, one per selector operator class, each attached to a
+      # component (web) whose labels satisfy the feature's appliesTo. The
+      # build is clean: every appliesTo constraint holds.
+      features:
+        eq:
+          type: core/feat-equality
+        zone-in:
+          type: core/feat-in
+        zone-notin:
+          type: core/feat-notin
+        has-category:
+          type: core/feat-exists
+        no-deprecated:
+          type: core/feat-absent
+        either:
+          type: core/feat-anyof
+    worker:
+      type: core/worker

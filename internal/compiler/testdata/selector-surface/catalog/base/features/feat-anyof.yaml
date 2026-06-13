@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/feat-anyof
+  version: "1.0.0"
+spec:
+  appliesToAnyOf:
+    - "component.aggrega.ai/type=worker"
+    - tier.aggrega.ai/zone: frontend
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/feat-absent
+  version: "1.0.0"
+spec:
+  appliesTo: "!deprecated.aggrega.ai/flag"
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

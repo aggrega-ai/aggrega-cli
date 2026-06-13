@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/feat-in
+  version: "1.0.0"
+spec:
+  appliesTo: "tier.aggrega.ai/zone in (frontend, edge)"
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

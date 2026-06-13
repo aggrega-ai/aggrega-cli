@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/feat-exists
+  version: "1.0.0"
+spec:
+  appliesTo: "component.aggrega.ai/category"
+  schema:
+    values:
+      enabled: { type: boolean, default: true }

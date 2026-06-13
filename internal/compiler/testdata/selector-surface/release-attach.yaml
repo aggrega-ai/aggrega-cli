@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: selector-surface-attach-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-attach.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        web:
+          infra:
+            replicas: 1
+        worker:
+          infra:
+            replicas: 1

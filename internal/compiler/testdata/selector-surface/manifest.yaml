@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: selector-surface-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/web: web-recipe:1.0.0
+        core/worker: worker-recipe:1.0.0
+    features:
+      type:
+        core/feat-equality: fr-equality:1.0.0
+        core/feat-in: fr-in:1.0.0
+        core/feat-notin: fr-notin:1.0.0
+        core/feat-exists: fr-exists:1.0.0
+        core/feat-absent: fr-absent:1.0.0
+        core/feat-anyof: fr-anyof:1.0.0
+        core/feat-malformed: fr-malformed:1.0.0

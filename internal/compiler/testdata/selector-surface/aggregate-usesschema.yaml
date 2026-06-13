@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-surface-usesschema
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/web
+      # The backend socket's usesSchema selector requires
+      # tier.aggrega.ai/zone=data, but the wired target (worker) is
+      # zone=backend. The socket-selector gate halts the build.
+      uses:
+        backend:
+          link:
+            target: worker
+    worker:
+      type: core/worker

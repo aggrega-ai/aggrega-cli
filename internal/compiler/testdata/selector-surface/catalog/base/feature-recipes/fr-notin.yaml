@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: fr-notin
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/feat-notin

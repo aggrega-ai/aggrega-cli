@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/web
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+    tier.aggrega.ai/zone: "frontend"
+    component.aggrega.ai/category: "compute"
+spec:
+  # The backend socket carries a selector no component in this fixture's
+  # backend tier satisfies. It is left unwired in every release except the
+  # usesSchema-violation case, which wires it to a target that fails the
+  # selector to prove the socket-selector gate fires on a real edge.
+  usesSchema:
+    backend:
+      required: false
+      selector: "tier.aggrega.ai/zone=data"
+      inject: ["env"]
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }

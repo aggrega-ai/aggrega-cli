@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: selector-surface-constraint
+  version: "1.0.0"
+spec:
+  components:
+    worker:
+      type: core/worker
+      # core/feat-equality requires component.aggrega.ai/type=server, but
+      # worker is type=worker. The appliesTo constraint is not satisfied and
+      # the build halts.
+      features:
+        eq:
+          type: core/feat-equality

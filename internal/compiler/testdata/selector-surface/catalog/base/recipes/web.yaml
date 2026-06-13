@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/web
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      web:
+        image: web-server:latest
+        ports:
+          http: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          http: {{ optional .infra `port` 8080 }}
