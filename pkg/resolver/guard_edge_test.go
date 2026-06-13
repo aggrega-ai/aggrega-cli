@@ -92,6 +92,68 @@ func om(pairs ...any) types.OrderedMap[any] {
 	return m
 }
 
+// normalizedReleaseTopLevelEdge builds a Release that authors node "svc"'s
+// (socket, alias) edge at the top-level `.spec.components` surface, then folds
+// it through NormalizeRelease — producing the synthesized `default` boundary the
+// resolver guards see. Mirrors releaseWithEdgeInfra but for the root surface.
+func normalizedReleaseTopLevelEdge(socket, alias string, infra types.OrderedMap[any]) *types.Release {
+	aliases := types.OrderedMap[types.ReleaseUsesEntry]{}
+	aliases.Set(alias, types.ReleaseUsesEntry{Infra: infra})
+	ru := types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]]{}
+	ru.Set(socket, aliases)
+	comps := types.OrderedMap[types.BoundaryComponent]{}
+	comps.Set("svc", types.BoundaryComponent{Uses: ru})
+	rel := &types.Release{Metadata: types.ReleaseMetadata{Name: "demo-prod"}}
+	rel.Spec.Components = comps
+	return types.NormalizeRelease(rel).Release()
+}
+
+// TestReleaseComponentFieldPath pins the Release-side path renderer: a
+// synthesized-default component renders at the root shape, a declared boundary
+// renders qualified, and a boundary a user *declares* as "default" still renders
+// qualified — the key is the flag, not the path string.
+func TestReleaseComponentFieldPath(t *testing.T) {
+	t.Parallel()
+	if got := releaseComponentFieldPath("default", "svc", true); got != `.spec.components["svc"]` {
+		t.Errorf("synthesized default must render root-shaped; got %q", got)
+	}
+	if got := releaseComponentFieldPath("prod", "svc", false); got != `.spec.boundaries["prod"].components["svc"]` {
+		t.Errorf("declared boundary must render qualified; got %q", got)
+	}
+	if got := releaseComponentFieldPath("default", "svc", false); got != `.spec.boundaries["default"].components["svc"]` {
+		t.Errorf("a declared boundary named default must stay qualified; got %q", got)
+	}
+}
+
+// TestGuardReleaseUsesSocket_SynthesizedDefaultElidesPath is the R1 elision
+// red/green: a top-level Release component (folded into the synthesized default)
+// wiring an undeclared socket halts with a root-shaped locator — never under the
+// generated `default` boundary. Closes the finding that a top-level Release
+// component's uses could leak the synthesized boundary into a guard diagnostic.
+func TestGuardReleaseUsesSocket_SynthesizedDefaultElidesPath(t *testing.T) {
+	t.Parallel()
+	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
+	rel := normalizedReleaseTopLevelEdge("caches", "primary", om("x", "y")) // undeclared socket
+	errs := guardReleaseUsesSocket(normalized(t, agg), rel, edgeSchemaCatalog(t))
+	if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket) {
+		t.Fatalf("want exactly 1 ErrUnknownUsesSocket; got %v", errs)
+	}
+	if errs[0].Field != `.spec.components["svc"].uses["caches"]` {
+		t.Errorf("synthesized-default Release edge must render root-shaped, never under default; got %q", errs[0].Field)
+	}
+}
+
+// TestGuardEdgeConformance_SynthesizedDefaultElidesInfraPath is the R2 elision
+// red/green: a per-edge infra violation on a top-level Release component renders
+// the root-shaped locator, never the synthesized `default` boundary.
+func TestGuardEdgeConformance_SynthesizedDefaultElidesInfraPath(t *testing.T) {
+	t.Parallel()
+	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
+	rel := normalizedReleaseTopLevelEdge("databases", "main", om("storage_clas", "fast")) // typo'd key
+	errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil)
+	requireConformance(t, errs, 1, `.spec.components["svc"].uses["databases"]["main"]`)
+}
+
 // --- per-edge values conformance (Aggregate, the reuse-proving cases) -------
 
 // TestGuardEdgeConformance_ValuesConforming proves the shared

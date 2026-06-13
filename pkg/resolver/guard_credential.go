@@ -35,7 +35,7 @@ func guardCredentialPartition(na types.NormalizedAggregate, catalog CatalogLooku
 
 	for _, p := range collectComponentInstances(na) {
 		comp := p.inst
-		base := componentFieldPath(p.subsystemPath, p.name)
+		base := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 		// Check features: block — must NOT contain credential Features
 		for featName, feat := range comp.Features.All() {
 			if isCredentialFeature(feat.Type, catalog) {

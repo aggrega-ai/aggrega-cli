@@ -82,6 +82,48 @@ func TestValidateInstanceNames_SpecialCharsRejected(t *testing.T) {
 	}
 }
 
+// TestValidateInstanceNames_SynthesizedDefaultElidesPath is the A2 elision
+// red/green: an invalid name on a top-level component (folded into the
+// synthesized default) renders the root-shaped locator the author typed, never
+// under the generated `default` scope.
+func TestValidateInstanceNames_SynthesizedDefaultElidesPath(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("bad name", types.ComponentInstance{Type: "core/server:1.0.0"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "test-app"},
+		Spec:     types.AggregateSpec{Components: components},
+	}
+	errs := ValidateInstanceNames(normalized(t, agg))
+	if len(errs) != 1 {
+		t.Fatalf("want exactly 1 name error; got %d: %v", len(errs), errs)
+	}
+	if errs[0].Field != `.spec.components["bad name"]` {
+		t.Errorf("synthesized-default component name error must render root-shaped, never under default; got %q", errs[0].Field)
+	}
+}
+
+// TestValidateInstanceNames_DeclaredDefaultStaysQualified is the counter-case: a
+// subsystem a user *declares* with the name "default" is not synthesized, so an
+// invalid name inside it renders the qualified locator — proving the elision
+// keys on the provenance flag, not the path string.
+func TestValidateInstanceNames_DeclaredDefaultStaysQualified(t *testing.T) {
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("bad name", types.ComponentInstance{Type: "core/server:1.0.0"})
+	subsystems := types.OrderedMap[types.Subsystem]{}
+	subsystems.Set("default", types.Subsystem{Components: components})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "test-app"},
+		Spec:     types.AggregateSpec{Subsystems: subsystems},
+	}
+	errs := ValidateInstanceNames(normalized(t, agg))
+	if len(errs) != 1 {
+		t.Fatalf("want exactly 1 name error; got %d: %v", len(errs), errs)
+	}
+	if errs[0].Field != `.spec.subsystems.default.components["bad name"]` {
+		t.Errorf("a declared subsystem named default must render qualified; got %q", errs[0].Field)
+	}
+}
+
 func TestValidateInstanceNames_NestedSubsystem(t *testing.T) {
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("bad.comp", types.ComponentInstance{Type: "core/server:1.0.0"})

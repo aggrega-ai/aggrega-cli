@@ -109,8 +109,9 @@ func TestSubsystemGuardCoverage_Merge(t *testing.T) {
 // TestCollectComponentInstances_RootOnlyFoldsToDefault pins the walker's
 // completeness over a root-only aggregate: Normalize folds the top-level
 // components into the synthesized `default` subsystem, so the walker yields every
-// instance tagged with subsystemPath "default" and componentFieldPath renders the
-// accurate `default` locator.
+// instance honestly tagged with subsystemPath "default" AND the synthesized
+// flag. The author-read locator elides the synthesized scope — a folded
+// component renders at the root shape it was typed at, never under `default`.
 func TestCollectComponentInstances_RootOnlyFoldsToDefault(t *testing.T) {
 	t.Parallel()
 	root := types.OrderedMap[types.ComponentInstance]{}
@@ -124,12 +125,57 @@ func TestCollectComponentInstances_RootOnlyFoldsToDefault(t *testing.T) {
 		t.Fatalf("walker must yield every root instance (folded into default); want 3, got %d", len(got))
 	}
 	for _, p := range got {
+		// Honest IR: the walker still tags the real folded location.
 		if p.subsystemPath != "default" {
 			t.Errorf("%s: root component must fold into the synthesized default subsystem; want subsystemPath %q, got %q", p.name, "default", p.subsystemPath)
 		}
+		if !p.synthesized {
+			t.Errorf("%s: folded root component must carry the synthesized-provenance flag", p.name)
+		}
+		// Elision: the author-read locator is root-shaped, never `default`.
+		want := `.spec.components["` + p.name + `"]`
+		if locator := componentFieldPath(p.subsystemPath, p.name, p.synthesized); locator != want {
+			t.Errorf("%s: synthesized-default component must render root-shaped %q; got %q", p.name, want, locator)
+		}
 	}
-	if got := componentFieldPath("default", "a"); got != `.spec.subsystems.default.components["a"]` {
-		t.Errorf("default path render: got %q", got)
+	// Counter-case: a subsystem a user *declares* with the name "default" is not
+	// synthesized, so its components still render the qualified locator — the
+	// key is the provenance flag, not the path string.
+	if got := componentFieldPath("default", "a", false); got != `.spec.subsystems.default.components["a"]` {
+		t.Errorf("declared default path render: got %q", got)
+	}
+}
+
+// TestSynthesizedDefault_HonestIRWhileDiagnosticElided proves the two halves of
+// the synthesized-default contract hold simultaneously: the normalized Aggregate
+// still carries the literal `default` subsystem marked Synthesized (honest
+// structure — no elision in the data), WHILE the author-read diagnostic locator
+// for a folded component is root-shaped (elision at addressing only).
+func TestSynthesizedDefault_HonestIRWhileDiagnosticElided(t *testing.T) {
+	t.Parallel()
+	root := types.OrderedMap[types.ComponentInstance]{}
+	root.Set("api", types.ComponentInstance{Type: "x"})
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: root}}
+	na := normalized(t, agg)
+
+	// Honest structure: the literal default subsystem is present and marked.
+	def, ok := na.Aggregate().Spec.Subsystems.Get("default")
+	if !ok || !def.Synthesized {
+		t.Fatalf("normalized Aggregate must carry a literal `default` subsystem marked Synthesized; ok=%v synthesized=%v", ok, def.Synthesized)
+	}
+	if _, rooted := na.Aggregate().Spec.Components.Get("api"); rooted {
+		t.Error("the folded root surface must be empty in the normalized view")
+	}
+
+	// Elision: the same folded component renders root-shaped in diagnostics.
+	var locator string
+	for _, p := range collectComponentInstances(na) {
+		if p.name == "api" {
+			locator = componentFieldPath(p.subsystemPath, p.name, p.synthesized)
+		}
+	}
+	if locator != `.spec.components["api"]` {
+		t.Errorf("diagnostic locator must be root-shaped while the IR stays honest; got %q", locator)
 	}
 }
 
@@ -160,7 +206,7 @@ func TestCollectComponentInstances_SubsystemsPathAware(t *testing.T) {
 			t.Errorf("%s: want subsystemPath %q; got %q", p.name, wantPath[p.name], p.subsystemPath)
 		}
 	}
-	if got := componentFieldPath("svc.inner", "c"); got != `.spec.subsystems.svc.subsystems.inner.components["c"]` {
+	if got := componentFieldPath("svc.inner", "c", false); got != `.spec.subsystems.svc.subsystems.inner.components["c"]` {
 		t.Errorf("nested path render: got %q", got)
 	}
 }

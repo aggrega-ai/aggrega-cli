@@ -82,6 +82,17 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 
 	// Subsystems (recursive)
 	for name, sub := range agg.Spec.Subsystems.All() {
+		// The synthesized default holds components authored at the top-level
+		// `.spec.components` surface; its name is compiler-generated, not
+		// author-typed. Validate its components at the root shape so a name
+		// diagnostic points where the author wrote them, and skip the
+		// generated-scope-name check. Keys on the provenance flag, not the
+		// name string — a user-declared subsystem named "default" is validated
+		// as the qualified scope it is.
+		if sub.Synthesized {
+			errs = append(errs, validateSubsystemNames(entity, ".spec", sub)...)
+			continue
+		}
 		if !instanceNamePattern.MatchString(name) {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,

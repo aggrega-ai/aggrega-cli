@@ -25,19 +25,32 @@ import (
 // authoring field locator used in diagnostics, so an error against a subsystem
 // component points at `.spec.subsystems.<…>.components[…]`, not a flattened
 // `.spec.components[…]`.
+//
+// Synthesized is true when the enclosing subsystem is the compiler-synthesized
+// default scope — i.e. the component was authored at the top-level
+// `.spec.components` surface and folded into the default during normalization.
+// [componentFieldPath] renders a synthesized-scope component at the root shape
+// the author actually typed, so the generated scope name never surfaces in a
+// diagnostic.
 type instancePair struct {
 	name          string
 	inst          types.ComponentInstance
 	subsystemPath string
+	synthesized   bool
 }
 
 // componentFieldPath renders the authoring field locator for a component
-// instance at the given dotted subsystem path: `.spec.components["name"]` at the
-// top level, `.spec.subsystems.a.components["name"]` in a subsystem, and
+// instance. A synthesized-default component renders at the root shape
+// `.spec.components["name"]` — the location the author typed — regardless of the
+// dotted subsystem path the normalization folded it under. Otherwise it renders
+// the real location: `.spec.components["name"]` at the top level,
+// `.spec.subsystems.a.components["name"]` in a declared subsystem, and
 // `.spec.subsystems.a.subsystems.b.components["name"]` for nested subsystems —
 // matching the dotted-aggregate-path convention used across the resolver guards.
-func componentFieldPath(subsystemPath, name string) string {
-	if subsystemPath == "" {
+// The key is the synthesized-provenance flag, not the path string: a subsystem a
+// user declares with the name "default" still renders the qualified path.
+func componentFieldPath(subsystemPath, name string, synthesized bool) string {
+	if subsystemPath == "" || synthesized {
 		return fmt.Sprintf(".spec.components[%q]", name)
 	}
 	return fmt.Sprintf(".spec.subsystems.%s.components[%q]", strings.ReplaceAll(subsystemPath, ".", ".subsystems."), name)
@@ -71,7 +84,7 @@ func collectFromSubsystems(parentPath string, subs types.OrderedMap[types.Subsys
 			path = parentPath + "." + subName
 		}
 		for name, inst := range sub.Components.All() {
-			*out = append(*out, instancePair{name: name, inst: inst, subsystemPath: path})
+			*out = append(*out, instancePair{name: name, inst: inst, subsystemPath: path, synthesized: sub.Synthesized})
 		}
 		collectFromSubsystems(path, sub.Subsystems, out)
 	}

@@ -213,6 +213,34 @@ func TestValidateAggregate_TierThreeFeatureInject_BothPresent(t *testing.T) {
 	}
 }
 
+// TestValidateInjectBlocks_SynthesizedDefaultElidesPath is the A3 elision
+// red/green: a both-present inject violation on a top-level component (folded
+// into the synthesized default) renders the root-shaped locator, never under the
+// generated `default` scope. The IR keeps the literal default scope; this elides
+// only the diagnostic locator string.
+func TestValidateInjectBlocks_SynthesizedDefaultElidesPath(t *testing.T) {
+	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Inject: &types.InjectBlock{
+			Env: []any{verboseEntry("DB_URL", "literal", "ref.path")},
+		},
+	})
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
+
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
+	if err == nil || !errors.Is(err, ErrInjectEntryAmbiguous) {
+		t.Fatalf("want ErrInjectEntryAmbiguous; got %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `.spec.components["api"].inject`) {
+		t.Errorf("synthesized-default inject diagnostic must render root-shaped; got %v", err)
+	}
+	if strings.Contains(msg, "subsystems") {
+		t.Errorf("synthesized default must not leak into the inject locator: %v", err)
+	}
+}
+
 // TestValidateAggregate_NestedSubsystems pins recursive coverage: a
 // both-present InjectBlock inside a nested subsystem (subsystems within
 // subsystems) is caught.

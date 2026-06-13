@@ -94,7 +94,7 @@ func guardSchemaConformance(
 		if !ok {
 			continue
 		}
-		componentField := fmt.Sprintf(".spec.components.%s", p.name)
+		componentField := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 		errs = append(errs, validateValuesConformance(
 			compiled, p.inst.Values, parameters, entity, componentField)...)
 
@@ -162,7 +162,7 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 				if !ok {
 					continue
 				}
-				field := fmt.Sprintf(".spec.components[%q].uses[%q][%q]", p.name, socket, alias)
+				field := fmt.Sprintf("%s.uses[%q][%q]", componentFieldPath(p.subsystemPath, p.name, p.synthesized), socket, alias)
 				errs = append(errs, ValidatePillarConformance(
 					compiled, "values", e.Values, parameters,
 					aggEntity, field, "the socket valueSchema")...)
@@ -189,8 +189,8 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 			if !ok {
 				continue
 			}
-			field := fmt.Sprintf(".spec.boundaries[%q].components[%q].uses[%q][%q]",
-				ref.boundaryPath, ref.nodeID, ref.socket, ref.alias)
+			field := fmt.Sprintf("%s.uses[%q][%q]",
+				releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket, ref.alias)
 			errs = append(errs, ValidatePillarConformance(
 				compiled, "infra", ref.entry.Infra, parameters,
 				relEntity, field, "the socket infraSchema")...)

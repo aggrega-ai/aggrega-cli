@@ -39,7 +39,7 @@ func guardRequiredFeatures(na types.NormalizedAggregate, release *types.Release,
 
 	for _, p := range collectComponentInstances(na) {
 		compName, comp := p.name, p.inst
-		base := componentFieldPath(p.subsystemPath, p.name)
+		base := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 		catComp, found := catalog.Component(comp.Type)
 		if !found {
 			continue

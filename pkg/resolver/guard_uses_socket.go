@@ -12,12 +12,31 @@ import (
 // releaseEdgeEntry is one operator-authored per-edge connection collected from
 // a Release: the consuming node ID, the socket and alias the entry sits under,
 // the boundary path it was authored in (for diagnostics), and the entry itself.
+// synthesized is true when the containing boundary is the compiler-synthesized
+// default — the component was authored at the top-level `.spec.components`
+// surface, so [releaseComponentFieldPath] renders its diagnostics at that root
+// shape rather than under the generated `default` boundary.
 type releaseEdgeEntry struct {
 	nodeID       string
 	socket       string
 	alias        string
 	boundaryPath string
+	synthesized  bool
 	entry        types.ReleaseUsesEntry
+}
+
+// releaseComponentFieldPath renders the authoring field locator for a Release
+// boundary component, the Release-side mirror of [componentFieldPath]. A
+// synthesized-default component renders at the root shape
+// `.spec.components["node"]` — where the author typed it — while a component in
+// a declared boundary renders the qualified `.spec.boundaries["path"].components["node"]`.
+// The key is the synthesized-provenance flag, not the path string: a boundary a
+// user declares with the name "default" still renders the qualified path.
+func releaseComponentFieldPath(boundaryPath, nodeID string, synthesized bool) string {
+	if synthesized {
+		return fmt.Sprintf(".spec.components[%q]", nodeID)
+	}
+	return fmt.Sprintf(".spec.boundaries[%q].components[%q]", boundaryPath, nodeID)
 }
 
 // collectReleaseEdgeEntries walks the Release boundary tree (outer to inner,
@@ -40,6 +59,7 @@ func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
 						socket:       socket,
 						alias:        alias,
 						boundaryPath: path,
+						synthesized:  b.Synthesized,
 						entry:        e,
 					})
 				}
@@ -95,7 +115,7 @@ func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release
 		if _, ok := catComp.Spec.UsesSchema.Get(ref.socket); !ok {
 			errs = append(errs, &ResolverError{
 				Entity: entity,
-				Field:  fmt.Sprintf(".spec.boundaries[%q].components[%q].uses[%q]", ref.boundaryPath, ref.nodeID, ref.socket),
+				Field:  fmt.Sprintf("%s.uses[%q]", releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket),
 				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
 					ref.socket, compType, catComp.Spec.UsesSchema.Keys()),
 				Err: ErrUnknownUsesSocket,
@@ -124,7 +144,7 @@ func guardUsesSocket(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 	// component's diagnostics point at .spec.subsystems.<…>.components[…].
 	for _, p := range collectComponentInstances(na) {
 		comp := p.inst
-		base := componentFieldPath(p.subsystemPath, p.name)
+		base := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 
 		// Validate component uses against Component usesSchema
 		if comp.Uses.Len() > 0 && catalog.Component != nil {

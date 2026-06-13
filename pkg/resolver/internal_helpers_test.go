@@ -702,19 +702,28 @@ func TestAggregateAnnotationSourcePath_NamedPrefix(t *testing.T) {
 // non-empty componentName produces a component-scoped path.
 func TestAnnotationSourcePath_ComponentVsBoundaryShape(t *testing.T) {
 	t.Parallel()
-	if got := annotationSourcePath("release.yaml", "prod", "", "feature.myco/x"); got != "release.yaml:boundaries.prod.annotations.feature.myco/x" {
+	if got := annotationSourcePath("release.yaml", "prod", "", "feature.myco/x", false); got != "release.yaml:boundaries.prod.annotations.feature.myco/x" {
 		t.Errorf("boundary-scoped: got %q", got)
 	}
-	if got := annotationSourcePath("release.yaml", "prod", "api", "feature.myco/x"); got != "release.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
+	if got := annotationSourcePath("release.yaml", "prod", "api", "feature.myco/x", false); got != "release.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
 		t.Errorf("component-scoped: got %q", got)
 	}
 	// Empty prefix falls back to release.yaml.
-	if got := annotationSourcePath("", "prod", "api", "feature.myco/x"); got != "release.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
+	if got := annotationSourcePath("", "prod", "api", "feature.myco/x", false); got != "release.yaml:boundaries.prod.components.api.annotations.feature.myco/x" {
 		t.Errorf("empty prefix fallback: got %q", got)
 	}
 	// Nested boundary uses slash-to-dot translation.
-	if got := annotationSourcePath("release.yaml", "outer/inner", "", "feature.myco/x"); got != "release.yaml:boundaries.outer.boundaries.inner.annotations.feature.myco/x" {
+	if got := annotationSourcePath("release.yaml", "outer/inner", "", "feature.myco/x", false); got != "release.yaml:boundaries.outer.boundaries.inner.annotations.feature.myco/x" {
 		t.Errorf("nested boundary: got %q", got)
+	}
+	// A synthesized-default boundary attributes annotations to the root shape
+	// the author typed — the generated `default` scope never appears. (R3 has no
+	// shipped consumer yet; this proves the formatter directly.)
+	if got := annotationSourcePath("release.yaml", "default", "api", "feature.myco/x", true); got != "release.yaml:components.api.annotations.feature.myco/x" {
+		t.Errorf("synthesized component-scoped: got %q", got)
+	}
+	if got := annotationSourcePath("release.yaml", "default", "", "feature.myco/x", true); got != "release.yaml:annotations.feature.myco/x" {
+		t.Errorf("synthesized boundary-scoped: got %q", got)
 	}
 }
 

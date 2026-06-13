@@ -92,7 +92,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 
 	for _, p := range instances {
 		comp := p.inst
-		base := componentFieldPath(p.subsystemPath, p.name)
+		base := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 
 		// Self-inject `from:` references resolve against the host's own provides.
 		if comp.Inject != nil {

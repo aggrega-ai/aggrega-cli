@@ -229,8 +229,8 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 
 	// Both colliding mechanism paths must surface — env and ssm_param.
 	wantFields := map[string]bool{
-		`.spec.subsystems.default.components["api"].inject.env["DB_URL"]`:       false,
-		`.spec.subsystems.default.components["api"].inject.ssm_param["DB_URL"]`: false,
+		`.spec.components["api"].inject.env["DB_URL"]`:       false,
+		`.spec.components["api"].inject.ssm_param["DB_URL"]`: false,
 	}
 	for _, e := range collisions {
 		if _, ok := wantFields[e.Field]; ok {
@@ -249,14 +249,14 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 	for _, e := range collisions {
 		msg := e.Error()
 		switch e.Field {
-		case `.spec.subsystems.default.components["api"].inject.env["DB_URL"]`:
+		case `.spec.components["api"].inject.env["DB_URL"]`:
 			if !strings.Contains(msg, "ssm_param") {
 				t.Errorf("env diagnostic missing ssm_param in others slot: %s", msg)
 			}
 			if strings.Contains(msg, "mechanism(s) [env") {
 				t.Errorf("env diagnostic includes self in others slot: %s", msg)
 			}
-		case `.spec.subsystems.default.components["api"].inject.ssm_param["DB_URL"]`:
+		case `.spec.components["api"].inject.ssm_param["DB_URL"]`:
 			if !strings.Contains(msg, "env") {
 				t.Errorf("ssm_param diagnostic missing env in others slot: %s", msg)
 			}

@@ -44,7 +44,7 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 
 	for _, p := range collectComponentInstances(na) {
 		comp := p.inst
-		base := componentFieldPath(p.subsystemPath, p.name)
+		base := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 		if comp.Inject == nil {
 			continue
 		}

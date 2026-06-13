@@ -243,7 +243,7 @@ func expandBoundary(
 		mergedSources[k] = v
 	}
 	for k := range b.Annotations.All() {
-		mergedSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, "", k)
+		mergedSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, "", k, b.Synthesized)
 	}
 
 	for compName, comp := range b.Components.All() {
@@ -253,7 +253,7 @@ func expandBoundary(
 			effectiveSources[k] = v
 		}
 		for k := range comp.Annotations.All() {
-			effectiveSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, compName, k)
+			effectiveSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, compName, k, b.Synthesized)
 		}
 
 		for key, value := range effective.All() {
@@ -297,10 +297,20 @@ func expandBoundary(
 // resolver pipeline. componentName empty signals a boundary-level
 // annotation; non-empty signals a component-level annotation under
 // that boundary.
-func annotationSourcePath(releasePath, boundaryPath, componentName, key string) string {
+func annotationSourcePath(releasePath, boundaryPath, componentName, key string, synthesized bool) string {
 	prefix := releasePath
 	if prefix == "" {
 		prefix = "release.yaml"
+	}
+	// A synthesized-default boundary holds components authored at the top-level
+	// `.spec.components` surface; attribute their annotations to that root shape
+	// rather than the generated `boundaries.default` scope. Keys on the
+	// provenance flag, not the path string.
+	if synthesized {
+		if componentName != "" {
+			return prefix + ":components." + componentName + ".annotations." + key
+		}
+		return prefix + ":annotations." + key
 	}
 	dotted := "boundaries." + strings.ReplaceAll(boundaryPath, "/", ".boundaries.")
 	if componentName != "" {

@@ -130,7 +130,15 @@ func ValidateInjectBlocks(na types.NormalizedAggregate, _ *types.Release) error 
 		errs = append(errs, validateComponentInstance(comp, fmt.Sprintf(".spec.components[%q]", name))...)
 	}
 	for name, sub := range agg.Spec.Subsystems.All() {
-		errs = append(errs, validateSubsystem(sub, fmt.Sprintf(".spec.subsystems[%q]", name))...)
+		// The synthesized default holds components authored at the top-level
+		// surface; render their inject diagnostics at the root shape rather
+		// than under the generated scope name. The IR itself keeps the literal
+		// default scope — this elides only the diagnostic locator string.
+		prefix := fmt.Sprintf(".spec.subsystems[%q]", name)
+		if sub.Synthesized {
+			prefix = ".spec"
+		}
+		errs = append(errs, validateSubsystem(sub, prefix)...)
 	}
 	// Release-side: no typed *InjectBlock surfaces today. If a future
 	// schema revision adds InjectBlock-bearing fields under Boundary,

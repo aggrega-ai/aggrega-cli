@@ -46,7 +46,7 @@ func TestGuardSchemaConformance_InheritedConstraintEnforced(t *testing.T) {
 	}
 	// name supplied, tls_enabled (inherited, required, no default) omitted.
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil)
-	requireConformance(t, errs, 1, ".spec.components.svc.values")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
 // TestGuardSchemaConformance_ExtendsPredicateReadsParameter confirms the
@@ -67,7 +67,7 @@ func TestGuardSchemaConformance_ExtendsPredicateReadsParameter(t *testing.T) {
 		t.Fatalf("tier=gold under allowedTier=gold should pass on the effective schema; got %v", errs)
 	}
 	errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "silver"})
-	requireConformance(t, errs, 1, ".spec.components.svc.values.tier")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.tier")
 }
 
 // schemaComponentCatalog returns a CatalogLookup whose single Component
@@ -130,31 +130,60 @@ func runSchemaGuard(agg *types.Aggregate, t *testing.T) []*ResolverError {
 	return guardSchemaConformance(normalized(t, agg), schemaComponentCatalog(t), nil, nil)
 }
 
+// aggWithValuesInSubsystem builds an Aggregate with component "svc" inside a
+// declared (non-synthesized) subsystem, its values pillar the supplied pairs.
+func aggWithValuesInSubsystem(subName string, pairs ...any) *types.Aggregate {
+	vals := types.OrderedMap[any]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		vals.Set(pairs[i].(string), pairs[i+1])
+	}
+	comps := types.OrderedMap[types.ComponentInstance]{}
+	comps.Set("svc", types.ComponentInstance{Type: "app/svc:1.0.0", Values: vals})
+	subs := types.OrderedMap[types.Subsystem]{}
+	subs.Set(subName, types.Subsystem{Components: comps})
+	return &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "demo"},
+		Spec:     types.AggregateSpec{Subsystems: subs},
+	}
+}
+
+// TestGuardSchemaConformance_RealSubsystemRendersQualified is the values-
+// conformance accuracy proof: a violation on a component in a DECLARED subsystem
+// renders the qualified locator the other guards already use, not the flattened
+// `.spec.components.svc` this site emitted before it joined the shared path
+// helper. The prefix is qualified — a root render would fail this assertion —
+// so this pins the fix, not just the synthesized-default elision.
+func TestGuardSchemaConformance_RealSubsystemRendersQualified(t *testing.T) {
+	t.Parallel()
+	errs := runSchemaGuard(aggWithValuesInSubsystem("payments", "name", "api", "port", "not-an-int"), t)
+	requireConformance(t, errs, 1, `.spec.subsystems.payments.components["svc"].values.port`)
+}
+
 // --- Negative: values pillar ---------------------------------------------
 
 func TestGuardSchemaConformance_ValuesWrongType(t *testing.T) {
 	t.Parallel()
 	errs := runSchemaGuard(aggWithValues("name", "api", "port", "not-an-int"), t)
-	requireConformance(t, errs, 1, ".spec.components.svc.values.port")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.port")
 }
 
 func TestGuardSchemaConformance_ValuesOutOfRange(t *testing.T) {
 	t.Parallel()
 	errs := runSchemaGuard(aggWithValues("name", "api", "port", 0), t)
-	requireConformance(t, errs, 1, ".spec.components.svc.values.port")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.port")
 }
 
 func TestGuardSchemaConformance_ValuesMissingRequiredNonDefaulted(t *testing.T) {
 	t.Parallel()
 	// name is required with no default; omitting it must halt.
 	errs := runSchemaGuard(aggWithValues("port", 8080), t)
-	requireConformance(t, errs, 1, ".spec.components.svc.values")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
 func TestGuardSchemaConformance_ValuesUnknownProperty(t *testing.T) {
 	t.Parallel()
 	errs := runSchemaGuard(aggWithValues("name", "api", "bogus", "x"), t)
-	requireConformance(t, errs, 1, ".spec.components.svc.values")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
 // TestGuardSchemaConformance_ComposedValuesSchemaValidates pins correction (a):
@@ -171,7 +200,7 @@ values:
 `
 	catalog := catalogFromComponentSchema(t, composedSchema)
 	errs := guardSchemaConformance(normalized(t, aggWithValues("port", 0)), catalog, nil, nil)
-	requireConformance(t, errs, 1, ".spec.components.svc.values")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
 // TestGuardSchemaConformance_NestedViolationSingleError pins dedup: a nested
@@ -182,7 +211,7 @@ func TestGuardSchemaConformance_NestedViolationSingleError(t *testing.T) {
 	db := types.OrderedMap[any]{}
 	db.Set("port", 0) // violates db.port minimum 1
 	errs := runSchemaGuard(aggWithValues("name", "api", "db", db), t)
-	requireConformance(t, errs, 1, ".spec.components.svc.values.db.port")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.db.port")
 }
 
 // TestGuardSchemaConformance_TwoIndependentViolations pins dedup: two
@@ -223,7 +252,7 @@ func TestGuardSchemaConformance_PredicateReadsParameter(t *testing.T) {
 	}
 	// allowedTier=silver → same value, now violates → exactly one halt.
 	errs := guardSchemaConformance(normalized(t, agg), catalog, nil, map[string]any{"allowedTier": "silver"})
-	requireConformance(t, errs, 1, ".spec.components.svc.values.tier")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.tier")
 }
 
 // --- Positive ------------------------------------------------------------
@@ -322,7 +351,7 @@ func TestGuardInfraConformance_TypoCaught(t *testing.T) {
 	cl := infraCatalog(t, providerBaseWithWorkers)
 	bi := infraBoundary("replicas", 2, "replcas", 3)
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
-	requireConformance(t, errs, 1, ".spec.components.svc.infra")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
 // TestGuardInfraConformance_ProviderKeyAdmitted: a provider-layered key present
@@ -344,7 +373,7 @@ func TestGuardInfraConformance_DeclaredKeyWrongType(t *testing.T) {
 	cl := infraCatalog(t, providerBaseWithWorkers)
 	bi := infraBoundary("replicas", "two", "tier", "gold")
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
-	requireConformance(t, errs, 1, ".spec.components.svc.infra.replicas")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra.replicas")
 }
 
 // TestGuardInfraConformance_RequiredWithDefaultNotMissing: a required schema.infra
@@ -397,7 +426,7 @@ infra:
 	// The constraint behind the $ref is enforced: replicas below the minimum halts.
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl,
 		infraBoundary("replicas", 0), nil)
-	requireConformance(t, errs, 1, ".spec.components.svc.infra.replicas")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra.replicas")
 }
 
 // TestGuardInfraConformance_SkipsWithoutBoundaryInfra: a component with no
@@ -433,7 +462,7 @@ func TestGuardInfraConformance_ResolvedProviderNoKeysClosesInfraOnly(t *testing.
 	cl := infraCatalog(t, openBaseSchema) // resolves, but no properties
 	bi := infraBoundary("replicas", 2, "replcas", 3)
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
-	requireConformance(t, errs, 1, ".spec.components.svc.infra")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
 // TestGuardInfraConformance_NoInfraPillarSkips: a Component that declares no
