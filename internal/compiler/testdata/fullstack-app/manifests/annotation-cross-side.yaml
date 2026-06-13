@@ -5,7 +5,14 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-synthesized:1.0.0
+        core/compute/web-ui: helm-web-ui-synthesized:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized:1.0.0
     features:
+      type:
+        feature.myco/db-pool: db-pool-patcher:1.0.0
       annotations:
         db-pool:
           feature: "feature.myco/db-pool"

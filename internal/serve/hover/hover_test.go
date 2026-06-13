@@ -129,11 +129,11 @@ func TestHoverManifestRendersSelfMetadataName(t *testing.T) {
 // --- Cross-reference / instance / edge cases at renderer level ---
 
 // TestHoverRendersDeprecationFlagWhenSetByFutureSchema pins the
-// anticipatory deprecation-render path. At this WI's close no entity
-// schema in pkg/types/ carries a top-level metadata.deprecated bool;
-// the renderer ships ahead of the future retroactive-deprecation-
-// protocol proposal so per-kind hover content is wired when the
-// schema field lands. This test uses a freeform mapping entry that
+// anticipatory deprecation-render path. No entity schema in
+// pkg/types/ currently carries a top-level metadata.deprecated bool;
+// the renderer ships ahead of the future deprecation mechanism so
+// per-kind hover content is wired when the schema field lands. This
+// test uses a freeform mapping entry that
 // yaml.v3 accepts but no validated entity currently produces — the
 // render path is reachable by this test, unreachable in production
 // until the schema addition lands.

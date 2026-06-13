@@ -54,13 +54,12 @@ func Separator() string {
 // Deprecated renders the **Deprecated**: yes line when the flag is
 // true; returns empty string otherwise.
 //
-// Anticipatory code: at this WI's close no entity schema in
-// pkg/types/ carries a top-level Deprecated bool on its Metadata
-// struct. The deprecation mechanism is the subject of a future
-// retroactive-deprecation-protocol proposal; the renderer surface
-// here ships ahead of that proposal so the per-kind hover content
-// will already be wired when the schema field lands. On current
-// entities the render path is unreachable — boolValueAtPath returns
+// Anticipatory code: no entity schema in pkg/types/ currently
+// carries a top-level Deprecated bool on its Metadata struct. The
+// deprecation mechanism is not yet defined; the renderer surface
+// here ships ahead of it so the per-kind hover content will already
+// be wired when the schema field lands. On current entities the
+// render path is unreachable — boolValueAtPath returns
 // false for every validated entity, so the Deprecated line never
 // fires in production hover output.
 func Deprecated(flag bool) string {

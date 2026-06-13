@@ -9,3 +9,6 @@ spec:
       type:
         core/api: api-recipe:1.0.0
         core/db: db-recipe:1.0.0
+    features:
+      type:
+        core/compose-bridge:1.0.0: compose-bridge-fr:1.0.0

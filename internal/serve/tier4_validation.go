@@ -183,6 +183,25 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		diags = append(diags, analyzerErrorsToDiagnostics(tier4.Analysis.Errors, relFile, doc, idx)...)
 	}
 
+	// Resolution-completeness diagnostics — the de-fallback regression guard.
+	// Resolution is mapping-only; an unmapped instance no longer silently
+	// resolves by spec.implements. serve keeps its resilient no-halt posture
+	// but surfaces each unmapped instance as a diagnostic carrying the
+	// implementing-recipe pin candidates, rather than a silent miss. This runs
+	// the SAME shared producer the CLI build joins into a halt
+	// (catalog.VerifyRecipeResolution), over the complete enumerated recipe set,
+	// so the editor's candidate suggestions match the build's exactly.
+	if tier4 != nil && tier4.IRGraph != nil {
+		for _, ferr := range s.lazyCatalog.ResolutionFindings(resolved.Manifest, tier4.IRGraph) {
+			diags = append(diags, Diagnostic{
+				Line:     1,
+				Column:   1,
+				Severity: "error",
+				Message:  "Closure: " + ferr.Error(),
+			})
+		}
+	}
+
 	return diags
 }
 

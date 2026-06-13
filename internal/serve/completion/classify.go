@@ -125,7 +125,7 @@ func ClassifyForCompletion(path []string, side yamlpos.ContextSide) ContextKind 
 	//
 	//   - VALUE side at any other key: deferred — no candidates yet
 	//     (free-form scalars like description, pattern, format do not
-	//     have a closed enumeration at this WI).
+	//     have a closed enumeration today).
 	if len(rest) >= 2 && rest[0] == "schema" {
 		if side == yamlpos.ContextSideValue {
 			// Scalar form: last segment is "type".

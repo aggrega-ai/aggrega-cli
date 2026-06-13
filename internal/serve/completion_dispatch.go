@@ -47,7 +47,7 @@ func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *j
 
 	// Determine the trigger-character prefix (for "/" trigger prefix
 	// narrowing). The prefix is the portion of the cursor's current
-	// scalar that precedes the trigger character — at this WI, the
+	// scalar that precedes the trigger character — today the
 	// daemon implements only the simplest prefix narrowing: when
 	// triggerCharacter is "/", filter candidates whose label starts
 	// with the cursor's scalar value (which would be the partial
@@ -97,8 +97,29 @@ func (s *Server) completionForNavigationContext(ctx yamlpos.Context, hostKind st
 		uris := s.enumerateWorkspaceURIs(targetKind)
 		return completion.Implements(uris, prefix), true
 	case yamlpos.ContextKindManifestRecipeReference:
-		uris := s.enumerateWorkspaceURIs("Recipe")
-		return completion.ManifestRecipeReference(uris, prefix), true
+		// Implements-aware ranking: a Manifest mapping value binds a component
+		// (or feature) TYPE to a recipe URI. Recipes whose spec.implements is
+		// able to implement that type rank first — a suggestion, never a
+		// constraint (the author may map any recipe). The type is the mapping
+		// key: the last path segment of a `...type.<TYPE>` cursor; a `features`
+		// segment selects FeatureRecipes. A `name` mapping carries an instance
+		// name (not a type), so ranking is skipped (mappingType stays empty).
+		recipeKind := "Recipe"
+		isTypeMapping := false
+		for _, seg := range ctx.Path {
+			switch seg {
+			case "features":
+				recipeKind = "FeatureRecipe"
+			case "type":
+				isTypeMapping = true
+			}
+		}
+		var mappingType string
+		if isTypeMapping && len(ctx.Path) > 0 {
+			mappingType = ctx.Path[len(ctx.Path)-1]
+		}
+		uris := s.enumerateWorkspaceURIs(recipeKind)
+		return completion.ManifestRecipeReference(uris, prefix, mappingType, s.enumerateRecipeImplements(recipeKind)), true
 	case yamlpos.ContextKindReleaseAggregatePath:
 		paths := s.enumerateWorkspaceRelativePaths("Aggregate")
 		return completion.ReleaseAggregatePath(paths, prefix), true
@@ -189,6 +210,44 @@ func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 		out = append(out, k)
 	}
 	sortStringSlice(out)
+	return out
+}
+
+// enumerateRecipeImplements maps each enumerated Recipe/FeatureRecipe URI
+// (metadata.name) to its spec.implements value, for implements-aware Manifest
+// recipe-reference completion ranking. Mirrors enumerateWorkspaceURIs's
+// parse-cache-then-walk enumeration so the keys match exactly; first occurrence
+// wins (parse-cache over walk), matching the URI enumerator's dedup.
+func (s *Server) enumerateRecipeImplements(kindFilter string) map[string]string {
+	out := map[string]string{}
+	record := func(node *yaml.Node) {
+		if scalarAtPathOnDoc(node, []string{"kind"}) != kindFilter {
+			return
+		}
+		name, _ := metadataNameOf(node)
+		if name == "" {
+			return
+		}
+		if _, ok := out[name]; ok {
+			return
+		}
+		out[name] = scalarAtPathOnDoc(node, []string{"spec", "implements"})
+	}
+	for _, entry := range s.parseCache.entries {
+		record(entry.node)
+	}
+	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var doc yaml.Node
+		if uerr := yaml.Unmarshal(content, &doc); uerr != nil {
+			return nil
+		}
+		record(&doc)
+		return nil
+	})
 	return out
 }
 

@@ -57,14 +57,21 @@ func TestRecipeLookup_HitAndMiss(t *testing.T) {
 		FeatureRecipes: map[string]types.FeatureRecipe{},
 	}
 	r := types.Recipe{}
+	r.Metadata.Name = "helm-api-server"
 	r.Spec.Implements = "core/compute/api-server"
 	c.Recipes[recipeURIKey(r.Metadata.Name, r.Metadata.Version)] = r
 
 	fr := types.FeatureRecipe{}
+	fr.Metadata.Name = "helm-monitoring"
 	fr.Spec.Implements = "feature/monitoring"
 	c.FeatureRecipes[recipeURIKey(fr.Metadata.Name, fr.Metadata.Version)] = fr
 
-	lookup := c.RecipeLookup()
+	mtC := &types.MappingTier{}
+	mtC.Type.Set("core/compute/api-server", "helm-api-server")
+	mtF := &types.MappingTier{}
+	mtF.Type.Set("feature/monitoring", "helm-monitoring")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: mtC, Features: mtF}}}
+	lookup := c.RecipeLookupWithManifest(manifest)
 	gotR, ok := lookup.Recipe("", "core/compute/api-server")
 	if !ok || gotR == nil {
 		t.Errorf("recipe hit should return non-nil + true")
@@ -179,9 +186,9 @@ func TestLegacyComponentURI_NilAndNoComponents(t *testing.T) {
 	}
 }
 
-// TestFeatureTypeToFeatureRecipeWithManifest_AllLayers pins the three-
-// layer cascade: flat mapping, legacy mapping, matchImplements fallback,
-// and miss.
+// TestFeatureTypeToFeatureRecipeWithManifest_AllLayers pins the mapping-only
+// cascade: flat mapping, legacy mapping, and miss. An unmapped feature type is
+// a miss here — resolution never walks spec.implements.
 func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	t.Parallel()
 	c := &Catalog{
@@ -219,10 +226,11 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 		t.Errorf("layer 2 legacy hit: ok=%v got=%v", ok, got)
 	}
 
-	// Layer 3: matchImplements fallback (no manifest mapping for this type).
-	got, ok = lookup2("", "feature/rewrite") // type maps via spec.implements walking
-	if !ok || got == nil {
-		t.Errorf("layer 3 fallback: ok=%v got=%v", ok, got)
+	// An unmapped type is a miss: resolution is mapping-only and never
+	// walks spec.implements, even when a recipe implements the type.
+	_, ok = lookup2("", "feature/rewrite")
+	if ok {
+		t.Errorf("unmapped type must miss under mapping-only resolution")
 	}
 
 	// Miss.
@@ -475,9 +483,15 @@ spec:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fr, _, ok := matchFeatureRecipeByImplements(c.FeatureRecipes, "feature/example")
-	if !ok {
+	if len(featureRecipesImplementing(c.FeatureRecipes, "feature/example")) == 0 {
 		t.Fatalf("FR not loaded")
+	}
+	var fr types.FeatureRecipe
+	for _, ffr := range c.FeatureRecipes {
+		if implementsSatisfies(ffr.Spec.Implements, "feature/example") {
+			fr = ffr
+			break
+		}
 	}
 	src, _ := fr.Spec.Source.(string)
 	if !filepath.IsAbs(src) {

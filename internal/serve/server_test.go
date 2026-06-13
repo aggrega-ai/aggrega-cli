@@ -205,7 +205,7 @@ func TestServeAggregaInvalidateDropsCacheEntry(t *testing.T) {
 // TestServeAggregaInvalidateWithGranularityFileFallsThroughToCoarse
 // verifies that a non-default Granularity value is accepted without
 // error and produces the coarse-default workspace-level invalidation.
-// At this WI, only the workspace mode is implemented; the field is
+// Only the workspace mode is implemented today; the field is
 // forward-compatible reservation for future per-file / per-entity
 // modes.
 func TestServeAggregaInvalidateWithGranularityFileFallsThroughToCoarse(t *testing.T) {

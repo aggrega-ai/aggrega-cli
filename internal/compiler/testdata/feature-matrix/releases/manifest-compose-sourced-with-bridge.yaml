@@ -9,3 +9,6 @@ spec:
       type:
         core/datastore/mariadb: feature-matrix-db-compose-bridge:1.0.0
         core/server: feature-matrix-api-compose-bridge:1.0.0
+    features:
+      type:
+        core/compose-bridge:1.0.0: compose-bridge-fr:1.0.0

@@ -70,7 +70,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Recipes) != 1 {
 		t.Errorf("expected 1 recipe, got %d", len(c.Recipes))
 	}
-	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/compute/api-server"); !ok {
+	if len(recipesImplementing(c.Recipes, "core/compute/api-server")) == 0 {
 		t.Error("missing recipe implementing core/api-server")
 	}
 
@@ -358,7 +358,10 @@ func TestLoad_RecipeLookup(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	lookup := c.RecipeLookup()
+	mt := &types.MappingTier{}
+	mt.Type.Set("core/compute/api-server", "helm-api-server")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: mt}}}
+	lookup := c.RecipeLookupWithManifest(manifest)
 
 	r, found := lookup.Recipe("", "core/compute/api-server")
 	if !found {
@@ -457,10 +460,10 @@ spec:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/x"); !ok {
+	if len(recipesImplementing(c.Recipes, "core/x")) == 0 {
 		t.Error("missing core/x from dirA")
 	}
-	if _, _, ok := matchRecipeByImplements(c.Recipes, "core/y"); !ok {
+	if len(recipesImplementing(c.Recipes, "core/y")) == 0 {
 		t.Error("missing core/y from dirB")
 	}
 }
@@ -564,9 +567,15 @@ spec:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r, _, ok := matchRecipeByImplements(c.Recipes, "core/rel")
-	if !ok {
+	if len(recipesImplementing(c.Recipes, "core/rel")) == 0 {
 		t.Fatal("recipe not loaded")
+	}
+	var r types.Recipe
+	for _, rr := range c.Recipes {
+		if implementsSatisfies(rr.Spec.Implements, "core/rel") {
+			r = rr
+			break
+		}
 	}
 	s, ok := r.Spec.Source.(string)
 	if !ok {

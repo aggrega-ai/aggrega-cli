@@ -41,7 +41,7 @@ type RecipeMetadata struct {
 type RecipeSpec struct {
 	// Provider The explicit execution engine this recipe targets (e.g., 'helm', 'terraform', 'compose', 'eval').
 	Provider string `json:"provider" yaml:"provider"`
-	// Implements API Contract mapping this recipe to a catalog component URI. Supports exact version ('core/api-server:1.0.0'), major-compatible range ('core/api-server:^1.0.0'), or unversioned ('core/api-server'). Validated for Interface Parity by the compiler using most-specific-match precedence.
+	// Implements Declares which catalog component type this recipe is able to implement (exact version 'core/api-server:1.0.0', major-compatible range 'core/api-server:^1.0.0', or unversioned 'core/api-server'). The compiler uses it to verify Manifest mappings and to suggest candidates in diagnostics and editor completion; it never resolves a build. The Manifest mapping is the user's explicit deployment choice, pinned in the lockfile.
 	Implements string `json:"implements" yaml:"implements"`
 	// Source The location of the infrastructure code. Accepts a Universal URI string or an open structured object validated dynamically by the Wasm Provider plugin.
 	Source any `json:"source,omitempty" yaml:"source,omitempty"`

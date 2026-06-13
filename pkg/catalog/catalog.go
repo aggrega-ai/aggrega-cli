@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -1313,41 +1312,6 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
 			s, ok := c.effectiveSchemas[typeURI]
 			return s, ok
-		},
-	}
-}
-
-// RecipeLookup returns a renderer.RecipeLookup whose Recipe and FeatureRecipe
-// closures resolve a component or feature type URI to the matching catalog
-// entry. The closures key on spec.implements with the language's documented
-// three-form precedence and return a pointer-plus-bool so callers can either
-// use the returned Recipe (typically copying or borrowing) or branch cleanly
-// on miss.
-//
-// The lookup walks three forms in order: exact-string match first, then
-// caret-range match (the caller's version satisfies a "<base>:^<version>"
-// constraint declared by some Recipe in the catalog), then unversioned
-// fallback ("<base>" alone). When multiple caret-form entries match the
-// caller's version, the one with the highest baseline version wins. See
-// matchImplements in version_match.go for the helper that walks the
-// precedence; the lookup closures here just dispatch through it.
-func (c *Catalog) RecipeLookup() renderer.RecipeLookup {
-	return renderer.RecipeLookup{
-		// No Manifest → no name tier; resolution is implements-only, so the
-		// instance name is unused here.
-		Recipe: func(_, componentType string) (*types.Recipe, bool) {
-			r, _, ok := matchRecipeByImplements(c.Recipes, componentType)
-			if !ok {
-				return nil, false
-			}
-			return &r, true
-		},
-		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
-			fr, _, ok := matchFeatureRecipeByImplements(c.FeatureRecipes, featureType)
-			if !ok {
-				return nil, false
-			}
-			return &fr, true
 		},
 	}
 }

@@ -27,7 +27,7 @@ var APIVersions = []string{
 }
 
 // ComponentCategories is the closed-set candidate list for the
-// component.aggrega.ai/category label. Empty at this WI — the
+// component.aggrega.ai/category label. Empty today — the
 // canonical category enumeration has not been surfaced. The handler
 // fires on the cursor position regardless; an empty candidate list is
 // the LSP convention for "no completions available." When a canonical

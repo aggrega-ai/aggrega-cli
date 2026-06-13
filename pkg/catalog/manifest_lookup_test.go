@@ -206,27 +206,6 @@ func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
 	}
 }
 
-// TestRecipeLookupWithManifest_MatchImplementsFinalFallback pins
-// layer-3: when neither flat nor legacy mappings are present, the
-// dispatch falls through to matchImplements walking spec.implements
-// (pre-migration behavior preserved).
-func TestRecipeLookupWithManifest_MatchImplementsFinalFallback(t *testing.T) {
-	t.Parallel()
-	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
-	)
-	// Empty Manifest mappings — neither flat nor legacy populated.
-	manifest := &types.Manifest{Spec: types.ManifestSpec{}}
-	lookup := c.RecipeLookupWithManifest(manifest)
-	r, ok := lookup.Recipe("", "core/datastore/postgres")
-	if !ok {
-		t.Fatal("expected matchImplements fallback to hit")
-	}
-	if r.Spec.Implements != "core/datastore/postgres" {
-		t.Errorf("wrong recipe resolved: %q", r.Spec.Implements)
-	}
-}
-
 // TestRecipeLookupWithManifest_FlatWinsOverLegacy pins the dispatch
 // precedence: when both flat and legacy mappings carry the same component
 // type, the flat-shape mapping resolves. Uses distinct spec.implements
@@ -499,10 +478,10 @@ func TestNameTierOverride_FiresAtBothJoins(t *testing.T) {
 	}
 	// Fiction-killer: BOTH same-type recipes (and feature recipes) survive the
 	// real loader — the catalog state the override depends on is reachable.
-	if _, ids, _ := matchRecipeByImplements(c.Recipes, compType); len(ids) != 2 {
+	if ids := recipesImplementing(c.Recipes, compType); len(ids) != 2 {
 		t.Fatalf("expected 2 recipes implementing %q to coexist after load; got %v", compType, ids)
 	}
-	if _, ids, _ := matchFeatureRecipeByImplements(c.FeatureRecipes, featType); len(ids) != 2 {
+	if ids := featureRecipesImplementing(c.FeatureRecipes, featType); len(ids) != 2 {
 		t.Fatalf("expected 2 feature recipes implementing %q to coexist after load; got %v", featType, ids)
 	}
 
@@ -596,10 +575,10 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 	gAmbig := &types.IRGraph{}
 	gAmbig.Spec.Nodes.Set("db-x", types.IRNode{Component: "app/db"})
 	err = c.VerifyRecipeResolution(empty, gAmbig)
-	if err == nil || !errors.Is(err, ErrAmbiguousImplements) {
-		t.Errorf("expected ErrAmbiguousImplements for unmapped 2-impl type; got %v", err)
+	if err == nil || !errors.Is(err, ErrNoRecipeResolved) {
+		t.Errorf("expected ErrNoRecipeResolved for unmapped 2-impl type; got %v", err)
 	} else if !strings.Contains(err.Error(), "db-a") || !strings.Contains(err.Error(), "db-b") {
-		t.Errorf("ambiguity error must name both recipes; got %v", err)
+		t.Errorf("candidate-list error must name both implementing recipes; got %v", err)
 	}
 
 	gNone := &types.IRGraph{}
@@ -613,6 +592,65 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 	mapped := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
 	if err := c.VerifyRecipeResolution(mapped, gAmbig); err != nil {
 		t.Errorf("a mapped type should resolve cleanly; got %v", err)
+	}
+}
+
+// TestCatalogImmunity_UnmappedSingleImplementerHalts pins the de-fallback
+// permanently: an instance with NO Manifest mapping halts even when EXACTLY ONE
+// recipe implements its type. Under the removed implements-search fallback the
+// lone implementer resolved silently; resolution is now mapping-only, so the
+// build halts with the implementing recipe named as a pin candidate. This is
+// red against the pre-removal code (which returned nil for a single implementer)
+// and green after — the fallback is provably gone.
+func TestCatalogImmunity_UnmappedSingleImplementerHalts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeCatalogEntity(t, dir, "r.yaml", recipeYAML("only-db", "app/db"))
+	c, err := Load("", dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	g := &types.IRGraph{}
+	g.Spec.Nodes.Set("db", types.IRNode{Component: "app/db"})
+
+	err = c.VerifyRecipeResolution(&types.Manifest{}, g)
+	if err == nil || !errors.Is(err, ErrNoRecipeResolved) {
+		t.Fatalf("an unmapped instance with exactly ONE implementer must halt with ErrNoRecipeResolved; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "only-db") {
+		t.Errorf("the halt must name the lone implementer as a pin candidate; got %v", err)
+	}
+}
+
+// TestCatalogImmunity_CatalogGrowthNonBreakingForMappedType pins that adding a
+// second recipe implementing an already-MAPPED type does not change which recipe
+// the mapped build resolves: the Manifest mapping pins the choice and the new
+// implementer is ignored. Identical resolution is the proximate proof that
+// rendered output stays byte-identical across catalog growth — catalog growth is
+// non-breaking for mapped manifests (the property the fallback violated, where
+// one implementer becoming two turned a clean build into an ambiguity halt).
+func TestCatalogImmunity_CatalogGrowthNonBreakingForMappedType(t *testing.T) {
+	t.Parallel()
+	comp := &types.MappingTier{}
+	comp.Type.Set("app/db", "db-a")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
+
+	c1 := fakeCatalog(fakeRecipe("db-a", "app/db"))
+	r1, ok1 := c1.RecipeLookupWithManifest(manifest).Recipe("db", "app/db")
+	if !ok1 {
+		t.Fatal("baseline catalog must resolve the mapped type")
+	}
+
+	// Catalog grows: a second recipe also implements app/db.
+	c2 := fakeCatalog(fakeRecipe("db-a", "app/db"), fakeRecipe("db-b", "app/db"))
+	r2, ok2 := c2.RecipeLookupWithManifest(manifest).Recipe("db", "app/db")
+	if !ok2 {
+		t.Fatal("grown catalog must still resolve the mapped type")
+	}
+
+	if r1.Metadata.Name != r2.Metadata.Name || r1.Metadata.Version != r2.Metadata.Version {
+		t.Errorf("catalog growth changed the mapped resolution: %s:%s -> %s:%s (must be identical)",
+			r1.Metadata.Name, r1.Metadata.Version, r2.Metadata.Name, r2.Metadata.Version)
 	}
 }
 

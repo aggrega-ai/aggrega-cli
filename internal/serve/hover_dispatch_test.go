@@ -325,7 +325,7 @@ func TestHoverReturnsNullContentsForSchemaPropertyCursor(t *testing.T) {
 	// Cursor on "port" key inside spec.schema.properties — line 8 (0-based), char 8.
 	result := hoverRequest(t, srv, compPath, 8, 8)
 	if result.Contents != nil {
-		t.Errorf("Contents = %+v; want nil (SchemaProperty deferred to completion WI)", result.Contents)
+		t.Errorf("Contents = %+v; want nil (SchemaProperty not yet implemented in completion)", result.Contents)
 	}
 }
 

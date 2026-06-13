@@ -21,8 +21,8 @@ pub mod rules;
 /// returns its findings inside a `LinterOutput`. Unknown rule_ids
 /// produce a single `unknown_rule` finding with severity `Error` and
 /// no classification — the graceful-degradation pattern that lets
-/// subsequent rule WIs register their rules without re-versioning
-/// the plugin's exported surface.
+/// later rules register without re-versioning the plugin's exported
+/// surface.
 #[plugin_fn]
 pub fn lint(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
     let input = input.0;

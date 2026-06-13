@@ -772,11 +772,21 @@ func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
 }
 
 // RecipeLookupWithManifest exposes the catalog matcher's Manifest-aware recipe
-// resolution over the lazily-enumerated recipe set. The Manifest mapping tiers
-// resolve by URI (point-lookup); the implements fallback searches the enumerated
-// set, halting loudly on ambiguity exactly as the eager path does.
+// resolution over the lazily-enumerated recipe set. Resolution is mapping-only:
+// the Manifest mapping tiers resolve by URI (point-lookup); an unmapped instance
+// is a miss — the catalog never chooses a recipe by spec.implements.
 func (l *LazyLookup) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
 	return l.recipeCatalog().RecipeLookupWithManifest(manifest)
+}
+
+// ResolutionFindings runs the shared resolution-completeness producer over the
+// tolerantly-enumerated (complete) recipe set, returning one error per instance
+// that does not resolve through an explicit Manifest mapping. The serve daemon
+// maps these to resilient diagnostics; the slice is identical to the CLI build's
+// halt input (VerifyRecipeResolution joins it), so both surfaces enumerate pin
+// candidates by the same logic over the same complete recipe set.
+func (l *LazyLookup) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
+	return l.recipeCatalog().ResolutionFindings(manifest, graph)
 }
 
 // SubAggregateLoader exposes the catalog's sub-aggregate loader over the lazily-

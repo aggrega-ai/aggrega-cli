@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestIndexFile_FeatureUnmarshalError pins the Feature-kind unmarshal
@@ -124,7 +126,14 @@ spec:
   valuesMapping: '{"image": "x:latest"}'
 `
 	_ = c.indexFile([]byte(src), "/some/dir/r.yaml")
-	if r, _, ok := matchRecipeByImplements(c.Recipes, "core/compute/api"); ok {
+	if len(recipesImplementing(c.Recipes, "core/compute/api")) > 0 {
+		var r types.Recipe
+		for _, rr := range c.Recipes {
+			if implementsSatisfies(rr.Spec.Implements, "core/compute/api") {
+				r = rr
+				break
+			}
+		}
 		if s, _ := r.Spec.Source.(string); s != "/absolute/path" {
 			t.Errorf("absolute source rewritten unexpectedly: %q", s)
 		}

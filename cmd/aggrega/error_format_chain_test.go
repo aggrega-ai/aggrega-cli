@@ -153,13 +153,13 @@ func TestFormatCompilerError_JoinOfNestedChains(t *testing.T) {
 // enclosing frame with a count header; errors.Is keeps traversing.
 func TestFormatCompilerError_MultiErrorLink_Step4cShape(t *testing.T) {
 	t.Parallel()
-	ambiguity := fmt.Errorf(
-		"%w: component %q (type %q): recipes [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0] all implement it",
-		catalog.ErrAmbiguousImplements, "db", "core/datastore/mariadb:1.0.0")
+	unmapped := fmt.Errorf(
+		"%w: component %q (type %q); recipes implementing it: [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0]; pin one in the Manifest",
+		catalog.ErrNoRecipeResolved, "db", "core/datastore/mariadb:1.0.0")
 	noRecipe := fmt.Errorf(
 		"%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it",
 		catalog.ErrNoRecipeResolved, "metrics", "core/metrics:1.0.0")
-	join := stderrors.Join(ambiguity, noRecipe)
+	join := stderrors.Join(unmapped, noRecipe)
 	head := cerrors.Wrap(join, cerrors.CatalogError,
 		cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
 
@@ -168,14 +168,14 @@ func TestFormatCompilerError_MultiErrorLink_Step4cShape(t *testing.T) {
 		"Step 4c (recipe resolution)",
 		"caused by (2):",
 		"cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0",
-		"all implement it",
+		"pin one in the Manifest",
 		"no Manifest mapping and no feature recipe implements it",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Step-4c shape missing %q\n--- got ---\n%s", want, got)
 		}
 	}
-	if !stderrors.Is(head, catalog.ErrAmbiguousImplements) || !stderrors.Is(head, catalog.ErrNoRecipeResolved) {
+	if !stderrors.Is(head, catalog.ErrNoRecipeResolved) {
 		t.Error("errors.Is must keep traversing through the multi-error link")
 	}
 }

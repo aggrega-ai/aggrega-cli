@@ -113,7 +113,7 @@ func TestCompletionLabelCategoryReturnsEmptyAtThisWI(t *testing.T) {
 	t.Parallel()
 	items := LabelValue("component.aggrega.ai/category")
 	if len(items) != 0 {
-		t.Errorf("LabelValue(category) = %+v; want empty (table deferred-empty at this WI)", items)
+		t.Errorf("LabelValue(category) = %+v; want empty (category table currently empty)", items)
 	}
 }
 
@@ -180,9 +180,36 @@ func TestCompletionSchemaKeywordsExtensionsSortAfterVanilla(t *testing.T) {
 func TestCompletionManifestRecipeReferenceEnumeratesRecipeURIs(t *testing.T) {
 	t.Parallel()
 	uris := []string{"recipes/helm-server", "recipes/compose-worker"}
-	items := ManifestRecipeReference(uris, "")
+	// No mapping type → plain alphabetical enumeration (the fallback).
+	items := ManifestRecipeReference(uris, "", "", nil)
 	if len(items) != 2 {
 		t.Fatalf("ManifestRecipeReference returned %d items; want 2", len(items))
+	}
+}
+
+// TestCompletionManifestRecipeReferenceRanksImplementersFirst pins the
+// implements-aware ordering: recipes whose spec.implements is able to implement
+// the mapping-key type rank ahead of the rest, while EVERY recipe is still
+// offered (implements suggests, never constrains — the author may map any
+// recipe). Ranking is on the version-stripped base.
+func TestCompletionManifestRecipeReferenceRanksImplementersFirst(t *testing.T) {
+	t.Parallel()
+	uris := []string{"helm-api", "helm-db", "terraform-api"} // sorted, as the enumerator delivers
+	implementsByName := map[string]string{
+		"helm-api":      "core/compute/api-server:1.0.0",
+		"helm-db":       "core/datastore/postgres:1.0.0",
+		"terraform-api": "core/compute/api-server:^1.0.0",
+	}
+	items := ManifestRecipeReference(uris, "", "core/compute/api-server", implementsByName)
+	if len(items) != 3 {
+		t.Fatalf("got %d items; want 3 — every recipe is still offered (rank, not filter)", len(items))
+	}
+	// Implementers first (alphabetical within the group), non-implementer last.
+	want := []string{"helm-api", "terraform-api", "helm-db"}
+	for i, w := range want {
+		if items[i].Label != w {
+			t.Errorf("rank %d = %q; want %q (implementers-first, then the rest)", i, items[i].Label, w)
+		}
 	}
 }
 

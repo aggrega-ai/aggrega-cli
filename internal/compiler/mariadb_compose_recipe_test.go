@@ -101,10 +101,14 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 		return &renderCompose.ComposeEngine{}, nil
 	}
 
+	mt := &types.MappingTier{}
+	mt.Type.Set("core/datastore/mariadb:1.0.0", "mariadb")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: mt}}}
+
 	result, err := renderer.RenderAll(
 		context.Background(),
 		input,
-		cat.RecipeLookup(),
+		cat.RecipeLookupWithManifest(manifest),
 		composeFactory,
 	)
 	if err != nil {

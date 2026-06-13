@@ -5,6 +5,12 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
+    components:
+      type:
+        core/api: api-recipe:1.0.0
+        core/db: db-recipe:1.0.0
+        core/cache: redis-recipe:1.0.0
+        core/gated: gated-recipe:1.0.0
     features:
       type:
         core/sidecar: sidecar-fr:1.0.0

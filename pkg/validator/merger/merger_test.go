@@ -738,7 +738,7 @@ func TestResolveChain_NilChild(t *testing.T) {
 // without error and the resulting validator validates instances
 // normally.
 //
-// The test exercises the full cross-WI surface: Merge produces a
+// The test exercises the full merge surface: Merge produces a
 // schema carrying __source_origin; jsonschema.New consumes the same
 // schema without error; the resulting Validator validates instances
 // and emits Findings only on real constraint violations, never on

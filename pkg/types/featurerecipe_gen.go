@@ -41,7 +41,7 @@ type FeatureRecipeMetadata struct {
 type FeatureRecipeSpec struct {
 	// Provider The explicit execution engine this recipe targets (e.g., 'helm', 'terraform', 'compose').
 	Provider string `json:"provider" yaml:"provider"`
-	// Implements API Contract mapping this recipe to a catalog Feature URI (including credential Features labeled feature.aggrega.ai/kind: secret). Supports exact version, major-compatible range (^), or unversioned matching. Validated for Interface Parity by the compiler.
+	// Implements Declares which catalog Feature type this recipe is able to implement (including credential Features labeled feature.aggrega.ai/kind: secret; exact version, major-compatible range '^', or unversioned). The compiler uses it to verify Manifest mappings and to suggest candidates in diagnostics and editor completion; it never resolves a build. The Manifest mapping is the user's explicit deployment choice, pinned in the lockfile.
 	Implements string `json:"implements" yaml:"implements"`
 	// Locals The Private Ops State. Internal computation results available only within this FeatureRecipe's templates. Used to export physical realities (e.g., target containers, JSON paths) for downstream Wasm plugins. Never exposed to callers — use provides for the public API.
 	Locals OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`

@@ -78,10 +78,9 @@ func writeEntityFile(t *testing.T, baseYAML []byte, proposedVersion string) stri
 }
 
 // TestLintPrePublishMatrixComponent exercises the 9-cell matrix for
-// the Component kind. Per acceptance criterion 3 of WI 14, the
-// matrix asserts HALT/PASS per (change category, proposed bump)
-// cell. Remaining 7 kinds defer to future implementation
-// (close-out integration test).
+// the Component kind. The matrix asserts HALT/PASS per (change
+// category, proposed bump) cell. Remaining 7 kinds defer to future
+// implementation.
 func TestLintPrePublishMatrixComponent(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
 
@@ -122,7 +121,7 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 				FetchTarget:    target,
 			}
 			err := lintRun(cfg)
-			// Per Observation 1 fix: NO silent-swallow. Matrix
+			// NO silent-swallow. Matrix
 			// fixtures are clean across all 7 rules; any halt is
 			// the schema-evolution one we care about (or a
 			// regression we want to surface).

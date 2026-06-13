@@ -152,7 +152,7 @@ func (m *memoryTagLister) Tags(ctx context.Context, last string, fn func(tags []
 }
 
 // TestListTagsAndLatestNonPreRelease pins the tag-listing helpers
-// added at WI 14 for `aggrega lint --pre-publish`'s previous-version
+// added for `aggrega lint --pre-publish`'s previous-version
 // lookup. ListTags materialises every tag the target carries;
 // LatestNonPreRelease filters pre-release tags and returns the
 // highest semver remaining.
@@ -211,7 +211,7 @@ func TestLatestNonPreReleaseEmptyAndFirstPublication(t *testing.T) {
 
 // TestHasAnySemverTag pins the helper used by the CLI to
 // distinguish "no previous version exists" from "tags exist but
-// all are pre-release" (Observation 4 fix).
+// all are pre-release".
 func TestHasAnySemverTag(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

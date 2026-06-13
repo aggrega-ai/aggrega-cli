@@ -41,18 +41,14 @@ var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinc
 // load rather than silently shadowed.
 var ErrDuplicateRecipeIdentity = errors.New("duplicate recipe identity (spec.provider + metadata.name + version) in the catalog")
 
-// ErrAmbiguousImplements fires when a component/feature type carries no Manifest
-// mapping yet more than one catalog recipe implements it — the compiler cannot
-// pick one without guessing, so it halts and names the colliding recipes. This
-// is the implements-search analogue of ErrAmbiguousTypeMapping, possible only
-// because the catalog (keyed by identity) holds multiple recipes per type.
-var ErrAmbiguousImplements = errors.New("multiple recipes implement this type and the Manifest does not map it; pin the instance or type in the Manifest to disambiguate")
-
-// ErrNoRecipeResolved fires when a component/feature instance resolves to no
-// recipe at all — no Manifest mapping names it and no catalog recipe implements
-// its type. The build halts rather than silently emitting a component with no
-// rendered output.
-var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance; map its type in the Manifest or add a recipe implementing it")
+// ErrNoRecipeResolved fires when a component/feature instance has no explicit
+// Manifest mapping for its type. Resolution is mapping-only — the catalog never
+// chooses a recipe by spec.implements, so an unmapped instance halts regardless
+// of how many recipes implement its type. The diagnostic names the implementing
+// recipes as pin candidates: implements informs the choice, the author makes it,
+// and the Manifest mapping records it. Also fires when a mapping names a recipe
+// absent from the catalog (a dangling mapping).
+var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type")
 
 // recipeURIKey composes the bare "name:version" URI form Manifest mapping
 // values and the closure walker use. A versionless entity keys on its bare
@@ -163,18 +159,15 @@ func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.Re
 func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.Recipe, bool) {
 	return func(instanceName, componentType string) (*types.Recipe, bool) {
 		// Layer 1: flat-shape mapping (name-wins-over-type via flatComponentURI).
-		// A version-ambiguous mapping error is swallowed to a miss here — render
-		// is resilient via the Layer-3 implements fallback below; the loud
-		// ErrAmbiguousTypeMapping is the pull/source-descent contract
-		// (ComponentRecipeURI), where a wrong pick mis-pins a source.
+		// A version-ambiguous mapping error is swallowed to a miss here; the
+		// loud ErrAmbiguousTypeMapping is the pull/source-descent contract
+		// (ComponentRecipeURI), where a wrong pick mis-pins a source. A mapped
+		// URI that does not resolve falls through to a miss and surfaces as a
+		// CATALOG_ERROR at the resolution-completeness pass.
 		if uri, ok, err := flatComponentURI(manifest, instanceName, componentType); err == nil && ok {
 			if r, found := c.RecipeByURI(uri); found {
 				return &r, true
 			}
-			// Manifest mapped this type to a URI that doesn't resolve;
-			// fall through to subsequent layers so legacy fixtures don't
-			// break, but in production this would surface as a CATALOG_ERROR
-			// at the consistency-check step.
 		}
 		// Layer 2: legacy v2 per-provider mapping.
 		if uri, ok, err := legacyComponentURI(manifest, instanceName, componentType); err == nil && ok {
@@ -182,15 +175,12 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 				return &r, true
 			}
 		}
-		// Layer 3: implements-search (the name tier is a Manifest-mapping
-		// concern, not an implements axis). A type with no mapping and >1
-		// implementing recipe misses here and halts loudly in the pre-render
-		// resolution-completeness pass — render never silently picks one.
-		r, _, ok := matchRecipeByImplements(c.Recipes, componentType)
-		if !ok {
-			return nil, false
-		}
-		return &r, true
+		// Resolution is mapping-only: an unmapped type is a miss here. The
+		// catalog never chooses a recipe by spec.implements — an unmapped
+		// instance halts loudly in the pre-render resolution-completeness pass
+		// (resolveComponentRecipeForVerify), which names the implementing
+		// recipes as pin candidates.
+		return nil, false
 	}
 }
 
@@ -206,11 +196,10 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 				return &fr, true
 			}
 		}
-		fr, _, ok := matchFeatureRecipeByImplements(c.FeatureRecipes, featureType)
-		if !ok {
-			return nil, false
-		}
-		return &fr, true
+		// Mapping-only resolution: an unmapped feature type is a miss here;
+		// implements never resolves. Unmapped feature instances halt in the
+		// pre-render resolution-completeness pass with pin candidates.
+		return nil, false
 	}
 }
 
@@ -361,50 +350,41 @@ func implementsSatisfies(impl, componentType string) bool {
 	return impl == cBase
 }
 
-// matchRecipeByImplements searches the catalog for recipes whose spec.implements
-// satisfies componentType. It returns the single match when exactly one recipe
-// implements the type; the sorted identity list of all matches is returned for
-// the caller's diagnostics. Zero or more than one return ok=false — the
-// resolution-completeness pass turns those into a loud halt (no recipe / the
-// ambiguity the Manifest must disambiguate), so render never silently picks.
-func matchRecipeByImplements(recipes map[string]types.Recipe, componentType string) (types.Recipe, []string, bool) {
-	var match types.Recipe
+// recipesImplementing returns the sorted, provider-qualified identity keys of
+// every catalog recipe whose spec.implements satisfies componentType. It is a
+// SUGGESTION provider only — resolution is mapping-only and never consults it.
+// Its readers are the no-mapping diagnostic (pin candidates) and the Manifest
+// recipe-reference completion (implements-aware ranking).
+func recipesImplementing(recipes map[string]types.Recipe, componentType string) []string {
 	var ids []string
 	for _, r := range recipes {
 		if implementsSatisfies(r.Spec.Implements, componentType) {
-			match = r
 			ids = append(ids, recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)
-	if len(ids) == 1 {
-		return match, ids, true
-	}
-	return types.Recipe{}, ids, false
+	return ids
 }
 
-// matchFeatureRecipeByImplements is the FeatureRecipe analogue of
-// matchRecipeByImplements.
-func matchFeatureRecipeByImplements(frs map[string]types.FeatureRecipe, featureType string) (types.FeatureRecipe, []string, bool) {
-	var match types.FeatureRecipe
+// featureRecipesImplementing is the FeatureRecipe analogue of recipesImplementing.
+func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType string) []string {
 	var ids []string
 	for _, fr := range frs {
 		if implementsSatisfies(fr.Spec.Implements, featureType) {
-			match = fr
 			ids = append(ids, recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)
-	if len(ids) == 1 {
-		return match, ids, true
-	}
-	return types.FeatureRecipe{}, ids, false
+	return ids
 }
 
-// resolveComponentRecipeForVerify runs the renderer's component cascade
-// (Manifest name → type → legacy mapping, then the implements search) for one
-// instance and returns a loud error when it does not resolve to exactly one
-// recipe. nil means the instance resolves cleanly.
+// resolveComponentRecipeForVerify verifies that one component instance resolves
+// through an explicit Manifest mapping. Resolution is mapping-only: a mapped
+// instance whose recipe is in the catalog resolves cleanly; a mapping to an
+// absent recipe (dangling) or no mapping at all halts loudly. An unmapped
+// instance always halts regardless of how many recipes implement its type — the
+// diagnostic lists those recipes as pin candidates (implements suggests; the
+// author chooses; the Manifest records). nil means the instance resolves cleanly.
 func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, instanceName, componentType string) error {
 	uri, ok, err := ComponentRecipeURI(manifest, instanceName, componentType)
 	if err != nil {
@@ -416,14 +396,10 @@ func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, inst
 		}
 		return nil
 	}
-	_, ids, single := matchRecipeByImplements(c.Recipes, componentType)
-	if single {
-		return nil
+	if candidates := recipesImplementing(c.Recipes, componentType); len(candidates) > 0 {
+		return fmt.Errorf("%w: component %q (type %q); recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved, instanceName, componentType, candidates)
 	}
-	if len(ids) == 0 {
-		return fmt.Errorf("%w: component %q (type %q): no Manifest mapping and no recipe implements it", ErrNoRecipeResolved, instanceName, componentType)
-	}
-	return fmt.Errorf("%w: component %q (type %q): recipes %v all implement it", ErrAmbiguousImplements, instanceName, componentType, ids)
+	return fmt.Errorf("%w: component %q (type %q); no recipe implements this type", ErrNoRecipeResolved, instanceName, componentType)
 }
 
 // resolveFeatureRecipeForVerify is the FeatureRecipe analogue of
@@ -439,25 +415,23 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 		}
 		return nil
 	}
-	_, ids, single := matchFeatureRecipeByImplements(c.FeatureRecipes, featureType)
-	if single {
-		return nil
+	if candidates := featureRecipesImplementing(c.FeatureRecipes, featureType); len(candidates) > 0 {
+		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved, instanceName, featureType, candidates)
 	}
-	if len(ids) == 0 {
-		return fmt.Errorf("%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it", ErrNoRecipeResolved, instanceName, featureType)
-	}
-	return fmt.Errorf("%w: feature %q (type %q): feature recipes %v all implement it", ErrAmbiguousImplements, instanceName, featureType, ids)
+	return fmt.Errorf("%w: feature %q (type %q); no feature recipe implements this type", ErrNoRecipeResolved, instanceName, featureType)
 }
 
-// VerifyRecipeResolution is the pre-render resolution-completeness pass: every
-// component and feature instance in the IR must resolve to exactly one recipe.
-// It runs the same cascade the renderer uses and halts loudly — rather than
-// letting a no-recipe instance silently render nothing or an ambiguous type
-// silently pick one — naming the offending instance and (for ambiguity) the
-// colliding recipes. Errors across all instances are collected (no
-// short-circuit) and joined in IR author order. Returns nil when every instance
-// resolves cleanly. Signature matches pipeline.Options.RecipeResolutionVerifier.
-func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
+// ResolutionFindings is the shared resolution-completeness producer: it walks
+// every component and feature instance in the IR and returns one error per
+// instance that does NOT resolve through an explicit Manifest mapping (unmapped
+// — naming the implementing recipes as pin candidates — or mapped to a recipe
+// absent from the catalog). The slice is in IR author order; an empty slice
+// means every instance resolves cleanly. Both surfaces consume this single
+// routine so they cannot drift: the CLI build joins the slice into a loud halt
+// (VerifyRecipeResolution); the serve daemon maps each finding to a resilient
+// diagnostic. The mapping-only cascade matches the renderer's — the catalog
+// never chooses a recipe by spec.implements.
+func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
 	if graph == nil {
 		return nil
 	}
@@ -492,7 +466,16 @@ func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.
 			}
 		}
 	}
-	return errors.Join(errs...)
+	return errs
+}
+
+// VerifyRecipeResolution is the CLI build's pre-render resolution-completeness
+// halt: it joins ResolutionFindings into a single error so an unmapped instance
+// halts the build loudly rather than silently rendering nothing. Returns nil
+// when every instance resolves cleanly. Signature matches
+// pipeline.Options.RecipeResolutionVerifier.
+func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
+	return errors.Join(c.ResolutionFindings(manifest, graph)...)
 }
 
 // VerifyManifestImplementsConsistency walks every populated mapping

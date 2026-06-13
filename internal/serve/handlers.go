@@ -23,7 +23,7 @@ import (
 
 // initializeParams is the request shape for `aggrega/initialize`. The
 // daemon reads positionEncodings off the client's capabilities; other
-// LSP initialize fields are accepted but ignored at this WI.
+// LSP initialize fields are accepted but ignored today.
 type initializeParams struct {
 	Capabilities clientCapabilities `json:"capabilities"`
 }
@@ -665,7 +665,7 @@ type completionParams struct {
 // completionContext mirrors a slice of LSP's CompletionContext shape.
 // triggerKind per LSP: 1 = Invoked (no trigger character), 2 =
 // TriggerCharacter, 3 = TriggerForIncompleteCompletions. Only
-// triggerCharacter is consumed at this WI; other fields are accepted
+// triggerCharacter is consumed today; other fields are accepted
 // and ignored for forward-compatibility.
 type completionContext struct {
 	TriggerKind      int    `json:"triggerKind"`

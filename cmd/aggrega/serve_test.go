@@ -394,7 +394,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 	ws := t.TempDir()
 
 	// Minimal workspace config; the resolve family does not consume
-	// CatalogDirs at this WI.
+	// CatalogDirs today.
 	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"), []byte("workspace: {}\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

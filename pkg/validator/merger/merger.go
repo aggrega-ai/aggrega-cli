@@ -78,7 +78,7 @@ type NarrowingViolation struct {
 //
 // Narrowing violations populate the returned Schema's
 // NarrowingViolations slice; an error is NOT returned on narrowing
-// (signal-only per the WI's contract). Returns a non-nil error only
+// (signal-only by contract). Returns a non-nil error only
 // on structural failures (empty input, nil schemas in the chain).
 func Merge(schemas []*Schema) (*Schema, error) {
 	if len(schemas) == 0 {

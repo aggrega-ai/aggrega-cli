@@ -550,7 +550,7 @@ func fetchPreviousRegistryVersion(
 
 // resolveParent walks workspace catalog_dirs to find the parent
 // entity named in header.Spec.Extends. Only catalog-dir
-// resolution at this WI; OCI parent fetch defers. Returns nil
+// resolution is performed today; OCI parent fetch defers. Returns nil
 // silently when extends is empty or the parent isn't locally
 // resolvable — the narrowing rule short-circuits on nil parent.
 func resolveParent(header lintEntityHeader, wsCfg workspaceconfig.Config, entityPath string) (json.RawMessage, error) {

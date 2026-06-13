@@ -6,7 +6,7 @@
 // field of its kind (plus representative nested content) with
 // schema-valid values, so marshalling and validating it exercises the
 // kind's full Go surface against its envelope schema. Kept adjacent to
-// the suite per the WI's "one constructor per kind" discipline.
+// the suite per the "one constructor per kind" discipline.
 package types_test
 
 import (

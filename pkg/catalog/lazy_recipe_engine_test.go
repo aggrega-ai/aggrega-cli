@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -39,19 +40,20 @@ spec:
 	if len(ll.recipeSkips) != 1 {
 		t.Fatalf("expected the broken recipe to be skipped-with-reason, got %d skips", len(ll.recipeSkips))
 	}
-	// The valid recipes still resolve by implements.
-	if _, _, ok := matchRecipeByImplements(ll.recipes, "core/a"); !ok {
-		t.Errorf("core/a should resolve to its recipe despite the unrelated broken recipe")
+	// The valid recipes are still enumerated as candidates by implements.
+	if len(recipesImplementing(ll.recipes, "core/a")) == 0 {
+		t.Errorf("core/a should enumerate its recipe despite the unrelated broken recipe")
 	}
-	if _, _, ok := matchRecipeByImplements(ll.recipes, "core/b"); !ok {
-		t.Errorf("core/b should resolve to its recipe despite the unrelated broken recipe")
+	if len(recipesImplementing(ll.recipes, "core/b")) == 0 {
+		t.Errorf("core/b should enumerate its recipe despite the unrelated broken recipe")
 	}
 }
 
-// TestLazyRecipe_EagerLazyParity proves the lazily-enumerated recipe set resolves
-// identically to the eager *Catalog's for the same VALID catalog — the matcher,
-// fed lazily, picks the same recipe identity. Non-vacuous: it asserts a non-empty
-// resolution on both sides and identity equality.
+// TestLazyRecipe_EagerLazyParity proves the suggestion enumerator over the
+// lazily-enumerated recipe set yields the SAME candidate id-list as over the
+// eager *Catalog's for the same VALID catalog — the enumerator, fed lazily,
+// names the same implementing recipes. Non-vacuous: it asserts a non-empty
+// candidate list on both sides and list equality.
 func TestLazyRecipe_EagerLazyParity(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -67,29 +69,28 @@ func TestLazyRecipe_EagerLazyParity(t *testing.T) {
 	ll.buildRecipeIndex()
 
 	for _, typ := range []string{"core/a", "core/b"} {
-		er, _, eok := matchRecipeByImplements(eager.Recipes, typ)
-		lr, _, lok := matchRecipeByImplements(ll.recipes, typ)
-		if !eok || !lok {
-			t.Fatalf("type %q: eager ok=%v lazy ok=%v (expected both resolvable)", typ, eok, lok)
+		eids := recipesImplementing(eager.Recipes, typ)
+		lids := recipesImplementing(ll.recipes, typ)
+		if len(eids) == 0 || len(lids) == 0 {
+			t.Fatalf("type %q: eager ids=%v lazy ids=%v (expected both non-empty)", typ, eids, lids)
 		}
-		if er.Metadata.Name != lr.Metadata.Name || er.Metadata.Version != lr.Metadata.Version {
-			t.Errorf("type %q resolves to %s:%s eager vs %s:%s lazy", typ,
-				er.Metadata.Name, er.Metadata.Version, lr.Metadata.Name, lr.Metadata.Version)
+		if !slices.Equal(eids, lids) {
+			t.Errorf("type %q candidate id-list differs: eager %v vs lazy %v", typ, eids, lids)
 		}
 	}
-	efr, _, eok := matchFeatureRecipeByImplements(eager.FeatureRecipes, "sec/x")
-	lfr, _, lok := matchFeatureRecipeByImplements(ll.featureRecipes, "sec/x")
-	if !eok || !lok || efr.Metadata.Name != lfr.Metadata.Name {
-		t.Errorf("feature recipe sec/x parity failed: eager ok=%v lazy ok=%v", eok, lok)
+	efr := featureRecipesImplementing(eager.FeatureRecipes, "sec/x")
+	lfr := featureRecipesImplementing(ll.featureRecipes, "sec/x")
+	if len(efr) == 0 || len(lfr) == 0 || !slices.Equal(efr, lfr) {
+		t.Errorf("feature recipe sec/x candidate parity failed: eager %v vs lazy %v", efr, lfr)
 	}
 }
 
-// TestLazyRecipe_AmbiguityPreserved proves the implements search over the lazy
-// set still halts on ambiguity: two recipes implementing one type resolve to
-// no single recipe (the caller turns this into ErrAmbiguousImplements). The lazy
-// enumeration must hold ALL implementers for this to fire — a coverage gap would
-// silently pick one.
-func TestLazyRecipe_AmbiguityPreserved(t *testing.T) {
+// TestLazyRecipe_EnumeratesAllImplementers proves the suggestion enumerator over
+// the lazy set names every implementer: two recipes implementing one type both
+// appear in the candidate id-list. The suggestion enumerator must hold all
+// implementers for a complete candidate list — a coverage gap would drop one
+// from the pin suggestions surfaced on an unmapped-type halt.
+func TestLazyRecipe_EnumeratesAllImplementers(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeFixture(t, dir, "one.yaml", recipeYAML("core/recipe-one", "core/dup"))
@@ -98,10 +99,7 @@ func TestLazyRecipe_AmbiguityPreserved(t *testing.T) {
 	ll := NewLazyLookup(dir, "", []string{dir}, nil)
 	ll.buildRecipeIndex()
 
-	_, ids, ok := matchRecipeByImplements(ll.recipes, "core/dup")
-	if ok {
-		t.Fatalf("two recipes implement core/dup; resolution must NOT pick one (got single ok)")
-	}
+	ids := recipesImplementing(ll.recipes, "core/dup")
 	if len(ids) != 2 {
 		t.Errorf("expected 2 colliding recipe identities, got %d (%v)", len(ids), ids)
 	}

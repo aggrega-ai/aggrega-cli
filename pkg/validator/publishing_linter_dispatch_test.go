@@ -196,8 +196,8 @@ func TestDispatchHandlesUnknownRule(t *testing.T) {
 // policies. This test pins the round-trip at the SCHEMA-validation
 // layer: the constructed Policies JSON object passes schema
 // validation when embedded inside a LinterInput envelope; the plugin
-// accepts the envelope without rejecting unknown fields. Future rule
-// WIs that DO consult policies will assert flag-specific behaviour
+// accepts the envelope without rejecting unknown fields. Future
+// rules that DO consult policies will assert flag-specific behaviour
 // against the same round-trip.
 func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
@@ -467,8 +467,8 @@ func TestDispatchCategoryViolationSuppressedByPolicy(t *testing.T) {
 	}
 }
 
-// TestDispatchPublishingLinterBatch pins the batch dispatcher added
-// at WI 14: a single plugin load + N rule invocations. Each input
+// TestDispatchPublishingLinterBatch pins the batch dispatcher: a
+// single plugin load + N rule invocations. Each input
 // returns its own []LinterFinding in input order.
 func TestDispatchPublishingLinterBatch(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")

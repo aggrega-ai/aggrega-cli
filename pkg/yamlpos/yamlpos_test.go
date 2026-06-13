@@ -496,10 +496,10 @@ func TestClassifyManifestKeySideReturnsUnknown(t *testing.T) {
 	src := "spec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server:1.0.0\n"
 	// Cursor on the KEY "core/server" (line 4, char 9 = start of value
 	// portion of the indented entry). Key-side cursor on Manifest
-	// mappings is intentionally NOT classified at this WI.
+	// mappings is intentionally NOT classified today.
 	ctx := classifyAtCursor(t, src, 4, 9)
 	if ctx.Kind == ContextKindManifestRecipeReference {
-		t.Errorf("Kind = ContextKindManifestRecipeReference on the KEY side; should be Unknown at this WI")
+		t.Errorf("Kind = ContextKindManifestRecipeReference on the KEY side; should be Unknown today")
 	}
 }
 

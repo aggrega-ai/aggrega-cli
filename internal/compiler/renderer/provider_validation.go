@@ -32,7 +32,7 @@ func isSourceless(recipe *types.Recipe) bool {
 	}
 	if s, ok := recipe.Spec.Source.(string); ok {
 		return s == "" // empty string → treat as sourceless for validation purposes;
-		// the dedicated helm provider (WI-5) will reject empty-string source with ErrEmptySource.
+		// the dedicated helm provider will reject empty-string source with ErrEmptySource.
 	}
 	return false
 }

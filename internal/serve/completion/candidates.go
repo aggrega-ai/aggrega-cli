@@ -3,6 +3,8 @@
 
 package completion
 
+import "strings"
+
 // This file holds the per-context candidate generators. Each takes
 // the inputs the dispatcher pre-enumerates (URI lists, path lists,
 // local-name lists, label-name) and returns a sorted CompletionItem
@@ -20,8 +22,8 @@ func Kind() []CompletionItem {
 	})
 }
 
-// APIVersion returns the apiVersion candidate list. Single value at
-// this WI.
+// APIVersion returns the apiVersion candidate list. Single value
+// today.
 func APIVersion() []CompletionItem {
 	return orderedItems(APIVersions, KindValue, func(label string) string {
 		return "Aggrega API version"
@@ -30,7 +32,7 @@ func APIVersion() []CompletionItem {
 
 // LabelValue dispatches on the label-name to the appropriate closed
 // set. For component.aggrega.ai/category the candidates are the
-// ComponentCategories slice (empty at this WI). For other label
+// ComponentCategories slice (empty today). For other label
 // names there is no closed set; empty list.
 //
 // labelName is the dotted key under metadata.labels (e.g.,
@@ -127,14 +129,59 @@ func SchemaKeyword() []CompletionItem {
 	return out
 }
 
-// ManifestRecipeReference returns the candidate list for a Manifest
-// mapping value-side cursor. uris is the pre-enumerated list of
-// Recipe URIs from the workspace.
-func ManifestRecipeReference(uris []string, prefix string) []CompletionItem {
-	items := alphabeticalItems(uris, KindReference, func(label string) string {
+// ManifestRecipeReference returns the candidate list for a Manifest mapping
+// value-side cursor. uris is the pre-enumerated (sorted) list of Recipe or
+// FeatureRecipe URIs from the workspace. When mappingType names the
+// component/feature type the cursor's mapping key binds, recipes whose
+// spec.implements (implementsByName[uri]) is able to implement that type RANK
+// FIRST — implements is a suggestion that helps the author pick the right
+// recipe, never a constraint, so every recipe is still offered. Prefix filtering
+// is preserved, as is alphabetical order within each rank group (uris arrives
+// sorted and the partition is stable). An empty mappingType falls back to the
+// plain alphabetical list.
+func ManifestRecipeReference(uris []string, prefix, mappingType string, implementsByName map[string]string) []CompletionItem {
+	if mappingType == "" {
+		items := alphabeticalItems(uris, KindReference, func(string) string {
+			return "Recipe URI"
+		})
+		return filterByPrefix(items, prefix)
+	}
+	var matches, rest []string
+	for _, u := range uris {
+		if implementsBaseMatch(implementsByName[u], mappingType) {
+			matches = append(matches, u)
+		} else {
+			rest = append(rest, u)
+		}
+	}
+	ranked := make([]string, 0, len(uris))
+	ranked = append(ranked, matches...)
+	ranked = append(ranked, rest...)
+	items := orderedItems(ranked, KindReference, func(label string) string {
+		if implementsBaseMatch(implementsByName[label], mappingType) {
+			return "Recipe URI — implements " + mappingType
+		}
 		return "Recipe URI"
 	})
 	return filterByPrefix(items, prefix)
+}
+
+// implementsBaseMatch reports whether a recipe's spec.implements value is a
+// candidate for the given Manifest mapping-key type. The comparison is on the
+// version-stripped base (it is a ranking hint for authoring completion, not the
+// resolution precedence — resolution is mapping-only and never consults this).
+func implementsBaseMatch(impl, mappingType string) bool {
+	if impl == "" {
+		return false
+	}
+	return baseURI(impl) == baseURI(mappingType)
+}
+
+func baseURI(s string) string {
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimPrefix(s, "^")
 }
 
 // ReleaseAggregatePath returns the candidate list for a Release's

@@ -244,7 +244,7 @@ func TestCompletionDispatchSchemaValueOfNonTypeKeyReturnsEmpty(t *testing.T) {
 	// Cursor on the VALUE side of description: inside spec.schema.
 	// Per the deferred-value design, this returns empty candidates
 	// (no keyword candidates, no primitive candidates — schema-value
-	// completion is shipped only for type: keys at this WI).
+	// completion is shipped only for type: keys today).
 	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    description: A free-form description.\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)

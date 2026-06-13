@@ -14,3 +14,6 @@ spec:
         core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
         core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
         core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+    features:
+      type:
+        core/k8s-dns-resolver: k8s-dns-patcher:1.0.0
