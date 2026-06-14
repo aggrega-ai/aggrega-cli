@@ -174,9 +174,9 @@ func TestFeatureMatrix_ComposeSourcedWithBridge(t *testing.T) {
 		name:        "compose-sourced-with-bridge",
 		releaseFile: "compose-sourced-with-bridge.yaml",
 		extraCatalogPaths: []string{
-			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
+			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge/1.0.0/feature.yaml",
 			"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
-			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
+			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
 		},
 	})
 	if len(res.Files) == 0 {

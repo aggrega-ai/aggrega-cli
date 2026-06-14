@@ -30,10 +30,10 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 	t.Parallel()
 
 	for _, p := range []string{
-		"../../../aggrega-hub/aggrega-catalog/recipe/helm/mariadb-bitnami/recipe.yaml",
-		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb/recipe.yaml",
-		"../../../aggrega-hub/aggrega-catalog/recipe/terraform/mariadb-rds/recipe.yaml",
-		"../../../aggrega-hub/aggrega-catalog/recipe/cloudformation/mariadb-rds/recipe.yaml",
+		"../../../aggrega-hub/aggrega-catalog/recipe/helm/mariadb-bitnami/1.0.0/recipe.yaml",
+		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb/1.0.0/recipe.yaml",
+		"../../../aggrega-hub/aggrega-catalog/recipe/terraform/mariadb-rds/1.0.0/recipe.yaml",
+		"../../../aggrega-hub/aggrega-catalog/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
 	} {
 		if _, err := catalog.LoadAll("", p); err != nil {
 			t.Errorf("Recipe %q failed to load: %v", p, err)
@@ -59,7 +59,7 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	cat, err := catalog.LoadAll("", 
 		"../../../aggrega-hub/aggrega-catalog/component/core/datastore",
 		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb",
-		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
+		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
 	)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)

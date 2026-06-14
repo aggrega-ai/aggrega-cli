@@ -67,8 +67,8 @@ type pushConfig struct {
 // pushEntityHeader is the minimal YAML envelope pushRun parses out
 // of the entity file: kind, metadata.name, metadata.version. The
 // shape mirrors the per-kind envelope pkg/oci/bundle.go uses for
-// validateLibraryPerVersionSubdir; duplicated here because the push
-// verb needs the same fields for every kind, not just libraries.
+// validateEntityVersionPathSubdir; duplicated here because the push
+// verb needs the same fields for every kind.
 type pushEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -80,15 +80,15 @@ type pushEntityHeader struct {
 // pushRun bundles the entity at cfg.EntityPath and publishes it.
 // Reads workspace config; parses the entity envelope (kind,
 // metadata.name, metadata.version); bundles via pkg/oci.Bundle (which
-// handles per-kind dispatch including library per-version subdir
-// enforcement and Recipe / FeatureRecipe tar.gz directory walking);
-// constructs the OCI repository reference; pushes via pkg/oci.Push.
+// handles per-kind dispatch including per-version subdir enforcement for
+// every publishable kind and Recipe / FeatureRecipe tar.gz directory
+// walking); constructs the OCI repository reference; pushes via pkg/oci.Push.
 //
 // Returns wrapped errors on workspace-config validation failure,
 // entity-file read / parse failure, bundle failure (including
 // ErrUnknownEntityKind for non-publishable kinds and
-// ErrLibraryVersionMismatch for libraries whose metadata.version
-// disagrees with their per-version subdirectory), and push failure.
+// ErrEntityVersionPathMismatch for an entity whose metadata.version
+// disagrees with its per-version subdirectory), and push failure.
 //
 // When cfg.DryRun is true, pushRun prints the proposed
 // <reference>:<tag> + mediatype + bundle byte count and returns

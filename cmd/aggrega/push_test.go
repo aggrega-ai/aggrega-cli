@@ -93,7 +93,7 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			t.Chdir(root)
-			entityPath := filepath.Join(root, "entity.yaml")
+			entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
 			writeEntityFixture(t, entityPath, tc.body)
 
 			store := memory.New()
@@ -178,10 +178,10 @@ spec:
 		PushTarget: memory.New(),
 	})
 	if err == nil {
-		t.Fatal("expected ErrLibraryVersionMismatch; got nil")
+		t.Fatal("expected ErrEntityVersionPathMismatch; got nil")
 	}
-	if !errors.Is(err, oci.ErrLibraryVersionMismatch) {
-		t.Errorf("error should wrap ErrLibraryVersionMismatch; got %v", err)
+	if !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+		t.Errorf("error should wrap ErrEntityVersionPathMismatch; got %v", err)
 	}
 }
 
@@ -206,7 +206,7 @@ spec:
 func TestPushRecipeBundlesCoLocatedTreeAsTarGz(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	recipeDir := filepath.Join(root, "recipes", "server")
+	recipeDir := filepath.Join(root, "recipes", "server", "1.0.0")
 	writeEntityFixture(t, filepath.Join(recipeDir, "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
@@ -257,7 +257,7 @@ spec:
 func TestPushRecipePreservesRemoteSourceURL(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	recipeDir := filepath.Join(root, "recipes", "mariadb")
+	recipeDir := filepath.Join(root, "recipes", "mariadb", "1.0.0")
 	recipeBody := `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
@@ -308,7 +308,7 @@ spec:
 func TestPushAcceptsAggregate(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	entityPath := filepath.Join(root, "entity.yaml")
+	entityPath := filepath.Join(root, "1.0.0", "aggregate.yaml")
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -379,7 +379,7 @@ metadata:
 func TestPushDryRunSkipsNetworkCall(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	entityPath := filepath.Join(root, "entity.yaml")
+	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -421,7 +421,7 @@ func TestPushUsesWorkspaceDefaultRegistry(t *testing.T) {
 workspace:
   default_registry: workspace.example.com
 `)
-	entityPath := filepath.Join(root, "entity.yaml")
+	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:

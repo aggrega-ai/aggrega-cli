@@ -23,7 +23,7 @@ func TestSentinelPassThroughErrorsIs(t *testing.T) {
 		{"ErrFetchNetworkUnreachable", oci.ErrFetchNetworkUnreachable},
 		{"ErrFetchIntegrity", oci.ErrFetchIntegrity},
 		{"ErrUnknownEntityKind", oci.ErrUnknownEntityKind},
-		{"ErrLibraryVersionMismatch", oci.ErrLibraryVersionMismatch},
+		{"ErrEntityVersionPathMismatch", oci.ErrEntityVersionPathMismatch},
 	}
 	for _, tc := range cases {
 		tc := tc

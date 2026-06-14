@@ -24,11 +24,13 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm/mariadb-bitnami\n"))
+	// Per-version layout: recipe.yaml sits under a <version>/ dir matching its
+	// metadata.version (the generalized per-version-subdir contract).
+	dir := filepath.Join(t.TempDir(), "1.0.0")
 	if err := os.MkdirAll(filepath.Join(dir, "source"), 0o755); err != nil {
 		t.Fatalf("mkdir source/: %v", err)
 	}
+	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm/mariadb-bitnami\n  version: 1.0.0\n"))
 	mustWrite(t, filepath.Join(dir, "source", "Chart.yaml"), []byte("name: mariadb\nversion: 25.0.8\n"))
 	mustWrite(t, filepath.Join(dir, "source", "values.yaml"), []byte("primary:\n  replicaCount: 1\n"))
 
@@ -92,21 +94,21 @@ func TestPullPushLibraryPerVersionSubdirEnforced(t *testing.T) {
 
 	_, _, err = oci.Bundle("SchemaLibrary", filepath.Join(bad, "library.yaml"))
 	if err == nil {
-		t.Fatal("expected ErrLibraryVersionMismatch; got nil")
+		t.Fatal("expected ErrEntityVersionPathMismatch; got nil")
 	}
-	if !errors.Is(err, oci.ErrLibraryVersionMismatch) {
-		t.Errorf("error should wrap ErrLibraryVersionMismatch; got %v", err)
+	if !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+		t.Errorf("error should wrap ErrEntityVersionPathMismatch; got %v", err)
 	}
 }
 
 func TestBundleDeterminism(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("kind: Recipe\n"))
+	dir := filepath.Join(t.TempDir(), "2.0.0")
 	if err := os.MkdirAll(filepath.Join(dir, "source"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("kind: Recipe\nmetadata:\n  version: 2.0.0\n"))
 	mustWrite(t, filepath.Join(dir, "source", "Chart.yaml"), []byte("name: x\n"))
 
 	first, _, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"))
@@ -122,19 +124,53 @@ func TestBundleDeterminism(t *testing.T) {
 	}
 }
 
-func TestBundleAggregate(t *testing.T) {
+// TestBundleBareKindsPerVersionSubdir covers the bare-YAML publishable kinds
+// (Component / Feature / Provider / Aggregate), which the per-version-subdir
+// check did NOT cover before this change. Each must bundle in-layout (the entity
+// file's parent dir equals metadata.version) and fail off-layout with
+// ErrEntityVersionPathMismatch.
+func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "aggregate.yaml"), []byte("kind: Aggregate\nmetadata:\n  name: app\n"))
-	data, mt, err := oci.Bundle("Aggregate", filepath.Join(dir, "aggregate.yaml"))
-	if err != nil {
-		t.Fatalf("Aggregate should bundle via the generic YAML path; got %v", err)
+	cases := []struct {
+		kind, file string
+		mt         string
+	}{
+		{"Component", "component.yaml", oci.MediaTypeComponent},
+		{"Feature", "feature.yaml", oci.MediaTypeFeature},
+		{"Provider", "provider.yaml", oci.MediaTypeProvider},
+		{"Aggregate", "aggregate.yaml", oci.MediaTypeAggregate},
 	}
-	if mt != oci.MediaTypeAggregate {
-		t.Errorf("Aggregate bundle mediatype = %q; want %q", mt, oci.MediaTypeAggregate)
+	body := func(kind string) []byte {
+		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	}
-	if len(data) == 0 {
-		t.Errorf("Aggregate bundle bytes empty")
+	for _, tc := range cases {
+		t.Run(tc.kind+"/in-layout", func(t *testing.T) {
+			ver := filepath.Join(t.TempDir(), "1.0.0")
+			if err := os.MkdirAll(ver, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			mustWrite(t, filepath.Join(ver, tc.file), body(tc.kind))
+			data, mt, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file))
+			if err != nil {
+				t.Fatalf("in-layout %s should bundle; got %v", tc.kind, err)
+			}
+			if mt != tc.mt {
+				t.Errorf("%s mediatype = %q; want %q", tc.kind, mt, tc.mt)
+			}
+			if len(data) == 0 {
+				t.Errorf("%s bundle bytes empty", tc.kind)
+			}
+		})
+		t.Run(tc.kind+"/off-layout", func(t *testing.T) {
+			ver := filepath.Join(t.TempDir(), "9.9.9") // parent dir != metadata.version
+			if err := os.MkdirAll(ver, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			mustWrite(t, filepath.Join(ver, tc.file), body(tc.kind))
+			if _, _, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file)); !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+				t.Errorf("off-layout %s should wrap ErrEntityVersionPathMismatch; got %v", tc.kind, err)
+			}
+		})
 	}
 }
 

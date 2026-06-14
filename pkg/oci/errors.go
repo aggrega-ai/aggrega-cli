@@ -36,12 +36,14 @@ var ErrFetchIntegrity = errors.New("oci: content digest mismatch")
 // at the dispatch boundary, not a user-input error.
 var ErrUnknownEntityKind = errors.New("oci: unknown entity kind for mediatype dispatch")
 
-// ErrLibraryVersionMismatch is returned by the publish-time
-// per-version-subdirectory validator when a SchemaLibrary or
-// MappingLibrary's filesystem path version segment doesn't match the
-// entity's metadata.version field. Call sites wrap this sentinel
-// with both values for the operator's diagnostic.
-var ErrLibraryVersionMismatch = errors.New("oci: library per-version subdirectory mismatch")
+// ErrEntityVersionPathMismatch is returned by the publish-time
+// per-version-subdirectory validator when a publishable entity's
+// filesystem path version segment (the parent directory of the entity
+// file) doesn't match the entity's metadata.version field. It applies
+// to every publishable kind — Component, Feature, Provider, Aggregate,
+// Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary. Call sites wrap
+// this sentinel with both values for the operator's diagnostic.
+var ErrEntityVersionPathMismatch = errors.New("oci: entity per-version subdirectory mismatch")
 
 // RemediationFor returns the operator-actionable remediation hint
 // for a fetch-sentinel error. The registryHost substring substitutes

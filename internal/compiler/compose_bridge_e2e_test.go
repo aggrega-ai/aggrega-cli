@@ -55,9 +55,9 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 		ReleasePath: "testdata/compose-bridge/release.yaml",
 		CatalogPaths: []string{
 			"testdata/compose-bridge/catalog/base",
-			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
+			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge/1.0.0/feature.yaml",
 			"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
-			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
+			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
 		},
 	})
 

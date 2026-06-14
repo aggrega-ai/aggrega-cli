@@ -35,9 +35,9 @@ func TestEmittedIRConformsToSchema(t *testing.T) {
 		{"uses-edge-subagg", "testdata/uses-edge-subagg/release.yaml", []string{"testdata/uses-edge-config/catalog/base", "testdata/uses-edge-subagg/catalog/base"}},
 		{"compose-bridge", "testdata/compose-bridge/release.yaml", []string{
 			"testdata/compose-bridge/catalog/base",
-			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge.yaml",
+			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge/1.0.0/feature.yaml",
 			"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
-			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components.yaml",
+			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
 		}},
 		{"determinism-fullcompile", "testdata/determinism/fullcompile/release.yaml", []string{"testdata/determinism/fullcompile/catalog/base", "testdata/determinism/fullcompile/catalog/recipes/helm"}},
 		{"fullstack-helm-synthesized", "testdata/fullstack-app/releases/helm-synthesized.yaml", []string{"testdata/fullstack-app/catalog/base", "testdata/fullstack-app/catalog/recipes/helm-synthesized"}},
