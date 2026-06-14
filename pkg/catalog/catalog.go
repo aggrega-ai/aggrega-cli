@@ -109,6 +109,21 @@ type Catalog struct {
 	// closure walker does not resolve (currently none — every kind
 	// the walker traverses is recorded here).
 	entityBytes map[string][]byte
+
+	// pathByIdentity maps "<Kind>:<identity-key>" to the file each entity was
+	// loaded from, for every indexed kind. indexFile populates it and uses it
+	// to detect a WITHIN-DIRECTORY duplicate identity (a second file claiming
+	// an identity already seen in the same directory load is the homogenized
+	// ErrDuplicateEntityIdentity collision). It also supplies the winner/shadowed
+	// file paths when an ordered multi-directory merge records a ShadowedEntity.
+	pathByIdentity map[string]string
+
+	// Shadows records, in deterministic listed-directory order, every entity a
+	// higher-precedence catalog directory overrode during a multi-directory
+	// load (see ShadowedEntity). Empty for a single-directory load. Surfaced on
+	// the resolution-detail reporting path; it never alters which entity
+	// resolves (first-win is decided at merge), only makes the override visible.
+	Shadows []ShadowedEntity
 }
 
 // Load scans a single directory recursively for .yaml / .yml files and
@@ -382,6 +397,18 @@ func sortedKeys(m map[string][]byte) []string {
 	return keys
 }
 
+// sortedMapKeys returns the keys of any string-keyed map in sorted order — the
+// generic companion to sortedKeys, used by the first-win merge to visit each
+// kind's identities deterministically.
+func sortedMapKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // LoadPassOne runs only Pass 1 of the catalog load — the filesystem walk +
 // per-file indexing, content-cache directory skipped — WITHOUT Pass-2 pillar
 // validation. The build-side library bridge uses it to determine the local
@@ -405,6 +432,23 @@ type SkippedEntity struct {
 	Kind string
 	Name string
 	Err  error
+}
+
+// ShadowedEntity records a catalog entity that was OVERRIDDEN by a
+// higher-precedence catalog directory during a multi-directory load. The
+// catalog_dirs list is an ordered, first-win precedence stack: when one
+// identity appears in more than one directory, the earlier-listed directory
+// wins and the later occurrence is shadowed (not loaded, not an error — an
+// intentional, observable override). Each shadow names the kind, the identity,
+// the winning directory + file, and the shadowed directory + file, so the
+// resolution-detail surface can report exactly what overrode what.
+type ShadowedEntity struct {
+	Kind         string
+	Identity     string
+	WinnerDir    string
+	WinnerPath   string
+	ShadowedDir  string
+	ShadowedPath string
 }
 
 // loadAllPassOne runs Pass 1 only — the filesystem walk + per-file indexing with
@@ -446,7 +490,36 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...s
 	if cacheDir != "" {
 		cacheClean = filepath.Clean(cacheDir)
 	}
-	c := &Catalog{
+
+	// catalog_dirs is an ordered first-win precedence stack. Each directory is
+	// indexed into its OWN catalog first — so a duplicate identity WITHIN one
+	// directory is the ErrDuplicateEntityIdentity collision (caught by
+	// indexFile via pathByIdentity), distinct from the same identity appearing
+	// ACROSS directories, which mergeFrom resolves as a first-win shadow. The
+	// per-directory walk preserves the tolerant-skip-vs-strict-halt split: a
+	// read/index failure (including a within-directory duplicate) is recorded
+	// and skipped in tolerant mode, or aborts the load in strict mode, exactly
+	// as before.
+	acc := newPassOneCatalog(workspaceRoot)
+	winnerDir := make(map[string]string) // "<Kind>:<identity>" -> directory that won it
+	var skipped []SkippedEntity
+	for _, dir := range dirs {
+		perDir := newPassOneCatalog(workspaceRoot)
+		dirSkips, err := perDir.walkDirInto(dir, cacheClean, tolerant)
+		if err != nil {
+			return nil, nil, err
+		}
+		skipped = append(skipped, dirSkips...)
+		acc.mergeFrom(perDir, dir, winnerDir)
+	}
+	return acc, skipped, nil
+}
+
+// newPassOneCatalog allocates a catalog with every Pass-1 index map ready. Both
+// the accumulated result and each per-directory sub-index are built through it
+// so they share one initialisation.
+func newPassOneCatalog(workspaceRoot string) *Catalog {
+	return &Catalog{
 		workspaceRoot:    workspaceRoot,
 		Components:       make(map[string]types.Component),
 		Features:         make(map[string]types.Feature),
@@ -461,49 +534,136 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...s
 		providerSources:  make(map[string]string),
 		aggregateSources: make(map[string]string),
 		entityBytes:      make(map[string][]byte),
+		pathByIdentity:   make(map[string]string),
 	}
+}
+
+// walkDirInto indexes one catalog directory into c. cacheClean (when non-empty)
+// is the workspace-relative cache path skipped during the walk. tolerant selects
+// skip-and-record vs fail-fast for a per-file read/index failure — identical to
+// the historical single-walk behavior, now scoped to one directory so a
+// within-directory duplicate identity is caught here while a cross-directory
+// duplicate is left for the first-win merge.
+func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedEntity, error) {
 	var skipped []SkippedEntity
-	for _, dir := range dirs {
-		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				// Skip the content-addressed cache: it is a resolution
-				// artifact, not authored Tier-1 catalog. Anchored on the
-				// walked root so the `--catalog .` default (cache under the
-				// catalog dir) is caught regardless of workspaceRoot.
-				if cacheClean != "" {
-					if rel, relErr := filepath.Rel(dir, path); relErr == nil && filepath.Clean(rel) == cacheClean {
-						return filepath.SkipDir
-					}
+	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			// Skip the content-addressed cache: it is a resolution
+			// artifact, not authored Tier-1 catalog. Anchored on the
+			// walked root so the `--catalog .` default (cache under the
+			// catalog dir) is caught regardless of workspaceRoot.
+			if cacheClean != "" {
+				if rel, relErr := filepath.Rel(dir, path); relErr == nil && filepath.Clean(rel) == cacheClean {
+					return filepath.SkipDir
 				}
-				return nil
-			}
-			if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				if tolerant {
-					skipped = append(skipped, newSkippedEntity(path, data, err))
-					return nil
-				}
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "read catalog file")
-			}
-			if ierr := c.indexFile(data, path); ierr != nil {
-				if tolerant {
-					skipped = append(skipped, newSkippedEntity(path, data, ierr))
-					return nil
-				}
-				return ierr
 			}
 			return nil
-		}); err != nil {
-			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 		}
+		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if tolerant {
+				skipped = append(skipped, newSkippedEntity(path, data, err))
+				return nil
+			}
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "read catalog file")
+		}
+		if ierr := c.indexFile(data, path); ierr != nil {
+			if tolerant {
+				skipped = append(skipped, newSkippedEntity(path, data, ierr))
+				return nil
+			}
+			return ierr
+		}
+		return nil
+	}); err != nil {
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 	}
-	return c, skipped, nil
+	return skipped, nil
+}
+
+// mergeFrom folds one already-indexed directory (perDir) into the accumulated
+// catalog with FIRST-WIN precedence: an identity acc already holds (from an
+// earlier-listed directory) wins, and perDir's occurrence is recorded as a
+// ShadowedEntity rather than overwriting. A not-yet-seen identity is inserted
+// with its side-table entries (source path, raw bytes). Iteration is in sorted
+// identity order per kind so the resolved set and the Shadows list are a pure,
+// deterministic function of directory order — preserving byte-identical output.
+func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[string]string) {
+	mergeKind(acc, "Component", acc.Components, perDir.Components, perDir, perDirRoot, winnerDir, func(k string) {
+		acc.componentSources[k] = perDir.componentSources[k]
+		bk := entityBytesKey("Component", perDir.Components[k].Metadata.Name)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "Feature", acc.Features, perDir.Features, perDir, perDirRoot, winnerDir, func(k string) {
+		acc.featureSources[k] = perDir.featureSources[k]
+		bk := entityBytesKey("Feature", perDir.Features[k].Metadata.Name)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "Recipe", acc.Recipes, perDir.Recipes, perDir, perDirRoot, winnerDir, func(k string) {
+		bk := entityBytesKey("Recipe", k)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "FeatureRecipe", acc.FeatureRecipes, perDir.FeatureRecipes, perDir, perDirRoot, winnerDir, func(k string) {
+		bk := entityBytesKey("FeatureRecipe", k)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "Aggregate", acc.Aggregates, perDir.Aggregates, perDir, perDirRoot, winnerDir, func(k string) {
+		acc.aggregateSources[k] = perDir.aggregateSources[k]
+		bk := entityBytesKey("Aggregate", perDir.Aggregates[k].Metadata.Name)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "Provider", acc.Providers, perDir.Providers, perDir, perDirRoot, winnerDir, func(k string) {
+		acc.providerSources[k] = perDir.providerSources[k]
+		bk := entityBytesKey("Provider", perDir.Providers[k].Metadata.Name)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "SchemaLibrary", acc.SchemaLibraries, perDir.SchemaLibraries, perDir, perDirRoot, winnerDir, func(k string) {
+		bk := entityBytesKey("SchemaLibrary", k)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "MappingLibrary", acc.MappingLibraries, perDir.MappingLibraries, perDir, perDirRoot, winnerDir, func(k string) {
+		bk := entityBytesKey("MappingLibrary", k)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+}
+
+// mergeKind merges one entity kind from src into dst with first-win precedence,
+// appending a ShadowedEntity to acc for each identity dst already holds and
+// running copyAux for each newly-inserted identity (its source / bytes side
+// tables). Keys are visited in sorted order so the Shadows list is deterministic.
+func mergeKind[T any](
+	acc *Catalog,
+	kind string,
+	dst, src map[string]T,
+	perDir *Catalog,
+	perDirRoot string,
+	winnerDir map[string]string,
+	copyAux func(key string),
+) {
+	for _, key := range sortedMapKeys(src) {
+		fk := kind + ":" + key
+		if _, exists := dst[key]; exists {
+			acc.Shadows = append(acc.Shadows, ShadowedEntity{
+				Kind:         kind,
+				Identity:     key,
+				WinnerDir:    winnerDir[fk],
+				WinnerPath:   acc.pathByIdentity[fk],
+				ShadowedDir:  perDirRoot,
+				ShadowedPath: perDir.pathByIdentity[fk],
+			})
+			continue
+		}
+		dst[key] = src[key]
+		acc.pathByIdentity[fk] = perDir.pathByIdentity[fk]
+		winnerDir[fk] = perDirRoot
+		copyAux(key)
+	}
 }
 
 // newSkippedEntity builds a SkippedEntity, recovering kind + name from a
@@ -761,6 +921,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
 		ckey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("Component:"+ckey, fmt.Sprintf("Component identity %q", ckey), path); err != nil {
+			return err
+		}
 		c.Components[ckey] = e
 		c.componentSources[ckey] = path
 		c.entityBytes[entityBytesKey("Component", e.Metadata.Name)] = data
@@ -770,6 +933,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Feature")
 		}
 		fkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("Feature:"+fkey, fmt.Sprintf("Feature identity %q", fkey), path); err != nil {
+			return err
+		}
 		c.Features[fkey] = e
 		c.featureSources[fkey] = path
 		c.entityBytes[entityBytesKey("Feature", e.Metadata.Name)] = data
@@ -783,8 +949,8 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return err
 		}
 		rKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-		if _, dup := c.Recipes[rKey]; dup {
-			return cerrors.Wrap(ErrDuplicateRecipeIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("recipe identity %q already declared", rKey))
+		if err := c.claimIdentity("Recipe:"+rKey, fmt.Sprintf("recipe identity %q", rKey), path); err != nil {
+			return err
 		}
 		c.Recipes[rKey] = e
 		c.entityBytes[entityBytesKey("Recipe", rKey)] = data
@@ -794,8 +960,8 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return err
 		}
 		frKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-		if _, dup := c.FeatureRecipes[frKey]; dup {
-			return cerrors.Wrap(ErrDuplicateRecipeIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("feature recipe identity %q already declared", frKey))
+		if err := c.claimIdentity("FeatureRecipe:"+frKey, fmt.Sprintf("feature recipe identity %q", frKey), path); err != nil {
+			return err
 		}
 		c.FeatureRecipes[frKey] = e
 		c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = data
@@ -805,6 +971,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
 		akey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("Aggregate:"+akey, fmt.Sprintf("Aggregate identity %q", akey), path); err != nil {
+			return err
+		}
 		c.Aggregates[akey] = e
 		c.aggregateSources[akey] = path
 		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
@@ -817,6 +986,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
 		}
 		pkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("Provider:"+pkey, fmt.Sprintf("Provider identity %q", pkey), path); err != nil {
+			return err
+		}
 		c.Providers[pkey] = e
 		c.providerSources[pkey] = path
 		c.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
@@ -831,6 +1003,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		e, err := parseSchemaLibraryEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "load SchemaLibrary")
+		}
+		if err := c.claimIdentity("SchemaLibrary:"+e.Metadata.Name, fmt.Sprintf("SchemaLibrary identity %q", e.Metadata.Name), path); err != nil {
+			return err
 		}
 		c.SchemaLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("SchemaLibrary", e.Metadata.Name)] = data
@@ -848,10 +1023,31 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		// at entity load. Content semantics (including any cross-library
 		// $import: references) resolve at Recipe / FeatureRecipe render
 		// time via the Go template engine.
+		if err := c.claimIdentity("MappingLibrary:"+e.Metadata.Name, fmt.Sprintf("MappingLibrary identity %q", e.Metadata.Name), path); err != nil {
+			return err
+		}
 		c.MappingLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
+	return nil
+}
+
+// claimIdentity records that fullKey ("<Kind>:<identity>") was indexed at path
+// within the current directory load, or returns ErrDuplicateEntityIdentity when
+// that identity was already claimed in the SAME directory — the homogenized
+// within-directory collision, loud for every kind. A duplicate identity ACROSS
+// directories never reaches here: each directory indexes into its own catalog,
+// and the cross-directory case is resolved as a first-win shadow by mergeFrom.
+// desc is the human label woven into the collision message.
+func (c *Catalog) claimIdentity(fullKey, desc, path string) error {
+	if c.pathByIdentity == nil {
+		c.pathByIdentity = make(map[string]string)
+	}
+	if _, dup := c.pathByIdentity[fullKey]; dup {
+		return cerrors.Wrap(ErrDuplicateEntityIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("%s already declared in this catalog directory", desc))
+	}
+	c.pathByIdentity[fullKey] = path
 	return nil
 }
 

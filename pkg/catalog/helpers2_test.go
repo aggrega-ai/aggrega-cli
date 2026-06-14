@@ -166,18 +166,21 @@ spec:
 	}
 }
 
-// TestLoadAll_DuplicateKeysLastWins pins the cross-directory merge
-// semantic: a Component defined in two dirs with the same metadata.name
-// key, the second loaded wins.
-func TestLoadAll_DuplicateKeysLastWins(t *testing.T) {
+// TestLoadAll_DuplicateKeysFirstWins pins the cross-directory merge semantic:
+// catalog_dirs is an ordered first-win precedence stack, so a Component defined
+// in two dirs with the same identity resolves to the EARLIER-listed dir, and the
+// later occurrence is recorded as an observable ShadowedEntity (not an error).
+func TestLoadAll_DuplicateKeysFirstWins(t *testing.T) {
 	t.Parallel()
 	tmp1 := t.TempDir()
 	tmp2 := t.TempDir()
-	common := `apiVersion: aggrega.ai/v1alpha1
+	comp := func(desc string) string {
+		return `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
   name: shared
   version: 1.0.0
+  description: ` + desc + `
   labels:
     component.aggrega.ai/type: server
 spec:
@@ -185,14 +188,42 @@ spec:
     values:
       type: object
 `
-	writeFile(t, tmp1+"/comp.yaml", common)
-	writeFile(t, tmp2+"/comp.yaml", common)
+	}
+	writeFile(t, tmp1+"/comp.yaml", comp("from-dir-1"))
+	writeFile(t, tmp2+"/comp.yaml", comp("from-dir-2"))
+
+	// tmp1 listed first -> tmp1 wins.
 	c, err := LoadAll("", tmp1, tmp2)
 	if err != nil {
 		t.Fatalf("loadAll: %v", err)
 	}
-	if _, ok, _ := c.resolveComponentKey("shared"); !ok {
-		t.Errorf("shared component missing")
+	got, ok := c.Components["shared:1.0.0"]
+	if !ok {
+		t.Fatal("shared component missing")
+	}
+	if got.Metadata.Description != "from-dir-1" {
+		t.Errorf("first-win violated: want the dir-1 entity, got description %q", got.Metadata.Description)
+	}
+
+	// The override is observable: exactly one shadow, dir-1 winner, dir-2 shadowed.
+	if len(c.Shadows) != 1 {
+		t.Fatalf("want exactly 1 shadow, got %d: %+v", len(c.Shadows), c.Shadows)
+	}
+	sh := c.Shadows[0]
+	if sh.Kind != "Component" || sh.Identity != "shared:1.0.0" {
+		t.Errorf("shadow identity wrong: %+v", sh)
+	}
+	if sh.WinnerDir != tmp1 || sh.ShadowedDir != tmp2 {
+		t.Errorf("shadow dirs wrong: winner=%q shadowed=%q (want %q / %q)", sh.WinnerDir, sh.ShadowedDir, tmp1, tmp2)
+	}
+
+	// Reversing the order reverses the winner — precedence is purely positional.
+	c2, err := LoadAll("", tmp2, tmp1)
+	if err != nil {
+		t.Fatalf("loadAll reversed: %v", err)
+	}
+	if c2.Components["shared:1.0.0"].Metadata.Description != "from-dir-2" {
+		t.Errorf("reversed order should make dir-2 win, got %q", c2.Components["shared:1.0.0"].Metadata.Description)
 	}
 }
 

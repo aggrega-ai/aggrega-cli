@@ -42,7 +42,7 @@ func TestFormatCompilerError_NestedFrames_CatalogDuplicate(t *testing.T) {
 		"catalog load", // the head frame's phase context
 		`recipe identity "terraform/mariadb-rds:1.0.0" already declared`,
 		"aggrega-catalog/recipe/terraform/mariadb-rds-copy/recipe.yaml",
-		"duplicate recipe identity (spec.provider + metadata.name + version)",
+		"duplicate entity identity within a single catalog directory",
 		"caused by:",
 	} {
 		if !strings.Contains(got, want) {

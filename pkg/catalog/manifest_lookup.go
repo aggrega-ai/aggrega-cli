@@ -32,14 +32,21 @@ var ErrManifestImplementsMismatch = errors.New("manifest mapping entry's recipe 
 // rather than silently resolving the first.
 var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous")
 
-// ErrDuplicateRecipeIdentity fires when two catalog recipes (or feature
-// recipes) share the same identity — spec.provider plus metadata.name plus
-// version. The catalog is keyed by identity so multiple recipes implementing
-// one component type coexist, and two providers may each ship a recipe of
-// the same name and version; a genuine duplicate identity (same provider,
-// same name, same version) is an authoring collision surfaced loudly at
-// load rather than silently shadowed.
-var ErrDuplicateRecipeIdentity = errors.New("duplicate recipe identity (spec.provider + metadata.name + version) in the catalog")
+// ErrDuplicateEntityIdentity fires when two catalog entities of one kind share
+// the same identity WITHIN A SINGLE catalog directory — an authoring collision,
+// surfaced loudly (strict load) or recorded as a skip (tolerant load). It is the
+// homogenized rule across every indexed kind (Component, Feature, Recipe,
+// FeatureRecipe, Provider, SchemaLibrary, MappingLibrary, Aggregate): within one
+// directory a duplicate identity halts; ACROSS directories the same identity is
+// a first-win shadow (the earlier-listed directory wins), never an error.
+var ErrDuplicateEntityIdentity = errors.New("duplicate entity identity within a single catalog directory")
+
+// ErrDuplicateRecipeIdentity is the recipe-specific facet of
+// ErrDuplicateEntityIdentity, preserved as an alias so callers matching the
+// recipe collision via errors.Is keep working. The Recipe / FeatureRecipe load
+// cases wrap it with the provider+name+version context; the wrapped error still
+// satisfies errors.Is against both this name and ErrDuplicateEntityIdentity.
+var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
 // Manifest mapping for its type. Resolution is mapping-only — the catalog never
