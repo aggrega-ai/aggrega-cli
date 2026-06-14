@@ -126,31 +126,6 @@ type Catalog struct {
 	Shadows []ShadowedEntity
 }
 
-// Load scans a single directory recursively for .yaml / .yml files and
-// indexes every recognised entity into a fresh Catalog. Convenience wrapper
-// over LoadAll; see LoadAll for the merge, error, and skip semantics.
-// workspaceRoot is the workspace the loader is loading on behalf of —
-// the catalog renders source-file accessors relative to it; pass ""
-// when the caller has no workspace concept (synthetic tests, workspace-
-// agnostic operations like `aggrega pull`).
-//
-// Load does NOT skip the content-addressed cache. A production caller that
-// walks a directory which may contain the workspace cache — e.g. the
-// `--catalog .` default, where `.aggrega/cache` sits under the catalog dir —
-// must use LoadWithCacheDir / LoadAllWithCacheDir so cached `library.yaml`
-// files are not ingested as authored Tier-1 catalog entities.
-func Load(workspaceRoot, dir string) (*Catalog, error) {
-	return LoadAllWithCacheDir(workspaceRoot, "", dir)
-}
-
-// LoadWithCacheDir is Load with the configured cache directory skipped during
-// the walk — the single-directory form of LoadAllWithCacheDir. cacheDir is the
-// workspace-relative cache path (e.g. ".aggrega/cache"); "" disables the skip
-// (identical to Load).
-func LoadWithCacheDir(workspaceRoot, cacheDir, dir string) (*Catalog, error) {
-	return LoadAllWithCacheDir(workspaceRoot, cacheDir, dir)
-}
-
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml
 // file under each, and indexes all six catalog-resident entity kinds into a
 // single Catalog. Files are dispatched by their top-level "kind:" field; see

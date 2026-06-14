@@ -98,7 +98,7 @@ func remoteSrcLockfile(digest string) *lockfile.Lockfile {
 
 func loadRemoteSrcCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	cat, err := catalog.Load("", remoteSrcCatalogPath)
+	cat, err := catalog.LoadAll("", remoteSrcCatalogPath)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}

@@ -50,7 +50,7 @@ func TestEagerCatalogVersionResolution(t *testing.T) {
 	writeFile(t, dir+"/widget-1.0.0.yaml", widgetV1)
 	writeFile(t, dir+"/widget-1.1.0.yaml", widgetV11)
 
-	c, err := Load("", dir)
+	c, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

@@ -79,7 +79,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		// slot is NOT walked into the in-memory catalog (a library slot is
 		// a library.yaml, which Load would index as a Tier-1 entity) — the
 		// reuse-check governs Tier-2, so the entity must miss Tier-1.
-		cat, err := catalog.Load("", t.TempDir())
+		cat, err := catalog.LoadAll("", t.TempDir())
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
@@ -110,7 +110,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		// slot is NOT walked into the in-memory catalog (a library slot is
 		// a library.yaml, which Load would index as a Tier-1 entity) — the
 		// reuse-check governs Tier-2, so the entity must miss Tier-1.
-		cat, err := catalog.Load("", t.TempDir())
+		cat, err := catalog.LoadAll("", t.TempDir())
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
@@ -150,7 +150,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		// slot is NOT walked into the in-memory catalog (a library slot is
 		// a library.yaml, which Load would index as a Tier-1 entity) — the
 		// reuse-check governs Tier-2, so the entity must miss Tier-1.
-		cat, err := catalog.Load("", t.TempDir())
+		cat, err := catalog.LoadAll("", t.TempDir())
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
@@ -189,7 +189,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		// slot is NOT walked into the in-memory catalog (a library slot is
 		// a library.yaml, which Load would index as a Tier-1 entity) — the
 		// reuse-check governs Tier-2, so the entity must miss Tier-1.
-		cat, err := catalog.Load("", t.TempDir())
+		cat, err := catalog.LoadAll("", t.TempDir())
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}

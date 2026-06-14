@@ -472,7 +472,7 @@ func TestNameTierOverride_FiresAtBothJoins(t *testing.T) {
 	writeCatalogEntity(t, dir, "feature-recipe/cred-default.yaml", featureRecipeYAML("cred-default", featType))
 	writeCatalogEntity(t, dir, "feature-recipe/cred-override.yaml", featureRecipeYAML("cred-override", featType))
 
-	c, err := Load("", dir)
+	c, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -552,7 +552,7 @@ func TestNameTier_DuplicateIdentityDetected(t *testing.T) {
 	dir := t.TempDir()
 	writeCatalogEntity(t, dir, "a.yaml", recipeYAML("dup", "app/db"))
 	writeCatalogEntity(t, dir, "b.yaml", recipeYAML("dup", "app/other"))
-	if _, err := Load("", dir); err == nil || !errors.Is(err, ErrDuplicateRecipeIdentity) {
+	if _, err := LoadAll("", dir); err == nil || !errors.Is(err, ErrDuplicateRecipeIdentity) {
 		t.Fatalf("expected ErrDuplicateRecipeIdentity for identity dup:1.0.0; got %v", err)
 	}
 }
@@ -566,7 +566,7 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 	dir := t.TempDir()
 	writeCatalogEntity(t, dir, "r1.yaml", recipeYAML("db-a", "app/db"))
 	writeCatalogEntity(t, dir, "r2.yaml", recipeYAML("db-b", "app/db"))
-	c, err := Load("", dir)
+	c, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -606,7 +606,7 @@ func TestCatalogImmunity_UnmappedSingleImplementerHalts(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeCatalogEntity(t, dir, "r.yaml", recipeYAML("only-db", "app/db"))
-	c, err := Load("", dir)
+	c, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

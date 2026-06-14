@@ -61,7 +61,7 @@ spec:
 `
 	writeYAMLToCatalog(t, dir, "component/core/api-server/api-server.yaml", compBody)
 
-	cat, err := catalog.Load("", dir)
+	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -121,7 +121,7 @@ spec:
 `
 	writeYAMLToCatalog(t, dir, "recipes/server.yaml", recipeBody)
 
-	cat, err := catalog.Load("", dir)
+	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	cat, err := catalog.Load("", dir)
+	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 func TestClosureLookupNilPullerReturnsNotFound(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	cat, err := catalog.Load("", dir)
+	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestPullWritesSchemaLibraryAsLibraryYAML(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	cat, err := catalog.Load("", dir)
+	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestPullWritesMappingLibraryAsLibraryYAML(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	cat, err := catalog.Load("", dir)
+	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

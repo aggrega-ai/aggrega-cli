@@ -61,7 +61,7 @@ func TestLazyRecipe_EagerLazyParity(t *testing.T) {
 	writeFixture(t, dir, "b.yaml", recipeYAML("core/recipe-b", "core/b"))
 	writeFixture(t, dir, "fr.yaml", featureRecipeYAML("sec/fr-x", "sec/x"))
 
-	eager, err := Load("", dir)
+	eager, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("eager Load: %v", err)
 	}

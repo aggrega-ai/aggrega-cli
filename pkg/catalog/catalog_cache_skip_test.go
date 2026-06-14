@@ -49,7 +49,7 @@ spec:
 `)
 
 	// Skip path: the cached library is NOT ingested; the authored one is.
-	skipped, err := catalog.LoadWithCacheDir(dir, cacheDir, dir)
+	skipped, err := catalog.LoadAllWithCacheDir(dir, cacheDir, dir)
 	if err != nil {
 		t.Fatalf("LoadWithCacheDir: %v", err)
 	}
@@ -63,7 +63,7 @@ spec:
 	// Non-vacuous canary: plain Load (no cache skip) DOES ingest the cached
 	// library — so the assertion above is earned, not green because the
 	// fixture was unloadable.
-	unskipped, err := catalog.Load("", dir)
+	unskipped, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

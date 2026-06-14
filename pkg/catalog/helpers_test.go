@@ -425,7 +425,7 @@ spec: [not, a, mapping]
 // TestLoad_NoSuchDirectory pins the directory-walk error path.
 func TestLoad_NoSuchDirectory(t *testing.T) {
 	t.Parallel()
-	_, err := Load("", "/nonexistent/path/nope")
+	_, err := LoadAll("", "/nonexistent/path/nope")
 	if err == nil {
 		t.Errorf("missing dir should error")
 	}
@@ -479,7 +479,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(tmp, "fr.yaml"), []byte(frYAML), 0o644); err != nil {
 		t.Fatalf("write fr: %v", err)
 	}
-	c, err := Load("", tmp)
+	c, err := LoadAll("", tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

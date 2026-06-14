@@ -170,7 +170,7 @@ func TestResolveSchemaLibraryBareNameTier1(t *testing.T) {
 
 	dir := t.TempDir()
 	writeBridgeFixture(t, dir, "dbsizing.yaml", dbSizingLibYAML)
-	cat, err := Load("", dir)
+	cat, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

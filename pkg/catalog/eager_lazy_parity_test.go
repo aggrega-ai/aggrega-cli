@@ -100,7 +100,7 @@ spec:
         default: true
 `)
 
-	cat, err := Load("", dir)
+	cat, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("catalog Load: %v", err)
 	}
@@ -192,7 +192,7 @@ spec:
       $dynamicAnchor: forbidden
       type: string
 `)
-	if _, eagerErr := Load("", rejectDir); eagerErr == nil {
+	if _, eagerErr := LoadAll("", rejectDir); eagerErr == nil {
 		t.Fatalf("fixture invalid: eager Load must reject a library with a forbidden keyword (the reject-parity assertion is vacuous otherwise)")
 	}
 	rejectLazy := NewLazyLookup("", "", []string{rejectDir}, nil)

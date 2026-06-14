@@ -72,7 +72,7 @@ func TestLoad_TwoProvidersSameRecipeName(t *testing.T) {
 	writeCatalogFile(t, dir, "recipe/terraform/mariadb-rds/recipe.yaml", tfBody)
 	writeCatalogFile(t, dir, "recipe/cloudformation/mariadb-rds/recipe.yaml", cfBody)
 
-	cat, err := Load("", dir)
+	cat, err := LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestLoad_SameProviderDuplicateHalts(t *testing.T) {
 	writeCatalogFile(t, dir, "recipe/terraform/mariadb-rds/recipe.yaml", body)
 	writeCatalogFile(t, dir, "recipe/terraform/mariadb-rds-copy/recipe.yaml", body)
 
-	_, err := Load("", dir)
+	_, err := LoadAll("", dir)
 	if err == nil {
 		t.Fatal("expected duplicate-identity halt")
 	}
