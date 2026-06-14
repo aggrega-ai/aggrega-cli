@@ -27,7 +27,7 @@ import (
 
 var (
 	pullReleasePath       string
-	pullCatalogDir        string
+	pullCatalogDirs       []string
 	pullRegenerate        bool
 	pullVerify            bool
 	pullIncludePrerelease bool
@@ -44,7 +44,7 @@ func newPullCmd() *cobra.Command {
 			}
 			return pullRun(pullConfig{
 				ReleasePath:       pullReleasePath,
-				CatalogDir:        pullCatalogDir,
+				CatalogDirs:       pullCatalogDirs,
 				Regenerate:        pullRegenerate,
 				Verify:            pullVerify,
 				IncludePrerelease: pullIncludePrerelease,
@@ -53,7 +53,7 @@ func newPullCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
-	c.Flags().StringVar(&pullCatalogDir, "catalog", ".", "Directory containing catalog entities")
+	c.Flags().StringArrayVar(&pullCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and rebuild from current registry state")
 	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
 	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
@@ -68,8 +68,12 @@ func newPullCmd() *cobra.Command {
 // flag handling reads the command-line values into a pullConfig
 // instance; build's auto-pull integration constructs one directly.
 type pullConfig struct {
-	ReleasePath       string
-	CatalogDir        string
+	ReleasePath string
+	// CatalogDirs holds the repeatable --catalog flag directories (UNresolved):
+	// pullRun prepends them to the workspace catalog_dirs via resolveCatalogDirs.
+	// build's auto-pull integration forwards its own flag dirs so the pull path
+	// re-derives the identical stack under the same config.
+	CatalogDirs       []string
 	Regenerate        bool
 	Verify            bool
 	IncludePrerelease bool
@@ -209,13 +213,17 @@ func pullRun(cfg pullConfig) error {
 	// the configured cache directory so cached library.yaml files are not
 	// ingested as authored Tier-1 catalog.
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	// Effective first-win catalog search stack: --catalog flag dirs prepended to
+	// the workspace catalog_dirs. Resolved here (not by the caller) so direct pull
+	// and build's auto-pull derive the identical stack under the same config.
+	dirs := resolveCatalogDirs(cfg.CatalogDirs, wsCfg, ".")
 	// Tolerant Pass-1: a file that fails to parse/index is skipped (recorded), not
 	// fatal — a broken catalog entity OUTSIDE this Release's closure never fails the
 	// pull. A cross-document $ref to a remote library cannot expand at load (Pass-2)
 	// because the library is not yet fetched — the closure walk + library discovery
 	// below acquire it; closure-scoped Pass-2 (after the bridge) is the validation
 	// gate, scoped to what the Release reaches.
-	cat, skipped, err := catalog.LoadPassOneTolerant("", cacheDir, cfg.CatalogDir)
+	cat, skipped, err := catalog.LoadPassOneTolerant("", cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}

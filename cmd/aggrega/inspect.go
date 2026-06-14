@@ -21,7 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var inspectCatalogDir string
+var inspectCatalogDirs []string
 
 func newInspectCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -30,7 +30,7 @@ func newInspectCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  runInspect,
 	}
-	c.Flags().StringVar(&inspectCatalogDir, "catalog", ".", "Directory containing catalog entities")
+	c.Flags().StringArrayVar(&inspectCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	return c
 }
 
@@ -38,7 +38,7 @@ func newInspectCmd() *cobra.Command {
 // dispatchInspect. Tests exercise dispatchInspect directly to avoid
 // racing on the package-level flag variable under t.Parallel.
 func runInspect(cmd *cobra.Command, args []string) error {
-	return dispatchInspect(args[0], inspectCatalogDir)
+	return dispatchInspect(args[0], inspectCatalogDirs)
 }
 
 // dispatchInspect routes the inspect command by the input form:
@@ -53,18 +53,19 @@ func runInspect(cmd *cobra.Command, args []string) error {
 //   - Anything else → treated as a catalog Component name, dispatched to
 //     the legacy schema-rendering branch.
 //
-// catalogDir supplies the catalog directory for both the catalog-name
-// branch and the Release branch's pipeline.
-func dispatchInspect(identifier, catalogDir string) error {
+// catalogDirs supplies the repeatable --catalog flag directories for both the
+// catalog-name branch and the Release branch's pipeline; each load site resolves
+// them against the workspace catalog_dirs into the first-win search stack.
+func dispatchInspect(identifier string, catalogDirs []string) error {
 	if strings.HasPrefix(identifier, "oci://") {
 		return fmt.Errorf("inspect for OCI URIs not yet implemented; resolve to a local path or use a catalog name")
 	}
 
 	if isPathInput(identifier) {
-		return inspectPath(identifier, catalogDir)
+		return inspectPath(identifier, catalogDirs)
 	}
 
-	return inspectCatalogComponent(identifier, catalogDir)
+	return inspectCatalogComponent(identifier, catalogDirs)
 }
 
 // isPathInput returns true when the identifier names a filesystem path
@@ -118,7 +119,7 @@ func resolveSiblingYAML(dir, name string) string {
 
 // inspectPath reads a YAML file, peeks at apiVersion / kind, and
 // dispatches to the per-kind inspector branch.
-func inspectPath(path, catalogDir string) error {
+func inspectPath(path string, catalogDirs []string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", path, err)
@@ -138,7 +139,7 @@ func inspectPath(path, catalogDir string) error {
 	case "Component":
 		return inspectComponentFile(path, data)
 	case "Release":
-		return inspectReleaseFile(path, catalogDir)
+		return inspectReleaseFile(path, catalogDirs)
 	case "Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider", "Workload":
 		return fmt.Errorf("inspect not yet implemented for kind %s", preamble.Kind)
 	default:
@@ -149,18 +150,21 @@ func inspectPath(path, catalogDir string) error {
 // inspectCatalogComponent runs the legacy catalog-component-name path.
 // Loads the catalog at catalogDir, resolves extends chains, looks up
 // the named Component, and prints its merged schema + usesSchema.
-func inspectCatalogComponent(componentType, catalogDir string) error {
+func inspectCatalogComponent(componentType string, catalogDirs []string) error {
 	// Workspace-agnostic inspection: this path prints catalog Component
 	// details without rendering any per-node IR, so no workspace-relative
 	// path normalization is needed. The walk still skips the configured
-	// cache directory (anchored on catalogDir) so cached library.yaml files
-	// are not shown as authored Tier-1 catalog.
+	// cache directory so cached library.yaml files are not shown as authored
+	// Tier-1 catalog.
 	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-	cat, err := catalog.LoadWithCacheDir("", cacheDir, catalogDir)
+	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
+	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
+	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")
+	cat, err := catalog.LoadAllWithCacheDir("", cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -264,7 +268,7 @@ func inspectComponentFile(path string, data []byte) error {
 //
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
-func inspectReleaseFile(releasePath, catalogDir string) error {
+func inspectReleaseFile(releasePath string, catalogDirs []string) error {
 	// wsRoot is the workspace the caller invoked the inspect from; the
 	// catalog renders source-file accessors relative to it so per-node
 	// IR SourceFile records stay byte-identical across machines.
@@ -274,7 +278,9 @@ func inspectReleaseFile(releasePath, catalogDir string) error {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-	cat, err := catalog.LoadWithCacheDir(wsRoot, cacheDir, catalogDir)
+	// Strict load over the first-win stack (--catalog dirs prepended to catalog_dirs).
+	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")
+	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}

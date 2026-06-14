@@ -68,7 +68,7 @@ func TestBuildDetail_LockfilePresent_NoPullNote(t *testing.T) {
 	var pre bool
 	var acqErr error
 	noteOut := captureStderr(func() {
-		pre, acqErr = acquireLockfile(rel, root, workspaceconfig.Config{}, true)
+		pre, acqErr = acquireLockfile(rel, []string{root}, workspaceconfig.Config{}, true)
 	})
 	if acqErr != nil {
 		t.Fatalf("acquireLockfile (detail=true): %v", acqErr)
@@ -82,7 +82,7 @@ func TestBuildDetail_LockfilePresent_NoPullNote(t *testing.T) {
 
 	var silentErr error
 	silentOut := captureStderr(func() {
-		_, silentErr = acquireLockfile(rel, root, workspaceconfig.Config{}, false)
+		_, silentErr = acquireLockfile(rel, []string{root}, workspaceconfig.Config{}, false)
 	})
 	if silentErr != nil {
 		t.Fatalf("acquireLockfile (detail=false): %v", silentErr)

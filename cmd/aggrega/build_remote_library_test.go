@@ -93,7 +93,7 @@ func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
 	}
 
 	puller := &fakeRemoteLibraryPuller{tags: []string{"2.0.0"}, metadataVersion: "1.0.0"}
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, puller: puller}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (library tag!=version): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -112,7 +112,7 @@ func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
 
 	// Build re-derives 1.0.0 via the bridge → tier-1; verify must pass (no drift),
 	// and the library-declared default still materializes.
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("dispatchBuild (library tag!=version) must succeed with no drift, got: %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "10Gi") {
@@ -141,7 +141,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 	}
 
 	puller := &fakeRemoteLibraryPuller{tags: []string{"1.0.0", "2.0.0"}}
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, puller: puller}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (Tier-3 remote fetch): %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 
 	// The remote-fetched, pinned library bridges at build (no network) and its
 	// declared default materializes in the rendered output.
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("dispatchBuild after remote fetch: %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "10Gi") {
@@ -325,7 +325,7 @@ func TestBuildResolvesRemotePinnedSchemaLibrary(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Initial pull with the library authored locally → a real lockfile pinning it.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestBuildResolvesRemotePinnedSchemaLibrary(t *testing.T) {
 	// build-side bridge can resolve the consumer's $ref.
 	relocateLibraryToCache(t, root, cacheDir)
 
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote library: %v", err)
 	}
 
@@ -386,7 +386,7 @@ func TestBuildWithoutBridgeFailsUnresolvedRef(t *testing.T) {
 		t.Fatalf("write empty lockfile: %v", err)
 	}
 
-	err := dispatchBuild(releasePath, catalogDir, false)
+	err := dispatchBuild(releasePath, []string{catalogDir}, false)
 	if err == nil {
 		t.Fatal("expected build to halt on unresolved cross-document $ref; got nil")
 	}
@@ -413,7 +413,7 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	relocateLibraryToCache(t, root, cacheDir)
@@ -436,7 +436,7 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	err = dispatchBuild(releasePath, catalogDir, false)
+	err = dispatchBuild(releasePath, []string{catalogDir}, false)
 	if err == nil {
 		t.Fatal("expected the build to halt on the tampered library pin; got nil")
 	}
@@ -489,7 +489,7 @@ spec:
 	resolver := &recordingSourceResolver{}
 	if err := pullRun(pullConfig{
 		ReleasePath:    releasePath,
-		CatalogDir:     catalogDir,
+		CatalogDirs:     []string{catalogDir},
 		puller:         puller,
 		sourceResolver: resolver,
 	}); err != nil {

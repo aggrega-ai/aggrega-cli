@@ -216,7 +216,7 @@ func TestBuildResolvesRemotePinnedMappingLibrary(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Initial pull with the library authored locally → a real lockfile pinning it.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -244,7 +244,7 @@ func TestBuildResolvesRemotePinnedMappingLibrary(t *testing.T) {
 
 	relocateMappingLibraryToCache(t, root, cacheDir, "1.0.0")
 
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote mapping library: %v", err)
 	}
 	first := readDistTree(t, filepath.Join(root, "dist"))
@@ -253,7 +253,7 @@ func TestBuildResolvesRemotePinnedMappingLibrary(t *testing.T) {
 	}
 
 	// Deterministic rebuild — byte-identical output.
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("second dispatchBuild: %v", err)
 	}
 	if second := readDistTree(t, filepath.Join(root, "dist")); second != first {
@@ -279,7 +279,7 @@ func TestPullFetchesRemoteMappingLibraryViaTier3(t *testing.T) {
 	}
 
 	puller := &fakeRemoteMappingLibraryPuller{tags: []string{"1.0.0", "2.0.0"}}
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, puller: puller}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (Tier-3 remote mapping fetch): %v", err)
 	}
 	if !puller.listTagsCalled {
@@ -299,7 +299,7 @@ func TestPullFetchesRemoteMappingLibraryViaTier3(t *testing.T) {
 		t.Errorf("lockfile should pin the highest tag (2.0.0) resolved at pull; got %q", pinned)
 	}
 
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("dispatchBuild after remote mapping fetch: %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "mariadb-helpers:v3") {
@@ -340,10 +340,10 @@ spec:
       image: "recursive-final:{{ .values.tag }}"
 `)
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
-	if err := dispatchBuild(releasePath, catalogDir, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogDir}, false); err != nil {
 		t.Fatalf("dispatchBuild (recursive mapping import): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "recursive-final:v3") {
@@ -385,10 +385,10 @@ spec:
       $import: HelmHelpers#/mappings/ServerValues
 `)
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
-	err := dispatchBuild(releasePath, catalogDir, false)
+	err := dispatchBuild(releasePath, []string{catalogDir}, false)
 	if err == nil {
 		t.Fatal("expected the build to halt on the mapping-import cycle; got nil")
 	}

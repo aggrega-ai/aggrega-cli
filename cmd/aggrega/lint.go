@@ -129,10 +129,10 @@ func lintCatalogWideFromWorkspace() error {
 		return fmt.Errorf("load workspace config: %w", err)
 	}
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
-	dirs := wsCfg.Workspace.CatalogDirs
-	if len(dirs) == 0 {
-		dirs = []string{wsRoot}
-	}
+	// Whole-catalog lint has no --catalog flag, so the flag list is empty; the
+	// shared resolver reproduces the prior behavior — config catalog_dirs, or the
+	// workspace root when none are configured.
+	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
 	return lintCatalogWide(wsRoot, cacheDir, dirs)
 }
 

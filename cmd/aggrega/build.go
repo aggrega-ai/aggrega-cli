@@ -26,7 +26,7 @@ import (
 
 var (
 	releasePath  string
-	catalogDir   string
+	catalogDirs  []string
 	traceEnabled bool
 	buildDetail  bool
 )
@@ -38,7 +38,7 @@ func newBuildCmd() *cobra.Command {
 		RunE:  runBuild,
 	}
 	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
-	c.Flags().StringVar(&catalogDir, "catalog", ".", "Directory containing catalog entities")
+	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	c.Flags().BoolVar(&buildDetail, "detail", false, "When build performs the implicit auto-pull (no lockfile present, auto_pull enabled), print per resolved entity what that pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no pull this build)")
 	if err := c.MarkFlagRequired("release"); err != nil {
@@ -60,7 +60,7 @@ func newBuildCmd() *cobra.Command {
 // and the rendered files are written to dist/. A summary line writes
 // to stdout.
 func runBuild(cmd *cobra.Command, args []string) error {
-	return dispatchBuild(releasePath, catalogDir, traceEnabled)
+	return dispatchBuild(releasePath, catalogDirs, traceEnabled)
 }
 
 // dispatchBuild composes the filesystem-touching pre-pipeline steps
@@ -71,7 +71,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 // pipeline orchestration lives in internal/compiler/pipeline; tests
 // call dispatchBuild directly to avoid racing on flag-bound globals
 // under t.Parallel.
-func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
+func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bool) error {
 	// Load catalog from directory. wsRoot is the workspace the caller
 	// invoked the build from; the catalog renders source-file accessors
 	// relative to it so the IR's per-node SourceFile records stay
@@ -88,6 +88,10 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	}
 	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
 
+	// Effective first-win catalog search stack: --catalog dirs prepended to the
+	// workspace catalog_dirs, defaulting to the current directory.
+	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
+
 	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
 	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity
 	// OUTSIDE this Release's closure never fails the build. The closure walk +
@@ -95,15 +99,24 @@ func dispatchBuild(releasePath, catalogDir string, traceEnabled bool) error {
 	// catalog-wide validation is `aggrega lint`'s job. Pass 1 does not expand
 	// cross-document $ref pillars, so a reference to a not-yet-bridged remote
 	// library does not fail here.
-	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, catalogDir)
+	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
 
+	// When more than one catalog directory is searched, report which entities a
+	// higher-precedence directory shadowed (--detail only); the override is never
+	// silent.
+	if buildDetail {
+		reportCatalogShadows(cat)
+	}
+
 	// Ensure the per-Release lockfile exists (auto-pull when missing + permitted),
 	// returning whether it pre-existed — drift is verified only for a pre-existing
-	// lockfile; a freshly auto-pulled one matches the closure by construction.
-	lockfilePreexisted, err := acquireLockfile(releasePath, catalogDir, wsCfg, buildDetail)
+	// lockfile; a freshly auto-pulled one matches the closure by construction. The
+	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
+	// the identical stack with the same config.
+	lockfilePreexisted, err := acquireLockfile(releasePath, catalogFlagDirs, wsCfg, buildDetail)
 	if err != nil {
 		return err
 	}
@@ -392,7 +405,7 @@ func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 	return false
 }
 
-func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Config, detail bool) (bool, error) {
+func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, detail bool) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -422,7 +435,7 @@ func acquireLockfile(releasePath, catalogDir string, wsCfg workspaceconfig.Confi
 			lockfilePath, releasePath)
 	}
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogDir, Detail: detail}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail}); err != nil {
 		return false, fmt.Errorf("auto-pull: %w", err)
 	}
 	return false, nil

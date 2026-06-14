@@ -131,7 +131,7 @@ func TestIsPathInput_AdditionalBranches(t *testing.T) {
 // TestInspectPath_NonExistentFile pins the read-error path.
 func TestInspectPath_NonExistentFile(t *testing.T) {
 	t.Parallel()
-	err := inspectPath("/nonexistent/file.yaml", "")
+	err := inspectPath("/nonexistent/file.yaml", nil)
 	if err == nil {
 		t.Errorf("missing file should error")
 	}
@@ -145,7 +145,7 @@ func TestInspectPath_MalformedYAMLPreamble(t *testing.T) {
 	if err := os.WriteFile(path, []byte("::: not yaml :::"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := inspectPath(path, "")
+	err := inspectPath(path, nil)
 	if err == nil {
 		t.Errorf("malformed YAML should error")
 	}
@@ -162,7 +162,7 @@ func TestInspectPath_NotYetImplemented(t *testing.T) {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", kind, err)
 		}
-		err := inspectPath(path, "")
+		err := inspectPath(path, nil)
 		if err == nil {
 			t.Errorf("kind %s should surface not-yet-implemented", kind)
 			continue
@@ -177,7 +177,7 @@ func TestInspectPath_NotYetImplemented(t *testing.T) {
 // error path.
 func TestInspectCatalogComponent_MissingCatalog(t *testing.T) {
 	t.Parallel()
-	err := inspectCatalogComponent("any-name", "/nonexistent/dir")
+	err := inspectCatalogComponent("any-name", []string{"/nonexistent/dir"})
 	if err == nil {
 		t.Errorf("missing catalog should error")
 	}
@@ -189,7 +189,7 @@ func TestInspectCatalogComponent_ComponentNotFound(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Empty catalog dir.
-	err := inspectCatalogComponent("absent-component", tmp)
+	err := inspectCatalogComponent("absent-component", []string{tmp})
 	if err == nil {
 		t.Errorf("missing component should error")
 	}
@@ -221,7 +221,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(tmp, "component.yaml"), []byte(compYAML), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := inspectCatalogComponent("core/server", tmp); err != nil {
+	if err := inspectCatalogComponent("core/server", []string{tmp}); err != nil {
 		t.Errorf("happy: %v", err)
 	}
 }
@@ -278,7 +278,7 @@ spec:
 // TestRunBuild_MissingCatalog pins the catalog-load error path.
 func TestRunBuild_MissingCatalog(t *testing.T) {
 	t.Parallel()
-	err := dispatchBuild("/nonexistent/release.yaml", "/nonexistent/catalog", false)
+	err := dispatchBuild("/nonexistent/release.yaml", []string{"/nonexistent/catalog"}, false)
 	if err == nil {
 		t.Errorf("missing catalog should error")
 	}
@@ -287,7 +287,7 @@ func TestRunBuild_MissingCatalog(t *testing.T) {
 // TestRunBuild_MissingRelease pins the release-load error path.
 func TestRunBuild_MissingRelease(t *testing.T) {
 	t.Parallel()
-	err := dispatchBuild("/nonexistent/release.yaml", t.TempDir(), false)
+	err := dispatchBuild("/nonexistent/release.yaml", []string{t.TempDir()}, false)
 	if err == nil {
 		t.Errorf("missing release should error")
 	}
@@ -296,7 +296,7 @@ func TestRunBuild_MissingRelease(t *testing.T) {
 // TestRunInspect_OCI pins the OCI not-implemented branch.
 func TestRunInspect_OCI(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect("oci://hub/lib@1#/schemas/X", "")
+	err := dispatchInspect("oci://hub/lib@1#/schemas/X", nil)
 	if err == nil {
 		t.Errorf("OCI URI should error")
 	}
@@ -309,7 +309,7 @@ func TestRunInspect_OCI(t *testing.T) {
 // path (non-path input + non-OCI input).
 func TestRunInspect_CatalogComponentBranch(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect("absent-component", t.TempDir())
+	err := dispatchInspect("absent-component", []string{t.TempDir()})
 	if err == nil {
 		t.Errorf("absent component should error")
 	}
@@ -323,7 +323,7 @@ func TestRunInspect_PathBranch(t *testing.T) {
 	if err := os.WriteFile(path, []byte("apiVersion: x\nkind: Manifest\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := dispatchInspect(path, tmp)
+	err := dispatchInspect(path, []string{tmp})
 	// Manifest → not-yet-implemented; surfaces as error.
 	if err == nil {
 		t.Errorf("manifest dispatch should error")

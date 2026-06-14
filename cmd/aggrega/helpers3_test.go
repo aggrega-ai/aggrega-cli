@@ -103,12 +103,12 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
 	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
+		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
 	})
 	releasePath = filepath.Join(root, "release.yaml")
-	catalogDir = catalogRoot
+	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
 	// Either succeeds (no annotations on Aggregate to fire on) or fails;
@@ -153,12 +153,12 @@ metadata:
 spec: {}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
 	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
+		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
 	})
 	releasePath = filepath.Join(root, "release.yaml")
-	catalogDir = catalogRoot
+	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
 	err := runBuild(nil, nil)
@@ -208,12 +208,12 @@ spec:
   boundaries: {}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
 	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
+		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
 	})
 	releasePath = filepath.Join(root, "release.yaml")
-	catalogDir = catalogRoot
+	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
 	err := runBuild(nil, nil)
@@ -228,7 +228,7 @@ func TestInspectReleaseFile_MissingFile(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Catalog without the release.
-	err := inspectReleaseFile("/nonexistent/release.yaml", tmp)
+	err := inspectReleaseFile("/nonexistent/release.yaml", []string{tmp})
 	if err == nil {
 		t.Errorf("missing release should error")
 	}
@@ -248,7 +248,7 @@ metadata:
   version: 1.0.0
 spec: {}
 `)
-	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), catalogRoot)
+	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), []string{catalogRoot})
 	if err == nil {
 		t.Errorf("malformed release should error")
 	}
@@ -340,7 +340,7 @@ spec:
         ports:
           web: {{ .values.port }}
 `)
-	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), catalogRoot)
+	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), []string{catalogRoot})
 	if err != nil {
 		t.Errorf("happy path: %v", err)
 	}

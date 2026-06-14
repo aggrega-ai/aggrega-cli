@@ -110,12 +110,12 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
 	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
+		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
 	})
 	releasePath = filepath.Join(root, "release.yaml")
-	catalogDir = catalogRoot
+	catalogDirs = []string{catalogRoot}
 	traceEnabled = true // exercise the trace-enabled branch
 	if err := os.RemoveAll(filepath.Join(root, ".trace")); err != nil {
 		t.Fatalf("clean .trace: %v", err)
@@ -219,12 +219,12 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDir, traceEnabled
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
 	t.Cleanup(func() {
-		releasePath, catalogDir, traceEnabled = prevRelease, prevCatalog, prevTrace
+		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
 	})
 	releasePath = filepath.Join(root, "release.yaml")
-	catalogDir = catalogRoot
+	catalogDirs = []string{catalogRoot}
 	traceEnabled = true
 
 	// runBuild may succeed or fail depending on the fixture's

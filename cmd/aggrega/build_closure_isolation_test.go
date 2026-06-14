@@ -190,7 +190,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
-	if err := dispatchBuild(releasePath, catalogRoot, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogRoot}, false); err != nil {
 		t.Fatalf("clean build should succeed: %v", err)
 	}
 	clean := readTree(t, filepath.Join(root, "dist"))
@@ -201,7 +201,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 	// Add broken entities OUTSIDE the closure; the closure (and lockfile) are
 	// unchanged, so the pre-existing lockfile still verifies.
 	writeBrokenOutOfClosureEntities(t, catalogRoot)
-	if err := dispatchBuild(releasePath, catalogRoot, false); err != nil {
+	if err := dispatchBuild(releasePath, []string{catalogRoot}, false); err != nil {
 		t.Fatalf("build must succeed despite broken out-of-closure entities (blast-radius isolation): %v", err)
 	}
 	dirty := readTree(t, filepath.Join(root, "dist"))
@@ -238,7 +238,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := dispatchBuild(releasePath, catalogRoot, false); err == nil {
+	if err := dispatchBuild(releasePath, []string{catalogRoot}, false); err == nil {
 		t.Fatal("build must fail when an in-closure component's $ref is unresolvable (closure-scoped Pass-2 must still reject)")
 	}
 }
@@ -262,7 +262,7 @@ metadata:
 spec:
   provider: helm
 `)
-	err := dispatchBuild(releasePath, catalogRoot, false)
+	err := dispatchBuild(releasePath, []string{catalogRoot}, false)
 	if err == nil {
 		t.Fatal("build must fail when the in-closure recipe was skipped at load")
 	}
@@ -303,7 +303,7 @@ func TestPull_BrokenOutOfClosureIsolation(t *testing.T) {
 	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogRoot}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("clean pull should succeed: %v", err)
 	}
 	clean := lockfileEntityURIs(t, releasePath)
@@ -312,7 +312,7 @@ func TestPull_BrokenOutOfClosureIsolation(t *testing.T) {
 	}
 
 	writeBrokenOutOfClosureEntities(t, catalogRoot)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogRoot, Regenerate: true}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, Regenerate: true}); err != nil {
 		t.Fatalf("pull must succeed despite broken out-of-closure entities: %v", err)
 	}
 	dirty := lockfileEntityURIs(t, releasePath)
@@ -342,7 +342,7 @@ metadata:
 spec:
   provider: helm
 `)
-	err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDir: catalogRoot})
+	err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}})
 	if err == nil {
 		t.Fatal("pull must fail when the in-closure recipe was skipped at load")
 	}
