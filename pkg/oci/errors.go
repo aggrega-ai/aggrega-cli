@@ -45,6 +45,17 @@ var ErrUnknownEntityKind = errors.New("oci: unknown entity kind for mediatype di
 // this sentinel with both values for the operator's diagnostic.
 var ErrEntityVersionPathMismatch = errors.New("oci: entity per-version subdirectory mismatch")
 
+// ErrOCILocationCollision fires when two DISTINCT catalog identities map to the
+// same OCI repository location — e.g. two SchemaLibrary identities that differ
+// only in case (AIDatastores vs AiDatastores both lower to schemalibrary/
+// aidatastores), or, were the provider ever dropped from a recipe location, two
+// provider-distinct recipes of the same name. Because the OCI location is a
+// lowercased, identity-derived coordinate, a faithful catalog must keep
+// identities collision-free under that mapping; a collision would silently
+// overwrite one entity's published bytes with another's. The whole-catalog lint
+// halts loudly on it rather than let population drop an entity.
+var ErrOCILocationCollision = errors.New("oci: distinct catalog identities map to the same OCI repository location")
+
 // RemediationFor returns the operator-actionable remediation hint
 // for a fetch-sentinel error. The registryHost substring substitutes
 // into auth/network messages; pass an empty string when the host is

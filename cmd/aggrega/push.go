@@ -75,6 +75,13 @@ type pushEntityHeader struct {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version"`
 	} `yaml:"metadata"`
+	Spec struct {
+		// Provider is the execution engine for Recipe / FeatureRecipe. It is
+		// part of those kinds' identity (recipeIdentityKey is
+		// provider/name:version), so the OCI location must encode it — two
+		// providers may ship a recipe of the same name.
+		Provider string `yaml:"provider"`
+	} `yaml:"spec"`
 }
 
 // pushRun bundles the entity at cfg.EntityPath and publishes it.
@@ -136,7 +143,7 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: bundle %s: %w", cfg.EntityPath, err)
 	}
 
-	reference := buildPushReference(registry, header.Kind, header.Metadata.Name)
+	reference := buildPushReference(registry, header.Kind, header.Spec.Provider, header.Metadata.Name)
 	tag := header.Metadata.Version
 
 	if cfg.DryRun {
@@ -185,8 +192,30 @@ func pushRun(cfg pushConfig) error {
 // (reference, tag) pair at the closure walker's Tier-3 dispatch.
 // TestPushReferenceRoundTripsThroughSplitURIForOCI pins the
 // symmetry across all publishable catalog kinds.
-func buildPushReference(registry, kind, metadataName string) string {
-	return registry + "/" + kindPathSegment(kind) + "/" + metadataName
+func buildPushReference(registry, kind, provider, metadataName string) string {
+	return registry + "/" + ociLocation(kind, provider, metadataName)
+}
+
+// ociLocation is the single rule mapping an entity identity to its OCI
+// repository LOCATION: `<kindSegment>/<lower(identityPath)>`. A location is a
+// coordinate derived from identity, not an identity itself: OCI repository names
+// must be lowercase, while a catalog identity may carry case (PascalCase
+// SchemaLibrary / MappingLibrary) and a provider scope (Recipe / FeatureRecipe
+// identity is provider/name, per recipeIdentityKey). So the location lowercases
+// the whole path and, for recipes, encodes the provider —
+// two providers may ship a recipe of the same name, and dropping the provider
+// silently overwrites one with the other. The identity itself stays cased and
+// provider-scoped everywhere it is an identity (metadata.name, lockfile, cache
+// key, closure). A faithful catalog keeps identities collision-free under this
+// mapping; the whole-catalog lint enforces it (ErrOCILocationCollision).
+func ociLocation(kind, provider, name string) string {
+	seg := kindPathSegment(kind)
+	switch kind {
+	case "Recipe", "FeatureRecipe":
+		return seg + "/" + strings.ToLower(provider) + "/" + strings.ToLower(name)
+	default:
+		return seg + "/" + strings.ToLower(name)
+	}
 }
 
 // kindPathSegment maps an entity kind to its OCI repository path

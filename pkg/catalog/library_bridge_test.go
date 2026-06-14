@@ -227,8 +227,11 @@ func TestLibraryReference(t *testing.T) {
 	cases := []struct {
 		registry, kind, name, want string
 	}{
-		{"hub.aggrega.ai", "SchemaLibrary", "DbSizing", "hub.aggrega.ai/schemalibrary/DbSizing"},
-		{"reg.example.com", "MappingLibrary", "BaseMappings", "reg.example.com/mappinglibrary/BaseMappings"},
+		// The OCI repository is a lowercased LOCATION: the PascalCase library
+		// identity is preserved in the lockfile/cache, while the fetch location
+		// lowercases the name. Pull-location == push-location.
+		{"hub.aggrega.ai", "SchemaLibrary", "DbSizing", "hub.aggrega.ai/schemalibrary/dbsizing"},
+		{"reg.example.com", "MappingLibrary", "BaseMappings", "reg.example.com/mappinglibrary/basemappings"},
 	}
 	for _, tc := range cases {
 		if got := libraryReference(tc.registry, tc.kind, tc.name); got != tc.want {

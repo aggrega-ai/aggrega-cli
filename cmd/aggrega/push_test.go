@@ -494,26 +494,27 @@ func TestPushReferenceRoundTripsThroughSplitURIForOCI(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		kind         string
+		provider     string
 		metadataName string
 		version      string
 	}{
-		{"Component", "core/api-server", "1.0.0"},
-		{"Feature", "core/ingress", "1.2.0"},
-		{"Recipe", "server", "2.0.0"},
-		{"FeatureRecipe", "ingress-nginx", "1.0.0"},
-		{"Provider", "helm", "3.0.0"},
-		{"SchemaLibrary", "Probes", "1.0.0"},
-		{"MappingLibrary", "BaseMappings", "2.1.0"},
+		{"Component", "", "core/api-server", "1.0.0"},
+		{"Feature", "", "core/ingress", "1.2.0"},
+		{"Recipe", "helm", "server", "2.0.0"},
+		{"FeatureRecipe", "helm", "ingress-nginx", "1.0.0"},
+		{"Provider", "", "helm", "3.0.0"},
+		{"SchemaLibrary", "", "Probes", "1.0.0"},
+		{"MappingLibrary", "", "BaseMappings", "2.1.0"},
 		// Wasm-plugin kind: path segment is the canonical "wasm" (not
 		// "wasmplugin"); plugin's metadata.name path-encodes the
 		// socket. Reference shape: <registry>/wasm/<socket>/<name>.
-		{"WasmPlugin", "linter/aggrega-publishing", "1.0.0"},
+		{"WasmPlugin", "", "linter/aggrega-publishing", "1.0.0"},
 	}
 	registry := "hub.aggrega.ai"
 	for _, tc := range cases {
 		t.Run(tc.kind, func(t *testing.T) {
 			t.Parallel()
-			ref := buildPushReference(registry, tc.kind, tc.metadataName)
+			ref := buildPushReference(registry, tc.kind, tc.provider, tc.metadataName)
 			uri := ref + ":" + tc.version
 			gotRef, gotTag, ok := catalog.SplitURIForOCI(uri)
 			if !ok {

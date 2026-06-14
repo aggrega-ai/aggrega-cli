@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -153,8 +154,75 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 		}
 		return fmt.Errorf("catalog validation failed: %d extends resolution error(s)", len(extErrs))
 	}
-	fmt.Println("catalog validation passed (schema-pillar + library + extends)")
+	if err := verifyNoOCILocationCollision(cat); err != nil {
+		return fmt.Errorf("catalog validation failed: %w", err)
+	}
+	fmt.Println("catalog validation passed (schema-pillar + library + extends + oci-location)")
 	return nil
+}
+
+// verifyNoOCILocationCollision halts when two DISTINCT catalog identities map to
+// the same OCI repository location (the lowercased, identity-derived coordinate
+// from ociLocation). Such a collision would silently overwrite one entity's
+// published bytes with another's at population time — the loud counterpart to the
+// publish-path location encoding. Grouping is by version-independent identity
+// (provider/name for recipes, metadata.name otherwise), so multiple versions of
+// one identity sharing a location — distinguished by tag — are not a collision.
+func verifyNoOCILocationCollision(cat *catalog.Catalog) error {
+	byLoc := map[string]map[string]struct{}{}
+	add := func(kind, provider, name string) {
+		loc := ociLocation(kind, provider, name)
+		ident := name
+		if provider != "" {
+			ident = provider + "/" + name
+		}
+		if byLoc[loc] == nil {
+			byLoc[loc] = map[string]struct{}{}
+		}
+		byLoc[loc][ident] = struct{}{}
+	}
+	for _, e := range cat.Components {
+		add("Component", "", e.Metadata.Name)
+	}
+	for _, e := range cat.Features {
+		add("Feature", "", e.Metadata.Name)
+	}
+	for _, e := range cat.Providers {
+		add("Provider", "", e.Metadata.Name)
+	}
+	for _, e := range cat.Aggregates {
+		add("Aggregate", "", e.Metadata.Name)
+	}
+	for _, e := range cat.Recipes {
+		add("Recipe", e.Spec.Provider, e.Metadata.Name)
+	}
+	for _, e := range cat.FeatureRecipes {
+		add("FeatureRecipe", e.Spec.Provider, e.Metadata.Name)
+	}
+	for _, e := range cat.SchemaLibraries {
+		add("SchemaLibrary", "", e.Metadata.Name)
+	}
+	for _, e := range cat.MappingLibraries {
+		add("MappingLibrary", "", e.Metadata.Name)
+	}
+
+	var collisions []string
+	for loc, idents := range byLoc {
+		if len(idents) <= 1 {
+			continue
+		}
+		names := make([]string, 0, len(idents))
+		for id := range idents {
+			names = append(names, id)
+		}
+		sort.Strings(names)
+		collisions = append(collisions, fmt.Sprintf("%s <- %s", loc, strings.Join(names, ", ")))
+	}
+	if len(collisions) == 0 {
+		return nil
+	}
+	sort.Strings(collisions)
+	return fmt.Errorf("%w:\n  - %s", oci.ErrOCILocationCollision, strings.Join(collisions, "\n  - "))
 }
 
 // lintConfig is the test-injectable input contract. Tests construct
@@ -197,7 +265,8 @@ type lintEntityHeader struct {
 		Labels  map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Extends string `yaml:"extends"`
+		Extends  string `yaml:"extends"`
+		Provider string `yaml:"provider"`
 	} `yaml:"spec"`
 }
 
@@ -513,7 +582,7 @@ func fetchPreviousRegistryVersion(
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
 	if target == nil {
-		reference := buildPushReference(wsCfg.Workspace.DefaultRegistry, header.Kind, header.Metadata.Name)
+		reference := buildPushReference(wsCfg.Workspace.DefaultRegistry, header.Kind, header.Spec.Provider, header.Metadata.Name)
 		repo, err := oci.NewRemoteRepository(reference)
 		if err != nil {
 			return nil, "", fmt.Errorf("construct repo: %w", err)

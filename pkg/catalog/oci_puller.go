@@ -90,7 +90,7 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 // so the tag is discarded and the pin is identity-stable even when a publisher
 // tags `latest`/`stable` over the versioned identity.
 func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion string) (*oci.PullResult, string, error) {
-	reference := p.registry + "/" + libraryPathSegment("Aggregate") + "/" + name
+	reference := p.registry + "/" + libraryPathSegment("Aggregate") + "/" + strings.ToLower(name)
 	repo, err := oci.NewRemoteRepository(reference)
 	if err != nil {
 		return nil, "", err
@@ -114,11 +114,14 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 }
 
 // libraryReference binds a host-less library identity to a physical OCI
-// reference, `<registry>/<kind-segment>/<name>` — the pull-side mirror of push's
-// buildPushReference, so a library is fetched from exactly where push published
-// it (the identity round-trip; pull-location == push-location).
+// reference, `<registry>/<kind-segment>/<lowercased-name>` — the pull-side mirror
+// of push's buildPushReference, so a library is fetched from exactly where push
+// published it. The name is lowercased because the OCI repository is a LOCATION,
+// not an IDENTITY (OCI repo names must be lowercase; a library identity is
+// PascalCase). The identity stays cased in the lockfile and cache key; only the
+// fetch location lowercases. Identity round-trip: pull-location == push-location.
 func libraryReference(registry, kind, name string) string {
-	return registry + "/" + libraryPathSegment(kind) + "/" + name
+	return registry + "/" + libraryPathSegment(kind) + "/" + strings.ToLower(name)
 }
 
 // libraryPathSegment mirrors the push-side kindPathSegment for library kinds, so
