@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -325,13 +326,17 @@ func (c *Catalog) MergeExtraAggregates(extra map[string][]byte) ([]string, error
 			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Aggregate %q", uri))
 		}
 		name := agg.Metadata.Name
-		if _, local := c.Aggregates[name]; local {
+		// Local-wins is name-scoped: a locally-authored aggregate of the same
+		// name shadows the lockfile-pinned one regardless of version, matching
+		// the pre-version-index behaviour. resolveAggregateKey scans by
+		// metadata.name, so it detects the local entry whatever its index key.
+		if _, local, _ := c.resolveAggregateKey(name); local {
 			warnings = append(warnings, fmt.Sprintf(
 				"Aggregate %q is present both in the local catalog and as a lockfile-pinned aggregate; the local definition is used",
 				name))
 			continue
 		}
-		c.Aggregates[name] = *agg
+		c.Aggregates[entityIndexKey(name, agg.Metadata.Version)] = *agg
 		c.entityBytes[entityBytesKey("Aggregate", name)] = data
 	}
 	return warnings, nil
@@ -755,16 +760,18 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")
 		}
-		c.Components[e.Metadata.Name] = e
-		c.componentSources[e.Metadata.Name] = path
+		ckey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		c.Components[ckey] = e
+		c.componentSources[ckey] = path
 		c.entityBytes[entityBytesKey("Component", e.Metadata.Name)] = data
 	case "Feature":
 		e, err := parseFeatureEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Feature")
 		}
-		c.Features[e.Metadata.Name] = e
-		c.featureSources[e.Metadata.Name] = path
+		fkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		c.Features[fkey] = e
+		c.featureSources[fkey] = path
 		c.entityBytes[entityBytesKey("Feature", e.Metadata.Name)] = data
 	case "Recipe":
 		// parseRecipeEntity is the shared per-entity resolve (unmarshal, shape
@@ -797,8 +804,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Aggregate")
 		}
-		c.Aggregates[e.Metadata.Name] = e
-		c.aggregateSources[e.Metadata.Name] = path
+		akey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		c.Aggregates[akey] = e
+		c.aggregateSources[akey] = path
 		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
 	case "Provider":
 		if _, eerr := envelope.ValidateBytes(envelope.KindProvider, data, path); eerr != nil {
@@ -808,8 +816,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
 		}
-		c.Providers[e.Metadata.Name] = e
-		c.providerSources[e.Metadata.Name] = path
+		pkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		c.Providers[pkey] = e
+		c.providerSources[pkey] = path
 		c.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
 	case "SchemaLibrary":
 		// Parse + the forbidden-keyword ($dynamicAnchor / $dynamicRef) and
@@ -1066,8 +1075,11 @@ func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, 
 // continues, where a sentinel error would force the caller to either
 // distinguish miss-vs-other-error or swallow both cases.
 func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
-	p, ok := c.Providers[name]
-	return p, ok
+	key, ok, _ := c.resolveProviderKey(name)
+	if !ok {
+		return types.Provider{}, false
+	}
+	return c.Providers[key], true
 }
 
 // ProviderInfraSchemaResolver returns a closure mapping a component instance
@@ -1179,12 +1191,18 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 	var errs []*validator.ValidationError
 
 	compLookup := func(uri string) (types.Component, bool) {
-		comp, ok := c.Components[uri]
-		return comp, ok
+		key, ok, _ := c.resolveComponentKey(uri)
+		if !ok {
+			return types.Component{}, false
+		}
+		return c.Components[key], true
 	}
 	featLookup := func(uri string) (types.Feature, bool) {
-		feat, ok := c.Features[uri]
-		return feat, ok
+		key, ok, _ := c.resolveFeatureKey(uri)
+		if !ok {
+			return types.Feature{}, false
+		}
+		return c.Features[key], true
 	}
 
 	// CatalogEntry chain lookups that compile each chain entry's authored
@@ -1235,6 +1253,15 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		if comp.Spec.Extends == "" {
 			continue
 		}
+		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion) {
+			errs = append(errs, &validator.ValidationError{
+				Entity:     "Component " + name,
+				FieldPath:  ".extends",
+				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", comp.Spec.Extends),
+				Err:        ErrUnsatisfiableEntityVersion,
+			})
+			continue
+		}
 		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
 		if len(vErrs) > 0 {
 			errs = append(errs, vErrs...)
@@ -1267,6 +1294,15 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 	for _, name := range featKeys {
 		feat := c.Features[name]
 		if feat.Spec.Extends == "" {
+			continue
+		}
+		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion) {
+			errs = append(errs, &validator.ValidationError{
+				Entity:     "Feature " + name,
+				FieldPath:  ".extends",
+				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", feat.Spec.Extends),
+				Err:        ErrUnsatisfiableEntityVersion,
+			})
 			continue
 		}
 		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)
@@ -1303,19 +1339,61 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 // into the catalog through these closures rather than through a typed
 // reference to *Catalog. Same pattern repeats in RecipeLookup
 // (renderer.RecipeLookup) and SubAggregateLoader (topology.SubAggregateLoader).
+// resolveComponentKey returns the index key of the version of typeURI that best
+// satisfies the reference under the three-form rule (exact / caret / unversioned
+// -> highest-satisfying), plus a matched flag and the recoverable
+// ErrUnsatisfiableEntityVersion when the base name exists but no version satisfies
+// a version-pinned reference. A bare typeURI resolves to the highest available
+// version. The eager catalog indexes by name:version, so this is the single point
+// that picks among coexisting versions; resolveFeatureKey / resolveProviderKey /
+// resolveAggregateKey mirror it for the other by-name kinds.
+func (c *Catalog) resolveComponentKey(typeURI string) (string, bool, error) {
+	return selectEntityVersion(c.Components, typeURI, func(v types.Component) (string, string) {
+		return v.Metadata.Name, v.Metadata.Version
+	})
+}
+
+func (c *Catalog) resolveFeatureKey(typeURI string) (string, bool, error) {
+	return selectEntityVersion(c.Features, typeURI, func(v types.Feature) (string, string) {
+		return v.Metadata.Name, v.Metadata.Version
+	})
+}
+
+func (c *Catalog) resolveProviderKey(name string) (string, bool, error) {
+	return selectEntityVersion(c.Providers, name, func(v types.Provider) (string, string) {
+		return v.Metadata.Name, v.Metadata.Version
+	})
+}
+
+func (c *Catalog) resolveAggregateKey(name string) (string, bool, error) {
+	return selectEntityVersion(c.Aggregates, name, func(v types.Aggregate) (string, string) {
+		return v.Metadata.Name, v.Metadata.Version
+	})
+}
+
 func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
-			comp, ok := c.Components[typeURI]
-			return comp, ok
+			key, ok, _ := c.resolveComponentKey(typeURI)
+			if !ok {
+				return types.Component{}, false
+			}
+			return c.Components[key], true
 		},
 		Feature: func(typeURI string) (types.Feature, bool) {
-			feat, ok := c.Features[typeURI]
-			return feat, ok
+			key, ok, _ := c.resolveFeatureKey(typeURI)
+			if !ok {
+				return types.Feature{}, false
+			}
+			return c.Features[key], true
 		},
 		SchemaLibraries: c.SchemaLibraries,
 		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
-			s, ok := c.effectiveSchemas[typeURI]
+			key, ok, _ := c.resolveComponentKey(typeURI)
+			if !ok {
+				return compactform.Schema{}, false
+			}
+			s, ok := c.effectiveSchemas[key]
 			return s, ok
 		},
 	}
@@ -1330,7 +1408,11 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 // source-file provenance to flattened nodes so the analyzer's
 // per-file diagnostic filtering operates on consistent path forms.
 func (c *Catalog) AggregateSourceFile(name string) (string, bool) {
-	path, ok := c.aggregateSources[name]
+	key, ok, _ := c.resolveAggregateKey(name)
+	if !ok {
+		return "", false
+	}
+	path, ok := c.aggregateSources[key]
 	if !ok {
 		return "", false
 	}
@@ -1358,12 +1440,13 @@ func (c *Catalog) EntityBytes(kind, name string) ([]byte, bool) {
 // (entity, path, bytes) contract as a same-directory-resolved one.
 func (c *Catalog) AggregateLookup() resolver.AggregateLookup {
 	return func(name string) (resolver.ResolvedAggregate, bool) {
-		agg, ok := c.Aggregates[name]
+		key, ok, _ := c.resolveAggregateKey(name)
 		if !ok {
 			return resolver.ResolvedAggregate{}, false
 		}
-		path, _ := c.AggregateSourceFile(name)
-		data, _ := c.EntityBytes("Aggregate", name)
+		agg := c.Aggregates[key]
+		path, _ := c.AggregateSourceFile(key)
+		data, _ := c.EntityBytes("Aggregate", agg.Metadata.Name)
 		return resolver.ResolvedAggregate{Aggregate: &agg, Path: path, Bytes: data}, true
 	}
 }
@@ -1384,17 +1467,18 @@ func (c *Catalog) AggregateLookup() resolver.AggregateLookup {
 // provenance through flatten so per-node IR records can carry it.
 func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 	return func(typeName string, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error) {
-		agg, ok := c.Aggregates[typeName]
+		key, ok, _ := c.resolveAggregateKey(typeName)
 		if !ok {
 			return nil, "", nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog", typeName), nil, nil)
 		}
+		agg := c.Aggregates[key]
 		// The return path (TopologyNode provenance) always comes from
 		// aggregateSources, exactly as before — decoupled from raw-byte
 		// acquisition, so a cache-bridged sub-aggregate (bytes, no path) or a
 		// failed re-read does not lose source provenance.
-		absPath := c.aggregateSources[typeName]
+		absPath := c.aggregateSources[key]
 		returnPath := RelativeToWorkspace(c.workspaceRoot, absPath)
-		raw := c.subAggregateRawBytes(typeName, absPath)
+		raw := c.subAggregateRawBytes(agg.Metadata.Name, absPath)
 		return resolveSubAggregateParameters(typeName, raw, absPath, returnPath, agg, parentParams)
 	}
 }

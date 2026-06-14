@@ -39,14 +39,13 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 	feats := map[string]types.Feature{}
 	featSrc := map[string]string{}
 	for _, e := range cl.Entities {
-		name := lookupNameFromURI(e.URI)
-		if comp, ok := c.Components[name]; ok {
-			comps[name] = comp
-			compSrc[name] = c.componentSources[name]
+		if key, ok, _ := c.resolveComponentKey(e.URI); ok {
+			comps[key] = c.Components[key]
+			compSrc[key] = c.componentSources[key]
 		}
-		if feat, ok := c.Features[name]; ok {
-			feats[name] = feat
-			featSrc[name] = c.featureSources[name]
+		if key, ok, _ := c.resolveFeatureKey(e.URI); ok {
+			feats[key] = c.Features[key]
+			featSrc[key] = c.featureSources[key]
 		}
 	}
 	return ValidateClosurePillars(comps, compSrc, feats, featSrc, c.SchemaLibraries)
@@ -62,18 +61,29 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 // chain is still merged correctly. Names are deduped (cl.Entities may list one
 // entity under several version-suffixed URIs) so no chain is double-merged.
 func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.ValidationError {
-	compLookup := func(uri string) (types.Component, bool) { comp, ok := c.Components[uri]; return comp, ok }
-	featLookup := func(uri string) (types.Feature, bool) { feat, ok := c.Features[uri]; return feat, ok }
+	compLookup := func(uri string) (types.Component, bool) {
+		key, ok, _ := c.resolveComponentKey(uri)
+		if !ok {
+			return types.Component{}, false
+		}
+		return c.Components[key], true
+	}
+	featLookup := func(uri string) (types.Feature, bool) {
+		key, ok, _ := c.resolveFeatureKey(uri)
+		if !ok {
+			return types.Feature{}, false
+		}
+		return c.Features[key], true
+	}
 
 	compSet := map[string]struct{}{}
 	featSet := map[string]struct{}{}
 	for _, e := range cl.Entities {
-		name := lookupNameFromURI(e.URI)
-		if _, ok := c.Components[name]; ok {
-			compSet[name] = struct{}{}
+		if key, ok, _ := c.resolveComponentKey(e.URI); ok {
+			compSet[key] = struct{}{}
 		}
-		if _, ok := c.Features[name]; ok {
-			featSet[name] = struct{}{}
+		if key, ok, _ := c.resolveFeatureKey(e.URI); ok {
+			featSet[key] = struct{}{}
 		}
 	}
 	compNames := make([]string, 0, len(compSet))
@@ -415,12 +425,13 @@ func (l *catalogLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error
 
 func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool) {
 	_, version, _ := splitVersionedURI(uri)
-	lookupName := lookupNameFromURI(uri)
 
-	if c, ok := l.catalog.Components[lookupName]; ok {
+	if key, ok, _ := l.catalog.resolveComponentKey(uri); ok {
+		c := l.catalog.Components[key]
 		return l.tier1Resolution("Component", c.Metadata.Name, c.Metadata.Version, version), true
 	}
-	if f, ok := l.catalog.Features[lookupName]; ok {
+	if key, ok, _ := l.catalog.resolveFeatureKey(uri); ok {
+		f := l.catalog.Features[key]
 		return l.tier1Resolution("Feature", f.Metadata.Name, f.Metadata.Version, version), true
 	}
 	// Recipe / FeatureRecipe lookups go through RecipeByURI /
@@ -437,10 +448,12 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
 		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
 	}
-	if p, ok := l.catalog.Providers[lookupName]; ok {
+	if key, ok, _ := l.catalog.resolveProviderKey(uri); ok {
+		p := l.catalog.Providers[key]
 		return l.tier1Resolution("Provider", p.Metadata.Name, p.Metadata.Version, version), true
 	}
-	if a, ok := l.catalog.Aggregates[lookupName]; ok {
+	if key, ok, _ := l.catalog.resolveAggregateKey(uri); ok {
+		a := l.catalog.Aggregates[key]
 		return l.tier1Resolution("Aggregate", a.Metadata.Name, a.Metadata.Version, version), true
 	}
 	return closure.Resolution{}, false

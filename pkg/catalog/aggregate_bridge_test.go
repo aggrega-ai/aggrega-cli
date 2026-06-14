@@ -41,7 +41,7 @@ func TestMergeExtraAggregatesFolds(t *testing.T) {
 	if len(warns) != 0 {
 		t.Fatalf("unexpected warnings: %v", warns)
 	}
-	if _, ok := c.Aggregates["app"]; !ok {
+	if _, ok, _ := c.resolveAggregateKey("app"); !ok {
 		t.Fatalf("aggregate not folded into cat.Aggregates")
 	}
 	if got := c.entityBytes[entityBytesKey("Aggregate", "app")]; string(got) != string(body) {

@@ -37,12 +37,12 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 		compNames = append(compNames, name)
 	}
 	sort.Strings(compNames)
-	for _, name := range compNames {
-		if _, ok := inClosure[name]; !ok {
+	for _, key := range compNames {
+		comp := cat.Components[key]
+		if _, ok := inClosure[comp.Metadata.Name]; !ok {
 			continue
 		}
-		comp := cat.Components[name]
-		consumers = append(consumers, closure.SchemaConsumer{URI: name, Schema: &comp.Spec.Schema})
+		consumers = append(consumers, closure.SchemaConsumer{URI: comp.Metadata.Name, Schema: &comp.Spec.Schema})
 	}
 
 	featNames := make([]string, 0, len(cat.Features))
@@ -50,12 +50,12 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 		featNames = append(featNames, name)
 	}
 	sort.Strings(featNames)
-	for _, name := range featNames {
-		if _, ok := inClosure[name]; !ok {
+	for _, key := range featNames {
+		feat := cat.Features[key]
+		if _, ok := inClosure[feat.Metadata.Name]; !ok {
 			continue
 		}
-		feat := cat.Features[name]
-		consumers = append(consumers, closure.SchemaConsumer{URI: name, Schema: &feat.Spec.Schema})
+		consumers = append(consumers, closure.SchemaConsumer{URI: feat.Metadata.Name, Schema: &feat.Spec.Schema})
 	}
 
 	// Transitive body accessor: a discovered library's own entry bodies, for

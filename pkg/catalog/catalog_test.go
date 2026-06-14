@@ -56,14 +56,14 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Components) != 1 {
 		t.Errorf("expected 1 component, got %d", len(c.Components))
 	}
-	if _, ok := c.Components["core/compute/api-server"]; !ok {
+	if _, ok, _ := c.resolveComponentKey("core/compute/api-server"); !ok {
 		t.Error("missing core/api-server component")
 	}
 
 	if len(c.Features) != 1 {
 		t.Errorf("expected 1 feature, got %d", len(c.Features))
 	}
-	if _, ok := c.Features["core/monitoring"]; !ok {
+	if _, ok, _ := c.resolveFeatureKey("core/monitoring"); !ok {
 		t.Error("missing core/monitoring feature")
 	}
 
@@ -81,14 +81,14 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Aggregates) != 1 {
 		t.Errorf("expected 1 aggregate, got %d", len(c.Aggregates))
 	}
-	if _, ok := c.Aggregates["db-module"]; !ok {
+	if _, ok, _ := c.resolveAggregateKey("db-module"); !ok {
 		t.Error("missing db-module aggregate")
 	}
 
 	if len(c.Providers) != 1 {
 		t.Errorf("expected 1 provider, got %d", len(c.Providers))
 	}
-	if _, ok := c.Providers["helm-chart"]; !ok {
+	if _, ok, _ := c.resolveProviderKey("helm-chart"); !ok {
 		t.Error("missing helm-chart provider")
 	}
 }
@@ -509,7 +509,7 @@ spec:
 	}
 
 	// Before resolution: child has its own Schema populated.
-	if cat.Components["core/compute/api"].Spec.Schema.Kind == 0 {
+	if before, _ := cat.CatalogLookup().Component("core/compute/api"); before.Spec.Schema.Kind == 0 {
 		t.Fatal("child component missing schema before resolution")
 	}
 
@@ -518,7 +518,7 @@ spec:
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 
-	resolved := cat.Components["core/compute/api"]
+	resolved, _ := cat.CatalogLookup().Component("core/compute/api")
 	typeLabel, _ := resolved.Metadata.Labels.Get("component.aggrega.ai/type")
 	if typeLabel != "server" {
 		t.Errorf("expected inherited type label, got %v", resolved.Metadata.Labels.Keys())

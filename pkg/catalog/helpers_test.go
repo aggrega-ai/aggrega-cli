@@ -506,7 +506,7 @@ func TestProviderLookup_MissAndHit(t *testing.T) {
 	if _, ok := c.ProviderLookup("absent"); ok {
 		t.Errorf("absent → false")
 	}
-	c.Providers["helm"] = types.Provider{}
+	c.Providers["helm"] = types.Provider{Metadata: types.ProviderMetadata{Name: "helm"}}
 	if _, ok := c.ProviderLookup("helm"); !ok {
 		t.Errorf("present → true")
 	}

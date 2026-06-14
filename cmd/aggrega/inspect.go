@@ -167,7 +167,7 @@ func inspectCatalogComponent(componentType, catalogDir string) error {
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
-	comp, found := cat.Components[componentType]
+	comp, found := cat.CatalogLookup().Component(componentType)
 	if !found {
 		return fmt.Errorf("component %q not found in catalog", componentType)
 	}

@@ -179,11 +179,15 @@ func (l *LazyLookup) Reset() {
 // Idempotent: calling Prime twice with the same catalog has no
 // additional effect.
 func (l *LazyLookup) Prime(cat *Catalog) {
-	for uri, comp := range cat.Components {
-		l.components[uri] = comp
+	// The lazy hot cache is keyed by the lookup URI callers request (the bare
+	// metadata.name), so prime under metadata.name rather than the eager
+	// catalog's name:version index key — otherwise a bare-name request would
+	// miss the primed entry and fall through to the Tier-1 walk.
+	for _, comp := range cat.Components {
+		l.components[comp.Metadata.Name] = comp
 	}
-	for uri, feat := range cat.Features {
-		l.features[uri] = feat
+	for _, feat := range cat.Features {
+		l.features[feat.Metadata.Name] = feat
 	}
 	l.componentIndexBuilt = true
 	l.featureIndexBuilt = true

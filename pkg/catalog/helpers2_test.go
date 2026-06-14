@@ -191,7 +191,7 @@ spec:
 	if err != nil {
 		t.Fatalf("loadAll: %v", err)
 	}
-	if _, ok := c.Components["shared"]; !ok {
+	if _, ok, _ := c.resolveComponentKey("shared"); !ok {
 		t.Errorf("shared component missing")
 	}
 }

@@ -78,6 +78,17 @@ func recipeIdentityKey(provider, name, version string) string {
 	return provider + "/" + recipeURIKey(name, version)
 }
 
+// entityIndexKey is the catalog index key for a by-name entity (Component,
+// Feature, Provider, Aggregate): the bare metadata.name when version-less,
+// "name:version" when versioned — the recipe identity key minus the provider
+// segment. Keying by name:version lets multiple versions of one entity coexist
+// in the index instead of silently overwriting by bare name (the semver-incorrect
+// last-wins the bare-name index produced); resolution then selects among the
+// coexisting versions via selectEntityVersion.
+func entityIndexKey(name, version string) string {
+	return recipeURIKey(name, version)
+}
+
 // versionTolerantTypeGet resolves a component / feature TYPE to its mapped recipe
 // URI in typeMap, tolerant of a version mismatch between the authored type and
 // the mapping key. It tries an exact key match first (so an exact-version key
