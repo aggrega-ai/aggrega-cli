@@ -95,6 +95,88 @@ values:
 	}
 }
 
+// mockCatalogLookupWithLibs is mockCatalogLookup plus a SchemaLibrary set, so a
+// bound Feature whose schema carries a cross-document $ref can resolve it.
+func mockCatalogLookupWithLibs(features map[string]types.Feature, libs map[string]types.SchemaLibrary) CatalogLookup {
+	c := mockCatalogLookup(features)
+	c.SchemaLibraries = libs
+	return c
+}
+
+func schemaLibrary(t *testing.T, src string) types.SchemaLibrary {
+	t.Helper()
+	var lib types.SchemaLibrary
+	if err := yaml.Unmarshal([]byte(src), &lib); err != nil {
+		t.Fatalf("schemalibrary unmarshal: %v", err)
+	}
+	return lib
+}
+
+// TestValidateBindingTargets_CrossDocRefSchema_ResolvesWithLibraries pins the
+// fix: an annotation-bound Feature whose spec.schema uses the standard
+// cross-document $ref (BaseComponents#/schemas/BaseFeatureParameter — the shape
+// nearly every core/ Feature, including core/prometheus-exporter, uses) validates
+// WITHOUT halting when the catalog's SchemaLibraries are supplied. The
+// belt-and-suspenders second arm asserts the same binding still ERRORS without
+// them, proving the library supply is causally what resolves the $ref rather than
+// a coincidental pass.
+func TestValidateBindingTargets_CrossDocRefSchema_ResolvesWithLibraries(t *testing.T) {
+	t.Parallel()
+	manifest := loadManifest(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.aggrega.ai/monitoring:
+          feature: core/prometheus-exporter:1.0.0
+          maps:
+            infra:
+              - interval
+              - port
+`)
+	// Standard Feature schema shape: a cross-document $ref in the values pillar,
+	// plus a local infra block the binding routes through.
+	feature := featureWithSchema(t, "core/prometheus-exporter", `
+values:
+  $ref: "BaseComponents#/schemas/BaseFeatureParameter"
+  properties:
+    scrapePath: { type: string }
+infra:
+  interval: { type: string }
+  port: { type: string }
+`)
+	features := map[string]types.Feature{"core/prometheus-exporter:1.0.0": feature}
+	libs := map[string]types.SchemaLibrary{
+		"BaseComponents": schemaLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: BaseComponents
+  version: 1.0.0
+spec:
+  schemas:
+    BaseFeatureParameter:
+      enabled: { type: boolean }
+`),
+	}
+
+	// With the libraries supplied, the cross-document $ref resolves and the infra
+	// binding paths validate.
+	if err := ValidateAnnotationBindingTargets(manifest, mockCatalogLookupWithLibs(features, libs)); err != nil {
+		t.Fatalf("expected nil with SchemaLibraries supplied; got %v", err)
+	}
+
+	// Without them, the same binding halts on the unresolved $ref — the defect
+	// this fix removes.
+	if err := ValidateAnnotationBindingTargets(manifest, mockCatalogLookup(features)); err == nil {
+		t.Fatal("expected a compile error without SchemaLibraries; got nil")
+	}
+}
+
 func TestValidateBindingTargets_MissingInfraPath_ErrorsLoud(t *testing.T) {
 	t.Parallel()
 	// Binding routes through infra path "nonexistent" but the

@@ -70,7 +70,16 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 			)
 		}
 
-		compiled, err := compactform.Compile(&feature.Spec.Schema)
+		// Supply the catalog's SchemaLibraries so a Feature schema that uses a
+		// cross-document $ref (e.g. the standard BaseComponents#/schemas/
+		// BaseFeatureParameter) compiles here exactly as it does on every other
+		// feature-schema compile path. Without them the $ref cannot resolve and
+		// validation halts spuriously. No-op for $ref-less schemas.
+		var opts []compactform.CompileOption
+		if len(catalogLookup.SchemaLibraries) > 0 {
+			opts = append(opts, compactform.WithSchemaLibraries(catalogLookup.SchemaLibraries))
+		}
+		compiled, err := compactform.Compile(&feature.Spec.Schema, opts...)
 		if err != nil {
 			// A Feature schema that fails to compile is a catalog-load
 			// error caught upstream; if it reaches here, return a wrapping
