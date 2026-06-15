@@ -516,6 +516,30 @@ func TestDescendHaltsOnAmbiguousKind(t *testing.T) {
 	}
 }
 
+// TestDescendHaltsOnStructuredSourceMissingKindURL pins that a structured source
+// in the schema-documented-but-unimplemented {registry, chart} shape — which lacks
+// the {kind, url} the shipped source-descent reads — is loudly rejected at lock-time
+// descent, not silently resolved to an empty fetch. This is the defect class that
+// reached the shipped mariadb-bitnami recipe: the open-object schema accepts the
+// shape, so the loud guardrail has to come from descent.
+func TestDescendHaltsOnStructuredSourceMissingKindURL(t *testing.T) {
+	t.Parallel()
+	uri := "hub.aggrega.ai/recipe/helm/x:1.0.0"
+	source := map[string]any{
+		"registry": "oci://registry-1.docker.io/bitnamicharts",
+		"chart":    "mariadb",
+		"version":  "25.0.8",
+	}
+	loader := &fakeRecipeLoader{
+		recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)},
+	}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err == nil {
+		t.Fatal("a kind/url-less structured source (the {registry, chart} shape) must halt loudly at descent, not resolve silently")
+	}
+}
+
 func TestDescendIgnoresTier1LocalSources(t *testing.T) {
 	t.Parallel()
 	uri := "hub.aggrega.ai/recipe/helm/x:1.0.0"

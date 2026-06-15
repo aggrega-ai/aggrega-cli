@@ -43,7 +43,7 @@ type RecipeSpec struct {
 	Provider string `json:"provider" yaml:"provider"`
 	// Implements Declares which catalog component type this recipe is able to implement (exact version 'core/api-server:1.0.0', major-compatible range 'core/api-server:^1.0.0', or unversioned 'core/api-server'). The compiler uses it to verify Manifest mappings and to suggest candidates in diagnostics and editor completion; it never resolves a build. The Manifest mapping is the user's explicit deployment choice, pinned in the lockfile.
 	Implements string `json:"implements" yaml:"implements"`
-	// Source The location of the infrastructure code. Accepts a Universal URI string or an open structured object validated dynamically by the Wasm Provider plugin.
+	// Source The location of the infrastructure code. Accepts a Universal URI string, or an open structured object whose provider-defined keys are exposed to the Recipe's templates as '.source.*'.
 	Source any `json:"source,omitempty" yaml:"source,omitempty"`
 	// Locals The Private Ops State. Internal computation results available only within this Recipe's templates (valuesMapping, provides, pipeline[].with). Used to export physical realities (e.g., target containers, JSON paths) for downstream Wasm plugins. Never exposed to callers — use provides for the public API.
 	Locals OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
