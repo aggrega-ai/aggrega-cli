@@ -17,8 +17,8 @@ type SchemaConsumer struct {
 
 // LibraryBodyFunc returns the entry bodies of a resolved SchemaLibrary so its own
 // cross-document $ref: references can be descended transitively. The caller
-// resolves the body from the catalog (a locally-authored or bridged library) or
-// the content cache (a remote pinned library, via the ReadPinnedLibrary path).
+// resolves the body from the catalog (a locally-authored library) or the content
+// cache (a remote pinned library, via the lazy library walk's verified Tier-2 read).
 // A false found return stops transitive descent into that library (its body is
 // not available to scan); err is for a hard read/parse failure.
 type LibraryBodyFunc func(lib ResolvedLibrary) (entryBodies []*yaml.Node, found bool, err error)

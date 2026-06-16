@@ -221,8 +221,8 @@ func pullRun(cfg pullConfig) error {
 	// fatal — a broken catalog entity OUTSIDE this Release's closure never fails the
 	// pull. A cross-document $ref to a remote library cannot expand at load (Pass-2)
 	// because the library is not yet fetched — the closure walk + library discovery
-	// below acquire it; closure-scoped Pass-2 (after the bridge) is the validation
-	// gate, scoped to what the Release reaches.
+	// below acquire it; closure-scoped Pass-2 (through the pinned lazy lookup) is
+	// the validation gate, scoped to what the Release reaches.
 	cat, skipped, err := catalog.LoadPassOneTolerant("", cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
@@ -245,8 +245,8 @@ func pullRun(cfg pullConfig) error {
 	// The registry (Tier-3) seam for a bare-name top-level spec.aggregate that the
 	// same-directory scan and the catalog both miss: fetch + cache it by identity,
 	// pinning its metadata.version (identity), not the OCI tag. Pull-only — build
-	// passes nil, so Tier-3 never networks and a registry top-level resolves there
-	// through the cache→catalog bridge.
+	// passes a nil puller, so Tier-3 never networks and a registry top-level
+	// resolves from the pinned cache through the lazy lookup.
 	registryFetch := func(ref string) (resolver.ResolvedAggregate, bool, error) {
 		data, version, digest, found, ferr := catalog.PullAndCacheAggregate(workspaceRoot, cacheDir, puller, ref)
 		if ferr != nil || !found {
@@ -315,13 +315,23 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
 	}
+	// pull's determinism-wired lazy lookup: the post-fetch consumers — closure-
+	// library discovery, closure-scoped validation, and the source-descent
+	// SubAggregateLoader below — resolve the resolved closure directly, with no
+	// cache→catalog bridge. REAL puller (pull's job is to fetch + cache); pins come
+	// from the freshly-computed closure, because no lockfile exists yet — pull WRITES
+	// it — so a Tier-2 hit is verified against the version the walk just resolved.
+	lazyView := catalog.NewLazyLookup(workspaceRoot, cacheDir, dirs, puller)
+	lazyView.SetPins(catalog.PinsFromClosure(cl))
+
 	// Discover + resolve the cross-document SchemaLibrary axis (ComputeClosure's
-	// entity walk does not descend Component/Feature schema bodies). Shared with
-	// build's drift-verify so both compute the identical library closure.
-	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
+	// entity walk does not descend Component/Feature schema bodies), reading the
+	// resolved closure through lazyView — the same producer build runs, so a pull
+	// and a build of the same Release compute the identical library closure.
+	if err := discoverClosureLibraries(&cl, lazyView, lookup); err != nil {
 		return fmt.Errorf("closure: schema-library discovery: %w", err)
 	}
-	if err := discoverClosureMappingLibraries(&cl, cat, lookup); err != nil {
+	if err := discoverClosureMappingLibraries(&cl, lazyView, lookup); err != nil {
 		return fmt.Errorf("closure: mapping-library discovery: %w", err)
 	}
 	// Pull-side transitive sub-aggregate descent: pin the closure of every
@@ -332,18 +342,9 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("closure: sub-aggregate descent: %w", err)
 	}
-	// Fold the registry aggregates the closure just pulled+cached into the catalog
-	// so pull's own source-descent topology flatten (SubAggregateLoader, below)
-	// resolves a registry-only sub-aggregate from cache — the same cache→catalog
-	// bridge build runs. The lockfile is written from the closure, not the catalog,
-	// so this fold does not perturb the pins.
-	pullPins := make([]aggregateBridgePin, 0, len(cl.Entities))
-	for _, e := range cl.Entities {
-		pullPins = append(pullPins, aggregateBridgePin{URI: e.URI, Version: e.ResolvedVersion, Digest: e.Digest})
-	}
-	if err := bridgeCachedEntities(cat, workspaceRoot, cacheDir, pullPins); err != nil {
-		return err
-	}
+	// Refresh the pin set so it covers the descended sub-aggregates the source-
+	// descent flatten resolves through lazyView.SubAggregateLoader below.
+	lazyView.SetPins(catalog.PinsFromClosure(cl))
 
 	// The pull-event tier diagnostic reads the closure's in-memory resolution
 	// tier (not persisted in the lockfile) and is unrecoverable after this run.
@@ -371,53 +372,13 @@ func pullRun(cfg pullConfig) error {
 		return nil
 	}
 
-	// Bridge the discovered libraries into the catalog before source-descent, so
-	// its materialized pillars expand library-$ref-composed defaults exactly as
-	// build does. Source-descent reads graph.Spec.{Infra,Values}Mapping (schema
-	// defaults applied), and a library-$ref-composed default materializes only once
-	// the $ref expands against the SchemaLibraries map; pull and build must compute
-	// identical materialized pillars here or the pinned source identity diverges
-	// from build (ErrFetchIntegrity). Mirrors dispatchBuild's bridge: a
-	// locally-authored library is already in the tolerant Pass-1 catalog (skipped);
-	// a remote pinned library is read from the cache. MERGE (not a reload): the
-	// libraries are merged into the existing tolerant catalog, so an out-of-closure
-	// broken entity is not re-walked-and-aborted; closure-scoped Pass-2 below is the
-	// validation gate, scoped to what the Release reaches.
-	extraLibs := map[string][]byte{}
-	for _, lib := range cl.SchemaLibraries {
-		if _, local := cat.SchemaLibraries[lib.URI]; local {
-			continue
-		}
-		data, rerr := catalog.ReadPinnedLibrary(workspaceRoot, cacheDir, lib.URI, lib.ResolvedVersion, lib.Digest)
-		if rerr != nil {
-			return fmt.Errorf("bridge pinned SchemaLibrary %s: %w", lib.URI, rerr)
-		}
-		extraLibs[lib.URI] = data
-	}
-	extraMappings := map[string][]byte{}
-	for _, lib := range cl.MappingLibraries {
-		if _, local := cat.MappingLibraries[lib.URI]; local {
-			continue
-		}
-		data, rerr := catalog.ReadPinnedLibrary(workspaceRoot, cacheDir, lib.URI, lib.ResolvedVersion, lib.Digest)
-		if rerr != nil {
-			return fmt.Errorf("bridge pinned MappingLibrary %s: %w", lib.URI, rerr)
-		}
-		extraMappings[lib.URI] = data
-	}
-	bridgeWarnings, err := cat.MergeExtraLibraries(extraLibs, extraMappings)
-	if err != nil {
-		return fmt.Errorf("catalog load (bridged): %w", err)
-	}
-	for _, w := range bridgeWarnings {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
 	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
-	// the closure's libraries (local + bridged) — the same gate build applies, so a
-	// pull and a build of the same Release agree on what is valid. An in-closure
-	// schema-invalid entity, or a $ref to a skipped/missing library, fails loudly
-	// here; an out-of-closure break is never validated.
-	if err := cat.ValidateClosureScopedPillars(cl); err != nil {
+	// the closure's libraries, read through lazyView (the resolved closure, library
+	// $refs expanded against the lazily-walked SchemaLibrary set) — the same gate
+	// build applies, so a pull and a build of the same Release agree on what is
+	// valid. An in-closure schema-invalid entity, or a $ref to a skipped/missing
+	// library, fails loudly here; an out-of-closure break is never validated.
+	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
 		return withSkipContext(err, skipped)
 	}
 
@@ -429,8 +390,8 @@ func pullRun(cfg pullConfig) error {
 	// cannot drift from build-time). aggBytes feeds ResolveFromInputs, which
 	// re-parses internally.
 	aggBytes := aggRes.Bytes
-	pullLookup := cat.CatalogLookup()
-	pullLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
+	pullLookup := lazyView.AsCatalogLookup()
+	pullLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
 	rr, topo, err := pipeline.ResolveAndFlatten(
 		context.Background(),
 		pipeline.Inputs{
@@ -440,7 +401,7 @@ func pullRun(cfg pullConfig) error {
 			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
 		},
 		pullLookup,
-		cat.SubAggregateLoader(),
+		lazyView.SubAggregateLoader(),
 	)
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
@@ -468,7 +429,7 @@ func pullRun(cfg pullConfig) error {
 	graph, _, err := ir.BuildIR(ir.BuildIRConfig{
 		Topology:        topo,
 		ResolveResult:   rr,
-		CatalogLookup:   cat.CatalogLookup(),
+		CatalogLookup:   pullLookup,
 		CompilerVersion: "0.1.0",
 	})
 	if err != nil {
@@ -484,7 +445,7 @@ func pullRun(cfg pullConfig) error {
 		if !ok {
 			return "", false
 		}
-		fr, ok := cat.FeatureRecipeByURI(frURI)
+		fr, ok := lazyView.FeatureRecipeByURI(frURI)
 		if !ok {
 			return "", false
 		}
@@ -525,7 +486,7 @@ func pullRun(cfg pullConfig) error {
 		srcResolver = cfg.sourceResolver
 	}
 	sourceArtifacts, err := closure.DescendRecipeSources(
-		perEntityInfra, cl, cat.ClosureRecipeLoader(), srcResolver,
+		perEntityInfra, cl, lazyView.ClosureRecipeLoader(), srcResolver,
 		workspaceRoot, cacheDir,
 	)
 	if err != nil {

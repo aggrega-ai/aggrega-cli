@@ -292,6 +292,53 @@ type LazyLookup struct {
 // deliberately does NOT emit a second notice (no double-report).
 func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.pins = pins
+	// The enumerated kinds (Recipe / FeatureRecipe / Aggregate / Provider /
+	// MappingLibrary / SchemaLibrary) fold a PIN-DEPENDENT Tier-2 set, and the
+	// enumeration is built-once (idempotent). When the pin set changes — pull's
+	// second SetPins after library discovery, or serve's per-request pins — drop the
+	// enumerated state so the next access re-folds against THESE pins; otherwise a
+	// newly-pinned library/recipe/aggregate (discovered after the first SetPins)
+	// would never be folded. The Tier-1 catalog-dir walk re-runs too (cheap; the
+	// maps rebuild identically from disk). The Component/Feature on-demand cascade
+	// reads l.pins directly, so it needs no invalidation here.
+	l.schemaLibrariesBuilt = false
+	l.recipeIndexBuilt = false
+	l.recipeCat = nil
+	l.schemaLibraries = map[string]types.SchemaLibrary{}
+	l.recipes = map[string]types.Recipe{}
+	l.featureRecipes = map[string]types.FeatureRecipe{}
+	l.aggregates = map[string]types.Aggregate{}
+	l.providers = map[string]types.Provider{}
+	l.mappingLibraries = map[string]types.MappingLibrary{}
+	l.aggregateSources = map[string]string{}
+	l.recipeSkips = map[string]error{}
+}
+
+// VerifyPinnedIntegrity is the BUILD's loud integrity gate: it reads every pinned
+// Tier-2 cache slot verify-on-read and returns the first ErrFetchIntegrity — a
+// slot whose content drifted from its lockfile pin (the tier2Skip condition). An
+// absent slot (ErrFetchNotFound) is NOT an error: a pin with no cache slot is a
+// catalog-resident entity resolved at Tier-1, exactly as the cache→catalog bridge
+// treated it. The build calls this after SetPins so a drifted pin halts loudly
+// with the integrity diagnostic ("re-pull") rather than collapsing into a
+// misleading downstream "not resolvable". Serve does NOT call it — its
+// resilient-inspection posture keeps the tier2Skip (the same build-halt /
+// serve-skip split the guard layer uses). Pins are visited in sorted URI order so
+// the surfaced drift is deterministic.
+func (l *LazyLookup) VerifyPinnedIntegrity() error {
+	uris := make([]string, 0, len(l.pins))
+	for uri := range l.pins {
+		uris = append(uris, uri)
+	}
+	sort.Strings(uris)
+	for _, uri := range uris {
+		pin := l.pins[uri]
+		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest)
+		if err != nil && errors.Is(err, oci.ErrFetchIntegrity) {
+			return fmt.Errorf("pinned entity %s: %w", uri, err)
+		}
+	}
+	return nil
 }
 
 // Pin is a lockfile entry's resolved version + content digest, keyed in the lazy
@@ -325,6 +372,28 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
 	}
 	for _, wp := range lf.WasmPlugins {
+		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
+	}
+	return pins
+}
+
+// PinsFromClosure builds the version-aware pin set SetPins consumes from a
+// freshly-computed closure — pull's lock-time source, where no lockfile exists
+// yet. Covers the same axes as PinsFromLockfile (entities, schema + mapping
+// libraries, wasm plugins), each carrying the version the walk resolved so a
+// bare-URI pin addresses its versioned cache slot. Source artifacts are excluded.
+func PinsFromClosure(cl closure.Closure) map[string]Pin {
+	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.WasmPlugins))
+	for _, e := range cl.Entities {
+		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
+	}
+	for _, sl := range cl.SchemaLibraries {
+		pins[sl.URI] = Pin{ResolvedVersion: sl.ResolvedVersion, Digest: sl.Digest}
+	}
+	for _, ml := range cl.MappingLibraries {
+		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
+	}
+	for _, wp := range cl.WasmPlugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
 	}
 	return pins
@@ -963,6 +1032,39 @@ func (l *LazyLookup) ProviderInfraSchemaResolver(manifest *types.Manifest) func(
 // build's pre-render gate reads the closure's complete recipe enumeration.
 func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
 	return l.recipeCatalog().VerifyRecipeResolution(manifest, graph)
+}
+
+// RecipeByURI / FeatureRecipeByURI resolve a recipe / feature-recipe by its
+// catalog URI over the lazily-enumerated (Tier-1 + pinned Tier-2) recipe set, for
+// the closure-library discovery's mapping-consumer scan.
+func (l *LazyLookup) RecipeByURI(uri string) (types.Recipe, bool) {
+	return l.recipeCatalog().RecipeByURI(uri)
+}
+
+func (l *LazyLookup) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
+	return l.recipeCatalog().FeatureRecipeByURI(uri)
+}
+
+// ClosureRecipeLoader exposes the source-descent recipe loader over the lazily-
+// enumerated (Tier-1 + pinned Tier-2) recipe set, so pull's lock-time source
+// descent loads a registry-resolved Recipe / FeatureRecipe from the pinned cache.
+func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
+	return l.recipeCatalog().ClosureRecipeLoader()
+}
+
+// SchemaLibrary / MappingLibrary resolve a library by its bare-name URI over the
+// lazily-walked (Tier-1 + pinned Tier-2) library sets, for the closure-library
+// discovery's transitive body access. Returns ok=false when the library is absent.
+func (l *LazyLookup) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
+	_ = l.buildSchemaLibraries()
+	lib, ok := l.schemaLibraries[uri]
+	return lib, ok
+}
+
+func (l *LazyLookup) MappingLibrary(uri string) (types.MappingLibrary, bool) {
+	l.buildRecipeIndex()
+	lib, ok := l.mappingLibraries[uri]
+	return lib, ok
 }
 
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every

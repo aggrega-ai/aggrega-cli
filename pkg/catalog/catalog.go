@@ -14,7 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -203,246 +202,11 @@ func LoadAllWithCacheDir(workspaceRoot, cacheDir string, dirs ...string) (*Catal
 	return c, nil
 }
 
-// LoadWithExtraLibraries runs the Pass-1 catalog walk, merges a set of
-// lockfile-pinned SchemaLibraries into the loaded catalog, and THEN runs Pass-2
-// pillar validation over the merged set. The merge sits between the two passes so
-// a cross-document $ref to a pinned remote library (present in `extra` but absent
-// from the local walk) resolves at Pass-2 exactly as a local library would. The
-// Pass-2 reject gate (validateSchemaPillars + library reject) is preserved, never
-// bypassed — `extra` is validated alongside the local set, not trusted blindly.
-//
-// A name present both in the local walk and in `extra` is a workspace
-// inconsistency: the LOCAL definition wins (the pin is skipped) and a collision
-// notice naming the library is returned. Warnings are returned in sorted-name
-// order for deterministic output. `extra` maps a library `metadata.name` (the
-// host-less identity) to its verified raw bytes (from ReadPinnedLibrary); the
-// bytes are parsed + indexed here so the bridged library carries faithful
-// entityBytes for the lockfile-drift verify.
-func LoadWithExtraLibraries(workspaceRoot, cacheDir string, extraSchemas, extraMappings map[string][]byte, dirs ...string) (*Catalog, []string, error) {
-	c, err := loadAllPassOne(workspaceRoot, cacheDir, dirs...)
-	if err != nil {
-		return nil, nil, err
-	}
-	warnings, err := c.MergeExtraLibraries(extraSchemas, extraMappings)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := c.validateSchemaPillarsPass(); err != nil {
-		return nil, nil, err
-	}
-	return c, warnings, nil
-}
-
-// MergeExtraLibraries merges lockfile-pinned remote libraries (the "URI → verified
-// bytes" maps produced by ReadPinnedLibrary) into an already-loaded catalog,
-// local-wins on a name collision (with a returned warning), WITHOUT running
-// whole-catalog Pass-2 validation. It is the bridge step shared by
-// LoadWithExtraLibraries (which follows it with Pass-2) and the closure-scoped
-// build / pull paths (which follow it with closure-scoped Pass-2 instead, so a
-// broken out-of-closure entity does not fail the merge).
-//
-// Each bridged library is parsed + indexed exactly as indexFile does for a local
-// one, and its entityBytes carry the EXACT verified bytes (not a re-serialised
-// parse) so the lockfile-drift verify — which recomputes the content digest from
-// entityBytes — stays faithful. Warnings are returned in sorted-name order for
-// deterministic output. Schema and mapping libraries are keyed in separate maps,
-// so a name shared across the two kinds does not collide.
-func (c *Catalog) MergeExtraLibraries(extraSchemas, extraMappings map[string][]byte) ([]string, error) {
-	var warnings []string
-
-	for _, name := range sortedKeys(extraSchemas) {
-		if _, local := c.SchemaLibraries[name]; local {
-			warnings = append(warnings, fmt.Sprintf(
-				"SchemaLibrary %q is present both in the local catalog and as a lockfile-pinned library; the local definition is used",
-				name))
-			continue
-		}
-		lib, perr := parseSchemaLibraryEntity(extraSchemas[name], "lockfile-pinned:"+name)
-		if perr != nil {
-			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged SchemaLibrary %q", name))
-		}
-		c.SchemaLibraries[name] = lib
-		c.entityBytes[entityBytesKey("SchemaLibrary", name)] = extraSchemas[name]
-	}
-
-	for _, name := range sortedKeys(extraMappings) {
-		if _, local := c.MappingLibraries[name]; local {
-			warnings = append(warnings, fmt.Sprintf(
-				"MappingLibrary %q is present both in the local catalog and as a lockfile-pinned library; the local definition is used",
-				name))
-			continue
-		}
-		lib, perr := parseMappingLibraryEntity(extraMappings[name], "lockfile-pinned:"+name)
-		if perr != nil {
-			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged MappingLibrary %q", name))
-		}
-		c.MappingLibraries[name] = lib
-		c.entityBytes[entityBytesKey("MappingLibrary", name)] = extraMappings[name]
-	}
-
-	return warnings, nil
-}
-
-// MergeExtraAggregates folds lockfile-pinned, cache-bridged Aggregates into an
-// already-loaded catalog so the Release-triad resolver (`AggregateLookup`) and
-// the topology builder (`SubAggregateLoader`) — both of which read
-// `cat.Aggregates` — resolve a registry-pulled aggregate at build, from the
-// cache, with no build-time network. It is the aggregate counterpart of
-// MergeExtraLibraries and shares its discipline: local-wins on a name collision
-// (with a returned warning), and the bridged `entityBytes` carry the EXACT
-// verified bytes (not a re-serialised parse) so the lockfile-drift verify stays
-// faithful.
-//
-// The input is the verified bytes of every cache-present lockfile entity, keyed
-// by URI; the entries are dispatched by kind. Only the Aggregate arm is wired:
-// a non-Aggregate (a pulled Component / Recipe, or a tar.gz whose bytes are not
-// YAML) is skipped — folding other pulled kinds from the cache is a separate,
-// pre-existing concern, not this bridge. (A future generalisation could pre-
-// filter candidates by their `referenced_from` role to avoid reading non-
-// aggregate slots; that is a profiling-driven optimisation, deliberately not
-// built here.)
-//
-// A cache-bridged aggregate gets no `aggregateSources` entry: it has no
-// workspace source file, so AggregateSourceFile returns "" — honest empty
-// provenance, mirroring the library bridge which sets no source path.
-func (c *Catalog) MergeExtraAggregates(extra map[string][]byte) ([]string, error) {
-	var warnings []string
-	for _, uri := range sortedKeys(extra) {
-		data := extra[uri]
-		if peekEntityKind(data) != "Aggregate" {
-			continue
-		}
-		agg, perr := resolver.LoadAggregateFromBytes(data, uri)
-		if perr != nil {
-			return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Aggregate %q", uri))
-		}
-		name := agg.Metadata.Name
-		// Local-wins is name-scoped: a locally-authored aggregate of the same
-		// name shadows the lockfile-pinned one regardless of version, matching
-		// the pre-version-index behaviour. resolveAggregateKey scans by
-		// metadata.name, so it detects the local entry whatever its index key.
-		if _, local, _ := c.resolveAggregateKey(name); local {
-			warnings = append(warnings, fmt.Sprintf(
-				"Aggregate %q is present both in the local catalog and as a lockfile-pinned aggregate; the local definition is used",
-				name))
-			continue
-		}
-		c.Aggregates[entityIndexKey(name, agg.Metadata.Version)] = *agg
-		c.entityBytes[entityBytesKey("Aggregate", name)] = data
-	}
-	return warnings, nil
-}
-
-// MergeExtraEntities folds lockfile-pinned, cache-bridged CORE catalog entities
-// (Component / Feature / Recipe / FeatureRecipe) into an already-loaded catalog,
-// so the resolver guard layer — which reads `cat.Component` / `cat.Feature`
-// through `CatalogLookup` — sees registry-resolved entities in a registry build
-// (where the in-memory catalog holds no local copies). It is the core-kind
-// counterpart of MergeExtraAggregates / MergeExtraLibraries and shares their
-// discipline: local-wins on an identity collision (with a returned warning), the
-// bridged `entityBytes` carry the EXACT verified bytes (not a re-serialised parse)
-// so the lockfile-drift verify stays faithful, and warnings sort by name for
-// deterministic output.
-//
-// The input is the verified bytes of every cache-present lockfile entity, keyed
-// by URI — the same map MergeExtraAggregates consumes; entries are dispatched by
-// kind and only the four core arms fold here (Aggregates fold in
-// MergeExtraAggregates, libraries in MergeExtraLibraries; a Recipe's tar.gz
-// source slot is gzip, not YAML, so `peekEntityKind` is "" and it is skipped).
-// Recipes and FeatureRecipes are keyed provider-scoped via recipeIdentityKey,
-// matching indexFile and the push/pull OCI-location identity rule, so two
-// provider-distinct recipes of the same name do not collide.
-func (c *Catalog) MergeExtraEntities(extra map[string][]byte) ([]string, error) {
-	var warnings []string
-	for _, uri := range sortedKeys(extra) {
-		blob := extra[uri]
-		// Component / Feature / Provider / Aggregate publish as plain YAML; Recipe
-		// and FeatureRecipe publish as a tar.gz bundle of the recipe directory
-		// whose entity anchor is the root recipe.yaml. Parse from the entity YAML,
-		// but keep the original blob as entityBytes so the lockfile-drift verify —
-		// which recomputes the digest from entityBytes — matches the pin (over the
-		// whole bundle), not the extracted file.
-		data := blob
-		if oci.IsTarGzBundle(blob) {
-			y, uerr := oci.EntityYAMLFromBundle(blob)
-			if uerr != nil {
-				return nil, cerrors.Wrap(uerr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("unbundle pinned entity %q", uri))
-			}
-			data = y
-		}
-		switch peekEntityKind(data) {
-		case "Component":
-			e, perr := parseComponentEntity(data, "lockfile-pinned:"+uri)
-			if perr != nil {
-				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Component %q", uri))
-			}
-			name := e.Metadata.Name
-			if key, present, _ := c.resolveComponentKey(name); present {
-				// Warn only for a genuinely local entity (one with a source file);
-				// a present-but-sourceless entry is one this same bridge folded for
-				// another reference URI (an entity referenced both bare and
-				// version-pinned), not a local-catalog shadow — skip it silently.
-				if _, fromLocal := c.componentSources[key]; fromLocal {
-					warnings = append(warnings, fmt.Sprintf(
-						"Component %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", name))
-				}
-				continue
-			}
-			c.Components[entityIndexKey(name, e.Metadata.Version)] = e
-			c.entityBytes[entityBytesKey("Component", name)] = blob
-		case "Feature":
-			e, perr := parseFeatureEntity(data, "lockfile-pinned:"+uri)
-			if perr != nil {
-				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Feature %q", uri))
-			}
-			name := e.Metadata.Name
-			if key, present, _ := c.resolveFeatureKey(name); present {
-				// As Component above: warn only for a genuinely local entity, not
-				// for one this bridge already folded under another reference URI.
-				if _, fromLocal := c.featureSources[key]; fromLocal {
-					warnings = append(warnings, fmt.Sprintf(
-						"Feature %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", name))
-				}
-				continue
-			}
-			c.Features[entityIndexKey(name, e.Metadata.Version)] = e
-			c.entityBytes[entityBytesKey("Feature", name)] = blob
-		case "Recipe":
-			e, perr := parseRecipeEntity(data, "lockfile-pinned:"+uri)
-			if perr != nil {
-				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Recipe %q", uri))
-			}
-			rKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-			if _, local := c.Recipes[rKey]; local {
-				warnings = append(warnings, fmt.Sprintf(
-					"Recipe %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", rKey))
-				continue
-			}
-			c.Recipes[rKey] = e
-			c.entityBytes[entityBytesKey("Recipe", rKey)] = blob
-		case "FeatureRecipe":
-			e, perr := parseFeatureRecipeEntity(data, "lockfile-pinned:"+uri)
-			if perr != nil {
-				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged FeatureRecipe %q", uri))
-			}
-			frKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-			if _, local := c.FeatureRecipes[frKey]; local {
-				warnings = append(warnings, fmt.Sprintf(
-					"FeatureRecipe %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", frKey))
-				continue
-			}
-			c.FeatureRecipes[frKey] = e
-			c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = blob
-		}
-	}
-	return warnings, nil
-}
-
 // peekEntityKind returns the `kind` of an entity from its raw bytes, or "" when
 // the bytes are not a parseable YAML entity envelope (e.g. a Recipe's tar.gz
-// cache slot, whose bytes are gzip, not YAML). Used by MergeExtraAggregates and
-// MergeExtraEntities to dispatch cache-present entities by kind without
-// committing to a full parse.
+// cache slot, whose bytes are gzip, not YAML). Used by the lazy lookup's
+// pin-driven Tier-2 enumeration to dispatch a cache-present entity by kind
+// without committing to a full parse.
 func peekEntityKind(data []byte) string {
 	var hdr struct {
 		Kind string `yaml:"kind"`
@@ -468,17 +232,6 @@ func entityMetadataVersion(data []byte) string {
 	return hdr.Metadata.Version
 }
 
-// sortedKeys returns the map's keys in lexicographic order for deterministic
-// iteration (bridged-library merge order and the warnings it emits).
-func sortedKeys(m map[string][]byte) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // sortedMapKeys returns the keys of any string-keyed map in sorted order — the
 // generic companion to sortedKeys, used by the first-win merge to visit each
 // kind's identities deterministically.
@@ -493,11 +246,9 @@ func sortedMapKeys[T any](m map[string]T) []string {
 
 // LoadPassOne runs only Pass 1 of the catalog load — the filesystem walk +
 // per-file indexing, content-cache directory skipped — WITHOUT Pass-2 pillar
-// validation. The build-side library bridge uses it to determine the local
-// library set (which lockfile-pinned libraries are already authored locally and
-// must NOT be bridged from the cache) before injecting the remote pins via
-// LoadWithExtraLibraries. Pass 1 alone is sufficient for that and for the
-// closure walk (which scans raw `$ref` values, not expanded pillars).
+// validation. Pass 1 alone is sufficient for the closure walk (which scans raw
+// `$ref` values, not expanded pillars); cross-document `$ref` expansion is the
+// closure-scoped Pass-2's job, against the resolved closure's library set.
 func LoadPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
 	return loadAllPassOne(workspaceRoot, cacheDir, dirs...)
 }
@@ -536,8 +287,7 @@ type ShadowedEntity struct {
 // loadAllPassOne runs Pass 1 only — the filesystem walk + per-file indexing with
 // the content-addressed cache directory skipped — and returns the catalog BEFORE
 // Pass-2 pillar validation (validateSchemaPillarsPass). LoadAllWithCacheDir runs
-// Pass 2 immediately after; LoadWithExtraLibraries injects lockfile-pinned
-// libraries between the two passes. cacheDir "" disables the cache skip.
+// Pass 2 immediately after. cacheDir "" disables the cache skip.
 //
 // Fail-fast: a per-file read / parse / index error aborts the whole walk. The
 // tolerant counterpart (LoadPassOneTolerant) skips-and-records instead, for the
@@ -758,43 +508,6 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 		se.Name = hdr.Metadata.Name
 	}
 	return se
-}
-
-// ReadPinnedLibrary reads a lockfile-pinned SchemaLibrary's VERIFIED BYTES from
-// the content cache. The cached bytes are verified against expectedDigest — the
-// lockfile pin — at the cache boundary via tier2ReadVerified: a cache miss
-// surfaces ErrFetchNotFound (the pull-first remediation), a digest mismatch
-// surfaces ErrFetchIntegrity. The caller (the build-side library bridge) supplies
-// the host-less name-path URI, the lockfile-resolved version, and the pinned
-// digest; integrity is structural at the cache read, so this carries no compare
-// of its own.
-//
-// It returns the raw bytes, not a parsed entity: parsing + catalog indexing
-// happens at the merge (LoadWithExtraLibraries) so the bridged library's
-// entityBytes carry the EXACT verified bytes the lockfile digest pins. A parsed
-// entity re-serialised would not byte-match, which would make the lockfile-drift
-// verify (which recomputes the content digest from entityBytes) halt spuriously.
-//
-// The versioned cache key is `<uri>:<version>` — the cache/lockfile version
-// separator is `:`, distinct from the optional `@` floor assertion that may
-// appear in an authored reference.
-func ReadPinnedLibrary(workspaceRoot, cacheDir, uri, version, expectedDigest string) ([]byte, error) {
-	versionedURI := uri
-	if version != "" {
-		versionedURI = uri + ":" + version
-	}
-	return tier2ReadVerified(workspaceRoot, cacheDir, versionedURI, expectedDigest)
-}
-
-// ReadPinnedEntity reads the verified cache bytes for a lockfile-pinned catalog
-// entity, keyed by its versioned URI. It is the generic counterpart of
-// ReadPinnedLibrary: verify-on-read against the pin digest, halting on a
-// mismatch (ErrFetchIntegrity — a tampered slot is loud). It passes
-// ErrFetchNotFound through unchanged so a caller scanning the lockfile can treat
-// an absent slot as "not cache-backed" (a catalog-resident entity is read from
-// the local catalog, not the cache) and skip it. Never networks.
-func ReadPinnedEntity(workspaceRoot, cacheDir, uri, version, expectedDigest string) ([]byte, error) {
-	return tier2ReadVerified(workspaceRoot, cacheDir, versionedSlotURI(uri, version), expectedDigest)
 }
 
 // validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component,

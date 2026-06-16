@@ -766,8 +766,8 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	// via the LibraryPuller capability — name→location, then list-tags→highest
 	// (when the URI carries no version) or the asserted floor as the tag (when a
 	// consumer's `@version` threaded a `name:floor` URI here). The cache
-	// slot is keyed `<name>:<version>` — the symmetric key the build-side bridge
-	// reads through ReadPinnedLibrary.
+	// slot is keyed `<name>:<version>` — the symmetric key the lazy lookup's
+	// verified Tier-2 read addresses.
 	if lp, ok := l.ociPuller.(LibraryPuller); ok {
 		name, floor, hasFloor := splitVersionedURI(uri)
 		result, resolvedVersion, err := lp.PullLibrary(context.Background(), name, kind, floor)

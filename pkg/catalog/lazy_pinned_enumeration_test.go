@@ -4,14 +4,95 @@
 package catalog
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// Cache-fixture entities for the lazy-enumeration tests. The library-referencing
+// component carries a schema $ref; recipes/FRs publish as tar.gz bundles.
+const (
+	bridgeComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/datastore/mariadb
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+`
+	bridgeFeatureYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/secret-value
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec: {}
+`
+	bridgeRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: mariadb
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: "core/datastore/mariadb"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: demo:1
+`
+	bridgeFeatureRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: dotenv-secret
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: "core/secret-value"
+`
+	dbSizingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: DbSizing
+  version: 1.0.0
+spec:
+  schemas:
+    Storage:
+      size: { type: string, default: "10Gi" }
+`
+)
+
+// recipeBundle wraps an entity YAML as a tar.gz with the root recipe.yaml anchor —
+// the on-the-wire shape Recipe / FeatureRecipe kinds publish in (and the cache
+// stores), so the pinned-Tier-2 read exercises the real unbundle path.
+func recipeBundle(t *testing.T, yaml string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	if err := tw.WriteHeader(&tar.Header{Name: "recipe.yaml", Size: int64(len(yaml)), Mode: 0o644}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte(yaml)); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
+}
 
 const (
 	pinnedAggregateYAML = `apiVersion: aggrega.ai/v1alpha1
@@ -72,12 +153,13 @@ func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob
 	return Pin{ResolvedVersion: version, Digest: contentDigest(blob)}
 }
 
-// TestLazyLookup_PinnedCacheEnumeration_BridgeParity proves that a
-// determinism-wired lazy lookup (nil puller + SetPins) resolves EVERY kind the
-// cache→catalog bridge folds, from the pinned Tier-2 cache, byte-identically to the
-// bridge. The set-level entityBytes comparison is the omission guard: a subject that
-// silently drops a pinned recipe / aggregate / library the bridge folds fails it.
-func TestLazyLookup_PinnedCacheEnumeration_BridgeParity(t *testing.T) {
+// TestLazyLookup_PinnedCacheEnumeration_Resolves proves that a determinism-wired
+// lazy lookup (nil puller + SetPins) resolves EVERY bridged kind from the pinned
+// Tier-2 cache, byte-identically to the directly-constructed fixture bytes. The
+// entityBytes comparison is the omission guard: a subject that silently drops a
+// pinned recipe / aggregate / library fails it. The Aggregate + SchemaLibrary are
+// pinned BARE (versioned slot, separate ResolvedVersion) — the bare-URI arm.
+func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	ws := t.TempDir()
 	const cacheDir = ".aggrega/cache"
 
@@ -112,33 +194,6 @@ func TestLazyLookup_PinnedCacheEnumeration_BridgeParity(t *testing.T) {
 	pins[mappingSlot] = writePinnedSlot(t, ws, cacheDir, mappingSlot, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
 	pins[provSlot] = writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML))
 
-	// --- Bridge reference view (today's build path) ---
-	bridge := makeEmptyCatalog()
-	entityExtra := map[string][]byte{
-		compSlot:   []byte(bridgeComponentYAML),
-		featSlot:   []byte(bridgeFeatureYAML),
-		recipeSlot: recipeBlob,
-		frSlot:     frBlob,
-		aggSlot:    []byte(pinnedAggregateYAML),
-		provSlot:   []byte(pinnedProviderYAML),
-	}
-	if _, err := bridge.MergeExtraEntities(entityExtra); err != nil {
-		t.Fatalf("bridge MergeExtraEntities: %v", err)
-	}
-	if _, err := bridge.MergeExtraAggregates(entityExtra); err != nil {
-		t.Fatalf("bridge MergeExtraAggregates: %v", err)
-	}
-	// Libraries are keyed in the bridge by their lockfile URI, which is the bare
-	// name (libraries are $ref'd by bare name) == metadata.name == the key the lazy
-	// backing folds under. The cache slot + pin stay versioned (Tier-2 read needs
-	// the version); the bridge map key is the bare name.
-	if _, err := bridge.MergeExtraLibraries(
-		map[string][]byte{"DbSizing": []byte(dbSizingLibYAML)},
-		map[string][]byte{"BaseMappings": []byte(pinnedMappingLibYAML)},
-	); err != nil {
-		t.Fatalf("bridge MergeExtraLibraries: %v", err)
-	}
-
 	// --- Subject: determinism-wired lazy lookup (nil puller + pins, no catalog dirs) ---
 	subject := NewLazyLookup(ws, cacheDir, nil, nil)
 	subject.SetPins(pins)
@@ -151,66 +206,49 @@ func TestLazyLookup_PinnedCacheEnumeration_BridgeParity(t *testing.T) {
 		t.Fatalf("subject did not resolve pinned Feature %s from the cache", featSlot)
 	}
 
-	// --- Set-level parity + byte-identity over entityBytes (the omission guard) ---
-	// entityBytes is keyed entityBytesKey(kind, name) in BOTH views for every kind,
-	// immune to the entity-map key-scheme differences (aggregates: name vs name:version).
-	wantKeys := []string{
-		entityBytesKey("Component", "core/datastore/mariadb"),
-		entityBytesKey("Feature", "core/secret-value"),
-		entityBytesKey("Recipe", recipeIdentityKey("compose", "mariadb", "1.0.0")),
-		entityBytesKey("FeatureRecipe", recipeIdentityKey("compose", "dotenv-secret", "1.0.0")),
-		entityBytesKey("Aggregate", "example/app"),
-		entityBytesKey("SchemaLibrary", "DbSizing"),
-		entityBytesKey("MappingLibrary", "BaseMappings"),
+	// --- Byte-identity against the DIRECT fixture bytes (the omission guard,
+	// bridge-free). entityBytes is keyed entityBytesKey(kind, name): a subject that
+	// drops a pinned recipe / aggregate / library — or retains drifted bytes —
+	// fails here. The Aggregate + SchemaLibrary are pinned BARE (versioned slot,
+	// separate ResolvedVersion), so their presence is the bare-URI determinism arm
+	// (the case the versionedSlotURI fix exists for). ---
+	wantBytes := map[string][]byte{
+		entityBytesKey("Component", "core/datastore/mariadb"):                                   []byte(bridgeComponentYAML),
+		entityBytesKey("Feature", "core/secret-value"):                                          []byte(bridgeFeatureYAML),
+		entityBytesKey("Recipe", recipeIdentityKey("compose", "mariadb", "1.0.0")):              recipeBlob,
+		entityBytesKey("FeatureRecipe", recipeIdentityKey("compose", "dotenv-secret", "1.0.0")): frBlob,
+		entityBytesKey("Aggregate", "example/app"):                                              []byte(pinnedAggregateYAML),
+		entityBytesKey("SchemaLibrary", "DbSizing"):                                             []byte(dbSizingLibYAML),
+		entityBytesKey("MappingLibrary", "BaseMappings"):                                        []byte(pinnedMappingLibYAML),
 	}
-	for _, k := range wantKeys {
-		b, bok := bridge.entityBytes[k]
-		s, sok := subject.entityBytes[k]
-		if !bok {
-			t.Fatalf("bridge reference is missing entityBytes %q (fixture/bridge wiring bug)", k)
-		}
-		if !sok {
-			t.Errorf("subject OMITS %q the bridge folds — pinned-enumeration completeness gap", k)
+	for k, want := range wantBytes {
+		got, ok := subject.entityBytes[k]
+		if !ok {
+			t.Errorf("subject OMITS %q from the pinned closure — enumeration completeness gap", k)
 			continue
 		}
-		if !bytes.Equal(b, s) {
-			t.Errorf("entityBytes %q differ between bridge and subject — byte-identity gap", k)
+		if !bytes.Equal(got, want) {
+			t.Errorf("entityBytes %q is not the pinned fixture bytes — byte-identity gap", k)
 		}
 	}
 
-	// --- Provider exclusion: the bridge folds no Provider, so neither must the subject ---
-	// (a cache-pinned Provider is present in the cache + pins above, yet absent from both views).
-	if _, ok := bridge.entityBytes[entityBytesKey("Provider", "compose")]; ok {
-		t.Fatalf("bridge unexpectedly folded a Provider — premise changed")
+	// The bare-pinned Aggregate + SchemaLibrary resolved into the enumerated maps —
+	// a version-less pin correctly addressing the versioned slot.
+	if _, ok := subject.aggregates["example/app"]; !ok {
+		t.Errorf("bare-URI-pinned Aggregate example/app not folded into the enumerated set")
 	}
-	if _, ok := subject.entityBytes[entityBytesKey("Provider", "compose")]; ok {
-		t.Errorf("subject folded a cache-pinned Provider the bridge does not — divergence from the bridge surface")
-	}
-	if len(subject.providers) != 0 {
-		t.Errorf("subject.providers must be empty (Provider is local-only, never bridged); got %v", subject.providers)
+	if _, ok := subject.schemaLibraries["DbSizing"]; !ok {
+		t.Errorf("bare-URI-pinned SchemaLibrary DbSizing not folded into the enumerated set")
 	}
 
-	// --- Value parity on the enumerated entity maps (same key scheme in both views) ---
-	if !reflect.DeepEqual(subject.recipes, bridge.Recipes) {
-		t.Errorf("recipe maps differ:\n subject=%v\n bridge=%v", subject.recipes, bridge.Recipes)
+	// Provider exclusion: a cache-pinned Provider is present in the cache + pins
+	// above, yet the enumeration must omit it — the closure never pins a Provider
+	// (providers are Tier-1-local), matching the retired bridge's surface.
+	if _, ok := subject.entityBytes[entityBytesKey("Provider", "compose")]; ok {
+		t.Errorf("subject folded a cache-pinned Provider; providers are Tier-1-local, never cache-resolved")
 	}
-	if !reflect.DeepEqual(subject.featureRecipes, bridge.FeatureRecipes) {
-		t.Errorf("feature-recipe maps differ")
-	}
-	if !reflect.DeepEqual(subject.mappingLibraries, bridge.MappingLibraries) {
-		t.Errorf("mapping-library maps differ")
-	}
-	if !reflect.DeepEqual(subject.schemaLibraries, bridge.SchemaLibraries) {
-		t.Errorf("schema-library maps differ")
-	}
-	// Aggregates: the lazy backing keys by metadata.name, the eager catalog by
-	// name:version — normalise to name and compare values.
-	bridgeAggsByName := map[string]types.Aggregate{}
-	for _, a := range bridge.Aggregates {
-		bridgeAggsByName[a.Metadata.Name] = a
-	}
-	if !reflect.DeepEqual(subject.aggregates, bridgeAggsByName) {
-		t.Errorf("aggregate maps differ (compared by name)")
+	if len(subject.providers) != 0 {
+		t.Errorf("subject.providers must be empty; got %v", subject.providers)
 	}
 }
 

@@ -14,11 +14,15 @@ import (
 )
 
 // discoverClosureLibraries is the single producer of the closure's SchemaLibrary
-// axis, shared by pull's pin flow and build's drift-verify flow so both compute
-// the identical library closure — the lockfile pull writes and the closure build
-// verifies against it cannot diverge. It scans every Component and Feature schema
-// in the loaded catalog for cross-document $ref:s, resolves the discovered
-// libraries (minimum-version selection + the injected lookup), and descends them
+// axis, shared by pull's pin flow and build's drift-verify flow. Both resolve the
+// closure through the same lazy lookup, so they compute the identical library
+// closure: the lockfile pull writes and the closure build verifies against it
+// agree by construction. (Before the closure-backed lookup, pull scanned the
+// pre-bridge catalog and build the post-bridge catalog — a latent divergence on a
+// registry-resolved component carrying a library $ref; reading the resolved
+// closure on both sides closes it.) It scans every in-closure Component and
+// Feature schema for cross-document $ref:s, resolves the discovered libraries
+// (minimum-version selection + the injected lookup), and descends them
 // transitively to a fixpoint, merging the result into cl.SchemaLibraries.
 //
 // Scanning is CLOSURE-SCOPED: only the Components and Features the Release reaches
@@ -28,43 +32,44 @@ import (
 // the build/pull. Transitive descent into a discovered library's own $ref:s is
 // unscoped (those libraries are in-closure by construction). Iteration is
 // sorted-name for deterministic output.
-func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup closure.Lookup) error {
-	inClosure := closureNameSet(cl)
-	var consumers []closure.SchemaConsumer
-
-	compNames := make([]string, 0, len(cat.Components))
-	for name := range cat.Components {
-		compNames = append(compNames, name)
-	}
-	sort.Strings(compNames)
-	for _, key := range compNames {
-		comp := cat.Components[key]
-		if _, ok := inClosure[comp.Metadata.Name]; !ok {
+func discoverClosureLibraries(cl *closure.Closure, lazy *catalog.LazyLookup, lookup closure.Lookup) error {
+	// Closure-scoped consumer scan over the lazy lookup: resolve each closure
+	// entity and collect its schema — components first, then features, each sorted
+	// by name. This preserves the deterministic consumer order the eager-map scan
+	// produced, now reading the resolved closure rather than the bridged catalog.
+	// Both build (computeBuildClosure) and pull pass their own lazy lookup, so
+	// there is one producer and no fork.
+	var compConsumers, featConsumers []closure.SchemaConsumer
+	compSeen, featSeen := map[string]struct{}{}, map[string]struct{}{}
+	for _, e := range cl.Entities {
+		if comp, ok := lazy.Component(e.URI); ok {
+			if _, dup := compSeen[comp.Metadata.Name]; dup {
+				continue
+			}
+			compSeen[comp.Metadata.Name] = struct{}{}
+			c := comp
+			compConsumers = append(compConsumers, closure.SchemaConsumer{URI: c.Metadata.Name, Schema: &c.Spec.Schema})
 			continue
 		}
-		consumers = append(consumers, closure.SchemaConsumer{URI: comp.Metadata.Name, Schema: &comp.Spec.Schema})
-	}
-
-	featNames := make([]string, 0, len(cat.Features))
-	for name := range cat.Features {
-		featNames = append(featNames, name)
-	}
-	sort.Strings(featNames)
-	for _, key := range featNames {
-		feat := cat.Features[key]
-		if _, ok := inClosure[feat.Metadata.Name]; !ok {
-			continue
+		if feat, ok := lazy.Feature(e.URI); ok {
+			if _, dup := featSeen[feat.Metadata.Name]; dup {
+				continue
+			}
+			featSeen[feat.Metadata.Name] = struct{}{}
+			f := feat
+			featConsumers = append(featConsumers, closure.SchemaConsumer{URI: f.Metadata.Name, Schema: &f.Spec.Schema})
 		}
-		consumers = append(consumers, closure.SchemaConsumer{URI: feat.Metadata.Name, Schema: &feat.Spec.Schema})
 	}
+	sort.Slice(compConsumers, func(i, j int) bool { return compConsumers[i].URI < compConsumers[j].URI })
+	sort.Slice(featConsumers, func(i, j int) bool { return featConsumers[i].URI < featConsumers[j].URI })
+	consumers := append(compConsumers, featConsumers...)
 
 	// Transitive body accessor: a discovered library's own entry bodies, for
-	// descending its cross-document $ref:s. A local or bridged library is in the
-	// catalog; a library present only in the cache (a remote pin not bridged into
-	// THIS catalog) is not found here and its transitive descent lands with the
-	// pull-side Tier-3 path.
+	// descending its cross-document $ref:s, resolved through the lazy library walk
+	// (Tier-1 + pinned Tier-2). A library the closure does not reach is not found
+	// here and its transitive descent lands with the lookup's Tier-3 path.
 	body := func(lib closure.ResolvedLibrary) ([]*yaml.Node, bool, error) {
-		sl, ok := cat.SchemaLibraries[lib.URI]
+		sl, ok := lazy.SchemaLibrary(lib.URI)
 		if !ok {
 			return nil, false, nil
 		}
@@ -93,47 +98,44 @@ func discoverClosureLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup 
 // directive form; a Mode-1 inline values template and a Mode-2 local-file import
 // carry no library reference and are skipped by the walker's identity gate.
 // Iteration is sorted-name for deterministic output.
-func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, lookup closure.Lookup) error {
-	var consumers []closure.MappingConsumer
-
-	inClosure := closureNameSet(cl)
-	recipeNames := make([]string, 0, len(cat.Recipes))
-	for name := range cat.Recipes {
-		recipeNames = append(recipeNames, name)
-	}
-	sort.Strings(recipeNames)
-	for _, name := range recipeNames {
-		// Closure membership is by the entity's metadata.name (the form
-		// closure entity URIs carry), not by the identity map key, which
-		// additionally carries the provider segment.
-		if _, ok := inClosure[cat.Recipes[name].Metadata.Name]; !ok {
+func discoverClosureMappingLibraries(cl *closure.Closure, lazy *catalog.LazyLookup, lookup closure.Lookup) error {
+	// Closure-scoped: resolve each closure recipe / feature-recipe via the lazy
+	// lookup and collect its `$import:` valuesMapping consumer — recipes first,
+	// then feature-recipes, each sorted by URI for deterministic output. A Mode-1
+	// inline template or a Mode-2 local-file import carries no library reference
+	// and is skipped by the directive gate.
+	var recipeConsumers, frConsumers []closure.MappingConsumer
+	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
+	for _, e := range cl.Entities {
+		if r, ok := lazy.RecipeByURI(e.URI); ok {
+			if _, dup := rSeen[e.URI]; dup {
+				continue
+			}
+			rSeen[e.URI] = struct{}{}
+			if tmpl, ok := valuesMappingImportDirective(r.Spec.ValuesMapping); ok {
+				recipeConsumers = append(recipeConsumers, closure.MappingConsumer{URI: e.URI, Template: tmpl})
+			}
 			continue
 		}
-		if tmpl, ok := valuesMappingImportDirective(cat.Recipes[name].Spec.ValuesMapping); ok {
-			consumers = append(consumers, closure.MappingConsumer{URI: name, Template: tmpl})
+		if fr, ok := lazy.FeatureRecipeByURI(e.URI); ok {
+			if _, dup := frSeen[e.URI]; dup {
+				continue
+			}
+			frSeen[e.URI] = struct{}{}
+			if tmpl, ok := valuesMappingImportDirective(fr.Spec.ValuesMapping); ok {
+				frConsumers = append(frConsumers, closure.MappingConsumer{URI: e.URI, Template: tmpl})
+			}
 		}
 	}
-
-	frNames := make([]string, 0, len(cat.FeatureRecipes))
-	for name := range cat.FeatureRecipes {
-		frNames = append(frNames, name)
-	}
-	sort.Strings(frNames)
-	for _, name := range frNames {
-		if _, ok := inClosure[cat.FeatureRecipes[name].Metadata.Name]; !ok {
-			continue
-		}
-		if tmpl, ok := valuesMappingImportDirective(cat.FeatureRecipes[name].Spec.ValuesMapping); ok {
-			consumers = append(consumers, closure.MappingConsumer{URI: name, Template: tmpl})
-		}
-	}
+	sort.Slice(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
+	sort.Slice(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
+	consumers := append(recipeConsumers, frConsumers...)
 
 	// Transitive body accessor: a discovered MappingLibrary's own entry bodies, for
-	// descending their field-root `$import:`s. A library present only in the cache
-	// (a remote pin not bridged into THIS catalog) is not found here and its
-	// transitive descent lands with the pull-side Tier-3 path.
+	// descending their field-root `$import:`s, resolved through the lazy library
+	// walk. A library the closure does not reach lands with the lookup's Tier-3 path.
 	body := func(lib closure.ResolvedLibrary) ([]string, bool, error) {
-		ml, ok := cat.MappingLibraries[lib.URI]
+		ml, ok := lazy.MappingLibrary(lib.URI)
 		if !ok {
 			return nil, false, nil
 		}
@@ -146,16 +148,6 @@ func discoverClosureMappingLibraries(cl *closure.Closure, cat *catalog.Catalog, 
 	}
 
 	return cl.DiscoverMappingLibraries(lookup, consumers, body)
-}
-
-// closureNameSet is the set of catalog index names (version-stripped) the
-// closure reaches, for filtering library discovery to closure entities.
-func closureNameSet(cl *closure.Closure) map[string]struct{} {
-	set := make(map[string]struct{}, len(cl.Entities))
-	for _, e := range cl.Entities {
-		set[catalog.EntityNameFromURI(e.URI)] = struct{}{}
-	}
-	return set
 }
 
 // valuesMappingImportDirective renders a valuesMapping that carries an `$import:`

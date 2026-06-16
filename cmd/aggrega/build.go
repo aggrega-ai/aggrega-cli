@@ -97,7 +97,7 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	// OUTSIDE this Release's closure never fails the build. The closure walk +
 	// closure-scoped Pass-2 below validate exactly what the Release reaches;
 	// catalog-wide validation is `aggrega lint`'s job. Pass 1 does not expand
-	// cross-document $ref pillars, so a reference to a not-yet-bridged remote
+	// cross-document $ref pillars, so a reference to a not-yet-resolved remote
 	// library does not fail here.
 	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, dirs...)
 	if err != nil {
@@ -125,71 +125,24 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 		return fmt.Errorf("load lockfile: %w", err)
 	}
 
-	// The build's determinism-wired lazy lookup: every dispatchBuild catalog
+	// The build's determinism-wired lazy lookup: EVERY dispatchBuild catalog
 	// consumer — guards, triad aggregate resolution, manifest-implements gate,
-	// closure-scoped validation + extends, renderer, topology — resolves the
-	// resolved closure through this, not the cache→catalog bridge. Nil puller:
-	// Tier-3 is disabled, so the build never networks. SetPins threads the lockfile
-	// pins so a Tier-2 cache hit is verified-on-read and a miss is a loud halt
-	// rather than a silent skip — byte-identical from the lockfile. (The closure
-	// discovery producers + the bridge functions stay on the eager catalog: they
-	// are shared with pull's pin flow and move with it.)
+	// closure computation + closure-scoped validation + extends, renderer,
+	// topology — resolves the resolved closure through this. No cache→catalog
+	// bridge: the lazy lookup reads registry-pulled entities directly from the
+	// pinned Tier-2 cache. Nil puller: Tier-3 is disabled, so the build never
+	// networks. SetPins threads the lockfile pins so a Tier-2 cache hit is
+	// verified-on-read and a miss is a loud halt rather than a silent skip —
+	// byte-identical from the lockfile.
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lazyView.SetPins(catalog.PinsFromLockfile(lf))
-
-	// Bridge lockfile-pinned remote libraries into the catalog (merge only — the
-	// authoritative gate is the closure-scoped Pass-2 below, not a whole-catalog
-	// pass). A locally-authored library has a pin but no cache slot, so only
-	// NON-LOCAL pins are bridged. ReadPinnedLibrary verifies each against its pin
-	// and HALTS on an integrity mismatch, so a tampered in-closure library is loud,
-	// never silently dropped.
-	extraLibs := map[string][]byte{}
-	for _, pin := range lf.SchemaLibraries {
-		if _, local := cat.SchemaLibraries[pin.URI]; local {
-			continue
-		}
-		data, rerr := catalog.ReadPinnedLibrary(wsRoot, cacheDir, pin.URI, pin.ResolvedVersion, pin.Digest)
-		if rerr != nil {
-			return fmt.Errorf("bridge pinned SchemaLibrary %s: %w", pin.URI, rerr)
-		}
-		extraLibs[pin.URI] = data
-	}
-	extraMappings := map[string][]byte{}
-	for _, pin := range lf.MappingLibraries {
-		if _, local := cat.MappingLibraries[pin.URI]; local {
-			continue
-		}
-		data, rerr := catalog.ReadPinnedLibrary(wsRoot, cacheDir, pin.URI, pin.ResolvedVersion, pin.Digest)
-		if rerr != nil {
-			return fmt.Errorf("bridge pinned MappingLibrary %s: %w", pin.URI, rerr)
-		}
-		extraMappings[pin.URI] = data
-	}
-	bridgeWarnings, err := cat.MergeExtraLibraries(extraLibs, extraMappings)
-	if err != nil {
-		return fmt.Errorf("catalog load: %w", err)
-	}
-	for _, w := range bridgeWarnings {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-
-	// Bridge lockfile-pinned, cache-backed entities into the catalog so the
-	// triad resolver, the topology builder, and the resolver guard layer resolve
-	// registry-pulled entities at build, from the cache, hermetically (no
-	// build-time network). The discriminator is build-machine-local catalog
-	// presence: read every lockfile entity's verified cache bytes; an absent slot
-	// (ErrFetchNotFound) is a catalog-resident entity (read from the local
-	// catalog, not the cache) and is skipped; a digest mismatch halts.
-	// bridgeCachedEntities folds Aggregates (for the triad/topology) and the core
-	// kinds Component / Feature / Recipe / FeatureRecipe (so the guards that read
-	// cat.Component / cat.Feature are not blind in a registry build), local-wins on
-	// an identity collision.
-	buildPins := make([]aggregateBridgePin, 0, len(lf.Entities))
-	for _, ent := range lf.Entities {
-		buildPins = append(buildPins, aggregateBridgePin{URI: ent.URI, Version: ent.ResolvedVersion, Digest: ent.Digest})
-	}
-	if err := bridgeCachedEntities(cat, wsRoot, cacheDir, buildPins); err != nil {
-		return err
+	// Loud integrity gate: a pinned cache slot that drifted from its lockfile pin
+	// halts here with the integrity diagnostic, before the closure walk — so a
+	// tampered/drifted cache surfaces as "re-pull", not a misleading downstream
+	// "not resolvable". (Serve keeps its resilient skip; the build, a deploy gate,
+	// halts.)
+	if err := lazyView.VerifyPinnedIntegrity(); err != nil {
+		return fmt.Errorf("lockfile integrity: %w", err)
 	}
 
 	// Load Release + derive Aggregate + Manifest paths. Loaded before the closure
@@ -217,9 +170,9 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	if err := lazyView.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
 		return err
 	}
-	// Build never networks: the registry tier (Tier-3) is nil here, so a
-	// registry-published top-level resolves only through the cache→catalog bridge
-	// (folded into cat.Aggregates above) via catLookup.
+	// Build never networks: the lazy lookup carries a nil puller (Tier-3 disabled),
+	// so a registry-published top-level resolves from the pinned Tier-2 cache
+	// through lazyView.AggregateLookup — the resolved closure, no bridge.
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), nil)
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
@@ -227,10 +180,10 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	aggregate := aggRes.Aggregate
 	aggBytes := aggRes.Bytes
 	// A registry-pinned top-level (a real resolved version in the lockfile)
-	// resolves via the bridge + tier-1; seeding it external — externals are
-	// consulted before the catalog — would shadow the bridge with a version-less
-	// pin and drift. Gate the external seed on the pin; the manifest is always
-	// external (it has no registry tier).
+	// resolves through the lazy lookup (Tier-1 / pinned Tier-2); seeding it external
+	// — externals are consulted before the catalog — would shadow it with a
+	// version-less pin and drift. Gate the external seed on the pin; the manifest is
+	// always external (it has no registry tier).
 	aggExternal := aggRes.Bytes
 	if lockfileHasRegistryPin(lf, rel.Spec.Aggregate) {
 		aggExternal = nil
@@ -238,21 +191,21 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 
 	// Compute the Release's closure ONCE — hermetic (nil puller, Tier-3 disabled),
-	// against the bridged catalog. Reused for closure-scoped validation, the
+	// through the lazy lookup. Reused for closure-scoped validation, the
 	// lockfile-drift check, and extends resolution. Out-of-closure entities are
 	// never resolved here; an in-closure entity that was skipped at tolerant load
 	// surfaces as an unresolvable URI, and withSkipContext replays WHY it was
 	// skipped so the failure is never a bare "not found".
-	cl, err := computeBuildClosure(rel, manifest, aggregate, externals, wsCfg, cat, wsRoot, cacheDir)
+	cl, err := computeBuildClosure(rel, manifest, aggregate, externals, wsCfg, lazyView, wsRoot, cacheDir)
 	if err != nil {
 		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
 	}
 
 	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
-	// the closure's libraries (local + bridged). An in-closure entity that is
-	// schema-invalid — or whose $ref names a library skipped (broken) or missing —
-	// fails loudly here (the hard in-closure library reject); an out-of-closure
-	// break is never validated.
+	// the closure's libraries (resolved through the lazy lookup). An in-closure
+	// entity that is schema-invalid — or whose $ref names a library skipped (broken)
+	// or missing — fails loudly here (the hard in-closure library reject); an
+	// out-of-closure break is never validated.
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
 		return withSkipContext(err, skipped)
 	}
@@ -350,70 +303,23 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	return nil
 }
 
-// acquireLockfile ensures the per-Release lockfile exists before the build's
-// library bridge + Pass-2 run, returning whether it PRE-EXISTED. A present
-// lockfile is left as-is — drift against it is verified later, against the
-// bridged catalog. A missing lockfile auto-pulls when workspace.auto_pull is true
-// (the default), populating the lockfile + cache in-process; under offline, or
-// with auto_pull false, it halts with the pull-first remediation (offline ignores
-// auto_pull because the pull itself needs network access).
+// acquireLockfile ensures the per-Release lockfile exists before the build wires
+// its lazy lookup + runs closure-scoped Pass-2, returning whether it PRE-EXISTED.
+// A present lockfile is left as-is — drift against it is verified later, against
+// the resolved closure. A missing lockfile auto-pulls when workspace.auto_pull is
+// true (the default), populating the lockfile + cache in-process; under offline,
+// or with auto_pull false, it halts with the pull-first remediation (offline
+// ignores auto_pull because the pull itself needs network access).
 //
-// Splitting acquisition from drift-verification is what lets the build load the
-// lockfile, bridge the pinned remote libraries it names into the catalog, and
-// only then verify drift against the merged catalog: a remote $ref cannot be
-// expanded at Pass-2 until its library is bridged, and the library cannot be
-// bridged until the lockfile that pins it is acquired.
-// aggregateBridgePin is the minimal pin shape the cache→catalog aggregate
-// bridge needs — satisfied by a committed lockfile.Entity (build) and an
-// in-memory closure.ResolvedRef (pull).
-type aggregateBridgePin struct {
-	URI     string
-	Version string
-	Digest  string
-}
-
-// bridgeCachedEntities folds lockfile-pinned, cache-present entities into the
-// catalog so the triad resolver, the topology SubAggregateLoader, and the
-// resolver guard layer resolve registry-pulled entities from the cache. It reads
-// every pinned entity's verified bytes once, then folds Aggregates
-// (MergeExtraAggregates — for the triad/topology) AND the core kinds Component /
-// Feature / Recipe / FeatureRecipe (MergeExtraEntities — so the guards that read
-// cat.Component / cat.Feature are not blind in a registry build). Shared by build
-// (over the committed lockfile) and pull (over the freshly-computed closure, so
-// pull's own source-descent topology flatten can resolve a registry-only entity
-// it just pinned). An absent cache slot is a catalog-resident entity, skipped; a
-// digest mismatch halts; each fold is local-wins on an identity collision.
-func bridgeCachedEntities(cat *catalog.Catalog, wsRoot, cacheDir string, pins []aggregateBridgePin) error {
-	extra := map[string][]byte{}
-	for _, p := range pins {
-		data, err := catalog.ReadPinnedEntity(wsRoot, cacheDir, p.URI, p.Version, p.Digest)
-		if stderrors.Is(err, oci.ErrFetchNotFound) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("bridge pinned entity %s: %w", p.URI, err)
-		}
-		extra[p.URI] = data
-	}
-	aggWarns, err := cat.MergeExtraAggregates(extra)
-	if err != nil {
-		return fmt.Errorf("catalog load: %w", err)
-	}
-	entWarns, err := cat.MergeExtraEntities(extra)
-	if err != nil {
-		return fmt.Errorf("catalog load: %w", err)
-	}
-	for _, w := range append(aggWarns, entWarns...) {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-	return nil
-}
+// The lockfile must exist before the lazy lookup is pinned: its pins drive the
+// verify-on-read Tier-2 reads through which every closure entity (and the
+// libraries a $ref names) resolves.
 
 // lockfileHasRegistryPin reports whether the lockfile pins uri as a registry
 // entity — one carrying a real resolved version. A version-less pin marks an
 // external (local) top-level; a real version marks one registry-resolved at pull
-// that must resolve at build via the cache→catalog bridge, not the external tier
-// (which would re-pin version "" and drift against the lockfile).
+// that must resolve at build through the lazy lookup's pinned Tier-2 read, not the
+// external tier (which would re-pin version "" and drift against the lockfile).
 func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 	if lf == nil {
 		return false
@@ -462,24 +368,24 @@ func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspa
 	return false, nil
 }
 
-// computeBuildClosure walks the Release's closure ONCE, hermetically (nil
-// OCIPuller, so Tier 3 never fires at build time), against the bridged catalog,
-// and resolves the cross-document SchemaLibrary + MappingLibrary axes the entity
-// walk does not descend. The single closure is reused for closure-scoped
-// validation, lockfile-drift verification, and closure-scoped extends — so the
-// catalog is walked once, not once per concern. Discovery runs against the
-// bridged catalog (the same producer pull uses) so a remote pinned library
-// resolves at Tier-1 and the drift compare is like-for-like.
-func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, externals map[string][]byte, wsCfg workspaceconfig.Config, cat *catalog.Catalog, wsRoot, cacheDir string) (closure.Closure, error) {
-	lookup := cat.ClosureLookupWithExternals(nil, wsRoot, cacheDir, externals)
+// computeBuildClosure walks the Release's closure ONCE, hermetically (the lazy
+// lookup carries a nil OCIPuller, so Tier 3 never fires at build time), and
+// resolves the cross-document SchemaLibrary + MappingLibrary axes the entity walk
+// does not descend. The single closure is reused for closure-scoped validation,
+// lockfile-drift verification, and closure-scoped extends — so the closure is
+// walked once, not once per concern. Discovery runs through the lazy lookup (the
+// same producer pull uses), so a remote pinned library resolves from the pinned
+// cache and the drift compare is like-for-like with pull.
+func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, externals map[string][]byte, wsCfg workspaceconfig.Config, lazyView *catalog.LazyLookup, wsRoot, cacheDir string) (closure.Closure, error) {
+	lookup := lazyView.ClosureLookup(nil, wsRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return closure.Closure{}, err
 	}
-	if err := discoverClosureLibraries(&cl, cat, lookup); err != nil {
+	if err := discoverClosureLibraries(&cl, lazyView, lookup); err != nil {
 		return closure.Closure{}, fmt.Errorf("schema-library discovery: %w", err)
 	}
-	if err := discoverClosureMappingLibraries(&cl, cat, lookup); err != nil {
+	if err := discoverClosureMappingLibraries(&cl, lazyView, lookup); err != nil {
 		return closure.Closure{}, fmt.Errorf("mapping-library discovery: %w", err)
 	}
 	return cl, nil
