@@ -234,11 +234,10 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
 	}
 
-	// Surface non-fatal advisory notices — schema-pillar-overlap lint and the
-	// signal-only narrowing-on-extend notices (a child tightening an inherited
-	// constraint is reported, never halted — narrowing enforcement is the
-	// opt-in publishing linter's job).
-	for _, w := range cat.LintWarnings() {
+	// Surface non-fatal schema-pillar-overlap advisories for the build's closure
+	// entities (registry-pinned included) — the warning-level sibling of the
+	// closure-scoped pillar validation above, over the same closure-entity set.
+	for _, w := range lazyView.ClosureLintWarnings(cl) {
 		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
 	}
 

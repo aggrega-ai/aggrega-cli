@@ -1112,6 +1112,53 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.schemaLibraries)
 }
 
+// ClosureLintWarnings returns the schema-pillar-overlap advisories for every
+// Component and Feature the closure reaches — the non-fatal, warning-level
+// sibling of ValidateClosureScopedPillars's pillar validation, over the same
+// closure-entity set. The whole-catalog Pass-2 ran the overlap lint beside the
+// pillar validation in one loop; when build resolution moved to a closure-scoped
+// view the validation came across but the overlap lint did not, so the build
+// surfaced no overlap advisories. This restores them, closure-scoped: a
+// registry-pinned closure Component now gets the same overlap advisory a local
+// one does.
+//
+// Entities are walked in sorted-URI order (deterministic; the warnings never
+// enter the lockfile or rendered output, but their emission order must be
+// stable). The URI is the per-entity locator — a registry-pinned closure entity
+// has no local file path. Narrowing-on-extend advisories are a separate
+// composition surface and are not included here.
+func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
+	// Self-sufficient: build the Tier-1 indexes the cascade reads, so the
+	// accessor does not depend on a prior ValidateClosureScopedPillars call.
+	l.buildComponentIndex()
+	l.buildFeatureIndex()
+
+	uris := make([]string, 0, len(cl.Entities))
+	seen := map[string]bool{}
+	for _, e := range cl.Entities {
+		if seen[e.URI] {
+			continue
+		}
+		seen[e.URI] = true
+		uris = append(uris, e.URI)
+	}
+	sort.Strings(uris)
+
+	var out []string
+	for _, uri := range uris {
+		if comp, ok := l.Component(uri); ok {
+			out = append(out, validator.ValidateSchemaPillarOverlap(
+				"Component", comp.Metadata.Name, uri, comp.Spec.Schema)...)
+			continue
+		}
+		if feat, ok := l.Feature(uri); ok {
+			out = append(out, validator.ValidateSchemaPillarOverlap(
+				"Feature", feat.Metadata.Name, uri, feat.Spec.Schema)...)
+		}
+	}
+	return out
+}
+
 // ResolveClosureExtends resolves the extends chain for each Component/Feature the
 // closure reaches and returns the collected resolution errors (a dangling parent,
 // a cycle, a malformed chain) — the daemon's early-warning extends gate, the lazy
