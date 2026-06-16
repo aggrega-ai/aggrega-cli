@@ -619,6 +619,10 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 			return nil
 		})
 	}
+	// Tier-2: fold lockfile-pinned SchemaLibrary cache slots, after the Tier-1 walk
+	// so a locally-authored library wins. Registry-pinned libraries live in the
+	// cache, not the catalog dirs, so without this the lazy backing cannot see them.
+	l.foldPinnedCacheEntities(map[string]bool{"SchemaLibrary": true})
 	return firstErr
 }
 
@@ -660,78 +664,161 @@ func (l *LazyLookup) buildRecipeIndex() {
 			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil {
 				return nil
 			}
-			switch hdr.Kind {
-			case "Recipe":
-				e, perr := parseRecipeEntity(data, path)
-				if perr != nil {
-					l.recordRecipeSkip(path, perr)
-					return nil
-				}
-				key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-				if _, dup := l.recipes[key]; dup {
-					l.recordRecipeSkip(path, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
-					return nil
-				}
-				l.recipes[key] = e
-				l.entityBytes[entityBytesKey("Recipe", key)] = data
-			case "FeatureRecipe":
-				e, perr := parseFeatureRecipeEntity(data, path)
-				if perr != nil {
-					l.recordRecipeSkip(path, perr)
-					return nil
-				}
-				key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-				if _, dup := l.featureRecipes[key]; dup {
-					l.recordRecipeSkip(path, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
-					return nil
-				}
-				l.featureRecipes[key] = e
-				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = data
-			case "Aggregate":
-				e, perr := parseAggregateEntity(data, path)
-				if perr != nil {
-					l.recordRecipeSkip(path, perr)
-					return nil
-				}
-				if _, dup := l.aggregates[e.Metadata.Name]; dup {
-					l.recordRecipeSkip(path, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
-					return nil
-				}
-				l.aggregates[e.Metadata.Name] = e
-				l.aggregateSources[e.Metadata.Name] = path
-				l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
-			case "Provider":
-				if _, eerr := envelope.ValidateBytes(envelope.KindProvider, data, path); eerr != nil {
-					l.recordRecipeSkip(path, eerr)
-					return nil
-				}
-				var e types.Provider
-				if uerr := yaml.Unmarshal(data, &e); uerr != nil {
-					l.recordRecipeSkip(path, uerr)
-					return nil
-				}
-				if _, dup := l.providers[e.Metadata.Name]; dup {
-					l.recordRecipeSkip(path, fmt.Errorf("duplicate provider name %q; this file is shadowed", e.Metadata.Name))
-					return nil
-				}
-				l.providers[e.Metadata.Name] = e
-				l.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
-			case "MappingLibrary":
-				e, perr := parseMappingLibraryEntity(data, path)
-				if perr != nil {
-					l.recordRecipeSkip(path, perr)
-					return nil
-				}
-				if _, dup := l.mappingLibraries[e.Metadata.Name]; dup {
-					l.recordRecipeSkip(path, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
-					return nil
-				}
-				l.mappingLibraries[e.Metadata.Name] = e
-				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
-			}
+			l.foldRecipeShellEntity(hdr.Kind, data, data, path)
 			return nil
 		})
 	}
+	// Tier-2: fold every lockfile-pinned cache slot of the recipe-shell kinds,
+	// under the SAME verify-on-read / pin discipline resolveComponent uses. A
+	// registry build's recipes / FeatureRecipes / aggregates / mapping libraries
+	// live in the pinned cache, not the catalog dirs — this is what makes the lazy
+	// backing see them. Runs AFTER the Tier-1 walk so a locally-authored entity
+	// wins on a name/identity collision. Provider is omitted deliberately: the
+	// cache→catalog bridge folds no Provider (providers are local-catalog only), so
+	// the pinned pass matches that surface exactly.
+	l.foldPinnedCacheEntities(map[string]bool{
+		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true,
+	})
+}
+
+// foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
+// FeatureRecipe, Aggregate, Provider, or MappingLibrary) and folds it into the hot
+// maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
+// collision (a later duplicate is skipped and recorded). parseData is the YAML to
+// parse; rawBytes is retained as entityBytes for digest fidelity — identical to
+// parseData for a Tier-1 catalog file, the whole tar.gz bundle for a Tier-2 recipe
+// cache slot; src labels the source for skip diagnostics. The single fold path
+// feeds both the Tier-1 walk and the pinned Tier-2 pass, so the two cannot drift.
+func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src string) {
+	switch kind {
+	case "Recipe":
+		e, perr := parseRecipeEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
+			return
+		}
+		key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+		if _, dup := l.recipes[key]; dup {
+			l.recordRecipeSkip(src, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
+			return
+		}
+		l.recipes[key] = e
+		l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
+	case "FeatureRecipe":
+		e, perr := parseFeatureRecipeEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
+			return
+		}
+		key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+		if _, dup := l.featureRecipes[key]; dup {
+			l.recordRecipeSkip(src, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
+			return
+		}
+		l.featureRecipes[key] = e
+		l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
+	case "Aggregate":
+		e, perr := parseAggregateEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
+			return
+		}
+		if _, dup := l.aggregates[e.Metadata.Name]; dup {
+			l.recordRecipeSkip(src, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
+			return
+		}
+		l.aggregates[e.Metadata.Name] = e
+		l.aggregateSources[e.Metadata.Name] = src
+		l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = rawBytes
+	case "Provider":
+		if _, eerr := envelope.ValidateBytes(envelope.KindProvider, parseData, src); eerr != nil {
+			l.recordRecipeSkip(src, eerr)
+			return
+		}
+		var e types.Provider
+		if uerr := yaml.Unmarshal(parseData, &e); uerr != nil {
+			l.recordRecipeSkip(src, uerr)
+			return
+		}
+		if _, dup := l.providers[e.Metadata.Name]; dup {
+			l.recordRecipeSkip(src, fmt.Errorf("duplicate provider name %q; this file is shadowed", e.Metadata.Name))
+			return
+		}
+		l.providers[e.Metadata.Name] = e
+		l.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = rawBytes
+	case "MappingLibrary":
+		e, perr := parseMappingLibraryEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
+			return
+		}
+		if _, dup := l.mappingLibraries[e.Metadata.Name]; dup {
+			l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
+			return
+		}
+		l.mappingLibraries[e.Metadata.Name] = e
+		l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
+	}
+}
+
+// foldPinnedCacheEntities folds every lockfile-pinned Tier-2 cache slot whose kind
+// is in allowed into the enumerated maps, under the SAME verify-on-read / pin
+// discipline resolveComponent uses (tier2ReadVerified). The pin set (SetPins) is
+// the lockfile's URI→digest map; the cache is keyed by URI, not walkable like the
+// Tier-1 dirs, so enumeration is pin-driven. A pinned slot that is absent, drifted,
+// or unreadable is skipped — a clean miss; an entity the build actually needs that
+// is missing surfaces as a loud halt at the guard layer, not here. Recipe /
+// FeatureRecipe slots are tar.gz bundles: the bundle is unwrapped to parse the
+// entity YAML, but the WHOLE bundle blob is retained as entityBytes so the pinned
+// digest covers the bundle (parity with the cache→catalog bridge). Deterministic:
+// pins are visited in sorted URI order, so first-wins shadowing among pinned
+// duplicates is stable across runs.
+func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
+	uris := make([]string, 0, len(l.pins))
+	for uri := range l.pins {
+		uris = append(uris, uri)
+	}
+	sort.Strings(uris)
+	for _, uri := range uris {
+		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, uri, l.pins[uri])
+		if err != nil {
+			continue
+		}
+		parseData := blob
+		if oci.IsTarGzBundle(blob) {
+			y, uerr := oci.EntityYAMLFromBundle(blob)
+			if uerr != nil {
+				continue
+			}
+			parseData = y
+		}
+		kind := peekEntityKind(parseData)
+		if !allowed[kind] {
+			continue
+		}
+		if kind == "SchemaLibrary" {
+			l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri)
+			continue
+		}
+		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri)
+	}
+}
+
+// foldPinnedSchemaLibrary folds one lockfile-pinned SchemaLibrary cache slot into
+// l.schemaLibraries, first-wins (a Tier-1 library of the same name already present
+// is kept). Mirrors the SchemaLibrary arm of buildSchemaLibraries' Tier-1 walk; the
+// raw bytes are retained for digest fidelity.
+func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src string) {
+	lib, perr := parseSchemaLibraryEntity(parseData, src)
+	if perr != nil {
+		l.recipeSkips[src] = perr
+		return
+	}
+	if _, dup := l.schemaLibraries[lib.Metadata.Name]; dup {
+		return
+	}
+	l.schemaLibraries[lib.Metadata.Name] = lib
+	l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = rawBytes
 }
 
 // recordRecipeSkip emits the one-line tolerance warning and records the reason,
