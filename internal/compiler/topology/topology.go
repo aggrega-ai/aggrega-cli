@@ -630,6 +630,22 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			continue // root / subsystem components are guarded at Step 1
 		}
 
+		// A sub-aggregate node whose type resolved as a catalog reference but is
+		// absent from the guard's view is the same loud halt the Step-1 guards
+		// raise — classify ONCE here, before any conformance pass. This subsumes
+		// the value, per-edge-value, and per-edge-infra conformance below (all gated
+		// on the same component lookup that previously skipped silently on a miss),
+		// so a no-uses node's miss is loud too, not silently skipped. A Tier-1
+		// relative-path type (a local file with no catalog entity) is a legitimate
+		// skip (classifier returns nil). A resilient-inspection caller (serve)
+		// tolerates the finding via the Step-1 sentinel filter; the build halts.
+		if _, found := catalog.Component(node.ComponentType); !found {
+			if verr := resolver.GuardEntityViewInconsistency(entity, fmt.Sprintf(".%s", nodeID), node.ComponentType); verr != nil {
+				errs = append(errs, verr)
+			}
+			continue
+		}
+
 		// Socket allowlist: every uses socket must exist in the component's usesSchema.
 		if node.Uses.Len() > 0 {
 			errs = append(errs, resolver.ValidateUsesAgainstSchema(

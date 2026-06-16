@@ -39,3 +39,14 @@ func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError 
 		Err:     ErrGuardEntityViewInconsistency,
 	}
 }
+
+// GuardEntityViewInconsistency is the exported entry point to the catalog-entity
+// view-inconsistency classifier, for callers outside this package — the topology
+// sub-aggregate conformance guard, which validates flattened sub-aggregate nodes
+// that the Step-1 guards do not reach. Same classification as the in-package
+// guards: a Tier-1 relative-path type is a legitimate skip (nil); a bare catalog
+// reference absent from the guard's view is the loud
+// [ErrGuardEntityViewInconsistency] halt.
+func GuardEntityViewInconsistency(entity, field, typeRef string) *ResolverError {
+	return guardEntityViewInconsistency(entity, field, typeRef)
+}

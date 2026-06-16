@@ -356,6 +356,57 @@ func TestBuild_BoundaryPath(t *testing.T) {
 // bypass. The test constructs the colliding scenario by directly
 // authoring a root-level instance name containing a dot — schema-
 // invalid but useful to exercise the guard.
+// TestGuardSubAggregateNodes_ResolvedCatalogRefAbsentHalts proves the Step-2
+// topology fold: a sub-aggregate node whose type resolved as a catalog reference
+// but is absent from the guard's view halts the build loudly — even with NO uses
+// block (the value/infra-conformance case the uses-path alone did not cover). A
+// resilient-inspection caller tolerates the same finding via the Step-1 sentinel
+// filter; here, the build (no tolerance) halts.
+func TestGuardSubAggregateNodes_ResolvedCatalogRefAbsentHalts(t *testing.T) {
+	t.Parallel()
+	childComps := types.OrderedMap[types.ComponentInstance]{}
+	// A bare catalog reference (not a Tier-1 ./ path), no uses block.
+	childComps.Set("svc", types.ComponentInstance{Type: "core/absent:1.0.0"})
+	childAgg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "data-mod"},
+		Spec:     types.AggregateSpec{Components: childComps},
+	}
+
+	aggregates := types.OrderedMap[types.SubAggregate]{}
+	aggregates.Set("data-mod", types.SubAggregate{Type: "modules/data-layer"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "root"},
+		Spec:     types.AggregateSpec{Aggregates: aggregates},
+	}
+
+	loader := func(typeName string, _ map[string]any) (*types.Aggregate, string, map[string]any, error) {
+		if typeName == "modules/data-layer" {
+			return childAgg, "", nil, nil
+		}
+		return nil, "", nil, fmt.Errorf("unknown: %s", typeName)
+	}
+	// A CatalogLookup whose Component lookup always misses — the resolved-but-absent
+	// condition the fold turns into a loud halt for a bare catalog reference.
+	notFound := resolver.CatalogLookup{Component: func(string) (types.Component, bool) {
+		return types.Component{}, false
+	}}
+
+	_, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+		LoadSubAggregate: loader,
+		CatalogLookup:    notFound,
+	})
+	if err == nil {
+		t.Fatal("expected a sub-aggregate view-inconsistency halt; got nil")
+	}
+	if !errors.Is(err, resolver.ErrGuardEntityViewInconsistency) {
+		t.Errorf("expected ErrGuardEntityViewInconsistency; got %v", err)
+	}
+}
+
 func TestErrSubAggregateNameCollision_HaltsOnOverwrite(t *testing.T) {
 	t.Parallel()
 	childComps := types.OrderedMap[types.ComponentInstance]{}

@@ -125,6 +125,18 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 		return fmt.Errorf("load lockfile: %w", err)
 	}
 
+	// The build's determinism-wired lazy lookup: every dispatchBuild catalog
+	// consumer — guards, triad aggregate resolution, manifest-implements gate,
+	// closure-scoped validation + extends, renderer, topology — resolves the
+	// resolved closure through this, not the cache→catalog bridge. Nil puller:
+	// Tier-3 is disabled, so the build never networks. SetPins threads the lockfile
+	// pins so a Tier-2 cache hit is verified-on-read and a miss is a loud halt
+	// rather than a silent skip — byte-identical from the lockfile. (The closure
+	// discovery producers + the bridge functions stay on the eager catalog: they
+	// are shared with pull's pin flow and move with it.)
+	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+	lazyView.SetPins(catalog.PinsFromLockfile(lf))
+
 	// Bridge lockfile-pinned remote libraries into the catalog (merge only — the
 	// authoritative gate is the closure-scoped Pass-2 below, not a whole-catalog
 	// pass). A locally-authored library has a pin but no cache slot, so only
@@ -202,13 +214,13 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	// Verify the Manifest's mapping table is consistent — each mapped type
 	// resolves to a recipe whose spec.implements matches — before any IR build.
 	// A mismatch is a Loud Guardrail halt here, the earliest loud point.
-	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+	if err := lazyView.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
 		return err
 	}
 	// Build never networks: the registry tier (Tier-3) is nil here, so a
 	// registry-published top-level resolves only through the cache→catalog bridge
 	// (folded into cat.Aggregates above) via catLookup.
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), nil)
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
 	}
@@ -241,7 +253,7 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	// schema-invalid — or whose $ref names a library skipped (broken) or missing —
 	// fails loudly here (the hard in-closure library reject); an out-of-closure
 	// break is never validated.
-	if err := cat.ValidateClosureScopedPillars(cl); err != nil {
+	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
 		return withSkipContext(err, skipped)
 	}
 
@@ -257,7 +269,7 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	// Resolve extends inheritance for the closure's Components and Features so the
 	// pipeline sees fully-merged entities. Closure-scoped: an out-of-closure broken
 	// extends never fails the build; an in-closure broken parent does.
-	if extErrs := cat.ResolveClosureExtends(cl); len(extErrs) > 0 {
+	if extErrs := lazyView.ResolveClosureExtends(cl); len(extErrs) > 0 {
 		for _, e := range extErrs {
 			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
 		}
@@ -281,8 +293,8 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	// source of truth both the CLI build and the build-faithful test harness
 	// use, so a test renders through exactly the engines a real build does.
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
-	buildLookup := cat.CatalogLookup()
-	buildLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
+	buildLookup := lazyView.AsCatalogLookup()
+	buildLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
 		pipeline.Inputs{
@@ -293,15 +305,15 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 			WorkspaceConfig:   wsCfg,
 			Lockfile:          lf,
 			WorkspaceRoot:     wsRoot,
-			MappingLibraries:  cat.MappingLibraries,
+			MappingLibraries:  lazyView.MappingLibraries(),
 		},
 		buildLookup,
-		cat.RecipeLookupWithManifest(manifest),
-		cat.SubAggregateLoader(),
+		lazyView.RecipeLookupWithManifest(manifest),
+		lazyView.SubAggregateLoader(),
 		enginefactory.Dispatch,
 		pipeline.Options{
 			IncludeTrace:             traceEnabled,
-			RecipeResolutionVerifier: cat.VerifyRecipeResolution,
+			RecipeResolutionVerifier: lazyView.VerifyRecipeResolution,
 		},
 	)
 	if err != nil {
