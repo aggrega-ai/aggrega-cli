@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,7 +29,9 @@ import (
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/registry"
+	"gopkg.in/yaml.v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -177,6 +180,15 @@ func sha256Hex(t *testing.T, path string) string {
 // pull → build of catalog-only against the in-process registry, and asserts the
 // registry-tier output is byte-identical to the offline reference and that a
 // rebuild from the generated lock is byte-identical (lock == build).
+//
+// This is also the behavioral no-bridge proof: the consumer workspace carries no
+// local catalog directory, so every kind (Component / Feature / Recipe /
+// FeatureRecipe / secret-origin + $ref Feature / SchemaLibrary / Aggregate)
+// resolves purely through the registry-pulled closure read by the closure-backed
+// lookup. There is no cache→catalog bridge in the path — the build reaching a
+// byte-identical result from a no-local-catalog workspace is the proof, since the
+// pre-unification path required that (now-deleted) bridge to fold registry
+// entities into the build's view.
 func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	host := startRegistry(t, nil)
 	counts := pushCatalog(t, host, standardCatalogDir(t))
@@ -187,7 +199,13 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 		}
 	}
 
-	newConsumerWorkspace(t, host)
+	ws := newConsumerWorkspace(t, host)
+	// No-bridge witness: the workspace has no local catalog dir, so resolution
+	// has no local source to fall back on and must run through the registry-pulled
+	// closure alone.
+	if _, err := os.Stat(filepath.Join(ws, "catalog")); err == nil {
+		t.Fatal("consumer workspace carries a local catalog dir; the no-bridge witness is invalid")
+	}
 	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
@@ -209,6 +227,70 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	}
 	if rebuilt := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
 		t.Errorf("lock != build: rebuild sha %s != %s", rebuilt, got)
+	}
+}
+
+// TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure proves the unified
+// view halts LOUDLY rather than silently building on a view gap. With every pin
+// present the build resolves cleanly through the closure-backed lookup (no false
+// halt); drop a referenced entity's pin from the lock while the Aggregate still
+// references it by bare token, and the build halts at closure resolution with
+// ErrUnresolvableURI. The halt is selective — it fires only on the genuine gap,
+// never on a legitimately-present reference.
+//
+// The relative-path-vs-catalog-reference classifier arm of the guard
+// view-consistency net is owned by the resolver unit suite
+// (pkg/resolver/guard_view_consistency_test.go), not duplicated here: a real
+// build cannot reach the guard's relative-path skip, because a missing entity
+// halts at the closure walk before any guard runs, and a relative-path component
+// type has no build-level load path (the closure resolves every entity URI
+// through the lookup). So the reachable real-build property is this selective
+// closure halt; the bare-token-absent-from-view guard halt is unreachable by
+// construction once the build's resolved set and the guards' view are the one
+// closure-backed lookup — which is the unification's whole point.
+func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
+	host := startRegistry(t, nil)
+	pushCatalog(t, host, standardCatalogDir(t))
+	newConsumerWorkspace(t, host)
+	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+
+	// Pin present: a legitimately-present reference resolves cleanly (no false halt).
+	if err := dispatchBuild("release.yaml", nil, false); err != nil {
+		t.Fatalf("build with all pins present: %v (a present reference must resolve cleanly)", err)
+	}
+
+	// Withhold a referenced catalog entity's pin from the build's view.
+	lockPath := lockfile.PathFor("release.yaml")
+	lf, _, err := lockfile.LoadLockfile(lockPath)
+	if err != nil {
+		t.Fatalf("load lock: %v", err)
+	}
+	var kept []lockfile.Entity
+	dropped := 0
+	for _, e := range lf.Entities {
+		if strings.HasPrefix(e.URI, "core/devtool/adminer") {
+			dropped++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if dropped == 0 {
+		t.Fatal("no adminer pin found to withhold; fixture drifted")
+	}
+	lf.Entities = kept
+	if err := lockfile.WriteLockfile(lockPath, lf); err != nil {
+		t.Fatalf("rewrite lock: %v", err)
+	}
+
+	_ = os.RemoveAll("dist")
+	err = dispatchBuild("release.yaml", nil, false)
+	if err == nil {
+		t.Fatal("build SUCCEEDED with a referenced entity withheld; the unified view silently proceeded on a gap")
+	}
+	if !errors.Is(err, closure.ErrUnresolvableURI) {
+		t.Fatalf("withheld entity: err = %v; want errors.Is(closure.ErrUnresolvableURI) — the loud closure halt", err)
 	}
 }
 
@@ -318,8 +400,14 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 // migrated-example set.
 func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	std := standardCatalogDir(t)
+	// Lint enumerates + validates via its own eager whole-catalog load, wholly
+	// independent of any build closure. Run it from a bare working directory with
+	// no Release and no lockfile present: there is no closure for it to read, so a
+	// warning-free result comes purely from the eager enumeration the build's
+	// closure-backed path does not touch — the retained-eager-load split.
+	t.Chdir(t.TempDir())
 	if err := lintCatalogWide("", "", []string{std}); err != nil {
-		t.Fatalf("whole-catalog lint not warning-free: %v", err)
+		t.Fatalf("whole-catalog lint not warning-free (independent eager enumeration): %v", err)
 	}
 
 	ws := t.TempDir()
@@ -534,5 +622,124 @@ func TestIntegration_RegistryAuthRefuse(t *testing.T) {
 	low := strings.ToLower(err.Error())
 	if !strings.Contains(low, "credential") && !strings.Contains(low, "unauthor") && !strings.Contains(low, "401") {
 		t.Errorf("auth-refuse: err = %v; want an auth/credential refusal", err)
+	}
+}
+
+// localExamplesRoot returns repo-root/aggrega-docs/language-reference/examples
+// from cmd/aggrega, skipping when the sibling repo is absent (same
+// sibling-checkout discipline as standardCatalogDir). Computed from the supplied
+// working directory so callers can resolve it before chdir-ing into a workspace.
+func localExamplesRoot(t *testing.T, wd string) string {
+	t.Helper()
+	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-docs", "language-reference", "examples"))
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("example set not present at %s: %v", dir, err)
+	}
+	return dir
+}
+
+// canonicalPins loads a written lockfile and returns its pins as canonical YAML
+// with the wall-clock generated_at masked — the one non-deterministic field,
+// which is not a pin. Everything that IS a pin (per-entity / per-library URI,
+// resolved_version, digest, the referenced-from and consumer sets) is captured.
+// Comparing this extracted form (not a raw on-disk file diff) is the invariance
+// check: gitignored lockfiles have no committed baseline, and a raw diff would
+// trip on generated_at.
+func canonicalPins(t *testing.T, lockPath string) []byte {
+	t.Helper()
+	lf, _, err := lockfile.LoadLockfile(lockPath)
+	if err != nil {
+		t.Fatalf("load lock %s: %v", lockPath, err)
+	}
+	lf.GeneratedAt = ""
+	out, err := yaml.Marshal(lf)
+	if err != nil {
+		t.Fatalf("marshal pins: %v", err)
+	}
+	return out
+}
+
+// TestIntegration_LocalPathPinInvariance is the durable, repeatable form of the
+// local-catalog byte-identity guard: for the library-pinning examples (each pins
+// a SchemaLibrary/MappingLibrary), regenerate the lockfile against the real
+// example inputs and assert the extracted pins match a committed golden. The
+// example *.lock files are gitignored (the examples ship inputs and regenerate
+// lockfiles), so the baseline is a committed golden under testdata, not the lock
+// itself; the comparison is extract-and-compare with generated_at masked, never a
+// raw file diff. A legitimate pin change (a catalog version bump, a new digest)
+// must update the golden in the same commit — that golden diff in review is the
+// deliberate-change gate; a silent perturbation fails here.
+//
+// Regenerate the goldens with: AGGREGA_UPDATE_GOLDEN=1 go test -tags=integration
+// -run TestIntegration_LocalPathPinInvariance ./cmd/aggrega/
+func TestIntegration_LocalPathPinInvariance(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	examplesRoot := localExamplesRoot(t, wd)
+	std := standardCatalogDir(t)
+	goldenBase := filepath.Join(wd, "testdata", "local_pin_invariance")
+
+	cases := []struct {
+		name         string
+		exampleDir   string
+		release      string
+		localCatalog []string
+		needStd      bool
+	}{
+		{"annotation-driven-monitoring", "annotation-driven-monitoring", "release.yaml", []string{"catalog"}, true},
+		{"mariadb-adminer-helm-chart", "mariadb-adminer", "release-helm-chart.yaml", []string{"catalog-helm-chart"}, false},
+		{"mariadb-adminer-helm-synth", "mariadb-adminer", "release-helm-synth.yaml", []string{"catalog-helm-synth"}, false},
+		{"cross-boundary-networking-compose", "cross-boundary-networking", "release-compose.yaml", []string{"catalog-compose"}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := t.TempDir()
+			copyTree(t, filepath.Join(examplesRoot, tc.exampleDir), ws)
+			// Drop the example's workspace config: its catalog_dirs are relative to
+			// the real example location and do not resolve from the temp copy. We
+			// supply the catalog dirs explicitly (absolute) instead — the same
+			// local + standard stack the example resolves against in place.
+			_ = os.Remove(filepath.Join(ws, ".aggrega-config.yaml"))
+			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+
+			var dirs []string
+			for _, lc := range tc.localCatalog {
+				dirs = append(dirs, filepath.Join(ws, lc))
+			}
+			if tc.needStd {
+				dirs = append(dirs, std)
+			}
+
+			t.Chdir(ws)
+			_ = os.Remove(lockfile.PathFor(tc.release)) // discard any copied stale lock
+			if err := pullRun(pullConfig{ReleasePath: tc.release, CatalogDirs: dirs, Regenerate: true}); err != nil {
+				t.Fatalf("regenerate lock: %v", err)
+			}
+			got := canonicalPins(t, lockfile.PathFor(tc.release))
+
+			golden := filepath.Join(goldenBase, tc.name+".pins.golden")
+			if os.Getenv("AGGREGA_UPDATE_GOLDEN") != "" {
+				if err := os.MkdirAll(goldenBase, 0o755); err != nil {
+					t.Fatalf("mkdir golden dir: %v", err)
+				}
+				if err := os.WriteFile(golden, got, 0o644); err != nil {
+					t.Fatalf("write golden: %v", err)
+				}
+				t.Logf("updated golden %s (%d bytes)", golden, len(got))
+				return
+			}
+			want, err := os.ReadFile(golden)
+			if err != nil {
+				t.Fatalf("read golden %s (regenerate with AGGREGA_UPDATE_GOLDEN=1): %v", golden, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%s: lockfile pins drifted from the committed golden (generated_at masked).\n"+
+					"A legitimate catalog/version change must update the golden in the same commit — the golden diff in review is the deliberate-change gate.\n"+
+					"--- got ---\n%s\n--- want ---\n%s", tc.name, got, want)
+			}
+		})
 	}
 }

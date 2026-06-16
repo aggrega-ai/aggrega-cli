@@ -1,0 +1,45 @@
+# aggrega
+
+The Aggrega compiler and command-line interface: a deterministic, Ahead-Of-Time
+compiler that renders deployment artifacts from Aggrega entities. Given identical
+inputs it produces byte-identical output.
+
+## Building
+
+The module root is this directory. Build the CLI with the Go toolchain:
+
+```bash
+go build ./cmd/aggrega
+```
+
+## Testing
+
+The fast unit suite needs nothing beyond this repository:
+
+```bash
+go test ./...
+```
+
+The integration suite is build-tagged `integration` and is excluded from the
+fast run (its in-process OCI registry harness pulls in test-only dependencies
+that never enter the production binary). It exercises real catalog resolution and
+the worked examples end to end, so it expects two companion repositories checked
+out **as sibling directories** next to this one. The sibling directory names are
+load-bearing — they must be exactly `aggrega-hub` and `aggrega-docs`:
+
+```text
+<parent>/
+  <this-repo>/     # the compiler and CLI (this module)
+  aggrega-hub/     # the standard catalog (under aggrega-catalog/)
+  aggrega-docs/    # the language-reference worked examples
+```
+
+With the siblings in place:
+
+```bash
+go test -tags=integration ./cmd/aggrega/
+```
+
+Tests that need a sibling skip automatically when it is absent, so the
+integration suite degrades gracefully on a partial checkout — but full coverage
+requires both `aggrega-hub` and `aggrega-docs` present.
