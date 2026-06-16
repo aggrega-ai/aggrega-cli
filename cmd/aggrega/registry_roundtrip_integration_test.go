@@ -1,0 +1,538 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+//go:build integration
+
+// Package main's registry round-trip integration test. Build-tagged
+// `integration` so the fast unit run excludes it (and the test-only
+// go-containerregistry dependency never enters the production binary's import
+// graph); CI runs it via `go test -tags=integration ./cmd/aggrega/...`.
+//
+// It stands up an in-process REAL HTTP OCI registry (go-containerregistry's
+// registry.New wrapped in httptest.Server, on 127.0.0.1 loopback so the OCI
+// client speaks plain HTTP), pushes the standard catalog, wipes the cache, and
+// drives the real pull → build through the real OCI client — the standing
+// regression guard for the consume side the manual smoke could not lock down.
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/google/go-containerregistry/pkg/registry"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+)
+
+// offlineReferenceSHA is the catalog-only compose output built offline against
+// the standard catalog; the registry-tier build must reproduce it byte-for-byte.
+const offlineReferenceSHA = "752c3b69b779dfdbc6029ff77c00c481d0afea2798fb44d815e2537e54e90167"
+
+func standardCatalogDir(t *testing.T) string {
+	t.Helper()
+	// repo-root/aggrega-hub/aggrega-catalog, from cmd/aggrega.
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-hub", "aggrega-catalog"))
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("standard catalog not present at %s: %v", dir, err)
+	}
+	return dir
+}
+
+func catalogOnlyExampleDir(t *testing.T) string {
+	t.Helper()
+	wd, _ := os.Getwd()
+	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-docs", "language-reference", "examples", "catalog-only"))
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("catalog-only example not present at %s: %v", dir, err)
+	}
+	return dir
+}
+
+// startRegistry stands up an in-process real OCI registry and returns its
+// loopback host:port. handlerWrap, when non-nil, wraps the registry handler
+// (used by the auth-refuse sub-test to inject 401s).
+func startRegistry(t *testing.T, handlerWrap func(http.Handler) http.Handler) string {
+	t.Helper()
+	var h http.Handler = registry.New()
+	if handlerWrap != nil {
+		h = handlerWrap(h)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return strings.TrimPrefix(srv.URL, "http://")
+}
+
+// publishableKinds is the eight kinds aggrega push publishes; mirrors
+// push-all.sh's is_publishable filter.
+var publishableKinds = map[string]bool{
+	"Component": true, "Feature": true, "Recipe": true, "FeatureRecipe": true,
+	"Provider": true, "SchemaLibrary": true, "MappingLibrary": true, "Aggregate": true,
+}
+
+// pushCatalog walks catalogDir and pushes every publishable entity to host via
+// the real push path (the programmatic equal of push-all.sh). Returns the count
+// pushed per kind so the test can assert coverage.
+func pushCatalog(t *testing.T, host, catalogDir string) map[string]int {
+	t.Helper()
+	counts := map[string]int{}
+	err := filepath.WalkDir(catalogDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		kind := peekKind(data)
+		if !publishableKinds[kind] {
+			return nil // non-entity YAML (recipe fragment, source/) or non-publishable
+		}
+		if perr := pushRun(pushConfig{EntityPath: path, Registry: host}); perr != nil {
+			t.Fatalf("push %s (%s): %v", path, kind, perr)
+		}
+		counts[kind]++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk catalog: %v", err)
+	}
+	return counts
+}
+
+func peekKind(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "kind:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "kind:"))
+		}
+	}
+	return ""
+}
+
+// newConsumerWorkspace copies the catalog-only example into a temp dir, points
+// it at the registry (no local catalog_dirs), and wipes the lockfile + cache so
+// the build must resolve everything over the wire. It chdir's into the workspace
+// (build/pull read the cwd) and returns the workspace path.
+func newConsumerWorkspace(t *testing.T, host string) string {
+	t.Helper()
+	ws := t.TempDir()
+	copyTree(t, catalogOnlyExampleDir(t), ws)
+	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+	_ = os.Remove(filepath.Join(ws, "release.lock"))
+	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+	_ = os.RemoveAll(filepath.Join(ws, "dist"))
+	t.Chdir(ws)
+	return ws
+}
+
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copy tree: %v", err)
+	}
+}
+
+func sha256Hex(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// TestIntegration_RegistryRoundTrip_Positive drives the real push → cache-wipe →
+// pull → build of catalog-only against the in-process registry, and asserts the
+// registry-tier output is byte-identical to the offline reference and that a
+// rebuild from the generated lock is byte-identical (lock == build).
+func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
+	host := startRegistry(t, nil)
+	counts := pushCatalog(t, host, standardCatalogDir(t))
+	// Every publishable kind present in the standard catalog pushed clean.
+	for _, k := range []string{"Component", "Feature", "Recipe", "FeatureRecipe", "Provider", "SchemaLibrary"} {
+		if counts[k] == 0 {
+			t.Errorf("no %s pushed (coverage gap)", k)
+		}
+	}
+
+	newConsumerWorkspace(t, host)
+	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+		t.Fatalf("registry pull: %v", err)
+	}
+	if err := dispatchBuild("release.yaml", nil, false); err != nil {
+		t.Fatalf("registry build: %v", err)
+	}
+	got := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
+	if got != offlineReferenceSHA {
+		t.Errorf("registry build output sha = %s; want offline reference %s", got, offlineReferenceSHA)
+	}
+
+	// lock == build: rebuild from the generated lock (no re-pull), byte-identical.
+	if _, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml")); err != nil {
+		t.Fatalf("lockfile absent after pull: %v", err)
+	}
+	_ = os.RemoveAll("dist")
+	if err := dispatchBuild("release.yaml", nil, false); err != nil {
+		t.Fatalf("rebuild from lock: %v", err)
+	}
+	if rebuilt := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
+		t.Errorf("lock != build: rebuild sha %s != %s", rebuilt, got)
+	}
+}
+
+// mutate applies an in-place string replacement to a workspace file.
+func mutateFile(t *testing.T, ws, file, old, new string) {
+	t.Helper()
+	p := filepath.Join(ws, file)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+	if !strings.Contains(string(data), old) {
+		t.Fatalf("mutation anchor %q not found in %s", old, file)
+	}
+	if err := os.WriteFile(p, []byte(strings.Replace(string(data), old, new, 1)), 0o644); err != nil {
+		t.Fatalf("write %s: %v", file, err)
+	}
+}
+
+// TestIntegration_RegistryBuild_GuardNegatives proves every guard FIRES against
+// registry-resolved entities — the property that catches a silently-disabled
+// validator (06-pre4's silent-skip class). Each case feeds invalid developer
+// input (a mutated local Aggregate) through the registry-build path against the
+// valid pushed catalog and requires the build to FAIL with the right sentinel.
+// All five formerly-silent-skipping guards are covered; credential (which halts)
+// is a bonus.
+func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
+	host := startRegistry(t, nil)
+	pushCatalog(t, host, standardCatalogDir(t))
+
+	cases := []struct {
+		name    string
+		mutate  func(t *testing.T, ws string)
+		wantErr error
+	}{
+		{
+			name: "schema_conformance",
+			mutate: func(t *testing.T, ws string) {
+				// database is a string field; a list violates the values schema.
+				mutateFile(t, ws, "aggregate.yaml", "database: appdb", "database: [not, a, string]")
+			},
+			wantErr: resolver.ErrSchemaConformance,
+		},
+		{
+			name: "unknown_uses_socket",
+			mutate: func(t *testing.T, ws string) {
+				// adminer declares a `databases` socket; `databases-typo` is undeclared.
+				mutateFile(t, ws, "aggregate.yaml", "        databases:\n", "        databases-typo:\n")
+			},
+			wantErr: resolver.ErrUnknownUsesSocket,
+		},
+		{
+			name: "self_inject_forbidden",
+			mutate: func(t *testing.T, ws string) {
+				// mariadb's spec.inject allowlist is [env, file]; a self-inject via
+				// the non-allowlisted `arg` mechanism is forbidden.
+				mutateFile(t, ws, "aggregate.yaml", "      values:\n        database: appdb", "      inject:\n        arg:\n          - in: X\n            from: host\n      values:\n        database: appdb")
+			},
+			wantErr: resolver.ErrSelfInjectForbidden,
+		},
+		{
+			name: "invalid_inject_key",
+			mutate: func(t *testing.T, ws string) {
+				// adminer's uses-inject `from: host` resolves against the db
+				// target's provides; `from: not-a-provides-key` does not exist on
+				// the target — guard_inject (the 5th silent-skipper) must reject it.
+				mutateFile(t, ws, "aggregate.yaml", "                  from: host", "                  from: not-a-provides-key")
+			},
+			wantErr: resolver.ErrInvalidInjectKey,
+		},
+		{
+			name: "credential_partition",
+			mutate: func(t *testing.T, ws string) {
+				// A non-secret Feature (audit-logging) placed in a secrets: block.
+				mutateFile(t, ws, "aggregate.yaml", "      secrets:\n        root_password:", "      secrets:\n        bad:\n          type: core/audit-logging\n        root_password:")
+			},
+			wantErr: resolver.ErrCredentialLabelPartition,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := t.TempDir()
+			copyTree(t, catalogOnlyExampleDir(t), ws)
+			writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+			_ = os.Remove(filepath.Join(ws, "release.lock"))
+			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+			tc.mutate(t, ws)
+			t.Chdir(ws)
+			err := dispatchBuild("release.yaml", nil, false)
+			if err == nil {
+				t.Fatalf("%s: build SUCCEEDED; want failure with %v", tc.name, tc.wantErr)
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("%s: build err = %v; want errors.Is(%v)", tc.name, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestIntegration_Capstone_LintAndExample is the continuous-exercise capstone:
+// the whole standard catalog lints warning-free, and the catalog-only example
+// (the consumption exemplar) builds green offline against it, byte-identical to
+// the reference. CI runs this (with the round-trip tests) so the catalog and its
+// living documentation are exercised on every run. CI wires the same
+// `aggrega lint` + per-example `aggrega build` invocations across the full
+// migrated-example set.
+func TestIntegration_Capstone_LintAndExample(t *testing.T) {
+	std := standardCatalogDir(t)
+	if err := lintCatalogWide("", "", []string{std}); err != nil {
+		t.Fatalf("whole-catalog lint not warning-free: %v", err)
+	}
+
+	ws := t.TempDir()
+	copyTree(t, catalogOnlyExampleDir(t), ws)
+	_ = os.Remove(filepath.Join(ws, "release.lock"))
+	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+	_ = os.RemoveAll(filepath.Join(ws, "dist"))
+	t.Chdir(ws)
+	// No workspace config: defaults (auto_pull on). --catalog supplies every
+	// entity locally, so the auto-pull resolves from the catalog with no network.
+	if err := dispatchBuild("release.yaml", []string{std}, false); err != nil {
+		t.Fatalf("catalog-only build against the shared catalog: %v", err)
+	}
+	if got := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != offlineReferenceSHA {
+		t.Errorf("offline example build sha = %s; want reference %s", got, offlineReferenceSHA)
+	}
+}
+
+// writeFixtureEntity writes an entity YAML into a fixture catalog at the
+// per-version-subdir layout push requires, returning the file path.
+func writeFixtureEntity(t *testing.T, catalogDir, relPath, yaml string) {
+	t.Helper()
+	p := filepath.Join(catalogDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("mkdir fixture: %v", err)
+	}
+	if err := os.WriteFile(p, []byte(yaml), 0o644); err != nil {
+		t.Fatalf("write fixture %s: %v", relPath, err)
+	}
+}
+
+// authoredFixtureCatalog writes a controlled fixture catalog: a Component with a
+// REQUIRED uses socket, a trivial Recipe implementing it, and a publishable
+// Aggregate. These isolate the required-socket guard (independent of whether any
+// standard component builds standalone) and give the kind-coverage test a real
+// Aggregate to round-trip. Returns the catalog dir.
+func authoredFixtureCatalog(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFixtureEntity(t, dir, "component/test/needs-socket/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: test/needs-socket
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  usesSchema:
+    backend:
+      selector: "component.aggrega.ai/type=stateful-server"
+      required: true
+      inject: [env]
+  schema:
+    values: {}
+`)
+	writeFixtureEntity(t, dir, "recipe/compose/needs-socket/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: needs-socket
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: test/needs-socket
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: busybox:1
+`)
+	writeFixtureEntity(t, dir, "aggregate/test/app-agg/1.0.0/aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test/app-agg
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+      secrets:
+        root_password:
+          type: core/secret-value
+          values:
+            key: PW
+            source: x
+`)
+	return dir
+}
+
+// TestIntegration_RequiredSocket_AuthoredFixture isolates guard_required_socket:
+// a fixture Component with a required uses socket, referenced with the socket
+// UNBOUND, must fail the registry build with ErrMissingRequiredSocket — and with
+// that SPECIFIC sentinel, so a failure on an earlier guard (missing recipe /
+// values) surfaces as "wrong guard", not a false pass. Completes the five
+// silent-skip guards' negative coverage.
+func TestIntegration_RequiredSocket_AuthoredFixture(t *testing.T) {
+	host := startRegistry(t, nil)
+	pushCatalog(t, host, standardCatalogDir(t)) // for the mariadb target the recipe selector needs
+	pushCatalog(t, host, authoredFixtureCatalog(t))
+
+	ws := t.TempDir()
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: test/needs-socket
+      # backend (required: true) is deliberately left UNBOUND.
+`)
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        test/needs-socket:1.0.0: compose/needs-socket:1.0.0
+`)
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: rel
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        app:
+          infra:
+            replicas: 1
+`)
+	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+	t.Chdir(ws)
+
+	err := dispatchBuild("release.yaml", nil, false)
+	if err == nil {
+		t.Fatalf("required-socket: build SUCCEEDED; want failure with ErrMissingRequiredSocket")
+	}
+	if !errors.Is(err, resolver.ErrMissingRequiredSocket) {
+		t.Fatalf("required-socket: build err = %v; want errors.Is(ErrMissingRequiredSocket) (a different error means the wrong guard fired)", err)
+	}
+}
+
+// TestIntegration_KindCoverage_ProviderAndAggregate round-trips the two kinds the
+// catalog-only build does not exercise — a Provider and a (published) Aggregate —
+// directly through the real OCI client, asserting each pulls non-empty from the
+// registry. Together with the positive build (Component/Recipe/FeatureRecipe/
+// Feature/libraries) this covers every publishable kind fetched-from-registry.
+func TestIntegration_KindCoverage_ProviderAndAggregate(t *testing.T) {
+	host := startRegistry(t, nil)
+	pushCatalog(t, host, standardCatalogDir(t))
+	pushCatalog(t, host, authoredFixtureCatalog(t))
+
+	for _, ent := range []struct{ kind, ref string }{
+		{"Provider", host + "/provider/compose"},
+		{"Aggregate", host + "/aggregate/test/app-agg"},
+	} {
+		repo, err := oci.NewRemoteRepository(ent.ref)
+		if err != nil {
+			t.Fatalf("%s: new repo %s: %v", ent.kind, ent.ref, err)
+		}
+		res, perr := oci.Pull(context.Background(), repo, "1.0.0")
+		if perr != nil {
+			t.Fatalf("%s: pull %s:1.0.0 from registry: %v", ent.kind, ent.ref, perr)
+		}
+		if len(res.Bytes) == 0 {
+			t.Errorf("%s: pulled empty bytes from %s", ent.kind, ent.ref)
+		}
+	}
+}
+
+// TestIntegration_RegistryAuthRefuse proves an unauthenticated pull against a
+// registry that demands auth fails with the unauthorized + docker-login
+// remediation (the in-process registry is auth-off, so a 401-injecting wrapper
+// stands in for the demand).
+func TestIntegration_RegistryAuthRefuse(t *testing.T) {
+	host := startRegistry(t, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Basic challenge (not Bearer) so the client surfaces a clean 401
+			// rather than attempting a token exchange against a realm URL.
+			w.Header().Set("WWW-Authenticate", `Basic realm="registry"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		})
+	})
+	ws := t.TempDir()
+	copyTree(t, catalogOnlyExampleDir(t), ws)
+	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+	_ = os.Remove(filepath.Join(ws, "release.lock"))
+	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+	t.Chdir(ws)
+	err := pullRun(pullConfig{ReleasePath: "release.yaml"})
+	// The security property: the pull is REFUSED against an auth-demanding
+	// registry — it does not silently succeed. (The exact unauthorized +
+	// `docker login <host>` remediation string is unit-tested in
+	// pkg/oci TestRemediationFor_Unauthorized; oras short-circuits the in-process
+	// Basic challenge with "basic credential not found" before the round-trip, so
+	// this in-process test asserts refusal, not the message.)
+	if err == nil {
+		t.Fatalf("auth-refuse: pull SUCCEEDED against an auth-demanding registry; want refusal")
+	}
+	low := strings.ToLower(err.Error())
+	if !strings.Contains(low, "credential") && !strings.Contains(low, "unauthor") && !strings.Contains(low, "401") {
+		t.Errorf("auth-refuse: err = %v; want an auth/credential refusal", err)
+	}
+}
