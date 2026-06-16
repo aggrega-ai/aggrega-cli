@@ -51,6 +51,9 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 
 		catComp, found := catalog.Component(comp.Type)
 		if !found {
+			if verr := guardEntityViewInconsistency(entity, base, comp.Type); verr != nil {
+				errs = append(errs, verr)
+			}
 			continue
 		}
 

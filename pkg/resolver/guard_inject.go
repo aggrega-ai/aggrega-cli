@@ -61,6 +61,9 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 	// whether the type resolved in the catalog; absent types are skipped.
 	providesCache := map[string]map[string]bool{}
 	resolvedType := map[string]bool{}
+	// View-inconsistency halts collected from providesFor's catalog miss; merged
+	// into errs before sorting (providesFor's bool return cannot carry a halt).
+	var viewErrs []*ResolverError
 	providesFor := func(compType string) (map[string]bool, bool) {
 		if keys, seen := providesCache[compType]; seen {
 			return keys, resolvedType[compType]
@@ -78,6 +81,12 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 		}
 		catComp, found := catalog.Component(compType)
 		if !found {
+			// providesFor's bool return cannot carry a halt; record a view
+			// inconsistency for a resolved bare-token catalog ref absent here
+			// (a Tier-1 relative-path type legitimately resolves to no entity).
+			if verr := guardEntityViewInconsistency(entity, fmt.Sprintf("inject resolution for type %q", compType), compType); verr != nil {
+				viewErrs = append(viewErrs, verr)
+			}
 			providesCache[compType] = nil
 			resolvedType[compType] = false
 			return nil, false
@@ -143,6 +152,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 		}
 	}
 
+	errs = append(errs, viewErrs...)
 	sortResolverErrors(errs)
 	return errs
 }

@@ -281,3 +281,211 @@ spec:
 		t.Fatalf("no irGraph response observed on the wire; messages=%v", msgs)
 	}
 }
+
+// TestServeIrGraphResilientToSubAggregateUsesViewInconsistency closes the
+// coverage hole the root-level drift test cannot reach: a drifted-out component
+// referenced by a SUB-AGGREGATE node that carries a `uses` block. Sub-aggregate
+// nodes are validated at Step 2 (topology), not Step 1 — through the same shared
+// uses-socket validator — so their view-inconsistency surfaces as a Step-2 halt,
+// on a different code path from the Step-1 guard tolerance.
+//
+// The component lives only in the Tier-2 cache, drifted from its pin, so it is
+// skipped on read and absent from the lazy view. The sub-aggregate's node has a
+// `uses` block, so the topology guard reaches the validator and the absent
+// component would halt the build. Resilient inspection must still return the
+// graph: the drift is a Problems-panel signal, not an inspection failure. A
+// regression that tolerates only the Step-1 path (and not Step 2) fails here.
+func TestServeIrGraphResilientToSubAggregateUsesViewInconsistency(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	const compURI = "demo/server:1.0.0"
+
+	pinnedComponent := []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: demo/server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }
+`)
+	cachedComponent := []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: demo/server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+    drift.aggrega.ai/marker: "local-edit"
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }
+`)
+	if string(pinnedComponent) == string(cachedComponent) {
+		t.Fatal("fixture error: pinned and cached content must differ to model drift")
+	}
+
+	// The drifted component lives ONLY in the Tier-2 cache, never in the catalog
+	// dir — so the lazy view, verifying on read, skips it as drifted and the
+	// guard sees it absent.
+	if err := oci.WriteCached(tmp, cacheDir, compURI, "1.0.0", cachedComponent); err != nil {
+		t.Fatalf("WriteCached: %v", err)
+	}
+
+	catalogDir := filepath.Join(tmp, "catalog")
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: demo-server-synthesized
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: demo/server
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: demo-server:latest
+`)
+	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  baseSchema: |
+    type: object
+    additionalProperties: true
+  workloadSchema: |
+    type: object
+    additionalProperties: true
+`)
+
+	// The sub-aggregate lives in the catalog dir (NOT drifted, so it loads and
+	// flattens). Its `svc` node references the drifted component AND carries a
+	// `uses` block, so topology's sub-aggregate guard reaches the uses-socket
+	// validator with the component absent. `helper` is the local uses target.
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "mod.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: mod
+  version: "1.0.0"
+spec:
+  components:
+    svc:
+      type: "demo/server:1.0.0"
+      uses:
+        link:
+          primary:
+            target: helper
+    helper:
+      type: "demo/server:1.0.0"
+`)
+
+	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: app-agg
+  manifest: app-manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        mod.svc: {}
+        mod.helper: {}
+`)
+	writeFixtureFile(t, filepath.Join(tmp, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: app-agg
+  version: "1.0.0"
+spec:
+  aggregates:
+    mod:
+      type: mod
+`)
+	writeFixtureFile(t, filepath.Join(tmp, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: app-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type: {}
+`)
+
+	releasePath := filepath.Join(tmp, "release.yaml")
+
+	lf := &lockfile.Lockfile{
+		Version:     1,
+		Release:     "./release.yaml",
+		GeneratedAt: "2026-06-03T10:00:00Z",
+		Entities: []lockfile.Entity{{
+			URI:             compURI,
+			ResolvedVersion: "1.0.0",
+			Digest:          contentDigestHex(pinnedComponent),
+		}},
+	}
+	if err := lockfile.WriteLockfile(lockfile.PathFor(releasePath), lf); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+
+	puller := &recordingPuller{body: cachedComponent}
+
+	srv := newTestServer(t, tmp, nil, nil)
+	srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
+	srv.wsConfig.Workspace.CacheDir = cacheDir
+	srv.lazyCatalog = catalog.NewLazyLookup(tmp, cacheDir, []string{catalogDir}, puller)
+
+	var in, out bytes.Buffer
+	in.Write(framedRequest(7, "aggrega/irGraph", irGraphParams{Release: "release.yaml"}))
+	srv.in = bufio.NewReader(&in)
+	srv.out = &out
+	body, err := readMessage(srv.in)
+	if err != nil {
+		t.Fatalf("readMessage: %v", err)
+	}
+	var req jsonRPCRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	if err := srv.handle(&req); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	msgs := drainFramedMessages(t, &out)
+	var sawResponse bool
+	for _, m := range msgs {
+		if _, hasID := m["id"]; !hasID {
+			continue // notification (e.g. publishDiagnostics) — not the response
+		}
+		if errObj, ok := m["error"]; ok && errObj != nil {
+			t.Fatalf("irGraph halted on a sub-aggregate uses view-inconsistency instead of "+
+				"returning a resilient graph (Step-2 tolerance regression): %v", errObj)
+		}
+		result, ok := m["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("response missing result object; got %v", m)
+		}
+		if _, ok := result["graph"]; !ok {
+			t.Fatalf("response result missing graph field; got %v", result)
+		}
+		sawResponse = true
+	}
+	if !sawResponse {
+		t.Fatalf("no irGraph response observed on the wire; messages=%v", msgs)
+	}
+}

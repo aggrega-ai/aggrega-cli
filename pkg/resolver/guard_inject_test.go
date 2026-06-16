@@ -342,15 +342,17 @@ func TestGuardInjectKeys_NoProvidesRejectsEveryFrom(t *testing.T) {
 }
 
 // TestGuardInjectKeys_UnknownTargetTypeSkipped verifies that a uses target
-// whose type is not in the catalog is skipped (unknown-type reporting belongs
-// to other guards), and that an unknown host type skips self-inject.
-func TestGuardInjectKeys_UnknownTargetTypeSkipped(t *testing.T) {
+// whose type is a genuinely-non-catalog Tier-1 relative-path reference is
+// skipped (no catalog entity to validate against), and so self-inject is not
+// flagged. The halt arm (a bare catalog ref absent from the view) is in
+// guard_view_consistency_test.go.
+func TestGuardInjectKeys_RelativePathTargetTypeSkipped(t *testing.T) {
 	t.Parallel()
 
 	agg := &types.Aggregate{}
 	agg.Metadata.Name = "app"
 	agg.Spec.Components = types.OrderedMap[types.ComponentInstance]{}
-	inst := types.ComponentInstance{Type: "core/unknown:1.0.0"}
+	inst := types.ComponentInstance{Type: "./local-variant"}
 	inst.Inject = &types.InjectBlock{Env: map[string]any{"X": map[string]any{"from": "nope"}}}
 	agg.Spec.Components.Set("svc", inst)
 
@@ -361,6 +363,6 @@ func TestGuardInjectKeys_UnknownTargetTypeSkipped(t *testing.T) {
 	}
 
 	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
-		t.Errorf("expected nil errors for unknown type; got %v", errs)
+		t.Errorf("expected nil errors for relative-path (non-catalog) type; got %v", errs)
 	}
 }

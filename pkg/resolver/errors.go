@@ -73,6 +73,16 @@ var (
 	// labelling).
 	ErrCredentialLabelPartition = errors.New("credential label partition violated")
 
+	// ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
+	// guard needs a catalog entity for a type that resolution resolved AS A
+	// CATALOG REFERENCE (a bare-token identity, not a Tier-1 relative-path file),
+	// yet the entity is absent from the guard's catalog view. A genuinely
+	// unresolvable reference halts earlier at resolution; reaching a guard with
+	// the entity missing means the build's resolved set and the guard's view have
+	// diverged — a loud halt, never a silent skip. (Tier-1 relative-path types,
+	// which legitimately have no catalog entity, are not this error.)
+	ErrGuardEntityViewInconsistency = errors.New("guard catalog-entity view inconsistency")
+
 	// ErrMissingRequiredFeature wraps a component whose declared catalog
 	// type lists a requiredFeature that no attached Feature instance satisfies.
 	ErrMissingRequiredFeature = errors.New("missing required feature")

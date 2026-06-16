@@ -577,9 +577,23 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// other. Predicate-inert: the sub-aggregate's own parameter context is not
 	// resolved, so only context-independent structural constraints are checked
 	// (conditional x-aggrega predicates are validated where the context exists).
+	result := &TopologyResult{
+		Nodes:              flat.Nodes,
+		Edges:              edges,
+		FeatureAttachments: flat.FeatureAttachments,
+		SecretAttachments:  flat.SecretAttachments,
+		ExportedComponents: flat.ExportedComponents,
+	}
+
 	if cfg.ResolveResult != nil {
 		if subErrs := guardSubAggregateNodes(flat, edges, cfg); len(subErrs) > 0 {
-			return nil, &resolver.MultiResolverError{
+			// Return the fully-built topology alongside the halt: the graph is
+			// complete at this final guard, and a resilient-inspection caller
+			// that tolerates the catalog-view-inconsistency class needs the
+			// graph it just validated. Halting callers check err first and
+			// discard the result, so the non-nil graph never leaks into a
+			// halt path.
+			return result, &resolver.MultiResolverError{
 				Entity:     "Step 2 (sub-aggregate conformance)",
 				Summary:    fmt.Sprintf("%d sub-aggregate guard violation(s)", len(subErrs)),
 				Violations: subErrs,
@@ -587,13 +601,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
-	return &TopologyResult{
-		Nodes:              flat.Nodes,
-		Edges:              edges,
-		FeatureAttachments: flat.FeatureAttachments,
-		SecretAttachments:  flat.SecretAttachments,
-		ExportedComponents: flat.ExportedComponents,
-	}, nil
+	return result, nil
 }
 
 // guardSubAggregateNodes runs the resolver's conformance validators over the

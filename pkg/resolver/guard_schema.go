@@ -90,11 +90,22 @@ func guardSchemaConformance(
 
 	var errs []*ResolverError
 	for _, p := range collectComponentInstances(na) {
+		componentField := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
+		// Classify a missing catalog entity HERE, before the compile call —
+		// compiledFor/CompileComponentSchema return only a bool, which would
+		// swallow a resolved-but-absent halt into the legitimate Kind==0 /
+		// compile-failure skip. A bare-token catalog ref absent from the view is
+		// a loud inconsistency; a Tier-1 relative-path type is a legitimate skip.
+		if _, found := catalog.Component(p.inst.Type); !found {
+			if verr := guardEntityViewInconsistency(entity, componentField, p.inst.Type); verr != nil {
+				errs = append(errs, verr)
+			}
+			continue
+		}
 		compiled, ok := compiledFor(p.inst.Type)
 		if !ok {
 			continue
 		}
-		componentField := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 		errs = append(errs, validateValuesConformance(
 			compiled, p.inst.Values, parameters, entity, componentField)...)
 
@@ -153,6 +164,19 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 	// entries (top-level + subsystem) in author order.
 	aggEntity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	for _, p := range collectComponentInstances(na) {
+		if p.inst.Uses.Len() == 0 {
+			continue
+		}
+		// Classify a missing catalog entity HERE, before CompileSocketPillarSchema
+		// — its bool return would otherwise swallow a resolved-but-absent halt
+		// into the legitimate socket-undeclared / no-pillar-schema skip.
+		if _, found := catalog.Component(p.inst.Type); !found {
+			if verr := guardEntityViewInconsistency(aggEntity,
+				componentFieldPath(p.subsystemPath, p.name, p.synthesized), p.inst.Type); verr != nil {
+				errs = append(errs, verr)
+			}
+			continue
+		}
 		for socket, sv := range p.inst.Uses.All() {
 			for alias, e := range sv.Verbose.All() {
 				if e.Values.Len() == 0 {
@@ -185,12 +209,20 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 			if !ok {
 				continue
 			}
+			field := fmt.Sprintf("%s.uses[%q][%q]",
+				releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket, ref.alias)
+			// Classify before CompileSocketPillarSchema (bool-swallow) — same as
+			// the values path above.
+			if _, found := catalog.Component(compType); !found {
+				if verr := guardEntityViewInconsistency(relEntity, field, compType); verr != nil {
+					errs = append(errs, verr)
+				}
+				continue
+			}
 			compiled, ok := CompileSocketPillarSchema(catalog, compType, ref.socket, "infra")
 			if !ok {
 				continue
 			}
-			field := fmt.Sprintf("%s.uses[%q][%q]",
-				releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket, ref.alias)
 			errs = append(errs, ValidatePillarConformance(
 				compiled, "infra", ref.entry.Infra, parameters,
 				relEntity, field, "the socket infraSchema")...)

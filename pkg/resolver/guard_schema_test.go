@@ -282,15 +282,17 @@ func TestGuardSchemaConformance_CatalogLessSkips(t *testing.T) {
 	}
 }
 
-func TestGuardSchemaConformance_UnknownTypeSkips(t *testing.T) {
+func TestGuardSchemaConformance_RelativePathTypeSkips(t *testing.T) {
 	t.Parallel()
-	// A component whose type is absent from the catalog is skipped here (unknown
-	// type is reported by other guards), not flagged for conformance.
+	// A genuinely-non-catalog type — a Tier-1 relative-path reference — has no
+	// catalog entity and is legitimately skipped (NOT a view inconsistency). The
+	// halt arm (a bare catalog ref absent from the view) is in
+	// guard_view_consistency_test.go.
 	comps := types.OrderedMap[types.ComponentInstance]{}
-	comps.Set("svc", types.ComponentInstance{Type: "absent/type:1.0.0"})
+	comps.Set("svc", types.ComponentInstance{Type: "./local-variant"})
 	agg := &types.Aggregate{Metadata: types.AggregateMetadata{Name: "demo"}, Spec: types.AggregateSpec{Components: comps}}
 	if errs := guardSchemaConformance(normalized(t, agg), schemaComponentCatalog(t), nil, nil); errs != nil {
-		t.Fatalf("unknown component type must be skipped; got %v", errs)
+		t.Fatalf("relative-path (non-catalog) type must be skipped; got %v", errs)
 	}
 }
 

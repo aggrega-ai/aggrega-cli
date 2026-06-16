@@ -486,6 +486,12 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			Lockfile:          lf,
 			WorkspaceRoot:     s.workspaceRoot,
 			MappingLibraries:  s.lazyCatalog.MappingLibraries(),
+			// Resilient inspection: a resolved catalog reference momentarily
+			// absent from the lazy view (a drifted cache slot skipped on read)
+			// is a drift signal, not an authoring fault. Build the graph with
+			// the entity skipped rather than halting; drift already surfaces as
+			// a Problems-panel diagnostic via the verify step above.
+			TolerateCatalogViewInconsistency: true,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
 		s.lazyCatalog.RecipeLookupWithManifest(resolved.Manifest),

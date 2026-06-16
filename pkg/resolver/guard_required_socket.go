@@ -24,7 +24,17 @@ func guardRequiredUsesSockets(na types.NormalizedAggregate, catalog CatalogLooku
 	for _, pair := range instances {
 		comp, ok := catalog.Component(pair.inst.Type)
 		if !ok {
-			continue // unknown-type errors handled by a different guard
+			// A resolved bare-token catalog ref absent here is a view
+			// inconsistency (loud); a Tier-1 relative-path type legitimately has
+			// no catalog entity (skip).
+			if verr := guardEntityViewInconsistency(
+				fmt.Sprintf("Aggregate %s", agg.Metadata.Name),
+				componentFieldPath(pair.subsystemPath, pair.name, pair.synthesized),
+				pair.inst.Type,
+			); verr != nil {
+				errs = append(errs, verr)
+			}
+			continue
 		}
 		if comp.Spec.UsesSchema.Len() == 0 {
 			continue

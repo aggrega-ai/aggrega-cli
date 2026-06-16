@@ -110,6 +110,10 @@ func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release
 		}
 		catComp, found := catalog.Component(compType)
 		if !found {
+			if verr := guardEntityViewInconsistency(entity,
+				releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), compType); verr != nil {
+				errs = append(errs, verr)
+			}
 			continue
 		}
 		if _, ok := catComp.Spec.UsesSchema.Get(ref.socket); !ok {
@@ -206,7 +210,12 @@ func guardUsesSocket(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 func ValidateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], compType string, catalog CatalogLookup) []*ResolverError {
 	catComp, found := catalog.Component(compType)
 	if !found {
-		return nil // catalog not available, skip
+		// A resolved bare-token catalog ref absent here is a loud view
+		// inconsistency; a Tier-1 relative-path type legitimately has no entity.
+		if verr := guardEntityViewInconsistency(entity, fieldPath, compType); verr != nil {
+			return []*ResolverError{verr}
+		}
+		return nil
 	}
 
 	if catComp.Spec.UsesSchema.Len() == 0 {

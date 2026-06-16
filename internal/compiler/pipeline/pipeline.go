@@ -61,6 +61,19 @@ type Inputs struct {
 	// bare-name `$import: <Library>#/mappings/<entry>` resolves at render. nil
 	// when no MappingLibraries are present.
 	MappingLibraries map[string]types.MappingLibrary
+
+	// TolerateCatalogViewInconsistency opts a caller out of the guard-layer
+	// halt for a component type that resolved AS A CATALOG REFERENCE yet is
+	// absent from the guard's catalog view (the resolved-set / view divergence
+	// that ErrGuardEntityViewInconsistency reports). Default false: the
+	// divergence halts loudly — the build's safety net. A resilient-inspection
+	// caller working against a lazily-populated view (where a cache slot may be
+	// skipped as drifted, leaving an in-closure type momentarily absent) sets
+	// it true: the divergence is dropped from the halt set so the IR still
+	// builds with the unavailable entity skipped, and the condition surfaces as
+	// a diagnostic rather than failing the inspection. Opt-out, not opt-in, so a
+	// caller that forgets the flag halts (safe) rather than silently skips.
+	TolerateCatalogViewInconsistency bool
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -196,6 +209,22 @@ func runStepsOneToFour(
 	return out, nil
 }
 
+// dropCatalogViewInconsistencies returns the guard-violation slice with every
+// ErrGuardEntityViewInconsistency finding removed, preserving order. It backs
+// Inputs.TolerateCatalogViewInconsistency: a resilient-inspection caller drops
+// the resolved-set / view divergence from the halt set while every other guard
+// violation still halts.
+func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.ResolverError {
+	kept := errs[:0:0]
+	for _, e := range errs {
+		if stderrors.Is(e, resolver.ErrGuardEntityViewInconsistency) {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	return kept
+}
+
 // ResolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
 // (parameter interpolation, annotation binding validation + expansion,
 // guards) then topology flatten — and returns the resolved per-component
@@ -242,6 +271,15 @@ func ResolveAndFlatten(
 	}
 
 	guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+	if inputs.TolerateCatalogViewInconsistency {
+		// Resilient inspection against a lazily-populated view: a resolved
+		// catalog reference momentarily absent from the view (a drifted cache
+		// slot skipped on read) is a drift signal, not an authoring fault.
+		// Drop it from the halt set so the IR still builds with the entity
+		// skipped; the condition surfaces as a diagnostic. Every other guard
+		// violation still halts.
+		guardErrs = dropCatalogViewInconsistencies(guardErrs)
+	}
 	if len(guardErrs) > 0 {
 		for _, e := range guardErrs {
 			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
@@ -269,6 +307,18 @@ func ResolveAndFlatten(
 		RootAggregateFile: inputs.AggregatePath,
 	})
 	if err != nil {
+		if inputs.TolerateCatalogViewInconsistency {
+			// The sub-aggregate guard reaches the same shared uses-socket
+			// validator as Step 1, so the view-inconsistency class can surface
+			// here too. Apply the same tolerance: if every Step-2 violation is
+			// a catalog-view inconsistency, suppress the halt and return the
+			// graph BuildContext built up to the guard (uses-conformance for the
+			// unavailable node skipped). A remaining real violation still halts.
+			var multi *resolver.MultiResolverError
+			if stderrors.As(err, &multi) && len(dropCatalogViewInconsistencies(multi.Violations)) == 0 {
+				return resolveResult, topoResult, nil
+			}
+		}
 		return resolveResult, nil, fmt.Errorf("Step 2 (topology): %w", err)
 	}
 
