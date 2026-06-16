@@ -157,6 +157,14 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 	if err := verifyNoOCILocationCollision(cat); err != nil {
 		return fmt.Errorf("catalog validation failed: %w", err)
 	}
+	// Surface the whole-catalog advisory notices accumulated during the eager
+	// passes above — schema-pillar overlap (Pass-2) and narrowing-on-extend (from
+	// ResolveAllExtends). Informational only: advisories never escalate the exit
+	// code, which stays 0 here (errors already returned above). Emission order is
+	// deterministic — lintWarnings is accumulated over sorted-key walks.
+	for _, w := range cat.LintWarnings() {
+		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+	}
 	fmt.Println("catalog validation passed (schema-pillar + library + extends + oci-location)")
 	return nil
 }
