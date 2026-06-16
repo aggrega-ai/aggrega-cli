@@ -18,7 +18,9 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -26,9 +28,10 @@ import (
 // lint command flags. Cobra populates these globals from the
 // invocation; lintRun reads them through lintConfig for testability.
 var (
-	lintEntityPath string
-	lintPrePublish bool
-	lintPluginPath string
+	lintEntityPath  string
+	lintReleasePath string
+	lintPrePublish  bool
+	lintPluginPath  string
 
 	// Tri-state policy override flags. Both
 	// `allow_*` (6) and `enforce_*` (2) families get paired CLI
@@ -79,6 +82,14 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
+			if lintReleasePath != "" {
+				// Release-closure mode is mutually exclusive with a positional /
+				// --entity target — they select different closures.
+				if path != "" {
+					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
+				}
+				return lintRelease(lintReleasePath)
+			}
 			if path == "" {
 				// No entity argument → whole-catalog validation.
 				return lintCatalogWideFromWorkspace()
@@ -91,6 +102,7 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 			})
 		},
 	}
+	c.Flags().StringVar(&lintReleasePath, "release", "", "Path to a Release YAML to lint over its resolved closure (closure-scoped schema-pillar overlap + pillar validation; mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&lintEntityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
 	c.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
 	c.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
@@ -166,6 +178,91 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
 	}
 	fmt.Println("catalog validation passed (schema-pillar + library + extends + oci-location)")
+	return nil
+}
+
+// lintRelease runs the closure-scoped lint mode: it computes a Release's resolved
+// closure through the SAME build machinery the compiler uses (computeBuildClosure
+// over the lazy lookup — never a lint-local fork, which would re-open the
+// build/lint view divergence) and validates + advises over exactly the entities
+// that Release reaches.
+//
+// Closure-scoped pillar VALIDATION errors fail the lint (non-zero exit), aligning
+// with whole-catalog lint's error contract; schema-pillar OVERLAP advisories are
+// informational `notice:` lines that never change the exit code, matching the
+// build's own advisory treatment. No render runs — this is validation + advice,
+// not emission.
+//
+// The lockfile pins the closure when present (the build's pinned view); absent, the
+// closure resolves through Tier-1 (local catalog). lint never triggers a network
+// pull — a registry-pinned closure that needs a lockfile surfaces as an honest
+// unresolvable-URI error rather than a silent fetch.
+func lintRelease(releasePath string) error {
+	wsRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getwd: %w", err)
+	}
+	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
+
+	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if lfErr == nil {
+		lazyView.SetPins(catalog.PinsFromLockfile(lf))
+	}
+
+	releaseDir := filepath.Dir(releasePath)
+	rel, err := resolver.LoadRelease(releasePath)
+	if err != nil {
+		return fmt.Errorf("load release: %w", err)
+	}
+	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
+	if err != nil {
+		return fmt.Errorf("load manifest: %w", err)
+	}
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	if err != nil {
+		return fmt.Errorf("compose manifest extends: %w", err)
+	}
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), nil)
+	if err != nil {
+		return fmt.Errorf("load aggregate: %w", err)
+	}
+	// Seed the aggregate as external only when it is NOT a registry-pinned
+	// top-level — a version-less external seed would shadow the pin (the same gate
+	// the build applies). The manifest is always external (no registry tier).
+	aggExternal := aggRes.Bytes
+	if lfErr == nil && lockfileHasRegistryPin(lf, rel.Spec.Aggregate) {
+		aggExternal = nil
+	}
+	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
+
+	cl, err := computeBuildClosure(rel, manifest, aggRes.Aggregate, externals, wsCfg, lazyView, wsRoot, cacheDir)
+	if err != nil {
+		return fmt.Errorf("release closure: %w", err)
+	}
+
+	// Pillar-validation errors fail the lint; resolve extends first so composed
+	// (parent+child) schemas validate, matching the build.
+	if extErrs := lazyView.ResolveClosureExtends(cl); len(extErrs) > 0 {
+		for _, e := range extErrs {
+			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+		}
+		return fmt.Errorf("release closure validation failed: %d extends resolution error(s)", len(extErrs))
+	}
+	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
+		return fmt.Errorf("release closure validation failed: %w", err)
+	}
+
+	// Schema-pillar overlap advisories — informational, never change the exit code.
+	for _, w := range lazyView.ClosureLintWarnings(cl) {
+		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+	}
+	fmt.Printf("release closure validation passed: %s (schema-pillar + closure pillars)\n", releasePath)
 	return nil
 }
 
