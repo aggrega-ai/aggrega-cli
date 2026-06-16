@@ -26,7 +26,9 @@
 // ResolveAllExtends walks the loaded Component / Feature entries and
 // performs the Two-Tiered Inheritance Merge: deep-merge of the YAML
 // envelope plus JSON Schema composition of the entity's authored Schema
-// content (a child can narrow a parent's constraint, never relax it).
+// content. The merge reports a child that widens a parent constraint as a
+// non-halting side-band signal; a narrow-only rule is opt-in policy
+// (the publishing-discipline plugin, at publish time), not a compiler check.
 // Recipe and FeatureRecipe split into separate index maps keyed by
 // spec.implements so their distinct schemas and roles stay distinct.
 //

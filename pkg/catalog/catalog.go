@@ -1149,9 +1149,13 @@ func (c *Catalog) DeprecationWarnings() []string {
 // resolves its extends chain in-place via the validator package's
 // ResolveComponentExtends / ResolveFeatureExtends. The merge follows the
 // two-tiered inheritance pattern: deep-merge the YAML envelope, compose
-// the Schema with parent under JSON Schema narrowing semantics (a child
-// may narrow a parent's constraint, never relax it). Cycles are detected
-// by the validator and surface as errors rather than infinite loops.
+// the Schema with parent under JSON Schema composition. The merge DETECTS
+// a child that widens a parent's constraint and reports it as a non-halting
+// side-band signal (merger.NarrowingViolation); it does not enforce a
+// narrow-only rule. Whether a child may narrow but not relax a parent
+// constraint is opt-in policy enforced by the publishing-discipline plugin
+// at publish time, not a compiler check. Cycles are detected by the
+// validator and surface as errors rather than infinite loops.
 //
 // Precondition. Must be called after Load / LoadAll and before any
 // downstream consumer reads from the catalog (CatalogLookup, RecipeLookup,
