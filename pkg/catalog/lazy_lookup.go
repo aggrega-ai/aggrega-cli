@@ -887,6 +887,38 @@ func (l *LazyLookup) SubAggregateLoader() topology.SubAggregateLoader {
 	return l.recipeCatalog().SubAggregateLoader()
 }
 
+// AggregateLookup exposes the catalog's Release-triad aggregate resolver over the
+// lazily-enumerated (Tier-1 + pinned Tier-2) Aggregate set, so a build's top-level
+// aggregate resolves from the closure directly — no cache→catalog bridge. A
+// registry-published top-level resolves through the pinned Tier-2 enumeration the
+// same way a local one resolves through Tier-1.
+func (l *LazyLookup) AggregateLookup() resolver.AggregateLookup {
+	return l.recipeCatalog().AggregateLookup()
+}
+
+// AssertManifestImplementsConsistency runs the catalog's manifest-implements
+// consistency gate (each mapped type resolves to a recipe whose spec.implements
+// matches) over the lazily-enumerated recipe set — the build's earliest loud
+// guardrail, now reading the closure rather than the bridged eager catalog.
+func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
+	return l.recipeCatalog().AssertManifestImplementsConsistency(manifest, manifestPath)
+}
+
+// ProviderInfraSchemaResolver exposes the per-component provider infra-schema
+// resolver over the lazily-enumerated recipe + provider set. Providers are
+// Tier-1-local (the closure never pins a Provider), so this resolves a provider's
+// baseSchema from the Tier-1 walk exactly as the eager catalog did.
+func (l *LazyLookup) ProviderInfraSchemaResolver(manifest *types.Manifest) func(string, string) (string, bool) {
+	return l.recipeCatalog().ProviderInfraSchemaResolver(manifest)
+}
+
+// VerifyRecipeResolution exposes the build-side resolution-completeness halt (the
+// joined form of ResolutionFindings) over the lazily-enumerated recipe set, so the
+// build's pre-render gate reads the closure's complete recipe enumeration.
+func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
+	return l.recipeCatalog().VerifyRecipeResolution(manifest, graph)
+}
+
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every
 // catalog file the lazy enumeration could not index (a recipe/FR/aggregate/
 // provider/mapping-library that failed to parse, a duplicate identity, or a
