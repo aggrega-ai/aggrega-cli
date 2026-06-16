@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,46 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// IsTarGzBundle reports whether b begins with the gzip magic — i.e. it is a
+// Recipe / FeatureRecipe tar.gz bundle (Bundle's tar.gz arm) rather than a
+// plain-YAML entity (Component / Feature / Provider / Aggregate).
+func IsTarGzBundle(b []byte) bool {
+	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
+}
+
+// EntityYAMLFromBundle extracts the entity YAML — the root `recipe.yaml` anchor —
+// from a Recipe / FeatureRecipe tar.gz bundle produced by Bundle. The bundle
+// carries the recipe's per-version directory (the entity file plus any sibling
+// source files); the entity file is the root `recipe.yaml`. It is the inverse of
+// Bundle's tar.gz arm, used to fold a registry-pulled recipe into the catalog
+// (the catalog holds the parsed recipe; the lockfile-drift pin stays over the
+// whole bundle blob). Returns an error when the bundle has no root recipe.yaml.
+func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(blob))
+	if err != nil {
+		return nil, fmt.Errorf("oci: unbundle gzip: %w", err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, nerr := tr.Next()
+		if nerr == io.EOF {
+			break
+		}
+		if nerr != nil {
+			return nil, fmt.Errorf("oci: unbundle tar: %w", nerr)
+		}
+		if hdr.Name == "recipe.yaml" {
+			data, rerr := io.ReadAll(tr)
+			if rerr != nil {
+				return nil, fmt.Errorf("oci: unbundle read recipe.yaml: %w", rerr)
+			}
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("oci: bundle has no recipe.yaml entity anchor")
+}
 
 // Bundle reads the entity at entityPath and returns the bundled
 // bytes plus the canonical OCI mediatype for that kind.

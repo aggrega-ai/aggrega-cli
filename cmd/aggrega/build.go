@@ -161,20 +161,22 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
 
-	// Bridge lockfile-pinned, cache-backed aggregates into the catalog so the
-	// triad resolver and the topology builder resolve a registry-pulled
-	// aggregate at build, from the cache, hermetically (no build-time network).
-	// The discriminator is build-machine-local catalog presence: read every
-	// lockfile entity's verified cache bytes; an absent slot (ErrFetchNotFound)
-	// is a catalog-resident entity (read from the local catalog, not the cache)
-	// and is skipped; a digest mismatch halts. MergeExtraAggregates dispatches
-	// by kind — folding only Aggregates, local-wins on a name collision — so the
-	// dropped per-entry resolution tier is never consulted.
+	// Bridge lockfile-pinned, cache-backed entities into the catalog so the
+	// triad resolver, the topology builder, and the resolver guard layer resolve
+	// registry-pulled entities at build, from the cache, hermetically (no
+	// build-time network). The discriminator is build-machine-local catalog
+	// presence: read every lockfile entity's verified cache bytes; an absent slot
+	// (ErrFetchNotFound) is a catalog-resident entity (read from the local
+	// catalog, not the cache) and is skipped; a digest mismatch halts.
+	// bridgeCachedEntities folds Aggregates (for the triad/topology) and the core
+	// kinds Component / Feature / Recipe / FeatureRecipe (so the guards that read
+	// cat.Component / cat.Feature are not blind in a registry build), local-wins on
+	// an identity collision.
 	buildPins := make([]aggregateBridgePin, 0, len(lf.Entities))
 	for _, ent := range lf.Entities {
 		buildPins = append(buildPins, aggregateBridgePin{URI: ent.URI, Version: ent.ResolvedVersion, Digest: ent.Digest})
 	}
-	if err := bridgeCachedAggregates(cat, wsRoot, cacheDir, buildPins); err != nil {
+	if err := bridgeCachedEntities(cat, wsRoot, cacheDir, buildPins); err != nil {
 		return err
 	}
 
@@ -358,15 +360,18 @@ type aggregateBridgePin struct {
 	Digest  string
 }
 
-// bridgeCachedAggregates folds lockfile-pinned, cache-present Aggregates into the
-// catalog so the triad resolver and the topology SubAggregateLoader resolve a
-// registry-pulled aggregate from the cache. Shared by build (over the committed
-// lockfile) and pull (over the freshly-computed closure, so pull's own
-// source-descent topology flatten can resolve a registry-only sub it just
-// pinned). An absent cache slot is a catalog-resident entity, skipped; a digest
-// mismatch halts; MergeExtraAggregates folds only the Aggregate kind, local-wins
-// on a name collision.
-func bridgeCachedAggregates(cat *catalog.Catalog, wsRoot, cacheDir string, pins []aggregateBridgePin) error {
+// bridgeCachedEntities folds lockfile-pinned, cache-present entities into the
+// catalog so the triad resolver, the topology SubAggregateLoader, and the
+// resolver guard layer resolve registry-pulled entities from the cache. It reads
+// every pinned entity's verified bytes once, then folds Aggregates
+// (MergeExtraAggregates — for the triad/topology) AND the core kinds Component /
+// Feature / Recipe / FeatureRecipe (MergeExtraEntities — so the guards that read
+// cat.Component / cat.Feature are not blind in a registry build). Shared by build
+// (over the committed lockfile) and pull (over the freshly-computed closure, so
+// pull's own source-descent topology flatten can resolve a registry-only entity
+// it just pinned). An absent cache slot is a catalog-resident entity, skipped; a
+// digest mismatch halts; each fold is local-wins on an identity collision.
+func bridgeCachedEntities(cat *catalog.Catalog, wsRoot, cacheDir string, pins []aggregateBridgePin) error {
 	extra := map[string][]byte{}
 	for _, p := range pins {
 		data, err := catalog.ReadPinnedEntity(wsRoot, cacheDir, p.URI, p.Version, p.Digest)
@@ -378,11 +383,15 @@ func bridgeCachedAggregates(cat *catalog.Catalog, wsRoot, cacheDir string, pins 
 		}
 		extra[p.URI] = data
 	}
-	warns, err := cat.MergeExtraAggregates(extra)
+	aggWarns, err := cat.MergeExtraAggregates(extra)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
-	for _, w := range warns {
+	entWarns, err := cat.MergeExtraEntities(extra)
+	if err != nil {
+		return fmt.Errorf("catalog load: %w", err)
+	}
+	for _, w := range append(aggWarns, entWarns...) {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
 	return nil

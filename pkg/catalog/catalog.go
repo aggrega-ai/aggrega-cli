@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -332,10 +333,116 @@ func (c *Catalog) MergeExtraAggregates(extra map[string][]byte) ([]string, error
 	return warnings, nil
 }
 
+// MergeExtraEntities folds lockfile-pinned, cache-bridged CORE catalog entities
+// (Component / Feature / Recipe / FeatureRecipe) into an already-loaded catalog,
+// so the resolver guard layer — which reads `cat.Component` / `cat.Feature`
+// through `CatalogLookup` — sees registry-resolved entities in a registry build
+// (where the in-memory catalog holds no local copies). It is the core-kind
+// counterpart of MergeExtraAggregates / MergeExtraLibraries and shares their
+// discipline: local-wins on an identity collision (with a returned warning), the
+// bridged `entityBytes` carry the EXACT verified bytes (not a re-serialised parse)
+// so the lockfile-drift verify stays faithful, and warnings sort by name for
+// deterministic output.
+//
+// The input is the verified bytes of every cache-present lockfile entity, keyed
+// by URI — the same map MergeExtraAggregates consumes; entries are dispatched by
+// kind and only the four core arms fold here (Aggregates fold in
+// MergeExtraAggregates, libraries in MergeExtraLibraries; a Recipe's tar.gz
+// source slot is gzip, not YAML, so `peekEntityKind` is "" and it is skipped).
+// Recipes and FeatureRecipes are keyed provider-scoped via recipeIdentityKey,
+// matching indexFile and the push/pull OCI-location identity rule, so two
+// provider-distinct recipes of the same name do not collide.
+func (c *Catalog) MergeExtraEntities(extra map[string][]byte) ([]string, error) {
+	var warnings []string
+	for _, uri := range sortedKeys(extra) {
+		blob := extra[uri]
+		// Component / Feature / Provider / Aggregate publish as plain YAML; Recipe
+		// and FeatureRecipe publish as a tar.gz bundle of the recipe directory
+		// whose entity anchor is the root recipe.yaml. Parse from the entity YAML,
+		// but keep the original blob as entityBytes so the lockfile-drift verify —
+		// which recomputes the digest from entityBytes — matches the pin (over the
+		// whole bundle), not the extracted file.
+		data := blob
+		if oci.IsTarGzBundle(blob) {
+			y, uerr := oci.EntityYAMLFromBundle(blob)
+			if uerr != nil {
+				return nil, cerrors.Wrap(uerr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("unbundle pinned entity %q", uri))
+			}
+			data = y
+		}
+		switch peekEntityKind(data) {
+		case "Component":
+			e, perr := parseComponentEntity(data, "lockfile-pinned:"+uri)
+			if perr != nil {
+				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Component %q", uri))
+			}
+			name := e.Metadata.Name
+			if key, present, _ := c.resolveComponentKey(name); present {
+				// Warn only for a genuinely local entity (one with a source file);
+				// a present-but-sourceless entry is one this same bridge folded for
+				// another reference URI (an entity referenced both bare and
+				// version-pinned), not a local-catalog shadow — skip it silently.
+				if _, fromLocal := c.componentSources[key]; fromLocal {
+					warnings = append(warnings, fmt.Sprintf(
+						"Component %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", name))
+				}
+				continue
+			}
+			c.Components[entityIndexKey(name, e.Metadata.Version)] = e
+			c.entityBytes[entityBytesKey("Component", name)] = blob
+		case "Feature":
+			e, perr := parseFeatureEntity(data, "lockfile-pinned:"+uri)
+			if perr != nil {
+				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Feature %q", uri))
+			}
+			name := e.Metadata.Name
+			if key, present, _ := c.resolveFeatureKey(name); present {
+				// As Component above: warn only for a genuinely local entity, not
+				// for one this bridge already folded under another reference URI.
+				if _, fromLocal := c.featureSources[key]; fromLocal {
+					warnings = append(warnings, fmt.Sprintf(
+						"Feature %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", name))
+				}
+				continue
+			}
+			c.Features[entityIndexKey(name, e.Metadata.Version)] = e
+			c.entityBytes[entityBytesKey("Feature", name)] = blob
+		case "Recipe":
+			e, perr := parseRecipeEntity(data, "lockfile-pinned:"+uri)
+			if perr != nil {
+				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged Recipe %q", uri))
+			}
+			rKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+			if _, local := c.Recipes[rKey]; local {
+				warnings = append(warnings, fmt.Sprintf(
+					"Recipe %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", rKey))
+				continue
+			}
+			c.Recipes[rKey] = e
+			c.entityBytes[entityBytesKey("Recipe", rKey)] = blob
+		case "FeatureRecipe":
+			e, perr := parseFeatureRecipeEntity(data, "lockfile-pinned:"+uri)
+			if perr != nil {
+				return nil, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("parse bridged FeatureRecipe %q", uri))
+			}
+			frKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+			if _, local := c.FeatureRecipes[frKey]; local {
+				warnings = append(warnings, fmt.Sprintf(
+					"FeatureRecipe %q is present both in the local catalog and as a lockfile-pinned entity; the local definition is used", frKey))
+				continue
+			}
+			c.FeatureRecipes[frKey] = e
+			c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = blob
+		}
+	}
+	return warnings, nil
+}
+
 // peekEntityKind returns the `kind` of an entity from its raw bytes, or "" when
 // the bytes are not a parseable YAML entity envelope (e.g. a Recipe's tar.gz
-// cache slot, whose bytes are gzip, not YAML). Used by MergeExtraAggregates to
-// dispatch cache-present entities by kind without committing to a full parse.
+// cache slot, whose bytes are gzip, not YAML). Used by MergeExtraAggregates and
+// MergeExtraEntities to dispatch cache-present entities by kind without
+// committing to a full parse.
 func peekEntityKind(data []byte) string {
 	var hdr struct {
 		Kind string `yaml:"kind"`

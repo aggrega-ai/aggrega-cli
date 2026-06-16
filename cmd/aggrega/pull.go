@@ -341,7 +341,7 @@ func pullRun(cfg pullConfig) error {
 	for _, e := range cl.Entities {
 		pullPins = append(pullPins, aggregateBridgePin{URI: e.URI, Version: e.ResolvedVersion, Digest: e.Digest})
 	}
-	if err := bridgeCachedAggregates(cat, workspaceRoot, cacheDir, pullPins); err != nil {
+	if err := bridgeCachedEntities(cat, workspaceRoot, cacheDir, pullPins); err != nil {
 		return err
 	}
 
