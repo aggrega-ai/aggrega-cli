@@ -258,8 +258,14 @@ func lintRelease(releasePath string) error {
 		return fmt.Errorf("release closure validation failed: %w", err)
 	}
 
-	// Schema-pillar overlap advisories — informational, never change the exit code.
+	// Schema-pillar overlap + narrowing-on-extend advisories — informational, never
+	// change the exit code (the compiler does not police narrow-vs-relax). The
+	// narrowings were computed by ResolveClosureExtends above (same composition as
+	// the effective schema), not recomputed here.
 	for _, w := range lazyView.ClosureLintWarnings(cl) {
+		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+	}
+	for _, w := range lazyView.ClosureNarrowingWarnings() {
 		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
 	}
 	fmt.Printf("release closure validation passed: %s (schema-pillar + closure pillars)\n", releasePath)

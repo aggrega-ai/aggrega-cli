@@ -144,6 +144,7 @@ func (l *LazyLookup) Reset() {
 	l.schemaLibraries = map[string]types.SchemaLibrary{}
 	l.schemaLibrariesBuilt = false
 	l.effectiveSchemas = nil
+	l.closureNarrowings = nil
 	l.pins = nil
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
@@ -238,6 +239,14 @@ type LazyLookup struct {
 	// with no extends-ing entity.
 	effectiveSchemas map[string]compactform.Schema
 
+	// closureNarrowings holds the narrowing-on-extend advisory notices (a child
+	// widening an inherited constraint) accumulated while composing the closure's
+	// extends chains — a non-halting side-band signal the lint closure mode
+	// surfaces informationally. Order follows the sorted-name closure walk that
+	// produces it. Never consulted by the build (build-time narrowing stays
+	// deferred); cleared with effectiveSchemas on Reset/SetPins.
+	closureNarrowings []string
+
 	// Negative cache short-circuits repeated lookups of known-missing
 	// URIs within the session.
 	componentMisses map[string]struct{}
@@ -329,6 +338,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.recipeCat = nil
 	l.schemaLibraries = map[string]types.SchemaLibrary{}
 	l.effectiveSchemas = nil
+	l.closureNarrowings = nil
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
@@ -1183,6 +1193,16 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 	return out
 }
 
+// ClosureNarrowingWarnings returns the narrowing-on-extend advisory notices
+// accumulated while composing the closure's extends chains (a child widening an
+// inherited constraint). Populated by ResolveClosureExtends from the same
+// composition that produces the effective schema — never recomputed. Returns nil
+// for a closure with no extends-narrowing. Signal-only: callers surface these
+// informationally; the compiler never halts on narrowing.
+func (l *LazyLookup) ClosureNarrowingWarnings() []string {
+	return l.closureNarrowings
+}
+
 // ResolveClosureExtends resolves the extends chain for each Component/Feature the
 // closure reaches and returns the collected resolution errors (a dangling parent,
 // a cycle, a malformed chain) — the daemon's early-warning extends gate, the lazy
@@ -1225,13 +1245,22 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 		}, true
 	}
 	storeEffective := func(name string, composition *validator.ExtendsComposition) {
-		if composition == nil || composition.EffectiveSchema == nil {
+		if composition == nil {
 			return
 		}
-		if l.effectiveSchemas == nil {
-			l.effectiveSchemas = map[string]compactform.Schema{}
+		if composition.EffectiveSchema != nil {
+			if l.effectiveSchemas == nil {
+				l.effectiveSchemas = map[string]compactform.Schema{}
+			}
+			l.effectiveSchemas[name] = composition.EffectiveSchema
 		}
-		l.effectiveSchemas[name] = composition.EffectiveSchema
+		// Accumulate the narrowing notices the composition already computed (a child
+		// widening an inherited constraint) — surfaced as advisories by the lint
+		// closure mode, never enforcement. Appended over the sorted-name closure
+		// walk, so the accumulated order is deterministic. Narrowings exist only
+		// when a schema merged (EffectiveSchema is then set), so this never strands
+		// a notice the nil-EffectiveSchema skip above would drop.
+		l.closureNarrowings = append(l.closureNarrowings, composition.Narrowings...)
 	}
 
 	byName := map[string]string{}
