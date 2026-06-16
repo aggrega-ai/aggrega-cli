@@ -149,7 +149,7 @@ func TestLazyLookupComponentTier2HitFromCacheDir(t *testing.T) {
 	}
 	puller := newMockPuller()
 	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
-	ll.SetPins(map[string]string{cachedComponentURI: pinFor([]byte(cachedComponentYAML))})
+	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: pinFor([]byte(cachedComponentYAML))}})
 	comp, ok := ll.AsCatalogLookup().Component(cachedComponentURI)
 	if !ok {
 		t.Fatalf("Component(%q) not found at Tier-2 under a matching pin", cachedComponentURI)
@@ -177,7 +177,7 @@ func TestLazyLookupComponentTier2DriftSkips(t *testing.T) {
 	puller := newMockPuller()
 	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
 	// Pin does NOT match the cached content -> drift.
-	ll.SetPins(map[string]string{cachedComponentURI: "sha256:0000000000000000000000000000000000000000000000000000000000000000"})
+	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"}})
 	if _, ok := ll.AsCatalogLookup().Component(cachedComponentURI); ok {
 		t.Errorf("drifted Tier-2 slot must NOT resolve (false-green); got a hit")
 	}

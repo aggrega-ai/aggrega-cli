@@ -97,9 +97,9 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// removal) degrades to a no-pin Tier-3 re-fetch on a drifted cache, masking the
 	// drift a verify-on-read skip would surface — guarded by an end-to-end test
 	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
-	var pins map[string]string
+	var pins map[string]catalog.Pin
 	if lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath)); err == nil && lf != nil {
-		pins = lf.PinsByURI()
+		pins = catalog.PinsFromLockfile(lf)
 	}
 	s.lazyCatalog.SetPins(pins)
 

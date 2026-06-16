@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -228,13 +229,16 @@ type LazyLookup struct {
 	featureIndex        map[string]string
 	featureIndexBuilt   bool
 
-	// pins maps a versioned entity URI to its lockfile content-digest pin, set
-	// per request via SetPins from the request's loaded lockfile. A Tier-2 cache
-	// hit is verified against the pin before use (verify-on-read). nil pins means
-	// no lockfile is threaded for this request — the cache is not trusted, so
-	// Tier-2 falls through to a Tier-3 re-establish rather than returning
-	// unverified bytes.
-	pins map[string]string
+	// pins maps an entity URI (as the lockfile records it — bare or versioned) to
+	// its resolved version + content-digest pin, set per request via SetPins from
+	// the request's loaded lockfile. The version is load-bearing: the Tier-2 cache
+	// slot is keyed by the VERSIONED URI, so a bare-URI pin (e.g. a sub-aggregate
+	// referenced by bare `type`, pinned with a separate ResolvedVersion) must form
+	// its slot key via versionedSlotURI before the verify-on-read. A Tier-2 hit is
+	// verified against the pin's digest before use. nil pins means no lockfile is
+	// threaded — the cache is not trusted, so Tier-2 falls through to a Tier-3
+	// re-establish rather than returning unverified bytes.
+	pins map[string]Pin
 
 	// Recipe / FeatureRecipe / Aggregate sets enumerated TOLERANTLY from the
 	// catalog directories on first need (buildRecipeIndex). Recipes are keyed by
@@ -286,8 +290,44 @@ type LazyLookup struct {
 // not built from drifted content; the per-request drift DIAGNOSTIC is the
 // closure-level lockfile-verify already run on the same request, so the skip
 // deliberately does NOT emit a second notice (no double-report).
-func (l *LazyLookup) SetPins(pins map[string]string) {
+func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.pins = pins
+}
+
+// Pin is a lockfile entry's resolved version + content digest, keyed in the lazy
+// lookup by the entity URI as the lockfile records it. The version is retained
+// (not just the digest) because the Tier-2 cache slot is keyed by the VERSIONED
+// URI: a bare-URI pin must combine its URI with ResolvedVersion (via
+// versionedSlotURI) to address the slot, exactly as the cache→catalog bridge does.
+type Pin struct {
+	ResolvedVersion string
+	Digest          string
+}
+
+// PinsFromLockfile builds the version-aware pin set SetPins consumes from a loaded
+// lockfile, across every kind the closure walker resolves through the Tier-2 cache
+// (entities, schema libraries, mapping libraries, wasm plugins) — the same axes
+// Lockfile.PinsByURI covers, but retaining ResolvedVersion so a bare-URI pin can
+// address its versioned cache slot. Source artifacts are excluded (they descend on
+// their own read-time digest gate, not the closure walker's Tier-2 reuse).
+func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
+	if lf == nil {
+		return nil
+	}
+	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WasmPlugins))
+	for _, e := range lf.Entities {
+		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
+	}
+	for _, sl := range lf.SchemaLibraries {
+		pins[sl.URI] = Pin{ResolvedVersion: sl.ResolvedVersion, Digest: sl.Digest}
+	}
+	for _, ml := range lf.MappingLibraries {
+		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
+	}
+	for _, wp := range lf.WasmPlugins {
+		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
+	}
+	return pins
 }
 
 // tier2Outcome is the verify-on-read decision for a Tier-2 cache slot.
@@ -316,7 +356,9 @@ func (l *LazyLookup) tier2Verified(uri string) ([]byte, tier2Outcome) {
 	if !havePin {
 		return nil, tier2Fetch
 	}
-	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, uri, pin)
+	// The cache slot is keyed by the versioned URI; combine the lookup URI with
+	// the pin's resolved version so a bare-URI pin addresses the right slot.
+	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest)
 	switch {
 	case err == nil:
 		return bytes, tier2Use
@@ -780,7 +822,11 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 	}
 	sort.Strings(uris)
 	for _, uri := range uris {
-		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, uri, l.pins[uri])
+		pin := l.pins[uri]
+		// A bare-URI pin (a sub-aggregate / library referenced by bare name, pinned
+		// with a separate ResolvedVersion) addresses its versioned cache slot via
+		// versionedSlotURI — the same key the cache→catalog bridge reads.
+		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest)
 		if err != nil {
 			continue
 		}

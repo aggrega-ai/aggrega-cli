@@ -17,6 +17,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
@@ -464,11 +465,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//     halts on). The reorder is guarded by an end-to-end test that drives this
 	//     handler against a drifted cache slot and asserts Tier-3 is never reached
 	//     (TestServeIrGraphVerifiesCacheAgainstPinBeforePreview).
-	var pins map[string]string
-	if lf != nil {
-		pins = lf.PinsByURI()
-	}
-	s.lazyCatalog.SetPins(pins)
+	s.lazyCatalog.SetPins(catalog.PinsFromLockfile(lf))
 
 	// 4. Recipe + sub-aggregate + mapping-library resolution all come from the
 	//    lazy backing now (no eager whole-catalog load): the tolerantly-enumerated

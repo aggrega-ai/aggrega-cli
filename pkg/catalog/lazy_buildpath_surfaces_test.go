@@ -25,13 +25,15 @@ func TestLazyLookup_BuildPathSurfaces_FromPinnedEnumeration(t *testing.T) {
 	recipeBlob := recipeBundle(t, bridgeRecipeYAML) // compose/mariadb, implements core/datastore/mariadb
 
 	const (
-		aggURI    = "example/app:1.0.0"
+		aggSlot   = "example/app:1.0.0"
 		recipeURI = "compose/mariadb:1.0.0"
 	)
-	pins := map[string]string{
-		aggURI:    writePinnedSlot(t, ws, cacheDir, aggURI, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML)),
+	pins := map[string]Pin{
 		recipeURI: writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob),
 	}
+	// The aggregate is pinned BARE (referenced by bare name via AggregateLookup),
+	// with a separate ResolvedVersion and a versioned slot — the real lockfile form.
+	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
 
 	// The Provider is Tier-1-local (the closure never pins a Provider): write it to
 	// a catalog dir, not the cache. ProviderInfraSchema must resolve it from Tier-1.

@@ -57,15 +57,19 @@ func (p *pinCacheCountingPuller) Pull(context.Context, string, string) (*oci.Pul
 }
 
 // writePinnedSlot writes one entity's bytes to the kind-appropriate Tier-2 cache
-// slot (library.yaml for libraries, blob for everything else) and returns its pin
-// digest, mirroring exactly what `aggrega pull` lays down.
-func writePinnedSlot(t *testing.T, ws, cacheDir, uri, mediaType string, blob []byte) string {
+// slot (library.yaml for libraries, blob for everything else), keyed by the
+// VERSIONED slotURI exactly as `aggrega pull` lays it down, and returns the
+// version-aware Pin. The caller decides the lockfile pin KEY (bare for an entity
+// referenced by bare name — a sub-aggregate / library — versioned otherwise); the
+// slot itself is always versioned, so a bare-URI pin must combine its URI with the
+// returned ResolvedVersion to address it.
+func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob []byte) Pin {
 	t.Helper()
-	_, version, _ := splitVersionedURI(uri)
-	if err := writeEntityToCacheSlot(ws, cacheDir, uri, version, &oci.PullResult{MediaType: mediaType, Bytes: blob}); err != nil {
-		t.Fatalf("write cache slot %s: %v", uri, err)
+	_, version, _ := splitVersionedURI(slotURI)
+	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob}); err != nil {
+		t.Fatalf("write cache slot %s: %v", slotURI, err)
 	}
-	return contentDigest(blob)
+	return Pin{ResolvedVersion: version, Digest: contentDigest(blob)}
 }
 
 // TestLazyLookup_PinnedCacheEnumeration_BridgeParity proves that a
@@ -80,37 +84,43 @@ func TestLazyLookup_PinnedCacheEnumeration_BridgeParity(t *testing.T) {
 	recipeBlob := recipeBundle(t, bridgeRecipeYAML)
 	frBlob := recipeBundle(t, bridgeFeatureRecipeYAML)
 
-	// Versioned URIs: the Tier-2 slot read requires a version on the URI.
+	// Cache slots are always keyed by the VERSIONED URI. The lockfile pin KEY,
+	// however, mirrors the reference form: a component / recipe referenced
+	// versioned pins versioned; an aggregate / library referenced by bare name
+	// pins BARE with a separate ResolvedVersion (the real lockfile form — the
+	// case that strands a version-less pin against a versioned slot).
 	const (
-		compURI    = "core/datastore/mariadb:1.0.0"
-		featURI    = "core/secret-value:1.0.0"
-		recipeURI  = "compose/mariadb:1.0.0"
-		frURI      = "compose/dotenv-secret:1.0.0"
-		aggURI     = "example/app:1.0.0"
-		schemaURI  = "DbSizing:1.0.0"
-		mappingURI = "BaseMappings:1.0.0"
-		provURI    = "compose:1.0.0" // pinned in cache but NOT folded by the bridge
+		compSlot    = "core/datastore/mariadb:1.0.0"
+		featSlot    = "core/secret-value:1.0.0"
+		recipeSlot  = "compose/mariadb:1.0.0"
+		frSlot      = "compose/dotenv-secret:1.0.0"
+		aggSlot     = "example/app:1.0.0"
+		schemaSlot  = "DbSizing:1.0.0"
+		mappingSlot = "BaseMappings:1.0.0"
+		provSlot    = "compose:1.0.0" // pinned in cache but NOT folded by the bridge
 	)
 
-	pins := map[string]string{}
-	pins[compURI] = writePinnedSlot(t, ws, cacheDir, compURI, oci.MediaTypeComponent, []byte(bridgeComponentYAML))
-	pins[featURI] = writePinnedSlot(t, ws, cacheDir, featURI, oci.MediaTypeFeature, []byte(bridgeFeatureYAML))
-	pins[recipeURI] = writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob)
-	pins[frURI] = writePinnedSlot(t, ws, cacheDir, frURI, oci.MediaTypeFeatureRecipe, frBlob)
-	pins[aggURI] = writePinnedSlot(t, ws, cacheDir, aggURI, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
-	pins[schemaURI] = writePinnedSlot(t, ws, cacheDir, schemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML))
-	pins[mappingURI] = writePinnedSlot(t, ws, cacheDir, mappingURI, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
-	pins[provURI] = writePinnedSlot(t, ws, cacheDir, provURI, oci.MediaTypeProvider, []byte(pinnedProviderYAML))
+	pins := map[string]Pin{}
+	pins[compSlot] = writePinnedSlot(t, ws, cacheDir, compSlot, oci.MediaTypeComponent, []byte(bridgeComponentYAML))
+	pins[featSlot] = writePinnedSlot(t, ws, cacheDir, featSlot, oci.MediaTypeFeature, []byte(bridgeFeatureYAML))
+	pins[recipeSlot] = writePinnedSlot(t, ws, cacheDir, recipeSlot, oci.MediaTypeRecipe, recipeBlob)
+	pins[frSlot] = writePinnedSlot(t, ws, cacheDir, frSlot, oci.MediaTypeFeatureRecipe, frBlob)
+	// BARE-URI pins (slot stays versioned) — the real lockfile form for a
+	// bare-`type` aggregate reference and a bare-name library $ref.
+	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
+	pins["DbSizing"] = writePinnedSlot(t, ws, cacheDir, schemaSlot, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML))
+	pins[mappingSlot] = writePinnedSlot(t, ws, cacheDir, mappingSlot, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
+	pins[provSlot] = writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML))
 
 	// --- Bridge reference view (today's build path) ---
 	bridge := makeEmptyCatalog()
 	entityExtra := map[string][]byte{
-		compURI:   []byte(bridgeComponentYAML),
-		featURI:   []byte(bridgeFeatureYAML),
-		recipeURI: recipeBlob,
-		frURI:     frBlob,
-		aggURI:    []byte(pinnedAggregateYAML),
-		provURI:   []byte(pinnedProviderYAML),
+		compSlot:   []byte(bridgeComponentYAML),
+		featSlot:   []byte(bridgeFeatureYAML),
+		recipeSlot: recipeBlob,
+		frSlot:     frBlob,
+		aggSlot:    []byte(pinnedAggregateYAML),
+		provSlot:   []byte(pinnedProviderYAML),
 	}
 	if _, err := bridge.MergeExtraEntities(entityExtra); err != nil {
 		t.Fatalf("bridge MergeExtraEntities: %v", err)
@@ -134,11 +144,11 @@ func TestLazyLookup_PinnedCacheEnumeration_BridgeParity(t *testing.T) {
 	subject.SetPins(pins)
 	subject.buildRecipeIndex()     // Tier-1 (empty) + pin-driven Tier-2 for the recipe-shell kinds
 	subject.buildSchemaLibraries() // Tier-1 (empty) + pin-driven Tier-2 for schema libraries
-	if _, ok := subject.Component(compURI); !ok {
-		t.Fatalf("subject did not resolve pinned Component %s from the cache", compURI)
+	if _, ok := subject.Component(compSlot); !ok {
+		t.Fatalf("subject did not resolve pinned Component %s from the cache", compSlot)
 	}
-	if _, ok := subject.Feature(featURI); !ok {
-		t.Fatalf("subject did not resolve pinned Feature %s from the cache", featURI)
+	if _, ok := subject.Feature(featSlot); !ok {
+		t.Fatalf("subject did not resolve pinned Feature %s from the cache", featSlot)
 	}
 
 	// --- Set-level parity + byte-identity over entityBytes (the omission guard) ---
@@ -218,7 +228,7 @@ func TestLazyLookup_PinnedCacheEnumeration_PullerNeverCalled(t *testing.T) {
 		recipeURI = "compose/mariadb:1.0.0"
 		schemaURI = "DbSizing:1.0.0"
 	)
-	pins := map[string]string{
+	pins := map[string]Pin{
 		compURI:   writePinnedSlot(t, ws, cacheDir, compURI, oci.MediaTypeComponent, []byte(bridgeComponentYAML)),
 		recipeURI: writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob),
 		schemaURI: writePinnedSlot(t, ws, cacheDir, schemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
@@ -248,7 +258,7 @@ func TestLazyLookup_NilPuller_CacheMissCleanMiss(t *testing.T) {
 	const absentURI = "core/never-cached:1.0.0"
 
 	subject := NewLazyLookup(ws, cacheDir, nil, nil)
-	subject.SetPins(map[string]string{absentURI: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000"})
+	subject.SetPins(map[string]Pin{absentURI: {ResolvedVersion: "1.0.0", Digest: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000"}})
 
 	if _, ok := subject.Component(absentURI); ok {
 		t.Fatalf("a pinned-but-uncached Component must be a clean miss; got a hit")
