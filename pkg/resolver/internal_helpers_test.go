@@ -511,11 +511,11 @@ func TestCheckArrayConstraints_EveryBranch(t *testing.T) {
 func TestValidateSubkeyValueAgainstFeatureSchema_EveryBranch(t *testing.T) {
 	t.Parallel()
 	// (a) Nil feature.
-	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(), nil, "infra", "port", 8080); err != nil {
+	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(nil), nil, "infra", "port", 8080); err != nil {
 		t.Errorf("nil feature: expected nil; got %v", err)
 	}
 	// (b) Type mismatch — string supplied for an integer-typed schema.
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 	// Build a Feature with a real schema (compile must succeed).
 	var schemaNode yaml.Node
 	if err := yaml.Unmarshal([]byte(`infra:

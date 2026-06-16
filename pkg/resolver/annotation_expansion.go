@@ -60,8 +60,14 @@ const (
 // without instrumenting compactform.Compile.
 type featureSchemaCache struct {
 	entries map[string]featureSchemaCacheEntry
-	hits    int
-	misses  int
+	// effectiveSchema, when non-nil, returns the composed (parent+child) schema for
+	// an extends-ing Feature. schemaFor prefers it over compiling the child-only
+	// authored schema, so the annotation path validates an extends-ing Feature
+	// against the same composed schema the main conformance consumers use. Nil →
+	// structural-only (no lookup / a Feature with no extends composition).
+	effectiveSchema func(typeURI string) (compactform.Schema, bool)
+	hits            int
+	misses          int
 }
 
 // featureSchemaCacheEntry is the per-Feature cached compile output.
@@ -74,8 +80,8 @@ type featureSchemaCacheEntry struct {
 
 // newFeatureSchemaCache returns an empty cache ready for use across
 // one ExpandAnnotations invocation.
-func newFeatureSchemaCache() *featureSchemaCache {
-	return &featureSchemaCache{entries: map[string]featureSchemaCacheEntry{}}
+func newFeatureSchemaCache(effectiveSchema func(typeURI string) (compactform.Schema, bool)) *featureSchemaCache {
+	return &featureSchemaCache{entries: map[string]featureSchemaCacheEntry{}, effectiveSchema: effectiveSchema}
 }
 
 // schemaFor returns the compiled JSON Schema 2020-12 form of the
@@ -107,6 +113,16 @@ func (c *featureSchemaCache) schemaFor(feature *types.Feature) (compactform.Sche
 		return entry.compiled, entry.ok
 	}
 	c.misses++
+	// Prefer the composed effective schema (extends parent+child) so an extends-ing
+	// Feature is validated against the same schema the main consumers use; fall back
+	// to the child-only authored schema when there is no composition.
+	if c.effectiveSchema != nil {
+		if eff, ok := c.effectiveSchema(key); ok {
+			entry := featureSchemaCacheEntry{compiled: eff, ok: true}
+			c.entries[key] = entry
+			return entry.compiled, entry.ok
+		}
+	}
 	compiled, err := compactform.Compile(&feature.Spec.Schema)
 	entry := featureSchemaCacheEntry{compiled: compiled, ok: err == nil}
 	c.entries[key] = entry
@@ -187,7 +203,7 @@ func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 	if rr.AnnotationProvenance == nil {
 		rr.AnnotationProvenance = map[string]AnnotationProvenance{}
 	}
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(catalogLookup.EffectiveSchema)
 
 	if rr.Release != nil {
 		for bName, boundary := range rr.Release.Spec.Boundaries.All() {

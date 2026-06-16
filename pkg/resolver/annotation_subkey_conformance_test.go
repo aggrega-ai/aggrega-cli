@@ -38,7 +38,7 @@ func TestSubkeyConformance_FullValidationNotTypeOnly(t *testing.T) {
   name: { type: string, pattern: "^[a-z]+$" }
 `
 	feature := subkeyFeature(t, schema)
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 
 	cases := []struct {
 		subkey  string
@@ -82,7 +82,7 @@ values:
   tier: { $ref: "#/$defs/Tier" }
 `
 	feature := subkeyFeature(t, schema)
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 
 	if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, "values", "tier", "gold"); err != nil {
 		t.Errorf("conforming $ref value should pass; got %v", err)
@@ -95,7 +95,7 @@ values:
 // TestSubkeyConformance_NilFeatureSkips pins the defensive nil-feature guard.
 func TestSubkeyConformance_NilFeatureSkips(t *testing.T) {
 	t.Parallel()
-	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(), nil, "values", "x", 1); err != nil {
+	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(nil), nil, "values", "x", 1); err != nil {
 		t.Errorf("nil feature must skip; got %v", err)
 	}
 }

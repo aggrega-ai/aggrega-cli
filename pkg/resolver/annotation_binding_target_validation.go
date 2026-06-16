@@ -75,20 +75,34 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 		// BaseFeatureParameter) compiles here exactly as it does on every other
 		// feature-schema compile path. Without them the $ref cannot resolve and
 		// validation halts spuriously. No-op for $ref-less schemas.
-		var opts []compactform.CompileOption
-		if len(catalogLookup.SchemaLibraries) > 0 {
-			opts = append(opts, compactform.WithSchemaLibraries(catalogLookup.SchemaLibraries))
+		//
+		// Prefer the composed effective schema for an extends-ing Feature, so a
+		// binding mapping to a pillar key inherited from a parent is recognised
+		// (not rejected as undeclared on the child-only schema); fall back to
+		// compiling the authored schema when there is no composition.
+		var compiled compactform.Schema
+		if catalogLookup.EffectiveSchema != nil {
+			if eff, ok := catalogLookup.EffectiveSchema(binding.Feature); ok {
+				compiled = eff
+			}
 		}
-		compiled, err := compactform.Compile(&feature.Spec.Schema, opts...)
-		if err != nil {
-			// A Feature schema that fails to compile is a catalog-load
-			// error caught upstream; if it reaches here, return a wrapping
-			// CATALOG_ERROR so the operator can locate the offending
-			// Feature.
-			return fmt.Errorf(
-				"CATALOG_ERROR: annotation binding %q targets Feature %q whose spec.schema does not compile: %w",
-				annotationKey, binding.Feature, err,
-			)
+		if compiled == nil {
+			var opts []compactform.CompileOption
+			if len(catalogLookup.SchemaLibraries) > 0 {
+				opts = append(opts, compactform.WithSchemaLibraries(catalogLookup.SchemaLibraries))
+			}
+			c, err := compactform.Compile(&feature.Spec.Schema, opts...)
+			if err != nil {
+				// A Feature schema that fails to compile is a catalog-load
+				// error caught upstream; if it reaches here, return a wrapping
+				// CATALOG_ERROR so the operator can locate the offending
+				// Feature.
+				return fmt.Errorf(
+					"CATALOG_ERROR: annotation binding %q targets Feature %q whose spec.schema does not compile: %w",
+					annotationKey, binding.Feature, err,
+				)
+			}
+			compiled = c
 		}
 
 		for _, path := range binding.Maps.Infra {

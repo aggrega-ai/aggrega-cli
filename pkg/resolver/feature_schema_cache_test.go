@@ -34,7 +34,7 @@ func brokenSchemaFeature(t *testing.T, name string) types.Feature {
 
 func TestFeatureSchemaCache_FirstCallCompilesOnceAndCachesMiss(t *testing.T) {
 	t.Parallel()
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 	feature := featureWithSchema(t, "core/db-pool", `
 values:
   db_name:
@@ -54,7 +54,7 @@ values:
 
 func TestFeatureSchemaCache_SecondCallOnSameFeatureHits(t *testing.T) {
 	t.Parallel()
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 	feature := featureWithSchema(t, "core/db-pool", `
 values:
   db_name:
@@ -76,7 +76,7 @@ values:
 
 func TestFeatureSchemaCache_DistinctVersionedURIsCompileSeparately(t *testing.T) {
 	t.Parallel()
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 	featureA := featureWithSchema(t, "core/db-pool", `
 values:
   db_name:
@@ -114,7 +114,7 @@ values:
 
 func TestFeatureSchemaCache_CompileErrorCachesNegativeResult(t *testing.T) {
 	t.Parallel()
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 	feature := brokenSchemaFeature(t, "core/broken")
 
 	_, ok := cache.schemaFor(&feature)
@@ -153,7 +153,7 @@ values:
 
 func TestFeatureSchemaCache_NilFeatureReturnsNegativeNoCounterChange(t *testing.T) {
 	t.Parallel()
-	cache := newFeatureSchemaCache()
+	cache := newFeatureSchemaCache(nil)
 	if _, ok := cache.schemaFor(nil); ok {
 		t.Errorf("schemaFor(nil): expected ok=false; got ok=true")
 	}
