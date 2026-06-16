@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -101,6 +102,17 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		Component:       l.Component,
 		Feature:         l.Feature,
 		SchemaLibraries: l.schemaLibraries,
+		// EffectiveSchema serves the composed (parent+child) schema for an
+		// extends-ing Component OR Feature, keyed by metadata.name — populated by
+		// ResolveClosureExtends. Returns (_, false) for a non-extends or
+		// not-yet-resolved type, so consumers fall back to the authored schema.
+		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
+			if l.effectiveSchemas == nil {
+				return compactform.Schema{}, false
+			}
+			s, ok := l.effectiveSchemas[lookupNameFromURI(typeURI)]
+			return s, ok
+		},
 	}
 }
 
@@ -131,6 +143,7 @@ func (l *LazyLookup) Reset() {
 	l.featureIndexBuilt = false
 	l.schemaLibraries = map[string]types.SchemaLibrary{}
 	l.schemaLibrariesBuilt = false
+	l.effectiveSchemas = nil
 	l.pins = nil
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
@@ -214,6 +227,16 @@ type LazyLookup struct {
 	// workspace re-walks.
 	schemaLibraries      map[string]types.SchemaLibrary
 	schemaLibrariesBuilt bool
+
+	// effectiveSchemas holds the composed (parent+child) schema for each
+	// extends-ing closure Component/Feature, keyed by metadata.name — the
+	// build-path counterpart to the eager catalog's effectiveSchemas. Populated
+	// by ResolveClosureExtends via the same ResolveInheritance merge the eager
+	// whole-catalog path uses; served through AsCatalogLookup so value
+	// conformance and schema-defaults validate extends entities against the
+	// composed schema, not the child-only structural one. Empty for a closure
+	// with no extends-ing entity.
+	effectiveSchemas map[string]compactform.Schema
 
 	// Negative cache short-circuits repeated lookups of known-missing
 	// URIs within the session.
@@ -305,6 +328,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.recipeIndexBuilt = false
 	l.recipeCat = nil
 	l.schemaLibraries = map[string]types.SchemaLibrary{}
+	l.effectiveSchemas = nil
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
@@ -1166,8 +1190,49 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 // entity's extends is never resolved, so a broken out-of-closure parent never
 // produces a diagnostic. Deterministic: closure entity names are deduped + sorted.
 func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
+	// The closure's library set is the cross-document $ref context the schema
+	// merge composes against — the same set the eager whole-catalog path feeds
+	// CompileSchemaForMerge.
+	_ = l.buildSchemaLibraries()
+
 	compLookup := func(uri string) (types.Component, bool) { return l.resolveComponent(uri) }
 	featLookup := func(uri string) (types.Feature, bool) { return l.resolveFeature(uri) }
+
+	// CatalogEntry chain lookups that compile each chain entry's authored schema
+	// into the JSON-Schema-merge input — identical to the eager ResolveAllExtends,
+	// so both surfaces compose through the same ResolveInheritance merge phase (no
+	// second merge implementation).
+	compEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
+		comp, ok := compLookup(uri)
+		if !ok {
+			return validator.CatalogEntry{}, false
+		}
+		return validator.CatalogEntry{
+			URI:        comp.Metadata.Name,
+			Extends:    comp.Spec.Extends,
+			JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, l.schemaLibraries),
+		}, true
+	}
+	featEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
+		feat, ok := featLookup(uri)
+		if !ok {
+			return validator.CatalogEntry{}, false
+		}
+		return validator.CatalogEntry{
+			URI:        feat.Metadata.Name,
+			Extends:    feat.Spec.Extends,
+			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
+		}, true
+	}
+	storeEffective := func(name string, composition *validator.ExtendsComposition) {
+		if composition == nil || composition.EffectiveSchema == nil {
+			return
+		}
+		if l.effectiveSchemas == nil {
+			l.effectiveSchemas = map[string]compactform.Schema{}
+		}
+		l.effectiveSchemas[name] = composition.EffectiveSchema
+	}
 
 	byName := map[string]string{}
 	for _, e := range cl.Entities {
@@ -1189,11 +1254,30 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 			if comp.Spec.Extends == "" {
 				continue
 			}
+			// Structural merge (metadata, secrets, uses, inject) — leaves
+			// Spec.Schema as-authored on the child.
 			if _, vErrs := validator.ResolveComponentExtends(comp, compLookup); len(vErrs) > 0 {
 				for _, ve := range vErrs {
 					errs = append(errs, ve)
 				}
+				continue
 			}
+			// Schema composition (values+infra+provides pillars the structural
+			// merge drops) — the composed EffectiveSchema value conformance and
+			// schema-defaults validate against.
+			rootEntry := validator.CatalogEntry{
+				URI:        comp.Metadata.Name,
+				Extends:    comp.Spec.Extends,
+				JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, l.schemaLibraries),
+			}
+			inh := validator.ResolveInheritance(rootEntry, compEntryLookup)
+			if len(inh.Errors) > 0 {
+				for _, ie := range inh.Errors {
+					errs = append(errs, ie)
+				}
+				continue
+			}
+			storeEffective(comp.Metadata.Name, validator.CompositionFromResult(comp.Metadata.Name, inh))
 			continue
 		}
 		if feat, ok := l.resolveFeature(uri); ok {
@@ -1204,7 +1288,21 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 				for _, ve := range vErrs {
 					errs = append(errs, ve)
 				}
+				continue
 			}
+			rootEntry := validator.CatalogEntry{
+				URI:        feat.Metadata.Name,
+				Extends:    feat.Spec.Extends,
+				JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
+			}
+			inh := validator.ResolveInheritance(rootEntry, featEntryLookup)
+			if len(inh.Errors) > 0 {
+				for _, ie := range inh.Errors {
+					errs = append(errs, ie)
+				}
+				continue
+			}
+			storeEffective(feat.Metadata.Name, validator.CompositionFromResult(feat.Metadata.Name, inh))
 		}
 	}
 	return errs

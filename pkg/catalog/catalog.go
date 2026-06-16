@@ -1384,12 +1384,20 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		},
 		SchemaLibraries: c.SchemaLibraries,
 		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
-			key, ok, _ := c.resolveComponentKey(typeURI)
-			if !ok {
-				return compactform.Schema{}, false
+			// Resolve as a Component then a Feature — both kinds compose extends
+			// schemas (stored by ResolveAllExtends), so an extends-ing Feature's
+			// composed schema is served, not just a Component's.
+			if key, ok, _ := c.resolveComponentKey(typeURI); ok {
+				if s, ok := c.effectiveSchemas[key]; ok {
+					return s, true
+				}
 			}
-			s, ok := c.effectiveSchemas[key]
-			return s, ok
+			if key, ok, _ := c.resolveFeatureKey(typeURI); ok {
+				if s, ok := c.effectiveSchemas[key]; ok {
+					return s, true
+				}
+			}
+			return compactform.Schema{}, false
 		},
 	}
 }
