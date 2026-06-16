@@ -422,7 +422,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 		// request (an honest degraded preview, not a false-green render).
 		return types.Component{}, false
 	}
-	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
+	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
 	if err == nil && bytes != nil {
 		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
@@ -449,7 +449,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 		// drifted bytes and do not self-heal.
 		return types.Feature{}, false
 	}
-	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri)
+	bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
 	if err == nil && bytes != nil {
 		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
@@ -931,14 +931,22 @@ type lazyClosureLookup struct {
 	base   closure.Lookup
 }
 
-func (x *lazyClosureLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
-	if res, ok := x.l.resolveComponentForClosure(uri, x.puller); ok {
-		return res, nil
+func (x *lazyClosureLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
+	// Route by the collection-site kind when known, so a Feature is not first
+	// attempted at a Component location (a wasted registry miss); fall back to the
+	// cascade when the hint is absent or names a kind this lazy path does not
+	// resolve directly (recipe/provider → base).
+	if kindHint != "feature" {
+		if res, ok := x.l.resolveComponentForClosure(uri, x.puller); ok {
+			return res, nil
+		}
 	}
-	if res, ok := x.l.resolveFeatureForClosure(uri, x.puller); ok {
-		return res, nil
+	if kindHint != "component" {
+		if res, ok := x.l.resolveFeatureForClosure(uri, x.puller); ok {
+			return res, nil
+		}
 	}
-	return x.base.ResolveCatalogEntity(uri)
+	return x.base.ResolveCatalogEntity(uri, kindHint)
 }
 
 func (x *lazyClosureLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
@@ -976,7 +984,7 @@ func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (c
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
 	}
-	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri); err == nil && bytes != nil {
+	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
 		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-3-pull"), true
@@ -999,7 +1007,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (clo
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
 	}
-	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri); err == nil && bytes != nil {
+	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
 		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-3-pull"), true

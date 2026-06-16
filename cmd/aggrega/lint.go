@@ -171,7 +171,7 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 func verifyNoOCILocationCollision(cat *catalog.Catalog) error {
 	byLoc := map[string]map[string]struct{}{}
 	add := func(kind, provider, name string) {
-		loc := ociLocation(kind, provider, name)
+		loc := catalog.OCILocation(kind, provider, name)
 		ident := name
 		if provider != "" {
 			ident = provider + "/" + name

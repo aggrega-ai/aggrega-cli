@@ -250,7 +250,12 @@ type LibraryConsumer struct {
 // compile-time guarantees that every implementer provides all
 // five resolution surfaces.
 type Lookup interface {
-	ResolveCatalogEntity(uri string) (Resolution, error)
+	// ResolveCatalogEntity resolves a core catalog entity (Component / Feature /
+	// Recipe / FeatureRecipe / Provider). kindHint is the KindHint recorded at
+	// the collection site (empty when none was known); a registry-backed Tier-3
+	// pull uses it to bind the bare identity to its OCI location, since a bare
+	// identity carries no kind segment.
+	ResolveCatalogEntity(uri, kindHint string) (Resolution, error)
 	// ResolveAggregate resolves a sub-aggregate reference (a KindHint=="aggregate"
 	// entity). It is distinct from ResolveCatalogEntity because a bare-name
 	// Aggregate resolves at a dedicated registry tier (the AggregatePuller),

@@ -164,6 +164,19 @@ type AggregatePuller interface {
 	PullAggregate(ctx context.Context, name, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
 }
 
+// EntityPuller is the optional puller capability for fetching a core catalog
+// entity (Component / Feature / Recipe / FeatureRecipe / Provider) by its bare
+// identity — the entity counterpart of LibraryPuller / AggregatePuller. It binds
+// the identity to its registry location (`<registry>/<OCILocation(kind, …)>`),
+// so a provider-scoped recipe identity is not misparsed with its provider as the
+// registry host. A puller that does not implement it (the hermetic-build nil
+// puller, or a Pull-only test puller) leaves the bare-identity entity tier on the
+// legacy already-located reference path. kind is the catalog kind
+// ("Component"/"Feature"/"Recipe"/"FeatureRecipe"/"Provider"); version is the tag.
+type EntityPuller interface {
+	PullEntity(ctx context.Context, identity, kind, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
+}
+
 // ClosureLookup returns a closure.Lookup that resolves catalog
 // entities, libraries, and Wasm plugins by walking three tiers in
 // order:
@@ -332,7 +345,7 @@ func versionedSlotURI(uri, version string) string {
 	return uri + ":" + version
 }
 
-func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
+func (l *catalogLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
 	if res, ok := l.lookupExternal(uri); ok {
 		return res, nil
 	}
@@ -345,8 +358,29 @@ func (l *catalogLookup) ResolveCatalogEntity(uri string) (closure.Resolution, er
 	if _, res, ok := l.tier2(uri); ok {
 		return res, nil
 	}
-	_, res, err := l.tier3CatalogEntity(uri)
+	_, res, err := l.tier3CatalogEntity(uri, ociKindForHint(kindHint))
 	return res, err
+}
+
+// ociKindForHint maps a closure KindHint to the catalog kind the OCI location
+// rule expects. An unmapped or empty hint yields "", which leaves the entity
+// Tier-3 pull on the legacy already-located reference path (no name→location
+// binding).
+func ociKindForHint(hint string) string {
+	switch hint {
+	case "component":
+		return "Component"
+	case "feature":
+		return "Feature"
+	case "recipe":
+		return "Recipe"
+	case "feature_recipe":
+		return "FeatureRecipe"
+	case "provider":
+		return "Provider"
+	default:
+		return ""
+	}
 }
 
 // lookupRegistry returns a pre-resolved registry entity the caller seeded — a
@@ -419,7 +453,7 @@ func (l *catalogLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error
 	if _, res, ok := l.tier2(uri); ok {
 		return res, nil
 	}
-	_, res, err := l.tier3CatalogEntity(uri)
+	_, res, err := l.tier3CatalogEntity(uri, "")
 	return res, err
 }
 
@@ -531,8 +565,8 @@ func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
 	return nil, closure.Resolution{}, false
 }
 
-func (l *catalogLookup) tier3CatalogEntity(uri string) ([]byte, closure.Resolution, error) {
-	bytes, res, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+func (l *catalogLookup) tier3CatalogEntity(uri, kind string) ([]byte, closure.Resolution, error) {
+	bytes, res, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.ociPuller, uri, kind)
 	if err == nil && !res.NotFound {
 		l.recordRefetchNotice(uri, res.Digest)
 	}
@@ -645,10 +679,56 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest string) ([]b
 // nil (hermetic-build path) or when the URI cannot be split into a
 // valid OCI reference + tag. Returns a wrapped error on pull or
 // cache-write failure.
-func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, uri string) ([]byte, closure.Resolution, error) {
+func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, uri, kind string) ([]byte, closure.Resolution, error) {
 	if puller == nil {
 		return nil, closure.Resolution{NotFound: true}, nil
 	}
+	// A bare catalog identity carries no registry or kind segment. When the kind
+	// is known and the puller can bind it, fetch through EntityPuller — the
+	// pull-side mirror of push (`<registry>/<OCILocation(kind, …)>`) — resolving a
+	// version-less reference (e.g. an Aggregate component `type` with no version)
+	// by list-tags→highest, mirroring libraries/aggregates. This is the only path
+	// that can fetch a bare identity; without the kind or the capability the entity
+	// tier falls to the legacy already-located, versioned reference path.
+	if ep, ok := puller.(EntityPuller); ok && kind != "" {
+		name, floor, hasFloor := splitVersionedURI(uri)
+		result, resolvedVersion, err := ep.PullEntity(context.Background(), name, kind, floor)
+		if err != nil {
+			if errors.Is(err, oci.ErrFetchNotFound) {
+				return nil, closure.Resolution{NotFound: true}, nil
+			}
+			// For the EntityPuller path the bound host is the configured registry,
+			// not the bare identity's leading segment — ask the puller for it so the
+			// docker-login remediation points correctly.
+			host := registryHostOf(name)
+			if rh, ok := puller.(interface{ RegistryHost() string }); ok {
+				host = rh.RegistryHost()
+			}
+			if rem := oci.RemediationFor(err, host); rem != "" {
+				return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w\n  %s", uri, err, rem)
+			}
+			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
+		}
+		// A bare-name reference pins the fetched body's metadata.version (identity);
+		// a floored reference keeps the floor. The cache slot is keyed by the
+		// closure URI (what the build re-reads) plus the pinned version.
+		pinnedVersion := resolvedVersion
+		if !hasFloor {
+			if mv := entityMetadataVersion(result.Bytes); mv != "" {
+				pinnedVersion = mv
+			}
+		}
+		if err := writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, pinnedVersion, result); err != nil {
+			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 cache write %s: %w", uri, err)
+		}
+		return result.Bytes, closure.Resolution{
+			ResolvedVersion: pinnedVersion,
+			Digest:          contentDigest(result.Bytes),
+			ResolutionPath:  "tier-3-pull",
+		}, nil
+	}
+
+	// Legacy already-located, versioned reference path (no kind / no capability).
 	reference, tag, ok := SplitURIForOCI(uri)
 	if !ok {
 		return nil, closure.Resolution{NotFound: true}, nil

@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -193,40 +193,5 @@ func pushRun(cfg pushConfig) error {
 // TestPushReferenceRoundTripsThroughSplitURIForOCI pins the
 // symmetry across all publishable catalog kinds.
 func buildPushReference(registry, kind, provider, metadataName string) string {
-	return registry + "/" + ociLocation(kind, provider, metadataName)
-}
-
-// ociLocation is the single rule mapping an entity identity to its OCI
-// repository LOCATION: `<kindSegment>/<lower(identityPath)>`. A location is a
-// coordinate derived from identity, not an identity itself: OCI repository names
-// must be lowercase, while a catalog identity may carry case (PascalCase
-// SchemaLibrary / MappingLibrary) and a provider scope (Recipe / FeatureRecipe
-// identity is provider/name, per recipeIdentityKey). So the location lowercases
-// the whole path and, for recipes, encodes the provider —
-// two providers may ship a recipe of the same name, and dropping the provider
-// silently overwrites one with the other. The identity itself stays cased and
-// provider-scoped everywhere it is an identity (metadata.name, lockfile, cache
-// key, closure). A faithful catalog keeps identities collision-free under this
-// mapping; the whole-catalog lint enforces it (ErrOCILocationCollision).
-func ociLocation(kind, provider, name string) string {
-	seg := kindPathSegment(kind)
-	switch kind {
-	case "Recipe", "FeatureRecipe":
-		return seg + "/" + strings.ToLower(provider) + "/" + strings.ToLower(name)
-	default:
-		return seg + "/" + strings.ToLower(name)
-	}
-}
-
-// kindPathSegment maps an entity kind to its OCI repository path
-// segment. Default behavior is `strings.ToLower(kind)`; the Wasm-
-// plugin kind aliases to the canonical `wasm` path prefix per the
-// plugin URI convention (`<registry>/wasm/<socket>/<name>`).
-func kindPathSegment(kind string) string {
-	switch kind {
-	case "WasmPlugin", "Wasm":
-		return "wasm"
-	default:
-		return strings.ToLower(kind)
-	}
+	return registry + "/" + catalog.OCILocation(kind, provider, metadataName)
 }

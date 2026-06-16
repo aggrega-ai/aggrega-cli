@@ -108,8 +108,10 @@ func TestDescend_PathFormNoHintUnchanged(t *testing.T) {
 
 // TestComputeClosure_ManifestMappingValuesCarryKindHint proves the provenance
 // wiring end-to-end: the Manifest walker records the recipe / feature_recipe
-// kind on mapping VALUES (by their position), while mapping KEYS (component /
-// feature types) carry no hint.
+// kind on mapping VALUES (by their position) and the component / feature kind on
+// mapping KEYS, so a registry-backed pull can bind every entity to its OCI
+// location. Recipe / feature_recipe hints are authoritative over component /
+// feature when a bare URI is shared across kinds.
 func TestComputeClosure_ManifestMappingValuesCarryKindHint(t *testing.T) {
 	t.Parallel()
 	man := loadManifest(t, `apiVersion: aggrega.ai/v1alpha1
@@ -150,8 +152,8 @@ spec:
 	cases := map[string]string{
 		"mariadb-bitnami:1.0.0":         "recipe",         // components-mapping value
 		"literal-credential-helm:1.0.0": "feature_recipe", // features-mapping value
-		"core/datastore/mariadb:1.0.0":   "",               // mapping key — a Component, no hint
-		"app/literal-credential:1.0.0":  "",               // mapping key — a Feature, no hint
+		"core/datastore/mariadb:1.0.0":   "component",      // mapping key — a Component
+		"app/literal-credential:1.0.0":  "feature",        // mapping key — a Feature
 	}
 	for uri, want := range cases {
 		if _, present := kindByURI[uri]; !present {

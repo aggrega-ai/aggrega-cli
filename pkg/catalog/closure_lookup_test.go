@@ -67,7 +67,7 @@ spec:
 	}
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
 
-	res, err := lookup.ResolveCatalogEntity("api-server:1.0.0")
+	res, err := lookup.ResolveCatalogEntity("api-server:1.0.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}
@@ -128,7 +128,7 @@ spec:
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
 
 	// metadata.name form — what Manifest mappings produce. MUST resolve.
-	res, err := lookup.ResolveCatalogEntity("server-recipe:2.5.0")
+	res, err := lookup.ResolveCatalogEntity("server-recipe:2.5.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity(metadata.name URI): %v", err)
 	}
@@ -147,7 +147,7 @@ spec:
 	// against the Recipe; it asks for the Component (which is absent
 	// in this fixture). Returns NotFound so the walker can surface
 	// the missing-Component diagnostic correctly.
-	res, err = lookup.ResolveCatalogEntity("core/server:2.5.0")
+	res, err = lookup.ResolveCatalogEntity("core/server:2.5.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity(spec.implements URI): %v", err)
 	}
@@ -175,7 +175,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
 
-	res, err := lookup.ResolveCatalogEntity("hub.aggrega.ai/component/core/api-server:2.0.0")
+	res, err := lookup.ResolveCatalogEntity("hub.aggrega.ai/component/core/api-server:2.0.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestClosureLookupNilPullerReturnsNotFound(t *testing.T) {
 	}
 
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
-	res, err := lookup.ResolveCatalogEntity("missing/component:9.9.9")
+	res, err := lookup.ResolveCatalogEntity("missing/component:9.9.9", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}

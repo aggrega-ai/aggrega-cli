@@ -142,7 +142,7 @@ func (s *walkState) walkAggregate(agg *types.Aggregate, path string) {
 	for name, ci := range agg.Spec.Components.All() {
 		instancePath := fmt.Sprintf("%s.spec.components.%s.type", path, name)
 		if ci.Type != "" {
-			s.addEntity(ci.Type, instancePath)
+			s.addEntityKind(ci.Type, instancePath, "component")
 		}
 		s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.spec.components.%s", path, name))
 	}
@@ -167,14 +167,14 @@ func (s *walkState) walkSubsystem(sys types.Subsystem, path string) {
 	for name, ci := range sys.Components.All() {
 		instancePath := fmt.Sprintf("%s.components.%s.type", path, name)
 		if ci.Type != "" {
-			s.addEntity(ci.Type, instancePath)
+			s.addEntityKind(ci.Type, instancePath, "component")
 		}
 		s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", path, name))
 	}
 	for name, fi := range sys.Features.All() {
 		instancePath := fmt.Sprintf("%s.features.%s.type", path, name)
 		if fi.Type != "" {
-			s.addEntity(fi.Type, instancePath)
+			s.addEntityKind(fi.Type, instancePath, "feature")
 		}
 	}
 	for name, sub := range sys.Subsystems.All() {
@@ -187,12 +187,14 @@ func (s *walkState) walkSubsystem(sys types.Subsystem, path string) {
 func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, path string) {
 	for name, fi := range ci.Features.All() {
 		if fi.Type != "" {
-			s.addEntity(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name))
+			s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name), "feature")
 		}
 	}
 	for name, si := range ci.Secrets.All() {
 		if si.Type != "" {
-			s.addEntity(si.Type, fmt.Sprintf("%s.secrets.%s.type", path, name))
+			// A secret-type reference resolves to a Feature entity (secrets are
+			// Features labeled secret); its registry location is feature/<name>.
+			s.addEntityKind(si.Type, fmt.Sprintf("%s.secrets.%s.type", path, name), "feature")
 		}
 	}
 }
@@ -211,7 +213,7 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 	if m.Spec.Mappings.Components != nil {
 		for componentType, recipeURI := range m.Spec.Mappings.Components.Type.All() {
 			// The mapping key is the developer-declared Component URI.
-			s.addEntity(componentType, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType))
+			s.addEntityKind(componentType, fmt.Sprintf("manifest.spec.mappings.components.type.%s", componentType), "component")
 			// The mapping value is the Ops-side Recipe URI. Its position (a
 			// components-mapping value) is authoritative for source-descent:
 			// record the recipe kind so a short-form reference is recognised
@@ -224,7 +226,7 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 	if m.Spec.Mappings.Features != nil {
 		for featureType, frURI := range m.Spec.Mappings.Features.Type.All() {
 			// The mapping key is the developer-declared Feature URI.
-			s.addEntity(featureType, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType))
+			s.addEntityKind(featureType, fmt.Sprintf("manifest.spec.mappings.features.type.%s", featureType), "feature")
 			// The mapping value is the Ops-side FeatureRecipe URI. Its position
 			// (a features-mapping value) is authoritative: record the
 			// feature_recipe kind so source-descent recognises it regardless of
@@ -253,12 +255,13 @@ func (s *walkState) walkBoundary(b types.Boundary, path string) {
 		compPath := fmt.Sprintf("%s.components.%s", path, compName)
 		for fname, bf := range bc.Features.All() {
 			if bf.Type != "" {
-				s.addEntity(bf.Type, fmt.Sprintf("%s.features.%s.type", compPath, fname))
+				s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", compPath, fname), "feature")
 			}
 		}
 		for sname, bs := range bc.Secrets.All() {
 			if bs.Type != "" {
-				s.addEntity(bs.Type, fmt.Sprintf("%s.secrets.%s.type", compPath, sname))
+				// A secret-type reference resolves to a Feature entity.
+				s.addEntityKind(bs.Type, fmt.Sprintf("%s.secrets.%s.type", compPath, sname), "feature")
 			}
 		}
 	}
@@ -470,11 +473,15 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 		// A sub-aggregate reference resolves through the dedicated aggregate
 		// registry tier (bare-name capable), not the generic catalog-entity
 		// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
-		resolve := lookup.ResolveCatalogEntity
+		// Every other entity passes its KindHint to the catalog-entity resolver so
+		// a registry-backed pull can bind the bare identity to its OCI location.
+		var res Resolution
+		var err error
 		if pending.kindHint == aggregateKindHint {
-			resolve = lookup.ResolveAggregate
+			res, err = lookup.ResolveAggregate(uri)
+		} else {
+			res, err = lookup.ResolveCatalogEntity(uri, pending.kindHint)
 		}
-		res, err := resolve(uri)
 		if err != nil {
 			return fmt.Errorf("closure: resolve entity %q: %w", uri, err)
 		}
@@ -766,9 +773,27 @@ func (s *walkState) addEntity(uri, refPath string) {
 // overwritten by a later position-less reference to the same URI.
 func (s *walkState) addEntityKind(uri, refPath, kind string) {
 	s.addEntity(uri, refPath)
-	if kind != "" && s.entities[uri].kindHint == "" {
+	if kind == "" {
+		return
+	}
+	// Recipe / FeatureRecipe / Aggregate hints are authoritative — source-descent
+	// and sub-aggregate descent rely on them. A Component / Feature hint is
+	// weaker: it fills an empty hint but never clobbers an authoritative one, and
+	// an authoritative hint upgrades a previously-recorded weak one. This matters
+	// when one bare URI is shared across kinds (a Component and a Recipe of the
+	// same name): the authoritative kind must win regardless of walk order.
+	cur := s.entities[uri].kindHint
+	if cur == "" || (isWeakKindHint(cur) && !isWeakKindHint(kind)) {
 		s.entities[uri].kindHint = kind
 	}
+}
+
+// isWeakKindHint reports whether a KindHint is a weak (overridable) entity kind.
+// Weak hints (component, feature) supply the registry-location kind for a
+// bare-identity pull but yield to an authoritative recipe/feature_recipe/aggregate
+// hint on a URI shared across kinds.
+func isWeakKindHint(kind string) bool {
+	return kind == "component" || kind == "feature"
 }
 
 func (s *walkState) addWasmPlugin(uri, refPath string) {

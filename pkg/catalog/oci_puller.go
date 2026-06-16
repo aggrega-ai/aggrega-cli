@@ -90,7 +90,7 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 // so the tag is discarded and the pin is identity-stable even when a publisher
 // tags `latest`/`stable` over the versioned identity.
 func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion string) (*oci.PullResult, string, error) {
-	reference := p.registry + "/" + libraryPathSegment("Aggregate") + "/" + strings.ToLower(name)
+	reference := p.registry + "/" + OCILocation("Aggregate", "", name)
 	repo, err := oci.NewRemoteRepository(reference)
 	if err != nil {
 		return nil, "", err
@@ -113,23 +113,73 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 	return result, tag, nil
 }
 
-// libraryReference binds a host-less library identity to a physical OCI
-// reference, `<registry>/<kind-segment>/<lowercased-name>` — the pull-side mirror
-// of push's buildPushReference, so a library is fetched from exactly where push
-// published it. The name is lowercased because the OCI repository is a LOCATION,
-// not an IDENTITY (OCI repo names must be lowercase; a library identity is
-// PascalCase). The identity stays cased in the lockfile and cache key; only the
-// fetch location lowercases. Identity round-trip: pull-location == push-location.
-func libraryReference(registry, kind, name string) string {
-	return registry + "/" + libraryPathSegment(kind) + "/" + strings.ToLower(name)
+// PullEntity pulls a core catalog entity (Component / Feature / Recipe /
+// FeatureRecipe / Provider) by its bare identity, binding it to a physical
+// location through the configured default registry — the pull-side mirror of
+// push's name→location. The bare identity carries no registry or kind segment,
+// so a provider-scoped recipe identity (provider/name) would otherwise be
+// misparsed with its provider taken as the registry host; entityReference binds
+// it to `<registry>/<OCILocation(kind, …)>` instead. When floorVersion is empty
+// (a bare type reference, e.g. an Aggregate component `type` with no version) it
+// lists the registry's tags and selects the highest semver, mirroring
+// PullLibrary; a non-empty floor is used directly as the tag. The selected
+// version is returned so the lockfile pins it.
+func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorVersion string) (*oci.PullResult, string, error) {
+	reference := entityReference(p.registry, kind, identity)
+	repo, err := oci.NewRemoteRepository(reference)
+	if err != nil {
+		return nil, "", err
+	}
+	version := floorVersion
+	if version == "" {
+		tags, terr := oci.ListTags(ctx, repo)
+		if terr != nil {
+			return nil, "", terr
+		}
+		version = highestSemverTag(tags)
+		if version == "" {
+			return nil, "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
+		}
+	}
+	result, perr := oci.Pull(ctx, repo, version)
+	if perr != nil {
+		return nil, "", perr
+	}
+	return result, version, nil
 }
 
-// libraryPathSegment mirrors the push-side kindPathSegment for library kinds, so
-// pull binds a bare-name library to the same registry path push publishes it to
-// (the identity round-trip). Library kinds lowercase directly
-// ("SchemaLibrary" → "schemalibrary", "MappingLibrary" → "mappinglibrary").
-func libraryPathSegment(kind string) string {
-	return strings.ToLower(kind)
+// RegistryHost reports the configured default registry, so a Tier-3 consumer can
+// point an authorization-failure remediation at the real host rather than at a
+// bare identity's leading path segment.
+func (p DefaultOCIPuller) RegistryHost() string {
+	return p.registry
+}
+
+// entityReference binds a bare catalog identity to its physical OCI reference,
+// `<registry>/<OCILocation(kind, provider, name)>` — the pull-side mirror of
+// push's buildPushReference, reusing the same OCILocation rule so push-location
+// == pull-location holds by construction. Recipe / FeatureRecipe identity is
+// provider/name; it is split on the first "/" to feed the provider-scoped
+// location branch. Other kinds pass the whole identity as the name.
+func entityReference(registry, kind, identity string) string {
+	provider, name := "", identity
+	switch kind {
+	case "Recipe", "FeatureRecipe":
+		if i := strings.IndexByte(identity, '/'); i >= 0 {
+			provider, name = identity[:i], identity[i+1:]
+		}
+	}
+	return registry + "/" + OCILocation(kind, provider, name)
+}
+
+// libraryReference binds a host-less library identity to a physical OCI
+// reference, `<registry>/<OCILocation(kind, "", name)>` — the pull-side mirror of
+// push's buildPushReference, so a library is fetched from exactly where push
+// published it. Libraries are not provider-scoped: the location is the
+// lowercased kind segment plus the lowercased name. The identity stays cased in
+// the lockfile and cache key; only the fetch location lowercases.
+func libraryReference(registry, kind, name string) string {
+	return registry + "/" + OCILocation(kind, "", name)
 }
 
 // highestSemverTag selects the highest dotted-numeric (MAJOR.MINOR.PATCH) tag

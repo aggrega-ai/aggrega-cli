@@ -27,7 +27,7 @@ type fakeLookup struct {
 	mappingLibs map[string]closure.LibraryResolution
 }
 
-func (f *fakeLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error) {
+func (f *fakeLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
 	if res, ok := f.entities[uri]; ok {
 		return res, nil
 	}
@@ -35,7 +35,7 @@ func (f *fakeLookup) ResolveCatalogEntity(uri string) (closure.Resolution, error
 }
 
 func (f *fakeLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
-	return f.ResolveCatalogEntity(uri)
+	return f.ResolveCatalogEntity(uri, "aggregate")
 }
 
 func (f *fakeLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
