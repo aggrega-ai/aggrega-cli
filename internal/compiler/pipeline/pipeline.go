@@ -43,6 +43,22 @@ type Inputs struct {
 	Manifest          *types.Manifest
 	AggregateRawBytes []byte
 	AggregatePath     string
+	// ReleasePath is a source-location label only (no I/O), forwarded into the
+	// resolver so the annotation-expansion pass can build Release-authored
+	// annotation source locations. Optional: callers that leave it empty get an
+	// empty release path in those source-location strings, unchanged from before.
+	ReleasePath string
+	// RootAggregateFile is the source-location label stamped onto the flattened
+	// root-tier topology node (and carried to IRNode.SourceFile) — a label only,
+	// no I/O. It is distinct from AggregatePath: AggregatePath drives the
+	// resolver's annotation source-location strings, while this drives the node
+	// source stamp, and a caller may need different representations for the two
+	// (inspect uses a sibling-resolved AggregatePath for byte-identical annotation
+	// brackets but a workspace-relative RootAggregateFile for a machine-stable
+	// node stamp). Optional: when empty, ResolveAndFlatten defaults it to
+	// AggregatePath, so callers that supply a single workspace-relative path are
+	// unchanged.
+	RootAggregateFile string
 	WorkspaceConfig   workspaceconfig.Config
 
 	// Lockfile and WorkspaceRoot, together with WorkspaceConfig's resolved
@@ -251,6 +267,7 @@ func ResolveAndValidate(
 		Manifest:          inputs.Manifest,
 		AggregateRawBytes: inputs.AggregateRawBytes,
 		AggregatePath:     inputs.AggregatePath,
+		ReleasePath:       inputs.ReleasePath,
 	}, func(resolveResult *resolver.ResolveResult) error {
 		if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
 			return fmt.Errorf("Step 1 (annotation binding validation): %w", err)
@@ -318,11 +335,18 @@ func ResolveAndFlatten(
 			return err
 		}
 
+		// The root-tier node source stamp defaults to AggregatePath but may be
+		// supplied separately (RootAggregateFile) when a caller's annotation-source
+		// label and node-source label need different path representations.
+		rootAggregateFile := inputs.RootAggregateFile
+		if rootAggregateFile == "" {
+			rootAggregateFile = inputs.AggregatePath
+		}
 		topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
 			ResolveResult:     resolveResult,
 			CatalogLookup:     catalogLookup,
 			LoadSubAggregate:  subAggregateLoader,
-			RootAggregateFile: inputs.AggregatePath,
+			RootAggregateFile: rootAggregateFile,
 		})
 		if err != nil {
 			if inputs.TolerateCatalogViewInconsistency {

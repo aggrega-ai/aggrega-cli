@@ -6,10 +6,9 @@ package resolver
 import (
 	"errors"
 	"fmt"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
-	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,22 +23,23 @@ type ResolveConfig struct {
 }
 
 // ResolveInputs configures the Step 1 resolver pipeline against caller-
-// supplied in-memory inputs. Use this entry point when the Release and
-// Manifest have already been parsed and the raw Aggregate YAML is held
-// as a byte slice — the long-running daemon (which holds parse caches)
-// and the internal/compiler/pipeline package take this shape. CLI callers
-// hold paths and use the ResolveConfig surface instead.
+// supplied in-memory inputs. Use this entry point (through ResolveAndUse) when
+// the Release and Manifest have already been parsed and the raw Aggregate YAML
+// is held as a byte slice — the long-running daemon (which holds parse caches)
+// and the internal/compiler/pipeline package take this shape. Callers holding
+// file paths load the bytes themselves and construct ResolveInputs.
 //
-// AggregatePath identifies the source location of AggregateRawBytes for
-// error provenance and downstream source-location strings (Annotation
-// expansion records the Aggregate's path in AnnotationProvenance entries).
-// The resolve pipeline performs no filesystem operations against
-// AggregatePath; it is a label only.
+// AggregatePath and ReleasePath identify the source locations of the Aggregate
+// and Release for error provenance and downstream source-location strings (the
+// annotation-expansion pass records them in AnnotationProvenance / the
+// `[annotation: <key> from <file>:<path>]` brackets). Both are labels only —
+// the resolve pipeline performs no filesystem operations against either.
 type ResolveInputs struct {
 	Release           *types.Release
 	Manifest          *types.Manifest
 	AggregateRawBytes []byte
 	AggregatePath     string // source-location label only; no I/O
+	ReleasePath       string // source-location label only; no I/O
 }
 
 // ResolveResult carries the artifacts produced by Step 1. The result is
@@ -97,79 +97,6 @@ type ResolveResult struct {
 	AnnotationProvenance map[string]AnnotationProvenance
 }
 
-// Resolve executes the Step 1 pipeline against the configured paths and
-// returns the resolved artifacts. The pipeline is:
-//
-//  1. Load Release.
-//  2. Load Manifest.
-//  3. Load Release.spec.parameters.$import: target if present (single-
-//     source file; multi-source layering uses Release extends: chains).
-//  4. Merge the loaded values with Release.spec.parameters inline content
-//     when both are populated; in the current single-source-only design
-//     exactly one mode is populated per Release.
-//  5. Read raw Aggregate YAML bytes.
-//  6. Interpolate the merged parameter map into the raw bytes via Go
-//     template + Sprig (missingkey=zero, so undefined references render
-//     as empty rather than failing).
-//  7. Unmarshal the interpolated bytes into a typed Aggregate.
-//  8. Validate user-authored instance names against the dot-free pattern.
-//  9. Wire per-component boundary infra from the Release boundary tree.
-//  10. Carry the merged parameter map through ResolveResult.Parameters
-//     for downstream consumption (orchestrator-time path-template
-//     evaluation). ResolveAndUse owns the active-purge, firing it after the
-//     use callback returns, so path-template evaluation reads the live map
-//     and the purge still runs by construction.
-//
-// Resolve takes a continuation: it loads the configured files, then delegates
-// to ResolveAndUse so the result is scoped and purged like every other resolve
-// path. It does not return a ResolveResult.
-//
-// Error semantics:
-//
-//   - Any I/O, unmarshal, or template error short-circuits the pipeline
-//     and is returned wrapped in a ResolverError with the source entity
-//     and path attached.
-//   - Instance-name validation returns only the first violation — the name
-//     pattern is a hard gate, and a single illegal name implies the
-//     Aggregate cannot be processed further.
-//   - Semantic guards (uses sockets, inject keys, requiredFeatures, etc.)
-//     are NOT run by Resolve. Callers invoke RunGuards separately after
-//     Resolve to obtain the catalog-aware checks; RunGuards collects all
-//     violations rather than short-circuiting.
-//
-// Steps must run in this order: name validation operates on the resolved
-// YAML, so it must follow interpolation and unmarshal; boundary infra
-// wiring depends on the Release; the parameter purge must run after every
-// step that consumes parameters.
-func Resolve(cfg ResolveConfig, use func(*ResolveResult) error) error {
-	release, err := LoadRelease(cfg.ReleasePath)
-	if err != nil {
-		return err
-	}
-	manifest, err := LoadManifest(cfg.ManifestPath)
-	if err != nil {
-		return err
-	}
-	rawAgg, err := os.ReadFile(cfg.AggregatePath)
-	if err != nil {
-		return &ResolverError{
-			Entity:  "Aggregate",
-			Field:   cfg.AggregatePath,
-			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrYAMLLoad,
-		}
-	}
-	return ResolveAndUse(ResolveInputs{
-		Release:           release,
-		Manifest:          manifest,
-		AggregateRawBytes: rawAgg,
-		AggregatePath:     cfg.AggregatePath,
-	}, func(result *ResolveResult) error {
-		result.ReleasePath = cfg.ReleasePath
-		return use(result)
-	})
-}
-
 // ResolveAndUse is the single exported producer of a ResolveResult. It runs
 // Step 1 against caller-supplied in-memory inputs and invokes use with the
 // resolved artifacts, then purges the merged parameter map in a defer it owns,
@@ -203,9 +130,9 @@ func ResolveAndUse(in ResolveInputs, use func(*ResolveResult) error) error {
 // private is what makes the purge structural rather than conventional — no
 // caller, in any package, can hold a live result and forget to purge it.
 //
-// ResolveResult.ReleasePath is left empty here because the caller already
-// knows where the Release came from; the Resolve path fills it inside the
-// ResolveAndUse callback.
+// ResolveResult.AggregatePath and .ReleasePath are forwarded verbatim from the
+// input labels (they drive annotation source-location strings); the resolve
+// pipeline never touches the filesystem through them.
 func resolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 	release := in.Release
 	manifest := in.Manifest
@@ -310,6 +237,7 @@ func resolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 		BoundaryAnnotations:  boundaryAnnotations,
 		Parameters:           params,
 		AggregatePath:        in.AggregatePath,
+		ReleasePath:          in.ReleasePath,
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}, nil
 }

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -269,9 +271,11 @@ func inspectComponentFile(path string, data []byte) error {
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
 func inspectReleaseFile(releasePath string, catalogDirs []string) error {
-	// wsRoot is the workspace the caller invoked the inspect from; the
-	// catalog renders source-file accessors relative to it so per-node
-	// IR SourceFile records stay byte-identical across machines.
+	// wsRoot is the workspace the caller invoked inspect from; the catalog
+	// renders its entity source-file accessors relative to it so catalog-sourced
+	// IR records read consistently across machines. The root Aggregate node's own
+	// source path comes from the AggregatePath label passed to the resolve funnel
+	// below, not from wsRoot.
 	wsRoot, _ := os.Getwd()
 	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
 	if err != nil {
@@ -296,70 +300,68 @@ func inspectReleaseFile(releasePath string, catalogDirs []string) error {
 	aggPath := resolveSiblingYAML(releaseDir, rel.Spec.Aggregate)
 	manifestPath := resolveSiblingYAML(releaseDir, rel.Spec.Manifest)
 
-	// Resolve scopes the parameter map to this callback and purges it after the
-	// callback returns (resolver.ResolveAndUse owns the purge), so the whole
-	// inspection runs while parameters are live and cannot leak them.
-	return resolver.Resolve(resolver.ResolveConfig{
-		AggregatePath: aggPath,
-		ReleasePath:   releasePath,
-		ManifestPath:  manifestPath,
-	}, func(resolveResult *resolver.ResolveResult) error {
-		catalogLookup := cat.CatalogLookup()
-		catalogLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(resolveResult.Manifest)
-		for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
-			fmt.Fprintf(os.Stderr, "  %s\n", w)
-		}
-		if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-			return fmt.Errorf("Step 1 (annotation expansion): %w", err)
-		}
-		if guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters); len(guardErrs) > 0 {
-			for _, e := range guardErrs {
-				fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
-			}
-			// Mirror the pipeline boundary: carry the per-violation slice so the
-			// guard sentinel is errors.Is-recoverable; the summary text is
-			// unchanged ("Step 1: N guard violation(s)").
-			return &resolver.MultiResolverError{
-				Entity:     "Step 1",
-				Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
-				Violations: guardErrs,
-			}
-		}
+	manifest, err := resolver.LoadManifest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("load manifest: %w", err)
+	}
+	aggBytes, err := os.ReadFile(aggPath)
+	if err != nil {
+		return fmt.Errorf("read aggregate %q: %w", aggPath, err)
+	}
+	catalogLookup := cat.CatalogLookup()
+	catalogLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
 
-		topoResult, err := topology.Build(topology.BuildConfig{
-			ResolveResult:     resolveResult,
-			CatalogLookup:     catalogLookup,
-			LoadSubAggregate:  cat.SubAggregateLoader(),
+	// Resolve through the same shared funnel build/lint/pull use
+	// (pipeline.ResolveAndFlatten → resolver.ResolveAndUse), so inspect's resolve
+	// path cannot drift from the compiler's and the parameter purge is covered by
+	// the producer-owned defer — inspect holds no purge defer of its own. The
+	// scoped callback builds the IR and prints while parameters are live. The
+	// AggregatePath / ReleasePath labels carry the source locations the
+	// annotation-expansion brackets read; they are the same strings inspect
+	// previously passed, so the bracket output is unchanged.
+	return pipeline.ResolveAndFlatten(
+		context.Background(),
+		pipeline.Inputs{
+			Release:           rel,
+			Manifest:          manifest,
+			AggregateRawBytes: aggBytes,
+			// AggregatePath is the sibling-resolved path (drives the annotation
+			// source-location brackets — kept identical to the pre-convergence
+			// value); RootAggregateFile is the workspace-relative path stamped
+			// onto the root-tier node (machine-stable), the same split inspect
+			// made before converging onto the shared funnel.
+			AggregatePath:     aggPath,
+			ReleasePath:       releasePath,
 			RootAggregateFile: catalog.RelativeToWorkspace(wsRoot, aggPath),
-		})
-		if err != nil {
-			return fmt.Errorf("Step 2 (topology): %w", err)
-		}
-
-		graph, _, err := ir.BuildIR(ir.BuildIRConfig{
-			Topology:        topoResult,
-			ResolveResult:   resolveResult,
-			CatalogLookup:   catalogLookup,
-			CompilerVersion: "0.1.0",
-		})
-		if err != nil {
-			return fmt.Errorf("Step 3 (IR): %w", err)
-		}
-
-		fmt.Printf("// Release: %s (from %s)\n", rel.Metadata.Name, releasePath)
-		for nodeID, featureMap := range graph.Spec.FeatureValuesMapping.All() {
-			fmt.Printf("\nComponent: %s\n", nodeID)
-			if featureMap.Len() == 0 {
-				fmt.Println("  (no Features attached)")
-				continue
+		},
+		catalogLookup,
+		cat.SubAggregateLoader(),
+		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
+			graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+				Topology:        topoResult,
+				ResolveResult:   resolveResult,
+				CatalogLookup:   catalogLookup,
+				CompilerVersion: "0.1.0",
+			})
+			if err != nil {
+				return fmt.Errorf("Step 3 (IR): %w", err)
 			}
-			fmt.Println("  Features:")
-			for instanceName, entry := range featureMap.All() {
-				renderFeatureAttachment(instanceName, entry)
+
+			fmt.Printf("// Release: %s (from %s)\n", rel.Metadata.Name, releasePath)
+			for nodeID, featureMap := range graph.Spec.FeatureValuesMapping.All() {
+				fmt.Printf("\nComponent: %s\n", nodeID)
+				if featureMap.Len() == 0 {
+					fmt.Println("  (no Features attached)")
+					continue
+				}
+				fmt.Println("  Features:")
+				for instanceName, entry := range featureMap.All() {
+					renderFeatureAttachment(instanceName, entry)
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		},
+	)
 }
 
 // renderFeatureAttachment writes one Feature attachment to stdout.

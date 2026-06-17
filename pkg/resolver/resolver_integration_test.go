@@ -23,9 +23,32 @@ import (
 // parameter-dependent work inside the callback, where the map is live.
 func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
 	t.Helper()
+	release, err := LoadRelease(cfg.ReleasePath)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := LoadManifest(cfg.ManifestPath)
+	if err != nil {
+		return nil, err
+	}
+	rawAgg, err := os.ReadFile(cfg.AggregatePath)
+	if err != nil {
+		return nil, &ResolverError{
+			Entity:  "Aggregate",
+			Field:   cfg.AggregatePath,
+			Message: fmt.Sprintf("failed to read file: %v", err),
+			Err:     ErrYAMLLoad,
+		}
+	}
 	var captured *ResolveResult
 	var paramSnapshot map[string]any
-	err := Resolve(cfg, func(rr *ResolveResult) error {
+	err = ResolveAndUse(ResolveInputs{
+		Release:           release,
+		Manifest:          manifest,
+		AggregateRawBytes: rawAgg,
+		AggregatePath:     cfg.AggregatePath,
+		ReleasePath:       cfg.ReleasePath,
+	}, func(rr *ResolveResult) error {
 		captured = rr
 		paramSnapshot = make(map[string]any, len(rr.Parameters))
 		for k, v := range rr.Parameters {
