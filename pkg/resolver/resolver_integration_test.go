@@ -14,6 +14,31 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
+// resolveForTest adapts the continuation-based Resolve to the value-returning
+// shape the integration assertions use. Resolve scopes the ResolveResult to a
+// callback and purges the parameter map after it returns; this helper captures
+// the result and snapshots the live parameter map inside the callback, then
+// reattaches the snapshot so post-call assertions on resolved parameter values
+// keep working. It is a test-only affordance — production callers do their
+// parameter-dependent work inside the callback, where the map is live.
+func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
+	t.Helper()
+	var captured *ResolveResult
+	var paramSnapshot map[string]any
+	err := Resolve(cfg, func(rr *ResolveResult) error {
+		captured = rr
+		paramSnapshot = make(map[string]any, len(rr.Parameters))
+		for k, v := range rr.Parameters {
+			paramSnapshot[k] = v
+		}
+		return nil
+	})
+	if captured != nil {
+		captured.Parameters = paramSnapshot
+	}
+	return captured, err
+}
+
 // resolvedComponent fetches a component from the resolved (normalized)
 // Aggregate. A top-level components surface folds into the synthesized
 // `default` subsystem at load, so a root-authored component resolves there;
@@ -167,7 +192,7 @@ func TestResolve_Integration(t *testing.T) {
 				}
 			}
 
-			result, err := Resolve(cfg)
+			result, err := resolveForTest(t, cfg)
 
 			if tt.wantErr != nil {
 				if err == nil {
@@ -221,7 +246,7 @@ spec:
 		ManifestPath:  filepath.Join(base, "manifest.yaml"),
 	}
 
-	result, err := Resolve(cfg)
+	result, err := resolveForTest(t, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,7 +269,7 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 		ManifestPath:  filepath.Join("testdata", "parameter-merge-and-fallback", "manifest.yaml"),
 	}
 
-	result, err := Resolve(cfg)
+	result, err := resolveForTest(t, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -331,7 +356,7 @@ func TestResolve_ParameterDefaultBackfill_E2E(t *testing.T) {
 				ReleasePath:   filepath.Join("testdata", "parameter-defaults", tc.releaseFile),
 				ManifestPath:  filepath.Join("testdata", "parameter-defaults", "manifest.yaml"),
 			}
-			result, err := Resolve(cfg)
+			result, err := resolveForTest(t, cfg)
 			if err != nil {
 				t.Fatalf("Resolve: %v", err)
 			}
@@ -384,7 +409,7 @@ spec:
 		ManifestPath:  filepath.Join("testdata", "parameter-merge-and-fallback", "manifest.yaml"),
 	}
 
-	result, err := Resolve(cfg)
+	result, err := resolveForTest(t, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

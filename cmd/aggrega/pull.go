@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -398,12 +399,17 @@ func pullRun(cfg pullConfig) error {
 	// component's source resolves against that component's own cascade-resolved
 	// infra (not a flattened Release-wide bag), and the component-to-Recipe join
 	// uses the same Manifest mapping the closure walker recorded (lock-time
-	// cannot drift from build-time). aggBytes feeds ResolveFromInputs, which
+	// cannot drift from build-time). aggBytes feeds the resolver, which
 	// re-parses internally.
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
 	pullLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
-	rr, topo, err := pipeline.ResolveAndFlatten(
+	// ResolveAndFlatten scopes the resolved view + parameter map to this
+	// callback; resolver.ResolveAndUse purges the parameters after it returns,
+	// so the entire source-descent runs while parameters are live and cannot
+	// leak them. The descent reads BoundaryInfra and the materialised IR
+	// pillars, never the raw parameter map.
+	if err := pipeline.ResolveAndFlatten(
 		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
@@ -413,105 +419,105 @@ func pullRun(cfg pullConfig) error {
 		},
 		pullLookup,
 		lazyView.SubAggregateLoader(),
-	)
-	if err != nil {
-		return fmt.Errorf("resolve: %w", err)
-	}
-	defer resolver.PurgeParameters(&rr.Parameters)
+		func(rr *resolver.ResolveResult, topo *topology.TopologyResult) error {
 
-	// Key per-instance infra by the Manifest-mapped entity URI — the same
-	// verbatim string the closure walker records as the source-descent entity
-	// (catalog.ComponentRecipeURI / FeatureRecipeURI resolve it flat-shape-first,
-	// legacy-fallback), so this map joins against closure entities regardless of
-	// short-form vs full-path mapping authoring. An instance with no Manifest
-	// mapping carries no source-descent entity and is skipped.
-	perEntityInfra := map[string][]closure.ComponentSourceInfra{}
+			// Key per-instance infra by the Manifest-mapped entity URI — the same
+			// verbatim string the closure walker records as the source-descent entity
+			// (catalog.ComponentRecipeURI / FeatureRecipeURI resolve it flat-shape-first,
+			// legacy-fallback), so this map joins against closure entities regardless of
+			// short-form vs full-path mapping authoring. An instance with no Manifest
+			// mapping carries no source-descent entity and is skipped.
+			perEntityInfra := map[string][]closure.ComponentSourceInfra{}
 
-	// Feature / secret instances: derive from the IR render-set, not a Release
-	// walk. The renderer renders graph.Spec (the IR), whose feature/secret set is
-	// assembled across all five tiers (Aggregate component/subsystem, Release
-	// boundary-wide/component, annotation-expanded) at IR-build — a Release-boundary
-	// walk and the topology are each short by tiers, so the using-set must come from
-	// the IR for the no-using-instance skip to be congruent with rendering. Building
-	// the IR here is acyclic (it consumes topology + resolve + catalog and copies
-	// the recipe source pointer, never a fetched artifact); pull thus inherits the
-	// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra
-	// (Part B made secrets carry it), so no Release-side join is needed.
-	graph, _, err := ir.BuildIR(ir.BuildIRConfig{
-		Topology:        topo,
-		ResolveResult:   rr,
-		CatalogLookup:   pullLookup,
-		CompilerVersion: "0.1.0",
-	})
-	if err != nil {
-		return fmt.Errorf("ir: %w", err)
-	}
-	executionScopeOf := func(instanceName, featType string) (string, bool) {
-		// Scope classification (name tier wins over type): a miss OR a
-		// version-ambiguous mapping falls through to the per-component pin,
-		// preserving prior behavior. The loud ambiguity halt belongs to the
-		// source-pin joins below (irEntityInfra for features, ComponentRecipeURI
-		// for components), where a wrong pick would mis-pin a fetched source.
-		frURI, ok, _ := catalog.FeatureRecipeURI(manifest, instanceName, featType)
-		if !ok {
-			return "", false
-		}
-		fr, ok := lazyView.FeatureRecipeByURI(frURI)
-		if !ok {
-			return "", false
-		}
-		return fr.Spec.ExecutionScope, true
-	}
-	featInfra, err := irEntityInfra(graph, manifest, executionScopeOf)
-	if err != nil {
-		return fmt.Errorf("feature source-descent mapping: %w", err)
-	}
-	for frURI, comps := range featInfra {
-		perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
-	}
-
-	// Component instances: the component->Recipe join comes from the flattened
-	// topology; the per-component source-eval values and infra come from the
-	// MATERIALIZED IR pillars (graph.Spec.ValuesMapping / InfraMapping — schema
-	// defaults applied), the same pillars the renderer resolves the source
-	// against, so a value/infra-driven source identity pins identically at lock
-	// and build. Runs after BuildIR so the materialized pillars exist.
-	for _, node := range topo.Nodes.All() {
-		recURI, found, err := catalog.ComponentRecipeURI(manifest, node.InstanceID, node.ComponentType)
-		if err != nil {
-			return fmt.Errorf("component source-descent mapping for %q: %w", node.ComponentType, err)
-		}
-		if !found {
-			continue
-		}
-		perEntityInfra[recURI] = append(perEntityInfra[recURI],
-			closure.ComponentSourceInfra{
-				Component: node.InstanceID,
-				Infra:     parse.NodePayloadMap(graph.Spec.InfraMapping, node.InstanceID),
-				Values:    parse.NodePayloadMap(graph.Spec.ValuesMapping, node.InstanceID),
+			// Feature / secret instances: derive from the IR render-set, not a Release
+			// walk. The renderer renders graph.Spec (the IR), whose feature/secret set is
+			// assembled across all five tiers (Aggregate component/subsystem, Release
+			// boundary-wide/component, annotation-expanded) at IR-build — a Release-boundary
+			// walk and the topology are each short by tiers, so the using-set must come from
+			// the IR for the no-using-instance skip to be congruent with rendering. Building
+			// the IR here is acyclic (it consumes topology + resolve + catalog and copies
+			// the recipe source pointer, never a fetched artifact); pull thus inherits the
+			// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra
+			// (Part B made secrets carry it), so no Release-side join is needed.
+			graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+				Topology:        topo,
+				ResolveResult:   rr,
+				CatalogLookup:   pullLookup,
+				CompilerVersion: "0.1.0",
 			})
-	}
+			if err != nil {
+				return fmt.Errorf("ir: %w", err)
+			}
+			executionScopeOf := func(instanceName, featType string) (string, bool) {
+				// Scope classification (name tier wins over type): a miss OR a
+				// version-ambiguous mapping falls through to the per-component pin,
+				// preserving prior behavior. The loud ambiguity halt belongs to the
+				// source-pin joins below (irEntityInfra for features, ComponentRecipeURI
+				// for components), where a wrong pick would mis-pin a fetched source.
+				frURI, ok, _ := catalog.FeatureRecipeURI(manifest, instanceName, featType)
+				if !ok {
+					return "", false
+				}
+				fr, ok := lazyView.FeatureRecipeByURI(frURI)
+				if !ok {
+					return "", false
+				}
+				return fr.Spec.ExecutionScope, true
+			}
+			featInfra, err := irEntityInfra(graph, manifest, executionScopeOf)
+			if err != nil {
+				return fmt.Errorf("feature source-descent mapping: %w", err)
+			}
+			for frURI, comps := range featInfra {
+				perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
+			}
 
-	var srcResolver closure.SourceResolver = sourceResolverShim{}
-	if cfg.sourceResolver != nil {
-		srcResolver = cfg.sourceResolver
-	}
-	sourceArtifacts, err := closure.DescendRecipeSources(
-		perEntityInfra, cl, lazyView.ClosureRecipeLoader(), srcResolver,
-		workspaceRoot, cacheDir,
-	)
-	if err != nil {
-		return fmt.Errorf("source descent: %w", err)
-	}
-	cl.SourceArtifacts = sourceArtifacts
+			// Component instances: the component->Recipe join comes from the flattened
+			// topology; the per-component source-eval values and infra come from the
+			// MATERIALIZED IR pillars (graph.Spec.ValuesMapping / InfraMapping — schema
+			// defaults applied), the same pillars the renderer resolves the source
+			// against, so a value/infra-driven source identity pins identically at lock
+			// and build. Runs after BuildIR so the materialized pillars exist.
+			for _, node := range topo.Nodes.All() {
+				recURI, found, err := catalog.ComponentRecipeURI(manifest, node.InstanceID, node.ComponentType)
+				if err != nil {
+					return fmt.Errorf("component source-descent mapping for %q: %w", node.ComponentType, err)
+				}
+				if !found {
+					continue
+				}
+				perEntityInfra[recURI] = append(perEntityInfra[recURI],
+					closure.ComponentSourceInfra{
+						Component: node.InstanceID,
+						Infra:     parse.NodePayloadMap(graph.Spec.InfraMapping, node.InstanceID),
+						Values:    parse.NodePayloadMap(graph.Spec.ValuesMapping, node.InstanceID),
+					})
+			}
 
-	lf := buildLockfile(cfg.ReleasePath, cl, wsCfg)
-	if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
-		return fmt.Errorf("write lockfile: %w", err)
-	}
+			var srcResolver closure.SourceResolver = sourceResolverShim{}
+			if cfg.sourceResolver != nil {
+				srcResolver = cfg.sourceResolver
+			}
+			sourceArtifacts, err := closure.DescendRecipeSources(
+				perEntityInfra, cl, lazyView.ClosureRecipeLoader(), srcResolver,
+				workspaceRoot, cacheDir,
+			)
+			if err != nil {
+				return fmt.Errorf("source descent: %w", err)
+			}
+			cl.SourceArtifacts = sourceArtifacts
 
-	fmt.Printf("Pull complete: %s (entities=%d, source_artifacts=%d)\n",
-		lockfilePath, len(cl.Entities), len(cl.SourceArtifacts))
+			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg)
+			if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
+				return fmt.Errorf("write lockfile: %w", err)
+			}
+
+			fmt.Printf("Pull complete: %s (entities=%d, source_artifacts=%d)\n",
+				lockfilePath, len(cl.Entities), len(cl.SourceArtifacts))
+			return nil
+		}); err != nil {
+		return err
+	}
 	return nil
 }
 

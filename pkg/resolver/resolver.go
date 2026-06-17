@@ -33,7 +33,7 @@ type ResolveConfig struct {
 // AggregatePath identifies the source location of AggregateRawBytes for
 // error provenance and downstream source-location strings (Annotation
 // expansion records the Aggregate's path in AnnotationProvenance entries).
-// ResolveFromInputs performs no filesystem operations against
+// The resolve pipeline performs no filesystem operations against
 // AggregatePath; it is a label only.
 type ResolveInputs struct {
 	Release           *types.Release
@@ -46,16 +46,17 @@ type ResolveInputs struct {
 // passed by pointer through topology, IR, and renderer; mutations after
 // Resolve returns are not expected.
 //
-// Parameters carries the merged parameter map alive past Step 1 so that
-// orchestrator-time path-template evaluation can consume `.parameters.<key>`
-// references in Release.spec.boundaries[].directory and subDirectory
-// templates. The active-purge mechanic now runs at end-of-pipeline in
-// cmd/aggrega/build.go (deferred after the resolver call) rather than at
-// Resolve return; the purge mechanism (zero values, delete keys, nil
-// pointer) is unchanged. See PurgeParameters for the active-purge
-// implementation. Value-template surfaces (Recipe valuesMapping, FR
-// valuesMapping) do NOT receive `.parameters` — that pillar is reserved
-// for path templates per the documented carve-out.
+// Parameters carries the merged parameter map alive through the resolve
+// scope so that orchestrator-time path-template evaluation can consume
+// `.parameters.<key>` references in Release.spec.boundaries[].directory and
+// subDirectory templates. ResolveAndUse owns the active-purge: it fires in a
+// deferred PurgeParameters after the use callback (which runs the rest of the
+// pipeline, render included) returns, so the renderer still sees live
+// parameters and the map is zeroed before control leaves the scope. The purge
+// mechanism (zero values, delete keys, nil pointer) is unchanged; see
+// PurgeParameters. Value-template surfaces (Recipe valuesMapping, FR
+// valuesMapping) do NOT receive `.parameters` — that pillar is reserved for
+// path templates per the documented carve-out.
 type ResolveResult struct {
 	Aggregate     *types.Aggregate
 	Release       *types.Release
@@ -75,7 +76,7 @@ type ResolveResult struct {
 	// rather than from this field.
 	BoundaryAnnotations map[string]types.OrderedMap[string]
 
-	Parameters    map[string]any // merged parameter map (alive through end-of-pipeline)
+	Parameters    map[string]any // merged parameter map (alive through the resolve scope; purged when ResolveAndUse's callback returns)
 	AggregatePath string         // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
 	ReleasePath   string         // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
 
@@ -115,10 +116,13 @@ type ResolveResult struct {
 //  9. Wire per-component boundary infra from the Release boundary tree.
 //  10. Carry the merged parameter map through ResolveResult.Parameters
 //     for downstream consumption (orchestrator-time path-template
-//     evaluation). The active-purge runs at end-of-pipeline in
-//     cmd/aggrega/build.go rather than at Resolve return, so that
-//     orchestrator-time path-template evaluation can read parameters
-//     via the live map.
+//     evaluation). ResolveAndUse owns the active-purge, firing it after the
+//     use callback returns, so path-template evaluation reads the live map
+//     and the purge still runs by construction.
+//
+// Resolve takes a continuation: it loads the configured files, then delegates
+// to ResolveAndUse so the result is scoped and purged like every other resolve
+// path. It does not return a ResolveResult.
 //
 // Error semantics:
 //
@@ -137,49 +141,72 @@ type ResolveResult struct {
 // YAML, so it must follow interpolation and unmarshal; boundary infra
 // wiring depends on the Release; the parameter purge must run after every
 // step that consumes parameters.
-func Resolve(cfg ResolveConfig) (*ResolveResult, error) {
+func Resolve(cfg ResolveConfig, use func(*ResolveResult) error) error {
 	release, err := LoadRelease(cfg.ReleasePath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	manifest, err := LoadManifest(cfg.ManifestPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rawAgg, err := os.ReadFile(cfg.AggregatePath)
 	if err != nil {
-		return nil, &ResolverError{
+		return &ResolverError{
 			Entity:  "Aggregate",
 			Field:   cfg.AggregatePath,
 			Message: fmt.Sprintf("failed to read file: %v", err),
 			Err:     ErrYAMLLoad,
 		}
 	}
-	result, err := ResolveFromInputs(ResolveInputs{
+	return ResolveAndUse(ResolveInputs{
 		Release:           release,
 		Manifest:          manifest,
 		AggregateRawBytes: rawAgg,
 		AggregatePath:     cfg.AggregatePath,
+	}, func(result *ResolveResult) error {
+		result.ReleasePath = cfg.ReleasePath
+		return use(result)
 	})
-	if err != nil {
-		return nil, err
-	}
-	result.ReleasePath = cfg.ReleasePath
-	return result, nil
 }
 
-// ResolveFromInputs executes the Step 1 pipeline against caller-supplied
-// in-memory inputs. The contract mirrors Resolve except that the caller
-// supplies pre-parsed Release + Manifest and raw Aggregate YAML bytes.
-// AggregatePath on the input struct is a source-location label only — no
-// filesystem operations target it.
+// ResolveAndUse is the single exported producer of a ResolveResult. It runs
+// Step 1 against caller-supplied in-memory inputs and invokes use with the
+// resolved artifacts, then purges the merged parameter map in a defer it owns,
+// before returning. Parameters are reachable ONLY inside use's scope: a caller
+// cannot obtain a live ResolveResult — and therefore cannot leak secret
+// parameter values by forgetting to purge — because the result never escapes
+// the callback. This is the structural security guarantee; the purge holds by
+// construction, not by every caller remembering a deferred PurgeParameters.
 //
-// ResolveResult.ReleasePath is left empty by this entry point because
-// the caller already knows where the Release came from; Resolve fills it
-// after delegation. Callers needing source-location strings for Release-
-// authored annotations set ResolveResult.ReleasePath themselves after
-// the call returns.
-func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
+// The purge runs on every path: use is invoked only when resolution succeeds,
+// and the deferred purge fires whether use returns nil or an error. A resolve
+// error short-circuits before use (no result is produced, nothing to purge).
+//
+// Higher layers compose through this entry rather than the unexported producer:
+// internal/compiler/pipeline's ResolveAndValidate / ResolveAndFlatten call
+// ResolveAndUse and thread their own continuations, so the whole pipeline —
+// including render — runs inside the scope and the purge fires after it.
+func ResolveAndUse(in ResolveInputs, use func(*ResolveResult) error) error {
+	result, err := resolveFromInputs(in)
+	if err != nil {
+		return err
+	}
+	defer PurgeParameters(&result.Parameters)
+	return use(result)
+}
+
+// resolveFromInputs executes the Step 1 pipeline against caller-supplied
+// in-memory inputs. It is unexported by design: the only way to obtain a
+// ResolveResult is through ResolveAndUse, which scopes the result to a
+// callback and owns the parameter purge. Keeping the value-returning producer
+// private is what makes the purge structural rather than conventional — no
+// caller, in any package, can hold a live result and forget to purge it.
+//
+// ResolveResult.ReleasePath is left empty here because the caller already
+// knows where the Release came from; the Resolve path fills it inside the
+// ResolveAndUse callback.
+func resolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 	release := in.Release
 	manifest := in.Manifest
 
@@ -271,10 +298,10 @@ func ResolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
 	boundaryInfra, boundaryAnnotations := WireBoundaryInfra(types.NormalizeRelease(release))
 
 	// Parameter map flows through to the renderer via ResolveResult.Parameters.
-	// Active-purge runs at end-of-pipeline. Callers using pipeline.RunPipeline
-	// inherit the purge via its internal defer; direct Resolve(cfg) callers
-	// (e.g., cmd/aggrega/inspect.go: inspectReleaseFile) carry their own
-	// defer resolver.PurgeParameters call.
+	// ResolveAndUse (the sole exported producer that wraps this function) owns
+	// the active-purge in a deferred PurgeParameters that fires after its
+	// callback returns, so every resolve path inherits one purge contract and
+	// no caller carries a purge defer of its own.
 	return &ResolveResult{
 		Aggregate:            &agg,
 		Release:              release,

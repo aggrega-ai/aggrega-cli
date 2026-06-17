@@ -255,15 +255,17 @@ func lintRelease(releasePath string) error {
 	// inherited-pillar value is validated against the inherited constraint.
 	conformanceLookup := lazyView.AsCatalogLookup()
 	conformanceLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
-	resolveResult, verr := pipeline.ResolveAndValidate(context.Background(), pipeline.Inputs{
+	verr := pipeline.ResolveAndValidate(context.Background(), pipeline.Inputs{
 		Release:           rel,
 		Manifest:          manifest,
 		AggregateRawBytes: aggRes.Bytes,
 		AggregatePath:     catalog.RelativeToWorkspace(wsRoot, aggRes.Path),
-	}, conformanceLookup)
-	if resolveResult != nil {
-		defer resolver.PurgeParameters(&resolveResult.Parameters)
-	}
+	}, conformanceLookup, func(*resolver.ResolveResult) error {
+		// Validation IS the Step-1 work (annotation + guard suite) that runs
+		// inside ResolveAndValidate; lint needs nothing further from the
+		// resolved view, and the parameter purge is owned by the resolver.
+		return nil
+	})
 	if verr != nil {
 		return fmt.Errorf("release value conformance failed: %w", verr)
 	}

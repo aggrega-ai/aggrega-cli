@@ -23,9 +23,9 @@ func bcomps(names ...string) types.OrderedMap[types.BoundaryComponent] {
 // the resolve entry: a Release carrying BOTH a non-empty top-level components
 // map AND a `default` boundary is a normalization bypass (impossible via
 // types.NormalizeRelease, and the authored-both shape is envelope-rejected). The
-// assert fires at ResolveFromInputs entry — before WireBoundaryInfra and the
-// release guards consume the Release — so a components-only bypass cannot be
-// silently missed.
+// assert fires at the resolve entry — before WireBoundaryInfra and the release
+// guards consume the Release — so a components-only bypass cannot be silently
+// missed. Exercised through ResolveAndUse, the single exported producer.
 func TestResolveFromInputs_UnnormalizedReleaseFailsLoud(t *testing.T) {
 	t.Parallel()
 	rel := &types.Release{}
@@ -34,7 +34,7 @@ func TestResolveFromInputs_UnnormalizedReleaseFailsLoud(t *testing.T) {
 	b.Set("default", types.Boundary{Synthesized: true})
 	rel.Spec.Boundaries = b
 
-	_, err := resolver.ResolveFromInputs(resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}})
+	err := resolver.ResolveAndUse(resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}}, func(*resolver.ResolveResult) error { return nil })
 	if !errors.Is(err, resolver.ErrUnnormalizedRelease) {
 		t.Fatalf("a bypass release (raw components + default boundary) must fail loud with ErrUnnormalizedRelease; got %v", err)
 	}
@@ -51,7 +51,7 @@ func TestResolveFromInputs_NormalizedReleaseClearsAssert(t *testing.T) {
 	rel.Spec.Boundaries = b
 	agg := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  components: {}\n")
 
-	_, err := resolver.ResolveFromInputs(resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg})
+	err := resolver.ResolveAndUse(resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg}, func(*resolver.ResolveResult) error { return nil })
 	if errors.Is(err, resolver.ErrUnnormalizedRelease) {
 		t.Fatalf("a normalized release must not trip the un-normalized assert; got %v", err)
 	}

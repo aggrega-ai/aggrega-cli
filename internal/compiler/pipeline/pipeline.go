@@ -124,10 +124,12 @@ type Tier4Result struct {
 	ResolveDiagnostics []*resolver.ResolverError
 }
 
-// stepsOneToFourOutput bundles the un-purged outputs that runStepsOneToFour
-// produces. Both RunTier4Pipeline and RunPipeline call the helper and own
-// the resolveResult.Parameters purge themselves so each exported function's
-// purge-on-exit discipline stays self-contained.
+// stepsOneToFourOutput bundles the outputs runStepsOneToFour produces inside
+// the resolve scope. The parameter-map purge is owned by resolver.ResolveAndUse
+// (which runStepsOneToFour routes through) and fires after the consumer's
+// continuation — RunPipeline's render or RunTier4Pipeline's extraction —
+// returns, so the outputs are valid for the whole continuation and no caller
+// holds a purge defer.
 type stepsOneToFourOutput struct {
 	ResolveResult *resolver.ResolveResult
 	Topology      *topology.TopologyResult
@@ -137,76 +139,71 @@ type stepsOneToFourOutput struct {
 }
 
 // runStepsOneToFour executes Steps 1-4 of the compiler pipeline (resolve,
-// topology, IR finalisation, analyse) against caller-supplied inputs and
-// returns the un-purged ResolveResult alongside the phase outputs. The
-// caller owns parameter-map purge via its own defer. Used by both
-// RunTier4Pipeline (which discards Step 5) and RunPipeline (which feeds
-// the rendering step from the same outputs).
+// topology, IR finalisation, analyse) and invokes use with the phase outputs
+// while still inside the resolve scope. It routes through ResolveAndFlatten →
+// resolver.ResolveAndUse, so the parameter purge is guaranteed by construction
+// and use runs while the parameter map is live. Used by both RunTier4Pipeline
+// (which discards Step 5) and RunPipeline (which renders from the same outputs).
 //
-// Behavior on phase failure:
-//   - Step 1 sub-pass failures return (out, error) with whichever sub-pass
-//     outputs were captured before the failure. resolveResult may be nil
-//     when the very first sub-pass (ResolveFromInputs) failed.
-//   - Step 2/3 failures return populated resolveResult but nil downstream
-//     phases.
-//   - Step 4 (analyzer) errors do NOT surface as a function-level error.
-//     The structured AnalysisResult.Errors slice is returned in out.Analysis;
-//     callers decide whether to treat analyzer errors as fatal or
-//     structured diagnostics. This preserves the daemon's Tier-4 contract.
+// Behavior on phase failure: a Step 1-3 failure returns the error without
+// invoking use. A Step 4 (analyzer) error is non-fatal — the structured
+// AnalysisResult.Errors slice rides on out.Analysis and use IS invoked, so
+// callers decide whether to treat analyzer errors as fatal (RunPipeline joins
+// them) or as diagnostics (RunTier4Pipeline). This preserves the daemon's
+// Tier-4 contract.
 func runStepsOneToFour(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
 	subAggregateLoader topology.SubAggregateLoader,
-) (*stepsOneToFourOutput, error) {
-	out := &stepsOneToFourOutput{}
-
+	use func(*stepsOneToFourOutput) error,
+) error {
 	if err := ctx.Err(); err != nil {
-		return out, err
+		return err
 	}
 
 	// Steps 1-2: resolve + topology flatten. Shared with `aggrega pull`'s
 	// per-component source resolution via ResolveAndFlatten, so lock-time
 	// source-descent and build-time rendering run one resolve + topology +
 	// recipe-selection path (no drift).
-	resolveResult, topoResult, err := ResolveAndFlatten(ctx, inputs, catalogLookup, subAggregateLoader)
-	out.ResolveResult = resolveResult // non-nil once resolve succeeded, even on later failure (caller purges)
-	out.Topology = topoResult
-	if err != nil {
-		return out, err
-	}
+	return ResolveAndFlatten(ctx, inputs, catalogLookup, subAggregateLoader, func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
+		out := &stepsOneToFourOutput{
+			ResolveResult: resolveResult,
+			Topology:      topoResult,
+		}
 
-	// Step 3: IR.
-	graph, featureOrder, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
-		Topology:        topoResult,
-		ResolveResult:   resolveResult,
-		CatalogLookup:   catalogLookup,
-		CompilerVersion: "0.1.0",
+		// Step 3: IR.
+		graph, featureOrder, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
+			Topology:        topoResult,
+			ResolveResult:   resolveResult,
+			CatalogLookup:   catalogLookup,
+			CompilerVersion: "0.1.0",
+		})
+		if err != nil {
+			return fmt.Errorf("Step 3 (IR): %w", err)
+		}
+		out.IRGraph = graph
+		out.FeatureOrder = featureOrder
+
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Step 4: Analyze. Analyser errors surface as structured
+		// AnalysisResult.Errors; the function-level error stays nil for
+		// analyzer-only failures so Tier-4 callers can consume them as
+		// diagnostics. Build / irgraph callers convert AnalysisResult.Errors
+		// to the joined-error shape via RunPipeline's wrapper logic.
+		analysis, err := analyzer.AnalyzeContext(ctx, graph, catalogLookup)
+		if err != nil {
+			return err
+		}
+		out.Analysis = analysis
+		for _, w := range analysis.Warnings {
+			fmt.Fprintf(os.Stderr, "  %s\n", w)
+		}
+		return use(out)
 	})
-	if err != nil {
-		return out, fmt.Errorf("Step 3 (IR): %w", err)
-	}
-	out.IRGraph = graph
-	out.FeatureOrder = featureOrder
-
-	if err := ctx.Err(); err != nil {
-		return out, err
-	}
-
-	// Step 4: Analyze. Analyser errors surface as structured
-	// AnalysisResult.Errors; the function-level error stays nil for
-	// analyzer-only failures so Tier-4 callers can consume them as
-	// diagnostics. Build / irgraph callers convert AnalysisResult.Errors
-	// to the joined-error shape via RunPipeline's wrapper logic.
-	analysis, err := analyzer.AnalyzeContext(ctx, graph, catalogLookup)
-	if err != nil {
-		return out, err
-	}
-	out.Analysis = analysis
-	for _, w := range analysis.Warnings {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-	return out, nil
 }
 
 // dropCatalogViewInconsistencies returns the guard-violation slice with every
@@ -225,129 +222,126 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 	return kept
 }
 
-// ResolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
-// (parameter interpolation, annotation binding validation + expansion,
-// guards) then topology flatten — and returns the resolved per-component
-// view: ResolveResult (carrying per-component BoundaryInfra) and the
-// flattened TopologyResult (nodes with InstanceID / ComponentType / Values).
-//
-// It is the single source of the resolve+flatten wiring. The build pipeline
-// (runStepsOneToFour) and `aggrega pull`'s per-component source resolution
-// both call it, so lock-time source-descent cannot drift from build-time
-// component / recipe / infra resolution — recipe selection then runs through
-// the same catalog RecipeLookup at both sites.
-//
-// resolveResult is returned non-nil once ResolveFromInputs succeeds, even when
-// a later Step-1 sub-pass or the topology step fails, so the caller can purge
-// the parameter map. The caller owns resolver.PurgeParameters.
 // ResolveAndValidate runs Step 1 of the compiler pipeline — resolve (parameter
 // interpolation) + annotation binding validation + expansion + the full guard
-// suite — against caller-supplied inputs, and returns the resolved per-component
-// view WITHOUT flattening topology. It is the single source of the build's
+// suite — against caller-supplied inputs, then invokes use with the resolved
+// per-component view (ResolveResult carrying per-component BoundaryInfra)
+// WITHOUT flattening topology. It is the single source of the build's
 // pre-topology validation: ResolveAndFlatten calls it then flattens, and a
 // validate-only caller (`aggrega lint --release`) calls it and stops, so the two
 // cannot diverge on what a Release's resolved values are validated against. The
 // guard suite operates on the resolved (post-parameter-interpolation) aggregate,
 // so templated `{{ .parameters.* }}` values are validated as resolved.
 //
-// resolveResult is returned non-nil once ResolveFromInputs succeeds, even when a
-// later Step-1 sub-pass fails, so the caller can purge the parameter map. The
-// caller owns resolver.PurgeParameters.
+// The continuation runs inside resolver.ResolveAndUse's scope, so the parameter
+// purge is guaranteed by construction. A resolve, annotation, or guard failure
+// returns the error without invoking use; the purge still fires.
 func ResolveAndValidate(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-) (*resolver.ResolveResult, error) {
+	use func(*resolver.ResolveResult) error,
+) error {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return err
 	}
 
-	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
+	return resolver.ResolveAndUse(resolver.ResolveInputs{
 		Release:           inputs.Release,
 		Manifest:          inputs.Manifest,
 		AggregateRawBytes: inputs.AggregateRawBytes,
 		AggregatePath:     inputs.AggregatePath,
+	}, func(resolveResult *resolver.ResolveResult) error {
+		if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
+			return fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+		}
+		for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
+			fmt.Fprintf(os.Stderr, "  %s\n", w)
+		}
+		if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
+			return fmt.Errorf("Step 1 (annotation expansion): %w", err)
+		}
+
+		guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+		if inputs.TolerateCatalogViewInconsistency {
+			// Resilient inspection against a lazily-populated view: a resolved
+			// catalog reference momentarily absent from the view (a drifted cache
+			// slot skipped on read) is a drift signal, not an authoring fault.
+			// Drop it from the halt set so the IR still builds with the entity
+			// skipped; the condition surfaces as a diagnostic. Every other guard
+			// violation still halts.
+			guardErrs = dropCatalogViewInconsistencies(guardErrs)
+		}
+		if len(guardErrs) > 0 {
+			for _, e := range guardErrs {
+				fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
+			}
+			// Carry the per-violation slice on the returned error so a caller can
+			// errors.Is the specific guard sentinel at the pipeline boundary
+			// (parity with the analyzer path, which joins). The summary text is
+			// unchanged: MultiResolverError.Error() renders "Step 1: N guard
+			// violation(s)".
+			return &resolver.MultiResolverError{
+				Entity:     "Step 1",
+				Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
+				Violations: guardErrs,
+			}
+		}
+		return use(resolveResult)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("Step 1 (resolve): %w", err)
-	}
-
-	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
-		return resolveResult, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
-	}
-	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
-		fmt.Fprintf(os.Stderr, "  %s\n", w)
-	}
-	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-		return resolveResult, fmt.Errorf("Step 1 (annotation expansion): %w", err)
-	}
-
-	guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
-	if inputs.TolerateCatalogViewInconsistency {
-		// Resilient inspection against a lazily-populated view: a resolved
-		// catalog reference momentarily absent from the view (a drifted cache
-		// slot skipped on read) is a drift signal, not an authoring fault.
-		// Drop it from the halt set so the IR still builds with the entity
-		// skipped; the condition surfaces as a diagnostic. Every other guard
-		// violation still halts.
-		guardErrs = dropCatalogViewInconsistencies(guardErrs)
-	}
-	if len(guardErrs) > 0 {
-		for _, e := range guardErrs {
-			fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
-		}
-		// Carry the per-violation slice on the returned error so a caller can
-		// errors.Is the specific guard sentinel at the pipeline boundary
-		// (parity with the analyzer path, which joins). The summary text is
-		// unchanged: MultiResolverError.Error() renders "Step 1: N guard
-		// violation(s)".
-		return resolveResult, &resolver.MultiResolverError{
-			Entity:     "Step 1",
-			Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
-			Violations: guardErrs,
-		}
-	}
-	return resolveResult, nil
 }
 
+// ResolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
+// (parameter interpolation, annotation binding validation + expansion, guards)
+// then topology flatten — and invokes use with the resolved per-component view
+// (ResolveResult carrying per-component BoundaryInfra) and the flattened
+// TopologyResult (nodes with InstanceID / ComponentType / Values).
+//
+// It is the single source of the resolve+flatten wiring. The build pipeline
+// (runStepsOneToFour) and `aggrega pull`'s per-component source resolution both
+// call it, so lock-time source-descent cannot drift from build-time component /
+// recipe / infra resolution — recipe selection then runs through the same
+// catalog RecipeLookup at both sites.
+//
+// The continuation runs inside resolver.ResolveAndUse's scope (threaded through
+// ResolveAndValidate), so the parameter purge is guaranteed by construction; a
+// resolve, guard, or topology failure returns the error without invoking use.
 func ResolveAndFlatten(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
 	subAggregateLoader topology.SubAggregateLoader,
-) (*resolver.ResolveResult, *topology.TopologyResult, error) {
-	resolveResult, err := ResolveAndValidate(ctx, inputs, catalogLookup)
-	if err != nil {
-		return resolveResult, nil, err
-	}
-
-	if err := ctx.Err(); err != nil {
-		return resolveResult, nil, err
-	}
-
-	topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
-		ResolveResult:     resolveResult,
-		CatalogLookup:     catalogLookup,
-		LoadSubAggregate:  subAggregateLoader,
-		RootAggregateFile: inputs.AggregatePath,
-	})
-	if err != nil {
-		if inputs.TolerateCatalogViewInconsistency {
-			// The sub-aggregate guard reaches the same shared uses-socket
-			// validator as Step 1, so the view-inconsistency class can surface
-			// here too. Apply the same tolerance: if every Step-2 violation is
-			// a catalog-view inconsistency, suppress the halt and return the
-			// graph BuildContext built up to the guard (uses-conformance for the
-			// unavailable node skipped). A remaining real violation still halts.
-			var multi *resolver.MultiResolverError
-			if stderrors.As(err, &multi) && len(dropCatalogViewInconsistencies(multi.Violations)) == 0 {
-				return resolveResult, topoResult, nil
-			}
+	use func(*resolver.ResolveResult, *topology.TopologyResult) error,
+) error {
+	return ResolveAndValidate(ctx, inputs, catalogLookup, func(resolveResult *resolver.ResolveResult) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		return resolveResult, nil, fmt.Errorf("Step 2 (topology): %w", err)
-	}
 
-	return resolveResult, topoResult, nil
+		topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
+			ResolveResult:     resolveResult,
+			CatalogLookup:     catalogLookup,
+			LoadSubAggregate:  subAggregateLoader,
+			RootAggregateFile: inputs.AggregatePath,
+		})
+		if err != nil {
+			if inputs.TolerateCatalogViewInconsistency {
+				// The sub-aggregate guard reaches the same shared uses-socket
+				// validator as Step 1, so the view-inconsistency class can surface
+				// here too. Apply the same tolerance: if every Step-2 violation is
+				// a catalog-view inconsistency, suppress the halt and proceed with
+				// the graph BuildContext built up to the guard (uses-conformance for
+				// the unavailable node skipped). A remaining real violation halts.
+				var multi *resolver.MultiResolverError
+				if stderrors.As(err, &multi) && len(dropCatalogViewInconsistencies(multi.Violations)) == 0 {
+					return use(resolveResult, topoResult)
+				}
+			}
+			return fmt.Errorf("Step 2 (topology): %w", err)
+		}
+
+		return use(resolveResult, topoResult)
+	})
 }
 
 // RunTier4Pipeline executes Steps 1-4 of the compiler pipeline (resolve,
@@ -371,18 +365,16 @@ func RunTier4Pipeline(
 	catalogLookup resolver.CatalogLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
-	stepsOut, err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader)
-	if stepsOut != nil && stepsOut.ResolveResult != nil {
-		// Purge the merged parameter map as RunTier4Pipeline exits so the
-		// lifetime matches the rendering pass exactly. Owned per-exported-
-		// function to keep the discipline at each API boundary.
-		defer resolver.PurgeParameters(&stepsOut.ResolveResult.Parameters)
-	}
-
-	out := &Tier4Result{
-		IRGraph:  stepsOut.IRGraph,
-		Analysis: stepsOut.Analysis,
-	}
+	out := &Tier4Result{}
+	err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
+		// Capture the phase outputs inside the resolve scope; the parameter
+		// purge is owned by resolver.ResolveAndUse and fires after this returns.
+		// Tier-4 runs no further work in the scope — analyzer errors ride on
+		// Analysis.Errors, consumed below.
+		out.IRGraph = stepsOut.IRGraph
+		out.Analysis = stepsOut.Analysis
+		return nil
+	})
 
 	// Extract the structured per-violation slice into a uniform shape so
 	// downstream consumers iterate ResolveDiagnostics with one code path
@@ -421,9 +413,11 @@ func RunTier4Pipeline(
 // process boundary.
 //
 // The parameter map merged from Release.spec.parameters flows through to
-// the renderer (for orchestrator-time path-template evaluation). Active-
-// purge runs as RunPipeline exits via a deferred PurgeParameters call —
-// the wrapper does not need to remember to purge.
+// the renderer (for orchestrator-time path-template evaluation). RunPipeline
+// runs inside resolver.ResolveAndUse's scope (via runStepsOneToFour →
+// ResolveAndFlatten), which owns the active-purge: the render completes inside
+// the callback and the deferred PurgeParameters fires after it returns, so
+// RunPipeline holds no purge defer of its own.
 //
 // RunPipeline shares Steps 1-4 with RunTier4Pipeline through the
 // unexported runStepsOneToFour helper, then runs Step 4b + Step 5.
@@ -439,98 +433,100 @@ func RunPipeline(
 	engineFactory renderer.EngineFactory,
 	opts Options,
 ) (*Result, error) {
-	stepsOut, err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader)
-	if stepsOut != nil && stepsOut.ResolveResult != nil {
-		defer resolver.PurgeParameters(&stepsOut.ResolveResult.Parameters)
-	}
+	var result *Result
+	err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
+		// Step 4: convert analyzer errors to the joined-error shape that
+		// pre-extraction RunPipeline returned. Preserves the first-error-fatal
+		// semantic existing callers (irgraph, CLI build) consume.
+		if len(stepsOut.Analysis.Errors) > 0 {
+			errs := make([]error, len(stepsOut.Analysis.Errors))
+			for i := range stepsOut.Analysis.Errors {
+				errs[i] = stepsOut.Analysis.Errors[i].ToCompilerError()
+			}
+			return stderrors.Join(errs...)
+		}
+
+		resolveResult := stepsOut.ResolveResult
+		graph := stepsOut.IRGraph
+		featureOrder := stepsOut.FeatureOrder
+
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Step 4b: Component / Feature assertions.
+		if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
+			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Step 4b (Component/Feature assertions)")
+		}
+
+		// Step 4c: resolution-completeness — every component/feature instance must
+		// resolve to exactly one recipe before render. Skipped when the caller does
+		// not supply a verifier (IR-inspection paths that do not render).
+		if opts.RecipeResolutionVerifier != nil {
+			if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
+			}
+		}
+
+		// Step 5: Render. Trace writer selection: in-memory collection when
+		// IncludeTrace is true (caller surfaces or writes the map); no-op
+		// otherwise. The trace close and the resolver's parameter purge both
+		// run as this continuation unwinds — trace first (deferred here), purge
+		// after (owned by resolver.ResolveAndUse), so render reads live
+		// parameters exactly as before.
+		var memWriter trace.MemoryWriter
+		var traceWriter trace.Writer
+		if opts.IncludeTrace {
+			memWriter = trace.NewMemory()
+			traceWriter = memWriter
+		} else {
+			traceWriter = trace.New("")
+		}
+		defer func() {
+			if cerr := traceWriter.Close(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "  trace: close: %s\n", cerr)
+			}
+		}()
+
+		rendererInput := renderer.RendererInput{
+			Graph:            graph,
+			FeatureOrder:     featureOrder,
+			ResolveResult:    resolveResult,
+			CatalogLookup:    catalogLookup,
+			MappingLibraries: inputs.MappingLibraries,
+			Trace:            traceWriter,
+			YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
+		}
+		// Build-time source-artifact resolution: when the caller supplies a
+		// lockfile and workspace root, the orchestrator resolves each remote
+		// source to its pinned cache entry. Left unset, the renderer forwards
+		// sources verbatim (sourceless / local-path paths).
+		if inputs.Lockfile != nil && inputs.WorkspaceRoot != "" {
+			rendererInput.Lockfile = inputs.Lockfile
+			rendererInput.WorkspaceRoot = inputs.WorkspaceRoot
+			rendererInput.CacheDir = inputs.WorkspaceConfig.Workspace.ResolvedCacheDir()
+		}
+
+		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, engineFactory)
+		if rerr != nil {
+			return fmt.Errorf("Step 5 (render): %w", rerr)
+		}
+
+		for _, w := range renderResult.Warnings {
+			fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
+		}
+
+		result = &Result{
+			Artifacts: renderResult.Files,
+			IRGraph:   graph,
+		}
+		if memWriter != nil {
+			result.Trace = memWriter.Entries()
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	// Step 4: convert analyzer errors to the joined-error shape that
-	// pre-extraction RunPipeline returned. Preserves the first-error-fatal
-	// semantic existing callers (irgraph, CLI build) consume.
-	if len(stepsOut.Analysis.Errors) > 0 {
-		errs := make([]error, len(stepsOut.Analysis.Errors))
-		for i := range stepsOut.Analysis.Errors {
-			errs[i] = stepsOut.Analysis.Errors[i].ToCompilerError()
-		}
-		return nil, stderrors.Join(errs...)
-	}
-
-	resolveResult := stepsOut.ResolveResult
-	graph := stepsOut.IRGraph
-	featureOrder := stepsOut.FeatureOrder
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	// Step 4b: Component / Feature assertions.
-	if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Step 4b (Component/Feature assertions)")
-	}
-
-	// Step 4c: resolution-completeness — every component/feature instance must
-	// resolve to exactly one recipe before render. Skipped when the caller does
-	// not supply a verifier (IR-inspection paths that do not render).
-	if opts.RecipeResolutionVerifier != nil {
-		if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
-		}
-	}
-
-	// Step 5: Render. Trace writer selection: in-memory collection when
-	// IncludeTrace is true (caller surfaces or writes the map); no-op
-	// otherwise.
-	var memWriter trace.MemoryWriter
-	var traceWriter trace.Writer
-	if opts.IncludeTrace {
-		memWriter = trace.NewMemory()
-		traceWriter = memWriter
-	} else {
-		traceWriter = trace.New("")
-	}
-	defer func() {
-		if cerr := traceWriter.Close(); cerr != nil {
-			fmt.Fprintf(os.Stderr, "  trace: close: %s\n", cerr)
-		}
-	}()
-
-	rendererInput := renderer.RendererInput{
-		Graph:            graph,
-		FeatureOrder:     featureOrder,
-		ResolveResult:    resolveResult,
-		CatalogLookup:    catalogLookup,
-		MappingLibraries: inputs.MappingLibraries,
-		Trace:            traceWriter,
-		YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
-	}
-	// Build-time source-artifact resolution: when the caller supplies a
-	// lockfile and workspace root, the orchestrator resolves each remote
-	// source to its pinned cache entry. Left unset, the renderer forwards
-	// sources verbatim (sourceless / local-path paths).
-	if inputs.Lockfile != nil && inputs.WorkspaceRoot != "" {
-		rendererInput.Lockfile = inputs.Lockfile
-		rendererInput.WorkspaceRoot = inputs.WorkspaceRoot
-		rendererInput.CacheDir = inputs.WorkspaceConfig.Workspace.ResolvedCacheDir()
-	}
-
-	renderResult, err := renderer.RenderAll(ctx, rendererInput, recipeLookup, engineFactory)
-	if err != nil {
-		return nil, fmt.Errorf("Step 5 (render): %w", err)
-	}
-
-	for _, w := range renderResult.Warnings {
-		fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
-	}
-
-	out := &Result{
-		Artifacts: renderResult.Files,
-		IRGraph:   graph,
-	}
-	if memWriter != nil {
-		out.Trace = memWriter.Entries()
-	}
-	return out, nil
+	return result, nil
 }
