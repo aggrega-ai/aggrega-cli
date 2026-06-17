@@ -20,9 +20,12 @@ import (
 // count as one entry. Each requirement matches against this set by exact
 // type equality.
 //
-// Scope: top-level Aggregate components only. Components inside subsystems
-// are not walked here; their requiredFeatures are not validated by this
-// guard.
+// Scope: every component instance in the NormalizedAggregate — the root
+// Aggregate's components plus all subsystem components (collectComponentInstances
+// walks subsystems recursively). Components contributed by flattened
+// sub-aggregates do not exist at this phase (they are produced by topology
+// flattening, after Step 1); their requiredFeatures contract is enforced by the
+// post-flatten pass over the IR graph instead.
 //
 // Silent skips: components whose type is not in the catalog, components
 // whose catalog entry has an empty requiredFeatures array. Errors sort
