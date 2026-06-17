@@ -335,36 +335,48 @@ func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspa
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
-	switch {
-	case statErr == nil:
-		// The lockfile already exists, so build does not pull this run. The
-		// resolution diagnostic is a pull-time surface; with no pull there is
-		// nothing to report, and re-deriving a tier the committed lockfile does
-		// not carry would fabricate one. Note the absence rather than print
-		// nothing, so --detail does not look silently broken.
-		if detail {
-			fmt.Fprintf(os.Stderr, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
-		}
-		return true, nil
-	case stderrors.Is(statErr, os.ErrNotExist):
-		// fall through to auto-pull / halt decision below
-	default:
+	preexisted := statErr == nil
+	if statErr != nil && !stderrors.Is(statErr, os.ErrNotExist) {
 		return false, fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
 	}
 
+	// Offline: never network. Build is frozen against whatever lockfile exists;
+	// a missing one cannot be filled here.
 	if wsCfg.Workspace.Offline {
+		if preexisted {
+			return true, nil
+		}
 		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull %s` from a connected environment first: %w",
 			lockfilePath, releasePath, oci.ErrFetchNotFound)
 	}
-	if !wsCfg.Workspace.AutoPull {
-		return false, fmt.Errorf("aggrega build: lockfile %s missing and auto_pull is false; run `aggrega pull %s` first",
-			lockfilePath, releasePath)
+
+	// build's auto-pull IS the default (lockfile-honoring) pull — no separate build
+	// flag, no float. It honors every existing pin (resolving to the pinned version,
+	// verifying the pinned digest, halting on a drifted pin), resolves + adds
+	// un-pinned references, refills an empty cache by pin, and prunes stale pins. On
+	// a complete, cache-populated lockfile it is a no-op with NO network (every pin a
+	// Tier-2 hit) — so the build stays hermetic given a complete lockfile, with
+	// auto_pull the fill escape hatch; only `pull --regenerate` floats. There is no
+	// absent-vs-partial special case: any incomplete/empty state runs the same
+	// honoring pull, and lockfile.Verify (in dispatchBuild) is the post-condition.
+	// The build's own resolution runs through the nil-puller pinned lazy lookup,
+	// untouched — so build output is unchanged by this fill.
+	if wsCfg.Workspace.AutoPull {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail}); err != nil {
+			return false, fmt.Errorf("auto-pull: %w", err)
+		}
+		return false, nil
 	}
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail}); err != nil {
-		return false, fmt.Errorf("auto-pull: %w", err)
+	// auto_pull is false: build is frozen against the lockfile as it stands.
+	if preexisted {
+		if detail {
+			fmt.Fprintf(os.Stderr, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present and auto_pull is off, so no pull ran this build\n", lockfilePath)
+		}
+		return true, nil
 	}
-	return false, nil
+	return false, fmt.Errorf("aggrega build: lockfile %s missing and auto_pull is false; run `aggrega pull %s` first",
+		lockfilePath, releasePath)
 }
 
 // computeBuildClosure walks the Release's closure ONCE, hermetically (the lazy

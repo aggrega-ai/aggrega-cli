@@ -251,7 +251,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	host := startRegistry(t, nil)
 	pushCatalog(t, host, standardCatalogDir(t))
-	newConsumerWorkspace(t, host)
+	ws := newConsumerWorkspace(t, host)
 	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
@@ -283,6 +283,15 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	if err := lockfile.WriteLockfile(lockPath, lf); err != nil {
 		t.Fatalf("rewrite lock: %v", err)
 	}
+
+	// Freeze the build: auto_pull is FALSE so the build resolves strictly against
+	// the (now-incomplete) lockfile rather than reconciling. The withheld entity
+	// is un-pinned in the frozen view, so the closure-backed lookup cannot resolve
+	// it and the build halts loudly at closure. (Under auto_pull:true the build's
+	// honoring auto-pull would resolve the un-pinned reference and re-add it — the
+	// honoring default fills a gap rather than halting; the loud closure halt is
+	// the frozen-mode guarantee.)
+	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: false\n  offline: false")
 
 	_ = os.RemoveAll("dist")
 	err = dispatchBuild("release.yaml", nil, false)

@@ -38,6 +38,17 @@ func newPullCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "pull",
 		Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
+		Long: `Resolve the Release's catalog and source closure into the cache and write the per-Release lockfile.
+
+By default, pull reconciles the lockfile against the current closure while honoring
+the pins it already records. A pinned entity is fetched at its pinned version and
+verified against its pinned digest; if the registry no longer serves the pinned bytes,
+pull halts rather than silently re-pinning. A reference with no pin — newly added, or
+removed from the lockfile by hand — is resolved fresh and added. Entities no longer in
+the closure are pruned. Re-running pull on an unchanged closure is a no-op.
+
+Use --regenerate to discard the existing lockfile and re-resolve every entity from
+current registry state, floating each dependency to the highest available version.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if pullVerify && pullRegenerate {
 				return fmt.Errorf("--verify and --regenerate are mutually exclusive")
@@ -54,7 +65,7 @@ func newPullCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&pullCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
-	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and rebuild from current registry state")
+	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and re-resolve every entity from current registry state, floating each dependency to the highest available version (ignores existing pins)")
 	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
 	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
 	c.Flags().BoolVar(&pullDetail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
@@ -305,7 +316,7 @@ func pullRun(cfg pullConfig) error {
 	if !cfg.Verify {
 		if prior, _, lerr := lockfile.LoadLockfile(lockfilePath); lerr == nil && prior != nil {
 			reuse = &catalog.ReuseVerification{
-				PriorPins: prior.PinsByURI(),
+				PriorPins: catalog.PinsFromLockfile(prior),
 				Warn:      func(notice string) { fmt.Fprintf(os.Stderr, "  reuse: %s\n", notice) },
 			}
 		}

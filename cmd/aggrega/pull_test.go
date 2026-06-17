@@ -339,6 +339,38 @@ func TestPullProducesByteIdenticalLockfileAcrossRuns(t *testing.T) {
 	}
 }
 
+// TestPullDefaultRerunIsByteIdentical proves the honoring default is idempotent:
+// a second plain pull (no --regenerate) over an unchanged closure honors the pins
+// the first pull recorded and rewrites a byte-identical lockfile (modulo the
+// generated_at provenance line). This is the GitOps-determinism guarantee of the
+// honoring reconcile — re-running pull does not churn the committed lockfile.
+func TestPullDefaultRerunIsByteIdentical(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("first pull: %v", err)
+	}
+	first, err := os.ReadFile(filepath.Join(root, "release.lock"))
+	if err != nil {
+		t.Fatalf("read first lockfile: %v", err)
+	}
+
+	// Second pull WITHOUT --regenerate: the honoring reconcile path.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("second pull (honoring rerun): %v", err)
+	}
+	second, err := os.ReadFile(filepath.Join(root, "release.lock"))
+	if err != nil {
+		t.Fatalf("read second lockfile: %v", err)
+	}
+
+	if !bytes.Equal(stripGeneratedAt(first), stripGeneratedAt(second)) {
+		t.Errorf("default honoring rerun churned the lockfile (excluding generated_at)\n--- first ---\n%s\n--- second ---\n%s", stripGeneratedAt(first), stripGeneratedAt(second))
+	}
+}
+
 func TestPullRegenerateDiscardsExistingLockfile(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

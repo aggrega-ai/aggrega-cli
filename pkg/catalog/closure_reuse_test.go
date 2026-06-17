@@ -5,6 +5,7 @@ package catalog_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		var notices []string
 		reuse := &catalog.ReuseVerification{
-			PriorPins: map[string]string{reuseURI: goodPin},
+			PriorPins: map[string]catalog.Pin{reuseURI: {Digest: goodPin}},
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
 		// A puller that must not be reached on a verified hit.
@@ -120,7 +121,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		var notices []string
 		reuse := &catalog.ReuseVerification{
-			PriorPins: map[string]string{reuseURI: goodPin},
+			PriorPins: map[string]catalog.Pin{reuseURI: {Digest: goodPin}},
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
@@ -142,7 +143,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 	})
 
-	t.Run("drift with re-tagged upstream re-fetches with a moved-pin notice", func(t *testing.T) {
+	t.Run("drift with re-tagged upstream HALTS (honor != launder)", func(t *testing.T) {
 		t.Parallel()
 		ws := t.TempDir()
 		seedCacheSlot(t, ws, cacheDir, drifted)
@@ -154,30 +155,22 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
+		// The registry now serves DIFFERENT bytes for the pinned version (the
+		// upstream tag was moved). Honoring does NOT re-pin the moved bytes — it
+		// HALTS with ErrFetchIntegrity, so a changed pin is surfaced, never
+		// laundered into a new lockfile.
 		retagged := reuseLibBody("20Gi")
-		retaggedPin := sha256Hex(retagged)
 		store := memory.New()
 		if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, retagged); err != nil {
 			t.Fatalf("oci.Push: %v", err)
 		}
-		var notices []string
 		reuse := &catalog.ReuseVerification{
-			PriorPins: map[string]string{reuseURI: goodPin},
-			Warn:      func(n string) { notices = append(notices, n) },
+			PriorPins: map[string]catalog.Pin{reuseURI: {ResolvedVersion: "1.0.0", Digest: goodPin}},
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
-		res, err := lookup.ResolveSchemaLibrary(reuseURI)
-		if err != nil {
-			t.Fatalf("ResolveSchemaLibrary: %v", err)
-		}
-		if res.Resolution.Digest != retaggedPin {
-			t.Errorf("re-fetched digest = %q; want %q (re-tagged upstream)", res.Resolution.Digest, retaggedPin)
-		}
-		if len(notices) != 1 {
-			t.Fatalf("notice count = %d; want 1", len(notices))
-		}
-		if !strings.Contains(notices[0], "moved") || !strings.Contains(notices[0], goodPin) || !strings.Contains(notices[0], retaggedPin) {
-			t.Errorf("notice = %q; want a moved-pin notice naming %s -> %s", notices[0], goodPin, retaggedPin)
+		_, err = lookup.ResolveSchemaLibrary(reuseURI)
+		if !errors.Is(err, oci.ErrFetchIntegrity) {
+			t.Errorf("re-tagged upstream: err = %v; want ErrFetchIntegrity (halt, not a re-pinned launder)", err)
 		}
 	})
 

@@ -71,9 +71,15 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: true\n")
+	// auto_pull is FALSE: the build is frozen against the committed lockfile and
+	// verifies it. (Under auto_pull:true the build's honoring auto-pull reconciles —
+	// a mutable local entity re-resolves from its authoritative Tier-1 source and
+	// re-pins, so a local drift never reaches this frozen drift-halt; registry-pin
+	// drift halts earlier via ErrFetchIntegrity. The drift-halt below is the
+	// auto_pull:false frozen-lockfile guarantee.)
+	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
 
-	// Prime the cache + lockfile by running an initial pull.
+	// Prime the cache + lockfile by running an initial explicit pull.
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}

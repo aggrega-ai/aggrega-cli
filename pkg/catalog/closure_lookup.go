@@ -252,14 +252,16 @@ type catalogLookup struct {
 	// and serve paths (the top-level resolves there via the cache→catalog bridge).
 	registrySeeds map[string]closure.Resolution
 
-	// priorPins, when non-nil, turns Tier-2 cache reuse into a verified
-	// reuse: a cached slot whose content digest no longer matches its
-	// prior-lockfile pin is skipped (re-fetched at Tier-3) instead of
-	// trusted. refetchPending flags the URIs that drifted so the Tier-3
-	// arm can record a notice via warn; both are nil unless a
-	// ReuseVerification was supplied (the hermetic build and serve
-	// paths leave them nil and reuse cache slots unconditionally).
-	priorPins      map[string]string
+	// priorPins, when non-nil, makes the pull HONOR a prior lockfile: a closure
+	// entity carrying a pin resolves to the pin's exact ResolvedVersion (never
+	// floated to list-tags→highest), and a Tier-2 cache slot is reused only when
+	// its content digest matches the pin's Digest; a registry whose pinned-version
+	// bytes no longer match the pin Digest HALTS (ErrFetchIntegrity), never
+	// re-pinned. refetchPending flags a drifted cache slot so the Tier-3 re-fetch
+	// records a notice via warn; both are nil unless a ReuseVerification was
+	// supplied (the hermetic build and serve paths leave them nil and reuse cache
+	// slots unconditionally — the build is frozen against a complete lockfile).
+	priorPins      map[string]Pin
 	refetchPending map[string]string
 	warn           func(notice string)
 }
@@ -277,7 +279,7 @@ type catalogLookup struct {
 // verification — there is nothing to compare against (e.g. an entity
 // that entered closure after the prior lock).
 type ReuseVerification struct {
-	PriorPins map[string]string
+	PriorPins map[string]Pin
 	Warn      func(notice string)
 }
 
@@ -355,11 +357,57 @@ func (l *catalogLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Reso
 	if res, ok := l.tier1CatalogEntity(uri); ok {
 		return res, nil
 	}
-	if _, res, ok := l.tier2(uri); ok {
+	// Honor a prior pin: resolve the pinned EXACT version (never float to
+	// list-tags→highest) and verify the resolved bytes against the pin's digest.
+	fetchURI := l.pinnedFetchURI(uri)
+	if _, res, ok := l.tier2(fetchURI); ok {
+		return l.honorPinDigest(uri, res)
+	}
+	_, res, err := l.tier3CatalogEntity(fetchURI, ociKindForHint(kindHint))
+	if err != nil {
+		return res, err
+	}
+	return l.honorPinDigest(uri, res)
+}
+
+// pinnedFetchURI returns the URI to resolve for an entity that carries a prior
+// lockfile pin: the pin's exact ResolvedVersion appended to a bare reference, so
+// a Tier-3 pull fetches the pinned version verbatim (the proven exact path)
+// rather than listing tags and floating to the highest. A reference that already
+// carries a version, or one with no prior pin (un-pinned: resolve fresh + add),
+// is returned unchanged. This is the float→honor flip; floating happens only for
+// an un-pinned reference (or under `pull --regenerate`, which supplies no pins).
+func (l *catalogLookup) pinnedFetchURI(uri string) string {
+	if l.priorPins == nil {
+		return uri
+	}
+	if _, _, hasVersion := splitVersionedURI(uri); hasVersion {
+		return uri
+	}
+	pin, ok := l.priorPins[uri]
+	if !ok || pin.ResolvedVersion == "" {
+		return uri
+	}
+	return uri + ":" + pin.ResolvedVersion
+}
+
+// honorPinDigest enforces honor≠launder: when the entity carried a prior pin and
+// the resolved bytes no longer hash to the pin's digest, the registry's
+// pinned-version bytes have changed under the pin — HALT with ErrFetchIntegrity
+// rather than re-resolving and laundering the changed bytes into a new pin.
+// Keyed by the original (caller's) URI, so a bare reference verifies against its
+// bare-keyed pin regardless of the versioned form used to fetch.
+func (l *catalogLookup) honorPinDigest(uri string, res closure.Resolution) (closure.Resolution, error) {
+	if l.priorPins == nil || res.NotFound {
 		return res, nil
 	}
-	_, res, err := l.tier3CatalogEntity(uri, ociKindForHint(kindHint))
-	return res, err
+	pin, ok := l.priorPins[uri]
+	if !ok || pin.Digest == "" || res.Digest == pin.Digest {
+		return res, nil
+	}
+	return closure.Resolution{}, fmt.Errorf(
+		"%w: pinned entity %q: registry now serves digest %s for the pinned version, not the pinned digest %s; run `aggrega pull --regenerate` to update the pin",
+		oci.ErrFetchIntegrity, uri, res.Digest, pin.Digest)
 }
 
 // ociKindForHint maps a closure KindHint to the catalog kind the OCI location
@@ -408,10 +456,15 @@ func (l *catalogLookup) ResolveAggregate(uri string) (closure.Resolution, error)
 	if res, ok := l.tier1CatalogEntity(uri); ok {
 		return res, nil
 	}
-	if _, res, ok := l.tier2(uri); ok {
-		return res, nil
+	fetchURI := l.pinnedFetchURI(uri)
+	if _, res, ok := l.tier2(fetchURI); ok {
+		return l.honorPinDigest(uri, res)
 	}
-	return l.tier3Aggregate(uri)
+	res, err := l.tier3Aggregate(fetchURI)
+	if err != nil {
+		return res, err
+	}
+	return l.honorPinDigest(uri, res)
 }
 
 func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
@@ -431,10 +484,16 @@ func (l *catalogLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolut
 	if res, entries, ok := l.tier1SchemaLibrary(uri); ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
-	if _, res, ok := l.tier2(uri); ok {
-		return closure.LibraryResolution{Resolution: res}, nil
+	fetchURI := l.pinnedFetchURI(uri)
+	if _, res, ok := l.tier2(fetchURI); ok {
+		res, err := l.honorPinDigest(uri, res)
+		return closure.LibraryResolution{Resolution: res}, err
 	}
-	res, err := l.tier3Library(uri, "SchemaLibrary")
+	res, err := l.tier3Library(fetchURI, "SchemaLibrary")
+	if err != nil {
+		return closure.LibraryResolution{Resolution: res}, err
+	}
+	res, err = l.honorPinDigest(uri, res)
 	return closure.LibraryResolution{Resolution: res}, err
 }
 
@@ -442,10 +501,16 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 	if res, entries, ok := l.tier1MappingLibrary(uri); ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
-	if _, res, ok := l.tier2(uri); ok {
-		return closure.LibraryResolution{Resolution: res}, nil
+	fetchURI := l.pinnedFetchURI(uri)
+	if _, res, ok := l.tier2(fetchURI); ok {
+		res, err := l.honorPinDigest(uri, res)
+		return closure.LibraryResolution{Resolution: res}, err
 	}
-	res, err := l.tier3Library(uri, "MappingLibrary")
+	res, err := l.tier3Library(fetchURI, "MappingLibrary")
+	if err != nil {
+		return closure.LibraryResolution{Resolution: res}, err
+	}
+	res, err = l.honorPinDigest(uri, res)
 	return closure.LibraryResolution{Resolution: res}, err
 }
 
@@ -552,7 +617,7 @@ func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
 		return bytes, res, true
 	}
 	pin, havePin := l.priorPins[uri]
-	if !havePin || contentDigest(bytes) == pin {
+	if !havePin || contentDigest(bytes) == pin.Digest {
 		return bytes, res, true
 	}
 	// Re-pull reuse-check: the cached slot no longer hashes to the pin
@@ -561,7 +626,7 @@ func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
 	// Re-establishing the pin from authoritative registry bytes is the
 	// correct action where the registry is reachable, rather than
 	// laundering the drifted slot into the new lockfile.
-	l.refetchPending[uri] = pin
+	l.refetchPending[uri] = pin.Digest
 	return nil, closure.Resolution{}, false
 }
 
