@@ -439,6 +439,62 @@ func TestMerge_NarrowingMultiKeyword(t *testing.T) {
 	}
 }
 
+// TestMerge_NarrowingOrderDeterministic verifies that a single merge's
+// multiple narrowing violations are emitted in a fixed (FieldPath → Keyword →
+// Detail → ParentSource → ChildSource) order regardless of the map-iteration
+// order the per-field detection walks. Two independent merges of the same
+// inputs must yield byte-identical NarrowingViolations slices, and the order
+// must be the sorted one — the property the closure / whole-catalog narrowing
+// advisories rely on to be stable run-to-run.
+func TestMerge_NarrowingOrderDeterministic(t *testing.T) {
+	t.Parallel()
+	// alpha widens two keywords; mid and zeta one each — four violations across
+	// three field paths, exercising the FieldPath sort and the per-path Keyword
+	// tiebreak. Sorted order: alpha/maxLength, alpha/minimum, mid/maximum, zeta/minimum.
+	parentJSON := `{"properties": {
+		"zeta": {"minimum": 10},
+		"alpha": {"minimum": 10, "maxLength": 5},
+		"mid": {"maximum": 100}
+	}}`
+	childJSON := `{"properties": {
+		"zeta": {"minimum": 0},
+		"alpha": {"minimum": 0, "maxLength": 99},
+		"mid": {"maximum": 999}
+	}}`
+	merge := func() []NarrowingViolation {
+		parent := mustSchema(t, parentJSON, "parent.yaml:1")
+		child := mustSchema(t, childJSON, "child.yaml:1")
+		out, err := Merge([]*Schema{parent, child})
+		if err != nil {
+			t.Fatalf("Merge: %v", err)
+		}
+		return out.NarrowingViolations
+	}
+
+	got := merge()
+	want := []struct{ field, keyword string }{
+		{"alpha", "maxLength"},
+		{"alpha", "minimum"},
+		{"mid", "maximum"},
+		{"zeta", "minimum"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d narrowing violations; got %d (%v)", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if got[i].FieldPath != w.field || got[i].Keyword != w.keyword {
+			t.Errorf("violation[%d] = (%s,%s); want (%s,%s) — not in sorted order: %v",
+				i, got[i].FieldPath, got[i].Keyword, w.field, w.keyword, got)
+		}
+	}
+	// Full-struct stability across an independent merge: the 5-field sort
+	// canonicalizes the whole slice, so a re-merge (with its own map-iteration
+	// order) produces an identical slice — this is the de-flake guarantee.
+	if again := merge(); !reflect.DeepEqual(got, again) {
+		t.Errorf("non-deterministic NarrowingViolations across merges:\n--first--\n%v\n--again--\n%v", got, again)
+	}
+}
+
 // TestMerge_NarrowingEnumWidens verifies enum widening detection —
 // child enum contains values not present in parent enum.
 func TestMerge_NarrowingEnumWidens(t *testing.T) {

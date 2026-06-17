@@ -4,6 +4,8 @@
 package merger
 
 import (
+	"sort"
+
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -118,6 +120,28 @@ func Merge(schemas []*Schema) (*Schema, error) {
 
 	applyProvenance(acc.Schema, "", provenance)
 
+	// Order the per-entity narrowing notices deterministically at the source.
+	// A single merge step's multi-field narrowings are produced in map-iteration
+	// order; the closure walk sorts ACROSS entities but not within one, so an
+	// entity that widens several inherited constraints would otherwise emit its
+	// notices in a run-varying order. FieldPath → Keyword → Detail already makes
+	// the rendered advisory deterministic; ParentSource → ChildSource extend the
+	// key to a total order over the full struct so the slice itself is canonical.
+	sort.Slice(violations, func(i, j int) bool {
+		a, b := violations[i], violations[j]
+		switch {
+		case a.FieldPath != b.FieldPath:
+			return a.FieldPath < b.FieldPath
+		case a.Keyword != b.Keyword:
+			return a.Keyword < b.Keyword
+		case a.Detail != b.Detail:
+			return a.Detail < b.Detail
+		case a.ParentSource != b.ParentSource:
+			return a.ParentSource < b.ParentSource
+		default:
+			return a.ChildSource < b.ChildSource
+		}
+	})
 	acc.NarrowingViolations = violations
 	return acc, nil
 }
