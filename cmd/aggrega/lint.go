@@ -216,36 +216,23 @@ func lintRelease(releasePath string) error {
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
 	}
 
-	releaseDir := filepath.Dir(releasePath)
-	rel, err := resolver.LoadRelease(releasePath)
+	// Shared Release→closure orchestration — the SAME front door the build runs
+	// (releaseClosure in build.go), so lint and build compute the identical closure
+	// by construction. lint runs no manifest-implements consistency halt (afterManifest
+	// nil) and tolerates a missing lockfile: pass the lockfile only when it loaded, so
+	// the registry-pin external-seed gate matches the build's exactly.
+	var lockForClosure *lockfile.Lockfile
+	if lfErr == nil {
+		lockForClosure = lf
+	}
+	rc, err := releaseClosure(releasePath, lazyView, lockForClosure, wsCfg, wsRoot, cacheDir, nil)
 	if err != nil {
-		return fmt.Errorf("load release: %w", err)
+		return err
 	}
-	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
-	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
-	}
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
-	if err != nil {
-		return fmt.Errorf("compose manifest extends: %w", err)
-	}
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), nil)
-	if err != nil {
-		return fmt.Errorf("load aggregate: %w", err)
-	}
-	// Seed the aggregate as external only when it is NOT a registry-pinned
-	// top-level — a version-less external seed would shadow the pin (the same gate
-	// the build applies). The manifest is always external (no registry tier).
-	aggExternal := aggRes.Bytes
-	if lfErr == nil && lockfileHasRegistryPin(lf, rel.Spec.Aggregate) {
-		aggExternal = nil
-	}
-	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
-
-	cl, err := computeBuildClosure(rel, manifest, aggRes.Aggregate, externals, wsCfg, lazyView, wsRoot, cacheDir)
-	if err != nil {
-		return fmt.Errorf("release closure: %w", err)
-	}
+	rel := rc.Release
+	manifest := rc.Manifest
+	aggRes := rc.Aggregate
+	cl := rc.Closure
 
 	// Pillar-validation errors fail the lint; resolve extends first so composed
 	// (parent+child) schemas validate, matching the build.
