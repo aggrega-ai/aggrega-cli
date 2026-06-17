@@ -506,7 +506,7 @@ func pullRun(cfg pullConfig) error {
 	cl.SourceArtifacts = sourceArtifacts
 
 	lf := buildLockfile(cfg.ReleasePath, cl, wsCfg)
-	if err := lockfile.WriteLockfile(lockfilePath, lf); err != nil {
+	if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
 		return fmt.Errorf("write lockfile: %w", err)
 	}
 

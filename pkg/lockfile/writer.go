@@ -4,6 +4,7 @@
 package lockfile
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"sort"
@@ -39,8 +40,7 @@ func WriteLockfile(path string, lf *Lockfile) error {
 		return fmt.Errorf("lockfile: WriteLockfile called with nil *Lockfile")
 	}
 
-	canonical := canonicalise(lf)
-	out, err := yaml.Marshal(canonical)
+	out, err := marshalCanonical(lf)
 	if err != nil {
 		return fmt.Errorf("lockfile: marshal %s: %w", path, err)
 	}
@@ -48,6 +48,69 @@ func WriteLockfile(path string, lf *Lockfile) error {
 		return fmt.Errorf("lockfile: write %s: %w", path, err)
 	}
 	return nil
+}
+
+// marshalCanonical returns the exact bytes WriteLockfile writes: the canonical
+// (deterministic) form of lf marshalled to YAML. It is the single serialization
+// path — WriteLockfile and the byte-identity comparison in
+// WriteLockfilePreservingTimestamp both route through it, so the comparison
+// cannot drift from what is written.
+func marshalCanonical(lf *Lockfile) ([]byte, error) {
+	return yaml.Marshal(canonicalise(lf))
+}
+
+// WriteLockfilePreservingTimestamp writes lf to path like WriteLockfile, but
+// keeps the lockfile byte-idempotent: when a prior lockfile already exists at
+// path and is byte-identical to lf modulo the generated_at provenance line, the
+// prior generated_at is reused so re-writing an unchanged closure produces a
+// byte-identical file (no spurious one-line diff for a committed lockfile). A
+// first write (no prior file) or any real change keeps lf's own stamp.
+//
+// The unchanged-comparison reads marshalCanonical(lf) — the actual bytes that
+// will be written — so equality cannot diverge from the serialized output.
+func WriteLockfilePreservingTimestamp(path string, lf *Lockfile) error {
+	if lf == nil {
+		return fmt.Errorf("lockfile: WriteLockfilePreservingTimestamp called with nil *Lockfile")
+	}
+	if prior, rerr := os.ReadFile(path); rerr == nil {
+		next, merr := marshalCanonical(lf)
+		if merr == nil && bytes.Equal(stripGeneratedAt(prior), stripGeneratedAt(next)) {
+			if priorStamp := generatedAtValue(prior); priorStamp != "" {
+				lf.GeneratedAt = priorStamp
+			}
+		}
+	}
+	return WriteLockfile(path, lf)
+}
+
+// stripGeneratedAt returns b with the single top-level `generated_at:` line
+// removed, so two canonical lockfiles can be compared for equality ignoring
+// only the wall-clock provenance stamp. generated_at is a column-0 field (the
+// sole generated_at: key in the schema), so the prefix match is unambiguous.
+func stripGeneratedAt(b []byte) []byte {
+	out := make([]byte, 0, len(b))
+	for _, line := range bytes.SplitAfter(b, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("generated_at:")) {
+			continue
+		}
+		out = append(out, line...)
+	}
+	return out
+}
+
+// generatedAtValue returns the logical generated_at timestamp from canonical
+// lockfile bytes, or "" when absent or unparsable. It reads the value through
+// the same YAML library that writes it — not a raw line slice — so the returned
+// string is the unquoted logical value; reassigning it to lf.GeneratedAt and
+// re-marshalling reproduces the prior bytes exactly (no quote-doubling).
+func generatedAtValue(b []byte) string {
+	var probe struct {
+		GeneratedAt string `yaml:"generated_at"`
+	}
+	if err := yaml.Unmarshal(b, &probe); err != nil {
+		return ""
+	}
+	return probe.GeneratedAt
 }
 
 // canonicalise returns a deep-copy of lf with every slice sorted by

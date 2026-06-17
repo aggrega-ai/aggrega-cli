@@ -371,6 +371,36 @@ func TestPullDefaultRerunIsByteIdentical(t *testing.T) {
 	}
 }
 
+// TestPullByteIdenticalIncludingGeneratedAt is the load-bearing idempotence
+// proof: a second plain pull over an unchanged closure produces a lockfile
+// byte-identical to the first INCLUDING the generated_at line — no stripping.
+// The committed-lockfile (GitOps) workflow therefore sees zero churn on re-pull.
+func TestPullByteIdenticalIncludingGeneratedAt(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("first pull: %v", err)
+	}
+	first, err := os.ReadFile(filepath.Join(root, "release.lock"))
+	if err != nil {
+		t.Fatalf("read first lockfile: %v", err)
+	}
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("second pull: %v", err)
+	}
+	second, err := os.ReadFile(filepath.Join(root, "release.lock"))
+	if err != nil {
+		t.Fatalf("read second lockfile: %v", err)
+	}
+
+	if !bytes.Equal(first, second) {
+		t.Errorf("re-pull was not byte-identical including generated_at\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
 func TestPullRegenerateDiscardsExistingLockfile(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
