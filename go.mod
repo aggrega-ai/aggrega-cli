@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/aggrega-ai/aggrega-schemas v0.2.1
+	github.com/aggrega-ai/aggrega-schemas v0.2.2
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/go-containerregistry v0.21.6
 	github.com/google/jsonschema-go v0.4.3
