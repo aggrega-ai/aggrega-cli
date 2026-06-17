@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -256,6 +257,28 @@ func lintRelease(releasePath string) error {
 	}
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
 		return fmt.Errorf("release closure validation failed: %w", err)
+	}
+
+	// Authored-value conformance: validate the Release's resolved (post-parameter-
+	// interpolation) values against the closure's composed schemas, via the build's
+	// SHARED Step-1 validation (ResolveAndValidate — the same guard suite the build
+	// runs pre-topology, no flatten/render). A real conformance violation is an
+	// error (non-zero exit), distinct from the advisories below. The composed
+	// EffectiveSchema (extends parent+child) flows in through the lookup, so an
+	// inherited-pillar value is validated against the inherited constraint.
+	conformanceLookup := lazyView.AsCatalogLookup()
+	conformanceLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
+	resolveResult, verr := pipeline.ResolveAndValidate(context.Background(), pipeline.Inputs{
+		Release:           rel,
+		Manifest:          manifest,
+		AggregateRawBytes: aggRes.Bytes,
+		AggregatePath:     catalog.RelativeToWorkspace(wsRoot, aggRes.Path),
+	}, conformanceLookup)
+	if resolveResult != nil {
+		defer resolver.PurgeParameters(&resolveResult.Parameters)
+	}
+	if verr != nil {
+		return fmt.Errorf("release value conformance failed: %w", verr)
 	}
 
 	// Schema-pillar overlap + narrowing-on-extend advisories — informational, never

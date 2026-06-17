@@ -240,14 +240,26 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 // resolveResult is returned non-nil once ResolveFromInputs succeeds, even when
 // a later Step-1 sub-pass or the topology step fails, so the caller can purge
 // the parameter map. The caller owns resolver.PurgeParameters.
-func ResolveAndFlatten(
+// ResolveAndValidate runs Step 1 of the compiler pipeline — resolve (parameter
+// interpolation) + annotation binding validation + expansion + the full guard
+// suite — against caller-supplied inputs, and returns the resolved per-component
+// view WITHOUT flattening topology. It is the single source of the build's
+// pre-topology validation: ResolveAndFlatten calls it then flattens, and a
+// validate-only caller (`aggrega lint --release`) calls it and stops, so the two
+// cannot diverge on what a Release's resolved values are validated against. The
+// guard suite operates on the resolved (post-parameter-interpolation) aggregate,
+// so templated `{{ .parameters.* }}` values are validated as resolved.
+//
+// resolveResult is returned non-nil once ResolveFromInputs succeeds, even when a
+// later Step-1 sub-pass fails, so the caller can purge the parameter map. The
+// caller owns resolver.PurgeParameters.
+func ResolveAndValidate(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
-	subAggregateLoader topology.SubAggregateLoader,
-) (*resolver.ResolveResult, *topology.TopologyResult, error) {
+) (*resolver.ResolveResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	resolveResult, err := resolver.ResolveFromInputs(resolver.ResolveInputs{
@@ -257,17 +269,17 @@ func ResolveAndFlatten(
 		AggregatePath:     inputs.AggregatePath,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("Step 1 (resolve): %w", err)
+		return nil, fmt.Errorf("Step 1 (resolve): %w", err)
 	}
 
 	if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
-		return resolveResult, nil, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+		return resolveResult, fmt.Errorf("Step 1 (annotation binding validation): %w", err)
 	}
 	for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
 		fmt.Fprintf(os.Stderr, "  %s\n", w)
 	}
 	if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-		return resolveResult, nil, fmt.Errorf("Step 1 (annotation expansion): %w", err)
+		return resolveResult, fmt.Errorf("Step 1 (annotation expansion): %w", err)
 	}
 
 	guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
@@ -289,11 +301,24 @@ func ResolveAndFlatten(
 		// (parity with the analyzer path, which joins). The summary text is
 		// unchanged: MultiResolverError.Error() renders "Step 1: N guard
 		// violation(s)".
-		return resolveResult, nil, &resolver.MultiResolverError{
+		return resolveResult, &resolver.MultiResolverError{
 			Entity:     "Step 1",
 			Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
 			Violations: guardErrs,
 		}
+	}
+	return resolveResult, nil
+}
+
+func ResolveAndFlatten(
+	ctx context.Context,
+	inputs Inputs,
+	catalogLookup resolver.CatalogLookup,
+	subAggregateLoader topology.SubAggregateLoader,
+) (*resolver.ResolveResult, *topology.TopologyResult, error) {
+	resolveResult, err := ResolveAndValidate(ctx, inputs, catalogLookup)
+	if err != nil {
+		return resolveResult, nil, err
 	}
 
 	if err := ctx.Err(); err != nil {
