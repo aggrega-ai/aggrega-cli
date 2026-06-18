@@ -66,6 +66,13 @@ type ProvidesContext struct {
 	Values  types.OrderedMap[any]    `json:"values"`
 	Infra   types.OrderedMap[any]    `json:"infra"`
 	Locals  types.OrderedMap[string] `json:"locals"`
+	// SecretName is the attachment instance name, populated only for an
+	// attachment credential FeatureRecipe's provides evaluation so its provides
+	// templates may reference .secret_name — the same value the credential render
+	// exposes at Phase B.6. Empty for a base Recipe's provides, whose
+	// self-containment allowlist admits only .context.instance_id under context
+	// (a base provides referencing .secret_name still halts).
+	SecretName string `json:"secret_name,omitempty"`
 }
 
 // ProvidesContextBlock holds only the instance_id for provides evaluation.

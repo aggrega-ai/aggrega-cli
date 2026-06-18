@@ -344,6 +344,11 @@ type TemplateFeature struct {
 type TemplateSecret struct {
 	Type   string          `json:"type" yaml:"type"`
 	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	// Provides is the filling credential FeatureRecipe's resolved provides — its
+	// declared output (the generated Secret's name, key, …) exposed to the
+	// consumer as .secrets.<slot>.provides.<key>, mirroring .uses.<socket>.provides.
+	// The consumer reads the producer's contract instead of re-deriving it.
+	Provides OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 }
 
 // StepOutput holds the outputs exported by one pipeline step for inter-step communication.

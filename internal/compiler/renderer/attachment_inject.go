@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -78,10 +79,11 @@ func ResolveAttachmentInject(
 // references resolve against.
 func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry) (types.OrderedMap[string], error) {
 	scope := ProvidesContext{
-		Context: ProvidesContextBlock{InstanceID: nodeID},
-		Values:  entry.Values,
-		Infra:   entry.Infra,
-		Locals:  types.OrderedMap[string]{},
+		Context:    ProvidesContextBlock{InstanceID: nodeID},
+		Values:     entry.Values,
+		Infra:      entry.Infra,
+		Locals:     types.OrderedMap[string]{},
+		SecretName: instanceName,
 	}
 	for k, tmplText := range fr.Spec.Locals.All() {
 		out, err := EvalTemplate(fmt.Sprintf("attach-inject-local[%s.%s]", instanceName, k), tmplText, scope)
@@ -99,6 +101,62 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 		provided.Set(k, strings.TrimSpace(out))
 	}
 	return provided, nil
+}
+
+// ResolveSecretProvides resolves each credential secret attachment's filling
+// FeatureRecipe `provides` ONCE — before the consumer renders — keyed by slot
+// (= attachment instance name), and enforces the producer-fulfilment contract:
+// the bound FeatureRecipe must publish every provides key the slot's Feature
+// declares in schema.provides; a missing key halts with
+// ErrCredentialProvidesContractUnfulfilled (structural key-presence, never a
+// judgement of the value). The returned bag is consumed by BOTH the consumer's
+// `.secrets.<slot>.provides` and the credential render's `frCtx.Provides` at
+// Phase B.6 — a single evaluation, so the two cannot drift.
+func ResolveSecretProvides(graph *types.IRGraph, nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
+	if recipeLookup.FeatureRecipe == nil {
+		return nil, nil
+	}
+	secrets, ok := graph.Spec.Secrets.Get(nodeID)
+	if !ok || secrets.Len() == 0 {
+		return nil, nil
+	}
+	out := map[string]types.OrderedMap[string]{}
+	slots := secrets.Keys()
+	sort.Strings(slots)
+	for _, slot := range slots {
+		entry, _ := secrets.Get(slot)
+		fr, found := recipeLookup.FeatureRecipe(slot, entry.Type)
+		if !found || fr == nil {
+			continue
+		}
+		provided, err := evalAttachmentFRProvides(fr, slot, nodeID, entry)
+		if err != nil {
+			return nil, err
+		}
+		// Producer-fulfilment: the bound FeatureRecipe must publish every provides
+		// key the slot's Feature declares as its output contract.
+		if catalogLookup.Feature != nil {
+			if feat, ffound := catalogLookup.Feature(entry.Type); ffound {
+				contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
+				keys := make([]string, 0, len(contract))
+				for k := range contract {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					if _, has := provided.Get(key); !has {
+						return nil, cerrors.Wrap(ErrCredentialProvidesContractUnfulfilled, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+							fmt.Sprintf("node %q secret %q: FeatureRecipe %q does not publish provides key %q declared by Feature %q's schema.provides contract", nodeID, slot, fr.Metadata.Name, key, entry.Type))
+					}
+				}
+			}
+		}
+		out[slot] = provided
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // deliverAttachmentInjectKeys resolves each delivery key's provides-key

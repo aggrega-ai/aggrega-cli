@@ -450,6 +450,14 @@ func phaseB6(
 			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 			frCtx.SecretName = secretName
 			frCtx.Inject = buildSecretInject(entry)
+			// Reuse the SAME resolved fill provides the consumer sees via
+			// .secrets.<slot>.provides (computed once before B.4) as this
+			// FeatureRecipe's .provides, so a valuesMapping deriving the Secret
+			// name from .provides renders the exact name the consumer read —
+			// single source, no drift.
+			if b, ok := state.SecretProvides[secretName]; ok {
+				frCtx.Provides = b
+			}
 
 			frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 			if err != nil {

@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	ErrProvidesSelfContainment      = errors.New("provides block references a root outside the self-contained set (.context.instance_id, .values, .infra, .locals)")
-	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
-	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
-	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
-	ErrAttachmentInjectKeyCollision = errors.New("duplicate delivery key across attachment-inject and another inject source")
-	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output")
+	ErrProvidesSelfContainment               = errors.New("provides block references a root outside the self-contained set (.context.instance_id, .values, .infra, .locals)")
+	ErrProvidesEvaluation                    = errors.New("provides template evaluation failed")
+	ErrCredentialProvidesContractUnfulfilled = errors.New("credential FeatureRecipe does not publish a provides key its Feature schema.provides contract declares")
+	ErrSelfInjectForbiddenReference          = errors.New("self-inject value: template references cross-node data")
+	ErrSelfInjectKeyCollision                = errors.New("duplicate delivery key across self-inject and uses-inject")
+	ErrAttachmentInjectKeyCollision          = errors.New("duplicate delivery key across attachment-inject and another inject source")
+	ErrUnmappedCustomMechanism               = errors.New("custom inject mechanism has no matching key in injectMapping output")
 
 	// ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
 	// MappingLibrary entry body's field-root $import:) is neither a host-bearing

@@ -218,6 +218,23 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}
 
+		// Resolve each credential attachment's fill provides ONCE (single bag) and
+		// expose it to the consumer as .secrets.<slot>.provides. The same bag is
+		// retained on state below and reused at Phase B.6 as the credential
+		// FeatureRecipe's .provides, so the consumer's read and the generated
+		// Secret derive from one evaluation (no drift). Also halts a bound
+		// FeatureRecipe that does not fulfil its Feature's provides contract.
+		secretProvides, err := ResolveSecretProvides(graph, nodeID, recipeLookup, input.CatalogLookup)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret provides", nodeID))
+		}
+		for slot, provided := range secretProvides {
+			if sec, ok := tmplCtx.Secrets.Get(slot); ok {
+				sec.Provides = provided
+				tmplCtx.Secrets.Set(slot, sec)
+			}
+		}
+
 		// Trace points: per-node pre-loop captures.
 		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial))
 		_ = traceWriter.Write(trace.PassProvides, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassProvides))
@@ -232,6 +249,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
 		state.MappingLibraries = input.MappingLibraries
+		state.SecretProvides = secretProvides
 
 		// Phase B.0 — locals + source-as-template eval; populates
 		// ctx.Locals + ctx.Source. May replace state.Recipe with a local

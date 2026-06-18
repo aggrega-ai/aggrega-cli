@@ -89,6 +89,14 @@ type PhaseBState struct {
 	// RendererInput; nil when no MappingLibraries are present (a non-library
 	// valuesMapping never reads it).
 	MappingLibraries map[string]types.MappingLibrary
+
+	// SecretProvides is the per-node `slot → resolved fill provides` map computed
+	// once before context assembly (ResolveSecretProvides). The same bag is
+	// surfaced to the consumer as `.secrets.<slot>.provides` AND reused at Phase
+	// B.6 as the credential FeatureRecipe's `.provides`, so the consumer's read
+	// and the rendered Secret derive from one evaluation (no drift). nil when no
+	// credential attachment resolves a provides bag.
+	SecretProvides map[string]types.OrderedMap[string]
 }
 
 // NewPhaseBState constructs a fresh accumulator for one node's Phase B run.

@@ -360,8 +360,22 @@ func providesKeysFromEffective(eff compactform.Schema) map[string]bool {
 }
 
 func componentProvidesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
+	return providesKeysFromSchema(comp.Spec.Schema, libraries)
+}
+
+// FeatureProvidesKeys returns the provides-pillar keys a Feature declares in its
+// spec.schema — the output contract a filling credential FeatureRecipe must
+// publish. Mirrors componentProvidesKeys; both delegate to providesKeysFromSchema.
+func FeatureProvidesKeys(feat types.Feature, libraries map[string]types.SchemaLibrary) map[string]bool {
+	return providesKeysFromSchema(feat.Spec.Schema, libraries)
+}
+
+// providesKeysFromSchema extracts the provides-pillar property names from an
+// entity's spec.schema node (compact-form-aware). Empty when the schema declares
+// no provides pillar or fails to compile (the pillar validator reports that fault).
+func providesKeysFromSchema(schema yaml.Node, libraries map[string]types.SchemaLibrary) map[string]bool {
 	keys := map[string]bool{}
-	node := &comp.Spec.Schema
+	node := &schema
 	if node.Kind == 0 {
 		return keys
 	}
