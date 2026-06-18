@@ -18,10 +18,14 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -170,6 +174,20 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 	if err := verifyNoOCILocationCollision(cat); err != nil {
 		return fmt.Errorf("catalog validation failed: %w", err)
 	}
+	catRecipes := make([]types.Recipe, 0, len(cat.Recipes))
+	for _, r := range cat.Recipes {
+		catRecipes = append(catRecipes, r)
+	}
+	catFeatureRecipes := make([]types.FeatureRecipe, 0, len(cat.FeatureRecipes))
+	for _, fr := range cat.FeatureRecipes {
+		catFeatureRecipes = append(catFeatureRecipes, fr)
+	}
+	if errs := inputKindCapabilityErrors(catRecipes, catFeatureRecipes); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "  input-kind: %s\n", e)
+		}
+		return fmt.Errorf("catalog validation failed: %d input-kind capability error(s)", len(errs))
+	}
 	// Surface the whole-catalog advisory notices accumulated during the eager
 	// passes above — schema-pillar overlap (Pass-2) and narrowing-on-extend (from
 	// ResolveAllExtends). Informational only: advisories never escalate the exit
@@ -280,8 +298,77 @@ func lintRelease(releasePath string) error {
 	for _, w := range lazyView.ClosureNarrowingWarnings() {
 		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
 	}
+	if errs := inputKindCapabilityErrors(closureRecipes(lazyView, cl)); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "  input-kind: %s\n", e)
+		}
+		return fmt.Errorf("release closure validation failed: %d input-kind capability error(s)", len(errs))
+	}
+
 	fmt.Printf("release closure validation passed: %s (schema-pillar + closure pillars)\n", releasePath)
 	return nil
+}
+
+// inputKindCapabilityErrors reports each Recipe / FeatureRecipe that declares a
+// workload: block (synthesized mode) bound to a KNOWN provider whose engine
+// cannot synthesize — a guaranteed render-time halt, surfaced here at lint time.
+// It is an early, non-authoritative detector: the render-time central input-kind
+// gate remains the single enforcement chokepoint. The detector reads engine
+// capabilities through enginefactory.CapabilitiesFor — the same Dispatch the gate
+// uses — so the two cannot disagree, and it reuses the gate's own message clause
+// (renderer.UnsupportedInputKindMessage) so the early and late diagnostics read
+// identically. A provider whose name binds to no shipped engine (CapabilitiesFor
+// ok=false — unknown, unimplemented terraform/cloudformation, or eval) is skipped:
+// there is no synthesizing engine to contradict and forward-looking catalog
+// scaffolding must not be flagged. The workload predicate is the gate's own
+// (!Spec.Workload.IsEmpty()), so presence is classified identically.
+func inputKindCapabilityErrors(recipes []types.Recipe, featureRecipes []types.FeatureRecipe) []error {
+	var errs []error
+	check := func(kind, identity, provider string, workload types.WorkloadTemplate) {
+		if workload.IsEmpty() {
+			return
+		}
+		caps, ok := enginefactory.CapabilitiesFor(provider)
+		if !ok || caps.Synthesized {
+			return
+		}
+		errs = append(errs, fmt.Errorf("%s %q: %s", kind, identity,
+			renderer.UnsupportedInputKindMessage(provider, "synthesised", caps)))
+	}
+	for _, r := range recipes {
+		check("Recipe", r.Metadata.Name+":"+r.Metadata.Version, r.Spec.Provider, r.Spec.Workload)
+	}
+	for _, fr := range featureRecipes {
+		check("FeatureRecipe", fr.Metadata.Name+":"+fr.Metadata.Version, fr.Spec.Provider, fr.Spec.Workload)
+	}
+	// Sort by message so the diagnostic order is deterministic regardless of the
+	// caller's iteration order (the whole-catalog mode ranges an unordered map).
+	sort.Slice(errs, func(i, j int) bool { return errs[i].Error() < errs[j].Error() })
+	return errs
+}
+
+// closureRecipes resolves the Recipe and FeatureRecipe entities a Release's
+// closure reaches, from the closure's recorded kind-hints, for the closure-scoped
+// lint detector. Entities the closure classified as neither (KindHint empty or
+// another kind) are not recipe-shaped and are skipped; an entry that fails to
+// resolve through the lazy view is likewise skipped (the render-time gate remains
+// the authoritative backstop).
+func closureRecipes(lazyView *catalog.LazyLookup, cl closure.Closure) ([]types.Recipe, []types.FeatureRecipe) {
+	var recipes []types.Recipe
+	var featureRecipes []types.FeatureRecipe
+	for _, e := range cl.Entities {
+		switch e.KindHint {
+		case "recipe":
+			if r, ok := lazyView.RecipeByURI(e.URI); ok {
+				recipes = append(recipes, r)
+			}
+		case "feature_recipe":
+			if fr, ok := lazyView.FeatureRecipeByURI(e.URI); ok {
+				featureRecipes = append(featureRecipes, fr)
+			}
+		}
+	}
+	return recipes, featureRecipes
 }
 
 // verifyNoOCILocationCollision halts when two DISTINCT catalog identities map to

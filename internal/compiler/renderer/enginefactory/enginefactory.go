@@ -42,3 +42,19 @@ func Dispatch(providerName string) (renderer.Engine, error) {
 		return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerName)
 	}
 }
+
+// CapabilitiesFor reports a provider's engine capabilities, resolved through the
+// same Dispatch the render-time input-kind gate uses — so any early consumer
+// (the lint detector) reads identical capabilities to the authoritative gate, by
+// construction, with no second capability table to drift. ok is false when the
+// provider name binds to no shipped engine (Dispatch returns ErrUnknownProvider):
+// an unknown, unimplemented (terraform/cloudformation), or eval provider, which a
+// capability-based check skips rather than flags. When ok is true the returned
+// capabilities are the engine's own ProviderCapabilities.
+func CapabilitiesFor(providerName string) (renderer.ProviderCapabilities, bool) {
+	engine, err := Dispatch(providerName)
+	if err != nil {
+		return renderer.ProviderCapabilities{}, false
+	}
+	return engine.Capabilities(), true
+}

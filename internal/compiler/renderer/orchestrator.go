@@ -967,11 +967,23 @@ func gateInputKind(nodeID, providerName string, engine Engine, hasSource, hasWor
 // "compute mandatory" semantic opinion (Invariant 1).
 func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderCapabilities) error {
 	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf(
-			"node %q: provider %q does not support %s recipes (this provider supports: %s); "+
-				"declare one of the supported input kinds, or target a provider that supports %s",
-			nodeID, providerName, mode, supportedKindsList(caps), mode),
+		fmt.Sprintf("node %q: %s", nodeID, UnsupportedInputKindMessage(providerName, mode, caps)),
 		nil, nil)
+}
+
+// UnsupportedInputKindMessage is the provider-capability clause shared by the
+// render-time input-kind gate and the early lint detector, so an unsupported
+// (mode, provider) reads identically whether it surfaces at lint or at render.
+// It names the provider, the unsupported mode, the kinds the provider does
+// support, and the remedy — framed as a provider capability, not a "compute
+// mandatory" semantic opinion (Invariant 1). Callers prefix it with the
+// offending entity: the gate with the flattened node id, the lint detector with
+// the Recipe/FeatureRecipe identity.
+func UnsupportedInputKindMessage(providerName, mode string, caps ProviderCapabilities) string {
+	return fmt.Sprintf(
+		"provider %q does not support %s recipes (this provider supports: %s); "+
+			"declare one of the supported input kinds, or target a provider that supports %s",
+		providerName, mode, supportedKindsList(caps), mode)
 }
 
 // supportedKindsList renders a provider's supported input kinds for the
