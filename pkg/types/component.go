@@ -44,4 +44,11 @@ type SecretSlot struct {
 	Required    bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject      []string `json:"inject,omitempty" yaml:"inject,omitempty"`
 	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	// Selector is an optional Kubernetes-style label selector (same grammar and
+	// pkg/selector engine as UsesSchemaEntry.Selector) constraining which
+	// credential Feature may fill this slot. Evaluated against the attached
+	// Feature's labels; an unsatisfied fill halts. A declared selector must
+	// constrain to secret-kind Features. Empty accepts any fill the secrets
+	// partition admits.
+	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
 }

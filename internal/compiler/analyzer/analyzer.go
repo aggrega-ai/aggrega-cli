@@ -243,6 +243,13 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 	}
 	errs = append(errs, appliesErrs...)
 
+	// 2b. secretsSchema slot selector validation (secret-kind constraint + fill satisfaction)
+	secretErrs, err := validateSecretSlotSelectors(ctx, graph, catalogLookup)
+	if err != nil {
+		return nil, err
+	}
+	errs = append(errs, secretErrs...)
+
 	// 3. DFS path calculation
 	paths := calculatePaths(graph)
 
