@@ -420,13 +420,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Phase B.2 — workload eval + ValidateWorkload + ValidateWorkloadSecrets.
-		// No-op for Recipes that don't declare workload:.
-		// Slots lookup deferred to inside the function body (passes empty
-		// when no workload is declared); future enhancement: thread the
-		// Component's secretsSchema from input.CatalogLookup so the
-		// workload-secret cross-check uses the real slot allowlist.
-		emptySlots := types.OrderedMap[types.SecretSlot]{}
-		if err := phaseB2(tmplCtx, state, emptySlots); err != nil {
+		// No-op for Recipes that don't declare workload:. The workload-secret
+		// cross-check validates containers.<n>.secrets against the bound
+		// Component's secretsSchema slot allowlist.
+		var slots types.OrderedMap[types.SecretSlot]
+		if input.CatalogLookup.Component != nil {
+			if comp, found := input.CatalogLookup.Component(node.Component); found {
+				slots = comp.Spec.SecretsSchema
+			}
+		}
+		if err := phaseB2(tmplCtx, state, slots); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 

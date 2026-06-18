@@ -401,7 +401,7 @@ func phaseB6(
 		// gate's uniform capability diagnostic, engine.Render failures, and the
 		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
 		// re-wrapping would bury the gate diagnostic the user needs to see.
-		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName)
+		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input))
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +469,7 @@ func phaseB6(
 			}
 			frNodeCtx.Source = resolvedSrc
 
-			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName)
+			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input))
 			if err != nil {
 				return nil, err
 			}
@@ -483,6 +483,20 @@ func phaseB6(
 
 	state.PhaseReached = 6
 	return out, nil
+}
+
+// featureSecretSlots returns the secretsSchema slots of the Feature the given
+// FeatureRecipe implements — the owning entity whose slot allowlist governs an
+// FR-synthesized Workload's containers.secrets cross-check (parallel to a
+// Component governing its own Recipe). Returns an empty map when the Feature
+// declares no slots or cannot be resolved.
+func featureSecretSlots(fr *types.FeatureRecipe, input RendererInput) types.OrderedMap[types.SecretSlot] {
+	if fr != nil && input.CatalogLookup.Feature != nil {
+		if feat, found := input.CatalogLookup.Feature(fr.Spec.Implements); found {
+			return feat.Spec.SecretsSchema
+		}
+	}
+	return types.OrderedMap[types.SecretSlot]{}
 }
 
 // renderFeatureRecipeFiles runs the full input-kind render for a resource-
@@ -506,6 +520,7 @@ func renderFeatureRecipeFiles(
 	frValues map[string]any,
 	resolvedSrc any,
 	instanceLabel string,
+	slots types.OrderedMap[types.SecretSlot],
 ) ([]EmittedFile, error) {
 	hasSource := resolvedSrc != nil
 	if s, ok := resolvedSrc.(string); ok && s == "" {
@@ -567,8 +582,7 @@ func renderFeatureRecipeFiles(
 		}
 	}
 
-	emptySlots := types.OrderedMap[types.SecretSlot]{}
-	if err := phaseB2(frCtx, state, emptySlots); err != nil {
+	if err := phaseB2(frCtx, state, slots); err != nil {
 		return nil, err
 	}
 	if err := phaseB3(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
