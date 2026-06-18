@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -14,17 +13,58 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// forbiddenProvidesRefs matches template actions referencing cross-node data.
-var forbiddenProvidesRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|uses)[^}]*\}\}`)
+// providesAllowedTopLevelRoots are the only top-level template roots a provides
+// template may reference. The provides block is evaluated in Pass 1 from
+// self-contained node data alone (see ProvidesContext), so its reachable roots
+// are exactly the context surface that pass exposes.
+var providesAllowedTopLevelRoots = map[string]bool{
+	"context": true,
+	"values":  true,
+	"infra":   true,
+	"locals":  true,
+}
 
-// CheckProvidesSelfContainment scans a provides template for forbidden references
-// to .context.inject or .context.uses. Returns an error if found.
+// providesAllowedContextRoots are the only .context.* sub-roots a provides
+// template may reference. Everything else under .context — inject and uses
+// (cross-node), annotations, labels, and metadata (placement- or
+// deployment-coupled) — is outside the self-contained Pass-1 surface.
+var providesAllowedContextRoots = map[string]bool{
+	"instance_id": true,
+}
+
+// CheckProvidesSelfContainment verifies a provides template references only the
+// self-contained Pass-1 roots: .context.instance_id, .values, .infra, .locals,
+// and static text. Any other root halts with ErrProvidesSelfContainment naming
+// the offending expression — a non-wired .context.* key (.context.inject,
+// .context.uses, .context.annotations, .context.labels, .context.metadata, …)
+// or a non-wired top-level root (.metadata, .provides, …). The check is a
+// positive allowlist over the template's parsed field accesses, so a reference
+// to a root the provides context does not expose is a Loud Guardrail rather
+// than a silent empty render. The halt is structural ("root not in the provides
+// context"), never a judgment about what the referenced value means.
 func CheckProvidesSelfContainment(templateText, recipeID string) error {
-	if forbiddenProvidesRefs.MatchString(templateText) {
-		return cerrors.Wrap(ErrProvidesSelfContainment, cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
-			fmt.Sprintf("Recipe %q provides block references .context.inject or .context.uses — the provides contract must be self-contained", recipeID))
+	paths, err := CollectTemplateFieldAccesses(templateText)
+	if err != nil {
+		// Malformed template: let provides evaluation report the parse error.
+		return nil
+	}
+	for _, p := range paths {
+		segs := strings.Split(strings.TrimPrefix(p, "."), ".")
+		root := segs[0]
+		if root == "" || !providesAllowedTopLevelRoots[root] {
+			return providesContainmentErr(recipeID, p)
+		}
+		if root == "context" && (len(segs) < 2 || !providesAllowedContextRoots[segs[1]]) {
+			return providesContainmentErr(recipeID, p)
+		}
 	}
 	return nil
+}
+
+func providesContainmentErr(recipeID, expr string) error {
+	return cerrors.Wrap(ErrProvidesSelfContainment, cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
+		fmt.Sprintf("Recipe %q provides references %q — the provides block is self-contained and may reference only "+
+			".context.instance_id, .values, .infra, .locals, and static text", recipeID, expr))
 }
 
 // EvaluateAllProvides executes Pass 1: evaluate all provides templates in any order.

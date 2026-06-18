@@ -140,6 +140,73 @@ func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 	}
 }
 
+func TestCheckProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
+	t.Parallel()
+	// Each of these references a root the self-contained Pass-1 surface does not
+	// expose; the allowlist must HALT (not render empty — the silent footgun the
+	// blocklist permitted). Includes the placement-coupled roots a naive
+	// "namespace in provides" fix would reach for.
+	forbidden := map[string]string{
+		"context.annotations": `{{ index .context.annotations "aggrega.ai/namespace" }}`,
+		"context.labels":      `{{ .context.labels.tier }}`,
+		"context.metadata":    `{{ .context.metadata.name }}`,
+		"top-level metadata":  `{{ .metadata.release_name }}`,
+		"context.inject":      `{{ .context.inject.env.X }}`,
+		"context.uses":        `{{ .context.uses.db.provides.host }}`,
+		"unknown top-level":   `{{ .provides.host }}`,
+	}
+	for name, tmpl := range forbidden {
+		t.Run(name, func(t *testing.T) {
+			err := CheckProvidesSelfContainment(tmpl, "bad-recipe")
+			if err == nil {
+				t.Fatalf("%s: expected halt, got nil (silent-empty footgun)", name)
+			}
+			if !errors.Is(err, ErrProvidesSelfContainment) {
+				t.Errorf("%s: expected ErrProvidesSelfContainment, got: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestCheckProvidesSelfContainment_AllowedRoots(t *testing.T) {
+	t.Parallel()
+	// The wired self-contained set: every one of these must pass the allowlist.
+	allowed := []string{
+		`{{ .context.instance_id }}-default`,
+		`{{ .values.port }}`,
+		`{{ .infra.tier }}`,
+		`{{ .locals.computed }}`,
+		`{{ .context.instance_id }}:{{ .values.port }}`,
+		`static-only`,
+	}
+	for _, tmpl := range allowed {
+		if err := CheckProvidesSelfContainment(tmpl, "ok-recipe"); err != nil {
+			t.Errorf("expected no error for %q, got: %v", tmpl, err)
+		}
+	}
+}
+
+func TestEvaluateAllProvides_ForbiddenAnnotationHaltsNotEmpty(t *testing.T) {
+	t.Parallel()
+	// Footgun-closure proof through the real provides-evaluation path: a provides
+	// reading a placement annotation HALTS loudly rather than rendering empty.
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("db", types.IRNode{})
+	graph := &types.IRGraph{Spec: types.IRSpec{Nodes: nodes}}
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", `{{ .context.instance_id }}-default.{{ index .context.annotations "aggrega.ai/namespace" }}`)
+	recipes := map[string]*types.Recipe{
+		"db": {Metadata: types.RecipeMetadata{Name: "footgun-recipe"}, Spec: types.RecipeSpec{Provides: provides}},
+	}
+	_, err := EvaluateAllProvides(graph, recipes)
+	if err == nil {
+		t.Fatal("expected halt for placement annotation in provides, got nil")
+	}
+	if !errors.Is(err, ErrProvidesSelfContainment) {
+		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
+	}
+}
+
 func TestEvaluateAllProvides_SprigFunction(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrProvidesSelfContainment      = errors.New("provides block references cross-node data")
+	ErrProvidesSelfContainment      = errors.New("provides block references a root outside the self-contained set (.context.instance_id, .values, .infra, .locals)")
 	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
 	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
