@@ -61,13 +61,20 @@ const (
 // tags Origin = EmitOriginWorkload before appending to PhaseBState.
 func (e *HelmEngine) SynthesizeWorkload(
 	_ context.Context,
-	_ *types.TemplateContext,
+	tmplCtx *types.TemplateContext,
 	w *types.Workload,
 	nodeCtx renderer.NodeRenderContext,
 ) ([]renderer.EmittedFile, error) {
 	if w == nil {
 		return nil, nil
 	}
+
+	// Slot → resolved provides bag. A workload secrets entry's `from` is the
+	// slot; the generated Secret's identity (name, key) comes from the slot's
+	// provides — resolved by the orchestrator before Phase B and exposed on the
+	// template context. The Phase B.2 referenceability check guarantees every
+	// referenced slot carries the keys read below.
+	secretProvides := secretProvidesFromContext(tmplCtx)
 
 	// Decide top-level resource: StatefulSet if any volume is
 	// persistentTemplate; else Deployment.
@@ -95,17 +102,17 @@ func (e *HelmEngine) SynthesizeWorkload(
 	var out []renderer.EmittedFile
 
 	// Containers: translate each in author-order.
-	containers, err := translateContainers(w, componentID)
+	containers, err := translateContainers(w, componentID, secretProvides)
 	if err != nil {
 		return nil, err
 	}
-	initContainers, err := translateInitContainers(w, componentID)
+	initContainers, err := translateInitContainers(w, componentID, secretProvides)
 	if err != nil {
 		return nil, err
 	}
 
 	// Pod-spec volumes (excludes persistentTemplate variants).
-	podVolumes := translatePodVolumes(w, componentID)
+	podVolumes := translatePodVolumes(w, componentID, secretProvides)
 
 	// Pod-level configuration: scheduling, podSecurityContext,
 	// serviceAccount, restartPolicy.
@@ -214,10 +221,25 @@ func workloadHasPersistentTemplate(w *types.Workload) bool {
 // translateContainers walks Workload.Containers in author order and produces
 // K8s-shape Container values. Returns an error if any container's
 // translation fails (e.g., probe http: with no available port).
-func translateContainers(w *types.Workload, nodeID string) ([]Container, error) {
+// secretProvidesFromContext projects each secret slot's resolved provides into
+// a slot→provides lookup the synthesizer reads to resolve a workload secret
+// reference to the generated Secret's identity. The orchestrator populates the
+// per-slot provides before Phase B; a nil context yields an empty lookup.
+func secretProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
+	out := map[string]types.OrderedMap[string]{}
+	if tmplCtx == nil {
+		return out
+	}
+	for slot, sec := range tmplCtx.Secrets.All() {
+		out[slot] = sec.Provides
+	}
+	return out
+}
+
+func translateContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) ([]Container, error) {
 	var out []Container
 	for name, c := range w.Containers.All() {
-		k8sContainer, err := translateContainer(name, c, nodeID)
+		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides)
 		if err != nil {
 			return nil, err
 		}
@@ -230,13 +252,13 @@ func translateContainers(w *types.Workload, nodeID string) ([]Container, error) 
 // initContainer naming convention: "init-<index>" when no other identity is
 // available — Workload's InitContainers is a list of ContainerSpec values
 // without explicit names today.
-func translateInitContainers(w *types.Workload, nodeID string) ([]Container, error) {
+func translateInitContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) ([]Container, error) {
 	if len(w.InitContainers) == 0 {
 		return nil, nil
 	}
 	var out []Container
 	for i, c := range w.InitContainers {
-		k8sContainer, err := translateContainer(fmt.Sprintf("init-%d", i), c, nodeID)
+		k8sContainer, err := translateContainer(fmt.Sprintf("init-%d", i), c, nodeID, secretProvides)
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +269,7 @@ func translateInitContainers(w *types.Workload, nodeID string) ([]Container, err
 
 // translateContainer maps a single Workload ContainerSpec to a K8s-shape
 // Container. Author-order preserved across ports / variables / secrets.
-func translateContainer(name string, c types.ContainerSpec, nodeID string) (Container, error) {
+func translateContainer(name string, c types.ContainerSpec, nodeID string, secretProvides map[string]types.OrderedMap[string]) (Container, error) {
 	out := Container{
 		Name:    sanitizeContainerName(name),
 		Image:   c.Image,
@@ -272,16 +294,21 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string) (Cont
 
 	// Secrets — for each entry, use env.valueFrom.secretKeyRef (env mode)
 	// or volume+volumeMount (file mode; the volume is added to the pod
-	// spec elsewhere). Author order preserved.
+	// spec elsewhere). Author order preserved. `ref.From` is the slot; the
+	// referenced Secret's name and data key come from the slot's resolved
+	// provides (name, key) — the env-var name stays the entry's map key.
 	for secretKey, ref := range c.Secrets.All() {
+		provides := secretProvides[ref.From]
 		switch ref.As {
 		case "env":
+			secretName, _ := provides.Get("name")
+			dataKey, _ := provides.Get("key")
 			out.Env = append(out.Env, EnvVar{
 				Name: secretKey,
 				ValueFrom: &EnvVarSource{
 					SecretKeyRef: &SecretKeySelector{
-						Name: ref.From,
-						Key:  secretKey,
+						Name: secretName,
+						Key:  dataKey,
 					},
 				},
 			})
@@ -468,8 +495,11 @@ func translateContainerSecurityContext(s *types.ContainerSecurityContext) *Conta
 //
 // Also adds secret-volume entries for container secrets entries that use
 // `as: file` — one volume per (container, secret-key) pair, named per
-// the convention "<instance_id>-secret-<slot>".
-func translatePodVolumes(w *types.Workload, nodeID string) []Volume {
+// the convention "<instance_id>-secret-<slot>". The volume name stays
+// convention-based (pod-internal); the SecretVolumeSource.SecretName it
+// mounts is the generated Secret's name, read from the slot's resolved
+// provides.
+func translatePodVolumes(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) []Volume {
 	var out []Volume
 
 	for name, v := range w.Volumes.All() {
@@ -521,10 +551,12 @@ func translatePodVolumes(w *types.Workload, nodeID string) []Volume {
 				continue
 			}
 			seenSecretVolumes[volName] = struct{}{}
+			provides := secretProvides[ref.From]
+			secretName, _ := provides.Get("name")
 			out = append(out, Volume{
 				Name: volName,
 				Secret: &SecretVolumeSource{
-					SecretName: ref.From,
+					SecretName: secretName,
 				},
 			})
 		}
@@ -539,10 +571,12 @@ func translatePodVolumes(w *types.Workload, nodeID string) []Volume {
 				continue
 			}
 			seenSecretVolumes[volName] = struct{}{}
+			provides := secretProvides[ref.From]
+			secretName, _ := provides.Get("name")
 			out = append(out, Volume{
 				Name: volName,
 				Secret: &SecretVolumeSource{
-					SecretName: ref.From,
+					SecretName: secretName,
 				},
 			})
 		}

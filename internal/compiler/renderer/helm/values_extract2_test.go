@@ -77,7 +77,7 @@ func TestTranslatePodVolumes_AllVolumeKinds(t *testing.T) {
 		Persistent: &types.PersistentVolume{},
 	})
 
-	vols := translatePodVolumes(w, "node-1")
+	vols := translatePodVolumes(w, "node-1", nil)
 	if len(vols) != 4 {
 		t.Fatalf("expected 4 volumes; got %d", len(vols))
 	}
@@ -119,7 +119,7 @@ func TestTranslatePodVolumes_SecretFileVolumesDedupedAcrossContainers(t *testing
 	}
 	w.InitContainers[0].Secrets.Set("init-creds", types.SecretRef{From: "shared", As: "file", Path: "/tmp/key2"})
 
-	vols := translatePodVolumes(w, "node-1")
+	vols := translatePodVolumes(w, "node-1", nil)
 	// "node-1-secret-shared" should appear exactly once across all
 	// containers + init containers.
 	count := 0
@@ -142,7 +142,7 @@ func TestTranslatePodVolumes_EnvSecretsIgnored(t *testing.T) {
 	c := types.ContainerSpec{Image: "x"}
 	c.Secrets.Set("API_TOKEN", types.SecretRef{From: "creds", As: "env"})
 	w.Containers.Set("c", c)
-	if len(translatePodVolumes(w, "n")) != 0 {
+	if len(translatePodVolumes(w, "n", nil)) != 0 {
 		t.Errorf("as:env secrets should NOT produce volume entries")
 	}
 }
@@ -189,7 +189,7 @@ func TestTranslateContainer_VolumeMountsAndSecretsBranches(t *testing.T) {
 		{Name: "data", Path: "/data", ReadOnly: true},
 	}
 
-	got, err := translateContainer("c1", c, "node-1")
+	got, err := translateContainer("c1", c, "node-1", nil)
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}

@@ -128,15 +128,19 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 
 // phaseB2 evaluates Recipe.Spec.Workload — inline content or the file
 // referenced by its `$import:` directive — parses the rendered output via
-// yaml.Unmarshal into a *types.Workload, then runs the two validators in
-// order:
+// yaml.Unmarshal into a *types.Workload, then runs the validators in order:
 //
 //  1. validator.ValidateWorkload — schema validation against the embedded
 //     Workload JSON Schema.
 //  2. validator.ValidateWorkloadSecrets — cross-wave check against the
 //     Component's secretsSchema slot allowlist.
+//  3. validator.ValidateWorkloadSecretReferenceability — every secrets entry's
+//     slot must expose the referenceable-secret provides keys (name, key) the
+//     synthesizer reads to resolve the reference; checked against the slot's
+//     resolved provides on the template context (ctx.Secrets) — the same bag the
+//     synthesizer reads, so the base and FeatureRecipe paths check uniformly.
 //
-// On both pass: state.ParsedWorkload and ctx.Workload populate. Any failure
+// On all pass: state.ParsedWorkload and ctx.Workload populate. Any failure
 // stops the build before B.3 runs; failures carry CATALOG_ERROR-prefixed
 // messages with field paths.
 //
@@ -176,6 +180,18 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		return err
 	}
 	if err := validator.ValidateWorkloadSecrets(&w, slots, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+		return err
+	}
+	// Referenceability reads each slot's resolved provides from the template
+	// context — the same bag the synthesizer reads to render the secretKeyRef /
+	// secret-volume name — so the base and FeatureRecipe workload paths (the
+	// latter renders against a shallow copy of this context) are checked
+	// uniformly.
+	secretProvides := map[string]types.OrderedMap[string]{}
+	for slot, sec := range ctx.Secrets.All() {
+		secretProvides[slot] = sec.Provides
+	}
+	if err := validator.ValidateWorkloadSecretReferenceability(&w, secretProvides, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
 

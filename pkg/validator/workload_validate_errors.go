@@ -27,6 +27,13 @@ var (
 	// allowlist, or references a blackbox slot (Inject == nil/empty,
 	// reserved for Recipe-internal plumbing).
 	ErrWorkloadSecretsSchema = errors.New("workload secretsSchema cross-check failed")
+
+	// ErrSecretSlotNotReferenceable: a Workload secrets entry references a
+	// slot whose resolved provides does not expose the referenceable-secret
+	// contract keys a workload reference reads (name, key). The slot's fill
+	// is not a referenceable secret — it cannot be referenced by name from a
+	// Workload. Structural key-presence only; no value inspection.
+	ErrSecretSlotNotReferenceable = errors.New("workload secret slot is not a referenceable secret")
 )
 
 // WorkloadValidationError carries the structured detail for a Workload

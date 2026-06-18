@@ -34,6 +34,15 @@ func goldenCheck(t *testing.T, name string, actual []byte) {
 	}
 }
 
+// providesBag builds a resolved secret-slot provides bag with the
+// referenceable-secret contract keys (name, key) the synthesizer reads.
+func providesBag(name, key string) types.OrderedMap[string] {
+	p := types.OrderedMap[string]{}
+	p.Set("name", name)
+	p.Set("key", key)
+	return p
+}
+
 // nodeCtxFor returns a minimal NodeRenderContext. Tests vary just the
 // fields they exercise.
 func nodeCtxFor(nodeID string) renderer.NodeRenderContext {
@@ -308,7 +317,14 @@ func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	// The synthesizer resolves each secret reference from the slot's provides:
+	// `from` names the slot; the generated Secret's name and data key come from
+	// the slot's resolved provides bag.
+	tmplCtx := &types.TemplateContext{}
+	tmplCtx.Secrets.Set("db-password", types.TemplateSecret{Provides: providesBag("db-creds", "password")})
+	tmplCtx.Secrets.Set("tls-cert", types.TemplateSecret{Provides: providesBag("tls-bundle", "tls.crt")})
+
+	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), tmplCtx, w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}

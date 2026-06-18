@@ -20,6 +20,13 @@ import (
 // Returns nil when every reference passes; otherwise returns a
 // *WorkloadValidationError with one finding per offending entry.
 //
+// This is the slot-membership and delivery-mechanism half of the workload
+// secret check. The companion ValidateWorkloadSecretReferenceability enforces
+// that the referenced slot's fill is a referenceable secret (its provides
+// expose name/key) — a workload `containers.secrets` entry references a Secret
+// resource by name, so a non-referenceable (inject-delivered) credential cannot
+// be referenced there; it is delivered through the slot's inject pipe instead.
+//
 // recipePath / recipeName / recipeVersion are threaded into the error for
 // operator-facing message context; pass "" when not available.
 func ValidateWorkloadSecrets(
@@ -101,6 +108,85 @@ func checkContainerSecrets(
 				Constraint: fmt.Sprintf("delivery mechanism %q is not permitted by slot %q (inject allowlist: %v)", ref.As, ref.From, slot.Inject),
 				Suggestion: fmt.Sprintf("use one of the allowlisted delivery mechanisms (%v), or widen the slot's inject allowlist in the Component/Feature secretsSchema", slot.Inject),
 			})
+		}
+	}
+
+	return findings
+}
+
+// ValidateWorkloadSecretReferenceability enforces that every Workload secrets
+// entry references a slot whose resolved provides expose the keys a workload
+// reference reads — `name` (the generated secret resource's locator) and `key`
+// (the data field within it). A slot whose fill is not a referenceable secret
+// (its provides lacks those keys) cannot be referenced by name from a Workload;
+// the build halts with ErrSecretSlotNotReferenceable.
+//
+// Structural key-presence only — the check never inspects the provides values.
+// Provider-agnostic: the same guarantee protects every provider's synthesizer
+// (the helm secretKeyRef / SecretVolumeSource reads, and any future provider).
+//
+// secretProvides maps slot name → the slot's resolved provides bag, resolved by
+// the orchestrator before Phase B. A slot absent from the map (no provides) or
+// present but missing a key fails the same way. recipePath / recipeName /
+// recipeVersion thread into the error for operator-facing context.
+func ValidateWorkloadSecretReferenceability(
+	w *types.Workload,
+	secretProvides map[string]types.OrderedMap[string],
+	recipePath, recipeName, recipeVersion string,
+) error {
+	if w == nil {
+		return nil
+	}
+
+	var findings []WorkloadValidationFinding
+
+	for name, c := range w.Containers.All() {
+		findings = append(findings,
+			checkContainerReferenceability(c, secretProvides, fmt.Sprintf(".containers.%s", name))...,
+		)
+	}
+	for i, c := range w.InitContainers {
+		findings = append(findings,
+			checkContainerReferenceability(c, secretProvides, fmt.Sprintf(".initContainers[%d]", i))...,
+		)
+	}
+
+	if len(findings) == 0 {
+		return nil
+	}
+	return &WorkloadValidationError{
+		Path:          recipePath,
+		RecipeName:    recipeName,
+		RecipeVersion: recipeVersion,
+		Stage:         "secretReferenceability",
+		Findings:      findings,
+		Err:           ErrSecretSlotNotReferenceable,
+	}
+}
+
+// checkContainerReferenceability walks a ContainerSpec's secrets entries and
+// produces a finding per entry whose slot's resolved provides is missing a key
+// a workload reference reads. The contract keys are fixed (name, key) — a
+// referenceable-secret Feature declares both, so a fill lacking either is not
+// referenceable regardless of the entry's delivery mechanism.
+func checkContainerReferenceability(
+	c types.ContainerSpec,
+	secretProvides map[string]types.OrderedMap[string],
+	containerPath string,
+) []WorkloadValidationFinding {
+	var findings []WorkloadValidationFinding
+
+	for key, ref := range c.Secrets.All() {
+		fieldPath := fmt.Sprintf("%s.secrets.%s", containerPath, key)
+		provides := secretProvides[ref.From]
+		for _, want := range []string{"name", "key"} {
+			if _, ok := provides.Get(want); !ok {
+				findings = append(findings, WorkloadValidationFinding{
+					FieldPath:  fieldPath + ".from",
+					Constraint: fmt.Sprintf("slot %q is not a referenceable secret: its resolved provides does not expose %q (a workload secret reference reads the provides keys name and key)", ref.From, want),
+					Suggestion: "reference a slot filled by a referenceable-secret feature (one whose schema.provides declares name and key), or deliver this secret through the slot's inject pipe rather than a workload reference",
+				})
+			}
 		}
 	}
 

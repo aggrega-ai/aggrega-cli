@@ -33,15 +33,32 @@ func slotMap(name string, inject []string) types.OrderedMap[types.SecretSlot] {
 
 // --- Base-Recipe path: orchestrator threads Component.SecretsSchema ---
 
-func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.SecretSlot]) error {
+// renderBaseWithSlot renders a base Recipe whose workload references the
+// `password` slot. When fillReferenceable is true the slot is filled by a
+// core/referenced-secret credential (its FeatureRecipe publishes provides
+// {name, key}) so the workload reference resolves; when false the slot has no
+// referenceable fill.
+func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.SecretSlot], fillReferenceable bool) error {
 	t.Helper()
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("db", types.IRNode{Component: "core/datastore/pgprobe", BoundaryPath: "backend"})
 
+	spec := types.IRSpec{Nodes: nodes, ValuesMapping: types.OrderedMap[json.RawMessage]{}}
+	if fillReferenceable {
+		vals := types.OrderedMap[any]{}
+		vals.Set("key", "POSTGRES_PASSWORD")
+		vals.Set("source", "supersecret")
+		secrets := types.OrderedMap[types.IRSecretEntry]{}
+		secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
+		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		nodeSecrets.Set("db", secrets)
+		spec.Secrets = nodeSecrets
+	}
+
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test"},
-			Spec:     types.IRSpec{Nodes: nodes, ValuesMapping: types.OrderedMap[json.RawMessage]{}},
+			Spec:     spec,
 		},
 		FeatureOrder:  ir.FeatureOrder{},
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}, BoundaryInfra: map[string]*resolver.BoundaryInfra{}},
@@ -51,6 +68,12 @@ func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.SecretSlo
 					return types.Component{Spec: types.ComponentSpec{SecretsSchema: compSlots}}, true
 				}
 				return types.Component{}, false
+			},
+			Feature: func(typeURI string) (types.Feature, bool) {
+				if typeURI == "core/referenced-secret" {
+					return referencedSecretFeature(), true
+				}
+				return types.Feature{}, false
 			},
 		},
 	}
@@ -70,7 +93,15 @@ containers:
 `}},
 			}, true
 		},
-		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
+			if ft == "core/referenced-secret" {
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
+					Spec:     types.FeatureRecipeSpec{Provider: "helm", Implements: "core/referenced-secret:1.0.0", Provides: fullContractProvides()},
+				}, true
+			}
+			return nil, false
+		},
 	}
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
 	return err
@@ -78,14 +109,24 @@ containers:
 
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_AdmitDeclaredTransparent(t *testing.T) {
 	t.Parallel()
-	if err := renderBaseWithSlot(t, slotMap("password", []string{"env"})); err != nil {
-		t.Fatalf("declared transparent slot should ADMIT (was: %v)", err)
+	// Transparent slot + referenceable fill: the workload reference resolves.
+	if err := renderBaseWithSlot(t, slotMap("password", []string{"env"}), true); err != nil {
+		t.Fatalf("declared transparent slot with a referenceable fill should ADMIT (was: %v)", err)
+	}
+}
+
+func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltNonReferenceable(t *testing.T) {
+	t.Parallel()
+	// Transparent slot but no referenceable fill: nothing to point at.
+	err := renderBaseWithSlot(t, slotMap("password", []string{"env"}), false)
+	if !errors.Is(err, validator.ErrSecretSlotNotReferenceable) {
+		t.Fatalf("transparent slot without a referenceable fill should HALT with ErrSecretSlotNotReferenceable, got: %v", err)
 	}
 }
 
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltUndeclared(t *testing.T) {
 	t.Parallel()
-	err := renderBaseWithSlot(t, slotMap("", nil)) // no slots declared
+	err := renderBaseWithSlot(t, slotMap("", nil), false) // no slots declared
 	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
 		t.Fatalf("undeclared slot should HALT with ErrWorkloadSecretsSchema, got: %v", err)
 	}
@@ -93,7 +134,7 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltUndeclared(t *testing.T)
 
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltBlackbox(t *testing.T) {
 	t.Parallel()
-	err := renderBaseWithSlot(t, slotMap("password", []string{})) // blackbox: inject:[]
+	err := renderBaseWithSlot(t, slotMap("password", []string{}), false) // blackbox: inject:[]
 	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
 		t.Fatalf("blackbox slot should HALT with ErrWorkloadSecretsSchema, got: %v", err)
 	}
@@ -101,7 +142,12 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltBlackbox(t *testing.T) {
 
 // --- FeatureRecipe path: renderFeatureRecipeFiles threads Feature.SecretsSchema ---
 
-func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot]) error {
+// renderFRWithSlot renders a FeatureRecipe-synthesized workload that references
+// the `frpass` slot. When fillReferenceable is true the slot is filled by a
+// core/referenced-secret credential so the FR workload reference resolves
+// (the FR path renders against a shallow copy of the node context, which
+// carries the resolved provides); when false the slot has no referenceable fill.
+func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot], fillReferenceable bool) error {
 	t.Helper()
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", BoundaryPath: "backend"})
@@ -114,10 +160,22 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot]
 		return outer
 	}()
 
+	spec := types.IRSpec{Nodes: nodes, ValuesMapping: types.OrderedMap[json.RawMessage]{}, FeatureValuesMapping: fvm}
+	if fillReferenceable {
+		vals := types.OrderedMap[any]{}
+		vals.Set("key", "FR_PW")
+		vals.Set("source", "supersecret")
+		secrets := types.OrderedMap[types.IRSecretEntry]{}
+		secrets.Set("frpass", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
+		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		nodeSecrets.Set("api", secrets)
+		spec.Secrets = nodeSecrets
+	}
+
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test"},
-			Spec:     types.IRSpec{Nodes: nodes, ValuesMapping: types.OrderedMap[json.RawMessage]{}, FeatureValuesMapping: fvm},
+			Spec:     spec,
 		},
 		FeatureOrder:  ir.FeatureOrder{"api": {"frprobe"}},
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}, BoundaryInfra: map[string]*resolver.BoundaryInfra{}},
@@ -126,6 +184,9 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot]
 			Feature: func(typeURI string) (types.Feature, bool) {
 				if typeURI == "core/frprobe:1.0.0" || typeURI == "core/frprobe" {
 					return types.Feature{Spec: types.FeatureSpec{SecretsSchema: featSlots}}, true
+				}
+				if typeURI == "core/referenced-secret" {
+					return referencedSecretFeature(), true
 				}
 				return types.Feature{}, false
 			},
@@ -158,6 +219,12 @@ containers:
 					},
 				}, true
 			}
+			if ft == "core/referenced-secret" {
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
+					Spec:     types.FeatureRecipeSpec{Provider: "helm", Implements: "core/referenced-secret:1.0.0", Provides: fullContractProvides()},
+				}, true
+			}
 			return nil, false
 		},
 	}
@@ -167,14 +234,22 @@ containers:
 
 func TestIntegration_WorkloadSecretSlots_FeatureRecipe_AdmitDeclaredTransparent(t *testing.T) {
 	t.Parallel()
-	if err := renderFRWithSlot(t, slotMap("frpass", []string{"env"})); err != nil {
-		t.Fatalf("FR declared transparent slot should ADMIT (was: %v)", err)
+	if err := renderFRWithSlot(t, slotMap("frpass", []string{"env"}), true); err != nil {
+		t.Fatalf("FR declared transparent slot with a referenceable fill should ADMIT (was: %v)", err)
+	}
+}
+
+func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltNonReferenceable(t *testing.T) {
+	t.Parallel()
+	err := renderFRWithSlot(t, slotMap("frpass", []string{"env"}), false)
+	if !errors.Is(err, validator.ErrSecretSlotNotReferenceable) {
+		t.Fatalf("FR transparent slot without a referenceable fill should HALT with ErrSecretSlotNotReferenceable, got: %v", err)
 	}
 }
 
 func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltUndeclared(t *testing.T) {
 	t.Parallel()
-	err := renderFRWithSlot(t, slotMap("", nil)) // Feature declares no slots
+	err := renderFRWithSlot(t, slotMap("", nil), false) // Feature declares no slots
 	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
 		t.Fatalf("FR undeclared slot should HALT with ErrWorkloadSecretsSchema, got: %v", err)
 	}
