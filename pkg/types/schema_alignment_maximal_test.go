@@ -122,7 +122,7 @@ func maximalFeatureRecipe() types.FeatureRecipe {
 			Implements:     "core/secret-value",
 			Locals:         om[string]("k", "v"),
 			Provides:       om[string]("ref", "x"),
-			InjectMapping:  "env:\n  {{ .values.key }}: \"{{ .values.source }}\"",
+			InjectMapping:  "env:\n  {{ .values.key }}: \"{{ .values.origin }}\"",
 			ExecutionScope: "component",
 			Assertions:     om[string]("rule", "{{ true }}"),
 		},

@@ -19,7 +19,7 @@ func dotenvSecretFR() *types.FeatureRecipe {
 		Spec: types.FeatureRecipeSpec{
 			Provider:      "compose",
 			Implements:    "core/secret-value:1.0.0",
-			InjectMapping: "env:\n  {{ .values.key }}: \"{{ .values.source }}\"\n",
+			InjectMapping: "env:\n  {{ .values.key }}: \"{{ .values.origin }}\"\n",
 		},
 	}
 }
@@ -55,7 +55,7 @@ func emptyComponentInjectCtx() *types.TemplateContext {
 func secretValues(key, source string) types.OrderedMap[any] {
 	v := types.OrderedMap[any]{}
 	v.Set("key", key)
-	v.Set("source", source)
+	v.Set("origin", source)
 	return v
 }
 

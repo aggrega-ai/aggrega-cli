@@ -47,7 +47,7 @@ func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.SecretSlo
 	if fillReferenceable {
 		vals := types.OrderedMap[any]{}
 		vals.Set("key", "POSTGRES_PASSWORD")
-		vals.Set("source", "supersecret")
+		vals.Set("origin", "supersecret")
 		secrets := types.OrderedMap[types.IRSecretEntry]{}
 		secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
 		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
@@ -164,7 +164,7 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot]
 	if fillReferenceable {
 		vals := types.OrderedMap[any]{}
 		vals.Set("key", "FR_PW")
-		vals.Set("source", "supersecret")
+		vals.Set("origin", "supersecret")
 		secrets := types.OrderedMap[types.IRSecretEntry]{}
 		secrets.Set("frpass", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
 		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}

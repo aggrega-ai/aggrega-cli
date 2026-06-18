@@ -45,7 +45,7 @@ func referencedSecretFixture(frProvides types.OrderedMap[string]) (renderer.Rend
 
 	vals := types.OrderedMap[any]{}
 	vals.Set("key", "POSTGRES_PASSWORD")
-	vals.Set("source", "supersecret")
+	vals.Set("origin", "supersecret")
 	secrets := types.OrderedMap[types.IRSecretEntry]{}
 	secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
 	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
@@ -151,7 +151,7 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 
 	vals := types.OrderedMap[any]{}
 	vals.Set("key", "POSTGRES_PASSWORD")
-	vals.Set("source", "supersecret")
+	vals.Set("origin", "supersecret")
 	secrets := types.OrderedMap[types.IRSecretEntry]{}
 	secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
 	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
