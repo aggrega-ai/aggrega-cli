@@ -133,7 +133,20 @@ func (e *HelmEngine) SynthesizeWorkload(
 		replicas = int32(*w.Replicas)
 	}
 
+	// Services are translated before the workload object so a synthesized
+	// StatefulSet can reference its governing headless Service by that Service's
+	// own rendered name — reusing it (rather than re-deriving the string) keeps
+	// the StatefulSet's serviceName and the emitted Service from ever drifting.
+	services, err := translateServices(w, componentID, namespace, selectorLabels, resourceLabels, resourceAnnotations)
+	if err != nil {
+		return nil, err
+	}
+
 	if useStatefulSet {
+		governingService, gerr := statefulSetGoverningService(services, nodeCtx.NodeID)
+		if gerr != nil {
+			return nil, gerr
+		}
 		ss := StatefulSet{
 			APIVersion: k8sStatefulSetAPIVersion,
 			Kind:       "StatefulSet",
@@ -141,6 +154,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 			Spec: StatefulSetSpec{
 				Replicas:             &replicas,
 				Selector:             &LabelSelector{MatchLabels: selectorLabels},
+				ServiceName:          governingService,
 				Template:             template,
 				VolumeClaimTemplates: translateVolumeClaimTemplates(w, componentID),
 			},
@@ -188,11 +202,7 @@ func (e *HelmEngine) SynthesizeWorkload(
 		})
 	}
 
-	// Services: one per Workload.Services entry, in author-order.
-	services, err := translateServices(w, componentID, namespace, selectorLabels, resourceLabels, resourceAnnotations)
-	if err != nil {
-		return nil, err
-	}
+	// Services: emit (in author-order) the services translated above.
 	for _, svc := range services {
 		body, err := marshalDeterministic(&svc, nodeCtx.YAMLIndent)
 		if err != nil {
@@ -216,6 +226,36 @@ func workloadHasPersistentTemplate(w *types.Workload) bool {
 		}
 	}
 	return false
+}
+
+// statefulSetGoverningService returns the rendered name of the single headless
+// Service that governs a synthesized StatefulSet, set as spec.serviceName. A
+// StatefulSet requires exactly one headless governing Service; a headless
+// Service is the one translateServices marked clusterIP: None. Reusing the
+// rendered Service's name (not re-deriving it) guarantees serviceName references
+// a Service that is actually emitted. Zero or several headless Services halt
+// loudly rather than emit a StatefulSet K8s would reject.
+func statefulSetGoverningService(services []Service, nodeID string) (string, error) {
+	var name string
+	count := 0
+	for _, svc := range services {
+		if svc.Spec.ClusterIP == "None" {
+			name = svc.Metadata.Name
+			count++
+		}
+	}
+	switch count {
+	case 1:
+		return name, nil
+	case 0:
+		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			"synthesized StatefulSet requires a headless governing Service (declare a service with type: Headless); none found",
+			nil, ErrStatefulSetNoHeadlessService)
+	default:
+		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			"synthesized StatefulSet declares more than one headless Service; the governing Service is ambiguous (declare exactly one type: Headless service)",
+			nil, ErrStatefulSetAmbiguousHeadlessService)
+	}
 }
 
 // translateContainers walks Workload.Containers in author order and produces

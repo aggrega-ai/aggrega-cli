@@ -16,6 +16,7 @@ spec:
   selector:
     matchLabels:
       app: postgres
+  serviceName: postgres-db
   template:
     metadata:
       name: ""

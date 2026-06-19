@@ -5,8 +5,10 @@ package helm
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -202,7 +204,54 @@ func TestSynthesizeWorkload_PersistentTemplateTriggersStatefulSet(t *testing.T) 
 	if files[0].Name != "postgres-statefulset.yaml" {
 		t.Errorf("expected statefulset.yaml; got %q", files[0].Name)
 	}
+	// serviceName must be set, and must equal the rendered headless Service's
+	// name (postgres-db) — the StatefulSet governs an emitted Service.
+	if !strings.Contains(string(files[0].Body), "serviceName: postgres-db") {
+		t.Errorf("StatefulSet must set serviceName to the headless Service name (postgres-db); got:\n%s", files[0].Body)
+	}
 	goldenCheck(t, "persistent-template-statefulset", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_StatefulSetNoHeadless_Halts: a persistentTemplate
+// Workload with no headless Service can't name a governing Service → halt.
+func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "db:1.0"}
+	c.Ports.Set("db", 5432)
+	w.Containers.Set("main", c)
+	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
+	// A ClusterIP service is not headless — no governing Service.
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("db", 5432)
+	w.Services.Set("db", svc)
+
+	_, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("postgres"))
+	if !errors.Is(err, ErrStatefulSetNoHeadlessService) {
+		t.Fatalf("expected ErrStatefulSetNoHeadlessService; got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts: a persistentTemplate
+// Workload with two headless Services has an ambiguous governing Service → halt.
+func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "db:1.0"}
+	c.Ports.Set("db", 5432)
+	w.Containers.Set("main", c)
+	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
+	h1 := types.ServiceSpec{Type: "Headless"}
+	h1.Ports.Set("db", 5432)
+	w.Services.Set("db", h1)
+	h2 := types.ServiceSpec{Type: "Headless"}
+	h2.Ports.Set("db", 5432)
+	w.Services.Set("db2", h2)
+
+	_, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("postgres"))
+	if !errors.Is(err, ErrStatefulSetAmbiguousHeadlessService) {
+		t.Fatalf("expected ErrStatefulSetAmbiguousHeadlessService; got %v", err)
+	}
 }
 
 // ----- Category 5 — Each probe shape -----
