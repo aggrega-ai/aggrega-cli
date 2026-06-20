@@ -31,6 +31,17 @@ var ErrFetchNetworkUnreachable = errors.New("oci: network unreachable")
 // remediation pointer.
 var ErrFetchIntegrity = errors.New("oci: content digest mismatch")
 
+// ErrImmutableTagConflict is returned by the publish path when the
+// target tag already exists in the registry pointing at a different
+// manifest digest than the content being pushed. Published bytes are
+// frozen: a tag is never silently overwritten with different content.
+// Call sites wrap this sentinel with the reference, the existing
+// digest, the proposed digest, and a pointer to publish a new version
+// (verified by aggrega lint --pre-publish) instead. Re-pushing
+// byte-identical content under the same tag is not a conflict — it is
+// an idempotent no-op.
+var ErrImmutableTagConflict = errors.New("oci: tag already published with different content")
+
 // ErrUnknownEntityKind is returned by MediaTypeForKind for kind
 // strings not in the canonical entity-kind set. Programming error
 // at the dispatch boundary, not a user-input error.

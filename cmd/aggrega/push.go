@@ -161,7 +161,34 @@ func pushRun(cfg pushConfig) error {
 		target = repo
 	}
 
-	digest, err := oci.Push(context.Background(), target, tag, mediaType, bundleBytes)
+	ctx := context.Background()
+
+	// Immutability guard: published bytes are frozen. HEAD the target tag
+	// before publishing and compare the digest it points at with the digest
+	// this content would produce. Re-pushing byte-identical content is an
+	// idempotent no-op; overwriting an existing tag with different content is
+	// refused. Changed content is published under a new version — aggrega lint
+	// --pre-publish gates that bump against the previous release. There is no
+	// --force escape: the registry has no overwrite path the operator can opt
+	// into, by design.
+	existingDigest, exists, err := oci.Resolve(ctx, target, tag)
+	if err != nil {
+		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, tag, err)
+	}
+	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes)
+	if err != nil {
+		return fmt.Errorf("aggrega push: %s:%s: %w", reference, tag, err)
+	}
+	if exists {
+		if existingDigest == proposedDigest {
+			fmt.Printf("Already published: %s:%s (%s)\n", reference, tag, existingDigest)
+			return nil
+		}
+		return fmt.Errorf("aggrega push: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
+			reference, tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
+	}
+
+	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
 	}

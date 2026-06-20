@@ -38,6 +38,8 @@ func newRootCmd() *cobra.Command {
 		newServeCmd(),
 		newLintCmd(),
 		newPushCmd(),
+		newLoginCmd(),
+		newLogoutCmd(),
 		newVersionCmd(),
 	)
 	silenceUsageOnRun(root)

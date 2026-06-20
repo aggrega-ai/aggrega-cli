@@ -18,6 +18,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
@@ -102,6 +103,44 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 	}, nil
 }
 
+// epochCreated is the fixed value Push pins into every manifest's
+// org.opencontainers.image.created annotation. oras stamps that
+// annotation with the current wall-clock time unless a value is
+// supplied, which would make byte-identical content produce a
+// different manifest digest on every push. Pinning it to the zero
+// epoch (the reproducible-build convention) makes the manifest digest
+// a pure function of the content — the precondition the publish-time
+// immutability guard relies on to recognise a re-push of identical
+// content. This extends the Deterministic Output discipline from the
+// content blob (which callers pre-canonicalise) to the manifest.
+const epochCreated = "1970-01-01T00:00:00Z"
+
+// packArtifact uploads `content` and packs a deterministic OCI manifest
+// referencing it into `target`, returning the manifest descriptor. It
+// does NOT tag. Push and ManifestDigest share it so the digest a guard
+// previews against an in-memory store is byte-identical to the digest a
+// real push produces.
+func packArtifact(ctx context.Context, target oras.Target, mediaType string, content []byte) (ocispec.Descriptor, error) {
+	contentDesc, err := oras.PushBytes(ctx, target, mediaType, content)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("oci: push content: %w", err)
+	}
+	manifestDesc, err := oras.PackManifest(
+		ctx,
+		target,
+		oras.PackManifestVersion1_1,
+		mediaType,
+		oras.PackManifestOptions{
+			Layers:              []ocispec.Descriptor{contentDesc},
+			ManifestAnnotations: map[string]string{ocispec.AnnotationCreated: epochCreated},
+		},
+	)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("oci: pack manifest: %w", err)
+	}
+	return manifestDesc, nil
+}
+
 // Push uploads `content` with `mediaType` to `target`, builds an OCI
 // manifest pointing at it, tags the manifest as `tag`, and returns
 // the manifest digest. The target may be a remote.Repository
@@ -111,31 +150,53 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 // Per Aggrega's deterministic-output discipline, callers SHOULD
 // supply bundle bytes pre-canonicalised (sorted file entries in
 // tar archives; zero timestamps; gzip default compression). Push
-// itself adds no canonicalisation; it trusts its input.
+// adds no content canonicalisation; it trusts its input. It does pin
+// the manifest's creation annotation, so byte-identical content always
+// produces a byte-identical manifest digest.
 func Push(ctx context.Context, target oras.Target, tag string, mediaType string, content []byte) (string, error) {
-	contentDesc, err := oras.PushBytes(ctx, target, mediaType, content)
+	manifestDesc, err := packArtifact(ctx, target, mediaType, content)
 	if err != nil {
-		return "", fmt.Errorf("oci: push content: %w", err)
+		return "", err
 	}
-
-	manifestDesc, err := oras.PackManifest(
-		ctx,
-		target,
-		oras.PackManifestVersion1_1,
-		mediaType,
-		oras.PackManifestOptions{
-			Layers: []ocispec.Descriptor{contentDesc},
-		},
-	)
-	if err != nil {
-		return "", fmt.Errorf("oci: pack manifest: %w", err)
-	}
-
 	if err := target.Tag(ctx, manifestDesc, tag); err != nil {
 		return "", fmt.Errorf("oci: tag %q: %w", tag, err)
 	}
-
 	return manifestDesc.Digest.String(), nil
+}
+
+// ManifestDigest computes, without contacting any remote, the manifest
+// digest Push would produce for `content` of `mediaType`. It packs into
+// an in-memory store and returns the descriptor digest. Because the
+// manifest's creation annotation is pinned, the result is deterministic
+// and equal to the digest a real Push of the same content yields — so a
+// caller can preview the digest a push would land before deciding
+// whether that push would overwrite an existing tag.
+func ManifestDigest(ctx context.Context, mediaType string, content []byte) (string, error) {
+	manifestDesc, err := packArtifact(ctx, memory.New(), mediaType, content)
+	if err != nil {
+		return "", err
+	}
+	return manifestDesc.Digest.String(), nil
+}
+
+// Resolve reports the manifest digest the target currently has for
+// `tag`. It is the read-only pre-push HEAD: exists is false (with a nil
+// error and empty digest) when the tag is simply absent, so callers can
+// distinguish "no such tag, safe to publish" from a transport or
+// authentication failure (non-nil error). The target may be a
+// remote.Repository or any oras.ReadOnlyTarget.
+func Resolve(ctx context.Context, target oras.ReadOnlyTarget, tag string) (digest string, exists bool, err error) {
+	desc, err := target.Resolve(ctx, tag)
+	if err != nil {
+		if errors.Is(err, errdef.ErrNotFound) {
+			return "", false, nil
+		}
+		if isUnauthorized(err) {
+			return "", false, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized)
+		}
+		return "", false, fmt.Errorf("oci: resolve %q: %w", tag, err)
+	}
+	return desc.Digest.String(), true, nil
 }
 
 // NewRemoteRepository constructs an authenticated remote.Repository
@@ -172,6 +233,34 @@ func NewRemoteRepository(reference string) (*remote.Repository, error) {
 		Credential: credentials.Credential(store),
 	}
 	return repo, nil
+}
+
+// VerifyCredential checks a username/password against a registry by pinging
+// its /v2/ endpoint with that specific credential, before anything is stored.
+// It is distinct from NewRemoteRepository, which reads whatever the credential
+// store holds: VerifyCredential authenticates with the credential passed in, so
+// `aggrega login` can fail loudly on a typo at login time rather than silently
+// at the first push. A registry host that addresses the local machine is pinged
+// over plain HTTP (mirroring NewRemoteRepository's loopback handling).
+//
+// A 401/403 maps to ErrFetchUnauthorized (wrong credential); other failures
+// (DNS, TCP, TLS) pass through wrapped with the registry host for diagnosis.
+func VerifyCredential(ctx context.Context, registryHost string, cred auth.Credential) error {
+	reg, err := remote.NewRegistry(registryHost)
+	if err != nil {
+		return fmt.Errorf("oci: parse registry %q: %w", registryHost, err)
+	}
+	reg.PlainHTTP = isLoopbackRegistry(reg.Reference.Registry)
+	reg.Client = &auth.Client{
+		Credential: auth.StaticCredential(reg.Reference.Registry, cred),
+	}
+	if err := reg.Ping(ctx); err != nil {
+		if isUnauthorized(err) {
+			return fmt.Errorf("oci: verify credential for %q: %v: %w", registryHost, err, ErrFetchUnauthorized)
+		}
+		return fmt.Errorf("oci: verify credential for %q: %w", registryHost, err)
+	}
+	return nil
 }
 
 // isUnauthorized reports whether a raw oras-go error represents an

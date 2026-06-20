@@ -67,6 +67,9 @@ var runtimeErrorCommands = []struct {
 	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{"lint", []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	// login fails in its own work before any stdin read or network call:
+	// --password-stdin requires --username.
+	{"login", []string{"login", "registry.invalid.example", "--password-stdin"}},
 }
 
 // TestCLIErrorHygiene_RuntimeErrorSuppressesUsageAndError drives each
@@ -142,6 +145,10 @@ func TestCLIErrorHygiene_AllRunECommandsCovered(t *testing.T) {
 	// version succeeds and has no error path / Usage to leak; it carries
 	// the wrap harmlessly and is exempt from the runtime-error table.
 	covered["version"] = true
+	// logout of an absent credential is a no-op success (like version), so it
+	// has no hermetic runtime-error invocation to drive here; the centralized
+	// wrap it carries is the same one proven against the login error path above.
+	covered["logout"] = true
 
 	for _, c := range newRootCmd().Commands() {
 		if c.RunE == nil {
