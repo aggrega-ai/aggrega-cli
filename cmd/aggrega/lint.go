@@ -803,7 +803,7 @@ func fetchPreviousRegistryVersion(
 	if err != nil {
 		return nil, "", fmt.Errorf("list tags: %w", err)
 	}
-	latest := oci.LatestNonPreRelease(tags)
+	latest := oci.SelectLatestVersion(tags, false /* includePreRelease */)
 	if latest == "" {
 		// Distinguish "no previous version exists" (true first publication)
 		// from "tags exist but all are pre-release" (different shape;

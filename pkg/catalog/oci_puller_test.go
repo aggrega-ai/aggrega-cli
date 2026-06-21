@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package catalog
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+)
+
+// TestSelectPullVersion pins the discovery step the three pull entrypoints
+// share: an empty-floorVersion pull lists tags and selects the highest
+// conformant version, surfacing a NotFound-wrapped error when none conforms.
+// The error rows are the behavior delta — a "v"-prefixed or four-part
+// "1.2.3.4" registry now yields "no version" where the previous dotted-numeric
+// selector accepted "1.2.3.4" and rejected nothing four-part about it. Both the
+// lint publish gate and this pull path now route through the same strict
+// selection, so they can no longer disagree about what resolves.
+func TestSelectPullVersion(t *testing.T) {
+	t.Parallel()
+	const ref = "example.test/component/widget"
+
+	cases := []struct {
+		name      string
+		tags      []string
+		want      string
+		wantErr   bool
+		errIsNotF bool
+	}{
+		{name: "highest stable selected", tags: []string{"1.0.0", "1.1.0", "0.9.0"}, want: "1.1.0"},
+		{name: "pre-release skipped on the pull path", tags: []string{"1.0.0", "1.1.0-rc.1"}, want: "1.0.0"},
+		{name: "v-prefix-only yields no-version error", tags: []string{"v1.0.0", "v2.0.0"}, wantErr: true, errIsNotF: true},
+		{name: "four-part-only yields no-version error", tags: []string{"1.2.3.4"}, wantErr: true, errIsNotF: true},
+		{name: "non-semver-only yields no-version error", tags: []string{"latest", "edge"}, wantErr: true, errIsNotF: true},
+		{name: "empty tag list yields no-version error", tags: nil, wantErr: true, errIsNotF: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := selectPullVersion(ref, tc.tags)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("selectPullVersion(%v): want error; got version %q", tc.tags, got)
+				}
+				if tc.errIsNotF && !errors.Is(err, oci.ErrFetchNotFound) {
+					t.Errorf("selectPullVersion(%v): error %v; want wrapped ErrFetchNotFound", tc.tags, err)
+				}
+				if got != "" {
+					t.Errorf("selectPullVersion(%v): want empty version on error; got %q", tc.tags, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("selectPullVersion(%v): unexpected error %v", tc.tags, err)
+			}
+			if got != tc.want {
+				t.Errorf("selectPullVersion(%v): got %q; want %q", tc.tags, got, tc.want)
+			}
+		})
+	}
+}

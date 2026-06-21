@@ -151,12 +151,12 @@ func (m *memoryTagLister) Tags(ctx context.Context, last string, fn func(tags []
 	return fn(m.tags)
 }
 
-// TestListTagsAndLatestNonPreRelease pins the tag-listing helpers
-// added for `aggrega lint --pre-publish`'s previous-version
-// lookup. ListTags materialises every tag the target carries;
-// LatestNonPreRelease filters pre-release tags and returns the
-// highest semver remaining.
-func TestListTagsAndLatestNonPreRelease(t *testing.T) {
+// TestListTagsAndSelectLatestVersion pins the tag-listing helpers
+// used for `aggrega lint --pre-publish`'s previous-version lookup.
+// ListTags materialises every tag the target carries;
+// SelectLatestVersion (skip-pre-release) filters pre-release tags and
+// returns the highest strict-SemVer tag remaining.
+func TestListTagsAndSelectLatestVersion(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := &memoryTagLister{Store: memory.New()}
@@ -186,32 +186,52 @@ func TestListTagsAndLatestNonPreRelease(t *testing.T) {
 		}
 	}
 
-	latest := oci.LatestNonPreRelease(tags)
+	latest := oci.SelectLatestVersion(tags, false /* includePreRelease */)
 	if latest != "1.1.0" {
-		t.Errorf("LatestNonPreRelease: got %q; want %q (pre-release 2.0.0-rc.1 must be filtered; non-semver 'latest' skipped)", latest, "1.1.0")
+		t.Errorf("SelectLatestVersion: got %q; want %q (pre-release 2.0.0-rc.1 must be filtered; non-semver 'latest' skipped)", latest, "1.1.0")
 	}
 }
 
-func TestLatestNonPreReleaseEmptyAndFirstPublication(t *testing.T) {
+// TestSelectLatestVersionStrictGrammar pins that selection accepts only
+// strict SemVer 2.0.0 tags (the grammar entity schemas mandate for
+// metadata.version) and that the include/skip-pre-release switch flips the
+// selected tag — the unification that ends the lint-vs-pull divergence where
+// "v"-prefixed tags passed lint but failed pull and four-part "1.2.3.4" was
+// accepted by pull but rejected by lint. These cases also serve as a
+// build-time check that StrictNewVersion enforces the schema grammar.
+func TestSelectLatestVersionStrictGrammar(t *testing.T) {
 	t.Parallel()
-	// First-publication case (no tags) returns empty string.
-	if got := oci.LatestNonPreRelease(nil); got != "" {
-		t.Errorf("empty input: got %q; want \"\"", got)
+	cases := []struct {
+		name              string
+		tags              []string
+		includePreRelease bool
+		want              string
+	}{
+		{"empty", nil, false, ""},
+		{"v-prefix skipped (was accepted by lint, rejected by pull)", []string{"v1.0.0", "v2.0.0"}, false, ""},
+		{"four-part skipped (was accepted by pull, rejected by lint)", []string{"1.2.3.4"}, false, ""},
+		{"leading-zero segment skipped", []string{"1.01.0"}, false, ""},
+		{"non-semver skipped", []string{"latest", "edge"}, false, ""},
+		{"highest stable selected", []string{"1.0.0", "1.1.0", "0.9.0"}, false, "1.1.0"},
+		{"pre-release skipped under skip", []string{"1.0.0", "1.1.0-rc.1"}, false, "1.0.0"},
+		{"pre-release selected under include", []string{"1.0.0", "1.1.0-rc.1"}, true, "1.1.0-rc.1"},
+		{"non-conformant ignored alongside conformant", []string{"v3.0.0", "1.2.3.4", "1.0.0"}, false, "1.0.0"},
 	}
-	// Only-pre-release case also returns empty string
-	// (risk: distinguished via HasAnySemverTag — see test below).
-	if got := oci.LatestNonPreRelease([]string{"1.0.0-alpha.1", "1.0.0-rc.1"}); got != "" {
-		t.Errorf("all-pre-release: got %q; want \"\"", got)
-	}
-	// Non-semver-only case returns empty string.
-	if got := oci.LatestNonPreRelease([]string{"latest", "edge"}); got != "" {
-		t.Errorf("non-semver-only: got %q; want \"\"", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oci.SelectLatestVersion(tc.tags, tc.includePreRelease); got != tc.want {
+				t.Errorf("SelectLatestVersion(%v, includePreRelease=%v): got %q; want %q", tc.tags, tc.includePreRelease, got, tc.want)
+			}
+		})
 	}
 }
 
-// TestHasAnySemverTag pins the helper used by the CLI to
-// distinguish "no previous version exists" from "tags exist but
-// all are pre-release".
+// TestHasAnySemverTag pins the helper used by the CLI to distinguish "no
+// previous version exists" from "tags exist but all are pre-release". It
+// shares its conformance parse with SelectLatestVersion, so a "v"-prefixed or
+// four-part tag — which SelectLatestVersion skips — is likewise not counted as
+// a version here (otherwise lint would wrongly warn "only pre-release tags" for
+// a registry holding only non-conformant tags).
 func TestHasAnySemverTag(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -221,6 +241,8 @@ func TestHasAnySemverTag(t *testing.T) {
 	}{
 		{"empty", nil, false},
 		{"only non-semver", []string{"latest", "edge"}, false},
+		{"v-prefix is not conformant", []string{"v1.0.0"}, false},
+		{"four-part is not conformant", []string{"1.2.3.4"}, false},
 		{"only pre-release", []string{"1.0.0-alpha.1", "1.0.0-rc.1"}, true},
 		{"includes stable", []string{"1.0.0", "1.1.0-rc.1"}, true},
 		{"all stable", []string{"1.0.0", "2.0.0"}, true},

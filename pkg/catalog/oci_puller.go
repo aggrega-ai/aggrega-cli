@@ -6,7 +6,6 @@ package catalog
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -68,9 +67,9 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 		if terr != nil {
 			return nil, "", terr
 		}
-		version = highestSemverTag(tags)
-		if version == "" {
-			return nil, "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
+		version, terr = selectPullVersion(reference, tags)
+		if terr != nil {
+			return nil, "", terr
 		}
 	}
 	result, perr := oci.Pull(ctx, repo, version)
@@ -101,9 +100,9 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 		if terr != nil {
 			return nil, "", terr
 		}
-		tag = highestSemverTag(tags)
-		if tag == "" {
-			return nil, "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
+		tag, terr = selectPullVersion(reference, tags)
+		if terr != nil {
+			return nil, "", terr
 		}
 	}
 	result, perr := oci.Pull(ctx, repo, tag)
@@ -136,9 +135,9 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 		if terr != nil {
 			return nil, "", terr
 		}
-		version = highestSemverTag(tags)
-		if version == "" {
-			return nil, "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
+		version, terr = selectPullVersion(reference, tags)
+		if terr != nil {
+			return nil, "", terr
 		}
 	}
 	result, perr := oci.Pull(ctx, repo, version)
@@ -182,59 +181,16 @@ func libraryReference(registry, kind, name string) string {
 	return registry + "/" + OCILocation(kind, "", name)
 }
 
-// highestSemverTag selects the highest dotted-numeric (MAJOR.MINOR.PATCH) tag
-// from a registry's tag list — the resolver-reported version for a pure
-// bare-name first pull. Tags that are not dotted-numeric semver (e.g. "latest",
-// build-metadata tags) are ignored; an empty result means no usable version.
-func highestSemverTag(tags []string) string {
-	best := ""
-	for _, t := range tags {
-		if !isDottedNumeric(t) {
-			continue
-		}
-		if best == "" || compareDottedNumeric(t, best) > 0 {
-			best = t
-		}
+// selectPullVersion picks the highest conformant published version from a
+// registry's tag list — the empty-floorVersion discovery step the three pull
+// entrypoints share. Selection is strict SemVer (oci.SelectLatestVersion);
+// when no tag conforms it returns a NotFound-wrapped error rather than an
+// empty version, so a registry holding only non-conformant tags (a "v" prefix,
+// a four-part "1.2.3.4") surfaces as "no version" instead of a bad pull.
+func selectPullVersion(reference string, tags []string) (string, error) {
+	version := oci.SelectLatestVersion(tags, false /* includePreRelease */)
+	if version == "" {
+		return "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
 	}
-	return best
-}
-
-func isDottedNumeric(v string) bool {
-	if v == "" {
-		return false
-	}
-	for _, part := range strings.Split(v, ".") {
-		if _, err := strconv.Atoi(part); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
-// compareDottedNumeric compares two dotted-numeric versions component-by-component
-// (numeric, not lexical), returning -1, 0, +1. A shorter version compares as if
-// padded with zeros (1.0 == 1.0.0). Callers pre-filter with isDottedNumeric.
-func compareDottedNumeric(a, b string) int {
-	ap := strings.Split(a, ".")
-	bp := strings.Split(b, ".")
-	n := len(ap)
-	if len(bp) > n {
-		n = len(bp)
-	}
-	for i := 0; i < n; i++ {
-		var av, bv int
-		if i < len(ap) {
-			av, _ = strconv.Atoi(ap[i])
-		}
-		if i < len(bp) {
-			bv, _ = strconv.Atoi(bp[i])
-		}
-		if av != bv {
-			if av < bv {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
+	return version, nil
 }

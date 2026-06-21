@@ -355,24 +355,38 @@ func ListTags(ctx context.Context, target oras.ReadOnlyTarget) ([]string, error)
 	return tags, nil
 }
 
-// LatestNonPreRelease parses each tag as semver, filters out tags
-// with pre-release components (e.g., "1.0.0-rc.1"), and returns the
-// highest remaining tag verbatim (preserving any "v" prefix the tag
-// originally carried). Returns an empty string when no qualifying
-// semver tag is present. Tags that fail semver parsing are silently
-// skipped — the registry may carry non-semver tags (e.g., "latest");
-// callers of aggrega push only write semver tags but operators may
-// push manually. The function does not fail (all skip-or-include
-// decisions are made silently); no error return.
-func LatestNonPreRelease(tags []string) string {
+// strictSemverTag parses a registry tag as strict SemVer 2.0.0 — the same
+// grammar entity schemas mandate for metadata.version: MAJOR.MINOR.PATCH with
+// an optional -prerelease and +build, no "v" prefix, and exactly three numeric
+// parts. It reports the parsed version and whether the tag conformed.
+// Non-conformant tags (a "v" prefix, a four-part "1.2.3.4", a bare "latest")
+// report ok=false. Every "is this a usable version tag" decision derives from
+// this one parse, so the selection and presence checks cannot disagree about
+// what counts as a version.
+func strictSemverTag(tag string) (*semver.Version, bool) {
+	v, err := semver.StrictNewVersion(tag)
+	if err != nil {
+		return nil, false
+	}
+	return v, true
+}
+
+// SelectLatestVersion returns the highest tag that conforms to strict SemVer
+// 2.0.0 (MAJOR.MINOR.PATCH, optional -prerelease / +build, no "v" prefix,
+// exactly three numeric parts). Non-conformant tags — a "v" prefix, a four-part
+// "1.2.3.4", a bare "latest" — are skipped and never selected. When
+// includePreRelease is false, tags carrying a pre-release component are also
+// skipped. Returns an empty string when no qualifying tag is present; the
+// function never fails (all skip-or-include decisions are made silently).
+func SelectLatestVersion(tags []string, includePreRelease bool) string {
 	var highest *semver.Version
 	var highestOrig string
 	for _, t := range tags {
-		v, err := semver.NewVersion(t)
-		if err != nil {
+		v, ok := strictSemverTag(t)
+		if !ok {
 			continue
 		}
-		if v.Prerelease() != "" {
+		if !includePreRelease && v.Prerelease() != "" {
 			continue
 		}
 		if highest == nil || v.GreaterThan(highest) {
@@ -383,14 +397,15 @@ func LatestNonPreRelease(tags []string) string {
 	return highestOrig
 }
 
-// HasAnySemverTag returns true when at least one tag in the input
-// parses as semver (regardless of pre-release status). Used by the
-// CLI to distinguish "no previous version exists" (true first
-// publication) from "previous versions exist but all are pre-
-// release" (different diagnostic).
+// HasAnySemverTag reports whether at least one tag conforms to strict SemVer
+// 2.0.0 (regardless of pre-release status). It derives conformance from the
+// same parse as SelectLatestVersion, so the two never disagree about what
+// counts as a version. Used by the CLI to distinguish "no previous version
+// exists" (true first publication) from "previous versions exist but all are
+// pre-release" (different diagnostic).
 func HasAnySemverTag(tags []string) bool {
 	for _, t := range tags {
-		if _, err := semver.NewVersion(t); err == nil {
+		if _, ok := strictSemverTag(t); ok {
 			return true
 		}
 	}
