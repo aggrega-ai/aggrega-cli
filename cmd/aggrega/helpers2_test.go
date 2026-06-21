@@ -121,7 +121,7 @@ spec:
 		t.Fatalf("clean .trace: %v", err)
 	}
 
-	if err := runBuild(nil, nil); err != nil {
+	if err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled); err != nil {
 		t.Fatalf("runBuild: %v", err)
 	}
 
@@ -230,5 +230,5 @@ spec:
 	// runBuild may succeed or fail depending on the fixture's
 	// completeness; the goal is to exercise the trace-enable code path,
 	// not specifically to make the build succeed.
-	_ = runBuild(nil, nil)
+	_ = dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
 }

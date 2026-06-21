@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TestDispatchInitializeIncludesWorkspaceRootAndConfigSource verifies
@@ -150,7 +152,7 @@ func TestDispatchInitializeCapabilitiesFieldUnchanged(t *testing.T) {
 func TestInitializeReportsWorkspaceMarkerAggregateGlob(t *testing.T) {
 	out := &bytes.Buffer{}
 	srv := newTestServer(t, "/tmp/test-workspace", nil, out)
-	srv.workspaceMarker = markerAggregateGlob
+	srv.workspaceMarker = workspaceconfig.MarkerAggregateGlob
 
 	req := framedRequest(1, "aggrega/initialize", map[string]any{
 		"capabilities": map[string]any{},
@@ -178,7 +180,7 @@ func TestInitializeReportsWorkspaceMarkerAggregateGlob(t *testing.T) {
 func TestInitializeReportsWorkspaceMarkerConfig(t *testing.T) {
 	out := &bytes.Buffer{}
 	srv := newTestServer(t, "/tmp/test-workspace", nil, out)
-	srv.workspaceMarker = markerConfigFile
+	srv.workspaceMarker = workspaceconfig.MarkerConfig
 
 	req := framedRequest(1, "aggrega/initialize", map[string]any{
 		"capabilities": map[string]any{},

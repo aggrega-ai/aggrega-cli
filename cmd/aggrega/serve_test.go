@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -206,30 +207,26 @@ func TestServeLifecycle(t *testing.T) {
 	}
 }
 
-// TestServeExitsWhenNoWorkspaceConfig spawns the daemon from a
-// directory with no .aggrega-config.yaml anywhere in the parent
-// chain. Asserts the daemon exits with non-zero exit code before
-// reading any JSON-RPC interaction.
-func TestServeExitsWhenNoWorkspaceConfig(t *testing.T) {
+// TestServeStartsWithCWDFallbackWhenNoMarker spawns the daemon from a
+// directory with no workspace marker anywhere in the parent chain.
+// Resolution falls back to the working directory (the same precedence the
+// CLI uses), so the daemon starts rather than erroring; with no input it
+// exits cleanly when stdin closes (EOF). This pins the unification: a missing
+// workspace no longer makes the daemon stricter than the CLI.
+func TestServeStartsWithCWDFallbackWhenNoMarker(t *testing.T) {
 	bin := buildServeBinary(t)
-	// Use the test's TempDir as the daemon's CWD; the temp dir is
-	// under $TMPDIR which has no .aggrega-config.yaml at its root
-	// (Linux: /tmp). The daemon's parent walk reaches the filesystem
-	// root and exits.
+	// The temp dir is under $TMPDIR (Linux: /tmp) with no workspace marker up
+	// to the filesystem root, so discovery falls through to CWD.
 	dir := t.TempDir()
 	cmd := exec.Command(bin, "serve")
 	cmd.Dir = dir
+	// Empty stdin: the reader hits EOF immediately and the dispatch loop exits
+	// cleanly. A non-zero exit here would mean the daemon refused to start
+	// without a marker — the pre-unification behavior this test guards against.
+	cmd.Stdin = bytes.NewReader(nil)
 	output, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("daemon should have exited non-zero; got success with output: %s", output)
-	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		if exitErr.ExitCode() == 0 {
-			t.Errorf("expected non-zero exit code; got 0")
-		}
-	}
-	if !strings.Contains(string(output), "workspace") {
-		t.Errorf("expected output mentioning workspace; got: %s", output)
+	if err != nil {
+		t.Fatalf("daemon should start with CWD fallback and exit cleanly on EOF; got error: %v, output: %s", err, output)
 	}
 }
 

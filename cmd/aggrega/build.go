@@ -60,7 +60,11 @@ func newBuildCmd() *cobra.Command {
 // and the rendered files are written to dist/. A summary line writes
 // to stdout.
 func runBuild(cmd *cobra.Command, args []string) error {
-	return dispatchBuild(releasePath, catalogDirs, traceEnabled)
+	rw, err := workspaceFromContext(cmd.Context())
+	if err != nil {
+		return err
+	}
+	return dispatchBuild(rw, releasePath, catalogDirs, traceEnabled)
 }
 
 // dispatchBuild composes the filesystem-touching pre-pipeline steps
@@ -69,23 +73,23 @@ func runBuild(cmd *cobra.Command, args []string) error {
 // pipeline.RunPipeline, then writes the rendered Artifacts to dist/
 // and (when --trace is on) the Trace map to .trace/. The in-memory
 // pipeline orchestration lives in internal/compiler/pipeline; tests
-// call dispatchBuild directly to avoid racing on flag-bound globals
-// under t.Parallel.
-func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bool) error {
-	// Load catalog from directory. wsRoot is the workspace the caller
-	// invoked the build from; the catalog renders source-file accessors
-	// relative to it so the IR's per-node SourceFile records stay
+// call dispatchBuild directly (passing a nil workspace, which resolves from
+// the working directory) to avoid racing on flag-bound globals under t.Parallel.
+func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool) error {
+	// wsRoot is the resolved workspace root; the catalog renders source-file
+	// accessors relative to it so the IR's per-node SourceFile records stay
 	// byte-identical across developer machines whose workspaces live at
 	// different absolute paths.
-	wsRoot, _ := os.Getwd()
-
-	// Load workspace config up front: the catalog walk skips the configured
-	// cache directory (a resolution artifact, not authored catalog), and the
-	// pipeline call below reuses wsCfg.
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsRoot := rw.Root()
+
+	// Workspace config drives the cache directory (the catalog walk skips it as
+	// a resolution artifact, not authored catalog) and is reused by the pipeline
+	// call below.
+	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 
 	// Effective first-win catalog search stack: --catalog dirs prepended to the
@@ -116,7 +120,7 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	// lockfile; a freshly auto-pulled one matches the closure by construction. The
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
-	lockfilePreexisted, err := acquireLockfile(releasePath, catalogFlagDirs, wsCfg, buildDetail)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, buildDetail)
 	if err != nil {
 		return err
 	}
@@ -298,7 +302,7 @@ func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 	return false
 }
 
-func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, detail bool) (bool, error) {
+func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, detail bool) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -329,7 +333,7 @@ func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspa
 	// The build's own resolution runs through the nil-puller pinned lazy lookup,
 	// untouched — so build output is unchanged by this fill.
 	if wsCfg.AutoPull {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail, ws: rw}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
 		return false, nil

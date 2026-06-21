@@ -55,12 +55,6 @@ type RunConfig struct {
 	// the flag were not passed).
 	WorkspaceRoot string
 
-	// GlobalConfigPathOverride, when non-empty, replaces the
-	// GlobalConfigPath resolution entirely. Tests use this to point
-	// at fixture files without depending on $AGGREGA_CONFIG or
-	// $XDG_CONFIG_HOME. The cobra flag does not expose this surface.
-	GlobalConfigPathOverride string
-
 	// DrainTimeout sets the budget the dispatch loop waits after
 	// observing an aggrega/shutdown notification before returning.
 	// Zero value defaults to defaultDrainTimeout (2 seconds). Tests
@@ -121,11 +115,11 @@ type Server struct {
 	// CLI does.
 	compilerVersion string
 	// workspaceMarker names the marker tier that anchored the
-	// workspace root via discovery. markerNone (the zero value)
-	// when --workspace-root was supplied explicitly, since no
-	// marker was consulted in that path. Surfaced on
-	// aggrega/initialize via WireName().
-	workspaceMarker markerSource
+	// workspace root via discovery. The zero value (no marker) when
+	// --workspace-root was supplied explicitly, since no marker was
+	// consulted in that path. Surfaced on aggrega/initialize via its
+	// String() wire token.
+	workspaceMarker workspaceconfig.Marker
 	wsConfig        workspaceconfig.Config
 
 	// shuttingDown is set to true by dispatchShutdown after an
@@ -252,9 +246,6 @@ type Server struct {
 // client interprets non-zero exit as a "language server failed to
 // start" condition.
 func Run(cfg RunConfig) error {
-	var root string
-	var workspaceConfigPath string
-	var marker markerSource
 	if cfg.WorkspaceRoot != "" {
 		st, statErr := os.Stat(cfg.WorkspaceRoot)
 		if statErr != nil {
@@ -263,32 +254,19 @@ func Run(cfg RunConfig) error {
 		if !st.IsDir() {
 			return fmt.Errorf("explicit workspace root %s is not a directory", cfg.WorkspaceRoot)
 		}
-		root = cfg.WorkspaceRoot
-		// Best-effort: when an explicit root carries a config file,
-		// honor it as the workspace overlay; otherwise fall through
-		// to defaults+global only.
-		candidate := root + string(os.PathSeparator) + ".aggrega-config.yaml"
-		if _, err := os.Stat(candidate); err == nil {
-			workspaceConfigPath = candidate
-		}
-	} else {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("getwd: %w", err)
-		}
-		res, err := discoverWorkspaceRoot(cwd)
-		if err != nil {
-			return fmt.Errorf("workspace root not discoverable from %s: %w", cwd, err)
-		}
-		root = res.root
-		workspaceConfigPath = res.configPath
-		marker = res.source
 	}
 
-	wsCfg, source, err := workspaceconfig.LoadWithGlobal(workspaceConfigPath, cfg.GlobalConfigPathOverride)
+	// Single resolution path shared with the CLI: discover the root
+	// (or honor the explicit one), cascade-merge the config tree, and
+	// report the marker tier for the aggrega/initialize wire token.
+	resolved, err := workspaceconfig.Resolve("", cfg.WorkspaceRoot)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	root := resolved.Root()
+	wsCfg := resolved.Config()
+	source := resolved.Source()
+	marker := resolved.Marker()
 
 	stderr := cfg.Stderr
 	if stderr == nil {

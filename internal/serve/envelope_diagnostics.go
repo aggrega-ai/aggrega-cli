@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -95,7 +96,7 @@ func classifyAggregaDocument(doc *yaml.Node) (envelope.Kind, bool) {
 // touches another ecosystem's lockfile.
 func (s *Server) classifyByFilename(file string) (envelope.Kind, bool) {
 	base := filepath.Base(file)
-	if base == ".aggrega-config.yaml" {
+	if base == workspaceconfig.ConfigFilename {
 		return envelope.KindAggregaConfig, true
 	}
 	if s.activeReleasePath != "" && base == filepath.Base(lockfile.PathFor(s.activeReleasePath)) {

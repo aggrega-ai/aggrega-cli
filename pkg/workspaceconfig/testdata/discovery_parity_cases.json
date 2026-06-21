@@ -1,0 +1,95 @@
+{
+  "_comment": "Single source of workspace-discovery parity cases. The Go resolver test (pkg/workspaceconfig) and the VS Code extension's discovery test both materialize each case and assert their discovery matches the expected anchor and marker here. Adding a case (or a new marker) here updates both sides at once; neither keeps a private copy. Per case: files[] (path + content, or path + dir:true) build a fixture tree; start is the directory discovery runs from (relative to the fixture root); anchor is the expected marker path relative to the fixture root (null when nothing anchors); marker is the wire token the Go resolver reports (\"\" when no marker — the CWD fallback).",
+  "cases": [
+    {
+      "name": "workspace-config anchors the root",
+      "files": [{"path": ".aggrega-config.yaml", "content": "workspace: {}\n"}],
+      "start": ".",
+      "anchor": ".aggrega-config.yaml",
+      "marker": "config"
+    },
+    {
+      "name": "bare config (no workspace: block) does not anchor",
+      "files": [{"path": ".aggrega-config.yaml", "content": "default_registry: r.io\n"}],
+      "start": ".",
+      "anchor": null,
+      "marker": ""
+    },
+    {
+      "name": "aggrega dir anchors the root",
+      "files": [{"path": ".aggrega", "dir": true}],
+      "start": ".",
+      "anchor": ".aggrega",
+      "marker": "directory"
+    },
+    {
+      "name": "aggregate glob anchors the root",
+      "files": [{"path": "aggregate.yaml", "content": "kind: Aggregate\n"}],
+      "start": ".",
+      "anchor": "aggregate.yaml",
+      "marker": "aggregate-glob"
+    },
+    {
+      "name": "aggregate suffixed glob anchors the root",
+      "files": [{"path": "aggregate-staging.yaml", "content": "kind: Aggregate\n"}],
+      "start": ".",
+      "anchor": "aggregate-staging.yaml",
+      "marker": "aggregate-glob"
+    },
+    {
+      "name": "release glob anchors the root",
+      "files": [{"path": "release.yaml", "content": "kind: Release\n"}],
+      "start": ".",
+      "anchor": "release.yaml",
+      "marker": "release-glob"
+    },
+    {
+      "name": "manifest glob anchors the root",
+      "files": [{"path": "manifest.yaml", "content": "kind: Manifest\n"}],
+      "start": ".",
+      "anchor": "manifest.yaml",
+      "marker": "manifest-glob"
+    },
+    {
+      "name": "lockfile alone does not anchor",
+      "files": [{"path": "release.lock.yaml", "content": "kind: Lockfile\n"}],
+      "start": ".",
+      "anchor": null,
+      "marker": ""
+    },
+    {
+      "name": "within-dir priority: workspace config beats glob",
+      "files": [
+        {"path": ".aggrega-config.yaml", "content": "workspace: {}\n"},
+        {"path": "aggregate.yaml", "content": "kind: Aggregate\n"}
+      ],
+      "start": ".",
+      "anchor": ".aggrega-config.yaml",
+      "marker": "config"
+    },
+    {
+      "name": "walks up to a workspace-config ancestor",
+      "files": [{"path": ".aggrega-config.yaml", "content": "workspace: {}\n"}],
+      "start": "a/b/c",
+      "anchor": ".aggrega-config.yaml",
+      "marker": "config"
+    },
+    {
+      "name": "workspace-config ancestor beats a nearer heuristic",
+      "files": [
+        {"path": ".aggrega-config.yaml", "content": "workspace: {}\n"},
+        {"path": "svc/aggregate.yaml", "content": "kind: Aggregate\n"}
+      ],
+      "start": "svc",
+      "anchor": ".aggrega-config.yaml",
+      "marker": "config"
+    },
+    {
+      "name": "no marker anywhere in the chain",
+      "files": [{"path": "a/b/keep.txt", "content": "x\n"}],
+      "start": "a/b",
+      "anchor": null,
+      "marker": ""
+    }
+  ]
+}

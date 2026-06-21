@@ -57,7 +57,12 @@ var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validatio
 //   - File read failure (other than file-not-found).
 //   - YAML parse failure (malformed document structure).
 //   - Schema validation failure (well-formed YAML violating the schema).
-func Load(path string) (Config, error) {
+//
+// Unexported: the only supported entry point is Resolve, which performs the
+// whole discovery-and-cascade job. Keeping the single-file loader internal
+// means no command outside this package can bypass Resolve to read a lone
+// config file — the single resolution path is compiler-enforced.
+func load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

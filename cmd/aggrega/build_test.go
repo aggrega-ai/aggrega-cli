@@ -131,9 +131,9 @@ spec:
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := runBuild(nil, nil)
+	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
 	if err == nil {
-		t.Fatal("runBuild returned nil; expected assertion failure")
+		t.Fatal("build returned nil; expected assertion failure")
 	}
 	if !errors.Is(err, renderer.ErrAssertionFailed) {
 		t.Errorf("expected ErrAssertionFailed in chain; got %v", err)

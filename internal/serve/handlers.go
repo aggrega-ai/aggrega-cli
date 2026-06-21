@@ -96,7 +96,7 @@ func (s *Server) dispatchInitialize(_ context.Context, req *jsonRPCRequest) erro
 		},
 		WorkspaceRoot:   s.workspaceRoot,
 		ConfigSource:    s.configSource,
-		WorkspaceMarker: s.workspaceMarker.WireName(),
+		WorkspaceMarker: s.workspaceMarker.String(),
 	}); err != nil {
 		return err
 	}

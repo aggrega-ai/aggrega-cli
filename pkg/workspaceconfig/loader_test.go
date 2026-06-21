@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package workspaceconfig_test
+package workspaceconfig
 
 import (
 	"errors"
@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // writeFixture writes content to a fresh path under t.TempDir and
@@ -68,7 +67,7 @@ lint:
     allow_category_mismatches: true
 `
 	path := writeFixture(t, content)
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -147,7 +146,7 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 offline: true
 `
 	path := writeFixture(t, content)
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -184,7 +183,7 @@ func TestLoadHonoursAutoPullFalseOverride(t *testing.T) {
 auto_pull: false
 `
 	path := writeFixture(t, content)
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -201,7 +200,7 @@ lint:
     allow_aggrega_ai_prefix: true
 `
 	path := writeFixture(t, content)
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -213,11 +212,11 @@ lint:
 func TestLoadEmptyFileReturnsDefaults(t *testing.T) {
 	t.Parallel()
 	path := writeFixture(t, "")
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !reflect.DeepEqual(got, workspaceconfig.Default()) {
+	if !reflect.DeepEqual(got, Default()) {
 		t.Errorf("empty file should yield Default(); got %+v", got)
 	}
 }
@@ -225,11 +224,11 @@ func TestLoadEmptyFileReturnsDefaults(t *testing.T) {
 func TestLoadHandlesFileAbsenceAsDefault(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "does-not-exist.yaml")
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("file-absence should not be an error; got %v", err)
 	}
-	if !reflect.DeepEqual(got, workspaceconfig.Default()) {
+	if !reflect.DeepEqual(got, Default()) {
 		t.Errorf("absent file should yield Default(); got %+v", got)
 	}
 }
@@ -244,11 +243,11 @@ lint:
     narrowing_exemptions: "not-a-list"
 `
 	path := writeFixture(t, content)
-	_, err := workspaceconfig.Load(path)
+	_, err := load(path)
 	if err == nil {
 		t.Fatal("expected validation error for non-list narrowing_exemptions; got nil")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "narrowing_exemptions") {
@@ -270,11 +269,11 @@ lint:
         reason: ok
 `
 	path := writeFixture(t, content)
-	_, err := workspaceconfig.Load(path)
+	_, err := load(path)
 	if err == nil {
 		t.Fatal("expected validation error for non-object entry in narrowing_exemptions; got nil")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "narrowing_exemptions") {
@@ -284,7 +283,7 @@ lint:
 
 func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	t.Parallel()
-	d := workspaceconfig.Default()
+	d := Default()
 	if d.DefaultRegistry != "hub.aggrega.ai" {
 		t.Errorf("Default().DefaultRegistry: %q", d.DefaultRegistry)
 	}
@@ -324,11 +323,11 @@ func TestLoadRejectsUnknownTopLevelKey(t *testing.T) {
 	// being silently dropped.
 	content := `unknown_block: true`
 	path := writeFixture(t, content)
-	_, err := workspaceconfig.Load(path)
+	_, err := load(path)
 	if err == nil {
 		t.Fatal("expected validation error for unknown top-level key; got nil")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 }
@@ -342,11 +341,11 @@ build:
   halt_on_deprecated_severity: info
 `
 	path := writeFixture(t, content)
-	_, err := workspaceconfig.Load(path)
+	_, err := load(path)
 	if err == nil {
 		t.Fatal("expected validation error for halt_on_deprecated_severity outside enum; got nil")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "halt_on_deprecated_severity") {
@@ -369,7 +368,7 @@ plugins:
     - uri: oci://hub.aggrega.ai/team/policy@v1
 `
 	path := writeFixture(t, content)
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -395,7 +394,7 @@ build: {}
 lint: {}
 `
 	path := writeFixture(t, content)
-	got, err := workspaceconfig.Load(path)
+	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

@@ -25,12 +25,23 @@ var rootCmd = newRootCmd()
 // (unknown flag, bad argument, missing required flag) still surface the
 // Usage block, because that is genuinely a misuse of the command.
 func newRootCmd() *cobra.Command {
+	var workspaceRootFlag string
 	root := &cobra.Command{
 		Use:           "aggrega",
 		Short:         "Aggrega compiler CLI",
 		Long:          "Aggrega compiles declarative aggregates into intermediate representation and deployment artifacts.",
 		SilenceErrors: true,
+		// Attach the lazy workspace resolver to every command's context.
+		// Resolution itself is deferred until a command first asks for it
+		// (workspaceFromContext), so version/login/logout run without
+		// discovering a workspace.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SetContext(withWorkspaceResolver(cmd.Context(), workspaceRootFlag))
+			return nil
+		},
 	}
+	root.PersistentFlags().StringVar(&workspaceRootFlag, "workspace-root", "",
+		"absolute path to use as the workspace root (skips discovery)")
 	root.AddCommand(
 		newBuildCmd(),
 		newPullCmd(),

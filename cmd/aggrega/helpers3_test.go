@@ -113,7 +113,7 @@ spec:
 
 	// Either succeeds (no annotations on Aggregate to fire on) or fails;
 	// both paths exercise the validation dispatch.
-	_ = runBuild(nil, nil)
+	_ = dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
 }
 
 // TestRunBuild_MalformedAggregate pins the resolver-error path: a
@@ -161,7 +161,7 @@ spec: {}
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := runBuild(nil, nil)
+	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
 	if err == nil {
 		t.Errorf("malformed aggregate should error at resolve")
 	}
@@ -216,7 +216,7 @@ spec:
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := runBuild(nil, nil)
+	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
 	if err == nil {
 		t.Errorf("extends to nonexistent parent should error")
 	}
@@ -228,7 +228,7 @@ func TestInspectReleaseFile_MissingFile(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Catalog without the release.
-	err := inspectReleaseFile("/nonexistent/release.yaml", []string{tmp})
+	err := inspectReleaseFile(nil, "/nonexistent/release.yaml", []string{tmp})
 	if err == nil {
 		t.Errorf("missing release should error")
 	}
@@ -248,7 +248,7 @@ metadata:
   version: 1.0.0
 spec: {}
 `)
-	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), []string{catalogRoot})
+	err := inspectReleaseFile(nil, filepath.Join(root, "release.yaml"), []string{catalogRoot})
 	if err == nil {
 		t.Errorf("malformed release should error")
 	}
@@ -340,7 +340,7 @@ spec:
         ports:
           web: {{ .values.port }}
 `)
-	err := inspectReleaseFile(filepath.Join(root, "release.yaml"), []string{catalogRoot})
+	err := inspectReleaseFile(nil, filepath.Join(root, "release.yaml"), []string{catalogRoot})
 	if err != nil {
 		t.Errorf("happy path: %v", err)
 	}

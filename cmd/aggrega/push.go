@@ -33,10 +33,15 @@ func newPushCmd() *cobra.Command {
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
 			return pushRun(pushConfig{
 				EntityPath: path,
 				Registry:   pushRegistry,
 				DryRun:     pushDryRun,
+				ws:         rw,
 			})
 		},
 	}
@@ -56,6 +61,11 @@ type pushConfig struct {
 	EntityPath string
 	Registry   string
 	DryRun     bool
+
+	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
+	// when a test invokes pushRun directly; workspaceOrResolve then resolves
+	// from the working directory.
+	ws *workspaceconfig.ResolvedWorkspace
 
 	// PushTarget overrides the production remote.Repository
 	// construction. Tests inject an in-memory oras.Target via this
@@ -107,10 +117,11 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: entity path required (pass as positional arg or via --entity)")
 	}
 
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsCfg := rw.Config()
 
 	registry := cfg.Registry
 	if registry == "" {

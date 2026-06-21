@@ -40,7 +40,11 @@ func newInspectCmd() *cobra.Command {
 // dispatchInspect. Tests exercise dispatchInspect directly to avoid
 // racing on the package-level flag variable under t.Parallel.
 func runInspect(cmd *cobra.Command, args []string) error {
-	return dispatchInspect(args[0], inspectCatalogDirs)
+	rw, err := workspaceFromContext(cmd.Context())
+	if err != nil {
+		return err
+	}
+	return dispatchInspect(rw, args[0], inspectCatalogDirs)
 }
 
 // dispatchInspect routes the inspect command by the input form:
@@ -58,16 +62,16 @@ func runInspect(cmd *cobra.Command, args []string) error {
 // catalogDirs supplies the repeatable --catalog flag directories for both the
 // catalog-name branch and the Release branch's pipeline; each load site resolves
 // them against the workspace catalog_dirs into the first-win search stack.
-func dispatchInspect(identifier string, catalogDirs []string) error {
+func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string) error {
 	if strings.HasPrefix(identifier, "oci://") {
 		return fmt.Errorf("inspect for OCI URIs not yet implemented; resolve to a local path or use a catalog name")
 	}
 
 	if isPathInput(identifier) {
-		return inspectPath(identifier, catalogDirs)
+		return inspectPath(rw, identifier, catalogDirs)
 	}
 
-	return inspectCatalogComponent(identifier, catalogDirs)
+	return inspectCatalogComponent(rw, identifier, catalogDirs)
 }
 
 // isPathInput returns true when the identifier names a filesystem path
@@ -121,7 +125,7 @@ func resolveSiblingYAML(dir, name string) string {
 
 // inspectPath reads a YAML file, peeks at apiVersion / kind, and
 // dispatches to the per-kind inspector branch.
-func inspectPath(path string, catalogDirs []string) error {
+func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs []string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", path, err)
@@ -141,7 +145,7 @@ func inspectPath(path string, catalogDirs []string) error {
 	case "Component":
 		return inspectComponentFile(path, data)
 	case "Release":
-		return inspectReleaseFile(path, catalogDirs)
+		return inspectReleaseFile(rw, path, catalogDirs)
 	case "Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider", "Workload":
 		return fmt.Errorf("inspect not yet implemented for kind %s", preamble.Kind)
 	default:
@@ -152,16 +156,17 @@ func inspectPath(path string, catalogDirs []string) error {
 // inspectCatalogComponent runs the legacy catalog-component-name path.
 // Loads the catalog at catalogDir, resolves extends chains, looks up
 // the named Component, and prints its merged schema + usesSchema.
-func inspectCatalogComponent(componentType string, catalogDirs []string) error {
+func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentType string, catalogDirs []string) error {
 	// Workspace-agnostic inspection: this path prints catalog Component
 	// details without rendering any per-node IR, so no workspace-relative
 	// path normalization is needed. The walk still skips the configured
 	// cache directory so cached library.yaml files are not shown as authored
 	// Tier-1 catalog.
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
@@ -270,17 +275,18 @@ func inspectComponentFile(path string, data []byte) error {
 //
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
-func inspectReleaseFile(releasePath string, catalogDirs []string) error {
-	// wsRoot is the workspace the caller invoked inspect from; the catalog
-	// renders its entity source-file accessors relative to it so catalog-sourced
-	// IR records read consistently across machines. The root Aggregate node's own
-	// source path comes from the AggregatePath label passed to the resolve funnel
-	// below, not from wsRoot.
-	wsRoot, _ := os.Getwd()
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+func inspectReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string) error {
+	// wsRoot is the resolved workspace root; the catalog renders its entity
+	// source-file accessors relative to it so catalog-sourced IR records read
+	// consistently across machines. The root Aggregate node's own source path
+	// comes from the AggregatePath label passed to the resolve funnel below,
+	// not from wsRoot.
+	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsRoot := rw.Root()
+	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load over the first-win stack (--catalog dirs prepended to catalog_dirs).
 	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")

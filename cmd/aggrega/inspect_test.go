@@ -26,10 +26,10 @@ const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-a
 func runInspectCaptured(t *testing.T, releasePath string) string {
 	t.Helper()
 	out, err := captureStdout(func() error {
-		return dispatchInspect(releasePath, []string{fullstackAppInspectCatalog})
+		return dispatchInspect(nil, releasePath, []string{fullstackAppInspectCatalog})
 	})
 	if err != nil {
-		t.Fatalf("dispatchInspect(%q): %v", releasePath, err)
+		t.Fatalf("dispatchInspect(nil, %q): %v", releasePath, err)
 	}
 	return out
 }
@@ -93,7 +93,7 @@ func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing
 // inspect is deferred.
 func TestInspect_OciUri_ReturnsNotImplemented(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect("oci://registry.example.com/components/api:1.0.0", nil)
+	err := dispatchInspect(nil, "oci://registry.example.com/components/api:1.0.0", nil)
 	if err == nil {
 		t.Fatal("expected not-implemented error for oci:// argument; got nil")
 	}
@@ -122,7 +122,7 @@ spec:
       type:
         core/server: server-recipe:1.0.0
 `)
-	err := dispatchInspect(manifestPath, nil)
+	err := dispatchInspect(nil, manifestPath, nil)
 	if err == nil {
 		t.Fatal("expected not-implemented-for-kind error for Manifest input; got nil")
 	}
@@ -145,7 +145,7 @@ func TestInspect_MissingKind_ReturnsError(t *testing.T) {
 	writeFixture(t, bogusPath, `some_field: value
 another_field: 42
 `)
-	err := dispatchInspect(bogusPath, nil)
+	err := dispatchInspect(nil, bogusPath, nil)
 	if err == nil {
 		t.Fatal("expected error on missing-kind file; got nil")
 	}
@@ -175,7 +175,7 @@ spec:
 `)
 
 	out, err := captureStdout(func() error {
-		return dispatchInspect(compPath, nil)
+		return dispatchInspect(nil, compPath, nil)
 	})
 	if err != nil {
 		t.Fatalf("Component file path should inspect cleanly; got: %v", err)

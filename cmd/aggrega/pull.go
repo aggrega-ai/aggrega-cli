@@ -54,6 +54,10 @@ current registry state, floating each dependency to the highest available versio
 			if pullVerify && pullRegenerate {
 				return fmt.Errorf("--verify and --regenerate are mutually exclusive")
 			}
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
 			return pullRun(pullConfig{
 				ReleasePath:       pullReleasePath,
 				CatalogDirs:       pullCatalogDirs,
@@ -61,6 +65,7 @@ current registry state, floating each dependency to the highest available versio
 				Verify:            pullVerify,
 				IncludePrerelease: pullIncludePrerelease,
 				Detail:            pullDetail,
+				ws:                rw,
 			})
 		},
 	}
@@ -90,6 +95,11 @@ type pullConfig struct {
 	Verify            bool
 	IncludePrerelease bool
 	Detail            bool
+
+	// ws is the resolved workspace, threaded in by the command's RunE from the
+	// shared resolution chokepoint. Nil only when a test invokes pullRun
+	// directly; workspaceOrResolve then resolves from the working directory.
+	ws *workspaceconfig.ResolvedWorkspace
 
 	// puller overrides the production OCI puller; tests inject an in-memory
 	// implementation to exercise a remote-library fetch without the network. Nil
@@ -194,10 +204,11 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 func pullRun(cfg pullConfig) error {
 	releaseDir := filepath.Dir(cfg.ReleasePath)
 
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsCfg := rw.Config()
 
 	rel, err := resolver.LoadRelease(cfg.ReleasePath)
 	if err != nil {
@@ -246,10 +257,7 @@ func pullRun(cfg pullConfig) error {
 		return err
 	}
 
-	workspaceRoot, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("workspace root: %w", err)
-	}
+	workspaceRoot := rw.Root()
 	puller := cfg.puller
 	if puller == nil {
 		puller = catalog.NewDefaultOCIPuller(wsCfg)
@@ -519,13 +527,6 @@ func pullRun(cfg pullConfig) error {
 		return err
 	}
 	return nil
-}
-
-// workspaceConfigPath returns the conventional path of the
-// per-workspace configuration file in the current working directory.
-// Returns ".aggrega-config.yaml" — Load tolerates absence.
-func workspaceConfigPath() string {
-	return ".aggrega-config.yaml"
 }
 
 // buildLockfile materialises a *lockfile.Lockfile from the closure

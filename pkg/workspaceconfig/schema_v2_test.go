@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package workspaceconfig_test
+package workspaceconfig
 
 import (
 	"errors"
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TestV2FieldLocations pins that the promoted top-level settings and the
@@ -28,7 +27,7 @@ parse_cache:
   max_entries: 7
   max_bytes: 8888
 `
-	got, err := workspaceconfig.Load(writeFixture(t, content))
+	got, err := load(writeFixture(t, content))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -57,7 +56,7 @@ parse_cache:
 // defaults intact (the marker carries no settings).
 func TestEmptyWorkspaceMarkerValidates(t *testing.T) {
 	t.Parallel()
-	got, err := workspaceconfig.Load(writeFixture(t, "workspace: {}\n"))
+	got, err := load(writeFixture(t, "workspace: {}\n"))
 	if err != nil {
 		t.Fatalf("Load(workspace: {}): %v", err)
 	}
@@ -76,11 +75,11 @@ func TestEmptyWorkspaceMarkerValidates(t *testing.T) {
 // (the key with no mapping) fails with the fix-it pointing at `workspace: {}`.
 func TestBareWorkspaceRejectedWithFixIt(t *testing.T) {
 	t.Parallel()
-	_, err := workspaceconfig.Load(writeFixture(t, "workspace:\n"))
+	_, err := load(writeFixture(t, "workspace:\n"))
 	if err == nil {
 		t.Fatal("expected a bare `workspace:` (null) to be rejected; got nil")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "workspace: {}") {
@@ -107,11 +106,11 @@ func TestMovedKeysReportRelocation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := workspaceconfig.Load(writeFixture(t, tc.content))
+			_, err := load(writeFixture(t, tc.content))
 			if err == nil {
 				t.Fatalf("expected a relocation diagnostic for %s; got nil", tc.name)
 			}
-			if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+			if !errors.Is(err, ErrConfigInvalid) {
 				t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
@@ -147,7 +146,7 @@ parse_cache:
   max_entries: 1000
   max_bytes: 100000000
 `
-	got, err := workspaceconfig.Load(writeFixture(t, content))
+	got, err := load(writeFixture(t, content))
 	if err != nil {
 		t.Fatalf("Load full v2 config: %v", err)
 	}

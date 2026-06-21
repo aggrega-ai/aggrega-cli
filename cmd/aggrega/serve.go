@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var serveWorkspaceRoot string
-
 func newServeCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "serve",
@@ -25,22 +23,18 @@ under the aggrega/ method namespace. State (parsed YAML, diagnostics,
 resolved catalog) holds across requests so IDE clients can issue many
 cheap operations without re-paying per-invocation startup cost.
 
-The daemon anchors its workspace root from either --workspace-root or
-the current working directory. When --workspace-root is set, that path
-is used as-is (and validated to exist as a directory). Otherwise the
-daemon walks upward from the current working directory looking for
-any of:
+The daemon resolves its workspace root through the same path every
+aggrega command uses: --workspace-root when set (used as-is, validated
+to exist as a directory), otherwise discovery walking upward from the
+current working directory. A directory anchors the workspace when it
+holds a .aggrega-config.yaml carrying a workspace: block, or — as a
+fallback — any of .aggrega/, aggregate*.yaml, release*.yaml,
+manifest*.yaml.
 
-  .aggrega-config.yaml   .aggrega/        aggregate*.yaml
-  release*.yaml          manifest*.yaml
-
-The first directory containing a marker anchors the workspace.
-
-Configuration is the merged composition of three layers, in
-precedence order: workspace .aggrega-config.yaml (when discovered)
-overrides ~/.config/aggrega/config.yaml (or $AGGREGA_CONFIG, or
-$XDG_CONFIG_HOME/aggrega/config.yaml), which overrides built-in
-defaults.
+Configuration is the cascade composition of the .aggrega-config.yaml
+files from the workspace root down to the working directory (nearer
+overrides farther), beneath which $AGGREGA_CONFIG (when set) and the
+built-in defaults apply.
 
 The daemon honors the aggrega/shutdown JSON-RPC notification for a
 cooperative cross-platform exit: the daemon completes the in-flight
@@ -48,13 +42,12 @@ handler if any, refuses new requests with code 1005, and exits
 cleanly within a 2-second drain budget.`,
 		RunE: runServe,
 	}
-	c.Flags().StringVar(&serveWorkspaceRoot, "workspace-root", "",
-		"absolute path to use as the workspace root (skips discovery)")
 	return c
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
-	root, err := validateWorkspaceRootFlag(serveWorkspaceRoot)
+	flagRoot, _ := cmd.Flags().GetString("workspace-root")
+	root, err := validateWorkspaceRootFlag(flagRoot)
 	if err != nil {
 		return err
 	}

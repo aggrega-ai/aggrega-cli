@@ -87,23 +87,28 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
 			if lintReleasePath != "" {
 				// Release-closure mode is mutually exclusive with a positional /
 				// --entity target — they select different closures.
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
-				return lintRelease(lintReleasePath)
+				return lintRelease(rw, lintReleasePath)
 			}
 			if path == "" {
 				// No entity argument → whole-catalog validation.
-				return lintCatalogWideFromWorkspace()
+				return lintCatalogWideFromWorkspace(rw)
 			}
 			return lintRun(lintConfig{
 				EntityPath:     path,
 				PrePublish:     lintPrePublish,
 				PluginPath:     lintPluginPath,
 				PolicyResolver: makeResolverFromCobra(cmd),
+				ws:             rw,
 			})
 		},
 	}
@@ -139,12 +144,13 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 // cache from .aggrega-config.yaml, then runs the whole-catalog validation pass.
 // Catalog dirs default to the workspace root when none are configured (mirroring
 // the daemon's catalog resolution).
-func lintCatalogWideFromWorkspace() error {
-	wsRoot, _ := os.Getwd()
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+func lintCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace) error {
+	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
 	}
+	wsRoot := rw.Root()
+	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Whole-catalog lint has no --catalog flag, so the flag list is empty; the
 	// shared resolver reproduces the prior behavior — config catalog_dirs, or the
@@ -216,15 +222,13 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 // closure resolves through Tier-1 (local catalog). lint never triggers a network
 // pull — a registry-pinned closure that needs a lockfile surfaces as an honest
 // unresolvable-URI error rather than a silent fetch.
-func lintRelease(releasePath string) error {
-	wsRoot, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getwd: %w", err)
-	}
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string) error {
+	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsRoot := rw.Root()
+	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
 
@@ -446,6 +450,11 @@ type lintConfig struct {
 	PluginPath     string
 	PolicyResolver func(flagBase string, wsValue bool) bool
 	FetchTarget    oras.ReadOnlyTarget
+
+	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
+	// when a test invokes lintRun directly; workspaceOrResolve then resolves
+	// from the working directory.
+	ws *workspaceconfig.ResolvedWorkspace
 }
 
 // makeResolverFromCobra returns a closure that decides effective
@@ -507,12 +516,13 @@ func lintRun(cfg lintConfig) error {
 	if cfg.EntityPath == "" {
 		return fmt.Errorf("aggrega lint: entity path required (pass as positional arg or via --entity)")
 	}
-	wsCfg, err := workspaceconfig.Load(workspaceConfigPath())
+	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsCfg := rw.Config()
 
-	pluginPath, err := resolvePluginPath(cfg.PluginPath, wsCfg)
+	pluginPath, err := resolvePluginPath(cfg.PluginPath, wsCfg, rw.Root())
 	if err != nil {
 		return err
 	}
@@ -625,16 +635,12 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // invocation CWD. workspaceRoot walks up from CWD looking for
 // `.aggrega-config.yaml`; CWD is used as fallback only when no
 // marker is found.
-func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, error) {
+func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config, wsRoot string) (string, error) {
 	if cliFlag != "" {
 		if filepath.IsAbs(cliFlag) {
 			return cliFlag, nil
 		}
-		root, err := workspaceRoot()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(root, cliFlag), nil
+		return filepath.Join(wsRoot, cliFlag), nil
 	}
 	if len(wsCfg.Plugins.Linter) > 0 {
 		uri := wsCfg.Plugins.Linter[0].URI
@@ -651,11 +657,7 @@ func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, er
 		if filepath.IsAbs(uri) {
 			return uri, nil
 		}
-		root, err := workspaceRoot()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(root, uri), nil
+		return filepath.Join(wsRoot, uri), nil
 	}
 	return "", fmt.Errorf(
 		"aggrega lint: no plugin path configured. Either:\n" +
@@ -663,34 +665,6 @@ func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, er
 			"  - or set plugins.linter[0].uri in .aggrega-config.yaml to a workspace-relative path")
 }
 
-// workspaceRoot walks up from the current working directory looking
-// for `.aggrega-config.yaml`. The directory containing that file is
-// the workspace root. When no marker is found before the filesystem
-// root, falls back to CWD (preserving prior behaviour for the
-// no-marker case).
-//
-// Resolution discipline: relative plugin paths
-// resolve against the workspace root rather than the invocation
-// CWD. Operators running `aggrega lint ../other-workspace/entity.yaml`
-// from a sub-directory get the correct plugin path lookup.
-func workspaceRoot() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("workspace root: getwd: %w", err)
-	}
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".aggrega-config.yaml")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// Reached filesystem root; fall back to CWD.
-			return cwd, nil
-		}
-		dir = parent
-	}
-}
 
 // looksLikeOCIURI returns true when the URI looks like an OCI
 // reference. Heuristic: oci:// scheme, or hub.aggrega.ai host, or
