@@ -61,6 +61,15 @@ type Inputs struct {
 	RootAggregateFile string
 	WorkspaceConfig   workspaceconfig.Config
 
+	// CompilerVersion is the build identity stamped into IR provenance
+	// (IRGraph.Spec.Provenance.CompilerVersion). The command layer supplies the
+	// binary's version string — the pipeline pipes it through to buildProvenance
+	// without deriving it, so a build-from-source and a released build stamp
+	// distinct identities while the value stays injectable for deterministic
+	// tests. Empty when a caller does not stamp provenance (the field carries no
+	// default; an unset value renders as an empty compiler-version).
+	CompilerVersion string
+
 	// Lockfile and WorkspaceRoot, together with WorkspaceConfig's resolved
 	// cache directory, enable build-time source-artifact resolution: when
 	// Lockfile is non-nil and WorkspaceRoot is set, RunPipeline populates the
@@ -193,7 +202,7 @@ func runStepsOneToFour(
 			Topology:        topoResult,
 			ResolveResult:   resolveResult,
 			CatalogLookup:   catalogLookup,
-			CompilerVersion: "0.1.0",
+			CompilerVersion: inputs.CompilerVersion,
 		})
 		if err != nil {
 			return fmt.Errorf("Step 3 (IR): %w", err)

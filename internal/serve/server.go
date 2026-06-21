@@ -67,6 +67,13 @@ type RunConfig struct {
 	// pass a short value (e.g., 50ms) so shutdown behavior exercises
 	// in subsecond wall time.
 	DrainTimeout time.Duration
+
+	// CompilerVersion is the binary's build identity, stamped into the IR
+	// provenance the daemon produces for inspect and Tier-4 diagnostics so its
+	// output names the same compiler version the CLI reports. The command layer
+	// derives it (the daemon cannot, living below the main package); an empty
+	// value stamps an empty compiler-version.
+	CompilerVersion string
 }
 
 // Diagnostic is the wire shape returned by `aggrega/validate` and
@@ -108,6 +115,11 @@ type Diagnostic struct {
 type Server struct {
 	workspaceRoot string
 	configSource  string
+	// compilerVersion is the binary build identity injected from the command
+	// layer (RunConfig.CompilerVersion) and stamped into the IR provenance the
+	// daemon produces, so inspect and Tier-4 output report the same version the
+	// CLI does.
+	compilerVersion string
 	// workspaceMarker names the marker tier that anchored the
 	// workspace root via discovery. markerNone (the zero value)
 	// when --workspace-root was supplied explicitly, since no
@@ -293,6 +305,7 @@ func Run(cfg RunConfig) error {
 	srv := &Server{
 		workspaceRoot:     root,
 		configSource:      source.String(),
+		compilerVersion:   cfg.CompilerVersion,
 		workspaceMarker:   marker,
 		wsConfig:          wsCfg,
 		lazyCatalog:       lazyCatalog,

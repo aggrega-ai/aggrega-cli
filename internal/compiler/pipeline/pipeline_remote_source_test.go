@@ -145,6 +145,7 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 			WorkspaceConfig:   workspaceconfig.Default(),
 			Lockfile:          remoteSrcLockfile(digest),
 			WorkspaceRoot:     root,
+			CompilerVersion:   fixtureCompilerVersion,
 		},
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),
@@ -201,6 +202,7 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     remoteSrcAggregatePath,
 			WorkspaceConfig:   workspaceconfig.Default(),
+			CompilerVersion:   fixtureCompilerVersion,
 			// Lockfile + WorkspaceRoot intentionally unset.
 		},
 		cat.CatalogLookup(),

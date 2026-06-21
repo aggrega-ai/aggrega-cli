@@ -341,7 +341,7 @@ func inspectReleaseFile(releasePath string, catalogDirs []string) error {
 				Topology:        topoResult,
 				ResolveResult:   resolveResult,
 				CatalogLookup:   catalogLookup,
-				CompilerVersion: "0.1.0",
+				CompilerVersion: provenanceCompilerVersion(),
 			})
 			if err != nil {
 				return fmt.Errorf("Step 3 (IR): %w", err)

@@ -224,6 +224,7 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 			Lockfile:          lf,
 			WorkspaceRoot:     wsRoot,
 			MappingLibraries:  lazyView.MappingLibraries(),
+			CompilerVersion:   provenanceCompilerVersion(),
 		},
 		buildLookup,
 		lazyView.RecipeLookupWithManifest(manifest),

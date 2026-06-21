@@ -134,6 +134,17 @@ func collectVersionInfo() versionInfo {
 	return out
 }
 
+// provenanceCompilerVersion returns the compiler-version string stamped into
+// IR provenance — the same build identity `aggrega version` reports, so the
+// audit trail names the exact binary that produced the IR. A release build
+// reports its tag (v-less, e.g. "1.2.0"); a source or working-tree build
+// reports the "(devel)" marker, so IR built from an unreleased compiler is
+// never mistaken for release output. It shares collectVersionInfo's derivation
+// (ldflags else ReadBuildInfo) so the stamp and the version command cannot drift.
+func provenanceCompilerVersion() string {
+	return collectVersionInfo().Version
+}
+
 // normalizeVersion strips the leading "v" from tag-shaped version
 // values (v0.1.2 → 0.1.2) so every surface reports the same v-less
 // form regardless of which build path supplied the value — ldflags

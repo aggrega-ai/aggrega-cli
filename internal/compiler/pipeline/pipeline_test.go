@@ -38,6 +38,13 @@ const (
 	fullstackManifestPath  = "../../../internal/compiler/testdata/fullstack-app/manifest.yaml"
 	fullstackCatalogPath   = "../../../internal/compiler/testdata/fullstack-app/catalog"
 	goldenFullstackDir     = "testdata/golden-fullstack-app"
+
+	// fixtureCompilerVersion is an arbitrary fixed test value, not a real
+	// version: production derives the compiler-version from the build, but these
+	// tests inject a constant so the provenance stamp (and the rendered
+	// aggrega.ai/compiler-version label) stays build-independent and the golden
+	// fixtures compare stably.
+	fixtureCompilerVersion = "0.1.0"
 )
 
 // productionEngineFactory mirrors the closure constructed inside
@@ -92,6 +99,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     fullstackAggregatePath,
 			WorkspaceConfig:   workspaceconfig.Default(),
+			CompilerVersion:   fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest),
 		cat.RecipeLookupWithManifest(manifest),
@@ -195,6 +203,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
+			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
@@ -239,6 +248,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
+			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,
@@ -302,6 +312,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: workspaceconfig.Default(),
+			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
 		productionEngineFactory,

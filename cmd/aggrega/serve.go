@@ -59,10 +59,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return serve.Run(serve.RunConfig{
-		Stdin:         cmd.InOrStdin(),
-		Stdout:        cmd.OutOrStdout(),
-		Stderr:        cmd.ErrOrStderr(),
-		WorkspaceRoot: root,
+		Stdin:           cmd.InOrStdin(),
+		Stdout:          cmd.OutOrStdout(),
+		Stderr:          cmd.ErrOrStderr(),
+		WorkspaceRoot:   root,
+		CompilerVersion: provenanceCompilerVersion(),
 	})
 }
 

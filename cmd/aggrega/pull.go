@@ -443,7 +443,7 @@ func pullRun(cfg pullConfig) error {
 				Topology:        topo,
 				ResolveResult:   rr,
 				CatalogLookup:   pullLookup,
-				CompilerVersion: "0.1.0",
+				CompilerVersion: provenanceCompilerVersion(),
 			})
 			if err != nil {
 				return fmt.Errorf("ir: %w", err)

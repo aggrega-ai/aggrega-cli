@@ -16,8 +16,11 @@ import (
 //     schema the emitted graph conforms to so downstream consumers can
 //     evolve their own version-handling without out-of-band coordination.
 //   - CompilerVersion — supplied by the caller via BuildIRConfig and
-//     plumbed through here. The orchestrator at cmd/aggrega/build.go
-//     passes the CLI binary's version string.
+//     plumbed through here. The command layer derives the CLI binary's
+//     version string and threads it in (directly for pull/inspect, via
+//     the pipeline's Inputs for build and the daemon); the builder pipes
+//     it through without deriving it, so the value stays injectable for
+//     deterministic tests.
 //   - AggregateVersion / ManifestVersion / ReleaseVersion — read from
 //     the resolved entities' metadata. Conditionally populated: a nil
 //     entity in ResolveResult leaves its version field at the zero value.

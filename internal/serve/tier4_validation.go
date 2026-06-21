@@ -143,6 +143,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			AggregateRawBytes: resolved.AggBytes,
 			AggregatePath:     relAggPath,
 			WorkspaceConfig:   s.wsConfig,
+			CompilerVersion:   s.compilerVersion,
 		},
 		s.lazyCatalog.AsCatalogLookup(),
 		s.lazyCatalog.SubAggregateLoader(),
