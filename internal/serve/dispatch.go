@@ -287,6 +287,8 @@ func (s *Server) handle(req *jsonRPCRequest) error {
 		return s.dispatchHover(ctx, req)
 	case "aggrega/completion":
 		return s.dispatchCompletion(ctx, req)
+	case "aggrega/releaseCandidates":
+		return s.dispatchReleaseCandidates(ctx, req)
 	default:
 		return s.writeError(req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
 	}

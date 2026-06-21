@@ -61,6 +61,30 @@ type serverCapabilities struct {
 // anchored via an explicit --workspace-root (no marker consulted).
 // Additive only: clients that read only Capabilities continue to
 // work; the new fields are opt-in for clients that surface them.
+// releaseCandidatesResult is the aggrega/releaseCandidates response: the
+// absolute paths of every Release-kind document under the workspace root,
+// determined by content (the file's `kind: Release` header), not by filename.
+// The IDE consumes this for its "which Release?" quick-pick so the editor's
+// candidate set matches exactly what the daemon resolves — a Release named
+// without a conventional prefix is included, and a non-Release file that
+// happens to be named like one is not.
+type releaseCandidatesResult struct {
+	Releases []string `json:"releases"`
+}
+
+// dispatchReleaseCandidates returns the workspace's Release-candidate set —
+// the content-kind walk the active-Release cascade already performs, surfaced
+// as a list so the IDE delegates Release detection to the daemon rather than
+// reimplementing it. Takes no params: the set is a property of the daemon's
+// workspace root, which it resolved at startup.
+func (s *Server) dispatchReleaseCandidates(_ context.Context, req *jsonRPCRequest) error {
+	releases := walkForReleases(s.workspaceRoot)
+	if releases == nil {
+		releases = []string{}
+	}
+	return s.writeResult(req.ID, releaseCandidatesResult{Releases: releases})
+}
+
 type initializeResult struct {
 	Capabilities    serverCapabilities `json:"capabilities"`
 	WorkspaceRoot   string             `json:"workspaceRoot"`
