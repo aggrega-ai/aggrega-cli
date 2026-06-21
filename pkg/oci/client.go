@@ -5,8 +5,6 @@ package oci
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
@@ -91,7 +90,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 		return nil, fmt.Errorf("oci: read content %q: %w", tag, err)
 	}
 
-	if got := computeDigest(content); got != contentDesc.Digest.String() {
+	if got := digest.ContentDigest(content); got != contentDesc.Digest.String() {
 		return nil, fmt.Errorf("oci: %q digest %s != manifest %s: %w",
 			tag, got, contentDesc.Digest.String(), ErrFetchIntegrity)
 	}
@@ -323,13 +322,6 @@ func descriptorFromManifest(manifestBytes []byte) (ocispec.Descriptor, string, e
 		mediaType = desc.MediaType
 	}
 	return desc, mediaType, nil
-}
-
-// computeDigest returns the OCI-format SHA-256 digest of content
-// ("sha256:<hex>") for byte-identity verification.
-func computeDigest(content []byte) string {
-	sum := sha256.Sum256(content)
-	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // ListTags returns every tag the registry has for the target, fully

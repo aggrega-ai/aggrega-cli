@@ -26,13 +26,13 @@ package sourcecache
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
@@ -80,7 +80,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, 
 		return "", fmt.Errorf("sourcecache: read blob %s: %w", blobPath, err)
 	}
 
-	gotDigest := computeDigest(blobBytes)
+	gotDigest := digest.ContentDigest(blobBytes)
 	if gotDigest != entry.Digest {
 		return "", fmt.Errorf("sourcecache: blob digest %s mismatches lockfile digest %s: %w",
 			gotDigest, entry.Digest, ErrFetchIntegrity)
@@ -125,11 +125,6 @@ func findEntry(lf *lockfile.Lockfile, kind, url, version string) *lockfile.Sourc
 		}
 	}
 	return nil
-}
-
-func computeDigest(b []byte) string {
-	sum := sha256.Sum256(b)
-	return fmt.Sprintf("sha256:%x", sum[:])
 }
 
 // extractTarGz extracts the gzipped tar archive in archiveBytes into

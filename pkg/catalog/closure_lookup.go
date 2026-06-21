@@ -5,8 +5,6 @@ package catalog
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -1005,12 +1004,11 @@ func readCacheSlotBytes(slot string) ([]byte, error) {
 	return nil, os.ErrNotExist
 }
 
-// contentDigest returns the standard OCI-format SHA-256 digest of
-// content ("sha256:<hex>"). Matches pkg/oci.computeDigest's shape
-// without re-exporting the unexported helper.
+// contentDigest returns the standard OCI-format SHA-256 digest of content
+// ("sha256:<hex>"). Forwards to the single content-address spelling in
+// pkg/digest so this package never re-derives the format.
 func contentDigest(data []byte) string {
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return digest.ContentDigest(data)
 }
 
 // entityBytesKey composes the lookup key the Catalog uses to store

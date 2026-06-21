@@ -53,6 +53,17 @@ func buildTGZ(t *testing.T, entries map[string]string) []byte {
 	return buf.Bytes()
 }
 
+// digestOf is intentionally an INDEPENDENT re-derivation of the content
+// digest, NOT a call to pkg/digest.ContentDigest. These tests seed a cache
+// slot and lockfile entry with this digest, then production recomputes via
+// ContentDigest and compares (LookupAndExtract's integrity check). Keeping the
+// test computation independent makes the round-trip a genuine cross-check: a
+// format change in ContentDigest makes production disagree with this seed and
+// the test fails. Delegating to the shared helper would change seed and
+// production together and blind the check. The inputs here are gzip archives,
+// whose compressed bytes are not stable across Go toolchains, so a hardcoded
+// golden literal is not viable; the literal-format guard lives in pkg/digest's
+// own test and the fixed-input catalog tests.
 func digestOf(b []byte) string {
 	sum := sha256.Sum256(b)
 	return fmt.Sprintf("sha256:%x", sum[:])

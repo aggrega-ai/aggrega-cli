@@ -17,7 +17,6 @@ package archive
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +24,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // Entry is one file in the archive, identified by its relative path
@@ -129,8 +130,7 @@ func writeEntry(tw *tar.Writer, e Entry) error {
 // internal/cacheslot; the prefix shape ("sha256:") is load-bearing
 // for lockfile-entry equality and for ErrFetchIntegrity comparisons.
 func Digest(archiveBytes []byte) string {
-	sum := sha256.Sum256(archiveBytes)
-	return fmt.Sprintf("sha256:%x", sum[:])
+	return digest.ContentDigest(archiveBytes)
 }
 
 // WalkDirectory walks a filesystem directory rooted at rootPath and

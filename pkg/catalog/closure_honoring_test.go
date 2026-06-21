@@ -5,12 +5,28 @@ package catalog_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
+
+// sha256Hex is intentionally an INDEPENDENT re-derivation of the content
+// digest, NOT a call to pkg/digest.ContentDigest. The pin-honoring and
+// reuse/drift tests seed a PriorPin with this digest, then production recomputes
+// via ContentDigest and compares to honor (or detect drift against) the pin.
+// Keeping the test computation independent makes that a genuine cross-check: a
+// format change in ContentDigest makes production disagree with the seeded pin
+// and the test fails. Delegating to the shared helper would move both together
+// and blind the check. The fixed-input literal-format guard lives in
+// pkg/digest's own test and the fixed-body assertions in closure_lookup_test.go.
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
 
 // twoVersionPuller models the real OCI puller's version semantics: a non-empty
 // floor is fetched verbatim (exact), an empty floor lists tags and floats to the

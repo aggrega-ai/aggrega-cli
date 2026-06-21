@@ -5,8 +5,6 @@ package catalog_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,11 +24,6 @@ type orasPullerAdapter struct{ target *memory.Store }
 
 func (a *orasPullerAdapter) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
 	return oci.Pull(ctx, a.target, tag)
-}
-
-func sha256Hex(b []byte) string {
-	sum := sha256.Sum256(b)
-	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func writeYAMLToCatalog(t *testing.T, dir, relpath, content string) {
@@ -77,8 +70,12 @@ spec:
 	if res.ResolvedVersion != "1.0.0" {
 		t.Errorf("ResolvedVersion: got %q; want %q", res.ResolvedVersion, "1.0.0")
 	}
-	if res.Digest != sha256Hex([]byte(compBody)) {
-		t.Errorf("Digest: got %q; want sha256(content)", res.Digest)
+	// Golden literal (not a re-derivation): the exact content-address of
+	// compBody. Guards the digest format itself — a spelling change in
+	// pkg/digest.ContentDigest fails here loudly instead of being mirrored.
+	const wantCompDigest = "sha256:63a6f93856eff3633dba32c5d7c1d92236ee48930a4c7fbe4bce2f63bddb19fd"
+	if res.Digest != wantCompDigest {
+		t.Errorf("Digest: got %q; want %q", res.Digest, wantCompDigest)
 	}
 	if !strings.Contains(res.ResolutionPath, "tier-1") {
 		t.Errorf("ResolutionPath: got %q; want tier-1", res.ResolutionPath)
@@ -138,8 +135,11 @@ spec:
 	if res.ResolvedVersion != "2.5.0" {
 		t.Errorf("ResolvedVersion: got %q; want %q", res.ResolvedVersion, "2.5.0")
 	}
-	if res.Digest != sha256Hex([]byte(recipeBody)) {
-		t.Errorf("Digest: got %q; want sha256(recipe body)", res.Digest)
+	// Golden literal (not a re-derivation): the exact content-address of
+	// recipeBody, guarding the digest format.
+	const wantRecipeDigest = "sha256:c7ee2c4b109a041c1f225a9d85a7b60c4cbf82ca121503fcd346f792426c788d"
+	if res.Digest != wantRecipeDigest {
+		t.Errorf("Digest: got %q; want %q", res.Digest, wantRecipeDigest)
 	}
 
 	// spec.implements form — the COMPONENT-type URI, not a Recipe URI.
@@ -182,8 +182,11 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	if res.NotFound {
 		t.Fatal("expected Tier-3 hit; got NotFound")
 	}
-	if res.Digest != sha256Hex(compBody) {
-		t.Errorf("Digest: got %q; want sha256(content)", res.Digest)
+	// Golden literal (not a re-derivation): the exact content-address of the
+	// version-2.0.0 compBody, guarding the digest format.
+	const wantComp2Digest = "sha256:44340f6f2084849530c815c7eb2b797f283cf44d809c83162f161d73d9921dc3"
+	if res.Digest != wantComp2Digest {
+		t.Errorf("Digest: got %q; want %q", res.Digest, wantComp2Digest)
 	}
 	if res.ResolvedVersion != "2.0.0" {
 		t.Errorf("ResolvedVersion: got %q; want %q", res.ResolvedVersion, "2.0.0")
