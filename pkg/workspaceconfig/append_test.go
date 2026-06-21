@@ -211,17 +211,17 @@ func TestLoadWithGlobalImporterAppend(t *testing.T) {
 func TestLoadWithGlobalCachePassesThroughSchemaAndOverlay(t *testing.T) {
 	dir := t.TempDir()
 	wsPath := writeYAML(t, dir, ".aggrega-config.yaml",
-		"cache:\n  max_entries: 500\n  max_bytes: 50000\n")
+		"parse_cache:\n  max_entries: 500\n  max_bytes: 50000\n")
 
 	merged, _, err := LoadWithGlobal(wsPath, "")
 	if err != nil {
 		t.Fatalf("LoadWithGlobal: %v", err)
 	}
-	if merged.Cache.MaxEntries != 500 {
-		t.Errorf("Cache.MaxEntries: got %d, want 500", merged.Cache.MaxEntries)
+	if merged.ParseCache.MaxEntries != 500 {
+		t.Errorf("Cache.MaxEntries: got %d, want 500", merged.ParseCache.MaxEntries)
 	}
-	if merged.Cache.MaxBytes != 50000 {
-		t.Errorf("Cache.MaxBytes: got %d, want 50000", merged.Cache.MaxBytes)
+	if merged.ParseCache.MaxBytes != 50000 {
+		t.Errorf("Cache.MaxBytes: got %d, want 50000", merged.ParseCache.MaxBytes)
 	}
 }
 
@@ -233,17 +233,17 @@ func TestLoadWithGlobalCachePassesThroughSchemaAndOverlay(t *testing.T) {
 func TestLoadWithGlobalCacheDefaultsPreservedWhenAbsent(t *testing.T) {
 	dir := t.TempDir()
 	wsPath := writeYAML(t, dir, ".aggrega-config.yaml",
-		"workspace:\n  default_registry: example.com\n")
+		"default_registry: example.com\n")
 
 	merged, _, err := LoadWithGlobal(wsPath, "")
 	if err != nil {
 		t.Fatalf("LoadWithGlobal: %v", err)
 	}
-	if merged.Cache.MaxEntries != 1000 {
-		t.Errorf("Cache.MaxEntries: got %d, want default 1000", merged.Cache.MaxEntries)
+	if merged.ParseCache.MaxEntries != 1000 {
+		t.Errorf("Cache.MaxEntries: got %d, want default 1000", merged.ParseCache.MaxEntries)
 	}
-	if merged.Cache.MaxBytes != 100_000_000 {
-		t.Errorf("Cache.MaxBytes: got %d, want default 100_000_000", merged.Cache.MaxBytes)
+	if merged.ParseCache.MaxBytes != 100_000_000 {
+		t.Errorf("Cache.MaxBytes: got %d, want default 100_000_000", merged.ParseCache.MaxBytes)
 	}
 }
 
@@ -256,16 +256,16 @@ func TestLoadWithGlobalCacheDefaultsPreservedWhenAbsent(t *testing.T) {
 func TestLoadWithGlobalCacheZeroIsExplicitUnbounded(t *testing.T) {
 	dir := t.TempDir()
 	wsPath := writeYAML(t, dir, ".aggrega-config.yaml",
-		"cache:\n  max_entries: 0\n  max_bytes: 0\n")
+		"parse_cache:\n  max_entries: 0\n  max_bytes: 0\n")
 
 	merged, _, err := LoadWithGlobal(wsPath, "")
 	if err != nil {
 		t.Fatalf("LoadWithGlobal: %v", err)
 	}
-	if merged.Cache.MaxEntries != 0 {
-		t.Errorf("Cache.MaxEntries: got %d, want explicit 0 (unbounded)", merged.Cache.MaxEntries)
+	if merged.ParseCache.MaxEntries != 0 {
+		t.Errorf("Cache.MaxEntries: got %d, want explicit 0 (unbounded)", merged.ParseCache.MaxEntries)
 	}
-	if merged.Cache.MaxBytes != 0 {
-		t.Errorf("Cache.MaxBytes: got %d, want explicit 0 (unbounded)", merged.Cache.MaxBytes)
+	if merged.ParseCache.MaxBytes != 0 {
+		t.Errorf("Cache.MaxBytes: got %d, want explicit 0 (unbounded)", merged.ParseCache.MaxBytes)
 	}
 }

@@ -181,7 +181,7 @@ spec:
 		ResolvedStep:               1,
 	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
-	srv.wsConfig.Workspace.CacheDir = cacheDir
+	srv.wsConfig.ArtifactCacheDir = cacheDir
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, cacheDir, []string{catalogDir}, puller)
 
 	var in, out bytes.Buffer

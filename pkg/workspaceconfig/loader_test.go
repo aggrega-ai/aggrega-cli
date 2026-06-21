@@ -30,12 +30,12 @@ func writeFixture(t *testing.T, content string) string {
 func TestLoadReturnsAllSettledFields(t *testing.T) {
 	t.Parallel()
 	content := `
+default_registry: my-registry.example.com
+artifact_cache_dir: .aggrega-custom
+offline: true
 workspace:
-  default_registry: my-registry.example.com
   catalog_dirs:
     - vendor/aggrega-catalog
-  cache_dir: .aggrega-custom
-  offline: true
 
 build:
   authoring_release: prod-release.yaml
@@ -73,16 +73,16 @@ lint:
 		t.Fatalf("Load: %v", err)
 	}
 
-	if got.Workspace.DefaultRegistry != "my-registry.example.com" {
-		t.Errorf("Workspace.DefaultRegistry: %q", got.Workspace.DefaultRegistry)
+	if got.DefaultRegistry != "my-registry.example.com" {
+		t.Errorf("Workspace.DefaultRegistry: %q", got.DefaultRegistry)
 	}
 	if len(got.Workspace.CatalogDirs) != 1 || got.Workspace.CatalogDirs[0] != "vendor/aggrega-catalog" {
 		t.Errorf("Workspace.CatalogDirs: %+v", got.Workspace.CatalogDirs)
 	}
-	if got.Workspace.CacheDir != ".aggrega-custom" {
-		t.Errorf("Workspace.CacheDir: %q", got.Workspace.CacheDir)
+	if got.ArtifactCacheDir != ".aggrega-custom" {
+		t.Errorf("Workspace.CacheDir: %q", got.ArtifactCacheDir)
 	}
-	if !got.Workspace.Offline {
+	if !got.Offline {
 		t.Errorf("Workspace.Offline should be true")
 	}
 
@@ -144,8 +144,7 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	// HaltOnDeprecatedSeverity, EnforceMonotonicNarrowing, and
 	// EnforceImmutability.
 	content := `
-workspace:
-  offline: true
+offline: true
 `
 	path := writeFixture(t, content)
 	got, err := workspaceconfig.Load(path)
@@ -153,18 +152,18 @@ workspace:
 		t.Fatalf("Load: %v", err)
 	}
 
-	if !got.Workspace.Offline {
+	if !got.Offline {
 		t.Errorf("Workspace.Offline: want true; got false")
 	}
-	if got.Workspace.DefaultRegistry != "hub.aggrega.ai" {
+	if got.DefaultRegistry != "hub.aggrega.ai" {
 		t.Errorf("Workspace.DefaultRegistry: want %q (Default); got %q",
-			"hub.aggrega.ai", got.Workspace.DefaultRegistry)
+			"hub.aggrega.ai", got.DefaultRegistry)
 	}
-	if got.Workspace.CacheDir != ".aggrega/cache" {
+	if got.ArtifactCacheDir != ".aggrega/cache" {
 		t.Errorf("Workspace.CacheDir: want %q (Default); got %q",
-			".aggrega/cache", got.Workspace.CacheDir)
+			".aggrega/cache", got.ArtifactCacheDir)
 	}
-	if !got.Workspace.AutoPull {
+	if !got.AutoPull {
 		t.Errorf("Workspace.AutoPull: want true (Default); got false")
 	}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
@@ -182,15 +181,14 @@ workspace:
 func TestLoadHonoursAutoPullFalseOverride(t *testing.T) {
 	t.Parallel()
 	content := `
-workspace:
-  auto_pull: false
+auto_pull: false
 `
 	path := writeFixture(t, content)
 	got, err := workspaceconfig.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.Workspace.AutoPull {
+	if got.AutoPull {
 		t.Errorf("Workspace.AutoPull: want false (overridden); got true")
 	}
 }
@@ -287,14 +285,14 @@ lint:
 func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	t.Parallel()
 	d := workspaceconfig.Default()
-	if d.Workspace.DefaultRegistry != "hub.aggrega.ai" {
-		t.Errorf("Default().Workspace.DefaultRegistry: %q", d.Workspace.DefaultRegistry)
+	if d.DefaultRegistry != "hub.aggrega.ai" {
+		t.Errorf("Default().DefaultRegistry: %q", d.DefaultRegistry)
 	}
-	if d.Workspace.CacheDir != ".aggrega/cache" {
-		t.Errorf("Default().Workspace.CacheDir: %q", d.Workspace.CacheDir)
+	if d.ArtifactCacheDir != ".aggrega/cache" {
+		t.Errorf("Default().ArtifactCacheDir: %q", d.ArtifactCacheDir)
 	}
-	if d.Workspace.Offline {
-		t.Errorf("Default().Workspace.Offline should be false")
+	if d.Offline {
+		t.Errorf("Default().Offline should be false")
 	}
 	if d.Build.HaltOnDeprecated {
 		t.Errorf("Default().Build.HaltOnDeprecated should be false")
@@ -402,13 +400,13 @@ lint: {}
 		t.Fatalf("Load: %v", err)
 	}
 	// Documented defaults must survive the empty-mapping pass.
-	if got.Workspace.DefaultRegistry != "hub.aggrega.ai" {
+	if got.DefaultRegistry != "hub.aggrega.ai" {
 		t.Errorf("Workspace.DefaultRegistry: want %q (Default preserved); got %q",
-			"hub.aggrega.ai", got.Workspace.DefaultRegistry)
+			"hub.aggrega.ai", got.DefaultRegistry)
 	}
-	if got.Workspace.CacheDir != ".aggrega/cache" {
+	if got.ArtifactCacheDir != ".aggrega/cache" {
 		t.Errorf("Workspace.CacheDir: want %q (Default preserved); got %q",
-			".aggrega/cache", got.Workspace.CacheDir)
+			".aggrega/cache", got.ArtifactCacheDir)
 	}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default preserved); got %q",

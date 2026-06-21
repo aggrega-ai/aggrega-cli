@@ -14,20 +14,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// writeWorkspaceConfig writes a minimal `.aggrega-config.yaml` at
-// the workspace root with the supplied workspace block fragment so
-// integration tests can flip the auto_pull / offline dials per case.
-func writeWorkspaceConfig(t *testing.T, root, workspaceBlock string) {
+// writeWorkspaceConfig writes a .aggrega-config.yaml whose full body is
+// configBody (verbatim). Top-level settings (default_registry, offline,
+// auto_pull, artifact_cache_dir) sit at the root; catalog_dirs go under a
+// `workspace:` block.
+func writeWorkspaceConfig(t *testing.T, root, configBody string) {
 	t.Helper()
-	content := "workspace:\n" + workspaceBlock + "\n"
-	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), content)
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), configBody+"\n")
 }
 
 func TestBuildAutoPullsWhenLockfileMissingAndAutoPullTrue(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: true\n")
+	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
 	if err := dispatchBuild(releasePath, []string{filepath.Join(root, "catalog")}, false); err != nil {
 		t.Fatalf("dispatchBuild: %v", err)
@@ -41,7 +41,7 @@ func TestBuildHaltsWhenLockfileMissingAndAutoPullFalse(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 
 	err := dispatchBuild(releasePath, []string{filepath.Join(root, "catalog")}, false)
 	if err == nil {
@@ -56,7 +56,7 @@ func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
-	writeWorkspaceConfig(t, root, "  offline: true\n")
+	writeWorkspaceConfig(t, root, "offline: true\n")
 
 	err := dispatchBuild(releasePath, []string{filepath.Join(root, "catalog")}, false)
 	if err == nil {
@@ -77,7 +77,7 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 	// re-pins, so a local drift never reaches this frozen drift-halt; registry-pin
 	// drift halts earlier via ErrFetchIntegrity. The drift-halt below is the
 	// auto_pull:false frozen-lockfile guarantee.)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 
 	// Prime the cache + lockfile by running an initial explicit pull.
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
@@ -112,7 +112,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: true\n")
+	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)

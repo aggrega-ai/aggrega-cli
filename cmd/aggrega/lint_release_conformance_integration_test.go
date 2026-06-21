@@ -160,7 +160,7 @@ spec:
 				rel = confRelease
 			}
 			writeFixture(t, filepath.Join(ws, "release.yaml"), rel)
-			writeWorkspaceConfig(t, ws, "  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
+			writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
 			t.Chdir(ws)
 
 			err := lintRelease("release.yaml")

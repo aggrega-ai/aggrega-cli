@@ -285,7 +285,7 @@ func Run(cfg RunConfig) error {
 	puller := catalog.NewDefaultOCIPuller(wsCfg)
 	lazyCatalog := catalog.NewLazyLookup(
 		root,
-		wsCfg.Workspace.CacheDir,
+		wsCfg.ArtifactCacheDir,
 		wsCfg.Workspace.CatalogDirs,
 		puller,
 	)
@@ -299,7 +299,7 @@ func Run(cfg RunConfig) error {
 		activeRelease:     activeRelease,
 		activeReleasePath: activeReleasePath,
 		cascadeAttempt:    attempt,
-		parseCache:        newCache(wsCfg.Cache.MaxEntries, wsCfg.Cache.MaxBytes),
+		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
 		in:                bufio.NewReader(cfg.Stdin),
 		out:               cfg.Stdout,

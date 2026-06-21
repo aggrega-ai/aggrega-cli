@@ -136,7 +136,7 @@ func newConsumerWorkspace(t *testing.T, host string) string {
 	t.Helper()
 	ws := t.TempDir()
 	copyTree(t, catalogOnlyExampleDir(t), ws)
-	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	_ = os.Remove(filepath.Join(ws, "release.lock"))
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	_ = os.RemoveAll(filepath.Join(ws, "dist"))
@@ -291,7 +291,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	// honoring auto-pull would resolve the un-pinned reference and re-add it — the
 	// honoring default fills a gap rather than halting; the loud closure halt is
 	// the frozen-mode guarantee.)
-	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: false\n  offline: false")
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 
 	_ = os.RemoveAll("dist")
 	err = dispatchBuild("release.yaml", nil, false)
@@ -384,7 +384,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ws := t.TempDir()
 			copyTree(t, catalogOnlyExampleDir(t), ws)
-			writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+			writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 			_ = os.Remove(filepath.Join(ws, "release.lock"))
 			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 			tc.mutate(t, ws)
@@ -559,7 +559,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
 	err := dispatchBuild("release.yaml", nil, false)
@@ -614,7 +614,7 @@ func TestIntegration_RegistryAuthRefuse(t *testing.T) {
 	})
 	ws := t.TempDir()
 	copyTree(t, catalogOnlyExampleDir(t), ws)
-	writeWorkspaceConfig(t, ws, "  default_registry: \""+host+"\"\n  auto_pull: true\n  offline: false")
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	_ = os.Remove(filepath.Join(ws, "release.lock"))
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	t.Chdir(ws)

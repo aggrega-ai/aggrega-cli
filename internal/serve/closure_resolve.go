@@ -90,7 +90,7 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 	aggregate := aggRes.Aggregate
 	aggBytes := aggRes.Bytes
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
-	cacheDir := s.wsConfig.Workspace.ResolvedCacheDir()
+	cacheDir := s.wsConfig.ResolvedArtifactCacheDir()
 	// Lazy closure walk — no eager whole-catalog load (0090 point-7). The daemon
 	// passes a nil puller (hermetic, Tier-3 disabled), matching the eager path it
 	// replaces; a broken out-of-closure entity is never enumerated-fatal.

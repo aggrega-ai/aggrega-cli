@@ -3,9 +3,12 @@
 
 // Package workspaceconfig parses and exposes the per-workspace
 // configuration file (`.aggrega-config.yaml`) that the aggrega CLI
-// consults at every build invocation. The file carries five
-// top-level blocks — workspace, build, plugins, lint, cache —
-// covering registry routing, build-time strictness dials,
+// consults at every build invocation. The `workspace` block is the
+// root marker — its presence marks the workspace root and it holds
+// only the root-defining catalog directories. Pure settings live at
+// the top level: default_registry, offline, auto_pull, and
+// artifact_cache_dir, plus the build, plugins, lint, and parse_cache
+// blocks — covering registry routing, build-time strictness dials,
 // workspace-level Wasm plugin attachments, per-rule lint gates, and
 // the daemon's parse-cache eviction caps.
 //
@@ -16,14 +19,14 @@
 // aggrega-schemas/json/.
 //
 // Several documented defaults are NOT the Go zero-value:
-// default_registry = "hub.aggrega.ai", cache_dir = ".aggrega/cache",
-// halt_on_deprecated_severity = "error", enforce_monotonic_narrowing
-// = true, enforce_immutability = true, cache.max_entries = 1000, and
-// cache.max_bytes = 100_000_000. Callers obtain a Config seeded with
-// those defaults via Default(); the loader's overlay pattern (Load
-// reads file → schema validates → yaml.Unmarshal into a
-// Default()-initialised value) preserves the documented defaults
-// when the file omits a key.
+// default_registry = "hub.aggrega.ai", artifact_cache_dir =
+// ".aggrega/cache", halt_on_deprecated_severity = "error",
+// enforce_monotonic_narrowing = true, enforce_immutability = true,
+// parse_cache.max_entries = 1000, and parse_cache.max_bytes =
+// 100_000_000. Callers obtain a Config seeded with those defaults via
+// Default(); the loader's overlay pattern (Load reads file → schema
+// validates → yaml.Unmarshal into a Default()-initialised value)
+// preserves the documented defaults when the file omits a key.
 //
 // List-append escape hatches: six list-valued fields (catalog_dirs,
 // narrowing_exemptions, and the four plugin sockets mutator/policy/
@@ -49,39 +52,48 @@ package workspaceconfig
 // parsed as true. Authors must use `true` / `false` for boolean
 // flags.
 type Config struct {
+	// Workspace is the root marker: its presence marks the workspace
+	// root, and it carries only the root-defining catalog directories.
 	Workspace WorkspaceConfig `yaml:"workspace"`
-	Build     BuildConfig     `yaml:"build"`
-	Plugins   PluginsConfig   `yaml:"plugins"`
-	Lint      LintConfig      `yaml:"lint"`
-	Cache     CacheConfig     `yaml:"cache"`
+	// DefaultRegistry, Offline, AutoPull, and ArtifactCacheDir are
+	// top-level (not root-defining) settings — global-capable, so they
+	// cascade-merge independently of the root marker.
+	DefaultRegistry  string `yaml:"default_registry"`
+	Offline          bool   `yaml:"offline"`
+	AutoPull         bool   `yaml:"auto_pull"`
+	ArtifactCacheDir string `yaml:"artifact_cache_dir"`
+
+	Build      BuildConfig      `yaml:"build"`
+	Plugins    PluginsConfig    `yaml:"plugins"`
+	Lint       LintConfig       `yaml:"lint"`
+	ParseCache ParseCacheConfig `yaml:"parse_cache"`
 }
 
-// WorkspaceConfig groups workspace-level orientation: which registry
-// the build pushes to and pulls from, where the local artifact cache
-// lives, and whether the build operates offline.
+// WorkspaceConfig is the workspace root marker. Its PRESENCE marks the
+// directory as the workspace root; it carries only the root-defining
+// catalog directories. Settings that are not root-defining
+// (default_registry, offline, auto_pull, artifact_cache_dir) live at the
+// top level on Config.
 //
 // CatalogDirsAppend is the merge-time companion for CatalogDirs: at
 // each precedence layer the entries here are concatenated onto the
 // resolved CatalogDirs list. LoadWithGlobal zeroes this field on the
 // returned Config.
 type WorkspaceConfig struct {
-	DefaultRegistry   string   `yaml:"default_registry"`
 	CatalogDirs       []string `yaml:"catalog_dirs"`
 	CatalogDirsAppend []string `yaml:"catalog_dirs_append"`
-	CacheDir          string   `yaml:"cache_dir"`
-	Offline           bool     `yaml:"offline"`
-	AutoPull          bool     `yaml:"auto_pull"`
 }
 
-// ResolvedCacheDir returns the configured content-cache directory, applying the
-// ".aggrega/cache" default when CacheDir is unset. Centralizes the default so
-// every catalog / closure load site resolves the cache path identically — if
-// the default ever moves, it moves here.
-func (w WorkspaceConfig) ResolvedCacheDir() string {
-	if w.CacheDir == "" {
+// ResolvedArtifactCacheDir returns the configured on-disk artifact cache
+// directory, applying the ".aggrega/cache" default when ArtifactCacheDir
+// is unset. Centralizes the default so every catalog / closure load site
+// resolves the cache path identically — if the default ever moves, it
+// moves here.
+func (c Config) ResolvedArtifactCacheDir() string {
+	if c.ArtifactCacheDir == "" {
 		return ".aggrega/cache"
 	}
-	return w.CacheDir
+	return c.ArtifactCacheDir
 }
 
 // BuildConfig groups build-time strictness dials and authoring
@@ -181,12 +193,13 @@ type NarrowingExemption struct {
 	Reason string   `yaml:"reason"`
 }
 
-// CacheConfig carries the daemon's parse-cache eviction caps. Both
+// ParseCacheConfig carries the daemon's parse-cache eviction caps. Both
 // caps apply simultaneously — the LRU eviction loop runs until both
 // the entry count and the byte total are within bounds. Either-zero
 // means "unbounded on that axis", which is useful for CI scenarios
-// where the cache lives only for one invocation.
-type CacheConfig struct {
+// where the cache lives only for one invocation. Distinct from
+// Config.ArtifactCacheDir, the on-disk content cache.
+type ParseCacheConfig struct {
 	// MaxEntries caps the number of cached parses. Default 1000;
 	// 0 = unbounded on the entry axis.
 	MaxEntries int `yaml:"max_entries"`
@@ -198,12 +211,12 @@ type CacheConfig struct {
 
 // Default returns a Config populated with the documented defaults.
 // Eight documented defaults are NOT the Go zero-value and are seeded
-// explicitly: Workspace.DefaultRegistry = "hub.aggrega.ai",
-// Workspace.CacheDir = ".aggrega/cache", Workspace.AutoPull = true,
+// explicitly: DefaultRegistry = "hub.aggrega.ai",
+// ArtifactCacheDir = ".aggrega/cache", AutoPull = true,
 // Build.HaltOnDeprecatedSeverity = "error",
 // Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true,
 // Lint.PublishingDiscipline.EnforceImmutability = true,
-// Cache.MaxEntries = 1000, and Cache.MaxBytes = 100_000_000.
+// ParseCache.MaxEntries = 1000, and ParseCache.MaxBytes = 100_000_000.
 // Remaining fields stay at Go's zero-value (every Allow* flag false,
 // every list nil, every other string empty).
 //
@@ -213,11 +226,9 @@ type CacheConfig struct {
 // preserves these defaults when the workspace file omits a key.
 func Default() Config {
 	return Config{
-		Workspace: WorkspaceConfig{
-			DefaultRegistry: "hub.aggrega.ai",
-			CacheDir:        ".aggrega/cache",
-			AutoPull:        true,
-		},
+		DefaultRegistry:  "hub.aggrega.ai",
+		ArtifactCacheDir: ".aggrega/cache",
+		AutoPull:         true,
 		Build: BuildConfig{
 			HaltOnDeprecatedSeverity: "error",
 			YAMLIndent:               2,
@@ -228,7 +239,7 @@ func Default() Config {
 				EnforceImmutability:       true,
 			},
 		},
-		Cache: CacheConfig{
+		ParseCache: ParseCacheConfig{
 			MaxEntries: 1000,
 			MaxBytes:   100_000_000,
 		},

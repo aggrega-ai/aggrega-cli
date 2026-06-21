@@ -145,7 +145,7 @@ func lintCatalogWideFromWorkspace() error {
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Whole-catalog lint has no --catalog flag, so the flag list is empty; the
 	// shared resolver reproduces the prior behavior — config catalog_dirs, or the
 	// workspace root when none are configured.
@@ -225,7 +225,7 @@ func lintRelease(releasePath string) error {
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
@@ -792,7 +792,7 @@ func fetchPreviousRegistryVersion(
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
 	if target == nil {
-		reference := buildPushReference(wsCfg.Workspace.DefaultRegistry, header.Kind, header.Spec.Provider, header.Metadata.Name)
+		reference := buildPushReference(wsCfg.DefaultRegistry, header.Kind, header.Spec.Provider, header.Metadata.Name)
 		repo, err := oci.NewRemoteRepository(reference)
 		if err != nil {
 			return nil, "", fmt.Errorf("construct repo: %w", err)

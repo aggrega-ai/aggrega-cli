@@ -114,7 +114,7 @@ func pushRun(cfg pushConfig) error {
 
 	registry := cfg.Registry
 	if registry == "" {
-		registry = wsCfg.Workspace.DefaultRegistry
+		registry = wsCfg.DefaultRegistry
 	}
 	if registry == "" {
 		return fmt.Errorf("aggrega push: no destination registry; set --registry or workspace.default_registry")

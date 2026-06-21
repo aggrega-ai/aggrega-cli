@@ -231,7 +231,7 @@ spec:
 
 	srv := newTestServer(t, tmp, nil, nil)
 	srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
-	srv.wsConfig.Workspace.CacheDir = cacheDir
+	srv.wsConfig.ArtifactCacheDir = cacheDir
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, cacheDir, []string{catalogDir}, puller)
 
 	var in, out bytes.Buffer
@@ -447,7 +447,7 @@ spec:
 
 	srv := newTestServer(t, tmp, nil, nil)
 	srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
-	srv.wsConfig.Workspace.CacheDir = cacheDir
+	srv.wsConfig.ArtifactCacheDir = cacheDir
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, cacheDir, []string{catalogDir}, puller)
 
 	var in, out bytes.Buffer

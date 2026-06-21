@@ -86,7 +86,7 @@ func dispatchBuild(releasePath string, catalogFlagDirs []string, traceEnabled bo
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 
 	// Effective first-win catalog search stack: --catalog dirs prepended to the
 	// workspace catalog_dirs, defaulting to the current directory.
@@ -308,7 +308,7 @@ func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspa
 
 	// Offline: never network. Build is frozen against whatever lockfile exists;
 	// a missing one cannot be filled here.
-	if wsCfg.Workspace.Offline {
+	if wsCfg.Offline {
 		if preexisted {
 			return true, nil
 		}
@@ -327,7 +327,7 @@ func acquireLockfile(releasePath string, catalogFlagDirs []string, wsCfg workspa
 	// honoring pull, and lockfile.Verify (in dispatchBuild) is the post-condition.
 	// The build's own resolution runs through the nil-puller pinned lazy lookup,
 	// untouched — so build output is unchanged by this fill.
-	if wsCfg.Workspace.AutoPull {
+	if wsCfg.AutoPull {
 		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}

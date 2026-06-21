@@ -160,7 +160,7 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteAggregateFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 

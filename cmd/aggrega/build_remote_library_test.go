@@ -86,7 +86,7 @@ func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
 	catalogDir := filepath.Join(root, "catalog")
 	if err := os.Remove(filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml")); err != nil {
 		t.Fatalf("remove local library: %v", err)
@@ -131,7 +131,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n")
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Make DbSizing genuinely remote: remove the local copy so only a Tier-3
@@ -320,7 +320,7 @@ func TestBuildResolvesRemotePinnedSchemaLibrary(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
@@ -374,7 +374,7 @@ func TestBuildWithoutBridgeFailsUnresolvedRef(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Remove the local library WITHOUT pinning/caching it, and hand the build a
@@ -409,7 +409,7 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
@@ -460,7 +460,7 @@ func TestPullSourceTemplateReadsBridgedLibraryDefault(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n")
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Sourced-mode Recipe whose source: version reads the library-$ref-composed
@@ -489,7 +489,7 @@ spec:
 	resolver := &recordingSourceResolver{}
 	if err := pullRun(pullConfig{
 		ReleasePath:    releasePath,
-		CatalogDirs:     []string{catalogDir},
+		CatalogDirs:    []string{catalogDir},
 		puller:         puller,
 		sourceResolver: resolver,
 	}); err != nil {

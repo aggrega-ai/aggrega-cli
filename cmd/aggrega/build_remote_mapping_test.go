@@ -211,7 +211,7 @@ func TestBuildResolvesRemotePinnedMappingLibrary(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteMappingLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
@@ -270,7 +270,7 @@ func TestPullFetchesRemoteMappingLibraryViaTier3(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteMappingLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n")
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Make HelmHelpers genuinely remote.
@@ -315,7 +315,7 @@ func TestBuildResolvesRecursiveMappingImport(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteMappingLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	catalogDir := filepath.Join(root, "catalog")
 
 	// HelmHelpers.ServerValues now indirects to BaseValues.Real (recursive import).
@@ -360,7 +360,7 @@ func TestBuildHaltsOnMappingImportCycle(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteMappingLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	catalogDir := filepath.Join(root, "catalog")
 
 	// HelmHelpers.ServerValues → Cycle.B → HelmHelpers.ServerValues (A↔B cycle).

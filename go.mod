@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/aggrega-ai/aggrega-schemas v0.2.3
+	github.com/aggrega-ai/aggrega-schemas v0.3.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/go-containerregistry v0.21.6
 	github.com/google/jsonschema-go v0.4.3
@@ -130,3 +130,9 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// TEMPORARY — drop before the final commit. Builds against the local
+// aggrega-schemas working tree until v0.3.0 is tagged. The committed go.mod must
+// require the real v0.3.0 tag with NO replace; run `go mod tidy` after the tag so
+// go.sum carries the published checksum.
+replace github.com/aggrega-ai/aggrega-schemas => ../aggrega-schemas

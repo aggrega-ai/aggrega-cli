@@ -105,7 +105,7 @@ spec:
 `)
 	// catalog_dirs: the local extends catalog (first) + the standard catalog for
 	// the compose provider the recipe targets.
-	writeWorkspaceConfig(t, ws, "  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
+	writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
 	t.Chdir(ws)
 
 	var err error

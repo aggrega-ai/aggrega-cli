@@ -29,7 +29,7 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	composeCatalog := filepath.Join(ws, "catalog-compose")
 	// Point the workspace config at the self-contained compose catalog (absolute),
 	// so lint --release resolves the closure from Tier-1 with no network/lockfile.
-	writeWorkspaceConfig(t, ws, "  catalog_dirs:\n    - "+composeCatalog+"\n")
+	writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+composeCatalog+"\n")
 	t.Chdir(ws)
 
 	// Clean closure → exit 0.

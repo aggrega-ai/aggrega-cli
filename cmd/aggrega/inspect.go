@@ -162,7 +162,7 @@ func inspectCatalogComponent(componentType string, catalogDirs []string) error {
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
 	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")
@@ -281,7 +281,7 @@ func inspectReleaseFile(releasePath string, catalogDirs []string) error {
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load over the first-win stack (--catalog dirs prepended to catalog_dirs).
 	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)

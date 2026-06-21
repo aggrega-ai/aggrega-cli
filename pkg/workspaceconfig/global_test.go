@@ -91,8 +91,8 @@ func TestLoadGlobalMissingFileDispositionByXDG(t *testing.T) {
 	if loaded {
 		t.Error("loaded: expected false for XDG-default missing file")
 	}
-	if cfg.Workspace.DefaultRegistry != "hub.aggrega.ai" {
-		t.Errorf("returned Config is not Default(): got DefaultRegistry=%q", cfg.Workspace.DefaultRegistry)
+	if cfg.DefaultRegistry != "hub.aggrega.ai" {
+		t.Errorf("returned Config is not Default(): got DefaultRegistry=%q", cfg.DefaultRegistry)
 	}
 }
 
@@ -111,8 +111,8 @@ func TestLoadGlobalLoadsValidFile(t *testing.T) {
 	if !loaded {
 		t.Error("loaded: expected true for a real file")
 	}
-	if cfg.Workspace.DefaultRegistry != "global.example.com" {
-		t.Errorf("DefaultRegistry: got %q, want %q", cfg.Workspace.DefaultRegistry, "global.example.com")
+	if cfg.DefaultRegistry != "global.example.com" {
+		t.Errorf("DefaultRegistry: got %q, want %q", cfg.DefaultRegistry, "global.example.com")
 	}
 	if cfg.Build.HaltOnDeprecated != true {
 		t.Errorf("HaltOnDeprecated: got %v, want true", cfg.Build.HaltOnDeprecated)
@@ -154,8 +154,8 @@ func TestLoadWithGlobalDefaults(t *testing.T) {
 	if src != SourceDefaults {
 		t.Errorf("Source: got %s, want SourceDefaults", src)
 	}
-	if cfg.Workspace.DefaultRegistry != "hub.aggrega.ai" {
-		t.Errorf("DefaultRegistry: got %q, want hub.aggrega.ai", cfg.Workspace.DefaultRegistry)
+	if cfg.DefaultRegistry != "hub.aggrega.ai" {
+		t.Errorf("DefaultRegistry: got %q, want hub.aggrega.ai", cfg.DefaultRegistry)
 	}
 }
 
@@ -172,8 +172,8 @@ func TestLoadWithGlobalSourceGlobal(t *testing.T) {
 	if src != SourceGlobal {
 		t.Errorf("Source: got %s, want SourceGlobal", src)
 	}
-	if cfg.Workspace.DefaultRegistry != "global.example.com" {
-		t.Errorf("DefaultRegistry: got %q, want global.example.com", cfg.Workspace.DefaultRegistry)
+	if cfg.DefaultRegistry != "global.example.com" {
+		t.Errorf("DefaultRegistry: got %q, want global.example.com", cfg.DefaultRegistry)
 	}
 }
 
@@ -196,13 +196,13 @@ func TestLoadWithGlobalPerFieldOverlay(t *testing.T) {
 	if src != SourceWorkspace {
 		t.Errorf("Source: got %s, want SourceWorkspace", src)
 	}
-	if cfg.Workspace.DefaultRegistry != "workspace.example.com" {
+	if cfg.DefaultRegistry != "workspace.example.com" {
 		t.Errorf("DefaultRegistry: got %q, want workspace.example.com (workspace overrides global)",
-			cfg.Workspace.DefaultRegistry)
+			cfg.DefaultRegistry)
 	}
-	if cfg.Workspace.CacheDir != ".aggrega/global-cache" {
+	if cfg.ArtifactCacheDir != ".aggrega/global-cache" {
 		t.Errorf("CacheDir: got %q, want .aggrega/global-cache (global, workspace silent)",
-			cfg.Workspace.CacheDir)
+			cfg.ArtifactCacheDir)
 	}
 	if cfg.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("HaltOnDeprecatedSeverity: got %q, want \"error\" (default, neither overlay set it)",

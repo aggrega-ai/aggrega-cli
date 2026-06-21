@@ -603,7 +603,7 @@ spec:
 // the editor BUFFER. Red before this leg: the classifier skipped it; green
 // now.
 func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
-	badConfigBuffer := "workspace:\n  offline: \"notabool\"\n"
+	badConfigBuffer := "workspace:\noffline: \"notabool\"\n"
 	scan := serveValidateScanBuffer(t, map[string]string{}, ".aggrega-config.yaml", badConfigBuffer)
 	if !strings.Contains(scan, "violates its envelope schema") {
 		t.Fatalf("invalid .aggrega-config.yaml buffer produced no envelope diagnostic on its file:\n%s", scan)

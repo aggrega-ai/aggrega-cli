@@ -97,6 +97,9 @@ func validateBytes(data []byte, path string) error {
 	if probe == nil {
 		return nil
 	}
+	if err := checkConfigShape(probe, path); err != nil {
+		return err
+	}
 	_, err := envelope.ValidateBytes(envelope.KindAggregaConfig, data, path)
 	var envErr *envelope.Error
 	if errors.As(err, &envErr) {
@@ -114,3 +117,38 @@ func validateBytes(data []byte, path string) error {
 	return nil
 }
 
+// checkConfigShape produces fix-it diagnostics for the two v2-layout
+// mistakes the bare JSON Schema can only report generically: a null
+// `workspace:` marker (the schema says "expected object, got null") and a
+// key that moved out of `workspace` or was renamed at the top level (the
+// schema says "additional property not allowed"). It lives in the single
+// shared validate path so the CLI and daemon both surface the better
+// message; an independent validator (e.g. an editor extension) still gets
+// the generic schema message, which is acceptable. All returns wrap
+// ErrConfigInvalid for category-consistent detection.
+func checkConfigShape(probe any, path string) error {
+	root, ok := probe.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if ws, present := root["workspace"]; present {
+		if ws == nil {
+			return fmt.Errorf("workspaceconfig: %s: `workspace` must be a mapping; write `workspace: {}` to mark a workspace root with no catalog directories: %w", path, ErrConfigInvalid)
+		}
+		if wsMap, ok := ws.(map[string]any); ok {
+			for _, moved := range []string{"default_registry", "offline", "auto_pull", "cache_dir"} {
+				if _, found := wsMap[moved]; found {
+					hint := moved
+					if moved == "cache_dir" {
+						hint = "artifact_cache_dir"
+					}
+					return fmt.Errorf("workspaceconfig: %s: `%s` moved to the top level; set top-level `%s`, not under `workspace`: %w", path, moved, hint, ErrConfigInvalid)
+				}
+			}
+		}
+	}
+	if _, found := root["cache"]; found {
+		return fmt.Errorf("workspaceconfig: %s: the `cache` block was renamed to `parse_cache`: %w", path, ErrConfigInvalid)
+	}
+	return nil
+}

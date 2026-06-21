@@ -528,7 +528,7 @@ func RunPipeline(
 		if inputs.Lockfile != nil && inputs.WorkspaceRoot != "" {
 			rendererInput.Lockfile = inputs.Lockfile
 			rendererInput.WorkspaceRoot = inputs.WorkspaceRoot
-			rendererInput.CacheDir = inputs.WorkspaceConfig.Workspace.ResolvedCacheDir()
+			rendererInput.CacheDir = inputs.WorkspaceConfig.ResolvedArtifactCacheDir()
 		}
 
 		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, engineFactory)

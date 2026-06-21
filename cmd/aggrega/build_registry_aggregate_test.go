@@ -134,7 +134,7 @@ func TestRegistryTopLevelResolvesEndToEnd(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
 	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -190,7 +190,7 @@ func TestRegistrySubResolvesEndToEnd(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
 	// The top-level is a LOCAL ./file that imports `mysub` by bare identity.
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -261,7 +261,7 @@ func TestRegistryAggregateDriftTagVsVersion(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
-	writeWorkspaceConfig(t, root, "  default_registry: hub.aggrega.ai\n  auto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
 	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:

@@ -25,10 +25,10 @@ import (
 // the same canonical helper. Local copies would drift; one
 // implementation prevents that.
 func NewDefaultOCIPuller(wsCfg workspaceconfig.Config) OCIPuller {
-	if wsCfg.Workspace.Offline {
+	if wsCfg.Offline {
 		return nil
 	}
-	return DefaultOCIPuller{registry: wsCfg.Workspace.DefaultRegistry}
+	return DefaultOCIPuller{registry: wsCfg.DefaultRegistry}
 }
 
 // DefaultOCIPuller is the production OCIPuller implementation. Pull constructs a

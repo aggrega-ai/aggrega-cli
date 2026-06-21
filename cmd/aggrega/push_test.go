@@ -418,8 +418,7 @@ func TestPushUsesWorkspaceDefaultRegistry(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	writeEntityFixture(t, filepath.Join(root, ".aggrega-config.yaml"), `
-workspace:
-  default_registry: workspace.example.com
+default_registry: workspace.example.com
 `)
 	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1

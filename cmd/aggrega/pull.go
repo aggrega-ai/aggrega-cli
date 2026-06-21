@@ -224,7 +224,7 @@ func pullRun(cfg pullConfig) error {
 	// accessors are unused. Pass "" for workspace root. The walk skips
 	// the configured cache directory so cached library.yaml files are not
 	// ingested as authored Tier-1 catalog.
-	cacheDir := wsCfg.Workspace.ResolvedCacheDir()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Effective first-win catalog search stack: --catalog flag dirs prepended to
 	// the workspace catalog_dirs. Resolved here (not by the caller) so direct pull
 	// and build's auto-pull derive the identical stack under the same config.
