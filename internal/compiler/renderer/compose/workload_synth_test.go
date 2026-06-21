@@ -242,6 +242,29 @@ func TestSynthesizeWorkload_SecretsAsEnvAndFile(t *testing.T) {
 	goldenCheck(t, "secrets-env-and-file", files[0].Body)
 }
 
+// TestSynthesizeWorkload_EnvAuthorOrder — the rendered environment: block keeps
+// the container's author order, not alphabetical. Variables are declared
+// ZEBRA, ALPHA, MIDDLE and a secret env entry NESTED appends last; the golden
+// must list them in that sequence, proving the Invariant-8 author-order clause
+// (no map-sort substituted for the OrderedMap).
+func TestSynthesizeWorkload_EnvAuthorOrder(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Variables.Set("ZEBRA", "z")
+	c.Variables.Set("ALPHA", "a")
+	c.Variables.Set("MIDDLE", "m")
+	c.Secrets.Set("NESTED", types.SecretRef{From: "db-credentials", As: "env"})
+	w.Containers.Set("main", c)
+
+	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "env-author-order", files[0].Body)
+}
+
 // TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts — NodePort triggers
 // host:container port publishing on the main service.
 func TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts(t *testing.T) {

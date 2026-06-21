@@ -461,8 +461,11 @@ type BoundaryConsumerEnvOverrider interface {
 }
 
 // applyConsumerEnvOverrides sets each override key into inject.Env and rebuilds
-// inject.All. Keys are applied in sorted order so any newly-appended Env key
-// lands deterministically (Invariant 8); an existing key is updated in place
+// inject.All. The overrides arrive as a plain map from the provider-agnostic
+// BoundaryConsumerEnvOverrider boundary, which carries no author order — so the
+// sorted-key application here is the determinism mechanism for any genuinely-new
+// Env key (Invariant 8), NOT a substitution for an OrderedMap order that exists
+// upstream (there is none to drive from). An existing key is updated in place
 // (OrderedMap.Set preserves position). It is a targeted last-wins on exactly
 // the override keys — other Env keys, and inject.File / inject.Arg, are left
 // byte-identical. A nil/empty override map is a no-op (non-named consumers are

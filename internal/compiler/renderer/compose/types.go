@@ -3,6 +3,8 @@
 
 package compose
 
+import "github.com/aggrega-ai/aggrega-cli/pkg/types"
+
 // ComposeFile is a Compose Specification document (no `version:` key — the
 // modern compose-spec deprecates it; Compose v2.2+ ignores it). Fragment
 // outputs from SynthesizeWorkload populate Services/Volumes/Networks with the
@@ -21,27 +23,27 @@ type ComposeFile struct {
 // The set of fields here is the currently synthesisable surface. Expansion
 // (e.g., secrets, deploy) lands as needed in future iterations.
 type Service struct {
-	Image       string            `yaml:"image,omitempty"`
-	Command     []string          `yaml:"command,omitempty"`
-	Entrypoint  []string          `yaml:"entrypoint,omitempty"`
-	Environment map[string]string `yaml:"environment,omitempty"`
-	EnvFile     []string          `yaml:"env_file,omitempty"`
-	Ports       []string          `yaml:"ports,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Volumes     []ServiceVolume   `yaml:"volumes,omitempty"`
-	Tmpfs       []string          `yaml:"tmpfs,omitempty"`
-	Networks    []string          `yaml:"networks,omitempty"`
-	NetworkMode string            `yaml:"network_mode,omitempty"`
-	DependsOn   []string          `yaml:"depends_on,omitempty"`
-	Healthcheck *Healthcheck      `yaml:"healthcheck,omitempty"`
-	Restart     string            `yaml:"restart,omitempty"`
-	User        string            `yaml:"user,omitempty"`
-	WorkingDir  string            `yaml:"working_dir,omitempty"`
-	Privileged  bool              `yaml:"privileged,omitempty"`
-	ReadOnly    bool              `yaml:"read_only,omitempty"`
-	CapAdd      []string          `yaml:"cap_add,omitempty"`
-	CapDrop     []string          `yaml:"cap_drop,omitempty"`
-	Configs     []ServiceConfig   `yaml:"configs,omitempty"`
+	Image       string                   `yaml:"image,omitempty"`
+	Command     []string                 `yaml:"command,omitempty"`
+	Entrypoint  []string                 `yaml:"entrypoint,omitempty"`
+	Environment types.OrderedMap[string] `yaml:"environment,omitempty"`
+	EnvFile     []string                 `yaml:"env_file,omitempty"`
+	Ports       []string                 `yaml:"ports,omitempty"`
+	Labels      map[string]string        `yaml:"labels,omitempty"`
+	Volumes     []ServiceVolume          `yaml:"volumes,omitempty"`
+	Tmpfs       []string                 `yaml:"tmpfs,omitempty"`
+	Networks    []string                 `yaml:"networks,omitempty"`
+	NetworkMode string                   `yaml:"network_mode,omitempty"`
+	DependsOn   []string                 `yaml:"depends_on,omitempty"`
+	Healthcheck *Healthcheck             `yaml:"healthcheck,omitempty"`
+	Restart     string                   `yaml:"restart,omitempty"`
+	User        string                   `yaml:"user,omitempty"`
+	WorkingDir  string                   `yaml:"working_dir,omitempty"`
+	Privileged  bool                     `yaml:"privileged,omitempty"`
+	ReadOnly    bool                     `yaml:"read_only,omitempty"`
+	CapAdd      []string                 `yaml:"cap_add,omitempty"`
+	CapDrop     []string                 `yaml:"cap_drop,omitempty"`
+	Configs     []ServiceConfig          `yaml:"configs,omitempty"`
 }
 
 // Config is a top-level compose config declaration with inline content. The

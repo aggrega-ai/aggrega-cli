@@ -203,17 +203,12 @@ func translateContainer(
 		svc.Command = c.Command
 	}
 
-	// Environment variables (preserves author order via OrderedMap;
-	// compose `environment:` accepts both list and map forms — we emit map
-	// form for clarity, but Go map iteration order is unstable, so use the
-	// OrderedMap iterator and copy into a map only at the last step. yaml.v3
-	// sorts map keys alphabetically on marshal — author order is lost in
-	// the output but the same input always produces the same output.
-	if c.Variables.Len() > 0 {
-		svc.Environment = map[string]string{}
-		for k, v := range c.Variables.All() {
-			svc.Environment[k] = v
-		}
+	// Environment variables. Compose `environment:` accepts both list and map
+	// forms — we emit map form for clarity, backed by an OrderedMap so the
+	// rendered key order is the container's author order (Variables then, below,
+	// secrets), matching the helm engine's ordered env for the same Workload.
+	for k, v := range c.Variables.All() {
+		svc.Environment.Set(k, v)
 	}
 
 	// Container secrets:
@@ -229,10 +224,7 @@ func translateContainer(
 			// Compose has no native env-from-secret. Track 1 emits the env
 			// var name with an empty value as a placeholder; Track 2 wires
 			// env_file: lookup against the secret slot name.
-			if svc.Environment == nil {
-				svc.Environment = map[string]string{}
-			}
-			svc.Environment[slotKey] = ""
+			svc.Environment.Set(slotKey, "")
 		case "file":
 			svc.Volumes = append(svc.Volumes, ServiceVolume{
 				Type:     "bind",

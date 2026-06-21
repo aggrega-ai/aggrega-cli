@@ -5,35 +5,10 @@ package renderer
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
-
-// DeepMergeInject merges an overlay flat map over the base inject pipe.
-// "Last wins" semantics: overlay values overwrite base values for the same key.
-// Used in Phase A to merge injectMapping outputs over .context.inject.
-func DeepMergeInject(base *types.InjectPipe, overlay map[string]string) {
-	if base == nil || len(overlay) == 0 {
-		return
-	}
-
-	// Phase A injectMapping outputs are flat key-value maps that merge into
-	// .context.inject.env. Iterate overlay in sorted order for stability since
-	// it arrives as a plain map.
-	keys := make([]string, 0, len(overlay))
-	for k := range overlay {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		base.Env.Set(k, overlay[k])
-	}
-
-	// Rebuild .all
-	base.All = buildInjectAll(*base)
-}
 
 // DeepMergeInjectStructured merges a structured inject output (with mechanism
 // keys) over the base inject pipe. Used when injectMapping returns YAML or

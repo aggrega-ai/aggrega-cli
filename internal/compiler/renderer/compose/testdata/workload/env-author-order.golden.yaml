@@ -1,0 +1,14 @@
+services:
+  api:
+    image: app:1.0
+    environment:
+      ZEBRA: z
+      ALPHA: a
+      MIDDLE: m
+      NESTED: ""
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
