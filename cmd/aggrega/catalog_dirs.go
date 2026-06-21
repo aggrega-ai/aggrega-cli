@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -24,13 +25,21 @@ import (
 // directories still resolve everything `./x` does not carry.
 //
 // `catalog_dirs_append` is already folded into `cfg.Workspace.CatalogDirs` at
-// config-load time, so it needs no handling here. The fallback differs per
-// surface — the current directory for the Release-scoped commands (build, pull,
-// inspect), the workspace root for the whole-catalog lint — and is passed in
-// rather than hardcoded so precedence has exactly one home.
+// config-load time, so it needs no handling here. The configured directories
+// are already absolute (the cascade resolved them against their declaring file
+// at load); the `--catalog` flag dirs carry no declaring file, so they resolve
+// against the working directory here — the one place flag paths are anchored,
+// which keeps the resolved set identical across build/pull/inspect for the same
+// flags and CWD. `fallback` is used only when nothing is configured or passed.
 func resolveCatalogDirs(flagDirs []string, cfg workspaceconfig.Config, fallback string) []string {
 	dirs := make([]string, 0, len(flagDirs)+len(cfg.Workspace.CatalogDirs))
-	dirs = append(dirs, flagDirs...)
+	for _, d := range flagDirs {
+		if abs, err := filepath.Abs(d); err == nil {
+			dirs = append(dirs, abs)
+		} else {
+			dirs = append(dirs, d)
+		}
+	}
 	dirs = append(dirs, cfg.Workspace.CatalogDirs...)
 	if len(dirs) == 0 {
 		dirs = []string{fallback}

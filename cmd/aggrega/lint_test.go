@@ -216,7 +216,7 @@ spec:
 // resolution, filesystem-absolute path used verbatim.
 func TestResolvePluginPathDirect(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	path, err := resolvePluginPath("/abs/path/to/plugin.wasm", wsCfg, "/ws")
+	path, err := resolvePluginPath("/abs/path/to/plugin.wasm", wsCfg)
 	if err != nil {
 		t.Fatalf("resolvePluginPath: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestResolvePluginPathRejectsOCIURI(t *testing.T) {
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
 		{URI: "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing:1.0.0"},
 	}
-	_, err := resolvePluginPath("", wsCfg, "/ws")
+	_, err := resolvePluginPath("", wsCfg)
 	if err == nil {
 		t.Fatal("expected error for OCI URI; got nil")
 	}
@@ -247,7 +247,7 @@ func TestResolvePluginPathRejectsOCIURI(t *testing.T) {
 // provides a path.
 func TestResolvePluginPathDiagnosticOnUnset(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	_, err := resolvePluginPath("", wsCfg, "/ws")
+	_, err := resolvePluginPath("", wsCfg)
 	if err == nil {
 		t.Fatal("expected error for unset plugin path; got nil")
 	}
@@ -269,9 +269,9 @@ func TestLooksLikeOCIURI(t *testing.T) {
 		{"/abs/path/plugin.wasm", false},
 	}
 	for _, tc := range cases {
-		got := looksLikeOCIURI(tc.uri)
+		got := workspaceconfig.LooksLikeOCIURI(tc.uri)
 		if got != tc.want {
-			t.Errorf("looksLikeOCIURI(%q): got %v; want %v", tc.uri, got, tc.want)
+			t.Errorf("LooksLikeOCIURI(%q): got %v; want %v", tc.uri, got, tc.want)
 		}
 	}
 }

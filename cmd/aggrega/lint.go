@@ -152,9 +152,16 @@ func lintCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace) error {
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	// Whole-catalog lint has no --catalog flag, so the flag list is empty; the
-	// shared resolver reproduces the prior behavior — config catalog_dirs, or the
-	// workspace root when none are configured.
+	// Whole-catalog lint enumerates an entire catalog tree. With no
+	// catalog_dirs configured it must NOT fall back to scanning the workspace
+	// root — that pulls in unrelated trees (a subrepo's testdata/ fixtures) and
+	// surfaces as a misleading duplicate-identity dump. Require an explicit
+	// catalog_dirs and say so plainly. (Release-scoped commands resolve a
+	// specific closure, not a whole-tree enumeration, so they keep a working-
+	// directory default; the footgun is specific to whole-catalog enumeration.)
+	if len(wsCfg.Workspace.CatalogDirs) == 0 {
+		return fmt.Errorf("OPS_ERROR: whole-catalog lint needs catalog directories to scan; set `workspace.catalog_dirs` in .aggrega-config.yaml (or lint a specific Release with --release)")
+	}
 	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
 	return lintCatalogWide(wsRoot, cacheDir, dirs)
 }
@@ -522,7 +529,7 @@ func lintRun(cfg lintConfig) error {
 	}
 	wsCfg := rw.Config()
 
-	pluginPath, err := resolvePluginPath(cfg.PluginPath, wsCfg, rw.Root())
+	pluginPath, err := resolvePluginPath(cfg.PluginPath, wsCfg)
 	if err != nil {
 		return err
 	}
@@ -635,16 +642,26 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // invocation CWD. workspaceRoot walks up from CWD looking for
 // `.aggrega-config.yaml`; CWD is used as fallback only when no
 // marker is found.
-func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config, wsRoot string) (string, error) {
+// resolvePluginPath returns the filesystem path of the publishing-linter Wasm
+// plugin. Precedence: the --plugin flag (resolved against the working directory
+// — it carries no declaring file), then plugins.linter[0].uri from the resolved
+// workspace config. Config URIs are already absolute (the cascade resolved them
+// against their declaring file at load), so they need no base here; a registry
+// reference is rejected until OCI plugin loading is wired.
+func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, error) {
 	if cliFlag != "" {
 		if filepath.IsAbs(cliFlag) {
 			return cliFlag, nil
 		}
-		return filepath.Join(wsRoot, cliFlag), nil
+		abs, err := filepath.Abs(cliFlag)
+		if err != nil {
+			return "", fmt.Errorf("resolve --plugin %q: %w", cliFlag, err)
+		}
+		return abs, nil
 	}
 	if len(wsCfg.Plugins.Linter) > 0 {
 		uri := wsCfg.Plugins.Linter[0].URI
-		if looksLikeOCIURI(uri) {
+		if workspaceconfig.LooksLikeOCIURI(uri) {
 			return "", fmt.Errorf(
 				"aggrega lint: workspace config plugins.linter[0].uri = %q is an OCI reference; "+
 					"OCI plugin URI resolution not yet wired. Either:\n"+
@@ -654,10 +671,7 @@ func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config, wsRoot stri
 				uri,
 			)
 		}
-		if filepath.IsAbs(uri) {
-			return uri, nil
-		}
-		return filepath.Join(wsRoot, uri), nil
+		return uri, nil
 	}
 	return "", fmt.Errorf(
 		"aggrega lint: no plugin path configured. Either:\n" +
@@ -669,19 +683,6 @@ func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config, wsRoot stri
 // looksLikeOCIURI returns true when the URI looks like an OCI
 // reference. Heuristic: oci:// scheme, or hub.aggrega.ai host, or
 // <host>/<path>:<tag> shape with a slash before the colon.
-func looksLikeOCIURI(uri string) bool {
-	if strings.HasPrefix(uri, "oci://") {
-		return true
-	}
-	if strings.Contains(uri, ".aggrega.ai") || strings.Contains(uri, "hub.aggrega.ai") {
-		return true
-	}
-	if !filepath.IsAbs(uri) && strings.Contains(uri, "/") && strings.Contains(uri, ":") {
-		return true
-	}
-	return false
-}
-
 // yamlToLinterJSON converts the proposed entity YAML to JSON and
 // extracts the metadata envelope. Returns the JSON bytes the plugin
 // consumes plus the header struct the host inspects for kind, name,

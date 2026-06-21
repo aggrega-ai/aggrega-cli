@@ -162,27 +162,39 @@ func Resolve(start, flagRoot string) (*ResolvedWorkspace, error) {
 		return nil, err
 	}
 	if globalLoaded {
-		appendLayers = append(appendLayers, captureAppends(globalCfg))
+		gdir := filepath.Dir(globalPath)
+		ga := captureAppends(globalCfg)
+		resolveAppendPaths(&ga, gdir)
+		appendLayers = append(appendLayers, ga)
 		stripAppends(&globalCfg)
+		resolveConfigPaths(&globalCfg, gdir)
 		merged = globalCfg
 		source = SourceGlobal
 		contributing = append(contributing, globalPath)
 	}
 
 	// Tree layers, farthest-from-start first (lowest precedence) to
-	// nearest-to-start last (highest precedence).
+	// nearest-to-start last (highest precedence). Relative path fields resolve
+	// against the directory of the file that declared them (per layer), so the
+	// merged Config carries absolute paths.
 	for _, path := range treeFiles {
+		dir := filepath.Dir(path)
 		raw, lerr := load(path)
 		if lerr != nil {
 			return nil, lerr
 		}
-		appendLayers = append(appendLayers, captureAppends(raw))
+		la := captureAppends(raw)
+		resolveAppendPaths(&la, dir)
+		appendLayers = append(appendLayers, la)
 
 		overlaid, oerr := loadOverlayInto(path, merged)
 		if oerr != nil {
 			return nil, oerr
 		}
 		stripAppends(&overlaid)
+		// Absolute values carried from prior (farther) layers skip; only the
+		// relative fields this layer wrote resolve against this layer's dir.
+		resolveConfigPaths(&overlaid, dir)
 		merged = overlaid
 		source = SourceWorkspace
 		contributing = append(contributing, path)
@@ -330,6 +342,83 @@ func (b byPathDepth) Len() int      { return len(b) }
 func (b byPathDepth) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 func (b byPathDepth) Less(i, j int) bool {
 	return strings.Count(b[i], string(os.PathSeparator)) > strings.Count(b[j], string(os.PathSeparator))
+}
+
+// resolveFilesystemPath resolves a relative catalog directory against dir,
+// returning an absolute path. Empty and already-absolute values pass through.
+// This is the cascade's counterpart to the entity-source convention catalog
+// loading uses: "relative" always means relative to the config file that wrote
+// the value.
+func resolveFilesystemPath(dir, v string) string {
+	if v == "" || filepath.IsAbs(v) {
+		return v
+	}
+	if abs, err := filepath.Abs(filepath.Join(dir, v)); err == nil {
+		return abs
+	}
+	return v
+}
+
+// LooksLikeOCIURI reports whether uri is a registry reference rather than a
+// filesystem path: an `oci://` scheme, an aggrega-hub host, or the
+// `<host>/<path>:<tag>` shape (a slash and a colon, not absolute). Such URIs
+// are NOT declaring-file-relative paths and are left untouched by resolution;
+// every consumer that must distinguish a registry plugin from a local one
+// shares this one predicate.
+func LooksLikeOCIURI(uri string) bool {
+	if strings.HasPrefix(uri, "oci://") {
+		return true
+	}
+	if strings.Contains(uri, ".aggrega.ai") || strings.Contains(uri, "hub.aggrega.ai") {
+		return true
+	}
+	if !filepath.IsAbs(uri) && strings.Contains(uri, "/") && strings.Contains(uri, ":") {
+		return true
+	}
+	return false
+}
+
+// resolveConfigPaths resolves a layer's relative BASE path fields — workspace
+// catalog_dirs and the four plugin-socket URIs — against dir, the directory of
+// the config file that declared them. Absolute values carried from a
+// farther-out layer pass through, so calling this after each layer's overlay is
+// idempotent: only the relative fields this layer wrote are anchored.
+func resolveConfigPaths(cfg *Config, dir string) {
+	for i, d := range cfg.Workspace.CatalogDirs {
+		cfg.Workspace.CatalogDirs[i] = resolveFilesystemPath(dir, d)
+	}
+	resolvePluginURIs(cfg.Plugins.Mutator, dir)
+	resolvePluginURIs(cfg.Plugins.Policy, dir)
+	resolvePluginURIs(cfg.Plugins.Linter, dir)
+	resolvePluginURIs(cfg.Plugins.Importer, dir)
+}
+
+// resolveAppendPaths resolves a captured layer's relative `_append` path fields
+// against dir before the cascade concatenates them, so each layer's appended
+// entries anchor to their own declaring file rather than the merge's.
+func resolveAppendPaths(a *appendSlices, dir string) {
+	for i, d := range a.CatalogDirs {
+		a.CatalogDirs[i] = resolveFilesystemPath(dir, d)
+	}
+	resolvePluginURIs(a.Mutator, dir)
+	resolvePluginURIs(a.Policy, dir)
+	resolvePluginURIs(a.Linter, dir)
+	resolvePluginURIs(a.Importer, dir)
+}
+
+// resolvePluginURIs resolves each ref's relative filesystem URI against dir.
+// Registry references (LooksLikeOCIURI) and already-absolute paths are left
+// untouched — only a local, declaring-file-relative plugin path is anchored.
+func resolvePluginURIs(refs []PluginRef, dir string) {
+	for i := range refs {
+		u := refs[i].URI
+		if u == "" || filepath.IsAbs(u) || LooksLikeOCIURI(u) {
+			continue
+		}
+		if abs, err := filepath.Abs(filepath.Join(dir, u)); err == nil {
+			refs[i].URI = abs
+		}
+	}
 }
 
 // loadGlobalLayer reads the explicit global config layer. Only the

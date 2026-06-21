@@ -249,9 +249,18 @@ func TestResolveCascadeAppendAndTopLevel(t *testing.T) {
 	if rw.Root() != root {
 		t.Fatalf("Root: got %q; want %q (root carries the only workspace: block)", rw.Root(), root)
 	}
-	// catalog_dirs: base + global append + root append (the bare child carries none).
+	// catalog_dirs: base + global append + root append (the bare child carries
+	// none). Each entry is resolved to absolute against the dir of the file that
+	// DECLARED it — the global append against the global file's dir, the root
+	// base+append against the root dir — proving declaring-file resolution, not
+	// a single shared base.
+	gdir := filepath.Dir(gpath)
 	got := rw.Config().Workspace.CatalogDirs
-	want := []string{"base", "g", "p"}
+	want := []string{
+		filepath.Join(root, "base"),
+		filepath.Join(gdir, "g"),
+		filepath.Join(root, "p"),
+	}
 	if len(got) != len(want) {
 		t.Fatalf("CatalogDirs: got %v; want %v", got, want)
 	}
@@ -263,6 +272,49 @@ func TestResolveCascadeAppendAndTopLevel(t *testing.T) {
 	// default_registry cascades top-level: child (nearest) overrides root and global.
 	if reg := rw.Config().DefaultRegistry; reg != "child.io" {
 		t.Errorf("DefaultRegistry: got %q; want child.io (bare child rung nearer-overrides)", reg)
+	}
+}
+
+// TestResolveDeclaringFilePaths pins declaring-file path resolution and its
+// idempotence across cascade layers: a relative path anchors to the dir of the
+// file that wrote it; an absolute value carried from a farther layer is NOT
+// re-anchored when a nearer layer overlays; and scheme URIs (oci://) and
+// absolute paths pass through untouched.
+func TestResolveDeclaringFilePaths(t *testing.T) {
+	root := t.TempDir() // sets env, not parallel
+	gdir := t.TempDir()
+	gpath := filepath.Join(gdir, "global.yaml")
+	// Global declares a base linter plugin (relative, anchored to gdir) and an
+	// oci policy plugin via append (scheme URI, must pass through).
+	write(t, gpath, "plugins:\n  linter:\n    - uri: ./glob.wasm\n  policy_append:\n    - uri: oci://h/p:1\n")
+	t.Setenv("AGGREGA_CONFIG", gpath)
+	// Root: the workspace: marker, no plugins.linter (so the global's base
+	// survives the overlay — the idempotence case), plus a relative and an
+	// absolute mutator.
+	absPlugin := filepath.Join(root, "abs", "m.wasm")
+	write(t, filepath.Join(root, ".aggrega-config.yaml"),
+		"workspace: {}\nplugins:\n  mutator:\n    - uri: ./rel.wasm\n    - uri: "+absPlugin+"\n")
+
+	rw, err := workspaceconfig.Resolve(root, "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	cfg := rw.Config()
+	// linter base was declared in the global file → anchored to gdir, and the
+	// root layer's overlay must NOT re-anchor that absolute to root.
+	if got, want := cfg.Plugins.Linter[0].URI, filepath.Join(gdir, "glob.wasm"); got != want {
+		t.Errorf("linter URI: got %q; want %q (declaring file is the global; a nearer overlay must not re-anchor it)", got, want)
+	}
+	// oci:// append passes through unchanged.
+	if len(cfg.Plugins.Policy) != 1 || cfg.Plugins.Policy[0].URI != "oci://h/p:1" {
+		t.Errorf("policy URI: got %v; want [oci://h/p:1] (scheme URI not resolved)", cfg.Plugins.Policy)
+	}
+	// root mutator: relative → root-anchored; absolute → unchanged.
+	if got, want := cfg.Plugins.Mutator[0].URI, filepath.Join(root, "rel.wasm"); got != want {
+		t.Errorf("mutator[0]: got %q; want %q (relative anchored to declaring root)", got, want)
+	}
+	if got := cfg.Plugins.Mutator[1].URI; got != absPlugin {
+		t.Errorf("mutator[1]: got %q; want %q (absolute unchanged)", got, absPlugin)
 	}
 }
 
