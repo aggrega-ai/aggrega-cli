@@ -285,6 +285,13 @@ func isUnauthorized(err error) bool {
 // Names other than "localhost" are NOT resolved — a DNS name that
 // happens to point at 127.0.0.1 stays HTTPS, keeping the plaintext
 // decision independent of resolver state.
+//
+// This deliberately does not route through pkg/registryhost.Of: its
+// input is an already-parsed registry reference (no scheme, no
+// userinfo, no path), and the loopback check needs the host with the
+// port stripped and IPv6 brackets removed — the opposite of Of's
+// port-and-bracket-preserving authority extraction. Of would be an
+// identity no-op here, so routing through it would consolidate nothing.
 func isLoopbackRegistry(registry string) bool {
 	host := registry
 	if h, _, err := net.SplitHostPort(registry); err == nil {

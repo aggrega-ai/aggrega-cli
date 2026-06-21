@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -764,7 +765,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 			// For the EntityPuller path the bound host is the configured registry,
 			// not the bare identity's leading segment — ask the puller for it so the
 			// docker-login remediation points correctly.
-			host := registryHostOf(name)
+			host := registryhost.Of(name)
 			if rh, ok := puller.(interface{ RegistryHost() string }); ok {
 				host = rh.RegistryHost()
 			}
@@ -806,7 +807,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 		// docker-login pointer for an unauthorized registry); surface
 		// it on the diagnostic rather than leaving the raw transport
 		// failure to speak for itself.
-		if rem := oci.RemediationFor(err, registryHostOf(reference)); rem != "" {
+		if rem := oci.RemediationFor(err, registryhost.Of(reference)); rem != "" {
 			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w\n  %s", uri, err, rem)
 		}
 		return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
@@ -979,16 +980,6 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 	default:
 		return oci.WriteCached(workspaceRoot, cacheDir, uri, version, result.Bytes)
 	}
-}
-
-// registryHostOf returns the registry host segment of an OCI
-// repository reference (everything before the first "/") for
-// remediation messages. A reference without a "/" returns as-is.
-func registryHostOf(reference string) string {
-	if i := strings.Index(reference, "/"); i > 0 {
-		return reference[:i]
-	}
-	return reference
 }
 
 // readCacheSlotBytes reads the entity bytes from a cache slot. Tries

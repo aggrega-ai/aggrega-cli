@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
 
@@ -109,6 +110,11 @@ func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, 
 }
 
 func splitURL(sourceURL string) (host, urlPath string) {
+	// Host comes from the shared extractor so the cache-slot path agrees with
+	// the remediation strings on one host per artifact and never carries URL
+	// userinfo (credentials) into the on-disk path.
+	host = registryhost.Of(sourceURL)
+
 	trimmed := sourceURL
 	trimmed = strings.TrimPrefix(trimmed, "oci://")
 	trimmed = strings.TrimPrefix(trimmed, "https://")
@@ -119,11 +125,9 @@ func splitURL(sourceURL string) (host, urlPath string) {
 
 	idx := strings.Index(trimmed, "/")
 	if idx < 0 {
-		host = trimmed
 		urlPath = ""
 		return
 	}
-	host = trimmed[:idx]
 	rest := trimmed[idx+1:]
 	rest = strings.TrimSuffix(rest, "/")
 	if rest == "" {

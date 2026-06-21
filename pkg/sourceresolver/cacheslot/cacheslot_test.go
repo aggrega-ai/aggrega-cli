@@ -65,6 +65,32 @@ func TestSlotURLPathPercentEncoded(t *testing.T) {
 	}
 }
 
+// TestSlotStripsUserinfoFromHost proves the userinfo fix and that it does not
+// silently re-key conformant caches: a URL carrying credentials produces the
+// SAME slot path as the credential-free URL (so the cache key is the host, not
+// the credentials), and no credentials appear anywhere in the on-disk path.
+// TestSlotShape above pins the conformant path verbatim, so a regression that
+// changed host extraction for a normal URL would fail there.
+func TestSlotStripsUserinfoFromHost(t *testing.T) {
+	t.Parallel()
+	clean, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-oci-chart",
+		"oci://hub.aggrega.ai/charts/mariadb", "25.0.8", "sha256:abcdef0123456789")
+	if err != nil {
+		t.Fatalf("Slot clean: %v", err)
+	}
+	withCreds, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-oci-chart",
+		"oci://user:pw@hub.aggrega.ai/charts/mariadb", "25.0.8", "sha256:abcdef0123456789")
+	if err != nil {
+		t.Fatalf("Slot withCreds: %v", err)
+	}
+	if withCreds != clean {
+		t.Errorf("userinfo URL keyed a different slot than the clean URL:\n  creds %s\n  clean %s", withCreds, clean)
+	}
+	if strings.Contains(withCreds, "user:pw") || strings.Contains(withCreds, "@") {
+		t.Errorf("credentials leaked into cache-slot path: %s", withCreds)
+	}
+}
+
 func TestSlotEmptyWorkspaceRootRejected(t *testing.T) {
 	t.Parallel()
 	_, err := cacheslot.Slot("", ".aggrega/cache", "helm-oci-chart",
