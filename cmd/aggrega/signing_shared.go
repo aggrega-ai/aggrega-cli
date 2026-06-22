@@ -114,8 +114,11 @@ func ttyOrDefault(tty func() bool) func() bool {
 // and `aggrega push`. A non-empty KeyPath selects the offline keyed signer,
 // reading the held PEM from disk; otherwise the live keyless signer is
 // constructed. The public-good Sigstore endpoint defaults are applied here —
-// the one home for endpoint defaulting — so an unset Fulcio/Rekor/timestamp
-// URL falls back to the community-operated instances.
+// the one home for endpoint defaulting — so an unset Fulcio/Rekor URL falls
+// back to the community-operated instances. The RFC3161 timestamp authority is
+// not defaulted: it is opt-in, set only when the caller supplies one, because
+// keyless signing's trusted timestamp comes from Rekor's transparency-log
+// inclusion rather than a separate timestamp authority.
 func buildSigner(p signerParams) (signing.Signer, error) {
 	if p.KeyPath != "" {
 		pem, err := os.ReadFile(p.KeyPath)
@@ -133,15 +136,11 @@ func buildSigner(p signerParams) (signing.Signer, error) {
 	if rekor == "" {
 		rekor = signing.DefaultRekorURL
 	}
-	timestamp := p.TimestampURL
-	if timestamp == "" {
-		timestamp = signing.DefaultTimestampURL
-	}
 	return &signing.KeylessSigner{
 		IDToken:      p.IDToken,
 		FulcioURL:    fulcio,
 		RekorURL:     rekor,
-		TimestampURL: timestamp,
+		TimestampURL: p.TimestampURL,
 	}, nil
 }
 

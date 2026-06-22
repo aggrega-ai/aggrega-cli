@@ -156,8 +156,10 @@ func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 }
 
 // TestBuildSignerDefaultsToPublicGood proves that with no URL flags or
-// config, buildSigner produces a keyless signer carrying the public-good
-// Sigstore endpoint defaults.
+// config, buildSigner produces a keyless signer that defaults Fulcio and Rekor
+// to the public-good Sigstore instances. The RFC3161 timestamp authority is
+// NOT defaulted — it is opt-in, so TimestampURL stays empty unless supplied;
+// the keyless trusted timestamp comes from Rekor's transparency-log inclusion.
 func TestBuildSignerDefaultsToPublicGood(t *testing.T) {
 	t.Parallel()
 	signer, err := buildSigner(signerParams{IDToken: "tok"})
@@ -174,8 +176,32 @@ func TestBuildSignerDefaultsToPublicGood(t *testing.T) {
 	if keyless.RekorURL != signing.DefaultRekorURL {
 		t.Errorf("RekorURL = %q, want default %q", keyless.RekorURL, signing.DefaultRekorURL)
 	}
-	if keyless.TimestampURL != signing.DefaultTimestampURL {
-		t.Errorf("TimestampURL = %q, want default %q", keyless.TimestampURL, signing.DefaultTimestampURL)
+	if keyless.TimestampURL != "" {
+		t.Errorf("TimestampURL = %q, want empty (timestamp authority is opt-in, not defaulted)", keyless.TimestampURL)
+	}
+}
+
+// TestBuildSignerTimestampOptIn proves the RFC3161 timestamp authority is
+// honored when supplied (the opt-in path), while Fulcio and Rekor still take
+// their public-good defaults for the unset fields.
+func TestBuildSignerTimestampOptIn(t *testing.T) {
+	t.Parallel()
+	signer, err := buildSigner(signerParams{
+		IDToken:      "tok",
+		TimestampURL: "https://tsa.private/api/v1/timestamp",
+	})
+	if err != nil {
+		t.Fatalf("buildSigner: %v", err)
+	}
+	keyless := signer.(*signing.KeylessSigner)
+	if keyless.TimestampURL != "https://tsa.private/api/v1/timestamp" {
+		t.Errorf("TimestampURL = %q, want the explicitly-supplied endpoint", keyless.TimestampURL)
+	}
+	if keyless.FulcioURL != signing.DefaultFulcioURL {
+		t.Errorf("FulcioURL = %q, want default for the unset field", keyless.FulcioURL)
+	}
+	if keyless.RekorURL != signing.DefaultRekorURL {
+		t.Errorf("RekorURL = %q, want default for the unset field", keyless.RekorURL)
 	}
 }
 
