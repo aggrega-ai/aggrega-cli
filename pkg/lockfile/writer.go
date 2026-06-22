@@ -137,6 +137,13 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, e := range lf.Entities {
 		entryCopy := e
 		entryCopy.ReferencedFrom = sortedCopy(e.ReferencedFrom)
+		// The Signature pointer is shared by the struct-copy; clone it so a
+		// caller mutating the output cannot reach back into the input. The
+		// value has no slices, so a shallow clone of the struct suffices.
+		if e.Signature != nil {
+			sig := *e.Signature
+			entryCopy.Signature = &sig
+		}
 		out.Entities[i] = entryCopy
 	}
 	sort.Slice(out.Entities, func(i, j int) bool {

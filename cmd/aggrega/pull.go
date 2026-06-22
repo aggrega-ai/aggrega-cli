@@ -516,6 +516,17 @@ func pullRun(cfg pullConfig) error {
 			cl.SourceArtifacts = sourceArtifacts
 
 			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg)
+			// Lock-time signature verification: verify each registry-resolved
+			// entity's signature against the registry's trust policy, record
+			// the verified fact, and cache the bundle for air-gapped re-verify.
+			// Pull verifies; build reads the recorded fact and never re-verifies
+			// (the AOT boundary). Skipped under workspace.offline (no network to
+			// fetch referrers).
+			if !wsCfg.Offline {
+				if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir); err != nil {
+					return fmt.Errorf("verify signatures: %w", err)
+				}
+			}
 			if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
 				return fmt.Errorf("write lockfile: %w", err)
 			}

@@ -69,13 +69,22 @@ type Config struct {
 	ParseCache ParseCacheConfig `yaml:"parse_cache"`
 
 	// Registries carries per-registry settings keyed by host. A registry
-	// absent from this list uses the defaults (signatures not required).
+	// absent from this list uses the defaults: a present signature is
+	// verified, and an absent signature is tolerated (except for the
+	// mandatory hub baseline).
 	Registries []RegistryConfig `yaml:"registries"`
+
+	// SkipSignatureVerification is the global, loud opt-out: when true,
+	// signature verification is disabled across every registry, including
+	// the mandatory hub baseline. It exists for break-glass and
+	// development scenarios and is never silent — every pull logs a
+	// prominent warning naming that verification was globally disabled.
+	// Defaults to false.
+	SkipSignatureVerification bool `yaml:"skip_signature_verification"`
 }
 
-// RegistryConfig carries settings scoped to one OCI registry host. The
-// shape is forward-compatible: per-registry trust settings beyond
-// RequiresSignatures are additive.
+// RegistryConfig carries settings scoped to one OCI registry host,
+// including its signature trust policy.
 type RegistryConfig struct {
 	// Host is the registry these settings apply to (e.g.
 	// "hub.aggrega.ai"), matched against the host of a push/pull target.
@@ -84,7 +93,48 @@ type RegistryConfig struct {
 	// registry outright and signs a push to it by default. There is no
 	// override: an unsigned push to a signature-requiring registry always
 	// halts. Defaults to false.
-	RequiresSignatures bool `yaml:"requires_signatures"`
+	RequiresSignatures bool `yaml:"requires_signatures,omitempty"`
+	// TrustedIdentities is the OR-set of keyless signing identities
+	// accepted for artifacts pulled from this registry. A signature
+	// verifies when its certificate matches ANY one entry. Used by the
+	// keyless verification path.
+	TrustedIdentities []TrustedIdentity `yaml:"trusted_identities,omitempty"`
+	// PublicKey is a pinned cosign-compatible public-key PEM (inline) for
+	// keyed-mode registries. When set, signatures from this registry are
+	// verified offline against this key rather than against keyless
+	// identities.
+	PublicKey string `yaml:"public_key,omitempty"`
+	// TrustedRoot is an optional path to a pinned Sigstore trust-root
+	// bundle for air-gapped keyless verification. When set, the keyless
+	// anchor is loaded from this file with no network; when empty, the
+	// real public-good trust root is fetched and cached.
+	TrustedRoot string `yaml:"trusted_root,omitempty"`
+	// Advisory, when true, downgrades a hard verification failure for
+	// this registry to a warning rather than halting the pull. The
+	// verification still runs and the failure is reported; the pull
+	// proceeds. Defaults to false (failures halt).
+	Advisory bool `yaml:"advisory,omitempty"`
+	// SkipVerification, when true, skips signature verification for this
+	// registry entirely. Unlike the global opt-out, this is scoped to one
+	// host. Defaults to false.
+	SkipVerification bool `yaml:"skip_verification,omitempty"`
+}
+
+// TrustedIdentity is one acceptable keyless signing identity: a
+// certificate subject (the OIDC identity) paired with the OIDC issuer that
+// vouched for it. A registry's TrustedIdentities is the OR-set a keyless
+// signature is matched against.
+type TrustedIdentity struct {
+	// Identity is the certificate subject alternative name — the OIDC
+	// identity bound into the short-lived signing certificate (e.g. a
+	// maintainer email or a CI workflow URI).
+	Identity string `yaml:"identity,omitempty"`
+	// IdentityRegexp, when set, matches the certificate subject as a
+	// regular expression instead of an exact string.
+	IdentityRegexp string `yaml:"identity_regexp,omitempty"`
+	// Issuer is the OIDC issuer URL that issued the identity token (e.g.
+	// "https://accounts.google.com").
+	Issuer string `yaml:"issuer"`
 }
 
 // RegistryRequiresSignatures reports whether the registry at host is
@@ -99,6 +149,52 @@ func (c Config) RegistryRequiresSignatures(host string) bool {
 		}
 	}
 	return false
+}
+
+// RegistryTrustPolicy returns the resolved trust policy for host and
+// whether a trust policy applies (an explicit per-registry entry, or the
+// embedded hub baseline). An unconfigured non-hub host returns the zero
+// RegistryConfig (Host set) and found=false: callers apply the
+// default-for-unknown policy (verify-if-a-signature-is-present) to such a
+// host. The hub baseline host always returns found=true with the embedded
+// baseline (overridden by an operator entry when present), so its
+// mandatory signature requirement holds even with no operator config. Host
+// matching is exact; callers normalise the host before the lookup.
+func (c Config) RegistryTrustPolicy(host string) (RegistryConfig, bool) {
+	for _, r := range c.Registries {
+		if r.Host == host {
+			return r, true
+		}
+	}
+	if host == HubBaselineHost {
+		return DefaultBaseline(), true
+	}
+	return RegistryConfig{Host: host}, false
+}
+
+// HubBaselineHost is the registry whose signature baseline is mandatory
+// and default-on. Pulls from this host verify signatures against the
+// embedded official baseline (overridable by operator config) and refuse
+// an unsigned artifact, regardless of whether the host appears in
+// Registries.
+const HubBaselineHost = "hub.aggrega.ai"
+
+// DefaultBaseline returns the embedded official trust baseline for the
+// aggrega hub: the OR-set of the maintainer identity and the CI
+// (GitHub-Actions-OIDC) identity, signatures required. It ships with
+// aggrega-cli as a distributable policy fragment rather than a hardcoded
+// rule — operator config layers over it via `aggrega registry add`, and
+// enterprises distribute their own baseline. The returned value is a fresh
+// copy the caller may mutate.
+func DefaultBaseline() RegistryConfig {
+	return RegistryConfig{
+		Host:               HubBaselineHost,
+		RequiresSignatures: true,
+		TrustedIdentities: []TrustedIdentity{
+			{Identity: "m.ferrero@cognitio.it", Issuer: "https://accounts.google.com"},
+			{IdentityRegexp: `^https://github\.com/aggrega-ai/`, Issuer: "https://token.actions.githubusercontent.com"},
+		},
+	}
 }
 
 // WorkspaceConfig is the workspace root marker. Its PRESENCE marks the

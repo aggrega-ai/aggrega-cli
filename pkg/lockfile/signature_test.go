@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package lockfile_test
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+)
+
+func signedLockfile(stamp string) *lockfile.Lockfile {
+	return &lockfile.Lockfile{
+		Version:     1,
+		Release:     "release.yaml",
+		GeneratedAt: stamp,
+		Entities: []lockfile.Entity{
+			{
+				URI:             "z-server",
+				ResolvedVersion: "1.0.0",
+				Digest:          "sha256:zzzz",
+				Signature: &lockfile.VerifiedSignature{
+					Mode:         "keyless",
+					Identity:     "m.ferrero@cognitio.it",
+					Issuer:       "https://accounts.google.com",
+					BundleDigest: "sha256:bbbb",
+				},
+			},
+			{
+				URI:             "a-db",
+				ResolvedVersion: "2.0.0",
+				Digest:          "sha256:aaaa",
+				Signature: &lockfile.VerifiedSignature{
+					Mode:         "keyed",
+					BundleDigest: "sha256:cccc",
+				},
+			},
+			// An unsigned entity carries no signature record.
+			{URI: "m-cache", ResolvedVersion: "3.0.0", Digest: "sha256:dddd"},
+		},
+	}
+}
+
+// TestVerifiedSignatureByteIdentity proves two independent WriteLockfile
+// invocations over the same in-memory lockfile carrying verified-signature
+// facts produce byte-identical output — the deterministic-output invariant
+// extends to the signature field.
+func TestVerifiedSignatureByteIdentity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const stamp = "2026-06-22T00:00:00Z"
+	pathA := filepath.Join(dir, "a.lock")
+	pathB := filepath.Join(dir, "b.lock")
+
+	if err := lockfile.WriteLockfile(pathA, signedLockfile(stamp)); err != nil {
+		t.Fatalf("write A: %v", err)
+	}
+	if err := lockfile.WriteLockfile(pathB, signedLockfile(stamp)); err != nil {
+		t.Fatalf("write B: %v", err)
+	}
+	a, _ := os.ReadFile(pathA)
+	b, _ := os.ReadFile(pathB)
+	if !bytes.Equal(a, b) {
+		t.Fatalf("lockfile bytes differ across independent writes:\n--- A ---\n%s\n--- B ---\n%s", a, b)
+	}
+}
+
+// TestVerifiedSignatureRoundTrip proves the signature fact survives a
+// write/load round-trip with all fields intact, and that an unsigned
+// entity loads with a nil signature.
+func TestVerifiedSignatureRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rt.lock")
+	if err := lockfile.WriteLockfile(path, signedLockfile("2026-06-22T00:00:00Z")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	byURI := map[string]lockfile.Entity{}
+	for _, e := range lf.Entities {
+		byURI[e.URI] = e
+	}
+
+	keyless := byURI["z-server"].Signature
+	if keyless == nil {
+		t.Fatal("z-server should carry a signature")
+	}
+	if keyless.Mode != "keyless" || keyless.Identity != "m.ferrero@cognitio.it" ||
+		keyless.Issuer != "https://accounts.google.com" || keyless.BundleDigest != "sha256:bbbb" {
+		t.Errorf("keyless signature round-trip lost data: %+v", keyless)
+	}
+
+	keyed := byURI["a-db"].Signature
+	if keyed == nil || keyed.Mode != "keyed" || keyed.BundleDigest != "sha256:cccc" {
+		t.Errorf("keyed signature round-trip lost data: %+v", keyed)
+	}
+	if keyed.Identity != "" || keyed.Issuer != "" {
+		t.Errorf("keyed signature should carry no identity/issuer: %+v", keyed)
+	}
+
+	if byURI["m-cache"].Signature != nil {
+		t.Error("unsigned entity should load with a nil signature")
+	}
+}
+
+// TestCanonicaliseDoesNotAliasSignature proves WriteLockfile's
+// canonicalise deep-copies the signature pointer so it does not alias the
+// caller's value (the maintenance hazard the canonicaliser guards against).
+func TestCanonicaliseDoesNotAliasSignature(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	lf := signedLockfile("2026-06-22T00:00:00Z")
+	orig := lf.Entities[0].Signature
+	if err := lockfile.WriteLockfile(filepath.Join(dir, "c.lock"), lf); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// The caller's signature pointer is unchanged after the write.
+	if lf.Entities[0].Signature != orig {
+		t.Error("WriteLockfile mutated the caller's signature pointer")
+	}
+}

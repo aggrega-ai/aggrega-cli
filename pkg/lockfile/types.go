@@ -52,10 +52,37 @@ type Lockfile struct {
 // pair that anchor deterministic builds. ReferencedFrom records the
 // authoring-site origins that pulled the URI into closure.
 type Entity struct {
-	URI             string   `yaml:"uri"`
-	ResolvedVersion string   `yaml:"resolved_version"`
-	Digest          string   `yaml:"digest"`
-	ReferencedFrom  []string `yaml:"referenced_from"`
+	URI             string             `yaml:"uri"`
+	ResolvedVersion string             `yaml:"resolved_version"`
+	Digest          string             `yaml:"digest"`
+	ReferencedFrom  []string           `yaml:"referenced_from"`
+	Signature       *VerifiedSignature `yaml:"signature,omitempty"`
+}
+
+// VerifiedSignature records that an entity's signature was verified at
+// pull time, and how. It is the durable answer to "why is this entity
+// trusted": the mode that verified it, the identity/issuer (keyless) or
+// pinned-key fingerprint (keyed) that matched, and the content-addressed
+// digest of the signature bundle cached in the closure for air-gapped
+// re-verification. Build does not re-run verification; it reads this fact
+// and re-verifies the cached bundle's digest only.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical
+// key emission, matching the Lockfile-wide discipline.
+type VerifiedSignature struct {
+	// BundleDigest is the SHA-256 (sha256:...) of the cached signature
+	// bundle blob stored in the closure. It both names the cache blob and
+	// is the integrity gate for an air-gapped re-verify.
+	BundleDigest string `yaml:"bundle_digest"`
+	// Identity is the verified certificate subject for a keyless
+	// signature (empty for keyed). Records which trusted identity matched.
+	Identity string `yaml:"identity,omitempty"`
+	// Issuer is the verified OIDC issuer for a keyless signature (empty
+	// for keyed).
+	Issuer string `yaml:"issuer,omitempty"`
+	// Mode is "keyless" or "keyed" — the verification mode that admitted
+	// the signature.
+	Mode string `yaml:"mode"`
 }
 
 // SchemaLibrary carries a SchemaLibrary pin plus a Consumers list
