@@ -246,9 +246,7 @@ spec:
 	if err := json.Unmarshal(body, &req); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
-	if err := srv.handle(&req); err != nil {
-		t.Fatalf("handle: %v", err)
-	}
+	driveHandle(t, srv, &req, &out)
 
 	// The drift skip must NOT have reached Tier-3. This is the ordering guard: a
 	// SetPins reorder would surface here as a puller call.
@@ -462,9 +460,7 @@ spec:
 	if err := json.Unmarshal(body, &req); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
-	if err := srv.handle(&req); err != nil {
-		t.Fatalf("handle: %v", err)
-	}
+	driveHandle(t, srv, &req, &out)
 
 	msgs := drainFramedMessages(t, &out)
 	var sawResponse bool

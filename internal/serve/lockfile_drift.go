@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -76,9 +77,9 @@ func (s *Server) loadAndCheckLockfileAtStartup() {
 // loop per the LSP-canonical ordering.
 // Returns the loaded lockfile (nil on load failure) so the caller can thread
 // it into the render pipeline for build-time source-artifact resolution.
-func (s *Server) verifyDriftAndPublish(lockfilePath string, cl closure.Closure) *lockfile.Lockfile {
+func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath string, cl closure.Closure) *lockfile.Lockfile {
 	lf := s.verifyDriftAndUpdateCache(lockfilePath, cl)
-	_ = s.publishDiagnostics(lockfilePath)
+	_ = s.publishDiagnostics(ctx, lockfilePath)
 	return lf
 }
 

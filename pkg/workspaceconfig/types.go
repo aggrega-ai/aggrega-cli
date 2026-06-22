@@ -63,10 +63,11 @@ type Config struct {
 	AutoPull         bool   `yaml:"auto_pull"`
 	ArtifactCacheDir string `yaml:"artifact_cache_dir"`
 
-	Build      BuildConfig      `yaml:"build"`
-	Plugins    PluginsConfig    `yaml:"plugins"`
-	Lint       LintConfig       `yaml:"lint"`
-	ParseCache ParseCacheConfig `yaml:"parse_cache"`
+	Build       BuildConfig       `yaml:"build"`
+	Plugins     PluginsConfig     `yaml:"plugins"`
+	Lint        LintConfig        `yaml:"lint"`
+	ParseCache  ParseCacheConfig  `yaml:"parse_cache"`
+	Concurrency ConcurrencyConfig `yaml:"concurrency"`
 
 	// Registries carries per-registry settings keyed by host. A registry
 	// absent from this list uses the defaults: a present signature is
@@ -337,6 +338,18 @@ type ParseCacheConfig struct {
 	MaxBytes int `yaml:"max_bytes"`
 }
 
+// ConcurrencyConfig carries the daemon's request-dispatch concurrency
+// settings. The daemon reads requests off a single stdin stream and
+// runs each through a worker pool; PoolSize sets how many worker
+// goroutines drain the bounded request queue.
+type ConcurrencyConfig struct {
+	// PoolSize sets the number of worker goroutines servicing the
+	// request queue. Default 1, which runs requests serially in
+	// arrival order. Values below 1 clamp to 1 at dispatch-loop
+	// startup.
+	PoolSize int `yaml:"pool_size"`
+}
+
 // Default returns a Config populated with the documented defaults.
 // Eight documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
@@ -370,6 +383,9 @@ func Default() Config {
 		ParseCache: ParseCacheConfig{
 			MaxEntries: 1000,
 			MaxBytes:   100_000_000,
+		},
+		Concurrency: ConcurrencyConfig{
+			PoolSize: 1,
 		},
 	}
 }

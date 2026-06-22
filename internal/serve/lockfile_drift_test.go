@@ -90,9 +90,11 @@ func TestPublishDiagnosticsWireShape(t *testing.T) {
 	srv.diagnostics["/tmp/release.lock"] = []Diagnostic{
 		{Line: 1, Column: 1, Severity: "warning", Message: "drifted"},
 	}
-	if err := srv.publishDiagnostics("/tmp/release.lock"); err != nil {
+	ctx1, flush1 := serializerContext(t, &out)
+	if err := srv.publishDiagnostics(ctx1, "/tmp/release.lock"); err != nil {
 		t.Fatalf("publishDiagnostics drift state: %v", err)
 	}
+	flush1()
 
 	notif := decodeOneNotification(t, &out)
 	if notif.Method != "aggrega/publishDiagnostics" {
@@ -117,9 +119,11 @@ func TestPublishDiagnosticsWireShape(t *testing.T) {
 
 	// Drift-cleared state: empty array means "clear this entry."
 	delete(srv.diagnostics, "/tmp/release.lock")
-	if err := srv.publishDiagnostics("/tmp/release.lock"); err != nil {
+	ctx2, flush2 := serializerContext(t, &out)
+	if err := srv.publishDiagnostics(ctx2, "/tmp/release.lock"); err != nil {
 		t.Fatalf("publishDiagnostics drift-cleared state: %v", err)
 	}
+	flush2()
 	notif = decodeOneNotification(t, &out)
 	if err := json.Unmarshal(notif.Params, &params); err != nil {
 		t.Fatalf("unmarshal cleared-state params: %v", err)

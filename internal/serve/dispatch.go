@@ -110,19 +110,29 @@ type incomingMessage struct {
 }
 
 // dispatchLoop spawns a reader goroutine to consume stdin and runs a
-// select-driven dispatcher in the main goroutine. The reader peeks
+// select-driven submission loop in the main goroutine. The reader peeks
 // at each message's method field: when it sees aggrega/shutdown it
 // creates a time.Timer for the drain budget and emits the timer's
 // channel onto drainTimerInstall (cap 1) so the main loop can begin
 // watching it. All messages — including the shutdown notification —
-// are also forwarded onto the message channel so dispatchShutdown
-// runs in the main goroutine and the no-mutex invariant holds.
+// are forwarded onto the message channel; the main loop assigns each an
+// arrival sequence and submits it to the worker pool.
+//
+// Each message off the single stdin stream gets a dense, gap-free
+// arrival sequence. The id-order stdout serializer emits responses in
+// that sequence regardless of which worker completes first, so output
+// is in request order. At the default pool size of one, workers run
+// serially in arrival order and the serializer's reordering buffer
+// stays empty. The serializer is the sole owner of stdout, so
+// concurrent workers never race the writer.
 //
 // The drain timer is arrival-based: it starts when the reader parses
 // the shutdown notification, not when the main loop observes the
 // notification (which could be delayed by an in-flight handler).
 // Worst-case exit latency from the client's POV is
-// max(in_flight_handler_runtime, drainTimeout).
+// max(in_flight_handler_runtime, drainTimeout). On every exit path the
+// loop drains the pool (bounded by serverCtx cancellation) and flushes
+// the serializer before returning.
 //
 // Per-request error handling:
 //   - Header parse error (malformed framing): logged to stderr, loop
@@ -156,6 +166,23 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 
 	messages := make(chan incomingMessage)
 	drainTimerInstall := make(chan (<-chan time.Time), 1)
+
+	// The serializer owns stdout for the dispatch loop's lifetime; every
+	// write surface routes through it so concurrent workers never race
+	// the single writer. It starts before the pool so a worker can never
+	// emit a frame before the serializer is receiving.
+	ser := newSerializer(s.out)
+	go ser.run()
+
+	// The worker pool runs handlers off the bounded queue. A pool size
+	// of one runs requests serially in arrival order; the value comes
+	// from workspace config, clamped to a minimum of one. Each worker
+	// closes the request's ordered serializer slot exactly once after
+	// the handler returns.
+	pool := newWorkerPool(s.wsConfig.Concurrency.PoolSize, func(q queuedRequest) {
+		body := s.handle(ser, q.seq, q.req)
+		ser.emit(q.seq, body)
+	})
 
 	go func() {
 		defer close(messages)
@@ -200,38 +227,109 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 		}
 	}()
 
+	// teardown drains the pool (waiting for in-flight workers, bounded by
+	// serverCtx cancellation) and then flushes and stops the serializer,
+	// returning any fatal stdout write error the serializer reported. It
+	// runs on every loop exit — EOF, read error, or drain-timer fire —
+	// so exit stays bounded by the drain budget with workers in flight.
+	teardown := func() error {
+		pool.drain()
+		ser.closeAndWait()
+		select {
+		case err := <-ser.errCh:
+			return err
+		default:
+			return nil
+		}
+	}
+
+	// seq is the dense, monotonic, gap-free arrival sequence assigned to
+	// every message off the single stdin stream. It is the canonical
+	// request order the serializer emits responses in. Each message
+	// consumes exactly one seq, and each seq's ordered slot is closed
+	// exactly once — by a worker after the handler returns, or directly
+	// here for a message that never reaches a worker (a parse failure).
+	var seq int64
 	var drainCh <-chan time.Time
 	for {
 		select {
 		case d := <-drainTimerInstall:
 			drainCh = d
+		case werr := <-ser.errCh:
+			// A fatal stdout write failed; a broken stdout terminates
+			// the daemon. Tear down the pool and serializer, then
+			// surface the error so the process exits non-zero.
+			_ = teardown()
+			return werr
 		case msg, ok := <-messages:
 			if !ok {
-				return nil
+				return teardown()
 			}
 			if msg.err != nil {
 				if errors.Is(msg.err, io.EOF) {
-					return nil
+					return teardown()
 				}
+				_ = teardown()
 				return fmt.Errorf("read message: %w", msg.err)
 			}
+			seq++
 			var req jsonRPCRequest
 			if jerr := json.Unmarshal(msg.body, &req); jerr != nil {
-				if werr := s.writeError(nil, jsonRPCParseError, "parse error: "+jerr.Error()); werr != nil {
-					return werr
+				body, merr := marshalErrorResponse(nil, jsonRPCParseError, "parse error: "+jerr.Error())
+				if merr != nil {
+					_ = teardown()
+					return merr
 				}
+				ser.emit(seq, body)
 				continue
 			}
-			if err := s.handle(&req); err != nil {
-				return err
-			}
+			pool.submit(queuedRequest{seq: seq, req: &req})
 		case <-drainCh:
-			return nil
+			return teardown()
 		}
 	}
 }
 
-// handle dispatches a parsed request to the appropriate per-method
+// handle dispatches one request and returns the response body for its
+// ordered serializer slot (nil when the request produces no response —
+// a notification, a shutdown, or a request dropped during drain — in
+// which case the worker closes the slot with a body-less done-frame).
+//
+// The per-request sink carrying the request's serializer and arrival
+// sequence is installed on the context here; every write surface the
+// handler reaches reads it back, so there is a single route from any
+// handler to stdout. Response surfaces record their body on the sink;
+// notification surfaces emit immediately through the serializer.
+func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte {
+	if s.testInDispatchHook != nil {
+		s.testInDispatchHook()
+	}
+	// Per-request context derived from the session-level serverCtx.
+	// dispatchLoop initialises serverCtx before spawning the reader
+	// goroutine and the worker pool (the test harness initialises it at
+	// Server construction), so this read is never concurrent with a
+	// write. When the reader cancels serverCtx on aggrega/shutdown
+	// arrival, this child cancels too, so an in-flight handler observes
+	// ctx.Err() at its next interruption point and returns within the
+	// drain budget. cancel runs when handle returns, releasing the child
+	// promptly.
+	ctx, cancel := context.WithCancel(s.serverCtx)
+	defer cancel()
+	sink := &requestSink{ser: ser, seq: seq}
+	ctx = withRequestSink(ctx, sink)
+
+	if err := s.dispatch(ctx, req); err != nil {
+		// The only errors reaching here are genuine marshal failures of
+		// an otherwise-valid response — they cannot be reported to the
+		// client (the response is what failed to marshal), so log to
+		// stderr and close the slot with no body.
+		fmt.Fprintf(s.stderr, "  handle %s: %v\n", req.Method, err)
+		return nil
+	}
+	return sink.response
+}
+
+// dispatch routes a parsed request to the appropriate per-method
 // handler. The method routing table is the load-bearing surface for
 // the daemon's wire protocol: adding a new method means adding a
 // case here.
@@ -243,20 +341,7 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 // applies uniformly. aggrega/shutdown itself is exempt — receiving
 // a second shutdown notification during drain is a no-op (the flag
 // is already set).
-func (s *Server) handle(req *jsonRPCRequest) error {
-	if s.testInDispatchHook != nil {
-		s.testInDispatchHook()
-	}
-	// Per-request context derived from the session-level serverCtx.
-	// dispatchLoop initialises serverCtx before spawning the reader
-	// goroutine (the test harness initialises it at Server construction),
-	// so this read is never concurrent with a write. When the reader
-	// cancels serverCtx on aggrega/shutdown arrival, this child cancels
-	// too, so an in-flight handler observes ctx.Err() at its next
-	// interruption point and returns within the drain budget. cancel runs
-	// when handle returns, releasing the child promptly.
-	ctx, cancel := context.WithCancel(s.serverCtx)
-	defer cancel()
+func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
 	if req.Method == "aggrega/shutdown" {
 		return s.dispatchShutdown(ctx, req)
 	}
@@ -264,7 +349,7 @@ func (s *Server) handle(req *jsonRPCRequest) error {
 		if isNotification(req) {
 			return nil
 		}
-		return s.writeError(req.ID, errShuttingDown, "daemon shutting down")
+		return s.writeError(ctx, req.ID, errShuttingDown, "daemon shutting down")
 	}
 	switch req.Method {
 	case "aggrega/initialize":
@@ -290,7 +375,7 @@ func (s *Server) handle(req *jsonRPCRequest) error {
 	case "aggrega/releaseCandidates":
 		return s.dispatchReleaseCandidates(ctx, req)
 	default:
-		return s.writeError(req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
+		return s.writeError(ctx, req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
 	}
 }
 
@@ -306,12 +391,24 @@ func isNotification(req *jsonRPCRequest) bool {
 	return string(req.ID) == "null"
 }
 
-// writeResult marshals result as the response Result field and writes
-// the message to s.out.
-func (s *Server) writeResult(id json.RawMessage, result any) error {
+// emitResponse records a fully-marshalled response body on the
+// request's sink. It is the single route from every response write
+// surface to stdout: the dispatch path flushes the recorded body
+// through the serializer (the sole owner of the underlying writer) in
+// arrival-sequence order once the handler returns, so workers never
+// race the writer and responses emit in request order regardless of
+// which worker finishes first.
+func (s *Server) emitResponse(ctx context.Context, body []byte) error {
+	sinkFromContext(ctx).response = body
+	return nil
+}
+
+// writeResult marshals result as the response Result field and routes
+// the message through the request's serializer slot.
+func (s *Server) writeResult(ctx context.Context, id json.RawMessage, result any) error {
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
-		return s.writeError(id, jsonRPCInternalError, "marshal result: "+err.Error())
+		return s.writeError(ctx, id, jsonRPCInternalError, "marshal result: "+err.Error())
 	}
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
@@ -322,7 +419,23 @@ func (s *Server) writeResult(id json.RawMessage, result any) error {
 	if err != nil {
 		return fmt.Errorf("marshal response: %w", err)
 	}
-	return writeMessage(s.out, respBytes)
+	return s.emitResponse(ctx, respBytes)
+}
+
+// marshalErrorResponse encodes a code/message error envelope (no Data
+// field) into a wire body. Shared by writeError and the dispatch loop's
+// parse-error path so the error-envelope encoding has a single home.
+func marshalErrorResponse(id json.RawMessage, code int, message string) ([]byte, error) {
+	resp := jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error:   &jsonRPCError{Code: code, Message: message},
+	}
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("marshal error response: %w", err)
+	}
+	return respBytes, nil
 }
 
 // writeError writes an error-envelope response with the supplied code
@@ -334,17 +447,12 @@ func (s *Server) writeResult(id json.RawMessage, result any) error {
 // handler return — including envelopes carrying a populated Data
 // field — use writeErrorEnvelope instead so the Data reaches the
 // wire.
-func (s *Server) writeError(id json.RawMessage, code int, message string) error {
-	resp := jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error:   &jsonRPCError{Code: code, Message: message},
-	}
-	respBytes, err := json.Marshal(resp)
+func (s *Server) writeError(ctx context.Context, id json.RawMessage, code int, message string) error {
+	respBytes, err := marshalErrorResponse(id, code, message)
 	if err != nil {
-		return fmt.Errorf("marshal error response: %w", err)
+		return err
 	}
-	return writeMessage(s.out, respBytes)
+	return s.emitResponse(ctx, respBytes)
 }
 
 // writeErrorEnvelope writes a pre-constructed error envelope to the
@@ -358,7 +466,7 @@ func (s *Server) writeError(id json.RawMessage, code int, message string) error 
 // omitempty drops the Data field from the JSON encoding, so the wire
 // is byte-identical to today for envelopes that did not populate
 // Data.
-func (s *Server) writeErrorEnvelope(id json.RawMessage, env *jsonRPCError) error {
+func (s *Server) writeErrorEnvelope(ctx context.Context, id json.RawMessage, env *jsonRPCError) error {
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -368,7 +476,7 @@ func (s *Server) writeErrorEnvelope(id json.RawMessage, env *jsonRPCError) error
 	if err != nil {
 		return fmt.Errorf("marshal error response: %w", err)
 	}
-	return writeMessage(s.out, respBytes)
+	return s.emitResponse(ctx, respBytes)
 }
 
 // jsonRPCNotification is the wire shape for an outgoing JSON-RPC
@@ -386,10 +494,13 @@ type jsonRPCNotification struct {
 // aggrega/publishDiagnostics where the daemon initiates a message
 // outside the request/response cycle.
 //
-// Concurrency: writes from the main dispatch goroutine. The reader
-// goroutine reads stdin and pushes onto channels; it never touches
-// s.out. No race.
-func (s *Server) writeNotification(method string, params any) error {
+// Notifications carry no id and have no id-correlation contract, so the
+// serializer emits them immediately on receipt, interleaved between
+// whatever ordered response frames surround them, rather than holding
+// them for arrival-sequence ordering. Routing still goes through the
+// serializer so it remains the sole owner of stdout and no worker races
+// the writer.
+func (s *Server) writeNotification(ctx context.Context, method string, params any) error {
 	body, err := json.Marshal(jsonRPCNotification{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -398,7 +509,8 @@ func (s *Server) writeNotification(method string, params any) error {
 	if err != nil {
 		return fmt.Errorf("marshal notification: %w", err)
 	}
-	return writeMessage(s.out, body)
+	sinkFromContext(ctx).ser.emitNow(body)
+	return nil
 }
 
 // publishDiagnosticsParams is the params shape for the
@@ -418,12 +530,12 @@ type publishDiagnosticsParams struct {
 // "clear" signal). Callers invoke this after every state mutation
 // to s.diagnostics so the extension's DiagnosticCollection stays
 // in sync with the daemon's cache.
-func (s *Server) publishDiagnostics(file string) error {
+func (s *Server) publishDiagnostics(ctx context.Context, file string) error {
 	diags := s.diagnostics[file]
 	if diags == nil {
 		diags = []Diagnostic{}
 	}
-	return s.writeNotification("aggrega/publishDiagnostics", publishDiagnosticsParams{
+	return s.writeNotification(ctx, "aggrega/publishDiagnostics", publishDiagnosticsParams{
 		File:        file,
 		Diagnostics: diags,
 	})

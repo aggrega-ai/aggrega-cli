@@ -5,7 +5,6 @@ package serve
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -33,9 +32,7 @@ func TestDispatchInitializeIncludesWorkspaceRootAndConfigSource(t *testing.T) {
 	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 		t.Fatalf("unmarshal test request: %v", err)
 	}
-	if err := srv.dispatchInitialize(context.Background(), &reqBody); err != nil {
-		t.Fatalf("dispatchInitialize: %v", err)
-	}
+	driveHandle(t, srv, &reqBody, out)
 
 	resp := decodeOneResponse(t, out)
 	var result initializeResult
@@ -84,9 +81,7 @@ func TestDispatchInitializeConfigSourceReflectsPrecedence(t *testing.T) {
 			if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 				t.Fatalf("unmarshal test request: %v", err)
 			}
-			if err := srv.dispatchInitialize(context.Background(), &reqBody); err != nil {
-				t.Fatalf("dispatchInitialize: %v", err)
-			}
+			driveHandle(t, srv, &reqBody, out)
 			resp := decodeOneResponse(t, out)
 			var result initializeResult
 			if err := json.Unmarshal(resp.Result, &result); err != nil {
@@ -121,9 +116,7 @@ func TestDispatchInitializeCapabilitiesFieldUnchanged(t *testing.T) {
 	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 		t.Fatalf("unmarshal test request: %v", err)
 	}
-	if err := srv.dispatchInitialize(context.Background(), &reqBody); err != nil {
-		t.Fatalf("dispatchInitialize: %v", err)
-	}
+	driveHandle(t, srv, &reqBody, out)
 
 	resp := decodeOneResponse(t, out)
 	// Decode into a permissive map so we can verify the field key
@@ -162,9 +155,7 @@ func TestInitializeReportsWorkspaceMarkerAggregateGlob(t *testing.T) {
 	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if err := srv.dispatchInitialize(context.Background(), &reqBody); err != nil {
-		t.Fatalf("dispatchInitialize: %v", err)
-	}
+	driveHandle(t, srv, &reqBody, out)
 	resp := decodeOneResponse(t, out)
 	var result initializeResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
@@ -190,9 +181,7 @@ func TestInitializeReportsWorkspaceMarkerConfig(t *testing.T) {
 	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if err := srv.dispatchInitialize(context.Background(), &reqBody); err != nil {
-		t.Fatalf("dispatchInitialize: %v", err)
-	}
+	driveHandle(t, srv, &reqBody, out)
 	resp := decodeOneResponse(t, out)
 	var result initializeResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
@@ -220,9 +209,7 @@ func TestInitializeOmitsWorkspaceMarkerWhenExplicitRoot(t *testing.T) {
 	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if err := srv.dispatchInitialize(context.Background(), &reqBody); err != nil {
-		t.Fatalf("dispatchInitialize: %v", err)
-	}
+	driveHandle(t, srv, &reqBody, out)
 	resp := decodeOneResponse(t, out)
 	var generic map[string]any
 	if err := json.Unmarshal(resp.Result, &generic); err != nil {

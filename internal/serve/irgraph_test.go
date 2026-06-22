@@ -107,9 +107,7 @@ func TestIrGraphResponseWireShapePreservesData(t *testing.T) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
-	if err := srv.handle(&req); err != nil {
-		t.Fatalf("handle: %v", err)
-	}
+	driveHandle(t, srv, &req, &out)
 
 	// out now holds the framed response. Strip the header and
 	// inspect the body as a permissive map.

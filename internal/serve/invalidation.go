@@ -42,13 +42,13 @@ type invalidateResult struct {
 	Invalidated bool `json:"invalidated"`
 }
 
-func (s *Server) dispatchInvalidate(_ context.Context, req *jsonRPCRequest) error {
+func (s *Server) dispatchInvalidate(ctx context.Context, req *jsonRPCRequest) error {
 	var params invalidateParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result := s.handleInvalidate(params)
-	return s.writeResult(req.ID, result)
+	return s.writeResult(ctx, req.ID, result)
 }
 
 // handleInvalidate drops cache entries in response to an LSP

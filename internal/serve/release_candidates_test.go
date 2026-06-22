@@ -5,7 +5,6 @@ package serve
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -47,9 +46,7 @@ func TestDispatchReleaseCandidatesByContentKind(t *testing.T) {
 	if err := json.Unmarshal(req[bodyStart:], &reqBody); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
-	if err := srv.dispatchReleaseCandidates(context.Background(), &reqBody); err != nil {
-		t.Fatalf("dispatchReleaseCandidates: %v", err)
-	}
+	driveHandle(t, srv, &reqBody, out)
 	resp := decodeOneResponse(t, out)
 	var result releaseCandidatesResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {

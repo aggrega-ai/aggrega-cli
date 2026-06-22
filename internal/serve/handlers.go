@@ -77,12 +77,12 @@ type releaseCandidatesResult struct {
 // as a list so the IDE delegates Release detection to the daemon rather than
 // reimplementing it. Takes no params: the set is a property of the daemon's
 // workspace root, which it resolved at startup.
-func (s *Server) dispatchReleaseCandidates(_ context.Context, req *jsonRPCRequest) error {
+func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequest) error {
 	releases := walkForReleases(s.workspaceRoot)
 	if releases == nil {
 		releases = []string{}
 	}
-	return s.writeResult(req.ID, releaseCandidatesResult{Releases: releases})
+	return s.writeResult(ctx, req.ID, releaseCandidatesResult{Releases: releases})
 }
 
 type initializeResult struct {
@@ -107,14 +107,14 @@ type initializeResult struct {
 // negotiation occurs (s.positionEncoding is initialized to UTF-16
 // in Run before dispatchInitialize ever runs). Unknown encoding
 // strings in the client's list are ignored.
-func (s *Server) dispatchInitialize(_ context.Context, req *jsonRPCRequest) error {
+func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) error {
 	var params initializeParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	selected := selectPositionEncoding(params.Capabilities)
 	s.positionEncoding = selected
-	if err := s.writeResult(req.ID, initializeResult{
+	if err := s.writeResult(ctx, req.ID, initializeResult{
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
 		},
@@ -138,7 +138,7 @@ func (s *Server) dispatchInitialize(_ context.Context, req *jsonRPCRequest) erro
 	}
 	sort.Strings(keys)
 	for _, file := range keys {
-		if err := s.publishDiagnostics(file); err != nil {
+		if err := s.publishDiagnostics(ctx, file); err != nil {
 			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
 		}
 	}
@@ -194,7 +194,7 @@ type validateResult struct {
 func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) error {
 	var params validateParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleValidate(ctx, params)
 	if ctx.Err() != nil {
@@ -203,9 +203,9 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 		return nil
 	}
 	if errEnvelope != nil {
-		return s.writeErrorEnvelope(req.ID, errEnvelope)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
-	return s.writeResult(req.ID, result)
+	return s.writeResult(ctx, req.ID, result)
 }
 
 // handleValidate parses the supplied content via yaml.v3 and populates
@@ -251,7 +251,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// Release sees the error there rather than only in stderr. Covers
 		// all three cascade load steps (authoring_release / single-Release
 		// heuristic / marker target).
-		failed := s.publishCascadeFailureDiagnostics()
+		failed := s.publishCascadeFailureDiagnostics(ctx)
 		// Three sub-cases:
 		//   (a) cascade exhausted but Release files exist, OR a found-but-
 		//       invalid candidate exists → operator's authoring needs a
@@ -283,13 +283,13 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 // envelope detail (the same text the CLI shows); the diagnostic anchors
 // at 1:1 because a document-envelope finding is schema-pointed, not
 // line-mapped (matching the Tier-D / lockfile-drift fallback position).
-func (s *Server) publishCascadeFailureDiagnostics() int {
+func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context) int {
 	failed := s.cascadeAttempt.failedReleaseCandidates()
 	for _, fc := range failed {
 		s.diagnostics[fc.Path] = []Diagnostic{
 			{Line: 1, Column: 1, Severity: "error", Message: fc.Err.Error()},
 		}
-		_ = s.publishDiagnostics(fc.Path)
+		_ = s.publishDiagnostics(ctx, fc.Path)
 	}
 	return len(failed)
 }
@@ -343,16 +343,16 @@ type diagnosticsResult struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-func (s *Server) dispatchDiagnostics(_ context.Context, req *jsonRPCRequest) error {
+func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) error {
 	var params diagnosticsParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleDiagnostics(params)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
-	return s.writeResult(req.ID, result)
+	return s.writeResult(ctx, req.ID, result)
 }
 
 // handleDiagnostics returns the cached diagnostics for the file. If
@@ -388,7 +388,7 @@ type irGraphResult struct {
 func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error {
 	var params irGraphParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleIrGraph(ctx, params)
 	if ctx.Err() != nil {
@@ -397,9 +397,9 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 		return nil
 	}
 	if errEnvelope != nil {
-		return s.writeErrorEnvelope(req.ID, errEnvelope)
+		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
 	}
-	return s.writeResult(req.ID, result)
+	return s.writeResult(ctx, req.ID, result)
 }
 
 // handleIrGraph loads the Release at params.Release, derives the
@@ -470,7 +470,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    aggrega/publishDiagnostics notification. Non-blocking —
 	//    irGraph still produces the IR graph; drift is a
 	//    Problems-panel signal, not a halt.
-	lf := s.verifyDriftAndPublish(lockfilePath, resolved.Closure)
+	lf := s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
 
 	// 3b. Thread the freshly-loaded lockfile pins into the lazy lookup so its
 	//     Tier-2 cache reads in the render pipeline (step 5) verify-on-read: a
@@ -577,13 +577,13 @@ type resolveResult struct {
 func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error {
 	var params resolveParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	loc, errEnvelope := s.resolveDefinitionSite(ctx, params.URI, params.Position)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
-	return s.writeResult(req.ID, resolveResult{Location: loc})
+	return s.writeResult(ctx, req.ID, resolveResult{Location: loc})
 }
 
 // findReferencesParams is the request shape for
@@ -606,16 +606,16 @@ type findReferencesResult struct {
 func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest) error {
 	var params findReferencesParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	locs, errEnvelope := s.findReferencesAcrossWorkspace(ctx, params.URI, params.Position)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
 	if locs == nil {
 		locs = []yamlpos.Location{}
 	}
-	return s.writeResult(req.ID, findReferencesResult{Locations: locs})
+	return s.writeResult(ctx, req.ID, findReferencesResult{Locations: locs})
 }
 
 // findImplementationsParams is the request shape for
@@ -636,16 +636,16 @@ type findImplementationsResult struct {
 func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRequest) error {
 	var params findImplementationsParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	locs, errEnvelope := s.findImplementationsAcrossWorkspace(ctx, params.URI, params.Position)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
 	if locs == nil {
 		locs = []yamlpos.Location{}
 	}
-	return s.writeResult(req.ID, findImplementationsResult{Locations: locs})
+	return s.writeResult(ctx, req.ID, findImplementationsResult{Locations: locs})
 }
 
 // hoverParams is the request shape for `aggrega/hover`. The cursor
@@ -672,13 +672,13 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 	}
 	var params hoverParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	contents, errEnvelope := s.handleHover(params)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
-	return s.writeResult(req.ID, hoverResult{Contents: contents})
+	return s.writeResult(ctx, req.ID, hoverResult{Contents: contents})
 }
 
 // completionParams is the request shape for `aggrega/completion`.
@@ -715,14 +715,14 @@ func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) er
 	}
 	var params completionParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	items, errEnvelope := s.handleCompletion(params)
 	if errEnvelope != nil {
-		return s.writeError(req.ID, errEnvelope.Code, errEnvelope.Message)
+		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
 	if items == nil {
 		items = []CompletionItem{}
 	}
-	return s.writeResult(req.ID, completionResult{Items: items})
+	return s.writeResult(ctx, req.ID, completionResult{Items: items})
 }

@@ -106,6 +106,11 @@ type Diagnostic struct {
 // introduced so the aggrega/shutdown drain timer can start at
 // notification arrival rather than after the in-flight handler
 // returns.
+//
+// Handlers run on a worker pool whose default size is one, so they
+// execute serially in arrival order and this no-mutex invariant holds
+// as stated; the id-order stdout serializer is the sole owner of the
+// output writer.
 type Server struct {
 	workspaceRoot string
 	configSource  string

@@ -52,6 +52,39 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 	return srv
 }
 
+// serializerContext returns a context carrying a per-request sink over
+// a freshly-started serializer writing to out, plus a flush function
+// that closes the serializer and waits for it to drain. Tests that
+// drive a write surface directly (notifications, single handlers) use
+// this so they exercise the one production write path instead of a
+// bypass. The sink uses arrival sequence 1.
+func serializerContext(t *testing.T, out io.Writer) (context.Context, func()) {
+	t.Helper()
+	ser := newSerializer(out)
+	go ser.run()
+	ctx := withRequestSink(context.Background(), &requestSink{ser: ser, seq: 1})
+	return ctx, func() { ser.closeAndWait() }
+}
+
+// driveHandle runs a single parsed request through the production
+// serializer path, writing its framed response to out. It mirrors the
+// dispatch loop's per-request flow (install a serializer, run the
+// handler under arrival sequence 1, close the slot, flush) so tests
+// that need to inspect raw stdout exercise the one write path.
+func driveHandle(t *testing.T, srv *Server, req *jsonRPCRequest, out io.Writer) {
+	t.Helper()
+	ser := newSerializer(out)
+	go ser.run()
+	frame := srv.handle(ser, 1, req)
+	ser.emit(1, frame)
+	ser.closeAndWait()
+	select {
+	case serr := <-ser.errCh:
+		t.Fatalf("serializer write error: %v", serr)
+	default:
+	}
+}
+
 // framedRequest returns a Content-Length-framed JSON-RPC request body
 // for the supplied method + params, with a deterministic id.
 func framedRequest(id int, method string, params any) []byte {
@@ -87,8 +120,12 @@ func decodeOneResponse(t *testing.T, out *bytes.Buffer) jsonRPCResponse {
 	return resp
 }
 
-// runOneRequest drives a single request through the dispatch loop and
-// returns the decoded response.
+// runOneRequest drives a single request through the same serializer
+// path production uses and returns the decoded response. It installs a
+// serializer over out, runs the handler under arrival sequence 1,
+// closes the handler's ordered slot with the returned body, and waits
+// for the serializer to flush before decoding — so the in-memory
+// harness exercises the one write path rather than a bypass.
 func runOneRequest(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffer) jsonRPCResponse {
 	t.Helper()
 	srv.in = bufio.NewReader(in)
@@ -101,8 +138,15 @@ func runOneRequest(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffe
 	if err := json.Unmarshal(body, &req); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
-	if err := srv.handle(&req); err != nil {
-		t.Fatalf("handle: %v", err)
+	ser := newSerializer(out)
+	go ser.run()
+	frame := srv.handle(ser, 1, &req)
+	ser.emit(1, frame)
+	ser.closeAndWait()
+	select {
+	case serr := <-ser.errCh:
+		t.Fatalf("serializer write error: %v", serr)
+	default:
 	}
 	return decodeOneResponse(t, out)
 }
@@ -477,9 +521,14 @@ func TestServeMalformedJSONReturnsParseErrorEnvelope(t *testing.T) {
 	}
 	var req jsonRPCRequest
 	if jerr := json.Unmarshal(body, &req); jerr != nil {
-		if werr := srv.writeError(nil, jsonRPCParseError, "parse error: "+jerr.Error()); werr != nil {
-			t.Fatalf("writeError: %v", werr)
+		envBytes, merr := marshalErrorResponse(nil, jsonRPCParseError, "parse error: "+jerr.Error())
+		if merr != nil {
+			t.Fatalf("marshalErrorResponse: %v", merr)
 		}
+		ser := newSerializer(&out)
+		go ser.run()
+		ser.emit(1, envBytes)
+		ser.closeAndWait()
 	}
 	resp := decodeOneResponse(t, &out)
 	if resp.Error == nil {
