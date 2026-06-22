@@ -55,7 +55,7 @@ func newSignCmd() *cobra.Command {
 	c.Flags().StringVar(&signFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing.")
 	c.Flags().StringVar(&signRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing.")
 	c.Flags().StringVar(&signTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
-	c.Flags().StringVar(&signIDToken, "identity-token", "", "OIDC identity token for keyless signing (or read from the ambient OIDC environment).")
+	c.Flags().StringVar(&signIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	return c
 }
 
@@ -98,6 +98,16 @@ type signConfig struct {
 	// Nil means production (os.Getenv); tests inject a frozen lookup so they
 	// stay race-free under t.Parallel.
 	EnvLookup func(string) string
+
+	// TokenGetter acquires a keyless OIDC identity token interactively when no
+	// explicit token is supplied. Nil means production
+	// (acquireInteractiveIDToken); tests inject a fake so no browser opens.
+	TokenGetter func() (string, error)
+
+	// IsTTY reports whether stdin is an interactive terminal, gating the
+	// interactive acquisition path. Nil means production (isTerminal); tests
+	// inject a fixed value so the decision is deterministic.
+	IsTTY func() bool
 }
 
 // signRun resolves the published artifact named by cfg.Reference, signs
@@ -141,9 +151,19 @@ func signRun(cfg signConfig) error {
 			return fmt.Errorf("workspaceconfig: %w", werr)
 		}
 		resolved := rw.Config().ResolveSigning(registryhost.Of(cfg.Reference))
+		keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
+		// Only the keyless branch resolves an identity token; the keyed path
+		// never reaches acquisition.
+		var idToken string
+		if keyPath == "" {
+			idToken, err = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
+			if err != nil {
+				return fmt.Errorf("aggrega sign: %w", err)
+			}
+		}
 		signer, err = buildSigner(signerParams{
-			KeyPath:      firstNonEmpty(cfg.KeyPath, resolved.KeyPath),
-			IDToken:      resolveIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup)),
+			KeyPath:      keyPath,
+			IDToken:      idToken,
 			FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 			RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 			TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),

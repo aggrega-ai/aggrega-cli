@@ -49,6 +49,9 @@ func TestPushKeyedEndToEndSignsBeforePush(t *testing.T) {
 		PushTarget: store,
 		Sign:       &sign,
 		KeyPath:    keyPath,
+		// The keyed path must never reach token acquisition: a TokenGetter
+		// that fails the test proves the keyed branch skips it entirely.
+		TokenGetter: func() (string, error) { t.Fatal("keyed path must not acquire an identity token"); return "", nil },
 		// Signer left nil: production constructs it via buildSigner.
 	}); err != nil {
 		t.Fatalf("pushRun: %v", err)
@@ -123,28 +126,29 @@ func TestPushKeyedMissingKeyLeavesZeroBytes(t *testing.T) {
 	}
 }
 
-// TestPushKeylessNoTokenLeavesZeroBytes proves a keyless --sign push with no
-// identity token refuses BEFORE push (the IDToken hard-fail still holds), so
-// zero bytes land — consistent with the sign-before-push guarantee.
-func TestPushKeylessNoTokenLeavesZeroBytes(t *testing.T) {
+// TestPushKeylessNoTokenNoTTYLeavesZeroBytes proves a keyless --sign push with
+// no identity token and no interactive terminal refuses BEFORE push (the
+// command-layer loud refuse), so zero bytes land — consistent with the
+// sign-before-push guarantee. No browser is ever opened: the TokenGetter seam
+// fails the test if invoked.
+func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 	ctx := context.Background()
 	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 
 	sign := true
 	err := pushRun(pushConfig{
-		EntityPath: entityPath,
-		Registry:   "secure.example.com",
-		PushTarget: store,
-		Sign:       &sign,
-		// No KeyPath and no IDToken → keyless signer with empty token,
-		// which refuses with ErrKeylessLive before push.
+		EntityPath:  entityPath,
+		Registry:    "secure.example.com",
+		PushTarget:  store,
+		Sign:        &sign,
+		EnvLookup:   func(string) string { return "" },
+		IsTTY:       func() bool { return false },
+		TokenGetter: func() (string, error) { t.Fatal("TokenGetter must not be called without a TTY"); return "", nil },
+		// No KeyPath and no IDToken, no TTY → loud refuse before push.
 	})
 	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
 		t.Fatalf("want ErrUnsignedPushRefused, got %v", err)
-	}
-	if !errors.Is(err, signing.ErrKeylessLive) {
-		t.Fatalf("want wrapped ErrKeylessLive, got %v", err)
 	}
 	if _, exists, _ := oci.Resolve(ctx, store, "1.0.0"); exists {
 		t.Error("keyless-no-token let bytes through: the tag exists after a refused push")

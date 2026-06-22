@@ -16,4 +16,12 @@ const (
 	DefaultRekorURL = "https://rekor.sigstore.dev"
 	// DefaultTimestampURL is the public-good RFC3161 timestamp-authority URL.
 	DefaultTimestampURL = "https://timestamp.sigstore.dev"
+
+	// DefaultOIDCIssuer is the public-good Sigstore OAuth issuer used to
+	// acquire a short-lived OIDC identity token for interactive keyless
+	// signing. It is the federated login broker the community Fulcio trusts.
+	DefaultOIDCIssuer = "https://oauth2.sigstore.dev/auth"
+	// DefaultOIDCClientID is the public-good OAuth client identifier the
+	// Sigstore issuer recognises for the interactive token-acquisition flow.
+	DefaultOIDCClientID = "sigstore"
 )

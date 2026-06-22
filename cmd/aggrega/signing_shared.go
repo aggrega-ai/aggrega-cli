@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sigstore/sigstore/pkg/oauthflow"
+	"golang.org/x/term"
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -52,6 +54,60 @@ func firstNonEmpty(vals ...string) string {
 // environment; pass os.Getenv in production.
 func resolveIDToken(flagToken string, look func(string) string) string {
 	return firstNonEmpty(flagToken, look(envIdentityToken), look(envSigstoreIDToken))
+}
+
+// isTerminal reports whether stdin is an interactive terminal. It is a
+// package-level seam: tests replace it to drive the acquisition decision
+// without a real TTY.
+var isTerminal = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+
+// acquireInteractiveIDToken acquires a short-lived OIDC identity token
+// interactively through the public-good Sigstore OAuth flow. It opens a
+// browser to complete the federated login and, when no browser is available,
+// falls back to an out-of-band paste flow. The returned raw token is fed to
+// the keyless signer; it is a runtime secret, never persisted.
+func acquireInteractiveIDToken() (string, error) {
+	tok, err := oauthflow.OIDConnect(signing.DefaultOIDCIssuer, signing.DefaultOIDCClientID, "", "", oauthflow.DefaultIDTokenGetter)
+	if err != nil {
+		return "", fmt.Errorf("acquire identity token: %w", err)
+	}
+	return tok.RawString, nil
+}
+
+// resolveOrAcquireIDToken returns the keyless OIDC identity token, choosing
+// among three runtime paths in strict precedence: an explicit token (the
+// --identity-token flag or AGGREGA_IDENTITY_TOKEN / SIGSTORE_ID_TOKEN, via the
+// resolveIDToken primitive) wins; otherwise, when stdin is an interactive
+// terminal, one is acquired interactively; otherwise it refuses loudly so a
+// keyless sign never silently proceeds or hangs waiting on a browser in a
+// non-interactive context. acquire and tty are injected seams for tests; the
+// flag/env ordering is not duplicated here — it stays in resolveIDToken.
+func resolveOrAcquireIDToken(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error)) (string, error) {
+	if t := resolveIDToken(flagToken, look); t != "" {
+		return t, nil
+	}
+	if tty() {
+		return acquire()
+	}
+	return "", fmt.Errorf("keyless signing needs an identity token and no interactive terminal is available; export %s or %s (for example a CI workflow OIDC token), or pass --identity-token", envIdentityToken, envSigstoreIDToken)
+}
+
+// tokenGetterOrDefault returns getter when non-nil, else the production
+// interactive acquisition function. The one place the seam falls through to
+// production, so both verbs default identically.
+func tokenGetterOrDefault(getter func() (string, error)) func() (string, error) {
+	if getter != nil {
+		return getter
+	}
+	return acquireInteractiveIDToken
+}
+
+// ttyOrDefault returns tty when non-nil, else the production terminal check.
+func ttyOrDefault(tty func() bool) func() bool {
+	if tty != nil {
+		return tty
+	}
+	return isTerminal
 }
 
 // buildSigner is the single signer-construction path for both `aggrega sign`

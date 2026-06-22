@@ -74,7 +74,7 @@ func newPushCmd() *cobra.Command {
 	c.Flags().StringVar(&pushFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")
 	c.Flags().StringVar(&pushRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
 	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "RFC3161 timestamp-authority URL for keyless signing. When omitted, the public-good timestamp authority is used.")
-	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing (or read from the ambient OIDC environment).")
+	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	return c
 }
 
@@ -119,6 +119,16 @@ type pushConfig struct {
 	// Nil means production (os.Getenv); tests inject a frozen lookup so they
 	// stay race-free under t.Parallel.
 	EnvLookup func(string) string
+
+	// TokenGetter acquires a keyless OIDC identity token interactively when no
+	// explicit token is supplied. Nil means production
+	// (acquireInteractiveIDToken); tests inject a fake so no browser opens.
+	TokenGetter func() (string, error)
+
+	// IsTTY reports whether stdin is an interactive terminal, gating the
+	// interactive acquisition path. Nil means production (isTerminal); tests
+	// inject a fixed value so the decision is deterministic.
+	IsTTY func() bool
 
 	// PushTarget overrides the production remote.Repository
 	// construction. Tests inject an in-memory oras.Target via this
@@ -298,9 +308,21 @@ func pushRun(cfg pushConfig) error {
 		signer := cfg.Signer
 		if signer == nil {
 			resolved := wsCfg.ResolveSigning(registryhost.Of(registry))
+			keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
+			// Only the keyless branch resolves an identity token; the keyed
+			// path never reaches acquisition. Resolve (or interactively
+			// acquire) the token before constructing the signer so a missing
+			// token refuses BEFORE any bytes reach the registry.
+			var idToken string
+			if keyPath == "" {
+				idToken, err = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
+				if err != nil {
+					return fmt.Errorf("aggrega push: %w: %w", err, signing.ErrUnsignedPushRefused)
+				}
+			}
 			signer, err = buildSigner(signerParams{
-				KeyPath:      firstNonEmpty(cfg.KeyPath, resolved.KeyPath),
-				IDToken:      resolveIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup)),
+				KeyPath:      keyPath,
+				IDToken:      idToken,
 				FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 				RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 				TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),

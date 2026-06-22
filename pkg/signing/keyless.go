@@ -56,6 +56,9 @@ type KeylessSigner struct {
 // have defaulted them to the public-good Sigstore instances before
 // constructing the signer.
 func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundleBytes []byte, artifactType string, err error) {
+	// Defensive backstop for a signer constructed directly with no token. The
+	// operator-facing token resolution and the helpful refuse message live at
+	// the command layer; this terse guard is a distinct internal surface.
 	if k.IDToken == "" {
 		return nil, "", fmt.Errorf("%w: an identity token is required", ErrKeylessLive)
 	}
