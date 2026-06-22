@@ -12,21 +12,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// resolveTempWorkspace resolves a workspace rooted at a temp dir carrying a
-// `workspace: {}` marker, so registryAddRun writes into that dir.
-func resolveTempWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, workspaceconfig.ConfigFilename), []byte("workspace: {}\n"), 0o644); err != nil {
-		t.Fatalf("seed config: %v", err)
-	}
-	rw, err := workspaceconfig.Resolve(dir, "")
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	return rw
-}
-
 // TestRegistryAddKeyless proves `registry add --identity` writes a keyless
 // trust policy that loads back through the config resolver.
 func TestRegistryAddKeyless(t *testing.T) {

@@ -119,6 +119,7 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 				PluginPath:     pluginPath,
 				PolicyResolver: func(_ string, ws bool) bool { return ws },
 				FetchTarget:    target,
+				ws:             resolveTempWorkspace(t),
 			}
 			err := lintRun(cfg)
 			// NO silent-swallow. Matrix
@@ -162,6 +163,7 @@ spec:
 		PrePublish:     false,
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
+		ws:             resolveTempWorkspace(t),
 	}
 	err := lintRun(cfg)
 	if err != nil {
@@ -205,6 +207,7 @@ spec:
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		FetchTarget:    target,
+		ws:             resolveTempWorkspace(t),
 	}
 	err := lintRun(cfg)
 	if err != nil {
@@ -410,7 +413,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 
 // TestLintMissingEntityPath pins the diagnostic for missing entity path.
 func TestLintMissingEntityPath(t *testing.T) {
-	err := lintRun(lintConfig{EntityPath: ""})
+	err := lintRun(lintConfig{EntityPath: "", ws: resolveTempWorkspace(t)})
 	if err == nil {
 		t.Fatal("expected error for missing entity path; got nil")
 	}

@@ -125,6 +125,7 @@ func TestSchemaEvolutionMatrixAllKinds(t *testing.T) {
 					PluginPath:     pluginPath,
 					PolicyResolver: func(_ string, ws bool) bool { return ws },
 					FetchTarget:    target,
+					ws:             resolveTempWorkspace(t),
 				}
 				err := lintRun(cfg)
 				if c.wantHalt && err == nil {
@@ -291,6 +292,7 @@ func TestMultiRuleCrossTalk(t *testing.T) {
 		PrePublish:     false, // default mode; cross-talk is about aggregation, not version bumping
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
+		ws:             resolveTempWorkspace(t),
 	}
 	// Run lint; in default mode every finding downgrades to
 	// warning and the command exits clean (no error).
