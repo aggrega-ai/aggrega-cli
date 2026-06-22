@@ -38,6 +38,22 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// resolveIDToken resolves the keyless OIDC identity token through its single
+// precedence order — the --identity-token flag, then AGGREGA_IDENTITY_TOKEN,
+// then SIGSTORE_ID_TOKEN — and returns the first non-empty value. The token is
+// a short-lived secret and is never a config field, so it is resolved here at
+// the signer-construction boundary rather than through the workspace-config
+// overlay. Both push and sign call this so the ordering has one definition.
+//
+// SIGSTORE_ID_TOKEN is the sigstore-ecosystem interop alias. It is read ONLY
+// here and is deliberately NOT an AGGREGA_-prefixed binding-table entry — it is
+// a foreign alias the ecosystem already sets, not an Aggrega setting, so it
+// must not be folded into the environment-overlay table. look reads the
+// environment; pass os.Getenv in production.
+func resolveIDToken(flagToken string, look func(string) string) string {
+	return firstNonEmpty(flagToken, look(envIdentityToken), look(envSigstoreIDToken))
+}
+
 // buildSigner is the single signer-construction path for both `aggrega sign`
 // and `aggrega push`. A non-empty KeyPath selects the offline keyed signer,
 // reading the held PEM from disk; otherwise the live keyless signer is

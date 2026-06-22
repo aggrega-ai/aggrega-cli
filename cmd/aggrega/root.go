@@ -36,7 +36,8 @@ func newRootCmd() *cobra.Command {
 		// (workspaceFromContext), so version/login/logout run without
 		// discovering a workspace.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			cmd.SetContext(withWorkspaceResolver(cmd.Context(), workspaceRootFlag))
+			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
+			cmd.SetContext(withWorkspaceResolver(cmd.Context(), root))
 			return nil
 		},
 	}

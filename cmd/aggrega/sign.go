@@ -12,7 +12,9 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 var (
@@ -34,6 +36,10 @@ func newSignCmd() *cobra.Command {
 			"provider, Fulcio, and Rekor.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
 			return signRun(signConfig{
 				Reference:    args[0],
 				KeyPath:      signKeyPath,
@@ -41,6 +47,7 @@ func newSignCmd() *cobra.Command {
 				RekorURL:     signRekor,
 				TimestampURL: signTimestamp,
 				IDToken:      signIDToken,
+				ws:           rw,
 			})
 		},
 	}
@@ -81,6 +88,16 @@ type signConfig struct {
 	// Signer overrides signer construction. Tests inject a fake; when
 	// nil, signRun builds a keyed or keyless signer from the flags.
 	Signer signing.Signer
+
+	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
+	// when a test invokes signRun directly; workspaceOrResolve then resolves
+	// from the working directory.
+	ws *workspaceconfig.ResolvedWorkspace
+
+	// EnvLookup reads the environment for the identity-token secret resolution.
+	// Nil means production (os.Getenv); tests inject a frozen lookup so they
+	// stay race-free under t.Parallel.
+	EnvLookup func(string) string
 }
 
 // signRun resolves the published artifact named by cfg.Reference, signs
@@ -119,12 +136,17 @@ func signRun(cfg signConfig) error {
 
 	signer := cfg.Signer
 	if signer == nil {
+		rw, werr := workspaceOrResolve(cfg.ws)
+		if werr != nil {
+			return fmt.Errorf("workspaceconfig: %w", werr)
+		}
+		resolved := rw.Config().ResolveSigning(registryhost.Of(cfg.Reference))
 		signer, err = buildSigner(signerParams{
-			KeyPath:      cfg.KeyPath,
-			IDToken:      cfg.IDToken,
-			FulcioURL:    cfg.FulcioURL,
-			RekorURL:     cfg.RekorURL,
-			TimestampURL: cfg.TimestampURL,
+			KeyPath:      firstNonEmpty(cfg.KeyPath, resolved.KeyPath),
+			IDToken:      resolveIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup)),
+			FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
+			RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
+			TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
 		})
 		if err != nil {
 			return fmt.Errorf("aggrega sign: %w", err)

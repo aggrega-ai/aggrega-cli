@@ -30,7 +30,7 @@ import (
 // Test files are exempt (the fallback is theirs to use).
 func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 	dirs := []string{".", filepath.Join("..", "..", "internal", "serve")}
-	cfgTypes := map[string]bool{"pullConfig": true, "pushConfig": true, "lintConfig": true}
+	cfgTypes := map[string]bool{"pullConfig": true, "pushConfig": true, "lintConfig": true, "signConfig": true}
 
 	for _, dir := range dirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.go"))

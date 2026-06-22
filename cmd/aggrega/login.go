@@ -59,6 +59,11 @@ type loginConfig struct {
 	Store credentials.Store // nil → NewStoreFromDocker (AllowPlaintextPut)
 	In    io.Reader         // nil → os.Stdin (username prompt / --password-stdin)
 	Out   io.Writer         // nil → os.Stdout (prompts and messages)
+
+	// EnvLookup reads the environment for the password secret. Nil means
+	// production (os.Getenv); tests inject a frozen lookup so they stay
+	// race-free under t.Parallel.
+	EnvLookup func(string) string
 }
 
 // loginRun resolves the username and password (from flags, stdin, or
@@ -98,8 +103,12 @@ func loginRun(cfg loginConfig) error {
 		}
 	}
 
+	// Password precedence: --password-stdin (most secure) > the environment
+	// variable (a non-interactive CI convenience, readable by child processes,
+	// so stdin is preferred) > the interactive prompt.
 	var password string
-	if cfg.PasswordStdin {
+	switch {
+	case cfg.PasswordStdin:
 		data, err := io.ReadAll(in)
 		if err != nil {
 			return fmt.Errorf("aggrega login: read password from stdin: %w", err)
@@ -107,7 +116,11 @@ func loginRun(cfg loginConfig) error {
 		// Accept a single trailing newline (echo "..." | ...) without making it
 		// part of the secret.
 		password = strings.TrimRight(string(data), "\r\n")
-	} else {
+	default:
+		if envPassword := envLookupOrGetenv(cfg.EnvLookup)(envRegistryPassword); envPassword != "" {
+			password = envPassword
+			break
+		}
 		fmt.Fprint(out, "Password: ")
 		b, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(out)

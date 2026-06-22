@@ -73,11 +73,11 @@ func (m Marker) String() string {
 // fabricate or mutate a resolved workspace; the only way to obtain one is to
 // run the single resolution path.
 type ResolvedWorkspace struct {
-	root    string
-	config  Config
-	source  Source
-	marker  Marker
-	files   []string
+	root   string
+	config Config
+	source Source
+	marker Marker
+	files  []string
 }
 
 // Root returns the absolute workspace root directory.
@@ -122,7 +122,17 @@ func (r *ResolvedWorkspace) ContributingFiles() []string {
 // whole-replace + `_append` semantics, generalized from three fixed layers to
 // N. The `workspace:`-bearing root config caps the cascade — files above the
 // root are not collected.
-func Resolve(start, flagRoot string) (*ResolvedWorkspace, error) {
+//
+// Environment overlay: a top layer above the merged config and below any CLI
+// flag the command applies, so the effective ladder is flag > environment >
+// config > default. The optional look reads the environment; when omitted (or
+// nil) the production os.Getenv is used. A test or the daemon passes an
+// explicit, frozen lookup so resolution stays deterministic and parallel-safe.
+func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWorkspace, error) {
+	lookup := os.Getenv
+	if len(look) > 0 && look[0] != nil {
+		lookup = look[0]
+	}
 	if start == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -201,6 +211,17 @@ func Resolve(start, flagRoot string) (*ResolvedWorkspace, error) {
 	}
 
 	applyAppends(&merged, appendLayers...)
+
+	// Environment overlay: the top config layer, above the merged file cascade
+	// and below the CLI flags the command applies. A SET variable wins over the
+	// config value; an unset one falls through.
+	envContributing, err := applyEnvOverlay(&merged, lookup)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range envContributing {
+		contributing = append(contributing, "$"+name)
+	}
 
 	return &ResolvedWorkspace{
 		root:   root,

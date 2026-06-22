@@ -115,6 +115,11 @@ type pushConfig struct {
 	// from the working directory.
 	ws *workspaceconfig.ResolvedWorkspace
 
+	// EnvLookup reads the environment for the identity-token secret resolution.
+	// Nil means production (os.Getenv); tests inject a frozen lookup so they
+	// stay race-free under t.Parallel.
+	EnvLookup func(string) string
+
 	// PushTarget overrides the production remote.Repository
 	// construction. Tests inject an in-memory oras.Target via this
 	// field; nil in production. When nil and DryRun is false,
@@ -295,7 +300,7 @@ func pushRun(cfg pushConfig) error {
 			resolved := wsCfg.ResolveSigning(registryhost.Of(registry))
 			signer, err = buildSigner(signerParams{
 				KeyPath:      firstNonEmpty(cfg.KeyPath, resolved.KeyPath),
-				IDToken:      cfg.IDToken,
+				IDToken:      resolveIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup)),
 				FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 				RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 				TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),

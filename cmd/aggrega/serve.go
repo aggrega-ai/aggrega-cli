@@ -47,7 +47,7 @@ cleanly within a 2-second drain budget.`,
 
 func runServe(cmd *cobra.Command, args []string) error {
 	flagRoot, _ := cmd.Flags().GetString("workspace-root")
-	root, err := validateWorkspaceRootFlag(flagRoot)
+	root, err := validateWorkspaceRootFlag(workspaceRootFromFlagOrEnv(cmd, flagRoot, nil))
 	if err != nil {
 		return err
 	}
