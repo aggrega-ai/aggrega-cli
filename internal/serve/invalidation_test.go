@@ -57,9 +57,9 @@ func TestInvalidateFileGranularityPreservesWorkspaceCache(t *testing.T) {
 	t.Parallel()
 	srv, compPath := newInvalidationServer(t)
 	srv.parseCache.Put("/file.yaml", &yaml.Node{}, []byte(""))
-	srv.diagnostics["/file.yaml"] = []Diagnostic{
+	srv.setDiagnostics("/file.yaml", []Diagnostic{
 		{Line: 1, Column: 1, Severity: "error", Message: "stale"},
-	}
+	})
 	if err := os.Remove(compPath); err != nil {
 		t.Fatalf("remove component fixture: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestInvalidateFileGranularityPreservesWorkspaceCache(t *testing.T) {
 	if _, ok := srv.parseCache.Get("/file.yaml"); ok {
 		t.Errorf("parseCache entry for /file.yaml should be dropped")
 	}
-	if _, ok := srv.diagnostics["/file.yaml"]; ok {
+	if srv.snapshotDiagnostics("/file.yaml") != nil {
 		t.Errorf("diagnostics entry for /file.yaml should be dropped")
 	}
 

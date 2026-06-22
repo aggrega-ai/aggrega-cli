@@ -87,9 +87,9 @@ func TestPublishDiagnosticsWireShape(t *testing.T) {
 	srv := newTestServer(t, tmp, nil, &out)
 
 	// Drift-detected state: populate one diagnostic on a file.
-	srv.diagnostics["/tmp/release.lock"] = []Diagnostic{
+	srv.setDiagnostics("/tmp/release.lock", []Diagnostic{
 		{Line: 1, Column: 1, Severity: "warning", Message: "drifted"},
-	}
+	})
 	ctx1, flush1 := serializerContext(t, &out)
 	if err := srv.publishDiagnostics(ctx1, "/tmp/release.lock"); err != nil {
 		t.Fatalf("publishDiagnostics drift state: %v", err)
@@ -118,7 +118,7 @@ func TestPublishDiagnosticsWireShape(t *testing.T) {
 	}
 
 	// Drift-cleared state: empty array means "clear this entry."
-	delete(srv.diagnostics, "/tmp/release.lock")
+	srv.dropDiagnostics("/tmp/release.lock")
 	ctx2, flush2 := serializerContext(t, &out)
 	if err := srv.publishDiagnostics(ctx2, "/tmp/release.lock"); err != nil {
 		t.Fatalf("publishDiagnostics drift-cleared state: %v", err)
@@ -152,9 +152,9 @@ func TestVerifyDriftAndUpdateCacheOnLoadFailure(t *testing.T) {
 	// Pre-populate the diagnostic so we can observe it being
 	// cleared on load failure.
 	lockfilePath := filepath.Join(tmp, "release.lock")
-	srv.diagnostics[lockfilePath] = []Diagnostic{
+	srv.setDiagnostics(lockfilePath, []Diagnostic{
 		{Line: 1, Column: 1, Severity: "warning", Message: "previous drift"},
-	}
+	})
 
 	// Write a malformed lockfile (so LoadLockfile returns an error).
 	if err := os.WriteFile(lockfilePath, []byte("this: is: not: valid: yaml: ["), 0o644); err != nil {
@@ -166,7 +166,7 @@ func TestVerifyDriftAndUpdateCacheOnLoadFailure(t *testing.T) {
 	srv.verifyDriftAndUpdateCache(lockfilePath, closure.Closure{})
 
 	// Prior drift diagnostic should be cleared.
-	if _, ok := srv.diagnostics[lockfilePath]; ok {
+	if srv.snapshotDiagnostics(lockfilePath) != nil {
 		t.Errorf("expected diagnostics entry to be cleared on load failure; still present")
 	}
 	if stderr.Len() == 0 {

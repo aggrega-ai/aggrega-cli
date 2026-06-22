@@ -41,7 +41,6 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 		in:               bufio.NewReader(stdin),
 		out:              stdout,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	// Production initializes serverCtx in dispatchLoop before spawning the
 	// reader goroutine. Tests that drive handle() directly bypass that
@@ -575,8 +574,8 @@ func TestServeAggregaInitializeSelectsUTF8WhenOffered(t *testing.T) {
 	if result.Capabilities.PositionEncoding != "utf-8" {
 		t.Errorf("PositionEncoding = %q; want utf-8 (server-preference)", result.Capabilities.PositionEncoding)
 	}
-	if srv.positionEncoding != yamlpos.PositionEncodingUTF8 {
-		t.Errorf("srv.positionEncoding = %q; want utf-8 (persisted on Server)", srv.positionEncoding)
+	if srv.positionEncoding() != yamlpos.PositionEncodingUTF8 {
+		t.Errorf("srv.positionEncoding() = %q; want utf-8 (persisted on Server)", srv.positionEncoding())
 	}
 }
 
@@ -621,8 +620,8 @@ func TestServeAggregaInitializeSelectsUTF32WhenOnlyOption(t *testing.T) {
 	if result.Capabilities.PositionEncoding != "utf-32" {
 		t.Errorf("PositionEncoding = %q; want utf-32", result.Capabilities.PositionEncoding)
 	}
-	if srv.positionEncoding != yamlpos.PositionEncodingUTF32 {
-		t.Errorf("srv.positionEncoding = %q; want utf-32", srv.positionEncoding)
+	if srv.positionEncoding() != yamlpos.PositionEncodingUTF32 {
+		t.Errorf("srv.positionEncoding() = %q; want utf-32", srv.positionEncoding())
 	}
 }
 
@@ -640,8 +639,8 @@ func TestServeAggregaInitializeUpdatesEncodingForSubsequentValidate(t *testing.T
 		},
 	}))
 	runOneRequest(t, srv, &in1, &out1)
-	if srv.positionEncoding != yamlpos.PositionEncodingUTF8 {
-		t.Fatalf("post-initialize srv.positionEncoding = %q; want utf-8", srv.positionEncoding)
+	if srv.positionEncoding() != yamlpos.PositionEncodingUTF8 {
+		t.Fatalf("post-initialize srv.positionEncoding() = %q; want utf-8", srv.positionEncoding())
 	}
 	// Subsequent validate succeeds — the encoding is now bound on the
 	// Server and threaded through resolve.go's BuildLineIndexWithEncoding
@@ -657,7 +656,7 @@ func TestServeAggregaInitializeUpdatesEncodingForSubsequentValidate(t *testing.T
 	if resp.Error != nil {
 		t.Fatalf("validate returned error after initialize: %+v", resp.Error)
 	}
-	if srv.positionEncoding != yamlpos.PositionEncodingUTF8 {
-		t.Errorf("srv.positionEncoding mutated by validate; got %q; want utf-8", srv.positionEncoding)
+	if srv.positionEncoding() != yamlpos.PositionEncodingUTF8 {
+		t.Errorf("srv.positionEncoding() mutated by validate; got %q; want utf-8", srv.positionEncoding())
 	}
 }

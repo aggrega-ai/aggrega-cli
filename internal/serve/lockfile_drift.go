@@ -98,17 +98,17 @@ func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closu
 	lf, _, err := lockfile.LoadLockfile(lockfilePath)
 	if err != nil {
 		fmt.Fprintf(s.stderr, "  lockfile load %s: %v\n", lockfilePath, err)
-		delete(s.diagnostics, lockfilePath)
+		s.dropDiagnostics(lockfilePath)
 		return nil
 	}
 	if err := lockfile.Verify(lf, cl); err != nil {
 		message := fmt.Sprintf("Lockfile drifted from current closure. Run `aggrega pull --regenerate --release <path>` to update. Details: %v", err)
-		s.diagnostics[lockfilePath] = []Diagnostic{
+		s.setDiagnostics(lockfilePath, []Diagnostic{
 			{Line: 1, Column: 1, Severity: "warning", Message: message},
-		}
+		})
 		return lf
 	}
 	// No drift — clear any prior drift diagnostic.
-	delete(s.diagnostics, lockfilePath)
+	s.dropDiagnostics(lockfilePath)
 	return lf
 }

@@ -6,6 +6,7 @@ package serve
 import (
 	"container/list"
 	"os"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -50,12 +51,19 @@ type cachedEntry struct {
 // bounds the count, maxBytes bounds the cumulative len(content)
 // byte total. Either-cap = 0 means "unbounded on that axis".
 //
-// Concurrency contract: the cache is NOT concurrency-safe. The
-// daemon's sequential dispatch loop is the only intended caller.
-// Both Get and Put mutate the LRU list, so any future move to a
-// concurrent dispatcher would need to add locking around all four
-// operations.
+// Concurrency contract: the cache is concurrency-safe. A single mutex
+// guards every operation. The lock is unavoidable rather than
+// copy-on-read because the LRU mutates on every access — Get moves a
+// hit to the front and evicts a stale entry, Put inserts and runs the
+// eviction loop, Drop removes — so there is no immutable snapshot to
+// hand out. All exported entry points (Get, Put, Drop, Range) take the
+// lock; the unexported helpers (remove, evictUntilWithinCaps) run
+// lock-free because they are only ever reached from an already-locked
+// exported method. The lock is held only for the in-memory map + list
+// work; Range invokes its callback under the lock, so callers must keep
+// the callback cheap and must not call back into the cache from it.
 type cache struct {
+	mu         sync.Mutex
 	entries    map[string]*cachedEntry
 	lruList    *list.List
 	totalBytes int64
@@ -85,6 +93,8 @@ func newCache(maxEntries int, maxBytes int) *cache {
 // caused by mtime-staleness remove the entry from both the map and
 // the LRU list.
 func (c *cache) Get(file string) (*cachedEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	entry, ok := c.entries[file]
 	if !ok {
 		return nil, false
@@ -110,6 +120,8 @@ func (c *cache) Get(file string) (*cachedEntry, bool) {
 // After insertion, the eviction loop runs until both caps are
 // satisfied. Either-cap = 0 disables eviction on that axis.
 func (c *cache) Put(file string, node *yaml.Node, content []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if existing, ok := c.entries[file]; ok {
 		c.remove(file, existing)
 	}
@@ -128,8 +140,28 @@ func (c *cache) Put(file string, node *yaml.Node, content []byte) {
 // Drop removes the cache entry for file if present. No-op when the
 // entry does not exist.
 func (c *cache) Drop(file string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if entry, ok := c.entries[file]; ok {
 		c.remove(file, entry)
+	}
+}
+
+// Range invokes fn for every live cache entry under the cache lock,
+// passing the file path plus the entry's parsed node and raw content.
+// Returning false from fn stops the iteration early. The callback runs
+// while the lock is held, so it must stay cheap and must not call any
+// other cache method (re-entrant locking would deadlock). Range is the
+// concurrency-safe replacement for ranging the entries map directly:
+// the workspace-wide reference/hover/completion scans use it so their
+// reads never race a concurrent Get/Put/Drop mutation of the map.
+func (c *cache) Range(fn func(file string, node *yaml.Node, content []byte) bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for file, entry := range c.entries {
+		if !fn(file, entry.node, entry.content) {
+			return
+		}
 	}
 }
 

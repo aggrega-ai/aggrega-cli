@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -92,6 +93,8 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 // *LazyLookup, so the same hot caches + negative caches + indexes
 // serve every consumer.
 func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	// Resolve the SchemaLibrary set (once, cached) so cross-document $ref expansion
 	// sees the same libraries the eager backing does. Best-effort here: a library
 	// that fails validation is surfaced as a hard reject by the eager recipe-catalog
@@ -106,14 +109,26 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// extends-ing Component OR Feature, keyed by metadata.name — populated by
 		// ResolveClosureExtends. Returns (_, false) for a non-extends or
 		// not-yet-resolved type, so consumers fall back to the authored schema.
-		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
-			if l.effectiveSchemas == nil {
-				return compactform.Schema{}, false
-			}
-			s, ok := l.effectiveSchemas[lookupNameFromURI(typeURI)]
-			return s, ok
-		},
+		EffectiveSchema: l.effectiveSchema,
 	}
+}
+
+// effectiveSchema serves the composed (parent+child) schema for an
+// extends-ing Component or Feature, keyed by metadata.name — populated
+// by ResolveClosureExtends. Returns (_, false) for a non-extends or
+// not-yet-resolved type, so consumers fall back to the authored schema.
+// It is handed out through AsCatalogLookup and invoked by the pipeline
+// outside any LazyLookup method, so it takes the lock itself to read
+// the effectiveSchemas map race-free against a concurrent
+// ResolveClosureExtends / Reset / SetPins.
+func (l *LazyLookup) effectiveSchema(typeURI string) (compactform.Schema, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.effectiveSchemas == nil {
+		return compactform.Schema{}, false
+	}
+	s, ok := l.effectiveSchemas[lookupNameFromURI(typeURI)]
+	return s, ok
 }
 
 // Reset clears the hot caches, negative caches, and per-kind index
@@ -126,13 +141,15 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 // workspace's filesystem state changed (a file was added, removed,
 // or modified) and the lookup's cached resolutions could be stale.
 //
-// Thread-safety: the lazy lookup is not concurrency-safe; the
-// daemon's sequential dispatch loop is the only intended caller.
+// Thread-safety: concurrency-safe via the lookup's internal mutex,
+// like every exported method; callers need no external lock.
 //
 // Idempotent: calling Reset twice in a row leaves the state empty;
 // the second call re-allocates the maps but observes no state to
 // clear.
 func (l *LazyLookup) Reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.components = map[string]types.Component{}
 	l.features = map[string]types.Feature{}
 	l.componentMisses = map[string]struct{}{}
@@ -194,6 +211,8 @@ func (l *LazyLookup) Reset() {
 // Idempotent: calling Prime twice with the same catalog has no
 // additional effect.
 func (l *LazyLookup) Prime(cat *Catalog) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	// The lazy hot cache is keyed by the lookup URI callers request (the bare
 	// metadata.name), so prime under metadata.name rather than the eager
 	// catalog's name:version index key — otherwise a bare-name request would
@@ -209,6 +228,22 @@ func (l *LazyLookup) Prime(cat *Catalog) {
 }
 
 type LazyLookup struct {
+	// mu guards every operation on the lazy lookup. Each exported
+	// method takes it on entry; the many unexported helpers
+	// (resolveComponent, the Tier-1/2/3 readers, the build* index
+	// builders, foldRecipeShellEntity, recipeCatalog, the component /
+	// feature cores) run lock-free because they are only ever reached
+	// from an already-locked exported method. The mutex is not
+	// re-entrant, so no locked exported method calls another — the
+	// extends-merge recursion is wired through the lock-free cores, and
+	// the closures the accessors hand out (AsCatalogLookup's Component /
+	// Feature, the recipe-shell lookups) re-enter only the exported
+	// methods, which the pipeline invokes after the accessor returned
+	// and released the lock. A single coarse mutex is the conservative
+	// correct choice: SetPins and Reset rewrite whole maps, so a reader
+	// holding a finer lock could observe a half-reset state.
+	mu sync.Mutex
+
 	workspaceRoot string
 	cacheDir      string
 	catalogDirs   []string
@@ -323,6 +358,8 @@ type LazyLookup struct {
 // closure-level lockfile-verify already run on the same request, so the skip
 // deliberately does NOT emit a second notice (no double-report).
 func (l *LazyLookup) SetPins(pins map[string]Pin) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.pins = pins
 	// The enumerated kinds (Recipe / FeatureRecipe / Aggregate / Provider /
 	// MappingLibrary / SchemaLibrary) fold a PIN-DEPENDENT Tier-2 set, and the
@@ -360,6 +397,8 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 // serve-skip split the guard layer uses). Pins are visited in sorted URI order so
 // the surfaced drift is deterministic.
 func (l *LazyLookup) VerifyPinnedIntegrity() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	uris := make([]string, 0, len(l.pins))
 	for uri := range l.pins {
 		uris = append(uris, uri)
@@ -496,6 +535,17 @@ type fileHeader struct {
 // in the daemon's stderr stream. This mirrors how dispatchBuild
 // surfaces catalog deprecation + binding-lint warnings.
 func (l *LazyLookup) Component(uri string) (types.Component, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.component(uri)
+}
+
+// component is the lock-free core of Component. The extends-merge
+// recursion is wired to component itself (not the exported Component),
+// so a multi-level chain resolves without re-acquiring the lock — the
+// caller already holds it. Every internal helper it reaches
+// (resolveComponent, the Tier-1/2/3 readers) is likewise lock-free.
+func (l *LazyLookup) component(uri string) (types.Component, bool) {
 	if c, ok := l.components[uri]; ok {
 		return c, true
 	}
@@ -507,7 +557,7 @@ func (l *LazyLookup) Component(uri string) (types.Component, bool) {
 		l.componentMisses[uri] = struct{}{}
 		return types.Component{}, false
 	}
-	merged, vErrs := validator.ResolveComponentExtends(comp, l.Component)
+	merged, vErrs := validator.ResolveComponentExtends(comp, l.component)
 	if len(vErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "  extends: Component %s: %s\n", uri, vErrs[0].Error())
 	}
@@ -518,6 +568,13 @@ func (l *LazyLookup) Component(uri string) (types.Component, bool) {
 // Feature mirrors Component for the Feature surface. Extends-resolution
 // errors surface to os.Stderr per the same convention.
 func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.feature(uri)
+}
+
+// feature is the lock-free core of Feature, mirroring component.
+func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
 	if f, ok := l.features[uri]; ok {
 		return f, true
 	}
@@ -529,7 +586,7 @@ func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 		l.featureMisses[uri] = struct{}{}
 		return types.Feature{}, false
 	}
-	merged, vErrs := validator.ResolveFeatureExtends(feat, l.Feature)
+	merged, vErrs := validator.ResolveFeatureExtends(feat, l.feature)
 	if len(vErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "  extends: Feature %s: %s\n", uri, vErrs[0].Error())
 	}
@@ -1007,6 +1064,8 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 // the renderer's $import resolution consumes). Triggers the recipe-shell
 // enumeration on first call.
 func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	return l.mappingLibraries
 }
@@ -1016,6 +1075,8 @@ func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
 // the Manifest mapping tiers resolve by URI (point-lookup); an unmapped instance
 // is a miss — the catalog never chooses a recipe by spec.implements.
 func (l *LazyLookup) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().RecipeLookupWithManifest(manifest)
 }
 
@@ -1026,6 +1087,8 @@ func (l *LazyLookup) RecipeLookupWithManifest(manifest *types.Manifest) renderer
 // halt input (VerifyRecipeResolution joins it), so both surfaces enumerate pin
 // candidates by the same logic over the same complete recipe set.
 func (l *LazyLookup) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().ResolutionFindings(manifest, graph)
 }
 
@@ -1033,6 +1096,8 @@ func (l *LazyLookup) ResolutionFindings(manifest *types.Manifest, graph *types.I
 // enumerated Aggregate set. A referenced sub-aggregate that is absent (or was
 // skipped as broken) is a fatal graph-construction failure, exactly as eager.
 func (l *LazyLookup) SubAggregateLoader() topology.SubAggregateLoader {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().SubAggregateLoader()
 }
 
@@ -1042,6 +1107,8 @@ func (l *LazyLookup) SubAggregateLoader() topology.SubAggregateLoader {
 // registry-published top-level resolves through the pinned Tier-2 enumeration the
 // same way a local one resolves through Tier-1.
 func (l *LazyLookup) AggregateLookup() resolver.AggregateLookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().AggregateLookup()
 }
 
@@ -1050,6 +1117,8 @@ func (l *LazyLookup) AggregateLookup() resolver.AggregateLookup {
 // matches) over the lazily-enumerated recipe set — the build's earliest loud
 // guardrail, now reading the closure rather than the bridged eager catalog.
 func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().AssertManifestImplementsConsistency(manifest, manifestPath)
 }
 
@@ -1058,6 +1127,8 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 // Tier-1-local (the closure never pins a Provider), so this resolves a provider's
 // baseSchema from the Tier-1 walk exactly as the eager catalog did.
 func (l *LazyLookup) ProviderInfraSchemaResolver(manifest *types.Manifest) func(string, string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().ProviderInfraSchemaResolver(manifest)
 }
 
@@ -1065,6 +1136,8 @@ func (l *LazyLookup) ProviderInfraSchemaResolver(manifest *types.Manifest) func(
 // joined form of ResolutionFindings) over the lazily-enumerated recipe set, so the
 // build's pre-render gate reads the closure's complete recipe enumeration.
 func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().VerifyRecipeResolution(manifest, graph)
 }
 
@@ -1072,10 +1145,14 @@ func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *typ
 // catalog URI over the lazily-enumerated (Tier-1 + pinned Tier-2) recipe set, for
 // the closure-library discovery's mapping-consumer scan.
 func (l *LazyLookup) RecipeByURI(uri string) (types.Recipe, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().RecipeByURI(uri)
 }
 
 func (l *LazyLookup) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().FeatureRecipeByURI(uri)
 }
 
@@ -1083,6 +1160,8 @@ func (l *LazyLookup) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) 
 // enumerated (Tier-1 + pinned Tier-2) recipe set, so pull's lock-time source
 // descent loads a registry-resolved Recipe / FeatureRecipe from the pinned cache.
 func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.recipeCatalog().ClosureRecipeLoader()
 }
 
@@ -1090,12 +1169,16 @@ func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
 // lazily-walked (Tier-1 + pinned Tier-2) library sets, for the closure-library
 // discovery's transitive body access. Returns ok=false when the library is absent.
 func (l *LazyLookup) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	_ = l.buildSchemaLibraries()
 	lib, ok := l.schemaLibraries[uri]
 	return lib, ok
 }
 
 func (l *LazyLookup) MappingLibrary(uri string) (types.MappingLibrary, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	lib, ok := l.mappingLibraries[uri]
 	return lib, ok
@@ -1108,6 +1191,8 @@ func (l *LazyLookup) MappingLibrary(uri string) (types.MappingLibrary, bool) {
 // daemon surfaces these as a closure-level diagnostic so an in-closure entity
 // that went missing because it was skipped is explained, not silently absent.
 func (l *LazyLookup) Skips() map[string]error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	_ = l.buildSchemaLibraries()
 	return l.recipeSkips
@@ -1124,6 +1209,8 @@ func (l *LazyLookup) Skips() map[string]error {
 // provenance. The resolved entities are extends-merged (what the daemon renders);
 // build remains the authoritative pre-extends validator.
 func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	_ = l.buildSchemaLibraries()
 	l.buildComponentIndex()
 	l.buildFeatureIndex()
@@ -1133,12 +1220,12 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 	featSrc := map[string]string{}
 	for _, e := range cl.Entities {
 		name := lookupNameFromURI(e.URI)
-		if comp, ok := l.Component(e.URI); ok {
+		if comp, ok := l.component(e.URI); ok {
 			comps[comp.Metadata.Name] = comp
 			compSrc[comp.Metadata.Name] = l.componentIndex[name]
 			continue
 		}
-		if feat, ok := l.Feature(e.URI); ok {
+		if feat, ok := l.feature(e.URI); ok {
 			feats[feat.Metadata.Name] = feat
 			featSrc[feat.Metadata.Name] = l.featureIndex[name]
 		}
@@ -1162,6 +1249,8 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 // has no local file path. Narrowing-on-extend advisories are a separate
 // composition surface and are not included here.
 func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	// Self-sufficient: build the Tier-1 indexes the cascade reads, so the
 	// accessor does not depend on a prior ValidateClosureScopedPillars call.
 	l.buildComponentIndex()
@@ -1180,12 +1269,12 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 
 	var out []string
 	for _, uri := range uris {
-		if comp, ok := l.Component(uri); ok {
+		if comp, ok := l.component(uri); ok {
 			out = append(out, validator.ValidateSchemaPillarOverlap(
 				"Component", comp.Metadata.Name, uri, comp.Spec.Schema)...)
 			continue
 		}
-		if feat, ok := l.Feature(uri); ok {
+		if feat, ok := l.feature(uri); ok {
 			out = append(out, validator.ValidateSchemaPillarOverlap(
 				"Feature", feat.Metadata.Name, uri, feat.Spec.Schema)...)
 		}
@@ -1200,6 +1289,8 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 // for a closure with no extends-narrowing. Signal-only: callers surface these
 // informationally; the compiler never halts on narrowing.
 func (l *LazyLookup) ClosureNarrowingWarnings() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.closureNarrowings
 }
 
@@ -1210,6 +1301,8 @@ func (l *LazyLookup) ClosureNarrowingWarnings() []string {
 // entity's extends is never resolved, so a broken out-of-closure parent never
 // produces a diagnostic. Deterministic: closure entity names are deduped + sorted.
 func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	// The closure's library set is the cross-document $ref context the schema
 	// merge composes against — the same set the eager whole-catalog path feeds
 	// CompileSchemaForMerge.
@@ -1354,6 +1447,8 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 // so the per-URI resolution here deliberately skips extends-merge (the digest is
 // of the raw authored entity, exactly as the eager closure lookup hashed).
 func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte) closure.Lookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return &lazyClosureLookup{
 		l:      l,
 		puller: puller,
@@ -1373,6 +1468,12 @@ type lazyClosureLookup struct {
 }
 
 func (x *lazyClosureLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
+	// The closure walker invokes this from pipeline code outside any
+	// LazyLookup method, and it re-enters the lookup's lock-free
+	// internals (resolveComponentForClosure / the recipe-shell base, which
+	// alias the lookup's maps), so it takes the lookup lock here.
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
 	// Route by the collection-site kind when known, so a Feature is not first
 	// attempted at a Component location (a wasted registry miss); fall back to the
 	// cascade when the hint is absent or names a kind this lazy path does not
@@ -1391,18 +1492,26 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(uri, kindHint string) (closure.
 }
 
 func (x *lazyClosureLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
 	return x.base.ResolveAggregate(uri)
 }
 
 func (x *lazyClosureLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
 	return x.base.ResolveSchemaLibrary(uri)
 }
 
 func (x *lazyClosureLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
 	return x.base.ResolveMappingLibrary(uri)
 }
 
 func (x *lazyClosureLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
 	return x.base.ResolveWasmPlugin(uri)
 }
 

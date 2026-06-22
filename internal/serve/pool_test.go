@@ -15,7 +15,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // newPoolTestServer builds a Server wired for an in-memory dispatch-loop
@@ -34,7 +33,6 @@ func newPoolTestServer(in io.Reader, out io.Writer, poolSize int, hook func()) *
 		in:                 bufio.NewReader(in),
 		out:                out,
 		stderr:             io.Discard,
-		positionEncoding:   yamlpos.PositionEncodingUTF16,
 		testInDispatchHook: hook,
 	}
 }

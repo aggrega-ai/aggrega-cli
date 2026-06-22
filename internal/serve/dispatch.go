@@ -345,7 +345,7 @@ func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
 	if req.Method == "aggrega/shutdown" {
 		return s.dispatchShutdown(ctx, req)
 	}
-	if s.shuttingDown {
+	if s.shuttingDown.Load() {
 		if isNotification(req) {
 			return nil
 		}
@@ -531,7 +531,7 @@ type publishDiagnosticsParams struct {
 // to s.diagnostics so the extension's DiagnosticCollection stays
 // in sync with the daemon's cache.
 func (s *Server) publishDiagnostics(ctx context.Context, file string) error {
-	diags := s.diagnostics[file]
+	diags := s.snapshotDiagnostics(file)
 	if diags == nil {
 		diags = []Diagnostic{}
 	}

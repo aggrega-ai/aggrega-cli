@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -95,22 +98,31 @@ type Diagnostic struct {
 // after workspace-root discovery + workspace-config load; reused for
 // every JSON-RPC request the dispatch loop reads.
 //
-// No mutex on Server's mutable state. The dispatch loop runs a reader
-// goroutine that consumes framed JSON-RPC messages from stdin and
-// pushes them onto a channel; the main goroutine selects on that
-// channel and runs handlers synchronously. Handlers — the only writers
-// of Server fields — execute in the main goroutine only. The reader
-// goroutine reads from stdin and writes to channels; it never touches
-// Server mutable state. The previous "single goroutine" architecture
-// served the same no-mutex invariant; the reader goroutine was
-// introduced so the aggrega/shutdown drain timer can start at
-// notification arrival rather than after the in-flight handler
-// returns.
+// Concurrency. The daemon dispatches handlers through a bounded worker
+// pool whose size is configurable via concurrency.pool_size. When the
+// pool size is greater than 1, handlers run concurrently, so every
+// Server field a handler touches is synchronized to support that; the
+// default pool size is 1, so handlers run serially. The synchronized
+// surfaces are:
 //
-// Handlers run on a worker pool whose default size is one, so they
-// execute serially in arrival order and this no-mutex invariant holds
-// as stated; the id-order stdout serializer is the sole owner of the
-// output writer.
+//   - The parse cache and the lazy catalog lookup are each internally
+//     synchronized by their own mutex; callers need no external lock.
+//   - The per-file diagnostics map is guarded by diagMu. Publication
+//     copies the file's slice under the lock and marshals outside it.
+//   - positionEncoding is held in an atomic value: the initialize
+//     handler stores it, every position-mapping site loads it.
+//   - shuttingDown is an atomic bool: the shutdown handler stores it,
+//     the dispatch drain-state pre-check loads it.
+//
+// The remaining fields (workspaceRoot, configSource, compilerVersion,
+// workspaceMarker, wsConfig, lazyCatalog pointer, activeRelease,
+// activeReleasePath, cascadeAttempt, lockfile, serverCtx/serverCancel)
+// are written once at construction or at startup before the worker
+// pool starts, then only read during handler execution, so they are
+// immutable snapshots needing no lock. The reader goroutine reads stdin
+// and writes channels; it never touches Server mutable state. The
+// id-order stdout serializer is the sole owner of the output writer, so
+// no worker touches s.out directly.
 type Server struct {
 	workspaceRoot string
 	configSource  string
@@ -127,12 +139,14 @@ type Server struct {
 	workspaceMarker workspaceconfig.Marker
 	wsConfig        workspaceconfig.Config
 
-	// shuttingDown is set to true by dispatchShutdown after an
+	// shuttingDown is set by dispatchShutdown after an
 	// aggrega/shutdown notification arrives. The drain-state
-	// pre-check in handle consults this flag to reject subsequent
+	// pre-check in dispatch consults it to reject subsequent
 	// requests with errShuttingDown and drop subsequent
-	// notifications.
-	shuttingDown bool
+	// notifications. Atomic because the shutdown handler that stores
+	// it and the dispatch pre-check that loads it run on different
+	// worker goroutines under the pool.
+	shuttingDown atomic.Bool
 
 	// serverCtx is the session-level context every per-request context
 	// derives from; serverCancel cancels it. The reader goroutine calls
@@ -199,21 +213,31 @@ type Server struct {
 	// when the lockfile machinery ships.
 	lockfile *lockfile.Lockfile
 
-	parseCache  *cache
+	parseCache *cache
+
+	// diagMu guards every read and write of the diagnostics map. The
+	// critical section is O(1) map work plus, at publish time, a copy
+	// of one file's slice header; it never spans a pipeline run or any
+	// I/O. Writers always reassign a whole slice (never mutate one in
+	// place), so a header copy taken under the lock is a safe snapshot
+	// to marshal after releasing it.
+	diagMu      sync.Mutex
 	diagnostics map[string][]Diagnostic
 
 	in     *bufio.Reader
 	out    io.Writer
 	stderr io.Writer
 
-	// positionEncoding selects how Position.Character offsets are
-	// interpreted in JSON-RPC requests + responses. Defaults to
-	// UTF-16 (LSP 3.17 protocol default). The aggrega/initialize
-	// handler may overwrite this when the client negotiates a
-	// different encoding via general.positionEncodings capability.
-	// Subsequent LineIndex constructions in the daemon read this
-	// field via BuildLineIndexWithEncoding.
-	positionEncoding yamlpos.PositionEncoding
+	// positionEncodingValue holds the negotiated position encoding,
+	// which selects how Position.Character offsets are interpreted in
+	// JSON-RPC requests + responses. Defaults to UTF-16 (LSP 3.17
+	// protocol default). The aggrega/initialize handler stores a new
+	// value when the client negotiates a different encoding via the
+	// general.positionEncodings capability; every position-mapping
+	// site loads it via the positionEncoding accessor. Held in an
+	// atomic value because the initialize handler that stores it and
+	// the read sites run on different worker goroutines under the pool.
+	positionEncodingValue atomic.Value
 
 	// testInDispatchHook, when non-nil, runs at the top of handle()
 	// before per-method dispatch. The production setup never sets
@@ -222,6 +246,73 @@ type Server struct {
 	// (e.g., distinguishing arrival-based from observation-based
 	// drain-timer semantics). A nil hook is a no-op.
 	testInDispatchHook func()
+}
+
+// positionEncoding returns the negotiated position encoding. It loads
+// the atomic value the initialize handler set; an unset value (a Server
+// constructed without setPositionEncoding) reports the UTF-16 protocol
+// default rather than an empty encoding.
+func (s *Server) positionEncoding() yamlpos.PositionEncoding {
+	v, ok := s.positionEncodingValue.Load().(yamlpos.PositionEncoding)
+	if !ok {
+		return yamlpos.PositionEncodingUTF16
+	}
+	return v
+}
+
+// setPositionEncoding stores the negotiated position encoding. Called
+// by the initialize handler when the client negotiates an encoding.
+func (s *Server) setPositionEncoding(enc yamlpos.PositionEncoding) {
+	s.positionEncodingValue.Store(enc)
+}
+
+// setDiagnostics records the diagnostics slice for file under diagMu.
+// A nil slice is stored verbatim (it reads back as an empty result).
+// This is the single write entry point for the diagnostics map; all
+// handler write sites route through it so the locking discipline has
+// one home.
+func (s *Server) setDiagnostics(file string, diags []Diagnostic) {
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	s.diagnostics[file] = diags
+}
+
+// dropDiagnostics removes file's diagnostics entry under diagMu. No-op
+// when the entry is absent.
+func (s *Server) dropDiagnostics(file string) {
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	delete(s.diagnostics, file)
+}
+
+// snapshotDiagnostics returns a copy of file's diagnostics slice taken
+// under diagMu. The copy is what callers marshal or return on the wire,
+// so the marshal runs off the lock and never races a concurrent
+// writer's whole-slice reassignment. A missing entry returns nil.
+func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	diags, ok := s.diagnostics[file]
+	if !ok || len(diags) == 0 {
+		return nil
+	}
+	out := make([]Diagnostic, len(diags))
+	copy(out, diags)
+	return out
+}
+
+// diagnosticsFiles returns the diagnostics map's keys, sorted, under
+// diagMu. Used by the initialize startup-flush so the whole-map range
+// does not race a concurrent writer.
+func (s *Server) diagnosticsFiles() []string {
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	files := make([]string, 0, len(s.diagnostics))
+	for f := range s.diagnostics {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return files
 }
 
 // Run anchors the workspace root, loads the merged workspace +
@@ -300,8 +391,8 @@ func Run(cfg RunConfig) error {
 		in:                bufio.NewReader(cfg.Stdin),
 		out:               cfg.Stdout,
 		stderr:            stderr,
-		positionEncoding:  yamlpos.PositionEncodingUTF16,
 	}
+	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 
 	// At-startup lockfile load + drift check. Best-effort: silent
 	// no-op when there is no active Release; stderr-log-and-skip on

@@ -158,7 +158,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 
 	// Source-position recovery walks the parsed document and computes
 	// scalar end positions in the validated file's coordinate space.
-	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 
 	var diags []Diagnostic
 

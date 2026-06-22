@@ -14,7 +14,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // shortDrain is the drain timeout integration-style shutdown tests
@@ -52,7 +51,6 @@ func startServerWithPipes(t *testing.T) (stdinW io.WriteCloser, stdoutR io.Reade
 		in:               bufio.NewReader(stdinR),
 		out:              stdoutBuf,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	ch := make(chan error, 1)
 	go func() {
@@ -111,7 +109,6 @@ func TestShutdownRejectsSubsequentRequests(t *testing.T) {
 		in:               bufio.NewReader(stdinR),
 		out:              stdoutBuf,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	done := make(chan error, 1)
 	// Use a longer drain here so the dispatcher has time to process
@@ -181,7 +178,6 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 		in:               bufio.NewReader(stdinR),
 		out:              stdoutBuf,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -219,7 +215,6 @@ func TestShutdownDrainBudgetEnforced(t *testing.T) {
 		in:               bufio.NewReader(stdinR),
 		out:              stdoutBuf,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -301,7 +296,6 @@ func TestShutdownDrainTimerIsArrivalBased(t *testing.T) {
 		in:               bufio.NewReader(stdinR),
 		out:              stdoutBuf,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 		testInDispatchHook: func() {
 			if hookFired {
 				return
@@ -364,7 +358,6 @@ func TestShutdownSecondNotificationIsIdempotent(t *testing.T) {
 		in:               bufio.NewReader(stdinR),
 		out:              stdoutBuf,
 		stderr:           io.Discard,
-		positionEncoding: yamlpos.PositionEncodingUTF16,
 	}
 	done := make(chan error, 1)
 	go func() {

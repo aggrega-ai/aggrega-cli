@@ -26,6 +26,6 @@ import "context"
 // timer-creation path without leaking runtime resources. The handler
 // itself simply re-sets the flag (already true) and returns.
 func (s *Server) dispatchShutdown(_ context.Context, _ *jsonRPCRequest) error {
-	s.shuttingDown = true
+	s.shuttingDown.Store(true)
 	return nil
 }

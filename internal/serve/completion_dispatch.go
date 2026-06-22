@@ -39,7 +39,7 @@ func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *j
 			Message: fmt.Sprintf("file not validated: %s", params.URI),
 		}
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding())
 	ctx, err := yamlpos.Classify(entry.node, idx, params.Position)
 	if err != nil {
 		return []CompletionItem{}, nil
@@ -175,15 +175,16 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 	seen := map[string]bool{}
 	// Parse-cache pass first.
-	for _, entry := range s.parseCache.entries {
-		if kindFilter != "" && scalarAtPathOnDoc(entry.node, []string{"kind"}) != kindFilter {
-			continue
+	s.parseCache.Range(func(_ string, node *yaml.Node, _ []byte) bool {
+		if kindFilter != "" && scalarAtPathOnDoc(node, []string{"kind"}) != kindFilter {
+			return true
 		}
-		name, _ := metadataNameOf(entry.node)
+		name, _ := metadataNameOf(node)
 		if name != "" {
 			seen[name] = true
 		}
-	}
+		return true
+	})
 	// Workspace-walk fallback. Completion is a fast path; cancellation is
 	// honored at the dispatcher entry check rather than mid-walk, so a
 	// background context suffices here.
@@ -233,9 +234,10 @@ func (s *Server) enumerateRecipeImplements(kindFilter string) map[string]string 
 		}
 		out[name] = scalarAtPathOnDoc(node, []string{"spec", "implements"})
 	}
-	for _, entry := range s.parseCache.entries {
-		record(entry.node)
-	}
+	s.parseCache.Range(func(_ string, node *yaml.Node, _ []byte) bool {
+		record(node)
+		return true
+	})
 	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
 		content, err := os.ReadFile(path)
 		if err != nil {

@@ -47,7 +47,7 @@ func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos y
 			Message: fmt.Sprintf("file not validated: %s", uri),
 		}
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding())
 	ctx, err := yamlpos.Classify(entry.node, idx, pos)
 	if err != nil {
 		return nil, nil
@@ -123,20 +123,22 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersi
 	seen := map[string]bool{}
 
 	// Parse-cache pass.
-	for path, entry := range s.parseCache.entries {
-		entityName, nameNode := metadataNameOf(entry.node)
+	encoding := s.positionEncoding()
+	s.parseCache.Range(func(path string, node *yaml.Node, content []byte) bool {
+		entityName, nameNode := metadataNameOf(node)
 		if entityName != name || nameNode == nil {
-			continue
+			return true
 		}
-		entityVersion := scalarValueAtPath(entry.node, []string{"metadata", "version"})
-		idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
+		entityVersion := scalarValueAtPath(node, []string{"metadata", "version"})
+		idx := yamlpos.BuildLineIndexWithEncoding(content, encoding)
 		matches = append(matches, match{
 			path:     path,
 			version:  entityVersion,
 			location: nodeToLocation(path, idx, nameNode),
 		})
 		seen[path] = true
-	}
+		return true
+	})
 
 	// Workspace-walk pass. Skip paths already captured by the parse-cache
 	// pass (a parse-cached file would be re-read from disk and possibly
@@ -159,7 +161,7 @@ func (s *Server) findDefinitionByURI(reqCtx context.Context, name, expectedVersi
 			return nil
 		}
 		entityVersion := scalarValueAtPath(&doc, []string{"metadata", "version"})
-		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 		matches = append(matches, match{
 			path:     path,
 			version:  entityVersion,
@@ -260,7 +262,7 @@ func (s *Server) resolveReleasePath(relativePath string) *yamlpos.Location {
 		fmt.Fprintf(s.stderr, "  release-path parse: %s: %v\n", full, unErr)
 		return nil
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 	if _, nameNode := metadataNameOf(&doc); nameNode != nil {
 		loc := nodeToLocation(full, idx, nameNode)
 		return &loc
@@ -327,7 +329,7 @@ func (s *Server) findReferencesAcrossWorkspace(reqCtx context.Context, uri strin
 			fmt.Fprintf(s.stderr, "  workspace-walk parse: %s: %v\n", path, unErr)
 			return nil
 		}
-		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 		root := documentRoot(&doc)
 		// Track files whose own metadata.name matches the search target. When more than one such file exists,
 		// emit a stderr warning at walk-end. This is symmetric to the duplicate-name warning emitted by
@@ -400,7 +402,7 @@ func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri 
 		if nameNode == nil {
 			return nil
 		}
-		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+		idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 		out = append(out, nodeToLocation(path, idx, nameNode))
 		return nil
 	})
@@ -423,7 +425,7 @@ func (s *Server) uriAtMetadataName(uri string, pos yamlpos.Position) (string, *j
 			Message: fmt.Sprintf("file not validated: %s", uri),
 		}
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding())
 	ctx, err := yamlpos.Classify(entry.node, idx, pos)
 	if err != nil {
 		return "", nil

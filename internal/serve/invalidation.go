@@ -87,7 +87,7 @@ func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
 	// also clears them. No-op when File is empty or the entry is
 	// absent.
 	s.parseCache.Drop(params.File)
-	delete(s.diagnostics, params.File)
+	s.dropDiagnostics(params.File)
 
 	// Workspace-level drops gated by granularity. Only "file" opts
 	// out; "workspace", empty (default), "entity", and any

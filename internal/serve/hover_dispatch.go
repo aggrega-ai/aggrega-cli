@@ -34,7 +34,7 @@ func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError)
 			Message: fmt.Sprintf("file not validated: %s", params.URI),
 		}
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(entry.content, s.positionEncoding())
 	ctx, err := yamlpos.Classify(entry.node, idx, params.Position)
 	if err != nil {
 		return nil, nil
@@ -90,11 +90,18 @@ func (s *Server) hoverByURI(targetURI string) *MarkupContent {
 // parsed root + raw bytes on hit; (nil, nil) on miss.
 func (s *Server) findEntityForHover(targetURI string) (*yaml.Node, []byte) {
 	// Parse-cache pass first (cheap, no filesystem).
-	for _, entry := range s.parseCache.entries {
-		name, _ := metadataNameOf(entry.node)
+	var hitNode *yaml.Node
+	var hitContent []byte
+	s.parseCache.Range(func(_ string, node *yaml.Node, content []byte) bool {
+		name, _ := metadataNameOf(node)
 		if name == targetURI {
-			return entry.node, entry.content
+			hitNode, hitContent = node, content
+			return false
 		}
+		return true
+	})
+	if hitNode != nil {
+		return hitNode, hitContent
 	}
 	// Workspace-walk fallback. Hover is a fast path; cancellation is
 	// honored at the dispatcher entry check rather than mid-walk, so a

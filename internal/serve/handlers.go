@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -113,7 +112,7 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	selected := selectPositionEncoding(params.Capabilities)
-	s.positionEncoding = selected
+	s.setPositionEncoding(selected)
 	if err := s.writeResult(ctx, req.ID, initializeResult{
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
@@ -130,14 +129,10 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	// dispatchLoop runs; the LSP-canonical pattern is to push those
 	// diagnostics AFTER the initialize response so the client's
 	// handshake completes before unsolicited notifications start
-	// arriving. Sort keys for deterministic ordering across daemon
-	// runs (Go map iteration is randomized).
-	keys := make([]string, 0, len(s.diagnostics))
-	for k := range s.diagnostics {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, file := range keys {
+	// arriving. diagnosticsFiles returns the keys sorted for
+	// deterministic ordering across daemon runs (Go map iteration is
+	// randomized).
+	for _, file := range s.diagnosticsFiles() {
 		if err := s.publishDiagnostics(ctx, file); err != nil {
 			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
 		}
@@ -226,7 +221,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
 		diag := yamlErrorToDiagnostic(err)
-		s.diagnostics[params.File] = []Diagnostic{diag}
+		s.setDiagnostics(params.File, []Diagnostic{diag})
 		s.parseCache.Drop(params.File)
 		return validateResult{Diagnostics: []Diagnostic{diag}}, nil
 	}
@@ -240,7 +235,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// honest coverage for every other file. Foreign YAML and envelope-clean
 	// documents fall through to the existing flow unchanged.
 	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(params.File, []byte(params.Content), &doc); hasFindings {
-		s.diagnostics[params.File] = diags
+		s.setDiagnostics(params.File, diags)
 		return validateResult{Diagnostics: diags}, nil
 	}
 	if s.activeRelease == nil {
@@ -261,7 +256,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		if s.cascadeAttempt.ReleaseCandidatesFound > 0 || failed > 0 {
 			return validateResult{}, s.emitReleaseNotResolvedEnvelope(params.File)
 		}
-		s.diagnostics[params.File] = nil
+		s.setDiagnostics(params.File, nil)
 		return validateResult{Diagnostics: nil}, nil
 	}
 	// Tier 4: structured semantic violations via RunTier4Pipeline.
@@ -271,7 +266,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// entry intact and return without overwriting it.
 		return validateResult{Diagnostics: diags}, nil
 	}
-	s.diagnostics[params.File] = diags
+	s.setDiagnostics(params.File, diags)
 	return validateResult{Diagnostics: diags}, nil
 }
 
@@ -286,9 +281,9 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context) int {
 	failed := s.cascadeAttempt.failedReleaseCandidates()
 	for _, fc := range failed {
-		s.diagnostics[fc.Path] = []Diagnostic{
+		s.setDiagnostics(fc.Path, []Diagnostic{
 			{Line: 1, Column: 1, Severity: "error", Message: fc.Err.Error()},
-		}
+		})
 		_ = s.publishDiagnostics(ctx, fc.Path)
 	}
 	return len(failed)
@@ -370,7 +365,7 @@ func (s *Server) handleDiagnostics(params diagnosticsParams) (diagnosticsResult,
 			Message: fmt.Sprintf("file not validated: %s", params.File),
 		}
 	}
-	return diagnosticsResult{Diagnostics: s.diagnostics[params.File]}, nil
+	return diagnosticsResult{Diagnostics: s.snapshotDiagnostics(params.File)}, nil
 }
 
 // irGraphParams is the request shape for `aggrega/irGraph`. The

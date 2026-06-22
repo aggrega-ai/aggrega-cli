@@ -131,7 +131,7 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 		// this leg produces no findings; fall through.
 		return nil, false
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding)
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 	var diags []Diagnostic
 	for _, f := range leafmostFindings(envErr.Findings) {
 		line, col := 1, 1
