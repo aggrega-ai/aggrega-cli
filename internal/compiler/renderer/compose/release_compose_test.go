@@ -60,7 +60,7 @@ func TestComposeAssemble_SingleBoundary(t *testing.T) {
 	pub.Ports.Set("web", 8080)
 	w.Services.Set("api", pub)
 
-	frag := makeFragment(t, "api", w, map[string]string{AnnotationNamespace: "production"})
+	frag := makeFragment(t, "api", w, map[string]string{renderer.AnnotationNamespace: "production"})
 
 	info := renderer.BoundaryInfo{
 		BoundaryPath:  "default",
@@ -68,7 +68,7 @@ func TestComposeAssemble_SingleBoundary(t *testing.T) {
 		IntermediatesByNode: map[string][]renderer.EmittedFile{
 			"api": frag,
 		},
-		NodeAnnotations:        map[string]map[string]string{"api": {AnnotationNamespace: "production"}},
+		NodeAnnotations:        map[string]map[string]string{"api": {renderer.AnnotationNamespace: "production"}},
 		NodeComponent:          map[string]string{"api": "test/component"},
 		ContributingBoundaries: []string{"default"},
 	}
@@ -113,12 +113,12 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 		BoundaryPath:  "merged",
 		AggregateName: "two-boundary-app",
 		IntermediatesByNode: map[string][]renderer.EmittedFile{
-			"frontend": makeFragment(t, "frontend", frontW, map[string]string{AnnotationNamespace: "edge-net"}),
-			"backend":  makeFragment(t, "backend", backW, map[string]string{AnnotationNamespace: "core-net"}),
+			"frontend": makeFragment(t, "frontend", frontW, map[string]string{renderer.AnnotationNamespace: "edge-net"}),
+			"backend":  makeFragment(t, "backend", backW, map[string]string{renderer.AnnotationNamespace: "core-net"}),
 		},
 		NodeAnnotations: map[string]map[string]string{
-			"frontend": {AnnotationNamespace: "edge-net"},
-			"backend":  {AnnotationNamespace: "core-net"},
+			"frontend": {renderer.AnnotationNamespace: "edge-net"},
+			"backend":  {renderer.AnnotationNamespace: "core-net"},
 		},
 		NodeComponent:          map[string]string{"frontend": "test/frontend", "backend": "test/backend"},
 		ContributingBoundaries: []string{"core", "edge"},
@@ -192,8 +192,8 @@ func TestComposeAssemble_ServiceCollision_Errors(t *testing.T) {
 			"auth-b": {{Name: "auth-b.compose-fragment.yaml", Body: fragBody("auth-b:1.0"), Origin: renderer.EmitOriginWorkload, Intermediate: true}},
 		},
 		NodeAnnotations: map[string]map[string]string{
-			"auth-a": {AnnotationNamespace: "a"},
-			"auth-b": {AnnotationNamespace: "b"},
+			"auth-a": {renderer.AnnotationNamespace: "a"},
+			"auth-b": {renderer.AnnotationNamespace: "b"},
 		},
 		NodeComponent:          map[string]string{},
 		ContributingBoundaries: []string{"a", "b"},

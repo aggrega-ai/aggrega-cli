@@ -46,17 +46,9 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-const (
-	// AnnotationNamespace is the per-node annotation that supplies the docker
-	// network name for the boundary the node lives in. All nodes in a
-	// boundary should carry the same value; the merger reads from the
-	// alphabetically-first node and ignores the rest.
-	AnnotationNamespace = "aggrega.ai/namespace"
-
-	// AssembledOutputFile is the assembled compose file path emitted by
-	// AssembleBoundary at the dispatch path.
-	AssembledOutputFile = "docker-compose.yaml"
-)
+// AssembledOutputFile is the assembled compose file path emitted by
+// AssembleBoundary at the dispatch path.
+const AssembledOutputFile = "docker-compose.yaml"
 
 // serviceContrib records one (boundary, nodeID) tuple that contributed a
 // service to the merged compose output. Used by collision detection to
@@ -132,7 +124,7 @@ func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.Bounda
 		// we read it directly per-node.
 		for _, nid := range allNodeIDs {
 			ann := info.NodeAnnotations[nid]
-			networkNameByNode[nid] = deriveNodeNetworkName(ann[AnnotationNamespace], info.BoundaryPath)
+			networkNameByNode[nid] = deriveNodeNetworkName(ann[renderer.AnnotationNamespace], info.BoundaryPath)
 		}
 	}
 

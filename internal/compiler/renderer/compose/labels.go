@@ -4,10 +4,23 @@
 package compose
 
 import (
-	"strconv"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
+
+// composeOmittedProvenanceKeys are the two provenance keys the shared
+// builders emit that compose deliberately does not carry. Compose has no
+// annotation concept and its service-label values are unconstrained, so it
+// folds the whole provenance set — labels plus annotations — into a single
+// labels map rather than splitting on the Kubernetes label-value charset.
+// The two Kubernetes-only keys are dropped: `app.kubernetes.io/name` is a
+// K8s recommended label with no compose meaning, and
+// `argocd.argoproj.io/sync-wave` is an Argo CD ordering hint that compose
+// does not honour. The plain `aggrega.ai/sync-wave` provenance entry is
+// retained.
+var composeOmittedProvenanceKeys = []string{
+	"app.kubernetes.io/name",
+	"argocd.argoproj.io/sync-wave",
+}
 
 // injectAggregaLabelsIntoServices walks the services: map of a YAML-
 // decoded compose document and stamps the canonical aggrega.ai/* label
@@ -113,37 +126,21 @@ func buildSingleOriginMap(doc map[string]any, nodeCtx renderer.NodeRenderContext
 }
 
 // buildAggregaLabels produces the aggrega.ai/* service-level labels for
-// compose services. Mirrors the helm and helmchart engines' same-named
-// helper so the cross-cutting provenance contract holds across all three
-// engines: every emitted service carries component-id, recipe-uri (when a
-// Recipe identity is attached to the node), and boundary-path. Compiler-
-// version, aggregate-name, environment, and sync-wave follow the same
-// elide-on-empty rule as the K8s engines.
+// compose services. It derives its set from the shared provenance builders
+// rather than re-listing keys, so adding a provenance key in one place flows
+// to every engine: compose carries the entire provenance set — the
+// label-safe entries unioned with the charset-unsafe ones — as a single
+// service-labels map, because compose's label values are unconstrained and
+// it has no annotation concept. The two Kubernetes-only keys
+// (composeOmittedProvenanceKeys) are dropped; the remaining set matches the
+// helm and helm-chart engines' provenance for the same node.
 func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
-	componentID := nodeCtx.LabelComponentID
-	if componentID == "" {
-		componentID = nodeCtx.NodeID
+	labels := renderer.BuildAggregaProvenanceLabels(nodeCtx)
+	for k, v := range renderer.BuildAggregaProvenanceAnnotations(nodeCtx, renderer.ProvenanceRecipeURIFromNodeCtx(nodeCtx)) {
+		labels[k] = v
 	}
-	labels := map[string]string{
-		"aggrega.ai/component-id": componentID,
-	}
-	if nodeCtx.BoundaryPath != "" {
-		labels["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath
-	}
-	if nodeCtx.RecipeName != "" && nodeCtx.RecipeVersion != "" {
-		labels["aggrega.ai/recipe-uri"] = nodeCtx.RecipeName + ":" + nodeCtx.RecipeVersion
-	}
-	if nodeCtx.Provenance.CompilerVersion != "" {
-		labels["aggrega.ai/compiler-version"] = nodeCtx.Provenance.CompilerVersion
-	}
-	if nodeCtx.Provenance.AggregateName != "" {
-		labels["aggrega.ai/aggregate-name"] = nodeCtx.Provenance.AggregateName
-	}
-	if nodeCtx.Provenance.Environment != "" {
-		labels["aggrega.ai/environment"] = nodeCtx.Provenance.Environment
-	}
-	if nodeCtx.SyncWave != 0 {
-		labels["aggrega.ai/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
+	for _, k := range composeOmittedProvenanceKeys {
+		delete(labels, k)
 	}
 	return labels
 }
