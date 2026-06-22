@@ -24,6 +24,11 @@ var (
 	pushRegistry   string
 	pushDryRun     bool
 	pushSign       bool
+	pushKeyPath    string
+	pushFulcio     string
+	pushRekor      string
+	pushTimestamp  string
+	pushIDToken    string
 )
 
 func newPushCmd() *cobra.Command {
@@ -41,10 +46,15 @@ func newPushCmd() *cobra.Command {
 				return err
 			}
 			pc := pushConfig{
-				EntityPath: path,
-				Registry:   pushRegistry,
-				DryRun:     pushDryRun,
-				ws:         rw,
+				EntityPath:   path,
+				Registry:     pushRegistry,
+				DryRun:       pushDryRun,
+				KeyPath:      pushKeyPath,
+				FulcioURL:    pushFulcio,
+				RekorURL:     pushRekor,
+				TimestampURL: pushTimestamp,
+				IDToken:      pushIDToken,
+				ws:           rw,
 			}
 			// --sign is tri-state: when the operator passes it explicitly we
 			// honour the value; otherwise the registry policy decides whether
@@ -60,6 +70,11 @@ func newPushCmd() *cobra.Command {
 	c.Flags().StringVar(&pushRegistry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
 	c.Flags().BoolVar(&pushDryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
 	c.Flags().BoolVar(&pushSign, "sign", false, "Sign the published artifact and attach the signature as an OCI referrer. When omitted, signing follows the destination registry's policy.")
+	c.Flags().StringVar(&pushKeyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
+	c.Flags().StringVar(&pushFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")
+	c.Flags().StringVar(&pushRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
+	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "RFC3161 timestamp-authority URL for keyless signing. When omitted, the public-good timestamp authority is used.")
+	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing (or read from the ambient OIDC environment).")
 	return c
 }
 
@@ -83,6 +98,18 @@ type pushConfig struct {
 	// regardless of this field. There is no flag to bypass that refusal.
 	Sign *bool
 
+	// KeyPath, FulcioURL, RekorURL, TimestampURL, and IDToken are the
+	// signing inputs from the CLI flags. They override the workspace
+	// config's signing block; an empty value falls through to the
+	// per-registry then global config, then to the public-good endpoint
+	// default. IDToken is never sourced from config — it is a short-lived
+	// secret supplied only by flag or the ambient OIDC environment.
+	KeyPath      string
+	FulcioURL    string
+	RekorURL     string
+	TimestampURL string
+	IDToken      string
+
 	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
 	// when a test invokes pushRun directly; workspaceOrResolve then resolves
 	// from the working directory.
@@ -95,9 +122,9 @@ type pushConfig struct {
 	PushTarget oras.Target
 
 	// Signer produces the signature bundle when signing is requested.
-	// Tests inject a fake; production constructs a real signer. When
-	// signing is requested and Signer is nil, pushRun constructs the
-	// keyless signer from the environment.
+	// Tests inject a fake; production constructs a real signer from the
+	// resolved signing inputs. When signing is requested and Signer is
+	// nil, pushRun builds a keyed or keyless signer via buildSigner.
 	Signer signing.Signer
 }
 
@@ -128,11 +155,21 @@ type pushEntityHeader struct {
 // every publishable kind and Recipe / FeatureRecipe tar.gz directory
 // walking); constructs the OCI repository reference; pushes via pkg/oci.Push.
 //
+// Signing is sign-before-push: when signing is requested, pushRun computes
+// the proposed manifest digest, constructs the signer, and signs the digest
+// BEFORE any bytes reach the registry. If the signer cannot be constructed or
+// signing fails, pushRun refuses before the push — zero bytes land, so an
+// unsigned artifact can never leak onto a signature-requiring registry. The
+// signature bundle is attached as a referrer only after the push succeeds; the
+// bundle commits to the digest string, so the pre-push signature is valid for
+// the published bytes.
+//
 // Returns wrapped errors on workspace-config validation failure,
 // entity-file read / parse failure, bundle failure (including
 // ErrUnknownEntityKind for non-publishable kinds and
 // ErrEntityVersionPathMismatch for an entity whose metadata.version
-// disagrees with its per-version subdirectory), and push failure.
+// disagrees with its per-version subdirectory), signer-construction /
+// signing failure (refused before the push), and push failure.
 //
 // When cfg.DryRun is true, pushRun prints the proposed
 // <reference>:<tag> + mediatype + bundle byte count and returns
@@ -241,6 +278,38 @@ func pushRun(cfg pushConfig) error {
 			reference, tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
 	}
 
+	// Sign-before-push: produce the signature bundle BEFORE any bytes reach
+	// the registry. The manifest digest is known pre-push, and the bundle
+	// commits to the digest string, so the signature is valid for the bytes
+	// that will land. If the signer cannot be constructed or signing fails,
+	// refuse here — nothing is pushed, so an unsigned artifact never leaks
+	// onto a signature-requiring registry. The bundle is held and attached
+	// as a referrer only after the push succeeds.
+	var (
+		signatureBundle []byte
+		signatureType   string
+	)
+	if wantSign {
+		signer := cfg.Signer
+		if signer == nil {
+			resolved := wsCfg.ResolveSigning(registryhost.Of(registry))
+			signer, err = buildSigner(signerParams{
+				KeyPath:      firstNonEmpty(cfg.KeyPath, resolved.KeyPath),
+				IDToken:      cfg.IDToken,
+				FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
+				RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
+				TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
+			})
+			if err != nil {
+				return fmt.Errorf("aggrega push: construct signer: %w: %w", err, signing.ErrUnsignedPushRefused)
+			}
+		}
+		signatureBundle, signatureType, err = signDigest(ctx, signer, proposedDigest)
+		if err != nil {
+			return fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+		}
+	}
+
 	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
@@ -248,34 +317,10 @@ func pushRun(cfg pushConfig) error {
 	fmt.Printf("Push complete: %s:%s (%s)\n", reference, tag, digest)
 
 	if wantSign {
-		if cfg.Signer == nil {
-			// A signature-requiring registry with no signer is refused
-			// before the push (the guardrail above only fires when signing
-			// was explicitly declined). Reaching here with no signer means
-			// the operator requested --sign but supplied no signing
-			// identity: halt rather than leave the artifact unsigned.
-			return fmt.Errorf("aggrega push: signing requested but no signer configured: %w", signing.ErrUnsignedPushRefused)
-		}
-		if err := signPushedArtifact(ctx, target, tag, digest, cfg.Signer); err != nil {
-			return fmt.Errorf("aggrega push: sign %s:%s: %w", reference, tag, err)
+		if err := attachBundle(ctx, target, tag, signatureType, signatureBundle); err != nil {
+			return fmt.Errorf("aggrega push: attach signature to %s:%s: %w", reference, tag, err)
 		}
 		fmt.Printf("Signature attached: %s:%s\n", reference, tag)
-	}
-	return nil
-}
-
-// signPushedArtifact signs the pushed artifact's manifest digest and
-// attaches the signature bundle as an OCI referrer of the just-published
-// artifact. The artifact itself is untouched — the referrer is a sibling
-// manifest pointing back at digest, so signing never re-pushes or mutates
-// published bytes. subjectRef is the tag the artifact was published under.
-func signPushedArtifact(ctx context.Context, target oras.Target, subjectRef, digest string, signer signing.Signer) error {
-	bundleBytes, artifactType, err := signer.Sign(ctx, digest)
-	if err != nil {
-		return err
-	}
-	if _, err := oci.AttachReferrer(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
-		return err
 	}
 	return nil
 }

@@ -69,6 +69,11 @@ type Config struct {
 	ParseCache  ParseCacheConfig  `yaml:"parse_cache"`
 	Concurrency ConcurrencyConfig `yaml:"concurrency"`
 
+	// Signing carries the global signing defaults: the keyless service
+	// URLs and an optional keyed-key path. A per-registry signing block
+	// overrides these for that host; both are overridden by a CLI flag.
+	Signing SigningConfig `yaml:"signing,omitempty"`
+
 	// Registries carries per-registry settings keyed by host. A registry
 	// absent from this list uses the defaults: a present signature is
 	// verified, and an absent signature is tolerated (except for the
@@ -119,6 +124,75 @@ type RegistryConfig struct {
 	// registry entirely. Unlike the global opt-out, this is scoped to one
 	// host. Defaults to false.
 	SkipVerification bool `yaml:"skip_verification,omitempty"`
+	// Signing carries the signing defaults scoped to this registry: the
+	// keyless service URLs and an optional keyed-key path. It overrides the
+	// global signing block for pushes to this host; a CLI flag overrides
+	// both.
+	Signing SigningConfig `yaml:"signing,omitempty"`
+}
+
+// SigningConfig carries the signing-side endpoint defaults: the keyless
+// service URLs and an optional pointer to a keyed-key file. It is the sign
+// counterpart of the verify-side trust policy and lives at both the global
+// (top-level) and per-registry levels.
+//
+// SECURITY: this struct holds NO secret material. The OIDC identity token
+// is a short-lived secret and is never a config field — it is supplied at
+// runtime via a flag, the ambient OIDC environment, or an interactive flow.
+// KeyPath is a PATH to a key file, never the key bytes; inline private-key
+// material never appears in config. This mirrors the verify side, which
+// pins an inline public_key but only ever a key PATH on the sign side.
+type SigningConfig struct {
+	// FulcioURL overrides the public-good Fulcio certificate-authority URL
+	// for keyless signing. Empty means use the public-good default.
+	FulcioURL string `yaml:"fulcio_url,omitempty"`
+	// RekorURL overrides the public-good Rekor transparency-log URL for
+	// keyless signing. Empty means use the public-good default.
+	RekorURL string `yaml:"rekor_url,omitempty"`
+	// TimestampURL overrides the public-good RFC3161 timestamp-authority URL
+	// for keyless signing. Empty means use the public-good default.
+	TimestampURL string `yaml:"timestamp_url,omitempty"`
+	// KeyPath is a path to a held ECDSA P-256 private-key PEM file for
+	// offline keyed signing. It is a POINTER to a file, never inline key
+	// material. Empty selects the keyless path.
+	KeyPath string `yaml:"key_path,omitempty"`
+}
+
+// ResolveSigning resolves the signing config for host by overlaying the
+// per-registry signing block onto the global one, field by field: a
+// non-empty per-registry value wins over the global value, and an empty
+// per-registry value falls through to the global value. Public-good URL
+// defaults are NOT applied here — the caller overlays CLI flags first and
+// applies endpoint defaults last, so this method returns only the
+// config-derived layer (per-registry > global) with empty meaning "unset".
+// Host matching is exact; callers normalise the host before the lookup.
+func (c Config) ResolveSigning(host string) SigningConfig {
+	resolved := c.Signing
+	for _, r := range c.Registries {
+		if r.Host == host {
+			resolved = overlaySigning(resolved, r.Signing)
+			break
+		}
+	}
+	return resolved
+}
+
+// overlaySigning returns base with each non-empty field of over taking
+// precedence. An empty field in over leaves base's value in place.
+func overlaySigning(base, over SigningConfig) SigningConfig {
+	if over.FulcioURL != "" {
+		base.FulcioURL = over.FulcioURL
+	}
+	if over.RekorURL != "" {
+		base.RekorURL = over.RekorURL
+	}
+	if over.TimestampURL != "" {
+		base.TimestampURL = over.TimestampURL
+	}
+	if over.KeyPath != "" {
+		base.KeyPath = over.KeyPath
+	}
+	return base
 }
 
 // TrustedIdentity is one acceptable keyless signing identity: a

@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -120,41 +119,28 @@ func signRun(cfg signConfig) error {
 
 	signer := cfg.Signer
 	if signer == nil {
-		signer, err = signerFromFlags(cfg)
+		signer, err = buildSigner(signerParams{
+			KeyPath:      cfg.KeyPath,
+			IDToken:      cfg.IDToken,
+			FulcioURL:    cfg.FulcioURL,
+			RekorURL:     cfg.RekorURL,
+			TimestampURL: cfg.TimestampURL,
+		})
 		if err != nil {
 			return fmt.Errorf("aggrega sign: %w", err)
 		}
 	}
 
-	bundleBytes, artifactType, err := signer.Sign(ctx, digest)
+	bundleBytes, artifactType, err := signDigest(ctx, signer, digest)
 	if err != nil {
 		return fmt.Errorf("aggrega sign: %s: %w", cfg.Reference, err)
 	}
-	if _, err := oci.AttachReferrer(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
+	if err := attachBundle(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
 		return fmt.Errorf("aggrega sign: attach signature to %s: %w", cfg.Reference, err)
 	}
 
 	fmt.Printf("Signature attached: %s (%s)\n", cfg.Reference, digest)
 	return nil
-}
-
-// signerFromFlags builds a keyed signer when a key path is supplied, and
-// a keyless signer otherwise. The keyless signer is live-only: its Sign
-// contacts Fulcio, Rekor, and an OIDC identity provider.
-func signerFromFlags(cfg signConfig) (signing.Signer, error) {
-	if cfg.KeyPath != "" {
-		pem, err := os.ReadFile(cfg.KeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("read key %s: %w", cfg.KeyPath, err)
-		}
-		return signing.LoadKeyedSigner(pem, nil)
-	}
-	return &signing.KeylessSigner{
-		IDToken:      cfg.IDToken,
-		FulcioURL:    cfg.FulcioURL,
-		RekorURL:     cfg.RekorURL,
-		TimestampURL: cfg.TimestampURL,
-	}, nil
 }
 
 // referenceTag returns the tag or digest portion of an OCI reference.

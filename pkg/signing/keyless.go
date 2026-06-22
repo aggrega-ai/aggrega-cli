@@ -49,12 +49,15 @@ type KeylessSigner struct {
 // key is discarded.
 //
 // LIVE-ONLY: this contacts Fulcio, Rekor, and (transitively) the OIDC
-// provider. It returns ErrKeylessLive when the required endpoints are not
-// configured, and otherwise depends entirely on those live services — it
-// has no offline path and no test exercises its network behaviour.
+// provider. It returns ErrKeylessLive when no identity token is configured,
+// and otherwise depends entirely on those live services — it has no offline
+// path and no test exercises its network behaviour. The Fulcio and Rekor
+// URLs are optional here: a caller that leaves them empty is expected to
+// have defaulted them to the public-good Sigstore instances before
+// constructing the signer.
 func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundleBytes []byte, artifactType string, err error) {
-	if k.IDToken == "" || k.FulcioURL == "" || k.RekorURL == "" {
-		return nil, "", fmt.Errorf("%w: IDToken, FulcioURL, and RekorURL are required", ErrKeylessLive)
+	if k.IDToken == "" {
+		return nil, "", fmt.Errorf("%w: an identity token is required", ErrKeylessLive)
 	}
 
 	ephemeral, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
