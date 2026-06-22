@@ -67,6 +67,8 @@ var runtimeErrorCommands = []struct {
 	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{"lint", []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	// sign fails parsing an invalid reference, locally, before any network call.
+	{"sign", []string{"sign", "not a valid ref!!!"}},
 	// login fails in its own work before any stdin read or network call:
 	// --password-stdin requires --username.
 	{"login", []string{"login", "registry.invalid.example", "--password-stdin"}},

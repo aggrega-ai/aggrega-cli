@@ -9,14 +9,23 @@ import (
 	"testing"
 )
 
-// TestProductionBinary_NoRegistryTestDep asserts the test-only
-// go-containerregistry dependency never enters the production binary's import
-// graph. The in-process OCI registry harness that uses it is integration-tagged
-// and test-only, so the default (non-test, untagged) build of the command must
-// not depend on it. `go list -deps` over the package's production build is the
-// lock: a stray non-test import of go-containerregistry would surface here in the
-// fast suite rather than shipping in a release binary.
-func TestProductionBinary_NoRegistryTestDep(t *testing.T) {
+// TestProductionBinary_NoRegistryHarnessDep asserts the in-process OCI
+// registry harness never enters the production binary's import graph. The
+// harness is the heavyweight go-containerregistry/pkg/registry server,
+// used only by the integration-tagged registry round-trip tests; the
+// default (non-test, untagged) build of the command must not depend on it.
+//
+// The guard is scoped to pkg/registry (the harness), not to the whole
+// go-containerregistry module: the signing crypto library transitively
+// brings the small reference-parsing leaf go-containerregistry/pkg/name
+// into the production graph, which is a legitimate dependency of the
+// keyed-signing path and not the in-process server this guard exists to
+// keep out.
+//
+// `go list -deps` over the package's production build is the lock: a stray
+// non-test import of the registry harness would surface here in the fast
+// suite rather than shipping in a release binary.
+func TestProductionBinary_NoRegistryHarnessDep(t *testing.T) {
 	t.Parallel()
 	goBin, err := exec.LookPath("go")
 	if err != nil {
@@ -28,8 +37,8 @@ func TestProductionBinary_NoRegistryTestDep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list -deps: %v\n%s", err, out)
 	}
-	if strings.Contains(string(out), "go-containerregistry") {
-		t.Errorf("go-containerregistry is in the production (non-test) dependency graph of cmd/aggrega; " +
-			"it must remain integration-test-only")
+	if strings.Contains(string(out), "go-containerregistry/pkg/registry") {
+		t.Errorf("the in-process registry harness (go-containerregistry/pkg/registry) is in the " +
+			"production (non-test) dependency graph of cmd/aggrega; it must remain integration-test-only")
 	}
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -21,6 +23,7 @@ var (
 	pushEntityPath string
 	pushRegistry   string
 	pushDryRun     bool
+	pushSign       bool
 )
 
 func newPushCmd() *cobra.Command {
@@ -37,17 +40,26 @@ func newPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return pushRun(pushConfig{
+			pc := pushConfig{
 				EntityPath: path,
 				Registry:   pushRegistry,
 				DryRun:     pushDryRun,
 				ws:         rw,
-			})
+			}
+			// --sign is tri-state: when the operator passes it explicitly we
+			// honour the value; otherwise the registry policy decides whether
+			// to sign by default.
+			if cmd.Flags().Changed("sign") {
+				v := pushSign
+				pc.Sign = &v
+			}
+			return pushRun(pc)
 		},
 	}
 	c.Flags().StringVar(&pushEntityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
 	c.Flags().StringVar(&pushRegistry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
 	c.Flags().BoolVar(&pushDryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
+	c.Flags().BoolVar(&pushSign, "sign", false, "Sign the published artifact and attach the signature as an OCI referrer. When omitted, signing follows the destination registry's policy.")
 	return c
 }
 
@@ -62,6 +74,15 @@ type pushConfig struct {
 	Registry   string
 	DryRun     bool
 
+	// Sign is the tri-state signing request. nil means "follow the
+	// destination registry's policy" (sign by default to a
+	// signature-requiring registry, do not sign otherwise). A non-nil
+	// value is the operator's explicit --sign choice and overrides the
+	// policy default — except that the strict-refuse guardrail below
+	// always halts an unsigned push to a signature-requiring registry,
+	// regardless of this field. There is no flag to bypass that refusal.
+	Sign *bool
+
 	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
 	// when a test invokes pushRun directly; workspaceOrResolve then resolves
 	// from the working directory.
@@ -72,6 +93,12 @@ type pushConfig struct {
 	// field; nil in production. When nil and DryRun is false,
 	// pushRun constructs the target via oci.NewRemoteRepository.
 	PushTarget oras.Target
+
+	// Signer produces the signature bundle when signing is requested.
+	// Tests inject a fake; production constructs a real signer. When
+	// signing is requested and Signer is nil, pushRun constructs the
+	// keyless signer from the environment.
+	Signer signing.Signer
 }
 
 // pushEntityHeader is the minimal YAML envelope pushRun parses out
@@ -129,6 +156,21 @@ func pushRun(cfg pushConfig) error {
 	}
 	if registry == "" {
 		return fmt.Errorf("aggrega push: no destination registry; set --registry or workspace.default_registry")
+	}
+
+	// Signing policy. The destination registry may require signatures; if
+	// so, signing is on by default and an unsigned push is refused
+	// outright. An explicit --sign value overrides the default for whether
+	// to sign, but never relaxes the refusal: there is no flag to push
+	// unsigned content to a signature-requiring registry.
+	requiresSignatures := wsCfg.RegistryRequiresSignatures(registryhost.Of(registry))
+	wantSign := requiresSignatures
+	if cfg.Sign != nil {
+		wantSign = *cfg.Sign
+	}
+	if requiresSignatures && !wantSign {
+		return fmt.Errorf("aggrega push: registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
+			registry, signing.ErrUnsignedPushRefused)
 	}
 
 	data, err := os.ReadFile(cfg.EntityPath)
@@ -203,8 +245,38 @@ func pushRun(cfg pushConfig) error {
 	if err != nil {
 		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
 	}
-
 	fmt.Printf("Push complete: %s:%s (%s)\n", reference, tag, digest)
+
+	if wantSign {
+		if cfg.Signer == nil {
+			// A signature-requiring registry with no signer is refused
+			// before the push (the guardrail above only fires when signing
+			// was explicitly declined). Reaching here with no signer means
+			// the operator requested --sign but supplied no signing
+			// identity: halt rather than leave the artifact unsigned.
+			return fmt.Errorf("aggrega push: signing requested but no signer configured: %w", signing.ErrUnsignedPushRefused)
+		}
+		if err := signPushedArtifact(ctx, target, tag, digest, cfg.Signer); err != nil {
+			return fmt.Errorf("aggrega push: sign %s:%s: %w", reference, tag, err)
+		}
+		fmt.Printf("Signature attached: %s:%s\n", reference, tag)
+	}
+	return nil
+}
+
+// signPushedArtifact signs the pushed artifact's manifest digest and
+// attaches the signature bundle as an OCI referrer of the just-published
+// artifact. The artifact itself is untouched — the referrer is a sibling
+// manifest pointing back at digest, so signing never re-pushes or mutates
+// published bytes. subjectRef is the tag the artifact was published under.
+func signPushedArtifact(ctx context.Context, target oras.Target, subjectRef, digest string, signer signing.Signer) error {
+	bundleBytes, artifactType, err := signer.Sign(ctx, digest)
+	if err != nil {
+		return err
+	}
+	if _, err := oci.AttachReferrer(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -67,6 +67,38 @@ type Config struct {
 	Plugins    PluginsConfig    `yaml:"plugins"`
 	Lint       LintConfig       `yaml:"lint"`
 	ParseCache ParseCacheConfig `yaml:"parse_cache"`
+
+	// Registries carries per-registry settings keyed by host. A registry
+	// absent from this list uses the defaults (signatures not required).
+	Registries []RegistryConfig `yaml:"registries"`
+}
+
+// RegistryConfig carries settings scoped to one OCI registry host. The
+// shape is forward-compatible: per-registry trust settings beyond
+// RequiresSignatures are additive.
+type RegistryConfig struct {
+	// Host is the registry these settings apply to (e.g.
+	// "hub.aggrega.ai"), matched against the host of a push/pull target.
+	Host string `yaml:"host"`
+	// RequiresSignatures, when true, refuses an unsigned push to this
+	// registry outright and signs a push to it by default. There is no
+	// override: an unsigned push to a signature-requiring registry always
+	// halts. Defaults to false.
+	RequiresSignatures bool `yaml:"requires_signatures"`
+}
+
+// RegistryRequiresSignatures reports whether the registry at host is
+// configured to require signatures. An unconfigured registry (absent
+// from Registries) does not require signatures. Host matching is exact;
+// callers normalise the host (strip any port or path) before the lookup
+// if needed.
+func (c Config) RegistryRequiresSignatures(host string) bool {
+	for _, r := range c.Registries {
+		if r.Host == host {
+			return r.RequiresSignatures
+		}
+	}
+	return false
 }
 
 // WorkspaceConfig is the workspace root marker. Its PRESENCE marks the

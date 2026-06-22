@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package oci
+
+import (
+	"context"
+	"fmt"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
+	"oras.land/oras-go/v2/registry"
+)
+
+// AttachReferrer attaches `payload` to the artifact identified by
+// `subjectRef` as an OCI referrer of type `artifactType`. It packs a
+// referrer manifest whose Subject is the subject artifact's manifest
+// descriptor, so the registry's Referrers API (and an in-memory store's
+// predecessor graph) reports the referrer when queried for the subject.
+//
+// The subject artifact is NOT re-pushed, re-tagged, or mutated: the
+// referrer is a sibling manifest pointing back at the existing subject
+// digest. Attaching a signature to a published artifact is therefore
+// immutability-safe — the artifact's own bytes and tags are untouched.
+//
+// subjectRef is any reference the target resolves to the subject's
+// manifest descriptor — a version tag or a manifest digest against a
+// remote registry, or a tag against an in-memory store. The target may
+// be a remote.Repository or any oras.Target (tests use memory.New()).
+//
+// Like Push, the referrer manifest pins its creation annotation, so a
+// re-attach of byte-identical payload to the same subject is
+// deterministic.
+func AttachReferrer(ctx context.Context, target oras.Target, subjectRef string, artifactType string, payload []byte) (ocispec.Descriptor, error) {
+	subjectDesc, err := target.Resolve(ctx, subjectRef)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("oci: resolve subject %q: %w", subjectRef, err)
+	}
+
+	payloadDesc, err := oras.PushBytes(ctx, target, artifactType, payload)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("oci: push referrer payload: %w", err)
+	}
+
+	manifestDesc, err := oras.PackManifest(
+		ctx,
+		target,
+		oras.PackManifestVersion1_1,
+		artifactType,
+		oras.PackManifestOptions{
+			Subject:             &subjectDesc,
+			Layers:              []ocispec.Descriptor{payloadDesc},
+			ManifestAnnotations: map[string]string{ocispec.AnnotationCreated: epochCreated},
+		},
+	)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("oci: pack referrer manifest: %w", err)
+	}
+	return manifestDesc, nil
+}
+
+// ListReferrers returns the descriptors of every referrer of
+// `subjectRef` whose artifactType equals `artifactType` (pass an empty
+// string to match all). It works uniformly against a remote.Repository
+// (via the registry Referrers API) and an in-memory store (via the
+// predecessor graph), so the same call discovers signatures in production
+// and in tests.
+//
+// subjectRef is any reference the target resolves to the subject's
+// manifest descriptor (a version tag or a manifest digest).
+//
+// Returns an empty slice (not nil) when the subject has no matching
+// referrer.
+func ListReferrers(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string, artifactType string) ([]ocispec.Descriptor, error) {
+	store, ok := target.(content.ReadOnlyGraphStorage)
+	if !ok {
+		return nil, fmt.Errorf("oci: target does not support referrer discovery: %T", target)
+	}
+	subjectDesc, err := target.Resolve(ctx, subjectRef)
+	if err != nil {
+		return nil, fmt.Errorf("oci: resolve subject %q: %w", subjectRef, err)
+	}
+	refs, err := registry.Referrers(ctx, store, subjectDesc, artifactType)
+	if err != nil {
+		return nil, fmt.Errorf("oci: list referrers of %q: %w", subjectRef, err)
+	}
+	if refs == nil {
+		return []ocispec.Descriptor{}, nil
+	}
+	return refs, nil
+}
+
+// FetchReferrerPayload fetches the layer payload of a referrer manifest
+// (e.g. a signature bundle) given the referrer's manifest descriptor as
+// returned by ListReferrers. It returns the bytes of the referrer's
+// single artifact layer — the inverse of the payload AttachReferrer
+// packed.
+func FetchReferrerPayload(ctx context.Context, target oras.ReadOnlyTarget, referrer ocispec.Descriptor) ([]byte, error) {
+	manifestBytes, err := content.FetchAll(ctx, target, referrer)
+	if err != nil {
+		return nil, fmt.Errorf("oci: fetch referrer manifest: %w", err)
+	}
+	payloadDesc, _, err := descriptorFromManifest(manifestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("oci: parse referrer manifest: %w", err)
+	}
+	payload, err := content.FetchAll(ctx, target, payloadDesc)
+	if err != nil {
+		return nil, fmt.Errorf("oci: fetch referrer payload: %w", err)
+	}
+	return payload, nil
+}
