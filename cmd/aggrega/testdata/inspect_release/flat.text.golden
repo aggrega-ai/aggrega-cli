@@ -1,0 +1,27 @@
+Release: prod-release:1.0.0
+
+Boundary: backend-ns
+  Directory: ./dist/backend
+  Annotations (provider-consumed):
+    aggrega.ai/namespace: backend-zone
+  Component: backend  (type: core/compute/api-server:1.0.0)
+    Uses:
+      data.main-db → data.main-db  [cross-boundary]
+    Features: (none)
+
+Boundary: frontend-ns
+  Directory: ./dist/frontend
+  Annotations (provider-consumed):
+    aggrega.ai/namespace: frontend-zone
+  Component: frontend  (type: core/compute/web-ui:1.0.0)
+    Uses:
+      my-api → backend  [cross-boundary]
+    Features:
+    - cross-namespace-routing (core/k8s-dns-resolver:1.0.0)    [explicit]
+
+Boundary: data-ns
+  Directory: ./dist/data
+  Annotations (provider-consumed):
+    aggrega.ai/namespace: database-zone
+  Component: data.main-db  (type: core/datastore/postgres:1.0.0)
+    Features: (none)

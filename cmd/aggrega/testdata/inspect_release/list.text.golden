@@ -1,0 +1,19 @@
+Release: prod-release:1.0.0
+
+Boundary: backend-ns
+  Directory: ./dist/backend
+  Annotations (provider-consumed):
+    aggrega.ai/namespace: backend-zone
+  backend
+
+Boundary: frontend-ns
+  Directory: ./dist/frontend
+  Annotations (provider-consumed):
+    aggrega.ai/namespace: frontend-zone
+  frontend
+
+Boundary: data-ns
+  Directory: ./dist/data
+  Annotations (provider-consumed):
+    aggrega.ai/namespace: database-zone
+  data.main-db

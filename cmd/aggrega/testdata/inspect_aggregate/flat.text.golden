@@ -1,0 +1,23 @@
+Aggregate: fullstack-app:1.0.0
+
+Components:
+  backend  (type: core/compute/api-server)
+    Values: (none)
+    Uses:
+      databases:
+        - data.main-db
+  frontend  (type: core/compute/web-ui)
+    Values: (none)
+    Uses:
+      apis:
+        - my-api → backend
+  data.main-db  (type: core/datastore/postgres)
+    Values:
+      database_name: app_production
+    Uses: (none)
+
+Dependency Graph:
+  data.main-db
+    ↑ backend
+  backend
+    ↑ frontend

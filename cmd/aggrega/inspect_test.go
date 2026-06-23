@@ -110,35 +110,29 @@ func TestInspect_OciUri_ReturnsNotImplemented(t *testing.T) {
 	}
 }
 
-// TestInspect_UnknownKind_ReturnsError pins the kind-dispatch
-// forward-compatibility behavior. A Manifest file (or any other
-// non-Component/non-Release kind) returns the "not yet implemented for
-// kind X" error so future inspector branches can be added without
-// breaking the existing dispatch surface.
+// TestInspect_UnknownKind_ReturnsError pins the kind-dispatch behavior for a
+// kind absent from the renderer table and not an embedded-only kind: dispatch
+// reports the unknown kind by name rather than silently succeeding, so a typo or
+// an unsupported kind surfaces clearly.
 func TestInspect_UnknownKind_ReturnsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	manifestPath := filepath.Join(root, "manifest.yaml")
-	writeFixture(t, manifestPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Manifest
+	sprocketPath := filepath.Join(root, "sprocket.yaml")
+	writeFixture(t, sprocketPath, `apiVersion: aggrega.ai/v1alpha1
+kind: Sprocket
 metadata:
-  name: test-manifest
+  name: test-sprocket
   version: "1.0.0"
-spec:
-  mappings:
-    components:
-      type:
-        core/server: server-recipe:1.0.0
 `)
-	err := dispatchInspect(resolveTempWorkspace(t), manifestPath, nil, testInspectOptions(io.Discard))
+	err := dispatchInspect(resolveTempWorkspace(t), sprocketPath, nil, testInspectOptions(io.Discard))
 	if err == nil {
-		t.Fatal("expected not-implemented-for-kind error for Manifest input; got nil")
+		t.Fatal("expected unknown-kind error for Sprocket input; got nil")
 	}
-	if !strings.Contains(err.Error(), "kind Manifest") {
+	if !strings.Contains(err.Error(), "unknown entity kind") {
+		t.Errorf("error should signal unknown entity kind; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Sprocket") {
 		t.Errorf("error should name the kind; got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("error should signal not-yet-implemented; got: %v", err)
 	}
 }
 

@@ -1,0 +1,14 @@
+Manifest: prod-manifest:1.0.0
+
+Component Mappings:
+  Type                                     → Recipe
+  core/compute/api-server                  helm-api-server-synthesized-with-artifacts:1.0.0
+  core/compute/web-ui                      helm-web-ui-synthesized-with-artifacts:1.0.0
+  core/datastore/postgres                  helm-postgres-synthesized-with-artifacts:1.0.0
+
+Feature Mappings:
+  Type                                     → FeatureRecipe
+  core/k8s-dns-resolver                    k8s-dns-patcher:1.0.0
+
+Annotation Bindings:
+  (none)

@@ -152,30 +152,6 @@ func TestInspectPath_MalformedYAMLPreamble(t *testing.T) {
 	}
 }
 
-// TestInspectPath_NotYetImplemented pins the recognized-but-unimplemented kinds
-// that surface "not yet implemented" rather than dispatch to a handler. Workload
-// is NOT in this set: it is embedded-only and hard-errors as non-standalone
-// (see TestInspectPath_NonStandaloneKind).
-func TestInspectPath_NotYetImplemented(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	for _, kind := range []string{"Manifest", "Aggregate"} {
-		path := filepath.Join(tmp, kind+".yaml")
-		content := "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: x\n"
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", kind, err)
-		}
-		err := inspectPath(resolveTempWorkspace(t), path, nil, testInspectOptions(io.Discard))
-		if err == nil {
-			t.Errorf("kind %s should surface not-yet-implemented", kind)
-			continue
-		}
-		if !strings.Contains(err.Error(), "not yet implemented") {
-			t.Errorf("kind %s: error should mention not yet implemented; got %v", kind, err)
-		}
-	}
-}
-
 // TestInspectCatalogComponent_MissingCatalog pins the catalog-load
 // error path.
 func TestInspectCatalogComponent_MissingCatalog(t *testing.T) {

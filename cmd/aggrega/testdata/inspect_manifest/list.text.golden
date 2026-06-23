@@ -1,0 +1,9 @@
+Manifest: prod-manifest:1.0.0
+Component Mappings:
+  - core/compute/api-server
+  - core/compute/web-ui
+  - core/datastore/postgres
+Feature Mappings:
+  - core/k8s-dns-resolver
+Annotation Bindings:
+  (none)

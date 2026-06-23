@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+    name: fullstack-app
+    version: "1.0.0"
+spec:
+    aggregates:
+        data:
+            type: db-module
+    components:
+        backend:
+            type: core/compute/api-server
+            uses:
+                databases:
+                    - data.main-db
+        frontend:
+            type: core/compute/web-ui
+            uses:
+                apis:
+                    my-api:
+                        target: backend
+                        inject:
+                            env:
+                                - in: API_HOST
+                                  from: host
+                                - in: API_PORT
+                                  from: service_port

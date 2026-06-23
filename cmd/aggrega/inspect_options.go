@@ -74,6 +74,11 @@ type inspectOptions struct {
 	// Component / Feature. When set and the catalog or the implements target is
 	// unavailable, the renderer aborts with a clear error rather than degrading.
 	showImplements bool
+	// flat collapses a tree-shaped render (the Aggregate subsystem tree, the
+	// Release boundary tree) into a flat list whose every node carries its full
+	// dotted path as a prefix. It is a no-op for kinds whose default render is
+	// already flat (the tabular Manifest); those renderers ignore it.
+	flat bool
 }
 
 // parseColorMode maps the --color string to a colorMode, returning a clear

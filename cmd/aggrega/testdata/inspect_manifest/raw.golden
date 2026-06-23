@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+    name: prod-manifest
+    version: "1.0.0"
+spec:
+    # The fullstack test catalog ships several Recipe variants per component
+    # type (synthesized/sourced x plain/with-artifacts x helm/compose). The
+    # mapping pins one variant per type so recipe selection is deterministic
+    # rather than depending on catalog load order.
+    mappings:
+        components:
+            type:
+                core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
+                core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+                core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+        features:
+            type:
+                core/k8s-dns-resolver: k8s-dns-patcher:1.0.0

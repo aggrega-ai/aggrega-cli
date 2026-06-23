@@ -41,6 +41,7 @@ func newInspectCmd() *cobra.Command {
 		outputFlag   string
 
 		showImplementsFlag bool
+		flatFlag           bool
 	)
 	c := &cobra.Command{
 		Use:   "inspect <identifier>",
@@ -75,6 +76,7 @@ func newInspectCmd() *cobra.Command {
 				out:            out,
 				colorize:       newColorizer(colorMode, out, noColorSet),
 				showImplements: showImplementsFlag,
+				flat:           flatFlag,
 			}
 			return dispatchInspect(rw, args[0], catalogDirs, opts)
 		},
@@ -88,6 +90,7 @@ func newInspectCmd() *cobra.Command {
 	c.Flags().BoolVar(&noColorFlag, "no-color", false, "Disable colorized output (alias for --color=never).")
 	c.Flags().StringVar(&outputFlag, "output", "text", "Output format: text|yaml.")
 	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
+	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")
@@ -189,6 +192,8 @@ var kindRenderers = map[string]kindRenderer{
 	"Provider":       renderProviderFile,
 	"MappingLibrary": renderMappingLibraryFile,
 	"SchemaLibrary":  renderSchemaLibraryFile,
+	"Manifest":       renderManifestFile,
+	"Aggregate":      renderAggregateFile,
 	"Release":        renderReleaseFile,
 }
 
@@ -200,8 +205,8 @@ var nonStandalone = map[string]bool{
 
 // inspectPath reads a YAML file, peeks at apiVersion / kind, and dispatches to
 // the per-kind renderer registered for that kind. A kind that is structurally
-// embedded-only (Workload) is a hard error; a recognized-but-unimplemented kind
-// reports forward-compatibly; an unrecognized kind reports the unknown kind.
+// embedded-only (Workload) is a hard error naming the entity it embeds under;
+// an unrecognized kind reports the unknown kind.
 func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs []string, opts inspectOptions) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -222,14 +227,9 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 		return render(rw, path, data, catalogDirs, opts)
 	}
 	if nonStandalone[preamble.Kind] {
-		return fmt.Errorf("kind %s is not a standalone inspectable entity", preamble.Kind)
+		return fmt.Errorf("kind %s is not a standalone inspectable entity; %s is embedded in Recipes — inspect a Recipe to see its %s", preamble.Kind, preamble.Kind, preamble.Kind)
 	}
-	switch preamble.Kind {
-	case "Manifest", "Aggregate":
-		return fmt.Errorf("inspect not yet implemented for kind %s", preamble.Kind)
-	default:
-		return fmt.Errorf("unknown entity kind %q in %q", preamble.Kind, path)
-	}
+	return fmt.Errorf("unknown entity kind %q in %q", preamble.Kind, path)
 }
 
 // inspectCatalogComponent runs the legacy catalog-component-name path.
@@ -278,11 +278,28 @@ func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentTyp
 // mirroring `aggrega build`'s catalog discovery.
 //
 // Release is a resolved instance kind: its render subject is the pipeline
-// result, so a --output yaml dump of that resolved subject and the --raw /
-// --resolved override are filled where the resolved-subject reshape lands. This
-// function threads opts.out as the output sink and otherwise renders the
-// per-node Feature-attachment text as before.
-func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, _ []byte, catalogDirs []string, opts inspectOptions) error {
+// result.
+//
+//   - --raw: the Release as authored (no pipeline), via the YAML round-trip.
+//   - --output yaml: the resolved IR graph re-emitted as YAML (the pipeline
+//     result is the resolved subject).
+//   - default / --resolved: a boundary-organised text layout — each boundary
+//     carries its output directory, sync-wave, and a two-way annotation split
+//     (aggrega.ai/* provider-consumed vs. other pass-through); each component
+//     under a boundary carries its Aggregate component type, its uses-edges
+//     (cross-boundary edges marked), and its Feature attachments with the
+//     preserved provenance brackets. --flat collapses the boundary tree to one
+//     section per boundary keyed by its full path.
+//
+// This function threads opts.out as the output sink and resolves through the
+// same shared funnel build/lint/pull use, so its resolve path cannot drift from
+// the compiler's.
+func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, data []byte, catalogDirs []string, opts inspectOptions) error {
+	// --raw is the as-authored bypass: emit the Release file verbatim, no
+	// pipeline, regardless of level.
+	if opts.mode == modeForcedRaw {
+		return emitYAMLRoundTrip(opts, releasePath, data)
+	}
 	// wsRoot is the resolved workspace root; the catalog renders its entity
 	// source-file accessors relative to it so catalog-sourced IR records read
 	// consistently across machines. The root Aggregate node's own source path
@@ -359,20 +376,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 			if err != nil {
 				return fmt.Errorf("Step 3 (IR): %w", err)
 			}
-
-			fmt.Fprintf(opts.out, "// Release: %s (from %s)\n", rel.Metadata.Name, releasePath)
-			for nodeID, featureMap := range graph.Spec.FeatureValuesMapping.All() {
-				fmt.Fprintf(opts.out, "\nComponent: %s\n", nodeID)
-				if featureMap.Len() == 0 {
-					fmt.Fprintln(opts.out, "  (no Features attached)")
-					continue
-				}
-				fmt.Fprintln(opts.out, "  Features:")
-				for instanceName, entry := range featureMap.All() {
-					renderFeatureAttachment(opts.out, instanceName, entry)
-				}
-			}
-			return nil
+			return renderReleaseResolved(opts, rel, releasePath, graph, resolveResult)
 		},
 	)
 }

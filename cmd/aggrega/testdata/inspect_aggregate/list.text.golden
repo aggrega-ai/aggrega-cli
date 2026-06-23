@@ -1,0 +1,6 @@
+Aggregate: fullstack-app:1.0.0
+
+Components:
+  backend  (core/compute/api-server)
+  frontend  (core/compute/web-ui)
+  data.main-db  (core/datastore/postgres)
