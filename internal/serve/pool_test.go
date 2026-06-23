@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -172,6 +174,214 @@ func TestDispatchIDCorrelatedResponsesThroughSerializer(t *testing.T) {
 		if id != ids[i] {
 			t.Errorf("response %d id = %d; want %d (arrival order)", i, id, ids[i])
 		}
+	}
+}
+
+// TestDispatchIDCorrelatedUnderOutOfOrderCompletion is the live-loop
+// proof of the serializer's ordering contract at concurrency > 1: with
+// handlers driven to COMPLETE out of submission order, every response is
+// still well-formed, id-correlated to its request, and emitted on the
+// wire in arrival-sequence order — with no torn or interleaved frames.
+//
+// The forced reordering uses testCtxHook (which runs at the top of each
+// id-bearing handler, in its worker goroutine) to park every handler on
+// a per-id gate. A controller goroutine then releases the parked handlers
+// strictly highest-id-first, waiting for each released handler to exit
+// the hook before releasing the next-lower id. So among any set of
+// handlers concurrently in flight, the higher id always completes first —
+// the live analogue of the unit-level {3,1,2} reordering. This holds at
+// any pool size: with pool < N only a window of handlers is in flight at
+// once, and the controller reverses completion within each window, which
+// is enough to drive the serializer's reordering buffer.
+//
+// Assertions: (i) every submitted id appears exactly once on the wire (no
+// drop, no duplicate); (ii) each response is well-formed JSON-RPC
+// (jsonrpc "2.0", exactly one of result/error, an id we submitted); (iii)
+// the wire id sequence is the submission order regardless of completion
+// interleave (the serializer's arrival-order emission contract). The
+// well-formed-framing check (ii), driven against concurrently-produced
+// stdout, is the framing-integrity-under-concurrency guarantee. Run under
+// -race.
+func TestDispatchIDCorrelatedUnderOutOfOrderCompletion(t *testing.T) {
+	t.Parallel()
+	for _, pool := range []int{4, 16} {
+		pool := pool
+		t.Run(fmt.Sprintf("pool=%d", pool), func(t *testing.T) {
+			t.Parallel()
+			const n = 16
+			ids := make([]int, n)
+			for i := range ids {
+				ids[i] = i + 1
+			}
+
+			// release[id] gates handler id inside the hook; entered carries
+			// each id as its handler parks; exited[id] is closed by the
+			// handler as it leaves the hook so the controller can serialize
+			// completions.
+			release := make(map[int]chan struct{}, n)
+			exited := make(map[int]chan struct{}, n)
+			for _, id := range ids {
+				release[id] = make(chan struct{})
+				exited[id] = make(chan struct{})
+			}
+			entered := make(chan int, n)
+
+			stdinR, stdinW := io.Pipe()
+			// io.Pipe + concurrent collecting reader: at pool 4 the queue
+			// holds 4*queueDepthFactor and 4 sit in workers, so all 16 held
+			// handlers can exceed in-flight capacity; reading concurrently
+			// keeps submission from deadlocking on a full queue.
+			stdoutR, stdoutW := io.Pipe()
+			srv := newPoolTestServer(stdinR, stdoutW, pool, nil)
+			srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+				var n int
+				if json.Unmarshal(id, &n) != nil {
+					return // the shutdown notification carries no id
+				}
+				entered <- n
+				<-release[n]
+				close(exited[n])
+			}
+
+			// Controller: release the highest currently-parked handler
+			// first, wait for it to leave the hook, then the next-highest,
+			// so completion order is strictly descending within every
+			// in-flight window.
+			ctrlDone := make(chan struct{})
+			go func() {
+				defer close(ctrlDone)
+				var parked []int
+				for seen := 0; seen < n; {
+					// Drain whatever has parked so far, then settle briefly
+					// so a full in-flight window (up to pool handlers) is
+					// captured before we pick the highest to release.
+					parked = append(parked, <-entered)
+					seen++
+				drainSettle:
+					for {
+						select {
+						case id := <-entered:
+							parked = append(parked, id)
+							seen++
+						case <-time.After(20 * time.Millisecond):
+							break drainSettle
+						}
+					}
+					// Release highest-first, serializing on each exit.
+					sort.Sort(sort.Reverse(sort.IntSlice(parked)))
+					for _, id := range parked {
+						close(release[id])
+						<-exited[id]
+					}
+					parked = parked[:0]
+				}
+			}()
+
+			// Collect responses concurrently so submission never blocks on a
+			// full queue. Read exactly n framed responses, then return.
+			type collected struct {
+				resps []jsonRPCResponse
+				err   error
+			}
+			readDone := make(chan collected, 1)
+			go func() {
+				r := bufio.NewReader(stdoutR)
+				out := make([]jsonRPCResponse, 0, n)
+				for i := 0; i < n; i++ {
+					body, err := readMessage(r)
+					if err != nil {
+						readDone <- collected{err: err}
+						return
+					}
+					var resp jsonRPCResponse
+					if err := json.Unmarshal(body, &resp); err != nil {
+						readDone <- collected{err: fmt.Errorf("response %d not well-formed JSON: %w (body %s)", i+1, err, body)}
+						return
+					}
+					out = append(out, resp)
+				}
+				readDone <- collected{resps: out}
+			}()
+
+			loopDone := make(chan error, 1)
+			go func() {
+				err := srv.dispatchLoop(500 * time.Millisecond)
+				stdoutW.Close()
+				loopDone <- err
+			}()
+
+			go func() {
+				for _, id := range ids {
+					stdinW.Write(framedRequest(id, "aggrega/releaseCandidates", map[string]any{}))
+				}
+				stdinW.Write(framedNotification("aggrega/shutdown", nil))
+				stdinW.Close()
+			}()
+
+			var got collected
+			select {
+			case got = <-readDone:
+			case <-time.After(10 * time.Second):
+				t.Fatal("did not read all responses; likely a stalled reorder window")
+			}
+			if got.err != nil {
+				t.Fatalf("read responses: %v", got.err)
+			}
+
+			select {
+			case err := <-loopDone:
+				if err != nil {
+					t.Fatalf("dispatchLoop: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("dispatch loop did not exit")
+			}
+			<-ctrlDone
+
+			if len(got.resps) != n {
+				t.Fatalf("response count = %d; want %d", len(got.resps), n)
+			}
+			submitted := make(map[int]bool, n)
+			for _, id := range ids {
+				submitted[id] = true
+			}
+			seen := make(map[int]int, n)
+			wire := make([]int, 0, n)
+			for i, resp := range got.resps {
+				// (ii) well-formed JSON-RPC: version, exactly one of
+				// result/error, an id we submitted.
+				if resp.JSONRPC != "2.0" {
+					t.Errorf("response %d jsonrpc = %q; want \"2.0\"", i, resp.JSONRPC)
+				}
+				hasResult := len(resp.Result) > 0
+				hasError := resp.Error != nil
+				if hasResult == hasError {
+					t.Errorf("response %d must carry exactly one of result/error (result=%v error=%v)", i, hasResult, hasError)
+				}
+				var id int
+				if err := json.Unmarshal(resp.ID, &id); err != nil {
+					t.Fatalf("response %d id parse: %v", i, err)
+				}
+				if !submitted[id] {
+					t.Errorf("response %d carries unsubmitted id %d", i, id)
+				}
+				seen[id]++
+				wire = append(wire, id)
+			}
+			// (i) every submitted id appears exactly once.
+			for _, id := range ids {
+				if seen[id] != 1 {
+					t.Errorf("id %d appeared %d times on the wire; want exactly 1", id, seen[id])
+				}
+			}
+			// (iii) wire order is the submission (arrival) order regardless
+			// of the forced reverse completion interleave.
+			for i, id := range wire {
+				if id != ids[i] {
+					t.Errorf("wire[%d] id = %d; want %d (arrival-sequence emission, not completion order)", i, id, ids[i])
+				}
+			}
+		})
 	}
 }
 
