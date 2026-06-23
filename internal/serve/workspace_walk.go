@@ -4,13 +4,14 @@
 package serve
 
 import (
+	"bufio"
 	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	gitignore "github.com/monochromegane/go-gitignore"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
 // walkWorkspaceYAML invokes visit once per YAML file under the
@@ -78,14 +79,14 @@ func (s *Server) walkWorkspaceYAML(ctx context.Context, visit func(path string) 
 // ancestor walks from re-stat'ing the same path.
 type gitignoreWalker struct {
 	root  string
-	cache map[string]gitignore.IgnoreMatcher
+	cache map[string]gitignore.Matcher
 }
 
 // newGitignoreWalker constructs a walker rooted at root.
 func newGitignoreWalker(root string) *gitignoreWalker {
 	return &gitignoreWalker{
 		root:  root,
-		cache: map[string]gitignore.IgnoreMatcher{},
+		cache: map[string]gitignore.Matcher{},
 	}
 }
 
@@ -96,23 +97,42 @@ func newGitignoreWalker(root string) *gitignoreWalker {
 // Per gitignore precedence rules, the deepest matcher takes priority
 // when patterns conflict. The first ignore-match across the ancestor
 // chain short-circuits and returns true. Negation patterns
-// (`!pattern`) are handled inside each matcher by the library; this
+// (`!pattern`) are resolved inside each per-directory matcher; this
 // walker doesn't synthesize cross-file negation.
 //
-// isDir mirrors the gitignore library's Match signature: directory
-// entries are matched with isDir=true so gitignore directory patterns
-// (`dirname/`) take effect.
+// isDir is forwarded to each matcher so directory-only patterns
+// (`dirname/`) take effect: directory entries are matched with
+// isDir=true. The candidate path is split into root-relative
+// components because the matcher operates on path-component slices
+// rather than on a single string.
 func (w *gitignoreWalker) matchesAny(path string, isDir bool) bool {
+	parts := w.relComponents(path)
+	if parts == nil {
+		return false
+	}
 	for _, dir := range w.ancestorsToRoot(path) {
 		matcher := w.matcherFor(dir)
 		if matcher == nil {
 			continue
 		}
-		if matcher.Match(path, isDir) {
+		if matcher.Match(parts, isDir) {
 			return true
 		}
 	}
 	return false
+}
+
+// relComponents splits path into its components relative to the
+// walker's root. Returns nil for a path equal to or outside the root.
+// Each per-directory matcher is scoped to a domain expressed in these
+// same root-relative components, so candidate paths and pattern
+// domains share one coordinate system.
+func (w *gitignoreWalker) relComponents(path string) []string {
+	rel, err := filepath.Rel(w.root, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return nil
+	}
+	return strings.Split(filepath.ToSlash(rel), "/")
 }
 
 // ancestorsToRoot returns the directory chain from the file's
@@ -144,21 +164,41 @@ func (w *gitignoreWalker) ancestorsToRoot(path string) []string {
 
 // matcherFor returns the matcher for dir's `.gitignore`, parsing it
 // lazily and caching the result. Returns nil when no `.gitignore`
-// exists or parsing fails.
-func (w *gitignoreWalker) matcherFor(dir string) gitignore.IgnoreMatcher {
+// exists or cannot be read.
+//
+// Each pattern is scoped to a domain of dir's components relative to
+// the walker's root, so a directory's patterns only match paths within
+// that directory's subtree. The root `.gitignore` carries an empty
+// domain and therefore applies tree-wide. Comment lines (`#`) and blank
+// lines are skipped, matching gitignore file conventions.
+func (w *gitignoreWalker) matcherFor(dir string) gitignore.Matcher {
 	if cached, ok := w.cache[dir]; ok {
 		return cached
 	}
 	path := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(path); err != nil {
-		w.cache[dir] = nil
-		return nil
-	}
-	matcher, err := gitignore.NewGitIgnore(path)
+	f, err := os.Open(path)
 	if err != nil {
 		w.cache[dir] = nil
 		return nil
 	}
+	defer f.Close()
+
+	domain := w.relComponents(dir)
+	var patterns []gitignore.Pattern
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		patterns = append(patterns, gitignore.ParsePattern(line, domain))
+	}
+	if err := scanner.Err(); err != nil {
+		w.cache[dir] = nil
+		return nil
+	}
+	matcher := gitignore.NewMatcher(patterns)
 	w.cache[dir] = matcher
 	return matcher
 }

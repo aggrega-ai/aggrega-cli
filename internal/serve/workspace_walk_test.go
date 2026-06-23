@@ -137,6 +137,53 @@ func TestWorkspaceWalkParentSkipDirOverridesNestedNegation(t *testing.T) {
 	}
 }
 
+// TestGitignoreWalkerMatchParity exercises the per-directory matcher
+// over a representative `.gitignore` covering each pattern class: a
+// plain entry, a glob, a negation, a root-anchored entry, a
+// directory-only entry, and a `**` deep-match. It pins matcher behavior
+// directly (not through the LSP server) so the pattern semantics are
+// asserted at the smallest surface.
+func TestGitignoreWalkerMatchParity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeWorkspaceTree(t, dir, map[string]string{
+		".gitignore": "secret.yaml\n" + // plain entry
+			"*.tmp.yaml\n" + // glob
+			"*.keepme.yaml\n" + // glob whose negation follows
+			"!special.keepme.yaml\n" + // negation (re-include)
+			"/anchored.yaml\n" + // root-anchored
+			"builddir/\n" + // directory-only
+			"**/deep.yaml\n", // ** deep-match (new capability)
+	})
+
+	w := newGitignoreWalker(dir)
+
+	cases := []struct {
+		name  string
+		rel   string
+		isDir bool
+		want  bool
+	}{
+		{"plain entry", "secret.yaml", false, true},
+		{"glob", "a.tmp.yaml", false, true},
+		{"negation re-includes", "special.keepme.yaml", false, false},
+		{"glob still excludes non-negated", "other.keepme.yaml", false, true},
+		{"anchored matches at root", "anchored.yaml", false, true},
+		{"anchored does not match in subdir", "sub/anchored.yaml", false, false},
+		{"dir-only matches directory", "builddir", true, true},
+		{"dir-only does not match file", "builddir", false, false},
+		{"doublestar deep match", "x/y/deep.yaml", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, filepath.FromSlash(tc.rel))
+			if got := w.matchesAny(path, tc.isDir); got != tc.want {
+				t.Errorf("matchesAny(%q, isDir=%v) = %v; want %v", tc.rel, tc.isDir, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWorkspaceWalkAncestorPrecedenceDeepestWins(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
