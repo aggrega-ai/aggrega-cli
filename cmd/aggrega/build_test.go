@@ -131,7 +131,7 @@ spec:
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := dispatchBuild(resolveTempWorkspace(t), releasePath, catalogDirs, traceEnabled, os.Stderr)
+	err := dispatchBuild(resolveTempWorkspace(t), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build returned nil; expected assertion failure")
 	}

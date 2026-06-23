@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -113,6 +115,11 @@ type signConfig struct {
 	// interactive acquisition path. Nil means production (isTerminal); tests
 	// inject a fixed value so the decision is deterministic.
 	IsTTY func() bool
+
+	// Out is the sink for the per-reference "Signature attached" status line.
+	// Nil defaults to os.Stdout at the top of signRun (production); tests pass
+	// a buffer to capture the output without mutating a process global.
+	Out io.Writer
 }
 
 // signRun signs every reference in cfg.References, attaching each signature
@@ -137,6 +144,10 @@ func signRun(cfg signConfig) error {
 		return fmt.Errorf("aggrega sign: at least one reference required")
 	}
 	ctx := context.Background()
+	out := cfg.Out
+	if out == nil {
+		out = os.Stdout
+	}
 
 	// Resolve the batch's signing posture once. The identity token is
 	// registry-independent — it identifies the signer, not the destination —
@@ -144,7 +155,7 @@ func signRun(cfg signConfig) error {
 	// every per-reference signer. The token getter runs even when a Signer is
 	// injected so the acquire-once accounting holds for both the production and
 	// the injected-signer paths.
-	b := &batchSigner{cfg: cfg}
+	b := &batchSigner{cfg: cfg, out: out}
 	if err := b.prepare(); err != nil {
 		return err
 	}
@@ -199,6 +210,10 @@ type batchSigner struct {
 	// resolved holds the workspace-config signing overlay for the batch. The
 	// per-reference signer applies it together with the CLI flags.
 	keyPath string
+
+	// out is the resolved sink for the per-reference status line, set once by
+	// signRun (os.Stdout in production).
+	out io.Writer
 }
 
 // prepare resolves the batch's signing posture once: it decides keyless vs
@@ -311,7 +326,7 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 		return fmt.Errorf("attach signature to %s: %w", ref, err)
 	}
 
-	fmt.Printf("Signature attached: %s (%s)\n", ref, digest)
+	fmt.Fprintf(b.out, "Signature attached: %s (%s)\n", ref, digest)
 	return nil
 }
 

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -35,14 +36,12 @@ func TestPushAbsentTagPublishes(t *testing.T) {
 	writeEntityFixture(t, entityPath, guardComponentBody)
 
 	store := memory.New()
-	out, err := captureStdout(func() error {
-		return pushRun(pushConfig{EntityPath: entityPath, Registry: "example.com", PushTarget: store})
-	})
-	if err != nil {
+	var buf bytes.Buffer
+	if err := pushRun(pushConfig{EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &buf}); err != nil {
 		t.Fatalf("push to empty registry: %v", err)
 	}
-	if !strings.Contains(out, "Push complete:") {
-		t.Errorf("expected 'Push complete:'; got:\n%s", out)
+	if !strings.Contains(buf.String(), "Push complete:") {
+		t.Errorf("expected 'Push complete:'; got:\n%s", buf.String())
 	}
 }
 
@@ -62,14 +61,12 @@ func TestPushSameContentIsIdempotentNoOp(t *testing.T) {
 		t.Fatalf("first push: %v", err)
 	}
 
-	out, err := captureStdout(func() error {
-		return pushRun(pushConfig{EntityPath: entityPath, Registry: "example.com", PushTarget: store})
-	})
-	if err != nil {
+	var buf bytes.Buffer
+	if err := pushRun(pushConfig{EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &buf}); err != nil {
 		t.Fatalf("idempotent re-push should succeed; got %v", err)
 	}
-	if !strings.Contains(out, "Already published:") {
-		t.Errorf("expected 'Already published:' on identical re-push; got:\n%s", out)
+	if !strings.Contains(buf.String(), "Already published:") {
+		t.Errorf("expected 'Already published:' on identical re-push; got:\n%s", buf.String())
 	}
 }
 

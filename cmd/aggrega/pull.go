@@ -107,6 +107,12 @@ type pullConfig struct {
 	// buffer to capture diagnostics without mutating a process global.
 	DiagOut io.Writer
 
+	// Out is the sink for the pull's user-facing status output (the --detail
+	// table, the "Verify:" line, and "Pull complete"). Nil defaults to os.Stdout
+	// at the top of pullRun (production); tests pass a buffer to capture the
+	// output without mutating a process global.
+	Out io.Writer
+
 	// puller overrides the production OCI puller; tests inject an in-memory
 	// implementation to exercise a remote-library fetch without the network. Nil
 	// uses NewDefaultOCIPuller (which is nil under workspace.offline).
@@ -210,6 +216,10 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 func pullRun(cfg pullConfig) error {
 	if cfg.DiagOut == nil {
 		cfg.DiagOut = os.Stderr
+	}
+	out := cfg.Out
+	if out == nil {
+		out = os.Stdout
 	}
 	releaseDir := filepath.Dir(cfg.ReleasePath)
 
@@ -380,7 +390,7 @@ func pullRun(cfg pullConfig) error {
 	// Rendered before the verify/write split so it reflects the pull regardless
 	// of mode.
 	if cfg.Detail {
-		printPullDetail(os.Stdout, cl)
+		printPullDetail(out, cl)
 	}
 
 	if cfg.Verify {
@@ -396,7 +406,7 @@ func pullRun(cfg pullConfig) error {
 		if verr := lockfile.Verify(lf, cl); verr != nil {
 			return fmt.Errorf("verify: %w", verr)
 		}
-		fmt.Printf("Verify: lockfile %s matches current closure (entities=%d)\n",
+		fmt.Fprintf(out, "Verify: lockfile %s matches current closure (entities=%d)\n",
 			lockfilePath, len(cl.Entities))
 		return nil
 	}
@@ -540,7 +550,7 @@ func pullRun(cfg pullConfig) error {
 				return fmt.Errorf("write lockfile: %w", err)
 			}
 
-			fmt.Printf("Pull complete: %s (entities=%d, source_artifacts=%d)\n",
+			fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d)\n",
 				lockfilePath, len(cl.Entities), len(cl.SourceArtifacts))
 			return nil
 		}); err != nil {

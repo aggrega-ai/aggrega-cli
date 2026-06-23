@@ -253,7 +253,7 @@ func TestNegativeCorpusLint_BaseValid(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "entity.yaml"), []byte(doc), 0o644); err != nil {
 				t.Fatalf("write base: %v", err)
 			}
-			if err := lintCatalogWide("", "", []string{dir}, os.Stderr); err != nil {
+			if err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
 				t.Fatalf("base %s should lint clean (positive control); got: %v", kind, err)
 			}
 		})
@@ -273,7 +273,7 @@ func TestNegativeCorpusLint_Violations(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "entity.yaml"), []byte(r.doc), 0o644); err != nil {
 				t.Fatalf("write violation: %v", err)
 			}
-			err := lintCatalogWide("", "", []string{dir}, os.Stderr)
+			err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
 			if err == nil {
 				t.Fatalf("%s: expected the lint path to reject; got nil", r.name)
 			}

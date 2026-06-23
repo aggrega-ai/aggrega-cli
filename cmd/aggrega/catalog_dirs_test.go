@@ -126,7 +126,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	// (a) via two --catalog flags.
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 	reset()
-	if err := dispatchBuild(nil, releasePath, []string{dir1, dir2}, false, os.Stderr); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{dir1, dir2}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("two-flag build failed (provider in dir2 must resolve): %v", err)
 	}
 	if renderedCount() == 0 {
@@ -136,7 +136,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	// (b) via catalog_dirs config, no flags.
 	reset()
 	writeWorkspaceConfig(t, root, "auto_pull: true\nworkspace:\n  catalog_dirs:\n    - "+dir1+"\n    - "+dir2+"\n")
-	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr); err != nil {
+	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("config catalog_dirs build failed: %v", err)
 	}
 	if renderedCount() == 0 {

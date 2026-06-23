@@ -24,77 +24,70 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Cobra binding targets for the inspect flags. These are read ONLY by
-// runInspect, which builds an inspectOptions from them once and threads that
-// struct onward. They never reach a per-kind renderer — renderers consume the
-// resolved inspectOptions, so the package-level flag variables are not a shared
-// surface tests must guard against under t.Parallel.
-var (
-	inspectCatalogDirs  []string
-	inspectListFlag     bool
-	inspectDetailFlag   bool
-	inspectRawFlag      bool
-	inspectResolvedFlag bool
-	inspectColorFlag    string
-	inspectNoColorFlag  bool
-	inspectOutputFlag   string
-)
-
 func newInspectCmd() *cobra.Command {
+	// Flag storage is per-command-instance, not package-global, so constructing
+	// the command concurrently (parallel tests calling newInspectCmd) never
+	// races on a shared binding target. The RunE closure captures these locals,
+	// resolves them into a single inspectOptions value, and threads that struct
+	// onward; the locals never reach a per-kind renderer.
+	var (
+		catalogDirs  []string
+		listFlag     bool
+		detailFlag   bool
+		rawFlag      bool
+		resolvedFlag bool
+		colorFlag    string
+		noColorFlag  bool
+		outputFlag   string
+	)
 	c := &cobra.Command{
 		Use:   "inspect <identifier>",
 		Short: "Inspect a catalog Component or a Release file (resolves by entity kind)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  runInspect,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			color := colorFlag
+			if noColorFlag {
+				color = "never"
+			}
+			colorMode, err := parseColorMode(color)
+			if err != nil {
+				return err
+			}
+			output, err := parseOutputFormat(outputFlag)
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+			_, noColorSet := os.LookupEnv("NO_COLOR")
+			opts := inspectOptions{
+				level:    resolveLevel(listFlag, detailFlag),
+				mode:     resolveMode(rawFlag, resolvedFlag),
+				output:   output,
+				color:    colorMode,
+				out:      out,
+				colorize: newColorizer(colorMode, out, noColorSet),
+			}
+			return dispatchInspect(rw, args[0], catalogDirs, opts)
+		},
 	}
-	c.Flags().StringArrayVar(&inspectCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
-	c.Flags().BoolVar(&inspectListFlag, "list", false, "Render identifiers only.")
-	c.Flags().BoolVar(&inspectDetailFlag, "detail", false, "Render full field bodies.")
-	c.Flags().BoolVar(&inspectRawFlag, "raw", false, "Render the entity as authored, without resolution.")
-	c.Flags().BoolVar(&inspectResolvedFlag, "resolved", false, "Render the entity fully resolved.")
-	c.Flags().StringVar(&inspectColorFlag, "color", "auto", "Colorize output: auto|always|never.")
-	c.Flags().BoolVar(&inspectNoColorFlag, "no-color", false, "Disable colorized output (alias for --color=never).")
-	c.Flags().StringVar(&inspectOutputFlag, "output", "text", "Output format: text|yaml.")
+	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().BoolVar(&listFlag, "list", false, "Render identifiers only.")
+	c.Flags().BoolVar(&detailFlag, "detail", false, "Render full field bodies.")
+	c.Flags().BoolVar(&rawFlag, "raw", false, "Render the entity as authored, without resolution.")
+	c.Flags().BoolVar(&resolvedFlag, "resolved", false, "Render the entity fully resolved.")
+	c.Flags().StringVar(&colorFlag, "color", "auto", "Colorize output: auto|always|never.")
+	c.Flags().BoolVar(&noColorFlag, "no-color", false, "Disable colorized output (alias for --color=never).")
+	c.Flags().StringVar(&outputFlag, "output", "text", "Output format: text|yaml.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")
 	return c
-}
-
-// runInspect reads the cobra-bound inspect flags, resolves them into a single
-// inspectOptions value, and delegates to dispatchInspect. Tests exercise
-// dispatchInspect directly with a constructed inspectOptions to avoid touching
-// the package-level flag variables under t.Parallel.
-func runInspect(cmd *cobra.Command, args []string) error {
-	rw, err := workspaceFromContext(cmd.Context())
-	if err != nil {
-		return err
-	}
-
-	color := inspectColorFlag
-	if inspectNoColorFlag {
-		color = "never"
-	}
-	colorMode, err := parseColorMode(color)
-	if err != nil {
-		return err
-	}
-	output, err := parseOutputFormat(inspectOutputFlag)
-	if err != nil {
-		return err
-	}
-
-	out := cmd.OutOrStdout()
-	_, noColorSet := os.LookupEnv("NO_COLOR")
-	opts := inspectOptions{
-		level:    resolveLevel(inspectListFlag, inspectDetailFlag),
-		mode:     resolveMode(inspectRawFlag, inspectResolvedFlag),
-		output:   output,
-		color:    colorMode,
-		out:      out,
-		colorize: newColorizer(colorMode, out, noColorSet),
-	}
-	return dispatchInspect(rw, args[0], inspectCatalogDirs, opts)
 }
 
 // dispatchInspect routes the inspect command by the input form:

@@ -65,7 +65,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return dispatchBuild(rw, releasePath, catalogDirs, traceEnabled, os.Stderr)
+	return dispatchBuild(rw, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 }
 
 // dispatchBuild composes the filesystem-touching pre-pipeline steps
@@ -77,9 +77,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 // call dispatchBuild directly (passing a nil workspace, which resolves from
 // the working directory) to avoid racing on flag-bound globals under t.Parallel.
 //
-// Per-step diagnostics are written to diagOut (os.Stderr in production); tests
-// pass a buffer to capture them without mutating a process global.
-func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut io.Writer) error {
+// Per-step diagnostics are written to diagOut (os.Stderr in production); the
+// final success summary is written to out (os.Stdout in production). Tests pass
+// buffers (or os.Stderr/os.Stdout) to capture or route the output without
+// mutating a process global.
+func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
 	// wsRoot is the resolved workspace root; the catalog renders source-file
 	// accessors relative to it so the IR's per-node SourceFile records stay
 	// byte-identical across developer machines whose workspaces live at
@@ -273,7 +275,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 		}
 	}
 
-	fmt.Printf("Build complete: %d files written to %s/\n", len(result.Artifacts), outDir)
+	fmt.Fprintf(out, "Build complete: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
 }
 

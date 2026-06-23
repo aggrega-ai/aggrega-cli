@@ -194,7 +194,7 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 
 	// Build is hermetic (auto_pull off, no puller) — it must resolve the
 	// sub-aggregate from the cache via the bridge during topology flatten.
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote sub-aggregate: %v", err)
 	}
 

@@ -435,40 +435,38 @@ spec:
 `)
 
 	// Without --registry, workspace.default_registry wins.
-	out, err := captureStdout(func() error {
-		return pushRun(pushConfig{
-			EntityPath: entityPath,
-			DryRun:     true,
-		})
-	})
-	if err != nil {
+	var buf bytes.Buffer
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		DryRun:     true,
+		Out:        &buf,
+	}); err != nil {
 		t.Fatalf("pushRun (default_registry): %v", err)
 	}
 	wantRef := "workspace.example.com/component/core/api-server:1.0.0"
-	if !strings.Contains(out, wantRef) {
-		t.Errorf("default_registry: stdout missing %q; got:\n%s", wantRef, out)
+	if !strings.Contains(buf.String(), wantRef) {
+		t.Errorf("default_registry: stdout missing %q; got:\n%s", wantRef, buf.String())
 	}
 
 	// With --registry, the flag wins over workspace.default_registry.
-	out, err = captureStdout(func() error {
-		return pushRun(pushConfig{
-			EntityPath: entityPath,
-			Registry:   "flag.example.io",
-			DryRun:     true,
-		})
-	})
-	if err != nil {
+	buf.Reset()
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		Registry:   "flag.example.io",
+		DryRun:     true,
+		Out:        &buf,
+	}); err != nil {
 		t.Fatalf("pushRun (flag override): %v", err)
 	}
 	wantRef = "flag.example.io/component/core/api-server:1.0.0"
-	if !strings.Contains(out, wantRef) {
-		t.Errorf("flag override: stdout missing %q; got:\n%s", wantRef, out)
+	if !strings.Contains(buf.String(), wantRef) {
+		t.Errorf("flag override: stdout missing %q; got:\n%s", wantRef, buf.String())
 	}
 	// Defensive: when the flag wins, the workspace-default host must
 	// NOT appear in the output. A regression that quietly fell back
 	// to the workspace default after seeing the flag would surface here.
-	if strings.Contains(out, "workspace.example.com") {
-		t.Errorf("flag override: stdout unexpectedly contained workspace.example.com; flag should win:\n%s", out)
+	if strings.Contains(buf.String(), "workspace.example.com") {
+		t.Errorf("flag override: stdout unexpectedly contained workspace.example.com; flag should win:\n%s", buf.String())
 	}
 }
 

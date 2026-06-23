@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,7 +111,7 @@ spec:
 	t.Chdir(ws)
 
 	var buf bytes.Buffer
-	err := lintRelease(nil, "release.yaml", &buf)
+	err := lintRelease(nil, "release.yaml", &buf, io.Discard)
 	out := buf.String()
 
 	// Invariant 1 / exit invariance: narrowing is advisory — lint --release still

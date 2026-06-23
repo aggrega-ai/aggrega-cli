@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -141,6 +142,13 @@ type pushConfig struct {
 	// resolved signing inputs. When signing is requested and Signer is
 	// nil, pushRun builds a keyed or keyless signer via buildSigner.
 	Signer signing.Signer
+
+	// Out is the sink for the command's user-facing status output (the
+	// dry-run line, "Push complete", "Already published", and the
+	// signature-attached note). Nil defaults to os.Stdout at the top of
+	// pushRun (production); tests pass a buffer to capture the output
+	// without mutating a process global.
+	Out io.Writer
 }
 
 // pushEntityHeader is the minimal YAML envelope pushRun parses out
@@ -194,6 +202,10 @@ type pushEntityHeader struct {
 func pushRun(cfg pushConfig) error {
 	if cfg.EntityPath == "" {
 		return fmt.Errorf("aggrega push: entity path required (pass as positional arg or via --entity)")
+	}
+	out := cfg.Out
+	if out == nil {
+		out = os.Stdout
 	}
 
 	rw, err := workspaceOrResolve(cfg.ws)
@@ -252,7 +264,7 @@ func pushRun(cfg pushConfig) error {
 	tag := header.Metadata.Version
 
 	if cfg.DryRun {
-		fmt.Printf("aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
+		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
 			reference, tag, header.Kind, mediaType, len(bundleBytes))
 		return nil
 	}
@@ -286,7 +298,7 @@ func pushRun(cfg pushConfig) error {
 	}
 	if exists {
 		if existingDigest == proposedDigest {
-			fmt.Printf("Already published: %s:%s (%s)\n", reference, tag, existingDigest)
+			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, tag, existingDigest)
 			return nil
 		}
 		return fmt.Errorf("aggrega push: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
@@ -341,13 +353,13 @@ func pushRun(cfg pushConfig) error {
 	if err != nil {
 		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
 	}
-	fmt.Printf("Push complete: %s:%s (%s)\n", reference, tag, digest)
+	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, tag, digest)
 
 	if wantSign {
 		if err := attachBundle(ctx, target, tag, signatureType, signatureBundle); err != nil {
 			return fmt.Errorf("aggrega push: attach signature to %s:%s: %w", reference, tag, err)
 		}
-		fmt.Printf("Signature attached: %s:%s\n", reference, tag)
+		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, tag)
 	}
 	return nil
 }

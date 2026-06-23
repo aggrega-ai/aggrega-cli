@@ -281,7 +281,7 @@ spec:
 // TestRunBuild_MissingCatalog pins the catalog-load error path.
 func TestRunBuild_MissingCatalog(t *testing.T) {
 	t.Parallel()
-	err := dispatchBuild(resolveTempWorkspace(t), "/nonexistent/release.yaml", []string{"/nonexistent/catalog"}, false, os.Stderr)
+	err := dispatchBuild(resolveTempWorkspace(t), "/nonexistent/release.yaml", []string{"/nonexistent/catalog"}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("missing catalog should error")
 	}
@@ -290,7 +290,7 @@ func TestRunBuild_MissingCatalog(t *testing.T) {
 // TestRunBuild_MissingRelease pins the release-load error path.
 func TestRunBuild_MissingRelease(t *testing.T) {
 	t.Parallel()
-	err := dispatchBuild(resolveTempWorkspace(t), "/nonexistent/release.yaml", []string{t.TempDir()}, false, os.Stderr)
+	err := dispatchBuild(resolveTempWorkspace(t), "/nonexistent/release.yaml", []string{t.TempDir()}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("missing release should error")
 	}

@@ -32,7 +32,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := lintCatalogWide("", "", []string{dir}, os.Stderr); err == nil {
+	if err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err == nil {
 		t.Fatal("expected catalog validation to fail on the unresolvable cross-document $ref; got nil")
 	}
 }
@@ -55,7 +55,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-	if err := lintCatalogWide("", "", []string{dir}, os.Stderr); err != nil {
+	if err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("valid catalog should pass catalog-wide validation; got %v", err)
 	}
 }

@@ -98,7 +98,7 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
-				return lintRelease(rw, lintReleasePath, os.Stderr)
+				return lintRelease(rw, lintReleasePath, os.Stderr, os.Stdout)
 			}
 			if path == "" {
 				// No entity argument → whole-catalog validation.
@@ -164,7 +164,7 @@ func lintCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace) error {
 		return fmt.Errorf("OPS_ERROR: whole-catalog lint needs catalog directories to scan; set `workspace.catalog_dirs` in .aggrega-config.yaml (or lint a specific Release with --release)")
 	}
 	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
-	return lintCatalogWide(wsRoot, cacheDir, dirs, os.Stderr)
+	return lintCatalogWide(wsRoot, cacheDir, dirs, os.Stderr, os.Stdout)
 }
 
 // lintCatalogWide runs the whole-catalog correctness validation: it loads every
@@ -174,8 +174,9 @@ func lintCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace) error {
 // validation — the home where a broken catalog entity is meant to surface (CI,
 // pre-publish). It halts loudly on any schema-pillar violation, unresolvable or
 // invalid library, or extends-resolution failure. Advisory and error
-// diagnostics are written to diagOut (os.Stderr in production).
-func lintCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut io.Writer) error {
+// diagnostics are written to diagOut (os.Stderr in production); the final
+// success summary is written to out (os.Stdout in production).
+func lintCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io.Writer) error {
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog validation failed: %w", err)
@@ -211,7 +212,7 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut io.Writer) 
 	for _, w := range cat.LintWarnings() {
 		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
-	fmt.Println("catalog validation passed (schema-pillar + library + extends + oci-location)")
+	fmt.Fprintln(out, "catalog validation passed (schema-pillar + library + extends + oci-location)")
 	return nil
 }
 
@@ -233,8 +234,9 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut io.Writer) 
 // unresolvable-URI error rather than a silent fetch.
 //
 // Advisory (`notice:`) and error diagnostics are written to diagOut (os.Stderr
-// in production).
-func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diagOut io.Writer) error {
+// in production); the final success summary is written to out (os.Stdout in
+// production).
+func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diagOut, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
@@ -321,7 +323,7 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 		return fmt.Errorf("release closure validation failed: %d input-kind capability error(s)", len(errs))
 	}
 
-	fmt.Printf("release closure validation passed: %s (schema-pillar + closure pillars)\n", releasePath)
+	fmt.Fprintf(out, "release closure validation passed: %s (schema-pillar + closure pillars)\n", releasePath)
 	return nil
 }
 
@@ -693,7 +695,6 @@ func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, er
 			"  - pass --plugin <filesystem-path>\n" +
 			"  - or set plugins.linter[0].uri in .aggrega-config.yaml to a workspace-relative path")
 }
-
 
 // looksLikeOCIURI returns true when the URI looks like an OCI
 // reference. Heuristic: oci:// scheme, or hub.aggrega.ai host, or

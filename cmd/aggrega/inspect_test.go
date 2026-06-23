@@ -5,9 +5,7 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,10 +19,10 @@ import (
 // the Component recipes the fullstack-app IR builder consumes.
 const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-app/catalog"
 
-// runInspectCaptured wires the captureStdout helper to a dispatchInspect
-// call against a Release file with the fullstack-app catalog set. The
-// returned string is the per-component Feature-attachment block the
-// inspect command emits.
+// runInspectCaptured drives a dispatchInspect call against a Release file with
+// the fullstack-app catalog set, capturing the command's output through the
+// injected writer. The returned string is the per-component Feature-attachment
+// block the inspect command emits.
 func runInspectCaptured(t *testing.T, releasePath string) string {
 	t.Helper()
 	var buf bytes.Buffer
@@ -199,52 +197,6 @@ spec:
 	if !strings.Contains(out, "port?: int | *8080") {
 		t.Errorf("output missing rendered schema body; got:\n%s", out)
 	}
-}
-
-// captureStdout redirects os.Stdout for the duration of fn, returning
-// what fn wrote. Used by tests that need to assert on user-facing
-// output of commands that print directly to stdout.
-//
-// Pipe teardown runs in a defer so a panic in fn still closes the
-// writer, unblocks the reader goroutine, and drains the captured
-// buffer — the goroutine would otherwise leak past the test and (if
-// the panic doesn't tear down the process) hold the pipe's file
-// descriptor. Named returns let the defer populate the output after
-// the drain completes, so callers see what fn actually wrote.
-func captureStdout(fn func() error) (out string, fnErr error) {
-	originalStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		return "", fmt.Errorf("pipe: %w", err)
-	}
-	os.Stdout = w
-
-	done := make(chan struct{})
-	var captured strings.Builder
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				captured.Write(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
-		close(done)
-	}()
-
-	defer func() {
-		os.Stdout = originalStdout
-		w.Close()
-		<-done
-		r.Close()
-		out = captured.String()
-	}()
-
-	fnErr = fn()
-	return
 }
 
 // TestIsPathInput pins the input-form detector that drives kind

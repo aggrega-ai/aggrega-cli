@@ -98,7 +98,7 @@ spec:
 	releasePath = filepath.Join(root, "release.yaml")
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
-	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr)
+	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("unknown provider should error at render")
 	}

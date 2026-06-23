@@ -164,7 +164,7 @@ spec:
 			writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
 			t.Chdir(ws)
 
-			err := lintRelease(nil, "release.yaml", os.Stderr)
+			err := lintRelease(nil, "release.yaml", os.Stderr, os.Stdout)
 			if tc.wantErr && err == nil {
 				t.Fatalf("%s: expected a value-conformance error; got nil", tc.name)
 			}

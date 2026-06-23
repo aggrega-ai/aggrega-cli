@@ -33,7 +33,7 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	t.Chdir(ws)
 
 	// Clean closure → exit 0.
-	if err := lintRelease(nil, "release-compose.yaml", os.Stderr); err != nil {
+	if err := lintRelease(nil, "release-compose.yaml", os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("lint --release over a clean closure must pass; got %v", err)
 	}
 
@@ -53,12 +53,12 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := lintRelease(nil, "release-compose.yaml", os.Stderr); err != nil {
+	if err := lintRelease(nil, "release-compose.yaml", os.Stderr, os.Stdout); err != nil {
 		t.Errorf("an out-of-closure broken entity must not fail closure-scoped lint --release; got %v", err)
 	}
 
 	// ...but whole-catalog lint DOES catch it — proving the modes scope differently.
-	if err := lintCatalogWide("", "", []string{composeCatalog}, os.Stderr); err == nil {
+	if err := lintCatalogWide("", "", []string{composeCatalog}, os.Stderr, os.Stdout); err == nil {
 		t.Error("whole-catalog lint must catch the broken out-of-closure entity (closure-scoping difference unproven)")
 	}
 }
