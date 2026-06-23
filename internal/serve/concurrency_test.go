@@ -5,7 +5,6 @@ package serve
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,8 +79,8 @@ func TestConcurrentSharedFileDispatchRaceClean(t *testing.T) {
 		t.Run(fmt.Sprintf("pool=%d", pool), func(t *testing.T) {
 			t.Parallel()
 			stdinR, stdinW := io.Pipe()
-			var stdout bytes.Buffer
-			srv, compPath := newConcurrencyServer(t, stdinR, &stdout, pool)
+			stdoutR, stdoutW := io.Pipe()
+			srv, compPath := newConcurrencyServer(t, stdinR, stdoutW, pool)
 
 			loopDone := make(chan error, 1)
 			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
@@ -89,7 +88,7 @@ func TestConcurrentSharedFileDispatchRaceClean(t *testing.T) {
 			// Read responses concurrently so a saturated bounded queue
 			// back-pressures the writer rather than deadlocking the test.
 			readDone := make(chan int, 1)
-			go func() { readDone <- drainResponses(bufio.NewReader(&stdout)) }()
+			go func() { readDone <- drainResponses(bufio.NewReader(stdoutR)) }()
 
 			content := concurrencyComponentYAML
 			file := compPath
@@ -126,6 +125,10 @@ func TestConcurrentSharedFileDispatchRaceClean(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("dispatch loop did not exit")
 			}
+			// The serializer has flushed and returned by the time the
+			// dispatch loop exits, so no further writes touch the pipe.
+			// Closing the writer now hands the drain goroutine its EOF.
+			stdoutW.Close()
 			<-readDone
 		})
 	}
@@ -141,13 +144,13 @@ func TestConcurrentSharedFileDispatchRaceClean(t *testing.T) {
 func TestConcurrentValidateAndReadHandlersRaceClean(t *testing.T) {
 	t.Parallel()
 	stdinR, stdinW := io.Pipe()
-	var stdout bytes.Buffer
-	srv, compPath := newConcurrencyServer(t, stdinR, &stdout, 16)
+	stdoutR, stdoutW := io.Pipe()
+	srv, compPath := newConcurrencyServer(t, stdinR, stdoutW, 16)
 
 	loopDone := make(chan error, 1)
 	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
 	readDone := make(chan int, 1)
-	go func() { readDone <- drainResponses(bufio.NewReader(&stdout)) }()
+	go func() { readDone <- drainResponses(bufio.NewReader(stdoutR)) }()
 
 	content := concurrencyComponentYAML
 	file := compPath
@@ -179,6 +182,10 @@ func TestConcurrentValidateAndReadHandlersRaceClean(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("dispatch loop did not exit")
 	}
+	// The serializer has flushed and returned by the time the dispatch
+	// loop exits, so no further writes touch the pipe. Closing the writer
+	// now hands the drain goroutine its EOF.
+	stdoutW.Close()
 	<-readDone
 }
 
@@ -202,14 +209,14 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 		t.Run(fmt.Sprintf("pool=%d", pool), func(t *testing.T) {
 			t.Parallel()
 			stdinR, stdinW := io.Pipe()
-			var stdout bytes.Buffer
-			srv := newPinIsolationServer(t, ws, stdinR, &stdout, pool)
+			stdoutR, stdoutW := io.Pipe()
+			srv := newPinIsolationServer(t, ws, stdinR, stdoutW, pool)
 			srv.activeReleasePath = releaseA
 
 			loopDone := make(chan error, 1)
 			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
 			readDone := make(chan int, 1)
-			go func() { readDone <- drainResponses(bufio.NewReader(&stdout)) }()
+			go func() { readDone <- drainResponses(bufio.NewReader(stdoutR)) }()
 
 			var feed [][]byte
 			feed = append(feed, framedRequest(1, "aggrega/initialize", initializeParams{}))
@@ -239,6 +246,10 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("dispatch loop did not exit")
 			}
+			// The serializer has flushed and returned by the time the
+			// dispatch loop exits, so no further writes touch the pipe.
+			// Closing the writer now hands the drain goroutine its EOF.
+			stdoutW.Close()
 			<-readDone
 		})
 	}
