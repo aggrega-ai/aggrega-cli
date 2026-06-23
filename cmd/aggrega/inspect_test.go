@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,13 +27,21 @@ const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-a
 // inspect command emits.
 func runInspectCaptured(t *testing.T, releasePath string) string {
 	t.Helper()
-	out, err := captureStdout(func() error {
-		return dispatchInspect(resolveTempWorkspace(t), releasePath, []string{fullstackAppInspectCatalog})
-	})
-	if err != nil {
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), releasePath, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("dispatchInspect(%q): %v", releasePath, err)
 	}
-	return out
+	return buf.String()
+}
+
+// testInspectOptions builds a default-level, text, color-off inspectOptions
+// writing to out — the construction tests use in place of the cobra flag
+// variables, so no package-level flag var is touched under t.Parallel.
+func testInspectOptions(out io.Writer) inspectOptions {
+	return inspectOptions{
+		out:      out,
+		colorize: newColorizer(colorNever, out, false),
+	}
 }
 
 func TestInspect_AnnotationBoundary_Explicit_UniformBracket(t *testing.T) {
@@ -93,7 +103,7 @@ func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing
 // inspect is deferred.
 func TestInspect_OciUri_ReturnsNotImplemented(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect(resolveTempWorkspace(t), "oci://registry.example.com/components/api:1.0.0", nil)
+	err := dispatchInspect(resolveTempWorkspace(t), "oci://registry.example.com/components/api:1.0.0", nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Fatal("expected not-implemented error for oci:// argument; got nil")
 	}
@@ -122,7 +132,7 @@ spec:
       type:
         core/server: server-recipe:1.0.0
 `)
-	err := dispatchInspect(resolveTempWorkspace(t), manifestPath, nil)
+	err := dispatchInspect(resolveTempWorkspace(t), manifestPath, nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Fatal("expected not-implemented-for-kind error for Manifest input; got nil")
 	}
@@ -145,7 +155,7 @@ func TestInspect_MissingKind_ReturnsError(t *testing.T) {
 	writeFixture(t, bogusPath, `some_field: value
 another_field: 42
 `)
-	err := dispatchInspect(resolveTempWorkspace(t), bogusPath, nil)
+	err := dispatchInspect(resolveTempWorkspace(t), bogusPath, nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Fatal("expected error on missing-kind file; got nil")
 	}
@@ -160,6 +170,7 @@ another_field: 42
 // a header line naming the Component and its source path, followed by
 // the rendered schema body.
 func TestInspect_ComponentFilePath_RendersSchema(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	compPath := filepath.Join(root, "component.yaml")
 	writeFixture(t, compPath, `apiVersion: aggrega.ai/v1alpha1
@@ -174,12 +185,11 @@ spec:
     values: { port?: int | *8080 }
 `)
 
-	out, err := captureStdout(func() error {
-		return dispatchInspect(resolveTempWorkspace(t), compPath, nil)
-	})
-	if err != nil {
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), compPath, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("Component file path should inspect cleanly; got: %v", err)
 	}
+	out := buf.String()
 	if !strings.Contains(out, "// Component: core/server") {
 		t.Errorf("output missing Component header naming core/server; got:\n%s", out)
 	}

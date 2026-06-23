@@ -4,6 +4,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -229,7 +230,7 @@ func TestInspectReleaseFile_MissingFile(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Catalog without the release.
-	err := inspectReleaseFile(nil, "/nonexistent/release.yaml", []string{tmp})
+	err := renderReleaseFile(nil, "/nonexistent/release.yaml", nil, []string{tmp}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing release should error")
 	}
@@ -249,7 +250,7 @@ metadata:
   version: 1.0.0
 spec: {}
 `)
-	err := inspectReleaseFile(nil, filepath.Join(root, "release.yaml"), []string{catalogRoot})
+	err := renderReleaseFile(nil, filepath.Join(root, "release.yaml"), nil, []string{catalogRoot}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("malformed release should error")
 	}
@@ -341,7 +342,7 @@ spec:
         ports:
           web: {{ .values.port }}
 `)
-	err := inspectReleaseFile(nil, filepath.Join(root, "release.yaml"), []string{catalogRoot})
+	err := renderReleaseFile(nil, filepath.Join(root, "release.yaml"), nil, []string{catalogRoot}, testInspectOptions(io.Discard))
 	if err != nil {
 		t.Errorf("happy path: %v", err)
 	}

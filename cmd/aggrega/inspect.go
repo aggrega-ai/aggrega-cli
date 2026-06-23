@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -23,7 +24,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var inspectCatalogDirs []string
+// Cobra binding targets for the inspect flags. These are read ONLY by
+// runInspect, which builds an inspectOptions from them once and threads that
+// struct onward. They never reach a per-kind renderer — renderers consume the
+// resolved inspectOptions, so the package-level flag variables are not a shared
+// surface tests must guard against under t.Parallel.
+var (
+	inspectCatalogDirs  []string
+	inspectListFlag     bool
+	inspectDetailFlag   bool
+	inspectRawFlag      bool
+	inspectResolvedFlag bool
+	inspectColorFlag    string
+	inspectNoColorFlag  bool
+	inspectOutputFlag   string
+)
 
 func newInspectCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -33,18 +48,53 @@ func newInspectCmd() *cobra.Command {
 		RunE:  runInspect,
 	}
 	c.Flags().StringArrayVar(&inspectCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().BoolVar(&inspectListFlag, "list", false, "Render identifiers only.")
+	c.Flags().BoolVar(&inspectDetailFlag, "detail", false, "Render full field bodies.")
+	c.Flags().BoolVar(&inspectRawFlag, "raw", false, "Render the entity as authored, without resolution.")
+	c.Flags().BoolVar(&inspectResolvedFlag, "resolved", false, "Render the entity fully resolved.")
+	c.Flags().StringVar(&inspectColorFlag, "color", "auto", "Colorize output: auto|always|never.")
+	c.Flags().BoolVar(&inspectNoColorFlag, "no-color", false, "Disable colorized output (alias for --color=never).")
+	c.Flags().StringVar(&inspectOutputFlag, "output", "text", "Output format: text|yaml.")
+	c.MarkFlagsMutuallyExclusive("list", "detail")
+	c.MarkFlagsMutuallyExclusive("raw", "resolved")
+	c.MarkFlagsMutuallyExclusive("color", "no-color")
 	return c
 }
 
-// runInspect reads the cobra-bound --catalog flag and delegates to
-// dispatchInspect. Tests exercise dispatchInspect directly to avoid
-// racing on the package-level flag variable under t.Parallel.
+// runInspect reads the cobra-bound inspect flags, resolves them into a single
+// inspectOptions value, and delegates to dispatchInspect. Tests exercise
+// dispatchInspect directly with a constructed inspectOptions to avoid touching
+// the package-level flag variables under t.Parallel.
 func runInspect(cmd *cobra.Command, args []string) error {
 	rw, err := workspaceFromContext(cmd.Context())
 	if err != nil {
 		return err
 	}
-	return dispatchInspect(rw, args[0], inspectCatalogDirs)
+
+	color := inspectColorFlag
+	if inspectNoColorFlag {
+		color = "never"
+	}
+	colorMode, err := parseColorMode(color)
+	if err != nil {
+		return err
+	}
+	output, err := parseOutputFormat(inspectOutputFlag)
+	if err != nil {
+		return err
+	}
+
+	out := cmd.OutOrStdout()
+	_, noColorSet := os.LookupEnv("NO_COLOR")
+	opts := inspectOptions{
+		level:    resolveLevel(inspectListFlag, inspectDetailFlag),
+		mode:     resolveMode(inspectRawFlag, inspectResolvedFlag),
+		output:   output,
+		color:    colorMode,
+		out:      out,
+		colorize: newColorizer(colorMode, out, noColorSet),
+	}
+	return dispatchInspect(rw, args[0], inspectCatalogDirs, opts)
 }
 
 // dispatchInspect routes the inspect command by the input form:
@@ -62,16 +112,16 @@ func runInspect(cmd *cobra.Command, args []string) error {
 // catalogDirs supplies the repeatable --catalog flag directories for both the
 // catalog-name branch and the Release branch's pipeline; each load site resolves
 // them against the workspace catalog_dirs into the first-win search stack.
-func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string) error {
+func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
 	if strings.HasPrefix(identifier, "oci://") {
 		return fmt.Errorf("inspect for OCI URIs not yet implemented; resolve to a local path or use a catalog name")
 	}
 
 	if isPathInput(identifier) {
-		return inspectPath(rw, identifier, catalogDirs)
+		return inspectPath(rw, identifier, catalogDirs, opts)
 	}
 
-	return inspectCatalogComponent(rw, identifier, catalogDirs)
+	return inspectCatalogComponent(rw, identifier, catalogDirs, opts)
 }
 
 // isPathInput returns true when the identifier names a filesystem path
@@ -123,9 +173,33 @@ func resolveSiblingYAML(dir, name string) string {
 	return candidate
 }
 
-// inspectPath reads a YAML file, peeks at apiVersion / kind, and
-// dispatches to the per-kind inspector branch.
-func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs []string) error {
+// kindRenderer renders one entity kind authored as a standalone file. Each
+// per-kind inspector is a kindRenderer registered in the kindRenderers table;
+// adding a kind is a single table entry. The renderer reads the already-loaded
+// bytes, the catalog search stack, and the resolved inspectOptions (which
+// carry the level, mode, output format, color decision, and the output sink),
+// and writes to opts.out.
+type kindRenderer func(rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error
+
+// kindRenderers maps an entity kind to its file-path inspector. inspectPath
+// dispatches through this table; kinds absent from it fall through to the
+// not-yet-implemented / non-standalone handling in inspectPath.
+var kindRenderers = map[string]kindRenderer{
+	"Component": renderComponentFile,
+	"Release":   renderReleaseFile,
+}
+
+// nonStandalone names the kinds that exist only embedded under another entity
+// and so cannot be inspected as standalone files (A8 hard error).
+var nonStandalone = map[string]bool{
+	"Workload": true,
+}
+
+// inspectPath reads a YAML file, peeks at apiVersion / kind, and dispatches to
+// the per-kind renderer registered for that kind. A kind that is structurally
+// embedded-only (Workload) is a hard error; a recognized-but-unimplemented kind
+// reports forward-compatibly; an unrecognized kind reports the unknown kind.
+func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs []string, opts inspectOptions) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", path, err)
@@ -141,12 +215,14 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 		return fmt.Errorf("couldn't determine entity kind from %q; expected apiVersion/kind preamble", path)
 	}
 
+	if render, ok := kindRenderers[preamble.Kind]; ok {
+		return render(rw, path, data, catalogDirs, opts)
+	}
+	if nonStandalone[preamble.Kind] {
+		return fmt.Errorf("kind %s is not a standalone inspectable entity", preamble.Kind)
+	}
 	switch preamble.Kind {
-	case "Component":
-		return inspectComponentFile(path, data)
-	case "Release":
-		return inspectReleaseFile(rw, path, catalogDirs)
-	case "Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider", "Workload":
+	case "Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider":
 		return fmt.Errorf("inspect not yet implemented for kind %s", preamble.Kind)
 	default:
 		return fmt.Errorf("unknown entity kind %q in %q", preamble.Kind, path)
@@ -156,7 +232,7 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 // inspectCatalogComponent runs the legacy catalog-component-name path.
 // Loads the catalog at catalogDir, resolves extends chains, looks up
 // the named Component, and prints its merged schema + usesSchema.
-func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentType string, catalogDirs []string) error {
+func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentType string, catalogDirs []string, opts inspectOptions) error {
 	// Workspace-agnostic inspection: this path prints catalog Component
 	// details without rendering any per-node IR, so no workspace-relative
 	// path normalization is needed. The walk still skips the configured
@@ -187,37 +263,48 @@ func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentTyp
 	if comp.Spec.Extends != "" {
 		header += " (resolved from inheritance chain)"
 	}
-	fmt.Println(header)
+	fmt.Fprintln(opts.out, opts.colorize.header(header))
 
 	if comp.Spec.Schema.Kind != 0 {
 		out, err := yaml.Marshal(&comp.Spec.Schema)
 		if err != nil {
 			return fmt.Errorf("render schema: %w", err)
 		}
-		fmt.Print(string(out))
+		fmt.Fprint(opts.out, string(out))
 	} else {
-		fmt.Println("// (no schema defined)")
+		fmt.Fprintln(opts.out, "// (no schema defined)")
 	}
 
 	if comp.Spec.UsesSchema.Len() > 0 {
-		fmt.Println("\n// usesSchema:")
+		fmt.Fprintln(opts.out, "\n// usesSchema:")
 		for socket, entry := range comp.Spec.UsesSchema.All() {
-			fmt.Printf("//   %s: selector=%q\n", socket, entry.Selector)
+			fmt.Fprintf(opts.out, "//   %s: selector=%q\n", socket, entry.Selector)
 		}
 	}
 	return nil
 }
 
-// inspectComponentFile renders the schema for a Component authored as a
-// standalone file. Output shape matches the catalog-name path's schema
-// rendering. usesSchema and extends headers are surfaced when present;
-// schema-less Components produce the `(no schema defined)` placeholder.
-func inspectComponentFile(path string, data []byte) error {
+// renderComponentFile renders a Component authored as a standalone file. It is
+// the reference kind proving the render framework end-to-end: it honors the
+// detail level (levelList emits identifiers only — the Component name plus its
+// usesSchema socket names), the YAML output format (--output yaml dumps the
+// parsed Component as YAML), and the colorizer on the header. At levelDefault
+// the text output matches the catalog-name path's schema rendering: a header
+// line naming the Component and its source path, the rendered schema body, and
+// the usesSchema sockets when present; schema-less Components produce the
+// `(no schema defined)` placeholder.
+//
+// levelDetail currently coincides with levelDefault for Component — the default
+// already surfaces the full schema body. The level is threaded so a later
+// reshape differentiates the two without touching the framework.
+//
+// A Component file is self-contained, so the --raw / --resolved override has no
+// effect here (opts.mode is read by the resolved instance kinds, not by the
+// as-authored kinds).
+func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	// The minimal Component shape needed for inspect output is parsed
-	// by reusing the catalog's loader logic indirectly: we marshal the
-	// already-read bytes into a temporary Component struct via the
-	// catalog's package-level types. To avoid a unneeded coupling the
-	// implementation here narrows to the fields inspect renders.
+	// by narrowing to the fields inspect renders, avoiding a coupling to
+	// the catalog loader's full Component type.
 	var comp struct {
 		Metadata struct {
 			Name string `yaml:"name"`
@@ -236,28 +323,56 @@ func inspectComponentFile(path string, data []byte) error {
 	if err := yaml.Unmarshal(data, &comp); err != nil {
 		return fmt.Errorf("parse Component at %q: %w", path, err)
 	}
+
+	if opts.output == outputYAML {
+		// The render subject for an as-authored kind is the parsed file. A
+		// Component file is self-contained, so raw and resolved emit the same
+		// subject; the resolved-subject contract for the instance kinds
+		// (Release / Aggregate), whose subject is a pipeline result, is filled
+		// where those kinds resolve.
+		var node yaml.Node
+		if err := yaml.Unmarshal(data, &node); err != nil {
+			return fmt.Errorf("parse Component at %q: %w", path, err)
+		}
+		out, err := yaml.Marshal(&node)
+		if err != nil {
+			return fmt.Errorf("render Component YAML: %w", err)
+		}
+		fmt.Fprint(opts.out, string(out))
+		return nil
+	}
+
 	name := comp.Metadata.Name
 	if name == "" {
 		name = path
 	}
+
+	if opts.level == levelList {
+		fmt.Fprintln(opts.out, opts.colorize.uri(name))
+		for socket := range comp.Spec.UsesSchema {
+			fmt.Fprintf(opts.out, "%s\n", socket)
+		}
+		return nil
+	}
+
 	header := fmt.Sprintf("// Component: %s (from %s)", name, path)
 	if comp.Spec.Extends != "" {
 		header += " (declares extends; inheritance NOT resolved for file-path inspection)"
 	}
-	fmt.Println(header)
+	fmt.Fprintln(opts.out, opts.colorize.header(header))
 	if comp.Spec.Schema.Kind != 0 {
 		out, err := yaml.Marshal(&comp.Spec.Schema)
 		if err != nil {
 			return fmt.Errorf("render schema: %w", err)
 		}
-		fmt.Print(string(out))
+		fmt.Fprint(opts.out, string(out))
 	} else {
-		fmt.Println("// (no schema defined)")
+		fmt.Fprintln(opts.out, "// (no schema defined)")
 	}
 	if len(comp.Spec.UsesSchema) > 0 {
-		fmt.Println("\n// usesSchema:")
+		fmt.Fprintln(opts.out, "\n// usesSchema:")
 		for socket, entry := range comp.Spec.UsesSchema {
-			fmt.Printf("//   %s: selector=%q\n", socket, entry.Selector)
+			fmt.Fprintf(opts.out, "//   %s: selector=%q\n", socket, entry.Selector)
 		}
 	}
 	return nil
@@ -275,7 +390,13 @@ func inspectComponentFile(path string, data []byte) error {
 //
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
-func inspectReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string) error {
+//
+// Release is a resolved instance kind: its render subject is the pipeline
+// result, so a --output yaml dump of that resolved subject and the --raw /
+// --resolved override are filled where the resolved-subject reshape lands. This
+// function threads opts.out as the output sink and otherwise renders the
+// per-node Feature-attachment text as before.
+func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, _ []byte, catalogDirs []string, opts inspectOptions) error {
 	// wsRoot is the resolved workspace root; the catalog renders its entity
 	// source-file accessors relative to it so catalog-sourced IR records read
 	// consistently across machines. The root Aggregate node's own source path
@@ -353,16 +474,16 @@ func inspectReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath strin
 				return fmt.Errorf("Step 3 (IR): %w", err)
 			}
 
-			fmt.Printf("// Release: %s (from %s)\n", rel.Metadata.Name, releasePath)
+			fmt.Fprintf(opts.out, "// Release: %s (from %s)\n", rel.Metadata.Name, releasePath)
 			for nodeID, featureMap := range graph.Spec.FeatureValuesMapping.All() {
-				fmt.Printf("\nComponent: %s\n", nodeID)
+				fmt.Fprintf(opts.out, "\nComponent: %s\n", nodeID)
 				if featureMap.Len() == 0 {
-					fmt.Println("  (no Features attached)")
+					fmt.Fprintln(opts.out, "  (no Features attached)")
 					continue
 				}
-				fmt.Println("  Features:")
+				fmt.Fprintln(opts.out, "  Features:")
 				for instanceName, entry := range featureMap.All() {
-					renderFeatureAttachment(instanceName, entry)
+					renderFeatureAttachment(opts.out, instanceName, entry)
 				}
 			}
 			return nil
@@ -378,14 +499,14 @@ func inspectReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath strin
 // diverges across leaves, the function expands into per-leaf lines —
 // one bracket per leaf the attachment populates — so the rendered
 // output surfaces the divergence that consumers would otherwise miss.
-func renderFeatureAttachment(instanceName string, entry types.IRFeatureEntry) {
+func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry) {
 	if featureProvenanceLayout(entry) {
-		fmt.Printf("    - %s    %s\n", featureLabel(instanceName, entry), perAttachmentBracket(entry))
+		fmt.Fprintf(out, "    - %s    %s\n", featureLabel(instanceName, entry), perAttachmentBracket(entry))
 		return
 	}
-	fmt.Printf("    - %s\n", featureLabel(instanceName, entry))
+	fmt.Fprintf(out, "    - %s\n", featureLabel(instanceName, entry))
 	for _, leaf := range walkLeavesInOrder(entry) {
-		fmt.Printf("        %s: %v    %s\n", leaf.path, leaf.value, perLeafBracket(leaf.provenance))
+		fmt.Fprintf(out, "        %s: %v    %s\n", leaf.path, leaf.value, perLeafBracket(leaf.provenance))
 	}
 }
 

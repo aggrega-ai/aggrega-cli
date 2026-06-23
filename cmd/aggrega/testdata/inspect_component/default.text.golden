@@ -1,0 +1,6 @@
+// Component: core/server (from COMPONENT_PATH)
+|
+    values: { port?: int | *8080 }
+
+// usesSchema:
+//   db: selector="component.aggrega.ai/type=stateful-server"

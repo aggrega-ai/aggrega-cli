@@ -4,6 +4,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,7 +132,7 @@ func TestIsPathInput_AdditionalBranches(t *testing.T) {
 // TestInspectPath_NonExistentFile pins the read-error path.
 func TestInspectPath_NonExistentFile(t *testing.T) {
 	t.Parallel()
-	err := inspectPath(resolveTempWorkspace(t), "/nonexistent/file.yaml", nil)
+	err := inspectPath(resolveTempWorkspace(t), "/nonexistent/file.yaml", nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing file should error")
 	}
@@ -145,24 +146,26 @@ func TestInspectPath_MalformedYAMLPreamble(t *testing.T) {
 	if err := os.WriteFile(path, []byte("::: not yaml :::"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := inspectPath(resolveTempWorkspace(t), path, nil)
+	err := inspectPath(resolveTempWorkspace(t), path, nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("malformed YAML should error")
 	}
 }
 
-// TestInspectPath_NotYetImplemented pins the documented kinds that
-// surface "not yet implemented" rather than dispatch to a handler.
+// TestInspectPath_NotYetImplemented pins the recognized-but-unimplemented kinds
+// that surface "not yet implemented" rather than dispatch to a handler. Workload
+// is NOT in this set: it is embedded-only and hard-errors as non-standalone
+// (see TestInspectPath_NonStandaloneKind).
 func TestInspectPath_NotYetImplemented(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	for _, kind := range []string{"Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider", "Workload"} {
+	for _, kind := range []string{"Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider"} {
 		path := filepath.Join(tmp, kind+".yaml")
 		content := "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: x\n"
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", kind, err)
 		}
-		err := inspectPath(resolveTempWorkspace(t), path, nil)
+		err := inspectPath(resolveTempWorkspace(t), path, nil, testInspectOptions(io.Discard))
 		if err == nil {
 			t.Errorf("kind %s should surface not-yet-implemented", kind)
 			continue
@@ -177,7 +180,7 @@ func TestInspectPath_NotYetImplemented(t *testing.T) {
 // error path.
 func TestInspectCatalogComponent_MissingCatalog(t *testing.T) {
 	t.Parallel()
-	err := inspectCatalogComponent(resolveTempWorkspace(t), "any-name", []string{"/nonexistent/dir"})
+	err := inspectCatalogComponent(resolveTempWorkspace(t), "any-name", []string{"/nonexistent/dir"}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing catalog should error")
 	}
@@ -189,7 +192,7 @@ func TestInspectCatalogComponent_ComponentNotFound(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Empty catalog dir.
-	err := inspectCatalogComponent(resolveTempWorkspace(t), "absent-component", []string{tmp})
+	err := inspectCatalogComponent(resolveTempWorkspace(t), "absent-component", []string{tmp}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing component should error")
 	}
@@ -221,7 +224,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(tmp, "component.yaml"), []byte(compYAML), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := inspectCatalogComponent(resolveTempWorkspace(t), "core/server", []string{tmp}); err != nil {
+	if err := inspectCatalogComponent(resolveTempWorkspace(t), "core/server", []string{tmp}, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("happy: %v", err)
 	}
 }
@@ -231,7 +234,7 @@ spec:
 func TestInspectComponentFile_MissingNameUsesPath(t *testing.T) {
 	t.Parallel()
 	src := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nspec:\n  schema:\n    values:\n      x: {type: string}\n")
-	if err := inspectComponentFile("/some/file.yaml", src); err != nil {
+	if err := renderComponentFile(nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("happy: %v", err)
 	}
 }
@@ -240,7 +243,7 @@ func TestInspectComponentFile_MissingNameUsesPath(t *testing.T) {
 func TestInspectComponentFile_NoSchemaDeclared(t *testing.T) {
 	t.Parallel()
 	src := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: x\nspec: {}\n")
-	if err := inspectComponentFile("/some/file.yaml", src); err != nil {
+	if err := renderComponentFile(nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("no-schema: %v", err)
 	}
 }
@@ -249,7 +252,7 @@ func TestInspectComponentFile_NoSchemaDeclared(t *testing.T) {
 func TestInspectComponentFile_MalformedYAML(t *testing.T) {
 	t.Parallel()
 	src := []byte("::: not yaml :::")
-	if err := inspectComponentFile("/some/file.yaml", src); err == nil {
+	if err := renderComponentFile(nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err == nil {
 		t.Errorf("malformed should error")
 	}
 }
@@ -270,7 +273,7 @@ spec:
     values:
       x: { type: string }
 `)
-	if err := inspectComponentFile("/some/file.yaml", src); err != nil {
+	if err := renderComponentFile(nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("extends: %v", err)
 	}
 }
@@ -296,7 +299,7 @@ func TestRunBuild_MissingRelease(t *testing.T) {
 // TestRunInspect_OCI pins the OCI not-implemented branch.
 func TestRunInspect_OCI(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect(resolveTempWorkspace(t), "oci://hub/lib@1#/schemas/X", nil)
+	err := dispatchInspect(resolveTempWorkspace(t), "oci://hub/lib@1#/schemas/X", nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("OCI URI should error")
 	}
@@ -309,7 +312,7 @@ func TestRunInspect_OCI(t *testing.T) {
 // path (non-path input + non-OCI input).
 func TestRunInspect_CatalogComponentBranch(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect(resolveTempWorkspace(t), "absent-component", []string{t.TempDir()})
+	err := dispatchInspect(resolveTempWorkspace(t), "absent-component", []string{t.TempDir()}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("absent component should error")
 	}
@@ -323,7 +326,7 @@ func TestRunInspect_PathBranch(t *testing.T) {
 	if err := os.WriteFile(path, []byte("apiVersion: x\nkind: Manifest\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := dispatchInspect(resolveTempWorkspace(t), path, []string{tmp})
+	err := dispatchInspect(resolveTempWorkspace(t), path, []string{tmp}, testInspectOptions(io.Discard))
 	// Manifest → not-yet-implemented; surfaces as error.
 	if err == nil {
 		t.Errorf("manifest dispatch should error")
