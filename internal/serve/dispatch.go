@@ -286,6 +286,27 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 				ser.emit(seq, body)
 				continue
 			}
+			// $/cancelRequest is handled inline on the main loop, not
+			// submitted to the pool: the pickup is a fast lock-guarded map
+			// lookup, and queueing it behind other work would defeat the
+			// point — at pool size one it would sit behind the very request
+			// it cancels, which holds the only worker. Handling it here
+			// makes cancellation prompt. It touches neither shuttingDown nor
+			// the pool, and runs BEFORE the drain gate below so a cancel
+			// arriving mid-shutdown still interrupts its in-flight request.
+			// The notification carries no id and yields no response; the
+			// seq's ordered slot is closed with a body-less done-frame so
+			// the serializer cursor advances. Malformed params are dropped
+			// silently — a notification has no response channel to report an
+			// error on.
+			if req.Method == "$/cancelRequest" {
+				var cp cancelParams
+				if json.Unmarshal(req.Params, &cp) == nil {
+					s.cancelTracker.cancel(cp.ID)
+				}
+				ser.emit(seq, nil)
+				continue
+			}
 			// Acceptance-boundary drain gate. The single-threaded main
 			// loop is the serialization point for shutdown ordering: set
 			// shuttingDown HERE, on accepting the shutdown message, so

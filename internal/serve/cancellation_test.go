@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -306,13 +307,13 @@ func TestCancelTrackerEmptyAfterBurst(t *testing.T) {
 	}
 }
 
-// TestCancelRequestByIdInterruptsHandler exercises the built-not-wired
-// pickup against a live in-flight handler: a handler is held on its
+// TestCancelRequestByIdInterruptsHandler exercises the registry pickup
+// directly against a live in-flight handler: a handler is held on its
 // per-request ctx.Done(); the test reaches the registry by id and calls
-// the cancel pickup directly (no dispatch method, no notification routing
-// — that path is not wired); the handler observes cancellation and
-// releases. This is what keeps the pickup a tested, documented seam
-// rather than dead capability.
+// the cancel pickup directly; the handler observes cancellation and
+// releases. This is the unit-level proof of the pickup in isolation; the
+// end-to-end notification route is covered by
+// TestCancelRequestNotificationInterruptsHandler.
 func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 	t.Parallel()
 
@@ -349,9 +350,8 @@ func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 		t.Fatal("target handler never entered in-flight")
 	}
 
-	// Reach the registry by id and fire the pickup directly. This is the
-	// future $/cancelRequest consumer's call site; no such consumer is
-	// wired, so the test stands in for it to prove the seam behaves.
+	// Reach the registry by id and fire the pickup directly — the
+	// unit-level seam check, independent of notification routing.
 	srv.cancelTracker.cancel(json.RawMessage(fmt.Sprintf("%d", targetID)))
 
 	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
@@ -370,5 +370,189 @@ func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 
 	if atomic.LoadInt32(&observed) != 1 {
 		t.Errorf("handler did not observe per-id cancellation from the registry pickup")
+	}
+}
+
+// TestCancelRequestNotificationInterruptsHandler drives a REAL
+// $/cancelRequest notification through the dispatch loop: an id-bearing
+// handler is held in-flight on its per-request ctx; the $/cancelRequest
+// notification carrying that id routes through the acceptance-boundary
+// case to the registry pickup; the handler observes cancellation and
+// releases. This is the end-to-end proof that the notification is wired,
+// run at pool 4 and 16 to confirm prompt cancellation under the pool and
+// -race cleanliness.
+func TestCancelRequestNotificationInterruptsHandler(t *testing.T) {
+	t.Parallel()
+	for _, pool := range []int{4, 16} {
+		pool := pool
+		t.Run(fmt.Sprintf("pool=%d", pool), func(t *testing.T) {
+			t.Parallel()
+
+			entered := make(chan struct{})
+			var observed int32
+			const targetID = 7
+
+			stdinR, stdinW := io.Pipe()
+			stdout := &syncBuffer{}
+			srv := newPoolTestServer(stdinR, stdout, pool, nil)
+			srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+				var n int
+				if json.Unmarshal(id, &n) != nil || n != targetID {
+					return
+				}
+				close(entered)
+				select {
+				case <-ctx.Done():
+					atomic.StoreInt32(&observed, 1)
+				case <-time.After(2 * time.Second):
+				}
+			}
+
+			loopDone := make(chan error, 1)
+			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+
+			if _, err := stdinW.Write(framedRequest(targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+				t.Fatalf("write request: %v", err)
+			}
+
+			select {
+			case <-entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("target handler never entered in-flight")
+			}
+
+			// The real wire path: a $/cancelRequest notification carrying
+			// the in-flight id, routed by the dispatch loop to the pickup.
+			if _, err := stdinW.Write(framedNotification("$/cancelRequest", map[string]any{"id": targetID})); err != nil {
+				t.Fatalf("write cancel: %v", err)
+			}
+
+			if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+				t.Fatalf("write shutdown: %v", err)
+			}
+			stdinW.Close()
+
+			select {
+			case err := <-loopDone:
+				if err != nil {
+					t.Fatalf("dispatchLoop: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("dispatch loop did not exit")
+			}
+
+			if atomic.LoadInt32(&observed) != 1 {
+				t.Errorf("handler did not observe cancellation from the $/cancelRequest notification")
+			}
+		})
+	}
+}
+
+// TestCancelRequestUnknownIdIsNoOp proves a $/cancelRequest for an id
+// with no in-flight handler is a safe no-op: it produces no response
+// frame (it is a notification), does not disturb the loop, and a normal
+// request submitted afterward is still served. Mirrors the
+// notification-produces-no-stdout-frame assertion shape from the
+// shutdown-drop tests.
+func TestCancelRequestUnknownIdIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	var stdin, stdout bytes.Buffer
+	// A cancel for an id that is not (and never was) in flight, then a
+	// real request whose response must still appear, then shutdown.
+	stdin.Write(framedNotification("$/cancelRequest", map[string]any{"id": 999}))
+	stdin.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{}))
+	stdin.Write(framedNotification("aggrega/shutdown", nil))
+
+	srv := newPoolTestServer(&stdin, &stdout, 4, nil)
+	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+		t.Fatalf("dispatchLoop: %v", err)
+	}
+
+	// Exactly one response frame: the releaseCandidates request. The
+	// $/cancelRequest and shutdown notifications produce none.
+	r := bufio.NewReader(&stdout)
+	resp := readResponses(t, r, 1)
+	var id int
+	if err := json.Unmarshal(resp[0].ID, &id); err != nil {
+		t.Fatalf("response id parse: %v", err)
+	}
+	if id != 1 {
+		t.Errorf("served response id = %d; want 1", id)
+	}
+	// No further frames: the next read must hit EOF.
+	if _, err := readMessage(r); err == nil {
+		t.Errorf("unexpected extra response frame after the single served request")
+	}
+}
+
+// TestCancelRequestNormalizesIdWhitespace is the id-normalization
+// regression: the in-flight request's id token and the $/cancelRequest
+// params.id are JSON-encoded with DIFFERENT insignificant whitespace for
+// the same logical id. The cancel must still interrupt the handler,
+// proving the cancelKey canonicalization rather than a verbatim-byte
+// match. framedRequest emits a tight `"id":7`; the cancel params here are
+// hand-framed as `{"id": 7}` with a space before the value.
+func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{})
+	var observed int32
+	const targetID = 7
+
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(stdinR, stdout, 4, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		var n int
+		if json.Unmarshal(id, &n) != nil || n != targetID {
+			return
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+			atomic.StoreInt32(&observed, 1)
+		case <-time.After(2 * time.Second):
+		}
+	}
+
+	loopDone := make(chan error, 1)
+	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+
+	if _, err := stdinW.Write(framedRequest(targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("target handler never entered in-flight")
+	}
+
+	// Hand-frame a $/cancelRequest whose params.id carries whitespace the
+	// request's id token did not (`"id": 7` vs the request's `"id":7`).
+	// A verbatim-byte match would miss; cancelKey's json.Compact makes
+	// both resolve to the same registry key.
+	cancelBody := `{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id": 7}}`
+	if _, err := stdinW.Write(rawFramed(cancelBody)); err != nil {
+		t.Fatalf("write cancel: %v", err)
+	}
+
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		t.Fatalf("write shutdown: %v", err)
+	}
+	stdinW.Close()
+
+	select {
+	case err := <-loopDone:
+		if err != nil {
+			t.Fatalf("dispatchLoop: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch loop did not exit")
+	}
+
+	if atomic.LoadInt32(&observed) != 1 {
+		t.Errorf("whitespace-differing $/cancelRequest did not cancel the handler; cancelKey normalization failed")
 	}
 }
