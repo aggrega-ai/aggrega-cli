@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,9 @@ import (
 // registry signature. A fatal verification failure (a required signature
 // that is missing, untrusted, or invalid for a non-advisory registry)
 // returns a non-nil error and halts the pull.
-func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string) error {
+//
+// Verification warning notices are written to diagOut (os.Stderr in production).
+func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer) error {
 	entities := make([]pullverify.Entity, 0, len(cl.Entities))
 	for _, e := range cl.Entities {
 		// Verify only entities freshly resolved from a registry (Tier-3).
@@ -56,7 +59,7 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	results, err := pullverify.Verify(ctx, entities, pullverify.Options{
 		Config: wsCfg,
 		Target: remoteTargetFor,
-		Warn:   func(notice string) { fmt.Fprintf(os.Stderr, "  verify: %s\n", notice) },
+		Warn:   func(notice string) { fmt.Fprintf(diagOut, "  verify: %s\n", notice) },
 	})
 	if err != nil {
 		return err

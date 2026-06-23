@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,14 +37,14 @@ func TestLintCatalogWide_SurfacesOverlapAdvisory(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, filepath.Join(dir, "overlap.yaml"), lintOverlapComponentYAML)
 
-	var err error
-	out := captureStderr(func() { err = lintCatalogWide("", "", []string{dir}) })
-	if err != nil {
+	var buf bytes.Buffer
+	if err := lintCatalogWide("", "", []string{dir}, &buf); err != nil {
 		t.Fatalf("overlap is advisory; lint must still pass (exit 0): %v", err)
 	}
+	out := buf.String()
 	for _, want := range []string{"notice:", "core/overlap-srv", "port"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("advisory output missing %q; got stderr:\n%s", want, out)
+			t.Errorf("advisory output missing %q; got diagnostics:\n%s", want, out)
 		}
 	}
 }
@@ -65,13 +66,12 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 
-	var err error
-	out := captureStderr(func() { err = lintCatalogWide("", "", []string{dir}) })
-	if err != nil {
+	var buf bytes.Buffer
+	if err := lintCatalogWide("", "", []string{dir}, &buf); err != nil {
 		t.Fatalf("clean catalog must pass: %v", err)
 	}
-	if strings.Contains(out, "notice:") {
-		t.Errorf("clean catalog must emit no notice; got stderr:\n%s", out)
+	if strings.Contains(buf.String(), "notice:") {
+		t.Errorf("clean catalog must emit no notice; got diagnostics:\n%s", buf.String())
 	}
 }
 
@@ -83,8 +83,10 @@ func TestLintCatalogWide_AdvisoryDeterministicOrder(t *testing.T) {
 	writeFixture(t, filepath.Join(dir, "z.yaml"), strings.Replace(lintOverlapComponentYAML, "core/overlap-srv", "core/zzz-srv", 1))
 	writeFixture(t, filepath.Join(dir, "a.yaml"), strings.Replace(lintOverlapComponentYAML, "core/overlap-srv", "core/aaa-srv", 1))
 
-	out1 := captureStderr(func() { _ = lintCatalogWide("", "", []string{dir}) })
-	out2 := captureStderr(func() { _ = lintCatalogWide("", "", []string{dir}) })
+	var buf1, buf2 bytes.Buffer
+	_ = lintCatalogWide("", "", []string{dir}, &buf1)
+	_ = lintCatalogWide("", "", []string{dir}, &buf2)
+	out1, out2 := buf1.String(), buf2.String()
 	if out1 != out2 {
 		t.Errorf("advisory output not deterministic across runs:\n--run1--\n%s\n--run2--\n%s", out1, out2)
 	}

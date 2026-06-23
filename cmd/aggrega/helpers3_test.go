@@ -4,6 +4,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -113,7 +114,7 @@ spec:
 
 	// Either succeeds (no annotations on Aggregate to fire on) or fails;
 	// both paths exercise the validation dispatch.
-	_ = dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
+	_ = dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr)
 }
 
 // TestRunBuild_MalformedAggregate pins the resolver-error path: a
@@ -161,7 +162,7 @@ spec: {}
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
+	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr)
 	if err == nil {
 		t.Errorf("malformed aggregate should error at resolve")
 	}
@@ -216,7 +217,7 @@ spec:
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled)
+	err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr)
 	if err == nil {
 		t.Errorf("extends to nonexistent parent should error")
 	}

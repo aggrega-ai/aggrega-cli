@@ -54,7 +54,7 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	// Build from the project root; the dist lands at the CWD per the Release's
 	// `directory:`. Snapshot content keyed within that dist root.
 	t.Chdir(root)
-	if err := dispatchBuild(nil, releasePath, nil, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr); err != nil {
 		t.Fatalf("build from root: %v", err)
 	}
 	fromRoot := distSnapshot(t, filepath.Join(root, "dist"))
@@ -69,7 +69,7 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(sub)
-	if err := dispatchBuild(nil, releasePath, nil, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr); err != nil {
 		t.Fatalf("build from subdir: %v", err)
 	}
 	fromSub := distSnapshot(t, filepath.Join(sub, "dist"))

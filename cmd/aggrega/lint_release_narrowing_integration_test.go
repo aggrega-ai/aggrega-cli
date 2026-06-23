@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -108,8 +109,9 @@ spec:
 	writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
 	t.Chdir(ws)
 
-	var err error
-	out := captureStderr(func() { err = lintRelease("release.yaml") })
+	var buf bytes.Buffer
+	err := lintRelease(nil, "release.yaml", &buf)
+	out := buf.String()
 
 	// Invariant 1 / exit invariance: narrowing is advisory — lint --release still
 	// passes (the value x=3 conforms to the composed minimum 1).
@@ -118,6 +120,6 @@ spec:
 	}
 	// The narrowing advisory is surfaced, naming the widening child.
 	if !strings.Contains(out, "test/lint-child") || !strings.Contains(out, "notice:") {
-		t.Errorf("expected a narrowing notice naming the widening child; got stderr:\n%s", out)
+		t.Errorf("expected a narrowing notice naming the widening child; got diagnostics:\n%s", out)
 	}
 }

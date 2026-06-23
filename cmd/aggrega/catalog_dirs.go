@@ -5,7 +5,7 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -47,16 +47,17 @@ func resolveCatalogDirs(flagDirs []string, cfg workspaceconfig.Config, fallback 
 	return dirs
 }
 
-// reportCatalogShadows prints, to stderr, each entity a higher-precedence catalog
+// reportCatalogShadows writes, to diagOut, each entity a higher-precedence catalog
 // directory overrode during a multi-directory load — the observable half of the
 // first-win stack. A single-directory load records no shadows, so this is a no-op
-// there. Diagnostic only; it never changes which entity resolved.
-func reportCatalogShadows(cat *catalog.Catalog) {
+// there. Diagnostics are written to diagOut (os.Stderr in production); it never
+// changes which entity resolved.
+func reportCatalogShadows(cat *catalog.Catalog, diagOut io.Writer) {
 	if cat == nil || len(cat.Shadows) == 0 {
 		return
 	}
 	for _, sh := range cat.Shadows {
-		fmt.Fprintf(os.Stderr, "catalog: %s %q in %s is shadowed by %s (first-win precedence)\n",
+		fmt.Fprintf(diagOut, "catalog: %s %q in %s is shadowed by %s (first-win precedence)\n",
 			sh.Kind, sh.Identity, sh.ShadowedDir, sh.WinnerDir)
 	}
 }

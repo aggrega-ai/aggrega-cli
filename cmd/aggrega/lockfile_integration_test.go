@@ -29,7 +29,7 @@ func TestBuildAutoPullsWhenLockfileMissingAndAutoPullTrue(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
-	if err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr); err != nil {
 		t.Fatalf("dispatchBuild: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "release.lock")); err != nil {
@@ -43,7 +43,7 @@ func TestBuildHaltsWhenLockfileMissingAndAutoPullFalse(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 
-	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false)
+	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr)
 	if err == nil {
 		t.Fatal("expected halt on missing-lockfile + auto_pull:false; got nil")
 	}
@@ -58,7 +58,7 @@ func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "offline: true\n")
 
-	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false)
+	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr)
 	if err == nil {
 		t.Fatal("expected halt on offline + missing lockfile; got nil")
 	}
@@ -99,7 +99,7 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false)
+	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr)
 	if err == nil {
 		t.Fatal("expected ErrLockfileDrift; got nil")
 	}
@@ -122,7 +122,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	// the verification step. The build itself may halt on later steps
 	// (this fixture has no Manifest mapping that the renderer requires);
 	// the test only asserts the lockfile verification gate is cleared.
-	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false)
+	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr)
 	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift) {
 		t.Errorf("unexpected drift on unchanged fixture: %v", err)
 	}

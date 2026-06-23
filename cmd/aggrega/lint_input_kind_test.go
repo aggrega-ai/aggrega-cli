@@ -11,6 +11,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ spec:
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
 `)
-	err := lintCatalogWide("", "", []string{dir})
+	err := lintCatalogWide("", "", []string{dir}, os.Stderr)
 	if err == nil {
 		t.Fatal("expected lint to flag workload:+helm-chart; got nil")
 	}
@@ -61,7 +62,7 @@ spec:
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
 `)
-	if err := lintCatalogWide("", "", []string{dir}); err != nil {
+	if err := lintCatalogWide("", "", []string{dir}, os.Stderr); err != nil {
 		t.Fatalf("workload:+compose (synthesizing) must lint clean; got %v", err)
 	}
 }

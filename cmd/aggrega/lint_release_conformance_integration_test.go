@@ -6,6 +6,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -163,7 +164,7 @@ spec:
 			writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
 			t.Chdir(ws)
 
-			err := lintRelease("release.yaml")
+			err := lintRelease(nil, "release.yaml", os.Stderr)
 			if tc.wantErr && err == nil {
 				t.Fatalf("%s: expected a value-conformance error; got nil", tc.name)
 			}

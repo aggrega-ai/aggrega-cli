@@ -7,6 +7,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return dispatchBuild(rw, releasePath, catalogDirs, traceEnabled)
+	return dispatchBuild(rw, releasePath, catalogDirs, traceEnabled, os.Stderr)
 }
 
 // dispatchBuild composes the filesystem-touching pre-pipeline steps
@@ -75,7 +76,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 // pipeline orchestration lives in internal/compiler/pipeline; tests
 // call dispatchBuild directly (passing a nil workspace, which resolves from
 // the working directory) to avoid racing on flag-bound globals under t.Parallel.
-func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool) error {
+//
+// Per-step diagnostics are written to diagOut (os.Stderr in production); tests
+// pass a buffer to capture them without mutating a process global.
+func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut io.Writer) error {
 	// wsRoot is the resolved workspace root; the catalog renders source-file
 	// accessors relative to it so the IR's per-node SourceFile records stay
 	// byte-identical across developer machines whose workspaces live at
@@ -112,7 +116,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// higher-precedence directory shadowed (--detail only); the override is never
 	// silent.
 	if buildDetail {
-		reportCatalogShadows(cat)
+		reportCatalogShadows(cat, diagOut)
 	}
 
 	// Ensure the per-Release lockfile exists (auto-pull when missing + permitted),
@@ -120,7 +124,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// lockfile; a freshly auto-pulled one matches the closure by construction. The
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, buildDetail)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, buildDetail, diagOut)
 	if err != nil {
 		return err
 	}
@@ -194,21 +198,21 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// extends never fails the build; an in-closure broken parent does.
 	if extErrs := lazyView.ResolveClosureExtends(cl); len(extErrs) > 0 {
 		for _, e := range extErrs {
-			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+			fmt.Fprintf(diagOut, "  extends: %s\n", e)
 		}
 		return withSkipContext(fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs)), skipped)
 	}
 
 	// Surface non-fatal deprecation notices about deprecated catalog shapes.
 	for _, w := range cat.DeprecationWarnings() {
-		fmt.Fprintf(os.Stderr, "  deprecation: %s\n", w)
+		fmt.Fprintf(diagOut, "  deprecation: %s\n", w)
 	}
 
 	// Surface non-fatal schema-pillar-overlap advisories for the build's closure
 	// entities (registry-pinned included) — the warning-level sibling of the
 	// closure-scoped pillar validation above, over the same closure-entity set.
 	for _, w := range lazyView.ClosureLintWarnings(cl) {
-		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
 
 	// Provider dispatch is the shared enginefactory.Dispatch — the single
@@ -302,7 +306,10 @@ func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 	return false
 }
 
-func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, detail bool) (bool, error) {
+// acquireLockfile writes any diagnostics (the no-pull --detail note, and the
+// auto-pull's reuse/verify notices forwarded through pullConfig.DiagOut) to
+// diagOut (os.Stderr in production).
+func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, detail bool, diagOut io.Writer) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -333,7 +340,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// The build's own resolution runs through the nil-puller pinned lazy lookup,
 	// untouched — so build output is unchanged by this fill.
 	if wsCfg.AutoPull {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail, ws: rw}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail, ws: rw, DiagOut: diagOut}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
 		return false, nil
@@ -342,7 +349,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// auto_pull is false: build is frozen against the lockfile as it stands.
 	if preexisted {
 		if detail {
-			fmt.Fprintf(os.Stderr, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present and auto_pull is off, so no pull ran this build\n", lockfilePath)
+			fmt.Fprintf(diagOut, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present and auto_pull is off, so no pull ran this build\n", lockfilePath)
 		}
 		return true, nil
 	}

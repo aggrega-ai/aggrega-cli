@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -171,7 +172,7 @@ spec:
 
 	// Build is hermetic (no puller) — it must resolve the top-level from the cache
 	// via the bridge.
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr); err != nil {
 		t.Fatalf("dispatchBuild (registry top-level from cache): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "8080") {
@@ -241,7 +242,7 @@ spec:
 	}
 	assertPinned(t, lf, "mysub", "1.0.0")
 
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr); err != nil {
 		t.Fatalf("dispatchBuild (registry sub from cache): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "8080") {
@@ -296,7 +297,7 @@ spec:
 	assertPinned(t, lf, "myapp", "1.0.0")
 
 	// Build re-derives 1.0.0 via the bridge → tier-1; verify must pass (no drift).
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr); err != nil {
 		t.Fatalf("dispatchBuild (drift) must succeed with no drift, got: %v", err)
 	}
 }

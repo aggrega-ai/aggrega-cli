@@ -209,7 +209,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
-	if err := dispatchBuild(nil, "release.yaml", nil, false); err != nil {
+	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr); err != nil {
 		t.Fatalf("registry build: %v", err)
 	}
 	got := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
@@ -222,7 +222,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 		t.Fatalf("lockfile absent after pull: %v", err)
 	}
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(nil, "release.yaml", nil, false); err != nil {
+	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr); err != nil {
 		t.Fatalf("rebuild from lock: %v", err)
 	}
 	if rebuilt := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
@@ -257,7 +257,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	}
 
 	// Pin present: a legitimately-present reference resolves cleanly (no false halt).
-	if err := dispatchBuild(nil, "release.yaml", nil, false); err != nil {
+	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr); err != nil {
 		t.Fatalf("build with all pins present: %v (a present reference must resolve cleanly)", err)
 	}
 
@@ -294,7 +294,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 
 	_ = os.RemoveAll("dist")
-	err = dispatchBuild(nil, "release.yaml", nil, false)
+	err = dispatchBuild(nil, "release.yaml", nil, false, os.Stderr)
 	if err == nil {
 		t.Fatal("build SUCCEEDED with a referenced entity withheld; the unified view silently proceeded on a gap")
 	}
@@ -389,7 +389,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 			tc.mutate(t, ws)
 			t.Chdir(ws)
-			err := dispatchBuild(nil, "release.yaml", nil, false)
+			err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr)
 			if err == nil {
 				t.Fatalf("%s: build SUCCEEDED; want failure with %v", tc.name, tc.wantErr)
 			}
@@ -415,7 +415,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	// warning-free result comes purely from the eager enumeration the build's
 	// closure-backed path does not touch — the retained-eager-load split.
 	t.Chdir(t.TempDir())
-	if err := lintCatalogWide("", "", []string{std}); err != nil {
+	if err := lintCatalogWide("", "", []string{std}, os.Stderr); err != nil {
 		t.Fatalf("whole-catalog lint not warning-free (independent eager enumeration): %v", err)
 	}
 
@@ -427,7 +427,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	t.Chdir(ws)
 	// No workspace config: defaults (auto_pull on). --catalog supplies every
 	// entity locally, so the auto-pull resolves from the catalog with no network.
-	if err := dispatchBuild(nil, "release.yaml", []string{std}, false); err != nil {
+	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr); err != nil {
 		t.Fatalf("catalog-only build against the shared catalog: %v", err)
 	}
 	if got := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != offlineReferenceSHA {
@@ -562,7 +562,7 @@ spec:
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
-	err := dispatchBuild(nil, "release.yaml", nil, false)
+	err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr)
 	if err == nil {
 		t.Fatalf("required-socket: build SUCCEEDED; want failure with ErrMissingRequiredSocket")
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -97,7 +98,7 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
-				return lintRelease(rw, lintReleasePath)
+				return lintRelease(rw, lintReleasePath, os.Stderr)
 			}
 			if path == "" {
 				// No entity argument → whole-catalog validation.
@@ -163,7 +164,7 @@ func lintCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace) error {
 		return fmt.Errorf("OPS_ERROR: whole-catalog lint needs catalog directories to scan; set `workspace.catalog_dirs` in .aggrega-config.yaml (or lint a specific Release with --release)")
 	}
 	dirs := resolveCatalogDirs(nil, wsCfg, wsRoot)
-	return lintCatalogWide(wsRoot, cacheDir, dirs)
+	return lintCatalogWide(wsRoot, cacheDir, dirs, os.Stderr)
 }
 
 // lintCatalogWide runs the whole-catalog correctness validation: it loads every
@@ -172,15 +173,16 @@ func lintCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace) error {
 // chains. This is the catalog-wide counterpart to a build's per-Release closure
 // validation — the home where a broken catalog entity is meant to surface (CI,
 // pre-publish). It halts loudly on any schema-pillar violation, unresolvable or
-// invalid library, or extends-resolution failure.
-func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
+// invalid library, or extends-resolution failure. Advisory and error
+// diagnostics are written to diagOut (os.Stderr in production).
+func lintCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut io.Writer) error {
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog validation failed: %w", err)
 	}
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		for _, e := range extErrs {
-			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+			fmt.Fprintf(diagOut, "  extends: %s\n", e)
 		}
 		return fmt.Errorf("catalog validation failed: %d extends resolution error(s)", len(extErrs))
 	}
@@ -197,7 +199,7 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 	}
 	if errs := inputKindCapabilityErrors(catRecipes, catFeatureRecipes); len(errs) > 0 {
 		for _, e := range errs {
-			fmt.Fprintf(os.Stderr, "  input-kind: %s\n", e)
+			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
 		}
 		return fmt.Errorf("catalog validation failed: %d input-kind capability error(s)", len(errs))
 	}
@@ -207,7 +209,7 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 	// code, which stays 0 here (errors already returned above). Emission order is
 	// deterministic — lintWarnings is accumulated over sorted-key walks.
 	for _, w := range cat.LintWarnings() {
-		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
 	fmt.Println("catalog validation passed (schema-pillar + library + extends + oci-location)")
 	return nil
@@ -229,7 +231,10 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string) error {
 // closure resolves through Tier-1 (local catalog). lint never triggers a network
 // pull — a registry-pinned closure that needs a lockfile surfaces as an honest
 // unresolvable-URI error rather than a silent fetch.
-func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string) error {
+//
+// Advisory (`notice:`) and error diagnostics are written to diagOut (os.Stderr
+// in production).
+func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diagOut io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
@@ -267,7 +272,7 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string) erro
 	// (parent+child) schemas validate, matching the build.
 	if extErrs := lazyView.ResolveClosureExtends(cl); len(extErrs) > 0 {
 		for _, e := range extErrs {
-			fmt.Fprintf(os.Stderr, "  extends: %s\n", e)
+			fmt.Fprintf(diagOut, "  extends: %s\n", e)
 		}
 		return fmt.Errorf("release closure validation failed: %d extends resolution error(s)", len(extErrs))
 	}
@@ -304,14 +309,14 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string) erro
 	// narrowings were computed by ResolveClosureExtends above (same composition as
 	// the effective schema), not recomputed here.
 	for _, w := range lazyView.ClosureLintWarnings(cl) {
-		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
 	for _, w := range lazyView.ClosureNarrowingWarnings() {
-		fmt.Fprintf(os.Stderr, "  notice: %s\n", w)
+		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
 	if errs := inputKindCapabilityErrors(closureRecipes(lazyView, cl)); len(errs) > 0 {
 		for _, e := range errs {
-			fmt.Fprintf(os.Stderr, "  input-kind: %s\n", e)
+			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
 		}
 		return fmt.Errorf("release closure validation failed: %d input-kind capability error(s)", len(errs))
 	}
@@ -462,6 +467,13 @@ type lintConfig struct {
 	// when a test invokes lintRun directly; workspaceOrResolve then resolves
 	// from the working directory.
 	ws *workspaceconfig.ResolvedWorkspace
+
+	// DiagOut is the sink for lint's diagnostic output (the first-publication
+	// note, the pre-release-only warning, the not-resolvable-parent note, and the
+	// findings report). Nil defaults to os.Stderr at the top of lintRun
+	// (production); tests pass a buffer to capture diagnostics without mutating a
+	// process global.
+	DiagOut io.Writer
 }
 
 // makeResolverFromCobra returns a closure that decides effective
@@ -520,6 +532,9 @@ func defaultRuleIDs(prePublish bool) []string {
 }
 
 func lintRun(cfg lintConfig) error {
+	if cfg.DiagOut == nil {
+		cfg.DiagOut = os.Stderr
+	}
 	if cfg.EntityPath == "" {
 		return fmt.Errorf("aggrega lint: entity path required (pass as positional arg or via --entity)")
 	}
@@ -556,7 +571,7 @@ func lintRun(cfg lintConfig) error {
 	)
 	if cfg.PrePublish {
 		previousJSON, previousVersion, err = fetchPreviousRegistryVersion(
-			context.Background(), cfg.FetchTarget, wsCfg, header,
+			context.Background(), cfg.FetchTarget, wsCfg, header, cfg.DiagOut,
 		)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: fetch previous: %w", err)
@@ -564,7 +579,7 @@ func lintRun(cfg lintConfig) error {
 		firstPublication = previousVersion == ""
 	}
 
-	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath)
+	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath, cfg.DiagOut)
 
 	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, cfg.PrePublish)
 	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginPath, inputs)
@@ -578,7 +593,7 @@ func lintRun(cfg lintConfig) error {
 	}
 
 	if firstPublication {
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(cfg.DiagOut,
 			"first publication of %q; no version-bump verification performed\n",
 			header.Metadata.Name)
 		aggregated = downgradeFirstPublicationToWarning(aggregated)
@@ -597,7 +612,7 @@ func lintRun(cfg lintConfig) error {
 		if verdict != "" {
 			proposedBump := bumpDirection(previousVersion, header.Metadata.Version)
 			if !proposedBumpSatisfies(proposedBump, verdict) {
-				printFindings(aggregated)
+				printFindings(aggregated, cfg.DiagOut)
 				return fmt.Errorf(
 					"aggrega lint --pre-publish: schema-evolution requires %s bump; proposed %s -> %s is %s",
 					verdict, previousVersion, header.Metadata.Version, proposedBump,
@@ -610,7 +625,7 @@ func lintRun(cfg lintConfig) error {
 		}
 	}
 
-	halted := printFindings(aggregated)
+	halted := printFindings(aggregated, cfg.DiagOut)
 	if halted {
 		return fmt.Errorf("aggrega lint: %d error finding(s)", countErrors(aggregated))
 	}
@@ -758,12 +773,14 @@ func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve fu
 // fetchPreviousRegistryVersion lists tags on the entity's registry
 // reference, picks the latest non-pre-release, and pulls its bytes.
 // Returns ("", "", nil) when no qualifying tag exists (first
-// publication.
+// publication. The pre-release-only warning is written to diagOut (os.Stderr
+// in production).
 func fetchPreviousRegistryVersion(
 	ctx context.Context,
 	overrideTarget oras.ReadOnlyTarget,
 	wsCfg workspaceconfig.Config,
 	header lintEntityHeader,
+	diagOut io.Writer,
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
 	if target == nil {
@@ -784,7 +801,7 @@ func fetchPreviousRegistryVersion(
 		// from "tags exist but all are pre-release" (different shape;
 		// operator should know).
 		if oci.HasAnySemverTag(tags) {
-			fmt.Fprintf(os.Stderr,
+			fmt.Fprintf(diagOut,
 				"warning: registry has only pre-release tags for this entity; "+
 					"treating as first publication. Promote a pre-release "+
 					"to a stable version to enable bump-vs-classification verification.\n")
@@ -806,8 +823,9 @@ func fetchPreviousRegistryVersion(
 // entity named in header.Spec.Extends. Only catalog-dir
 // resolution is performed today; OCI parent fetch defers. Returns nil
 // silently when extends is empty or the parent isn't locally
-// resolvable — the narrowing rule short-circuits on nil parent.
-func resolveParent(header lintEntityHeader, wsCfg workspaceconfig.Config, entityPath string) (json.RawMessage, error) {
+// resolvable — the narrowing rule short-circuits on nil parent. The
+// not-locally-resolvable note is written to diagOut (os.Stderr in production).
+func resolveParent(header lintEntityHeader, wsCfg workspaceconfig.Config, entityPath string, diagOut io.Writer) (json.RawMessage, error) {
 	if header.Spec.Extends == "" {
 		return nil, nil
 	}
@@ -838,7 +856,7 @@ func resolveParent(header lintEntityHeader, wsCfg workspaceconfig.Config, entity
 			return parentJSON, nil
 		}
 	}
-	fmt.Fprintf(os.Stderr, "narrowing rule: parent %q not locally resolvable; rule skipped\n", header.Spec.Extends)
+	fmt.Fprintf(diagOut, "narrowing rule: parent %q not locally resolvable; rule skipped\n", header.Spec.Extends)
 	return nil, nil
 }
 
@@ -913,15 +931,15 @@ func downgradeFirstPublicationToWarning(findings []validator.LinterFinding) []va
 	return out
 }
 
-// printFindings writes each finding to stderr in a stable format
-// and returns true when at least one finding is severity=error.
-func printFindings(findings []validator.LinterFinding) bool {
+// printFindings writes each finding to diagOut (os.Stderr in production) in a
+// stable format and returns true when at least one finding is severity=error.
+func printFindings(findings []validator.LinterFinding, diagOut io.Writer) bool {
 	halted := false
 	for _, f := range findings {
 		if f.Severity == "error" {
 			halted = true
 		}
-		fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", f.Severity, f.RuleID, f.Message)
+		fmt.Fprintf(diagOut, "[%s] %s: %s\n", f.Severity, f.RuleID, f.Message)
 	}
 	return halted
 }

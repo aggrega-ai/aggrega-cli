@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,15 +66,19 @@ func TestReportCatalogShadows(t *testing.T) {
 		WinnerDir: "./local", WinnerPath: "./local/server.yaml",
 		ShadowedDir: "./std", ShadowedPath: "./std/server.yaml",
 	}}}
-	out := captureStderr(func() { reportCatalogShadows(withShadow) })
+	var buf bytes.Buffer
+	reportCatalogShadows(withShadow, &buf)
+	out := buf.String()
 	for _, want := range []string{"Component", "server:1.0.0", "./std", "./local"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("shadow report missing %q; got %q", want, out)
 		}
 	}
 
-	if silent := captureStderr(func() { reportCatalogShadows(&catalog.Catalog{}) }); silent != "" {
-		t.Errorf("no-shadow load must print nothing; got %q", silent)
+	var silentBuf bytes.Buffer
+	reportCatalogShadows(&catalog.Catalog{}, &silentBuf)
+	if silentBuf.String() != "" {
+		t.Errorf("no-shadow load must print nothing; got %q", silentBuf.String())
 	}
 }
 
@@ -121,7 +126,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	// (a) via two --catalog flags.
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 	reset()
-	if err := dispatchBuild(nil, releasePath, []string{dir1, dir2}, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, []string{dir1, dir2}, false, os.Stderr); err != nil {
 		t.Fatalf("two-flag build failed (provider in dir2 must resolve): %v", err)
 	}
 	if renderedCount() == 0 {
@@ -131,7 +136,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	// (b) via catalog_dirs config, no flags.
 	reset()
 	writeWorkspaceConfig(t, root, "auto_pull: true\nworkspace:\n  catalog_dirs:\n    - "+dir1+"\n    - "+dir2+"\n")
-	if err := dispatchBuild(nil, releasePath, nil, false); err != nil {
+	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr); err != nil {
 		t.Fatalf("config catalog_dirs build failed: %v", err)
 	}
 	if renderedCount() == 0 {

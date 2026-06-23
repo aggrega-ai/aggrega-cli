@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,6 +101,11 @@ type pullConfig struct {
 	// shared resolution chokepoint. Nil only when a test invokes pullRun
 	// directly; workspaceOrResolve then resolves from the working directory.
 	ws *workspaceconfig.ResolvedWorkspace
+
+	// DiagOut is the sink for the pull's reuse/verify diagnostic notices.
+	// Nil defaults to os.Stderr at the top of pullRun (production); tests pass a
+	// buffer to capture diagnostics without mutating a process global.
+	DiagOut io.Writer
 
 	// puller overrides the production OCI puller; tests inject an in-memory
 	// implementation to exercise a remote-library fetch without the network. Nil
@@ -202,6 +208,9 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 // source descent failure (closure.ErrSourceTemplateAtLockTime), and
 // lockfile write failure.
 func pullRun(cfg pullConfig) error {
+	if cfg.DiagOut == nil {
+		cfg.DiagOut = os.Stderr
+	}
 	releaseDir := filepath.Dir(cfg.ReleasePath)
 
 	rw, err := workspaceOrResolve(cfg.ws)
@@ -326,7 +335,7 @@ func pullRun(cfg pullConfig) error {
 		if prior, _, lerr := lockfile.LoadLockfile(lockfilePath); lerr == nil && prior != nil {
 			reuse = &catalog.ReuseVerification{
 				PriorPins: catalog.PinsFromLockfile(prior),
-				Warn:      func(notice string) { fmt.Fprintf(os.Stderr, "  reuse: %s\n", notice) },
+				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
 			}
 		}
 	}
@@ -523,7 +532,7 @@ func pullRun(cfg pullConfig) error {
 			// (the AOT boundary). Skipped under workspace.offline (no network to
 			// fetch referrers).
 			if !wsCfg.Offline {
-				if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir); err != nil {
+				if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut); err != nil {
 					return fmt.Errorf("verify signatures: %w", err)
 				}
 			}
