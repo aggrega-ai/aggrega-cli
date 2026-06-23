@@ -77,9 +77,15 @@ func (s *Server) dispatchInvalidate(ctx context.Context, req *jsonRPCRequest) er
 // second invalidate has no incremental downstream cost because
 // caches stay empty.
 //
-// Thread-safety: relies on the daemon's sequential dispatch loop.
-// Concurrent callers would race on the lazy lookup's map
-// re-allocations; the dispatch loop is the only intended caller.
+// Thread-safety: safe under the worker pool. The per-file parse +
+// diagnostic drops are guarded by their own structures, and the
+// session catalog's Reset rewrites its maps under the catalog mutex.
+// A concurrent Release-resolving handler reads the session catalog
+// only through ForRequest, which snapshots the Tier-1 indexes under
+// the same mutex before resolving against its own view — so a reset
+// that lands mid-flight either precedes the snapshot (the view
+// re-walks) or follows it (the view keeps its copy), never tearing a
+// map an in-flight resolution holds.
 func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
 	// Per-file drops fire for every granularity — a file-scoped
 	// invalidate legitimately clears the named file's per-file

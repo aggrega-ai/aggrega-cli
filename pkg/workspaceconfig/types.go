@@ -418,22 +418,23 @@ type ParseCacheConfig struct {
 // goroutines drain the bounded request queue.
 type ConcurrencyConfig struct {
 	// PoolSize sets the number of worker goroutines servicing the
-	// request queue. Default 1, which runs requests serially in
-	// arrival order. Values below 1 clamp to 1 at dispatch-loop
-	// startup.
+	// request queue. Default 4, which dispatches up to four requests
+	// concurrently; set it to 1 to run requests serially in arrival
+	// order. Values below 1 clamp to 1 at dispatch-loop startup.
 	PoolSize int `yaml:"pool_size"`
 }
 
 // Default returns a Config populated with the documented defaults.
-// Eight documented defaults are NOT the Go zero-value and are seeded
+// Nine documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
 // ArtifactCacheDir = ".aggrega/cache", AutoPull = true,
 // Build.HaltOnDeprecatedSeverity = "error",
 // Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true,
 // Lint.PublishingDiscipline.EnforceImmutability = true,
-// ParseCache.MaxEntries = 1000, and ParseCache.MaxBytes = 100_000_000.
-// Remaining fields stay at Go's zero-value (every Allow* flag false,
-// every list nil, every other string empty).
+// ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
+// and Concurrency.PoolSize = 4. Remaining fields stay at Go's
+// zero-value (every Allow* flag false, every list nil, every other
+// string empty).
 //
 // Callers that want a true zero-value Config use Config{} directly;
 // callers that want the documented baseline use Default(). The
@@ -459,7 +460,7 @@ func Default() Config {
 			MaxBytes:   100_000_000,
 		},
 		Concurrency: ConcurrencyConfig{
-			PoolSize: 1,
+			PoolSize: 4,
 		},
 	}
 }

@@ -88,6 +88,54 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 	}
 }
 
+// ForRequest returns a request-scoped *LazyLookup carrying its OWN pin set and
+// its OWN pin-DEPENDENT caches, seeded with pins, so a concurrent request
+// resolving with different pins never perturbs this one. Pins and every cache
+// whose contents depend on them (the hot Component/Feature caches, the
+// enumerated Recipe/FeatureRecipe/Aggregate/Provider/MappingLibrary/
+// SchemaLibrary shell, the effective-schema and narrowing accumulators, the
+// recipe-catalog shell, the retained entity bytes) are private to the returned
+// view. The pin-INDEPENDENT, session-stable state — workspaceRoot, cacheDir,
+// catalogDirs, puller — is carried over, and the already-built Tier-1
+// filesystem indexes (a pure function of catalog-dir contents) are SNAPSHOTTED
+// under the parent's lock into the view, so the view never aliases a map the
+// parent's Reset or a concurrent index build could rewrite under it. The view
+// owns its own mutex; being single-request scoped, it sees no cross-request
+// contention.
+//
+// The session catalog the view forks from is unchanged — ForRequest installs no
+// pins on it. A request resolves entirely against its view; the session catalog
+// holds only the shared session-stable state and is reset on workspace
+// invalidation. This is what removes shared mutable pin state: two requests
+// hold two views, so one request's pins can never interleave into another's
+// multi-step resolution.
+func (l *LazyLookup) ForRequest(pins map[string]Pin) *LazyLookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// Build the Tier-1 indexes once on the session catalog (idempotent), then
+	// snapshot them into the view. Copying decouples the view from the parent's
+	// map identity: a later Reset on the parent swaps in fresh maps and a
+	// concurrent parent index build writes its own maps — neither touches the
+	// view's snapshot.
+	l.buildComponentIndex()
+	l.buildFeatureIndex()
+	componentIndex := make(map[string]string, len(l.componentIndex))
+	for k, v := range l.componentIndex {
+		componentIndex[k] = v
+	}
+	featureIndex := make(map[string]string, len(l.featureIndex))
+	for k, v := range l.featureIndex {
+		featureIndex[k] = v
+	}
+	view := NewLazyLookup(l.workspaceRoot, l.cacheDir, l.catalogDirs, l.puller)
+	view.componentIndex = componentIndex
+	view.componentIndexBuilt = true
+	view.featureIndex = featureIndex
+	view.featureIndexBuilt = true
+	view.SetPins(pins)
+	return view
+}
+
 // AsCatalogLookup returns the resolver.CatalogLookup view of the lazy
 // lookup. Both Component and Feature fields close over the underlying
 // *LazyLookup, so the same hot caches + negative caches + indexes
@@ -135,11 +183,17 @@ func (l *LazyLookup) effectiveSchema(typeURI string) (compactform.Schema, bool) 
 // state, returning the lookup to its post-construction shape.
 // Subsequent Component / Feature calls re-walk the cascade.
 //
+// Reset is the session catalog's workspace-invalidation operation: when
+// the workspace's filesystem state changed (a file was added, removed,
+// or modified) the session-stable Tier-1 indexes and the cached
+// resolutions built from them are stale, so Reset drops them and the
+// next access re-walks. It rebuilds fresh maps rather than clearing in
+// place, so a request view that snapshotted the indexes before the
+// reset keeps its own copy unaffected.
+//
 // Reset does NOT touch the workspaceRoot / cacheDir / catalogDirs /
-// puller configuration — those came from NewLazyLookup and stay
-// stable across the session. Reset is the right operation when the
-// workspace's filesystem state changed (a file was added, removed,
-// or modified) and the lookup's cached resolutions could be stale.
+// puller configuration — those came from NewLazyLookup and stay stable
+// across the session.
 //
 // Thread-safety: concurrency-safe via the lookup's internal mutex,
 // like every exported method; callers need no external lock.
@@ -242,6 +296,14 @@ type LazyLookup struct {
 	// and released the lock. A single coarse mutex is the conservative
 	// correct choice: SetPins and Reset rewrite whole maps, so a reader
 	// holding a finer lock could observe a half-reset state.
+	//
+	// The mutex makes each individual method atomic; it does not make a
+	// SetPins-then-reads SEQUENCE atomic against another goroutine's
+	// SetPins. A consumer that needs a consistent pin set across a
+	// multi-call resolution must therefore hold its OWN lookup for that
+	// span rather than share one whose pins another goroutine can swap
+	// mid-resolution — the daemon does this by forking a per-request
+	// view (ForRequest), so cross-request pin interleaving cannot occur.
 	mu sync.Mutex
 
 	workspaceRoot string
@@ -346,12 +408,19 @@ type LazyLookup struct {
 	recipeCat *Catalog
 }
 
-// SetPins threads the per-request lockfile pins into the lazy lookup, enabling
-// verify-on-read on the Tier-2 cache. It MUST be called before the request's
-// Component/Feature reads run (the daemon's sequential dispatch sets it from the
-// per-request loaded lockfile, then resolves). Passing nil disables trust in the
-// cache for the request: Tier-2 hits are not returned unverified; the cascade
-// falls through to Tier-3.
+// SetPins installs the lockfile pins on the lookup, enabling verify-on-read on
+// the Tier-2 cache. It MUST be called before the reads that consume them run,
+// on a lookup a single owner holds for the duration: a whole-invocation CLI
+// lookup (build/pull/lint set their pins then read), or a per-request daemon
+// view obtained from ForRequest (which seeds its pins through this same path, so
+// pin installation has one implementation). Passing nil disables trust in the
+// cache: Tier-2 hits are not returned unverified; the cascade falls through to
+// Tier-3.
+//
+// SetPins is not a cross-request handle on a shared catalog — the daemon never
+// calls it on its session catalog. A lookup whose pins another goroutine may
+// reset mid-resolution would resolve against the wrong pin set; ForRequest
+// exists precisely so each daemon request owns its own pinned view.
 //
 // On a pin mismatch the slot is skipped (not used, not re-fetched) so the IR is
 // not built from drifted content; the per-request drift DIAGNOSTIC is the

@@ -99,14 +99,20 @@ type Diagnostic struct {
 // every JSON-RPC request the dispatch loop reads.
 //
 // Concurrency. The daemon dispatches handlers through a bounded worker
-// pool whose size is configurable via concurrency.pool_size. When the
-// pool size is greater than 1, handlers run concurrently, so every
-// Server field a handler touches is synchronized to support that; the
-// default pool size is 1, so handlers run serially. The synchronized
-// surfaces are:
+// pool whose size is configurable via concurrency.pool_size (default
+// 4). When the pool size is greater than 1, handlers run concurrently,
+// so every Server field a handler touches is synchronized to support
+// that. The synchronized surfaces are:
 //
-//   - The parse cache and the lazy catalog lookup are each internally
-//     synchronized by their own mutex; callers need no external lock.
+//   - The parse cache and the session catalog lookup are each
+//     internally synchronized by their own mutex; callers need no
+//     external lock. A handler resolving a Release does NOT pin the
+//     session catalog: it forks a request-scoped view (ForRequest)
+//     carrying its own lockfile-pin snapshot and pin-dependent caches,
+//     so one request's pins can never interleave into another's
+//     multi-step resolution. The session catalog holds only the
+//     pin-independent, session-stable Tier-1 indexes, snapshotted into
+//     each view; it is reset only on workspace invalidation.
 //   - The per-file diagnostics map is guarded by diagMu. Publication
 //     copies the file's slice under the lock and marshals outside it.
 //   - positionEncoding is held in an atomic value: the initialize
@@ -158,17 +164,22 @@ type Server struct {
 	serverCtx    context.Context
 	serverCancel context.CancelFunc
 
-	// lazyCatalog is the per-URI Tier-1/2/3 cascade for the WHOLE catalog
-	// surface — Component + Feature (on-demand cascade) plus the tolerantly-
-	// enumerated Recipe / FeatureRecipe / Aggregate / Provider / SchemaLibrary /
-	// MappingLibrary shell (recipe resolution, sub-aggregate loading, the closure
-	// walk, and closure-scoped Pass-2). Constructed once at startup via
-	// catalog.NewLazyLookup; no per-request reconstruction, no eager whole-catalog
-	// load (0090 point-7). The struct carries its own session-scoped hot cache +
-	// negative cache; consumers obtain resolver.CatalogLookup via AsCatalogLookup,
-	// the recipe surfaces via RecipeLookupWithManifest / SubAggregateLoader /
-	// MappingLibraries, and the closure walk via ClosureLookup. Reset() on
-	// invalidation re-walks a changed workspace.
+	// lazyCatalog is the session-scoped catalog lookup: the per-URI Tier-1/2/3
+	// cascade for the WHOLE catalog surface — Component + Feature (on-demand
+	// cascade) plus the tolerantly-enumerated Recipe / FeatureRecipe / Aggregate /
+	// Provider / SchemaLibrary / MappingLibrary shell. Constructed once at startup
+	// via catalog.NewLazyLookup; no per-request reconstruction, no eager
+	// whole-catalog load. It holds the session-stable, pin-independent Tier-1
+	// filesystem indexes; Reset() on invalidation re-walks a changed workspace.
+	//
+	// A Release-resolving handler does NOT read or pin this lookup directly. It
+	// forks a request-scoped view via ForRequest, seeded with that request's
+	// lockfile pins and snapshotting the session Tier-1 indexes, and threads the
+	// view through closure compute and the render pipeline (AsCatalogLookup,
+	// RecipeLookupWithManifest, SubAggregateLoader, MappingLibraries, ClosureLookup,
+	// the closure-scoped extends + Pass-2). Each request therefore resolves against
+	// its own immutable pin snapshot, so a concurrent request's pins never perturb
+	// it — the consistency the worker pool depends on.
 	lazyCatalog *catalog.LazyLookup
 
 	// activeRelease is the workspace's session-scoped active Release,

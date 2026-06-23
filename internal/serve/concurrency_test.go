@@ -182,6 +182,68 @@ func TestConcurrentValidateAndReadHandlersRaceClean(t *testing.T) {
 	<-readDone
 }
 
+// TestConcurrentIrGraphValidateInvalidateRaceClean drives the four pin-dependent
+// daemon surfaces — irGraph, validate (Tier-4), invalidate (Reset), and
+// diagnostics — concurrently against a real Release-bearing workspace through the
+// dispatch loop at high pool sizes. Each handler resolves through its own
+// per-request catalog view, and invalidate resets the session catalog under it;
+// with the race detector on, any unsynchronized access between a request view's
+// resolution and a concurrent reset (or another request's view) fails the test.
+// Distinct from the pin-isolation test (which asserts logical correctness), this
+// asserts the data-race floor across all four surfaces at once.
+func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
+	t.Parallel()
+	ws, releaseA, releaseB := pinIsolationWorkspace(t)
+	relA := filepath.Base(releaseA)
+	relB := filepath.Base(releaseB)
+
+	for _, pool := range []int{4, 32} {
+		pool := pool
+		t.Run(fmt.Sprintf("pool=%d", pool), func(t *testing.T) {
+			t.Parallel()
+			stdinR, stdinW := io.Pipe()
+			var stdout bytes.Buffer
+			srv := newPinIsolationServer(t, ws, stdinR, &stdout, pool)
+			srv.activeReleasePath = releaseA
+
+			loopDone := make(chan error, 1)
+			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+			readDone := make(chan int, 1)
+			go func() { readDone <- drainResponses(bufio.NewReader(&stdout)) }()
+
+			var feed [][]byte
+			feed = append(feed, framedRequest(1, "aggrega/initialize", initializeParams{}))
+			aggA := filepath.Join(ws, "release-a-agg.yaml")
+			for i := 0; i < 40; i++ {
+				feed = append(feed,
+					framedRequest(i+2, "aggrega/irGraph", irGraphParams{Release: relA}),
+					framedRequest(i+2, "aggrega/irGraph", irGraphParams{Release: relB}),
+					framedRequest(i+2, "aggrega/validate", validateParams{File: aggA, Content: ""}),
+					framedRequest(i+2, "aggrega/diagnostics", diagnosticsParams{File: aggA}),
+					framedRequest(i+2, "aggrega/invalidate", invalidateParams{Granularity: "workspace"}),
+				)
+			}
+			feed = append(feed, framedNotification("aggrega/shutdown", nil))
+			for _, msg := range feed {
+				if _, err := stdinW.Write(msg); err != nil {
+					t.Fatalf("write request: %v", err)
+				}
+			}
+			stdinW.Close()
+
+			select {
+			case err := <-loopDone:
+				if err != nil {
+					t.Fatalf("dispatchLoop: %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("dispatch loop did not exit")
+			}
+			<-readDone
+		})
+	}
+}
+
 // TestLazyLookupConcurrentAccessRaceClean is the direct pkg-level proof
 // that LazyLookup is concurrency-safe: it fans out concurrent
 // Component/Feature/AsCatalogLookup/MappingLibraries/Skips/Reset/SetPins

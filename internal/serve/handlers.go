@@ -448,17 +448,39 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		}
 	}
 
-	// 2. Resolve closure (factored helper — used here AND by the
-	//    drift check at startup). Bundles Release + Manifest +
-	//    Aggregate + raw aggregate bytes + computed closure into a
-	//    single result struct; step 3 verifies and step 5 feeds the
-	//    pipeline.
-	resolved, envelope := s.resolveReleaseClosure(releasePath)
+	// 2. Build the per-request catalog view, seeded with THIS request's pins so
+	//    its Tier-2 cache reads verify-on-read against this Release's lockfile
+	//    and a concurrent request resolving a different Release's pins can never
+	//    perturb this resolution. The pins are loaded once here and the same
+	//    view threads through closure compute (step 3), drift context, and the
+	//    render pipeline (step 5), so the whole request resolves against one
+	//    consistent pin snapshot. A failed/absent lockfile load yields nil pins,
+	//    disabling cache trust for the request (the cascade re-establishes at
+	//    Tier-3) — never an inherited cross-request pin set.
+	//
+	//    ORDERING IS LOAD-BEARING: the view's pins are set (via ForRequest)
+	//    before any Tier-2 read fires. Verify-on-read depends on the pins being
+	//    present before the reads; resolving against an unpinned view silently
+	//    degrades to no-pin -> Tier-3 re-fetch, re-introducing drift-masking
+	//    (serve would preview re-fetched content a local-cache-drifted build
+	//    halts on). Guarded end-to-end by
+	//    TestServeIrGraphVerifiesCacheAgainstPinBeforePreview.
+	var pins map[string]catalog.Pin
+	if lf, _, err := lockfile.LoadLockfile(lockfilePath); err == nil && lf != nil {
+		pins = catalog.PinsFromLockfile(lf)
+	}
+	view := s.lazyCatalog.ForRequest(pins)
+
+	// 3. Resolve closure against the request view (factored helper — used here
+	//    AND by the drift check at startup). Bundles Release + Manifest +
+	//    Aggregate + raw aggregate bytes + computed closure into a single result
+	//    struct; step 4 verifies and step 5 feeds the pipeline.
+	resolved, envelope := s.resolveReleaseClosure(view, releasePath)
 	if envelope != nil {
 		return irGraphResult{}, envelope
 	}
 
-	// 3. Drift verify. Reuses the closure computed in step 2.
+	// 4. Drift verify. Reuses the closure computed in step 3.
 	//    Loads the lockfile fresh (catches the case where the
 	//    operator re-pulled between calls). On drift, publishes a
 	//    Warning diagnostic on the lockfile path AND fires the
@@ -467,27 +489,8 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    Problems-panel signal, not a halt.
 	lf := s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
 
-	// 3b. Thread the freshly-loaded lockfile pins into the lazy lookup so its
-	//     Tier-2 cache reads in the render pipeline (step 5) verify-on-read: a
-	//     drifted cache slot is skipped (not previewed as false-green content),
-	//     a genuine miss re-establishes at Tier-3. The per-request drift notice
-	//     is the closure-level verify just run (step 3); the skip does not
-	//     double-report it. lf is nil only when the lockfile failed to load
-	//     (drift is non-blocking and still returns it); nil pins disables cache
-	//     trust for the request.
-	//
-	//     ORDERING IS LOAD-BEARING: this SetPins MUST precede the RunPipeline
-	//     reads below. Verify-on-read depends on the pins being set before the
-	//     Tier-2 reads fire; moving SetPins after them (or removing it) silently
-	//     degrades to no-pin -> Tier-3 re-fetch, which re-introduces drift-masking
-	//     (serve would preview re-fetched content that a local-cache-drifted build
-	//     halts on). The reorder is guarded by an end-to-end test that drives this
-	//     handler against a drifted cache slot and asserts Tier-3 is never reached
-	//     (TestServeIrGraphVerifiesCacheAgainstPinBeforePreview).
-	s.lazyCatalog.SetPins(catalog.PinsFromLockfile(lf))
-
-	// 4. Recipe + sub-aggregate + mapping-library resolution all come from the
-	//    lazy backing now (no eager whole-catalog load): the tolerantly-enumerated
+	// 5. Recipe + sub-aggregate + mapping-library resolution all come from the
+	//    request view (no eager whole-catalog load): the tolerantly-enumerated
 	//    recipe shell, on par with the Component/Feature cascade already feeding
 	//    AsCatalogLookup. A broken out-of-closure entity never fails this build.
 	aggPath := resolved.AggregatePath
@@ -501,7 +504,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			WorkspaceConfig:   s.wsConfig,
 			Lockfile:          lf,
 			WorkspaceRoot:     s.workspaceRoot,
-			MappingLibraries:  s.lazyCatalog.MappingLibraries(),
+			MappingLibraries:  view.MappingLibraries(),
 			CompilerVersion:   s.compilerVersion,
 			// Resilient inspection: a resolved catalog reference momentarily
 			// absent from the lazy view (a drifted cache slot skipped on read)
@@ -510,9 +513,9 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			// a Problems-panel diagnostic via the verify step above.
 			TolerateCatalogViewInconsistency: true,
 		},
-		s.lazyCatalog.AsCatalogLookup(),
-		s.lazyCatalog.RecipeLookupWithManifest(resolved.Manifest),
-		s.lazyCatalog.SubAggregateLoader(),
+		view.AsCatalogLookup(),
+		view.RecipeLookupWithManifest(resolved.Manifest),
+		view.SubAggregateLoader(),
 		enginefactory.Dispatch,
 		// irGraph is resilient inspection — it returns the IR graph even when
 		// resolution is incomplete, so it does not run the render-time

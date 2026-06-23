@@ -792,7 +792,8 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	// output is observable. The slice must carry violations from BOTH
 	// the root Aggregate file AND the sub-aggregate file before the
 	// per-file filter assertion is meaningful.
-	resolved, env := srv.resolveReleaseClosure(releasePath)
+	view := srv.lazyCatalog.ForRequest(nil)
+	resolved, env := srv.resolveReleaseClosure(view, releasePath)
 	if env != nil {
 		t.Fatalf("resolveReleaseClosure envelope: %+v", env)
 	}
@@ -810,8 +811,8 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			AggregatePath:     relAggPath,
 			WorkspaceConfig:   srv.wsConfig,
 		},
-		srv.lazyCatalog.AsCatalogLookup(),
-		srv.lazyCatalog.SubAggregateLoader(),
+		view.AsCatalogLookup(),
+		view.SubAggregateLoader(),
 	)
 	if tier4 == nil || tier4.Analysis == nil {
 		t.Fatalf("expected non-nil Tier4Result.Analysis from pipeline; got %+v", tier4)

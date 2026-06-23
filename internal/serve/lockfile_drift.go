@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -47,10 +48,14 @@ func (s *Server) loadAndCheckLockfileAtStartup() {
 	}
 	s.lockfile = lf
 
-	// Compute the closure and verify. Best-effort — failure here
-	// is logged to stderr and skipped; per-handleIrGraph drift is
+	// Compute the closure and verify against a request-scoped view seeded with
+	// this lockfile's pins (the same per-request resolution shape the handlers
+	// use), so the startup closure walk resolves cache-resident entities against
+	// the pin set rather than the session catalog's empty one. Best-effort —
+	// failure here is logged to stderr and skipped; per-handleIrGraph drift is
 	// the reliable path.
-	resolved, envelope := s.resolveReleaseClosure(s.activeReleasePath)
+	view := s.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
+	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath)
 	if envelope != nil {
 		fmt.Fprintf(s.stderr, "  startup drift check: closure compute failed: %s\n", envelope.Message)
 		return

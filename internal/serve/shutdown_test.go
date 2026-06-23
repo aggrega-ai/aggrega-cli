@@ -287,9 +287,15 @@ func TestShutdownDrainTimerIsArrivalBased(t *testing.T) {
 	// adding another handlerDelay and masking the arrival-vs-
 	// observation timing distinction.
 	hookFired := false
+	// The arrival-vs-observation timing distinction this test asserts depends on
+	// serial dispatch: the delayed validate handler must run to completion before
+	// the shutdown notification is handled. Pin the pool to 1 so the two requests
+	// do not overlap (which would also race the one-shot hookFired gate).
+	cfg := workspaceconfig.Default()
+	cfg.Concurrency.PoolSize = 1
 	srv := &Server{
 		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         workspaceconfig.Default(),
+		wsConfig:         cfg,
 		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
 		parseCache:       newCache(0, 0),
 		diagnostics:      map[string][]Diagnostic{},

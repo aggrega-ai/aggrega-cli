@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -33,6 +34,14 @@ type resolvedRelease struct {
 // handleIrGraph (existing pipeline path) AND by the at-startup +
 // per-irGraph drift checks.
 //
+// view is the request-scoped catalog lookup the closure walk resolves
+// against — seeded with this request's pins, so a cache-resident entity
+// resolves against the right pin set and another concurrent request's
+// pins can never interleave into this walk. The same view is threaded
+// onward into the render pipeline, so closure compute and render see one
+// consistent pin snapshot. skipContext reads the view's skip record for
+// the same reason.
+//
 // The closure compute uses a hermetic lookup (nil OCIPuller),
 // matching the CLI's verifyLockfileAgainstClosure. Tier-3 (OCI
 // pull) never fires during verification; missing cache entries
@@ -49,7 +58,7 @@ type resolvedRelease struct {
 // Release/Manifest/Aggregate load failures populate Data.File with
 // the path being loaded; the recipe-catalog resolution failure
 // stays Data-less because the catalog spans multiple source dirs.
-func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *jsonRPCError) {
+func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string) (*resolvedRelease, *jsonRPCError) {
 	rel, err := resolver.LoadRelease(releasePath)
 	if err != nil {
 		return nil, &jsonRPCError{
@@ -94,7 +103,7 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 	// Lazy closure walk — no eager whole-catalog load (0090 point-7). The daemon
 	// passes a nil puller (hermetic, Tier-3 disabled), matching the eager path it
 	// replaces; a broken out-of-closure entity is never enumerated-fatal.
-	lookup := s.lazyCatalog.ClosureLookup(nil, s.workspaceRoot, cacheDir, externals)
+	lookup := view.ClosureLookup(nil, s.workspaceRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, s.wsConfig, lookup)
 	if err != nil {
 		// An in-closure entity that was skipped at the tolerant lazy enumeration
@@ -102,7 +111,7 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 		// missing so the diagnostic is never a bare "not found".
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: s.skipContext(fmt.Sprintf("closure compute: %v", err)),
+			Message: s.skipContext(view, fmt.Sprintf("closure compute: %v", err)),
 		}
 	}
 	return &resolvedRelease{
@@ -119,9 +128,12 @@ func (s *Server) resolveReleaseClosure(releasePath string) (*resolvedRelease, *j
 // enumeration skipped (tolerantly) — so an in-closure entity that went missing
 // because it was skipped is explained, not silently absent. Deterministic
 // (sorted by path); no-op when nothing was skipped. Mirrors the CLI build's
-// withSkipContext, sourced from the lazy backing's skip record.
-func (s *Server) skipContext(msg string) string {
-	skips := s.lazyCatalog.Skips()
+// withSkipContext, sourced from the supplied request view's skip record — the
+// same view whose enumeration produced the unresolved-URI failure, so the skips
+// reported are exactly the ones that could explain it (not a session catalog's
+// possibly-stale skip set).
+func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
+	skips := view.Skips()
 	if len(skips) == 0 {
 		return msg
 	}

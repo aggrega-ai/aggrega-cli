@@ -50,7 +50,34 @@ import (
 // empty slice — the caller's existing Tier-1 diagnostics for the
 // file already populated stay in place.
 func (s *Server) runTier4Validation(ctx context.Context, file string, content []byte, doc *yaml.Node) []Diagnostic {
-	resolved, envelope := s.resolveReleaseClosure(s.activeReleasePath)
+	// Build the per-request catalog view, seeded with the active Release's
+	// lockfile pins, so every Tier-4 resolution read below verifies-on-read
+	// against THIS Release's pins and a concurrent request resolving a different
+	// Release's pins can never perturb this validation. The pins are loaded once
+	// here and the same view threads through closure compute, closure-scoped
+	// extends + Pass-2, the Tier-4 pipeline, and resolution findings, so the
+	// whole validation sees one consistent pin snapshot. A failed/absent/invalid
+	// lockfile yields nil pins (no-pin -> Tier-3 re-establish), never an
+	// inherited cross-request pin set.
+	//
+	// This is a QUIET load — pins only, no drift verify and no diagnostic
+	// publication. Lockfile drift is surfaced by the at-startup check and the
+	// irGraph handler, and those notifications persist in the client; re-publishing
+	// here (validate fires per edit) would re-send an un-deduplicated drift notice
+	// at editing cadence without adding a needed signal.
+	//
+	// ORDERING IS LOAD-BEARING: the view's pins are set (via ForRequest) before
+	// any Tier-2 read fires. Resolving against an unpinned view degrades to a
+	// no-pin Tier-3 re-fetch on a drifted cache, masking the drift a
+	// verify-on-read skip would surface — guarded by an end-to-end test
+	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
+	var pins map[string]catalog.Pin
+	if lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath)); err == nil && lf != nil {
+		pins = catalog.PinsFromLockfile(lf)
+	}
+	view := s.lazyCatalog.ForRequest(pins)
+
+	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath)
 	if envelope != nil {
 		// Closure-level failure (catalog load, Release/Manifest load,
 		// Aggregate read) — Tier-D fall-back at file:1:1.
@@ -80,35 +107,12 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
 
-	// Thread the active Release's lockfile pins into the lazy lookup so the Tier-4
-	// resolution reads below verify-on-read against THIS Release's pins, matching
-	// the irGraph handler's posture. Set unconditionally (nil when no/invalid
-	// lockfile) so validation never inherits the session-scoped pin state a prior
-	// request left, and gains no hard lockfile dependency: nil pins -> no-pin ->
-	// Tier-3 re-establish, exactly as before.
-	//
-	// This is a QUIET load — pins only, no drift verify and no diagnostic
-	// publication. Lockfile drift is surfaced by the at-startup check and the
-	// irGraph handler, and those notifications persist in the client; re-publishing
-	// here (validate fires per edit) would re-send an un-deduplicated drift notice
-	// at editing cadence without adding a needed signal.
-	//
-	// ORDERING IS LOAD-BEARING: this MUST precede RunTier4Pipeline. A reorder (or
-	// removal) degrades to a no-pin Tier-3 re-fetch on a drifted cache, masking the
-	// drift a verify-on-read skip would surface — guarded by an end-to-end test
-	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
-	var pins map[string]catalog.Pin
-	if lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath)); err == nil && lf != nil {
-		pins = catalog.PinsFromLockfile(lf)
-	}
-	s.lazyCatalog.SetPins(pins)
-
 	// Closure-scoped extends — the daemon's early-warning extends gate, mirroring
 	// the CLI build's closure-scoped extends resolution. A dangling parent (or a
 	// cycle / malformed chain) on an in-closure Component/Feature surfaces as a
 	// Tier-D closure-level diagnostic; an out-of-closure broken extends is never
-	// resolved. Runs after SetPins so its reads verify-on-read.
-	if extErrs := s.lazyCatalog.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
+	// resolved. Reads through the pinned request view so it verifies-on-read.
+	if extErrs := view.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
@@ -118,20 +122,20 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	}
 
 	// Closure-scoped Pass-2 — the daemon's early-warning schema-pillar gate,
-	// replacing the whole-catalog Pass-2 the eager load used to provide. Runs AFTER
-	// SetPins so its resolution reads verify-on-read against this Release's pins (a
-	// drifted cache slot is skipped, never self-healed via Tier-3). Validates ONLY
-	// the entities the Release reaches; an in-closure schema-invalid Component/
-	// Feature (or a $ref to a skipped/missing library) surfaces as a Tier-D
-	// closure-level diagnostic, with the skip context explaining a missing library.
-	// A broken out-of-closure entity is never validated. build remains the
-	// authoritative validator.
-	if err := s.lazyCatalog.ValidateClosureScopedPillars(resolved.Closure); err != nil {
+	// replacing the whole-catalog Pass-2 the eager load used to provide. Reads
+	// through the pinned request view so its resolution verifies-on-read against
+	// this Release's pins (a drifted cache slot is skipped, never self-healed via
+	// Tier-3). Validates ONLY the entities the Release reaches; an in-closure
+	// schema-invalid Component/Feature (or a $ref to a skipped/missing library)
+	// surfaces as a Tier-D closure-level diagnostic, with the skip context
+	// explaining a missing library. A broken out-of-closure entity is never
+	// validated. build remains the authoritative validator.
+	if err := view.ValidateClosureScopedPillars(resolved.Closure); err != nil {
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  "Closure: " + s.skipContext(err.Error()),
+			Message:  "Closure: " + s.skipContext(view, err.Error()),
 		}}
 	}
 
@@ -145,8 +149,8 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			WorkspaceConfig:   s.wsConfig,
 			CompilerVersion:   s.compilerVersion,
 		},
-		s.lazyCatalog.AsCatalogLookup(),
-		s.lazyCatalog.SubAggregateLoader(),
+		view.AsCatalogLookup(),
+		view.SubAggregateLoader(),
 	)
 
 	// Cancellation (shutdown drain) surfaces as a context error from the
@@ -193,7 +197,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// (catalog.VerifyRecipeResolution), over the complete enumerated recipe set,
 	// so the editor's candidate suggestions match the build's exactly.
 	if tier4 != nil && tier4.IRGraph != nil {
-		for _, ferr := range s.lazyCatalog.ResolutionFindings(resolved.Manifest, tier4.IRGraph) {
+		for _, ferr := range view.ResolutionFindings(resolved.Manifest, tier4.IRGraph) {
 			diags = append(diags, Diagnostic{
 				Line:     1,
 				Column:   1,
