@@ -1,0 +1,17 @@
+Feature: core/metrics:1.0.0
+Schema:
+  |
+      values: { port?: int | *9090 }
+Uses sockets:
+  backend: selector="component.aggrega.ai/type=stateful-server"
+    inject: [env]
+Secret slots:
+  token (required)
+Targeting:
+  appliesTo: component.aggrega.ai/type=server
+Labels:
+  feature.aggrega.ai/category: observability
+Interoperability:
+  conflictsWith: [core/other]
+Assertions:
+  - port-positive

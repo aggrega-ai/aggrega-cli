@@ -69,6 +69,11 @@ type inspectOptions struct {
 	color    colorMode
 	out      io.Writer
 	colorize *colorizer
+	// showImplements opts a Recipe / FeatureRecipe inspection into resolving
+	// its spec.implements reference against the catalog and rendering the bound
+	// Component / Feature. When set and the catalog or the implements target is
+	// unavailable, the renderer aborts with a clear error rather than degrading.
+	showImplements bool
 }
 
 // parseColorMode maps the --color string to a colorMode, returning a clear

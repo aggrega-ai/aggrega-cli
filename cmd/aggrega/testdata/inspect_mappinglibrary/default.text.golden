@@ -1,0 +1,7 @@
+MappingLibrary: CommonHelmMappings:1.0.0
+Description: Reusable Helm value mappings.
+Mappings:
+  ResourcesBlock
+    Use: valuesMapping: { $import: CommonHelmMappings#/mappings/ResourcesBlock }
+  ProbesBlock
+    Use: valuesMapping: { $import: CommonHelmMappings#/mappings/ProbesBlock }

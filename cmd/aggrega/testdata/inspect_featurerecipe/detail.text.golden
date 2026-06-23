@@ -1,0 +1,11 @@
+FeatureRecipe: core/metrics-recipe:1.0.0
+Implements: core/metrics:1.0.0
+Provider: helm
+Artifacts (1):
+  servicemonitor.yaml: inline
+valuesMapping: (none)
+injectMapping: present
+executionScope: boundary
+Artifact servicemonitor.yaml:
+    apiVersion: monitoring.coreos.com/v1
+    kind: ServiceMonitor

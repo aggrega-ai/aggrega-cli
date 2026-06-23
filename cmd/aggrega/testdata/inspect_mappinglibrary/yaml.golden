@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: MappingLibrary
+metadata:
+    name: CommonHelmMappings
+    version: "1.0.0"
+    description: Reusable Helm value mappings.
+spec:
+    mappings:
+        ResourcesBlock: |
+            resources:
+              requests:
+                cpu: {{ .values.cpu }}
+        ProbesBlock: |
+            livenessProbe:
+              httpGet:
+                path: /healthz

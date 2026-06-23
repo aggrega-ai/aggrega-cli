@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+    name: core/metrics-recipe
+    version: "1.0.0"
+spec:
+    provider: helm
+    implements: core/metrics:1.0.0
+    artifacts:
+        servicemonitor.yaml: |
+            apiVersion: monitoring.coreos.com/v1
+            kind: ServiceMonitor
+    injectMapping: |
+        {}
+    executionScope: boundary

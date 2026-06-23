@@ -1,0 +1,11 @@
+Component: core/api-server:1.0.0
+Schema:
+  |
+      values: { port?: int | *8080 }
+Uses sockets:
+  db: selector="component.aggrega.ai/type=stateful-server"
+Self-inject mechanisms: [env file]
+Required features:
+  - core/metrics
+Labels:
+  component.aggrega.ai/type: server

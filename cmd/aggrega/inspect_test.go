@@ -163,10 +163,9 @@ another_field: 42
 }
 
 // TestInspect_ComponentFilePath_RendersSchema pins the Component-file
-// branch. A Component authored as a standalone YAML file inspects with
-// the same output shape as the catalog-name path's schema rendering:
-// a header line naming the Component and its source path, followed by
-// the rendered schema body.
+// branch. A Component authored as a standalone YAML file inspects with the
+// structured shape shared with the catalog-name path: a header line naming the
+// Component and version, followed by the rendered schema body.
 func TestInspect_ComponentFilePath_RendersSchema(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -188,11 +187,8 @@ spec:
 		t.Fatalf("Component file path should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "// Component: core/server") {
+	if !strings.Contains(out, "Component: core/server:1.0.0") {
 		t.Errorf("output missing Component header naming core/server; got:\n%s", out)
-	}
-	if !strings.Contains(out, compPath) {
-		t.Errorf("output missing source path suffix on the header; got:\n%s", out)
 	}
 	if !strings.Contains(out, "port?: int | *8080") {
 		t.Errorf("output missing rendered schema body; got:\n%s", out)

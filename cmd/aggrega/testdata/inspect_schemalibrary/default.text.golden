@@ -1,0 +1,11 @@
+SchemaLibrary: CommonSchemas:1.0.0
+Description: Reusable schema definitions.
+Schemas:
+  Port
+    Use: { $ref: CommonSchemas#/schemas/Port }
+  Replicas
+    Use: { $ref: CommonSchemas#/schemas/Replicas }
+Templates:
+  SizedField
+    params:
+      max: integer (default: 100)

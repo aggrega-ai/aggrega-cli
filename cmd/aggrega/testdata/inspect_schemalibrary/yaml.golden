@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+    name: CommonSchemas
+    version: "1.0.0"
+    description: Reusable schema definitions.
+spec:
+    schemas:
+        Port:
+            type: integer
+            minimum: 1
+        Replicas:
+            type: integer
+    templates:
+        SizedField:
+            $params:
+                max:
+                    type: integer
+                    default: 100
+            type: integer

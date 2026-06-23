@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+    name: helm
+    version: "1.0.0"
+    description: Helm rendering engine.
+spec:
+    plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
+    baseSchema: |
+        type: object
+    workloadSchema: |
+        type: object

@@ -39,6 +39,8 @@ func newInspectCmd() *cobra.Command {
 		colorFlag    string
 		noColorFlag  bool
 		outputFlag   string
+
+		showImplementsFlag bool
 	)
 	c := &cobra.Command{
 		Use:   "inspect <identifier>",
@@ -66,12 +68,13 @@ func newInspectCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			_, noColorSet := os.LookupEnv("NO_COLOR")
 			opts := inspectOptions{
-				level:    resolveLevel(listFlag, detailFlag),
-				mode:     resolveMode(rawFlag, resolvedFlag),
-				output:   output,
-				color:    colorMode,
-				out:      out,
-				colorize: newColorizer(colorMode, out, noColorSet),
+				level:          resolveLevel(listFlag, detailFlag),
+				mode:           resolveMode(rawFlag, resolvedFlag),
+				output:         output,
+				color:          colorMode,
+				out:            out,
+				colorize:       newColorizer(colorMode, out, noColorSet),
+				showImplements: showImplementsFlag,
 			}
 			return dispatchInspect(rw, args[0], catalogDirs, opts)
 		},
@@ -84,6 +87,7 @@ func newInspectCmd() *cobra.Command {
 	c.Flags().StringVar(&colorFlag, "color", "auto", "Colorize output: auto|always|never.")
 	c.Flags().BoolVar(&noColorFlag, "no-color", false, "Disable colorized output (alias for --color=never).")
 	c.Flags().StringVar(&outputFlag, "output", "text", "Output format: text|yaml.")
+	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")
@@ -178,8 +182,14 @@ type kindRenderer func(rw *workspaceconfig.ResolvedWorkspace, path string, data 
 // dispatches through this table; kinds absent from it fall through to the
 // not-yet-implemented / non-standalone handling in inspectPath.
 var kindRenderers = map[string]kindRenderer{
-	"Component": renderComponentFile,
-	"Release":   renderReleaseFile,
+	"Component":      renderComponentFile,
+	"Feature":        renderFeatureFile,
+	"Recipe":         renderRecipeFile,
+	"FeatureRecipe":  renderFeatureRecipeFile,
+	"Provider":       renderProviderFile,
+	"MappingLibrary": renderMappingLibraryFile,
+	"SchemaLibrary":  renderSchemaLibraryFile,
+	"Release":        renderReleaseFile,
 }
 
 // nonStandalone names the kinds that exist only embedded under another entity
@@ -215,7 +225,7 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 		return fmt.Errorf("kind %s is not a standalone inspectable entity", preamble.Kind)
 	}
 	switch preamble.Kind {
-	case "Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider":
+	case "Manifest", "Aggregate":
 		return fmt.Errorf("inspect not yet implemented for kind %s", preamble.Kind)
 	default:
 		return fmt.Errorf("unknown entity kind %q in %q", preamble.Kind, path)
@@ -251,124 +261,7 @@ func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentTyp
 	if !found {
 		return fmt.Errorf("component %q not found in catalog", componentType)
 	}
-
-	header := fmt.Sprintf("// Component: %s", componentType)
-	if comp.Spec.Extends != "" {
-		header += " (resolved from inheritance chain)"
-	}
-	fmt.Fprintln(opts.out, opts.colorize.header(header))
-
-	if comp.Spec.Schema.Kind != 0 {
-		out, err := yaml.Marshal(&comp.Spec.Schema)
-		if err != nil {
-			return fmt.Errorf("render schema: %w", err)
-		}
-		fmt.Fprint(opts.out, string(out))
-	} else {
-		fmt.Fprintln(opts.out, "// (no schema defined)")
-	}
-
-	if comp.Spec.UsesSchema.Len() > 0 {
-		fmt.Fprintln(opts.out, "\n// usesSchema:")
-		for socket, entry := range comp.Spec.UsesSchema.All() {
-			fmt.Fprintf(opts.out, "//   %s: selector=%q\n", socket, entry.Selector)
-		}
-	}
-	return nil
-}
-
-// renderComponentFile renders a Component authored as a standalone file. It is
-// the reference kind proving the render framework end-to-end: it honors the
-// detail level (levelList emits identifiers only — the Component name plus its
-// usesSchema socket names), the YAML output format (--output yaml dumps the
-// parsed Component as YAML), and the colorizer on the header. At levelDefault
-// the text output matches the catalog-name path's schema rendering: a header
-// line naming the Component and its source path, the rendered schema body, and
-// the usesSchema sockets when present; schema-less Components produce the
-// `(no schema defined)` placeholder.
-//
-// levelDetail currently coincides with levelDefault for Component — the default
-// already surfaces the full schema body. The level is threaded so a later
-// reshape differentiates the two without touching the framework.
-//
-// A Component file is self-contained, so the --raw / --resolved override has no
-// effect here (opts.mode is read by the resolved instance kinds, not by the
-// as-authored kinds).
-func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
-	// The minimal Component shape needed for inspect output is parsed
-	// by narrowing to the fields inspect renders, avoiding a coupling to
-	// the catalog loader's full Component type.
-	var comp struct {
-		Metadata struct {
-			Name string `yaml:"name"`
-		} `yaml:"metadata"`
-		Spec struct {
-			Extends string    `yaml:"extends"`
-			Schema  yaml.Node `yaml:"schema"`
-			// UsesSchema rendering parallels the catalog branch but
-			// without resolving extends inheritance — the file is
-			// inspected as authored.
-			UsesSchema map[string]struct {
-				Selector string `yaml:"selector"`
-			} `yaml:"usesSchema"`
-		} `yaml:"spec"`
-	}
-	if err := yaml.Unmarshal(data, &comp); err != nil {
-		return fmt.Errorf("parse Component at %q: %w", path, err)
-	}
-
-	if opts.output == outputYAML {
-		// The render subject for an as-authored kind is the parsed file. A
-		// Component file is self-contained, so raw and resolved emit the same
-		// subject; the resolved-subject contract for the instance kinds
-		// (Release / Aggregate), whose subject is a pipeline result, is filled
-		// where those kinds resolve.
-		var node yaml.Node
-		if err := yaml.Unmarshal(data, &node); err != nil {
-			return fmt.Errorf("parse Component at %q: %w", path, err)
-		}
-		out, err := yaml.Marshal(&node)
-		if err != nil {
-			return fmt.Errorf("render Component YAML: %w", err)
-		}
-		fmt.Fprint(opts.out, string(out))
-		return nil
-	}
-
-	name := comp.Metadata.Name
-	if name == "" {
-		name = path
-	}
-
-	if opts.level == levelList {
-		fmt.Fprintln(opts.out, opts.colorize.uri(name))
-		for socket := range comp.Spec.UsesSchema {
-			fmt.Fprintf(opts.out, "%s\n", socket)
-		}
-		return nil
-	}
-
-	header := fmt.Sprintf("// Component: %s (from %s)", name, path)
-	if comp.Spec.Extends != "" {
-		header += " (declares extends; inheritance NOT resolved for file-path inspection)"
-	}
-	fmt.Fprintln(opts.out, opts.colorize.header(header))
-	if comp.Spec.Schema.Kind != 0 {
-		out, err := yaml.Marshal(&comp.Spec.Schema)
-		if err != nil {
-			return fmt.Errorf("render schema: %w", err)
-		}
-		fmt.Fprint(opts.out, string(out))
-	} else {
-		fmt.Fprintln(opts.out, "// (no schema defined)")
-	}
-	if len(comp.Spec.UsesSchema) > 0 {
-		fmt.Fprintln(opts.out, "\n// usesSchema:")
-		for socket, entry := range comp.Spec.UsesSchema {
-			fmt.Fprintf(opts.out, "//   %s: selector=%q\n", socket, entry.Selector)
-		}
-	}
-	return nil
+	return renderComponentStructured(comp, componentType, opts)
 }
 
 // inspectReleaseFile loads a Release plus its referenced Aggregate and

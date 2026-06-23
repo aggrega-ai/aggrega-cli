@@ -1,0 +1,575 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// writeKindFixture writes body into a temp file named <kind>.yaml and returns
+// the path. Each per-kind golden test drives dispatchInspect against this file
+// through the injected buffer (no global os.Stdout swap).
+func writeKindFixture(t *testing.T, kind, body string) string {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, kind+".yaml")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s fixture: %v", kind, err)
+	}
+	return path
+}
+
+// runKindGoldens drives the three text levels (default / list / detail) plus the
+// --output yaml round-trip of a fixture through dispatchInspect, comparing each
+// against testdata/inspect_<kind>/. The temp path is masked to a stable token so
+// goldens are machine-stable.
+func runKindGoldens(t *testing.T, kind, body string) {
+	t.Helper()
+	path := writeKindFixture(t, kind, body)
+	mask := func(s string) []byte {
+		return []byte(strings.ReplaceAll(s, path, strings.ToUpper(kind)+"_PATH"))
+	}
+
+	var buf bytes.Buffer
+	opts := testInspectOptions(&buf)
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect %s default: %v", kind, err)
+	}
+	compareGoldenKind(t, kind, "default.text.golden", mask(buf.String()))
+
+	buf.Reset()
+	opts = testInspectOptions(&buf)
+	opts.level = levelList
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect %s --list: %v", kind, err)
+	}
+	compareGoldenKind(t, kind, "list.text.golden", mask(buf.String()))
+
+	buf.Reset()
+	opts = testInspectOptions(&buf)
+	opts.level = levelDetail
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect %s --detail: %v", kind, err)
+	}
+	compareGoldenKind(t, kind, "detail.text.golden", mask(buf.String()))
+
+	buf.Reset()
+	opts = testInspectOptions(&buf)
+	opts.output = outputYAML
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect %s --output yaml: %v", kind, err)
+	}
+	compareGoldenKind(t, kind, "yaml.golden", buf.Bytes())
+}
+
+const providerFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+  description: Helm rendering engine.
+spec:
+  plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
+  baseSchema: |
+    type: object
+  workloadSchema: |
+    type: object
+`
+
+// providerWKAFixture declares a populated wellKnownAnnotations block. No real
+// catalog Provider populates the field yet, so this fixture proves the
+// Provider renderer renders the populated path — correctness is the spec, not
+// whether a catalog consumer exercises it today.
+const providerWKAFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
+  workloadSchema: |
+    type: object
+  wellKnownAnnotations:
+    - key: aggrega.ai/replicas
+      purpose: Desired replica count.
+      defaultBehavior: One replica.
+    - key: aggrega.ai/ingress-host
+      purpose: External hostname.
+`
+
+func TestInspectProvider_Goldens(t *testing.T) {
+	t.Parallel()
+	runKindGoldens(t, "provider", providerFixture)
+}
+
+func TestInspectProvider_PopulatedWKA_Golden(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "provider_wka", providerWKAFixture)
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("inspect provider wka: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "(none declared)") {
+		t.Errorf("populated wellKnownAnnotations should not show the (none declared) fallback; got:\n%s", out)
+	}
+	if !strings.Contains(out, "aggrega.ai/replicas") || !strings.Contains(out, "Desired replica count.") {
+		t.Errorf("populated wellKnownAnnotations entries should render key + purpose; got:\n%s", out)
+	}
+	compareGoldenKind(t, "provider_wka", "default.text.golden", []byte(out))
+}
+
+func TestInspectProvider_RecipeHostingLine(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name           string
+		base, workload string
+		want           string
+	}{
+		{"both", "type: object", "type: object", "synthesized + sourceless"},
+		{"synth", "", "type: object", "synthesized"},
+		{"sourceless", "type: object", "", "sourceless"},
+		{"neither", "", "", "sourced-only"},
+	}
+	for _, c := range cases {
+		body := "apiVersion: aggrega.ai/v1alpha1\nkind: Provider\nmetadata:\n  name: p\n  version: \"1.0.0\"\nspec:\n  plugin: x\n"
+		if c.base != "" {
+			body += "  baseSchema: |\n    " + c.base + "\n"
+		}
+		if c.workload != "" {
+			body += "  workloadSchema: |\n    " + c.workload + "\n"
+		}
+		path := writeKindFixture(t, "provider_"+c.name, body)
+		var buf bytes.Buffer
+		if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+			t.Fatalf("inspect %s: %v", c.name, err)
+		}
+		if !strings.Contains(buf.String(), "Recipe-hosting: "+c.want) {
+			t.Errorf("%s: want Recipe-hosting %q; got:\n%s", c.name, c.want, buf.String())
+		}
+	}
+}
+
+const featureFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/metrics
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/category: observability
+spec:
+  schema: |
+    values: { port?: int | *9090 }
+  usesSchema:
+    backend:
+      selector: 'component.aggrega.ai/type=stateful-server'
+      inject: [env]
+  secretsSchema:
+    token:
+      required: true
+  appliesTo: 'component.aggrega.ai/type=server'
+  interoperability:
+    conflictsWith:
+      - core/other
+  assertions:
+    port-positive: '{{ if lt .values.port 1 }}{{ fail "port must be positive" }}{{ end }}'
+`
+
+func TestInspectFeature_Goldens(t *testing.T) {
+	t.Parallel()
+	runKindGoldens(t, "feature", featureFixture)
+}
+
+const credentialFeatureFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/db-credential
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec:
+  schema: |
+    values: {}
+`
+
+func TestInspectFeature_CredentialMarker(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "feature_secret", credentialFeatureFixture)
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("inspect credential feature: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Credential Feature") {
+		t.Errorf("secret-kind Feature should render the credential marker; got:\n%s", buf.String())
+	}
+}
+
+const recipeSynthesizedFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: core/api-server-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/api-server:1.0.0
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+  provides:
+    endpoint: '{{ .metadata.name }}'
+`
+
+const recipeSourcedFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: core/redis-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/redis:1.0.0
+  source: oci://charts.example.com/redis:17.0.0
+  valuesMapping: |
+    image: redis
+`
+
+func TestInspectRecipe_Synthesized_Goldens(t *testing.T) {
+	t.Parallel()
+	runKindGoldens(t, "recipe", recipeSynthesizedFixture)
+}
+
+func TestInspectRecipe_Sourced_Golden(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "recipe_sourced", recipeSourcedFixture)
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("inspect sourced recipe: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "## Sourced") {
+		t.Errorf("sourced recipe should render the ## Sourced mode header; got:\n%s", out)
+	}
+	if strings.Contains(out, "## Synthesized") {
+		t.Errorf("sourced recipe should not render ## Synthesized; got:\n%s", out)
+	}
+	compareGoldenKind(t, "recipe_sourced", "default.text.golden", []byte(out))
+}
+
+const featureRecipeFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: core/metrics-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/metrics:1.0.0
+  artifacts:
+    servicemonitor.yaml: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+  injectMapping: |
+    {}
+  executionScope: boundary
+`
+
+func TestInspectFeatureRecipe_Goldens(t *testing.T) {
+	t.Parallel()
+	runKindGoldens(t, "featurerecipe", featureRecipeFixture)
+}
+
+func TestInspectFeatureRecipe_ListArtifactCount(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "fr_count", featureRecipeFixture)
+	var buf bytes.Buffer
+	opts := testInspectOptions(&buf)
+	opts.level = levelList
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect fr --list: %v", err)
+	}
+	if !strings.Contains(buf.String(), "artifacts: 1") {
+		t.Errorf("--list should show the artifact count; got:\n%s", buf.String())
+	}
+}
+
+const mappingLibraryFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: MappingLibrary
+metadata:
+  name: CommonHelmMappings
+  version: "1.0.0"
+  description: Reusable Helm value mappings.
+spec:
+  mappings:
+    ResourcesBlock: |
+      resources:
+        requests:
+          cpu: {{ .values.cpu }}
+    ProbesBlock: |
+      livenessProbe:
+        httpGet:
+          path: /healthz
+`
+
+func TestInspectMappingLibrary_Goldens(t *testing.T) {
+	t.Parallel()
+	runKindGoldens(t, "mappinglibrary", mappingLibraryFixture)
+}
+
+func TestInspectMappingLibrary_BareNameUseLine(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "ml_use", mappingLibraryFixture)
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("inspect mapping library: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "$import: CommonHelmMappings#/mappings/ResourcesBlock") {
+		t.Errorf("Use line should reference bare-name identity; got:\n%s", out)
+	}
+	if strings.Contains(out, "oci://") {
+		t.Errorf("Use line must not use an oci:// URL; got:\n%s", out)
+	}
+}
+
+const schemaLibraryFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: CommonSchemas
+  version: "1.0.0"
+  description: Reusable schema definitions.
+spec:
+  schemas:
+    Port:
+      type: integer
+      minimum: 1
+    Replicas:
+      type: integer
+  templates:
+    SizedField:
+      $params:
+        max:
+          type: integer
+          default: 100
+      type: integer
+`
+
+func TestInspectSchemaLibrary_Goldens(t *testing.T) {
+	t.Parallel()
+	runKindGoldens(t, "schemalibrary", schemaLibraryFixture)
+}
+
+func TestInspectSchemaLibrary_RefUseLineAndTemplates(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "sl_use", schemaLibraryFixture)
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("inspect schema library: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "$ref: CommonSchemas#/schemas/Port") {
+		t.Errorf("Use line should reference bare-name $ref identity; got:\n%s", out)
+	}
+	if !strings.Contains(out, "SizedField") || !strings.Contains(out, "max: integer") {
+		t.Errorf("templates section should render the template and its $params; got:\n%s", out)
+	}
+}
+
+const componentDetailFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/api-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema: |
+    values: { port?: int | *8080 }
+  inject: [env, file]
+  requiredFeatures:
+    - core/metrics
+  usesSchema:
+    db:
+      selector: 'component.aggrega.ai/type=stateful-server'
+`
+
+func TestInspectComponent_Detail_Golden(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "component_detail", componentDetailFixture)
+	var buf bytes.Buffer
+	opts := testInspectOptions(&buf)
+	opts.level = levelDetail
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect component --detail: %v", err)
+	}
+	out := strings.ReplaceAll(buf.String(), path, "COMPONENT_DETAIL_PATH")
+	if !strings.Contains(out, "Required features:") {
+		t.Errorf("--detail should surface requiredFeatures; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Self-inject mechanisms") {
+		t.Errorf("--detail should surface inject mechanisms; got:\n%s", out)
+	}
+	compareGoldenKind(t, "component_detail", "detail.text.golden", []byte(out))
+}
+
+// TestInspectKind_ColorOnHeader proves the colorizer threads through a per-kind
+// renderer end-to-end on a representative kind (Provider).
+func TestInspectKind_ColorOnHeader(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "provider_color", providerFixture)
+	var buf bytes.Buffer
+	opts := inspectOptions{out: &buf, colorize: newColorizer(colorAlways, &buf, false)}
+	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+		t.Fatalf("inspect --color=always: %v", err)
+	}
+	if !hasANSI(buf.String()) {
+		t.Errorf("--color=always should wrap the Provider header in ANSI; got:\n%s", buf.String())
+	}
+}
+
+// TestInspectKind_Determinism asserts a per-kind default render is byte-identical
+// across two runs (Invariant 8: OrderedMap iteration, no plain-map ranging).
+func TestInspectKind_Determinism(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "feature_det", featureFixture)
+	render := func() string {
+		var buf bytes.Buffer
+		if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+			t.Fatalf("inspect: %v", err)
+		}
+		return buf.String()
+	}
+	if a, b := render(), render(); a != b {
+		t.Errorf("default render not byte-identical across runs:\n--- a ---\n%s\n--- b ---\n%s", a, b)
+	}
+}
+
+// TestInspectRecipe_ShowImplements_ResolvesComponent proves --show-implements
+// resolves a Recipe's implements reference via the shared catalog lookup (the
+// three-form matching shared with build), surfacing the bound Component and its
+// requiredFeatures.
+func TestInspectRecipe_ShowImplements_ResolvesComponent(t *testing.T) {
+	t.Parallel()
+	catDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/api-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    values: {}
+  requiredFeatures:
+    - core/metrics
+`), 0o644); err != nil {
+		t.Fatalf("write component: %v", err)
+	}
+	recipePath := writeKindFixture(t, "recipe_impl", recipeSynthesizedFixture)
+
+	var buf bytes.Buffer
+	opts := testInspectOptions(&buf)
+	opts.showImplements = true
+	if err := dispatchInspect(resolveTempWorkspace(t), recipePath, []string{catDir}, opts); err != nil {
+		t.Fatalf("inspect --show-implements: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Implements Component: core/api-server:1.0.0") {
+		t.Errorf("--show-implements should resolve the bound Component; got:\n%s", out)
+	}
+	if !strings.Contains(out, "core/metrics") {
+		t.Errorf("--show-implements should surface the Component's requiredFeatures; got:\n%s", out)
+	}
+}
+
+// TestInspectRecipe_ShowImplements_AbortsWhenAbsent asserts --show-implements
+// aborts with a clear error when the implements target is not in the catalog
+// (no best-effort degradation).
+func TestInspectRecipe_ShowImplements_AbortsWhenAbsent(t *testing.T) {
+	t.Parallel()
+	catDir := t.TempDir() // empty catalog
+	recipePath := writeKindFixture(t, "recipe_missing", recipeSynthesizedFixture)
+	var buf bytes.Buffer
+	opts := testInspectOptions(&buf)
+	opts.showImplements = true
+	err := dispatchInspect(resolveTempWorkspace(t), recipePath, []string{catDir}, opts)
+	if err == nil {
+		t.Fatal("--show-implements should abort when the implements target is absent")
+	}
+	if !strings.Contains(err.Error(), "show-implements") {
+		t.Errorf("abort error should name --show-implements; got: %v", err)
+	}
+}
+
+// TestInspectFeatureRecipe_ShowImplements_CredentialMarker proves
+// --show-implements resolves a FeatureRecipe's bound Feature and emits the
+// credential marker when that Feature is secret-kind.
+func TestInspectFeatureRecipe_ShowImplements_CredentialMarker(t *testing.T) {
+	t.Parallel()
+	catDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(catDir, "db-credential.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/db-credential
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec:
+  schema:
+    values: {}
+`), 0o644); err != nil {
+		t.Fatalf("write feature: %v", err)
+	}
+	frBody := `apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: core/db-credential-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/db-credential:1.0.0
+  injectMapping: |
+    {}
+`
+	frPath := writeKindFixture(t, "fr_cred", frBody)
+	var buf bytes.Buffer
+	opts := testInspectOptions(&buf)
+	opts.showImplements = true
+	if err := dispatchInspect(resolveTempWorkspace(t), frPath, []string{catDir}, opts); err != nil {
+		t.Fatalf("inspect fr --show-implements: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Implements Feature: core/db-credential:1.0.0") {
+		t.Errorf("--show-implements should resolve the bound Feature; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Credential FeatureRecipe — emits secret-kind injection") {
+		t.Errorf("--show-implements should emit the credential marker for a secret-kind Feature; got:\n%s", out)
+	}
+}
+
+// TestInspectDispatch_RegisteredKinds asserts each newly-registered kind routes
+// to its renderer rather than the not-yet-implemented / unknown-kind branches.
+func TestInspectDispatch_RegisteredKinds(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"Feature":        featureFixture,
+		"Recipe":         recipeSynthesizedFixture,
+		"FeatureRecipe":  featureRecipeFixture,
+		"Provider":       providerFixture,
+		"MappingLibrary": mappingLibraryFixture,
+		"SchemaLibrary":  schemaLibraryFixture,
+	}
+	for kind, body := range cases {
+		path := writeKindFixture(t, strings.ToLower(kind), body)
+		var buf bytes.Buffer
+		if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+			t.Fatalf("%s should route to its renderer; got: %v", kind, err)
+		}
+		if strings.Contains(buf.String(), "not yet implemented") || strings.Contains(buf.String(), "unknown entity kind") {
+			t.Errorf("%s should not hit a stub branch; got:\n%s", kind, buf.String())
+		}
+	}
+}

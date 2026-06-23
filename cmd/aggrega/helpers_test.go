@@ -159,7 +159,7 @@ func TestInspectPath_MalformedYAMLPreamble(t *testing.T) {
 func TestInspectPath_NotYetImplemented(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	for _, kind := range []string{"Manifest", "Aggregate", "Feature", "Recipe", "FeatureRecipe", "Provider"} {
+	for _, kind := range []string{"Manifest", "Aggregate"} {
 		path := filepath.Join(tmp, kind+".yaml")
 		content := "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: x\n"
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

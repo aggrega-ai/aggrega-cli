@@ -43,11 +43,13 @@ func writeReferenceComponent(t *testing.T) string {
 	return path
 }
 
-// compareGolden asserts got matches the committed golden at
-// testdata/inspect_component/<name>. Regenerate with AGGREGA_UPDATE_GOLDEN=1.
-func compareGolden(t *testing.T, name string, got []byte) {
+// compareGoldenKind asserts got matches the committed golden at
+// testdata/inspect_<kind>/<name>. Regenerate with AGGREGA_UPDATE_GOLDEN=1. The
+// kind subdir is parameterized so each per-kind inspector pins its own golden
+// tree.
+func compareGoldenKind(t *testing.T, kind, name string, got []byte) {
 	t.Helper()
-	golden := filepath.Join("testdata", "inspect_component", name)
+	golden := filepath.Join("testdata", "inspect_"+kind, name)
 	if os.Getenv("AGGREGA_UPDATE_GOLDEN") != "" {
 		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
 			t.Fatalf("mkdir golden dir: %v", err)
@@ -81,7 +83,7 @@ func TestInspectComponent_DefaultText_Golden(t *testing.T) {
 	// The header carries the temp path; mask it to the basename so the golden
 	// is stable across machines.
 	got := strings.ReplaceAll(buf.String(), path, "COMPONENT_PATH")
-	compareGolden(t, "default.text.golden", []byte(got))
+	compareGoldenKind(t, "component", "default.text.golden", []byte(got))
 }
 
 // TestInspectComponent_List_Golden pins the --list output: identifiers only
@@ -95,7 +97,7 @@ func TestInspectComponent_List_Golden(t *testing.T) {
 	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
 		t.Fatalf("inspect --list: %v", err)
 	}
-	compareGolden(t, "list.text.golden", buf.Bytes())
+	compareGoldenKind(t, "component", "list.text.golden", buf.Bytes())
 }
 
 // TestInspectComponent_YAML_Golden pins the --output yaml dump of the reference
@@ -109,7 +111,7 @@ func TestInspectComponent_YAML_Golden(t *testing.T) {
 	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
 		t.Fatalf("inspect --output yaml: %v", err)
 	}
-	compareGolden(t, "yaml.golden", buf.Bytes())
+	compareGoldenKind(t, "component", "yaml.golden", buf.Bytes())
 }
 
 // TestInspectComponent_ColorOnHeader proves the colorizer is wired through the

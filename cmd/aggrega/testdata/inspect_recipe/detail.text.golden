@@ -1,0 +1,11 @@
+Recipe: core/api-server-recipe:1.0.0
+Implements: core/api-server:1.0.0
+Provider: helm
+## Synthesized
+  workload: inline
+valuesMapping: (none)
+Workload:
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+Provides:
+  - endpoint

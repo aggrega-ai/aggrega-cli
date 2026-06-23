@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+    name: core/metrics
+    version: "1.0.0"
+    labels:
+        feature.aggrega.ai/category: observability
+spec:
+    schema: |
+        values: { port?: int | *9090 }
+    usesSchema:
+        backend:
+            selector: 'component.aggrega.ai/type=stateful-server'
+            inject: [env]
+    secretsSchema:
+        token:
+            required: true
+    appliesTo: 'component.aggrega.ai/type=server'
+    interoperability:
+        conflictsWith:
+            - core/other
+    assertions:
+        port-positive: '{{ if lt .values.port 1 }}{{ fail "port must be positive" }}{{ end }}'
