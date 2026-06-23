@@ -162,6 +162,9 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 	if s.serverCtx == nil {
 		s.serverCtx, s.serverCancel = context.WithCancel(context.Background())
 	}
+	if s.cancelTracker == nil {
+		s.cancelTracker = newCancelRegistry()
+	}
 	defer s.serverCancel()
 
 	messages := make(chan incomingMessage)
@@ -315,8 +318,19 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 	// promptly.
 	ctx, cancel := context.WithCancel(s.serverCtx)
 	defer cancel()
+	// Register the SAME per-request cancel handle under the request's id
+	// so a specific in-flight request is addressable by id. This is a
+	// second address for the child handle above, not a second cancel
+	// authority. Notifications carry no id and are not tracked (track is a
+	// no-op on an empty id). untrack pairs with the defer'd cancel, so the
+	// registry holds only currently in-flight requests.
+	s.cancelTracker.track(req.ID, cancel)
+	defer s.cancelTracker.untrack(req.ID)
 	sink := &requestSink{ser: ser, seq: seq}
 	ctx = withRequestSink(ctx, sink)
+	if s.testCtxHook != nil {
+		s.testCtxHook(ctx, req.ID)
+	}
 
 	if err := s.dispatch(ctx, req); err != nil {
 		// The only errors reaching here are genuine marshal failures of

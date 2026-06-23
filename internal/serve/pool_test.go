@@ -271,6 +271,7 @@ func TestByteIdenticalToSequentialAtConcurrencyOne(t *testing.T) {
 		}
 		srv := newPoolTestServer(nil, &reference, 1, nil)
 		srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
+		srv.cancelTracker = newCancelRegistry()
 		ser := newSerializer(&reference)
 		go ser.run()
 		ser.emit(1, srv.handle(ser, 1, &req))

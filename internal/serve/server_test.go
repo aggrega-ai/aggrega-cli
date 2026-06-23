@@ -47,6 +47,7 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 	// path, so initialize here; the per-request contexts handle() derives
 	// then have a live parent.
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
+	srv.cancelTracker = newCancelRegistry()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }

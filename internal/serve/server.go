@@ -16,6 +16,7 @@ package serve
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -120,15 +121,22 @@ type Diagnostic struct {
 //   - shuttingDown is an atomic bool: the shutdown handler stores it,
 //     the dispatch drain-state pre-check loads it.
 //
+//   - The per-request cancel registry (cancelTracker) is internally
+//     synchronized by its own mutex: each in-flight handler tracks and
+//     untracks its id under the lock, so concurrent track / untrack
+//     across the pool need no external lock.
+//
 // The remaining fields (workspaceRoot, configSource, compilerVersion,
 // workspaceMarker, wsConfig, lazyCatalog pointer, activeRelease,
-// activeReleasePath, cascadeAttempt, lockfile, serverCtx/serverCancel)
-// are written once at construction or at startup before the worker
-// pool starts, then only read during handler execution, so they are
-// immutable snapshots needing no lock. The reader goroutine reads stdin
-// and writes channels; it never touches Server mutable state. The
-// id-order stdout serializer is the sole owner of the output writer, so
-// no worker touches s.out directly.
+// activeReleasePath, cascadeAttempt, lockfile, serverCtx/serverCancel,
+// cancelTracker pointer) are written once at construction or at startup
+// before the worker pool starts, then only read during handler
+// execution, so they are immutable snapshots needing no lock (the
+// registry the cancelTracker pointer names carries its own lock for its
+// mutable map). The reader goroutine reads stdin and writes channels; it
+// never touches Server mutable state. The id-order stdout serializer is
+// the sole owner of the output writer, so no worker touches s.out
+// directly.
 type Server struct {
 	workspaceRoot string
 	configSource  string
@@ -163,6 +171,17 @@ type Server struct {
 	// idempotent — the dispatch loop also defers it as an exit backstop.
 	serverCtx    context.Context
 	serverCancel context.CancelFunc
+
+	// cancelTracker maps an in-flight request's id to its per-request
+	// cancel func, so a specific running request is addressable by id.
+	// It stores the same per-request cancel handle handle already owns
+	// (a second address, not a second cancel authority); track / untrack
+	// run inside handle for every id-bearing request. The per-id cancel
+	// pickup it exposes is built and tested but not yet routed to any
+	// production caller — see cancelRegistry. Constructed lazily in
+	// dispatchLoop alongside serverCtx; the in-memory test harness may
+	// construct it earlier.
+	cancelTracker *cancelRegistry
 
 	// lazyCatalog is the session-scoped catalog lookup: the per-URI Tier-1/2/3
 	// cascade for the WHOLE catalog surface — Component + Feature (on-demand
@@ -257,6 +276,13 @@ type Server struct {
 	// (e.g., distinguishing arrival-based from observation-based
 	// drain-timer semantics). A nil hook is a no-op.
 	testInDispatchHook func()
+
+	// testCtxHook, when non-nil, runs inside handle() with the request's
+	// per-request context and id after both are established, so a test
+	// can observe the live per-request context (e.g. block on its
+	// Done() to assert shutdown or per-id cancellation propagates). The
+	// production setup never sets this field. A nil hook is a no-op.
+	testCtxHook func(ctx context.Context, id json.RawMessage)
 }
 
 // positionEncoding returns the negotiated position encoding. It loads

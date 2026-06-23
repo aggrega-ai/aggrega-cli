@@ -1,0 +1,374 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package serve
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// TestCancelRegistryTrackUntrackLifecycle is the unit-level proof of the
+// per-request cancel registry: track records an id, untrack removes it,
+// cancel(id) fires the stored func, an unknown id is a safe no-op, and a
+// notification (empty id) is never tracked. This asserts registry
+// BEHAVIOR; it is not a live per-request cancel-by-id round-trip — no
+// dispatch method or notification routing is exercised, matching the
+// built-not-wired boundary.
+func TestCancelRegistryTrackUntrackLifecycle(t *testing.T) {
+	t.Parallel()
+	r := newCancelRegistry()
+
+	id := json.RawMessage(`"req-1"`)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if r.len() != 0 {
+		t.Fatalf("fresh registry len = %d; want 0", r.len())
+	}
+
+	r.track(id, cancel)
+	if r.len() != 1 {
+		t.Errorf("after track len = %d; want 1", r.len())
+	}
+
+	// cancel(id) must fire the stored func, cancelling the derived ctx.
+	r.cancel(id)
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("cancel(id) did not fire the registered cancel func")
+	}
+
+	r.untrack(id)
+	if r.len() != 0 {
+		t.Errorf("after untrack len = %d; want 0", r.len())
+	}
+
+	// cancel on an absent id is a safe no-op.
+	r.cancel(json.RawMessage(`"absent"`))
+
+	// A notification carries no id and is never tracked.
+	r.track(nil, func() {})
+	r.track(json.RawMessage{}, func() {})
+	if r.len() != 0 {
+		t.Errorf("notification (empty id) was tracked; len = %d; want 0", r.len())
+	}
+	// untrack / cancel on an empty id are no-ops too.
+	r.untrack(nil)
+	r.cancel(nil)
+}
+
+// TestCancelRegistryConcurrentTrackUntrackRaceClean fans out many
+// goroutines tracking and untracking distinct ids (and reading len /
+// firing cancel) on one registry. Under -race this fails if track /
+// untrack / cancel / len touch the map without the lock. It also proves
+// the track / untrack pairing is balanced: the registry returns to empty.
+func TestCancelRegistryConcurrentTrackUntrackRaceClean(t *testing.T) {
+	t.Parallel()
+	r := newCancelRegistry()
+
+	const workers = 32
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		w := w
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				id := json.RawMessage(fmt.Sprintf(`"w%d-%d"`, w, i))
+				_, cancel := context.WithCancel(context.Background())
+				r.track(id, cancel)
+				r.len()
+				r.cancel(id)
+				r.untrack(id)
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("registry fan-out did not complete")
+	}
+	if r.len() != 0 {
+		t.Errorf("registry not balanced after fan-out; len = %d; want 0", r.len())
+	}
+}
+
+// TestDeadlineComposesOverPerRequestContext proves source (d): the
+// per-request context shape is a plain cancellable chain, so a deadline
+// layers onto it by construction. A WithTimeout child cancels on timeout,
+// and a parent cancel still propagates to the deadline child. No deadline
+// is set in production; this asserts the chain ADMITS one.
+func TestDeadlineComposesOverPerRequestContext(t *testing.T) {
+	t.Parallel()
+
+	// Shape mirrors handle's chain: a per-request child of a session
+	// parent, then a deadline layered on top.
+	parent, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	perRequest, perRequestCancel := context.WithCancel(parent)
+	defer perRequestCancel()
+
+	withDeadline, cancelDeadline := context.WithTimeout(perRequest, 20*time.Millisecond)
+	defer cancelDeadline()
+	select {
+	case <-withDeadline.Done():
+		if withDeadline.Err() != context.DeadlineExceeded {
+			t.Errorf("deadline child err = %v; want DeadlineExceeded", withDeadline.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("deadline child did not fire on timeout")
+	}
+
+	// A parent cancel still propagates through a deadline child.
+	perRequest2, perRequest2Cancel := context.WithCancel(parent)
+	defer perRequest2Cancel()
+	withDeadline2, cancelDeadline2 := context.WithTimeout(perRequest2, time.Hour)
+	defer cancelDeadline2()
+	parentCancel()
+	select {
+	case <-withDeadline2.Done():
+		if withDeadline2.Err() != context.Canceled {
+			t.Errorf("deadline child err after parent cancel = %v; want Canceled", withDeadline2.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("parent cancel did not propagate through the deadline child")
+	}
+}
+
+// TestShutdownCancelsConcurrentInFlightHandlers proves source (a) under
+// the pool: with N handlers held in-flight, an aggrega/shutdown
+// notification cancels every one of their per-request contexts within
+// the drain budget, and the dispatch loop exits. This extends the
+// single-in-flight arrival-based drain tests into the multiple-concurrent
+// case the pool enables.
+func TestShutdownCancelsConcurrentInFlightHandlers(t *testing.T) {
+	t.Parallel()
+	for _, pool := range []int{4, 16} {
+		pool := pool
+		t.Run(fmt.Sprintf("pool=%d", pool), func(t *testing.T) {
+			t.Parallel()
+			const inFlight = 4
+
+			var entered sync.WaitGroup
+			entered.Add(inFlight)
+			var enteredOnce int32
+			var cancelledCount int32
+			held := make(chan struct{})
+
+			stdinR, stdinW := io.Pipe()
+			// A mutex-guarded buffer keeps the serializer's concurrent
+			// writes race-free; the test reads it only after the loop
+			// returns. The in-flight count (4) stays under the queue
+			// capacity at both pool sizes, so submission never blocks on
+			// a drain and no concurrent reader is needed.
+			stdout := &syncBuffer{}
+			srv := newPoolTestServer(stdinR, stdout, pool, nil)
+			srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+				// Only the first inFlight id-bearing handlers block; the
+				// shutdown notification (no id) and any later request fall
+				// through so the loop can progress.
+				if len(id) == 0 {
+					return
+				}
+				if atomic.AddInt32(&enteredOnce, 1) > inFlight {
+					return
+				}
+				entered.Done()
+				// Block until the request context is cancelled (by
+				// shutdown) or the test releases.
+				select {
+				case <-ctx.Done():
+					atomic.AddInt32(&cancelledCount, 1)
+				case <-held:
+				}
+			}
+
+			loopDone := make(chan error, 1)
+			go func() { loopDone <- srv.dispatchLoop(200 * time.Millisecond) }()
+
+			for i := 0; i < inFlight; i++ {
+				if _, err := stdinW.Write(framedRequest(i+1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+					t.Fatalf("write request: %v", err)
+				}
+			}
+
+			// Wait until all inFlight handlers are parked on ctx.Done().
+			waitDone := make(chan struct{})
+			go func() { entered.Wait(); close(waitDone) }()
+			select {
+			case <-waitDone:
+			case <-time.After(2 * time.Second):
+				close(held)
+				t.Fatal("handlers never all entered in-flight")
+			}
+
+			// Now fire shutdown; serverCancel cancels every per-request ctx.
+			if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+				t.Fatalf("write shutdown: %v", err)
+			}
+			stdinW.Close()
+
+			select {
+			case err := <-loopDone:
+				if err != nil {
+					t.Fatalf("dispatchLoop: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				close(held)
+				t.Fatal("dispatch loop did not exit on shutdown")
+			}
+
+			if got := atomic.LoadInt32(&cancelledCount); got != inFlight {
+				t.Errorf("cancelled handlers = %d; want %d (every in-flight ctx cancelled on shutdown)", got, inFlight)
+			}
+		})
+	}
+}
+
+// TestPerRequestCancelFiresOnCompletion proves source (b): each
+// in-flight request's per-request context is Done() once its handler
+// returns — the defer cancel() released the child. Asserted under the
+// pool, capturing the live ctx via testCtxHook.
+func TestPerRequestCancelFiresOnCompletion(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	captured := map[string]context.Context{}
+
+	var stdin, stdout bytes.Buffer
+	ids := []int{1, 2, 3}
+	for _, id := range ids {
+		stdin.Write(framedRequest(id, "aggrega/releaseCandidates", map[string]any{}))
+	}
+	stdin.Write(framedNotification("aggrega/shutdown", nil))
+
+	srv := newPoolTestServer(&stdin, &stdout, 4, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		if len(id) == 0 {
+			return
+		}
+		mu.Lock()
+		captured[string(id)] = ctx
+		mu.Unlock()
+	}
+
+	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+		t.Fatalf("dispatchLoop: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(captured) != len(ids) {
+		t.Fatalf("captured %d contexts; want %d", len(captured), len(ids))
+	}
+	for id, ctx := range captured {
+		select {
+		case <-ctx.Done():
+		default:
+			t.Errorf("per-request ctx for id %s not Done() after handler returned", id)
+		}
+	}
+}
+
+// TestCancelTrackerEmptyAfterBurst proves no registry / context leak
+// under the pool: after a burst of concurrent id-bearing requests
+// completes (no shutdown mid-burst), the cancel registry is empty —
+// every tracked id was untracked, so track / untrack stay balanced under
+// concurrency.
+func TestCancelTrackerEmptyAfterBurst(t *testing.T) {
+	t.Parallel()
+
+	var stdin, stdout bytes.Buffer
+	const n = 50
+	for i := 0; i < n; i++ {
+		stdin.Write(framedRequest(i+1, "aggrega/releaseCandidates", map[string]any{}))
+	}
+	stdin.Write(framedNotification("aggrega/shutdown", nil))
+
+	srv := newPoolTestServer(&stdin, &stdout, 16, nil)
+	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+		t.Fatalf("dispatchLoop: %v", err)
+	}
+
+	if got := srv.cancelTracker.len(); got != 0 {
+		t.Errorf("cancel registry not empty after burst drained; len = %d; want 0", got)
+	}
+}
+
+// TestCancelRequestByIdInterruptsHandler exercises the built-not-wired
+// pickup against a live in-flight handler: a handler is held on its
+// per-request ctx.Done(); the test reaches the registry by id and calls
+// the cancel pickup directly (no dispatch method, no notification routing
+// — that path is not wired); the handler observes cancellation and
+// releases. This is what keeps the pickup a tested, documented seam
+// rather than dead capability.
+func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{})
+	var observed int32
+	const targetID = 7
+
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(stdinR, stdout, 4, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		var n int
+		if json.Unmarshal(id, &n) != nil || n != targetID {
+			return
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+			atomic.StoreInt32(&observed, 1)
+		case <-time.After(2 * time.Second):
+		}
+	}
+
+	loopDone := make(chan error, 1)
+	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+
+	if _, err := stdinW.Write(framedRequest(targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("target handler never entered in-flight")
+	}
+
+	// Reach the registry by id and fire the pickup directly. This is the
+	// future $/cancelRequest consumer's call site; no such consumer is
+	// wired, so the test stands in for it to prove the seam behaves.
+	srv.cancelTracker.cancel(json.RawMessage(fmt.Sprintf("%d", targetID)))
+
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		t.Fatalf("write shutdown: %v", err)
+	}
+	stdinW.Close()
+
+	select {
+	case err := <-loopDone:
+		if err != nil {
+			t.Fatalf("dispatchLoop: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch loop did not exit")
+	}
+
+	if atomic.LoadInt32(&observed) != 1 {
+		t.Errorf("handler did not observe per-id cancellation from the registry pickup")
+	}
+}
