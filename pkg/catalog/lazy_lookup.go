@@ -941,14 +941,16 @@ func (l *LazyLookup) buildRecipeIndex() {
 	}
 	// Tier-2: fold every lockfile-pinned cache slot of the recipe-shell kinds,
 	// under the SAME verify-on-read / pin discipline resolveComponent uses. A
-	// registry build's recipes / FeatureRecipes / aggregates / mapping libraries
-	// live in the pinned cache, not the catalog dirs — this is what makes the lazy
-	// backing see them. Runs AFTER the Tier-1 walk so a locally-authored entity
-	// wins on a name/identity collision. Provider is omitted deliberately: the
-	// cache→catalog bridge folds no Provider (providers are local-catalog only), so
-	// the pinned pass matches that surface exactly.
+	// registry build's recipes / FeatureRecipes / aggregates / providers / mapping
+	// libraries live in the pinned cache, not the catalog dirs — this is what makes
+	// the lazy backing see them. Runs AFTER the Tier-1 walk so a locally-authored
+	// entity wins on a name/identity collision. A registry-resolved Provider
+	// participates in the closure under the provider-entity pin path (a Recipe's
+	// declared provider, resolved above Tier-1, is walked and pinned), so its pinned
+	// cache slot folds here into l.providers; a locally-authored provider still
+	// resolves through the Tier-1 walk above.
 	l.foldPinnedCacheEntities(map[string]bool{
-		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true,
+		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "Provider": true,
 	})
 }
 
@@ -1192,9 +1194,10 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 }
 
 // ProviderInfraSchemaResolver exposes the per-component provider infra-schema
-// resolver over the lazily-enumerated recipe + provider set. Providers are
-// Tier-1-local (the closure never pins a Provider), so this resolves a provider's
-// baseSchema from the Tier-1 walk exactly as the eager catalog did.
+// resolver over the lazily-enumerated recipe + provider set. A locally-authored
+// provider resolves from the Tier-1 walk; a registry-resolved provider — one a
+// Recipe declares and the closure pins above Tier-1 — resolves from the pinned
+// Tier-2 cache fold. Either way the baseSchema is read from the same provider map.
 func (l *LazyLookup) ProviderInfraSchemaResolver(manifest *types.Manifest) func(string, string) (string, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

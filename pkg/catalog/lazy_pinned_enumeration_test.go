@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Cache-fixture entities for the lazy-enumeration tests. The library-referencing
@@ -179,7 +180,7 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		aggSlot     = "example/app:1.0.0"
 		schemaSlot  = "DbSizing:1.0.0"
 		mappingSlot = "BaseMappings:1.0.0"
-		provSlot    = "compose:1.0.0" // pinned in cache but NOT folded by the bridge
+		provSlot    = "compose:1.0.0" // a registry-resolved provider is folded by the pinned pass
 	)
 
 	pins := map[string]Pin{}
@@ -220,6 +221,7 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		entityBytesKey("Aggregate", "example/app"):                                              []byte(pinnedAggregateYAML),
 		entityBytesKey("SchemaLibrary", "DbSizing"):                                             []byte(dbSizingLibYAML),
 		entityBytesKey("MappingLibrary", "BaseMappings"):                                        []byte(pinnedMappingLibYAML),
+		entityBytesKey("Provider", "compose"):                                                   []byte(pinnedProviderYAML),
 	}
 	for k, want := range wantBytes {
 		got, ok := subject.entityBytes[k]
@@ -241,14 +243,83 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		t.Errorf("bare-URI-pinned SchemaLibrary DbSizing not folded into the enumerated set")
 	}
 
-	// Provider exclusion: a cache-pinned Provider is present in the cache + pins
-	// above, yet the enumeration must omit it — the closure never pins a Provider
-	// (providers are Tier-1-local), matching the retired bridge's surface.
-	if _, ok := subject.entityBytes[entityBytesKey("Provider", "compose")]; ok {
-		t.Errorf("subject folded a cache-pinned Provider; providers are Tier-1-local, never cache-resolved")
+	// Provider inclusion: a cache-pinned Provider folds into the enumerated set — a
+	// registry-resolved provider (a Recipe's declared provider, pinned above Tier-1)
+	// participates in the closure, so its pinned cache slot resolves into l.providers
+	// for ProviderLookup / ProviderInfraSchemaResolver.
+	if _, ok := subject.providers["compose"]; !ok {
+		t.Errorf("subject did not fold the cache-pinned Provider compose into the enumerated set")
 	}
-	if len(subject.providers) != 0 {
-		t.Errorf("subject.providers must be empty; got %v", subject.providers)
+	if _, ok := subject.recipeCatalog().ProviderLookup("compose"); !ok {
+		t.Errorf("ProviderLookup did not resolve the cache-pinned Provider compose")
+	}
+}
+
+// TestLazyLookup_PinnedProvider_InfraSchemaResolves proves the build-path consumer:
+// a registry-resolved (cache-pinned, Tier-1-absent) Provider is re-resolved through
+// ProviderInfraSchemaResolver — the manifest→recipe→provider→baseSchema chain the
+// resolver's infra-conformance gate calls — returning the cache-pinned provider's
+// baseSchema. This is the capability the provider-entity closure pin enables end to
+// end (item 3); it changes nothing in ProviderLookup itself (single-source: the
+// pinned fold feeds l.providers, the existing resolver reads it).
+func TestLazyLookup_PinnedProvider_InfraSchemaResolves(t *testing.T) {
+	ws := t.TempDir()
+	const cacheDir = ".aggrega/cache"
+
+	recipeBlob := recipeBundle(t, bridgeRecipeYAML)
+	const (
+		compSlot   = "core/datastore/mariadb:1.0.0"
+		recipeSlot = "compose/mariadb:1.0.0"
+		provSlot   = "compose:1.0.0"
+	)
+	pins := map[string]Pin{
+		compSlot:   writePinnedSlot(t, ws, cacheDir, compSlot, oci.MediaTypeComponent, []byte(bridgeComponentYAML)),
+		recipeSlot: writePinnedSlot(t, ws, cacheDir, recipeSlot, oci.MediaTypeRecipe, recipeBlob),
+		provSlot:   writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML)),
+	}
+
+	// A manifest mapping the component type to the recipe, so the resolver chains
+	// instance → recipe (implements core/datastore/mariadb) → provider (compose).
+	mtC := &types.MappingTier{}
+	mtC.Type.Set("core/datastore/mariadb", "compose/mariadb")
+	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: mtC}}}
+
+	subject := NewLazyLookup(ws, cacheDir, nil, nil)
+	subject.SetPins(pins)
+	resolver := subject.ProviderInfraSchemaResolver(manifest)
+	baseSchema, ok := resolver("db", "core/datastore/mariadb")
+	if !ok {
+		t.Fatalf("ProviderInfraSchemaResolver did not resolve the cache-pinned Provider compose")
+	}
+	if baseSchema == "" {
+		t.Errorf("resolved Provider baseSchema is empty; want the pinned provider's baseSchema")
+	}
+}
+
+// TestLazyLookup_PinnedProvider_FoldDeterministic proves the provider fold is
+// byte-identical across two independent enumerations of the same pinned closure
+// (Invariant 8) — the provider's retained bytes match the directly-constructed
+// fixture both times.
+func TestLazyLookup_PinnedProvider_FoldDeterministic(t *testing.T) {
+	ws := t.TempDir()
+	const cacheDir = ".aggrega/cache"
+	const provSlot = "compose:1.0.0"
+
+	fold := func() []byte {
+		subject := NewLazyLookup(ws, cacheDir, nil, nil)
+		subject.SetPins(map[string]Pin{
+			provSlot: writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML)),
+		})
+		subject.buildRecipeIndex()
+		return subject.entityBytes[entityBytesKey("Provider", "compose")]
+	}
+	first := fold()
+	second := fold()
+	if !bytes.Equal(first, second) {
+		t.Fatalf("provider fold is non-deterministic across pulls")
+	}
+	if !bytes.Equal(first, []byte(pinnedProviderYAML)) {
+		t.Fatalf("provider fold bytes are not the pinned fixture bytes")
 	}
 }
 
