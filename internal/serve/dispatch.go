@@ -286,6 +286,36 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 				ser.emit(seq, body)
 				continue
 			}
+			// Acceptance-boundary drain gate. The single-threaded main
+			// loop is the serialization point for shutdown ordering: set
+			// shuttingDown HERE, on accepting the shutdown message, so
+			// every message the loop accepts afterward strictly observes
+			// the flag. Setting it inside the worker (dispatchShutdown)
+			// would let the loop accept and submit a following message
+			// before the worker stored the flag, under a multi-worker
+			// pool. The worker's own Store is a harmless idempotent
+			// re-set.
+			if req.Method == "aggrega/shutdown" {
+				s.shuttingDown.Store(true)
+			} else if s.shuttingDown.Load() {
+				// Accepted after shutdown was observed: drop at the loop
+				// rather than submitting. The seq is already assigned, so
+				// its ordered slot must be closed or the serializer
+				// stalls waiting for it.
+				if isNotification(&req) {
+					// Drop silently; close the slot with a body-less
+					// done-frame so the serializer cursor advances.
+					ser.emit(seq, nil)
+					continue
+				}
+				body, merr := marshalErrorResponse(req.ID, errShuttingDown, "daemon shutting down")
+				if merr != nil {
+					_ = teardown()
+					return merr
+				}
+				ser.emit(seq, body)
+				continue
+			}
 			pool.submit(queuedRequest{seq: seq, req: &req})
 		case <-drainCh:
 			return teardown()
@@ -348,22 +378,15 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 // the daemon's wire protocol: adding a new method means adding a
 // case here.
 //
-// Drain-state pre-check: when s.shuttingDown is set (an
-// aggrega/shutdown notification has already arrived), requests
-// receive an errShuttingDown envelope and notifications are
-// dropped. The pre-check fires before per-method dispatch so it
-// applies uniformly. aggrega/shutdown itself is exempt — receiving
-// a second shutdown notification during drain is a no-op (the flag
-// is already set).
+// Post-shutdown rejection happens at the dispatch-loop acceptance
+// boundary, not here: the main loop sets s.shuttingDown when it
+// accepts aggrega/shutdown and drops every message it accepts
+// afterward, so dispatch only ever sees pre-shutdown-accepted
+// messages — which process normally — plus the shutdown message
+// itself, routed to dispatchShutdown.
 func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
 	if req.Method == "aggrega/shutdown" {
 		return s.dispatchShutdown(ctx, req)
-	}
-	if s.shuttingDown.Load() {
-		if isNotification(req) {
-			return nil
-		}
-		return s.writeError(ctx, req.ID, errShuttingDown, "daemon shutting down")
 	}
 	switch req.Method {
 	case "aggrega/initialize":

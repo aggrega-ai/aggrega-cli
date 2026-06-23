@@ -6,10 +6,13 @@ package serve
 import "context"
 
 // dispatchShutdown handles the aggrega/shutdown JSON-RPC notification.
-// The notification carries no parameters and expects no response;
-// the handler sets s.shuttingDown so handle's drain-state pre-check
-// rejects subsequent requests with errShuttingDown and drops
-// subsequent notifications.
+// The notification carries no parameters and expects no response.
+// s.shuttingDown is set at the dispatch loop's acceptance of the
+// shutdown message — on the single-threaded main loop, before any
+// following message is accepted — so under a multi-worker pool a
+// notification arriving after shutdown is dropped at acceptance rather
+// than racing into a worker. This handler's Store is an idempotent
+// re-set of an already-set flag.
 //
 // The drain TIMER and the serverCtx cancellation are both owned by the
 // reader goroutine in dispatchLoop — they fire at notification ARRIVAL

@@ -169,9 +169,17 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdoutBuf := &bytes.Buffer{}
+	// Pin pool=4 explicitly. The acceptance-boundary drop this test
+	// guards is a no-op at pool=1 (serial dispatch already orders the
+	// shutdown before the follow-on notification); the logical race it
+	// regresses against only surfaces under a multi-worker pool. The
+	// default is 4 today, but pinning here keeps the guard sharp if the
+	// default ever changes.
+	cfg := workspaceconfig.Default()
+	cfg.Concurrency.PoolSize = 4
 	srv := &Server{
 		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         workspaceconfig.Default(),
+		wsConfig:         cfg,
 		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
 		parseCache:       newCache(0, 0),
 		diagnostics:      map[string][]Diagnostic{},

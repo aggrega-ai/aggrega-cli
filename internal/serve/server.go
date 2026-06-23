@@ -118,8 +118,9 @@ type Diagnostic struct {
 //     copies the file's slice under the lock and marshals outside it.
 //   - positionEncoding is held in an atomic value: the initialize
 //     handler stores it, every position-mapping site loads it.
-//   - shuttingDown is an atomic bool: the shutdown handler stores it,
-//     the dispatch drain-state pre-check loads it.
+//   - shuttingDown is an atomic bool: the dispatch loop's acceptance
+//     gate and the shutdown handler store it, the acceptance gate loads
+//     it.
 //
 //   - The per-request cancel registry (cancelTracker) is internally
 //     synchronized by its own mutex: each in-flight handler tracks and
@@ -153,13 +154,16 @@ type Server struct {
 	workspaceMarker workspaceconfig.Marker
 	wsConfig        workspaceconfig.Config
 
-	// shuttingDown is set by dispatchShutdown after an
-	// aggrega/shutdown notification arrives. The drain-state
-	// pre-check in dispatch consults it to reject subsequent
-	// requests with errShuttingDown and drop subsequent
-	// notifications. Atomic because the shutdown handler that stores
-	// it and the dispatch pre-check that loads it run on different
-	// worker goroutines under the pool.
+	// shuttingDown is set at the dispatch loop's acceptance of an
+	// aggrega/shutdown message — on the single-threaded main loop, so
+	// every message accepted afterward strictly observes the flag —
+	// and is idempotently re-set by dispatchShutdown on the worker.
+	// The acceptance-boundary gate consults it to reject subsequent
+	// requests with errShuttingDown and drop subsequent notifications
+	// before they reach a worker; once a message clears that gate and
+	// reaches a worker, dispatch processes it normally. Atomic because
+	// the main loop and the worker store it on different goroutines
+	// under the pool, while the main loop also loads it at the gate.
 	shuttingDown atomic.Bool
 
 	// serverCtx is the session-level context every per-request context
