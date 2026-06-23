@@ -273,10 +273,10 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 		t.Fatalf("seed digest %q != push digest %q", signDigestVal, pushDigest)
 	}
 	if err := signRun(signConfig{
-		Reference:  "secure.example.com/component/core/api-server:1.0.0",
-		SubjectRef: "1.0.0",
-		Target:     signStore,
-		KeyPath:    keyPath,
+		References:  []string{"secure.example.com/component/core/api-server:1.0.0"},
+		SubjectRefs: map[string]string{"secure.example.com/component/core/api-server:1.0.0": "1.0.0"},
+		Target:      signStore,
+		KeyPath:     keyPath,
 	}); err != nil {
 		t.Fatalf("signRun: %v", err)
 	}

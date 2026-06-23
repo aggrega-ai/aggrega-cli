@@ -51,6 +51,7 @@ func newRootCmd() *cobra.Command {
 		newLintCmd(),
 		newPushCmd(),
 		newSignCmd(),
+		newAuthCmd(),
 		newRegistryCmd(),
 		newLoginCmd(),
 		newLogoutCmd(),

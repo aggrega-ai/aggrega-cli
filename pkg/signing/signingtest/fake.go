@@ -26,17 +26,30 @@ type FakeSigner struct {
 	// ArtifactType is the referrer artifactType returned by Sign. When
 	// empty, signing.BundleMediaType is returned.
 	ArtifactType string
-	// Err, when non-nil, is returned by Sign instead of a bundle.
+	// Err, when non-nil, is returned by Sign instead of a bundle on every
+	// call. For per-call control — failing one digest while others succeed, or
+	// failing the first attempt then succeeding — use FailOn.
 	Err error
+
+	// FailOn, when non-nil, is consulted per Sign call before Err: a non-nil
+	// return fails that call with the returned error. The closure receives the
+	// digest, so a test can fail exactly one reference, or fail the first
+	// attempt of a reference and succeed on retry by counting its own calls.
+	FailOn func(digest string) error
 
 	// Signed records every digest passed to Sign, in call order.
 	Signed []string
 }
 
-// Sign records the digest and returns the canned bundle (or the
-// configured error).
+// Sign records the digest and returns the canned bundle (or a configured
+// error: FailOn for per-call control, otherwise Err for every call).
 func (f *FakeSigner) Sign(_ context.Context, artifactDigest string) ([]byte, string, error) {
 	f.Signed = append(f.Signed, artifactDigest)
+	if f.FailOn != nil {
+		if err := f.FailOn(artifactDigest); err != nil {
+			return nil, "", err
+		}
+	}
 	if f.Err != nil {
 		return nil, "", f.Err
 	}
