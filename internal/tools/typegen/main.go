@@ -62,6 +62,7 @@ var kindSources = map[string]kindSource{
 	"aggregate_gen.go":      {"Aggregate", schemas.AggregateV1alpha1},
 	"release_gen.go":        {"Release", schemas.ReleaseV1alpha1},
 	"component_gen.go":      {"Component", schemas.ComponentV1alpha1},
+	"wasmplugin_gen.go":     {"WasmPlugin", schemas.WasmPluginV1alpha1},
 }
 
 // knownImports maps a package selector that may appear in an x-aggrega-go-type

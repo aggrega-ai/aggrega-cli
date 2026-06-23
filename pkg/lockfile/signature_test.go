@@ -110,6 +110,116 @@ func TestVerifiedSignatureRoundTrip(t *testing.T) {
 	}
 }
 
+func signedPluginLockfile(stamp string) *lockfile.Lockfile {
+	return &lockfile.Lockfile{
+		Version:     1,
+		Release:     "release.yaml",
+		GeneratedAt: stamp,
+		WasmPlugins: []lockfile.WasmPlugin{
+			{
+				URI:             "z-plugin",
+				ResolvedVersion: "1.0.0",
+				Digest:          "sha256:zzzz",
+				Signature: &lockfile.VerifiedSignature{
+					Mode:         "keyless",
+					Identity:     "m.ferrero@cognitio.it",
+					Issuer:       "https://accounts.google.com",
+					BundleDigest: "sha256:bbbb",
+				},
+			},
+			{
+				URI:             "a-plugin",
+				ResolvedVersion: "2.0.0",
+				Digest:          "sha256:aaaa",
+				Signature: &lockfile.VerifiedSignature{
+					Mode:         "keyed",
+					BundleDigest: "sha256:cccc",
+				},
+			},
+			// An unsigned plugin carries no signature record.
+			{URI: "m-plugin", ResolvedVersion: "3.0.0", Digest: "sha256:dddd"},
+		},
+	}
+}
+
+// TestWasmPluginSignatureByteIdentity proves the deterministic-output
+// invariant extends to the WasmPlugin signature field — two independent
+// writes of the same in-memory lockfile produce byte-identical output.
+func TestWasmPluginSignatureByteIdentity(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const stamp = "2026-06-22T00:00:00Z"
+	pathA := filepath.Join(dir, "a.lock")
+	pathB := filepath.Join(dir, "b.lock")
+
+	if err := lockfile.WriteLockfile(pathA, signedPluginLockfile(stamp)); err != nil {
+		t.Fatalf("write A: %v", err)
+	}
+	if err := lockfile.WriteLockfile(pathB, signedPluginLockfile(stamp)); err != nil {
+		t.Fatalf("write B: %v", err)
+	}
+	a, _ := os.ReadFile(pathA)
+	b, _ := os.ReadFile(pathB)
+	if !bytes.Equal(a, b) {
+		t.Fatalf("lockfile bytes differ across independent writes:\n--- A ---\n%s\n--- B ---\n%s", a, b)
+	}
+}
+
+// TestWasmPluginSignatureRoundTrip proves the plugin signature fact survives
+// a write/load round-trip with all fields intact, and that an unsigned plugin
+// loads with a nil signature.
+func TestWasmPluginSignatureRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rt.lock")
+	if err := lockfile.WriteLockfile(path, signedPluginLockfile("2026-06-22T00:00:00Z")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	byURI := map[string]lockfile.WasmPlugin{}
+	for _, p := range lf.WasmPlugins {
+		byURI[p.URI] = p
+	}
+
+	keyless := byURI["z-plugin"].Signature
+	if keyless == nil {
+		t.Fatal("z-plugin should carry a signature")
+	}
+	if keyless.Mode != "keyless" || keyless.Identity != "m.ferrero@cognitio.it" ||
+		keyless.Issuer != "https://accounts.google.com" || keyless.BundleDigest != "sha256:bbbb" {
+		t.Errorf("keyless signature round-trip lost data: %+v", keyless)
+	}
+
+	keyed := byURI["a-plugin"].Signature
+	if keyed == nil || keyed.Mode != "keyed" || keyed.BundleDigest != "sha256:cccc" {
+		t.Errorf("keyed signature round-trip lost data: %+v", keyed)
+	}
+
+	if byURI["m-plugin"].Signature != nil {
+		t.Error("unsigned plugin should load with a nil signature")
+	}
+}
+
+// TestCanonicaliseDoesNotAliasPluginSignature proves WriteLockfile's
+// canonicalise deep-copies the plugin signature pointer so it does not alias
+// the caller's value.
+func TestCanonicaliseDoesNotAliasPluginSignature(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	lf := signedPluginLockfile("2026-06-22T00:00:00Z")
+	orig := lf.WasmPlugins[0].Signature
+	if err := lockfile.WriteLockfile(filepath.Join(dir, "c.lock"), lf); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if lf.WasmPlugins[0].Signature != orig {
+		t.Error("WriteLockfile mutated the caller's plugin signature pointer")
+	}
+}
+
 // TestCanonicaliseDoesNotAliasSignature proves WriteLockfile's
 // canonicalise deep-copies the signature pointer so it does not alias the
 // caller's value (the maintenance hazard the canonicaliser guards against).

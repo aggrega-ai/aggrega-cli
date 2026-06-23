@@ -542,7 +542,7 @@ func pullRun(cfg pullConfig) error {
 			// (the AOT boundary). Skipped under workspace.offline (no network to
 			// fetch referrers).
 			if !wsCfg.Offline {
-				if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut); err != nil {
+				if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, remoteTargetFor); err != nil {
 					return fmt.Errorf("verify signatures: %w", err)
 				}
 			}

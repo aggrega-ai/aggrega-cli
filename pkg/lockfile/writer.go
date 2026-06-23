@@ -191,6 +191,13 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, p := range lf.WasmPlugins {
 		entryCopy := p
 		entryCopy.ReferencedFrom = sortedCopy(p.ReferencedFrom)
+		// The Signature pointer is shared by the struct-copy; clone it so a
+		// caller mutating the output cannot reach back into the input. The
+		// value has no slices, so a shallow clone of the struct suffices.
+		if p.Signature != nil {
+			sig := *p.Signature
+			entryCopy.Signature = &sig
+		}
 		out.WasmPlugins[i] = entryCopy
 	}
 	sort.Slice(out.WasmPlugins, func(i, j int) bool {

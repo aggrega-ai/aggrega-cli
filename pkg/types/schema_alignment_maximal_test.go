@@ -145,6 +145,41 @@ func maximalProvider() types.Provider {
 	}
 }
 
+func maximalWasmPlugin() types.WasmPlugin {
+	cfg := om[string]("LOG_LEVEL", "info")
+	return types.WasmPlugin{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "WasmPlugin",
+		Metadata: types.WasmPluginMetadata{
+			Name:        "publishing-linter",
+			Version:     "1.0.0",
+			Description: "maximal wasm plugin",
+			Maintainers: []types.Maintainer{{Name: "M", Email: "m@example.com", URL: "https://example.com"}},
+			License:     "Apache-2.0",
+			Repository:  "https://example.com/repo",
+			Home:        "https://example.com",
+			Keywords:    []string{"linter"},
+			Deprecated:  false,
+		},
+		Spec: types.WasmPluginSpec{
+			Plugin:      "oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PluginTypes: []string{"linter"},
+			AbiVersion:  "v1alpha1",
+			Signature: &types.WasmPluginSignature{
+				Type:         "sigstore-cosign",
+				SignatureRef: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+				PublicKeyRef: "cosign.pub",
+			},
+			Runtime: &types.WasmPluginRuntime{
+				MaxMemoryPages:        16,
+				TimeoutMs:             5000,
+				DeclaredHostFunctions: []string{"log"},
+				ConfigKV:              cfg,
+			},
+		},
+	}
+}
+
 func maximalSchemaLibrary() types.SchemaLibrary {
 	return types.SchemaLibrary{
 		APIVersion: "aggrega.ai/v1alpha1",

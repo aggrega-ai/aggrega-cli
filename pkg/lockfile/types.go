@@ -166,8 +166,9 @@ type SourceArtifactReference struct {
 // `recipe.<provider>.<name>.spec.pipeline`) that pulled the URI into
 // closure.
 type WasmPlugin struct {
-	URI             string   `yaml:"uri"`
-	ResolvedVersion string   `yaml:"resolved_version"`
-	Digest          string   `yaml:"digest"`
-	ReferencedFrom  []string `yaml:"referenced_from"`
+	URI             string             `yaml:"uri"`
+	ResolvedVersion string             `yaml:"resolved_version"`
+	Digest          string             `yaml:"digest"`
+	ReferencedFrom  []string           `yaml:"referenced_from"`
+	Signature       *VerifiedSignature `yaml:"signature,omitempty"`
 }
