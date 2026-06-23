@@ -138,6 +138,9 @@ func maximalProvider() types.Provider {
 			Plugin:         "hub.aggrega.ai/providers/compose-renderer:1.0.0",
 			BaseSchema:     "type: object",
 			WorkloadSchema: "type: object",
+			WellKnownAnnotations: []types.WellKnownAnnotation{
+				{Key: "aggrega.ai/namespace", Purpose: "target namespace", DefaultBehavior: "default namespace"},
+			},
 		},
 	}
 }

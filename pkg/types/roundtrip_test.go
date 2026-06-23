@@ -277,6 +277,92 @@ spec:
 	}
 }
 
+// TestProvider_WellKnownAnnotationsRoundTrip asserts a Provider authored
+// with a wellKnownAnnotations block round-trips with its entries in author
+// order (the field is a list, so slice index order is the author order),
+// and that a Provider authored without the block emits no
+// wellKnownAnnotations key (the field is optional).
+func TestProvider_WellKnownAnnotationsRoundTrip(t *testing.T) {
+	t.Parallel()
+	// Entries authored in a deliberately non-alphabetical key order.
+	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: aggrega/helm:1.0.0
+  wellKnownAnnotations:
+    - key: aggrega.ai/zone
+      purpose: zone placement
+      defaultBehavior: cluster default zone
+    - key: aggrega.ai/alpha
+      purpose: alpha directive
+    - key: aggrega.ai/middle
+      purpose: middle directive
+      defaultBehavior: middle off
+`)
+
+	var first Provider
+	if err := yaml.Unmarshal(src, &first); err != nil {
+		t.Fatalf("first Unmarshal: %v", err)
+	}
+	wantKeys := []string{"aggrega.ai/zone", "aggrega.ai/alpha", "aggrega.ai/middle"}
+	gotKeys := func(p *Provider) []string {
+		keys := make([]string, len(p.Spec.WellKnownAnnotations))
+		for i, w := range p.Spec.WellKnownAnnotations {
+			keys[i] = w.Key
+		}
+		return keys
+	}
+	if got := gotKeys(&first); !slices.Equal(got, wantKeys) {
+		t.Errorf("author order not preserved on first parse: keys = %v, want %v", got, wantKeys)
+	}
+
+	out1, err := yaml.Marshal(&first)
+	if err != nil {
+		t.Fatalf("first Marshal: %v", err)
+	}
+	var second Provider
+	if err := yaml.Unmarshal(out1, &second); err != nil {
+		t.Fatalf("re-Unmarshal: %v", err)
+	}
+	out2, err := yaml.Marshal(&second)
+	if err != nil {
+		t.Fatalf("re-Marshal: %v", err)
+	}
+	if !bytes.Equal(out1, out2) {
+		t.Errorf("round-trip not idempotent:\nfirst:\n%s\nsecond:\n%s", out1, out2)
+	}
+	if got := gotKeys(&second); !slices.Equal(got, wantKeys) {
+		t.Errorf("author order lost through round-trip: keys = %v, want %v", got, wantKeys)
+	}
+
+	// A Provider without the block omits the key entirely (optional field).
+	bare := []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: aggrega/helm:1.0.0
+`)
+	var bareProvider Provider
+	if err := yaml.Unmarshal(bare, &bareProvider); err != nil {
+		t.Fatalf("bare Unmarshal: %v", err)
+	}
+	if bareProvider.Spec.WellKnownAnnotations != nil {
+		t.Errorf("absent block must yield a nil slice; got %v", bareProvider.Spec.WellKnownAnnotations)
+	}
+	bareOut, err := yaml.Marshal(&bareProvider)
+	if err != nil {
+		t.Fatalf("bare Marshal: %v", err)
+	}
+	if bytes.Contains(bareOut, []byte("wellKnownAnnotations")) {
+		t.Errorf("absent block must not emit the key:\n%s", bareOut)
+	}
+}
+
 // TestManifest_NestedOrderedMapRoundTrip exercises OrderedMap[OrderedMap[V]]
 // through the Manifest's two-tier mapping structure
 // (Mappings.<provider>.Components.Type). Author order must be preserved at

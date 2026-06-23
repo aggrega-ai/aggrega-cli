@@ -20,6 +20,16 @@ type Maintainer struct {
 	URL   string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
+// WellKnownAnnotation documents one platform-native annotation key a
+// provider's rendering engine reads, for catalog readers and the inspect
+// surface. It is descriptive contract metadata — the compiler does not
+// consume it to gate or branch a build.
+type WellKnownAnnotation struct {
+	Key             string `json:"key" yaml:"key"`
+	Purpose         string `json:"purpose" yaml:"purpose"`
+	DefaultBehavior string `json:"defaultBehavior,omitempty" yaml:"defaultBehavior,omitempty"`
+}
+
 // ComponentType is the 7-type Cloud-Native Ontology from component-v1alpha1.schema.json.
 type ComponentType string
 
