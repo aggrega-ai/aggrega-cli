@@ -291,8 +291,17 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 
 	bundleBytes, artifactType, err := signDigest(ctx, signer, digest)
 	if err != nil {
-		// A keyless cert-issuance failure has no classifiable upstream signal —
-		// the certificate authority's rejection arrives as an opaque
+		// A token that structurally lacks a usable signing subject is a distinct
+		// failure from an expired or rejected token: re-acquiring or re-exporting
+		// it cannot help, because the identity the OIDC flow returned — not the
+		// token's freshness — is the problem. Classify it before the re-acquire
+		// path so the operator is pointed at the identity provider/client/scope
+		// rather than told to re-export, and so no pointless re-acquisition runs.
+		if b.keyless && keylessSubjectFailure(err) {
+			return fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
+		}
+		// A keyless cert-issuance failure otherwise has no classifiable upstream
+		// signal — the certificate authority's rejection arrives as an opaque
 		// string-wrapped error, indistinguishable from a transient outage. When
 		// the token was interactively acquired and the per-batch latch is unset,
 		// treat the failure as a possibly-expired token: re-acquire once, rebuild

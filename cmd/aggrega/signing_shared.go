@@ -5,8 +5,11 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/sigstore/sigstore/pkg/oauthflow"
 	"golang.org/x/term"
@@ -136,12 +139,101 @@ func buildSigner(p signerParams) (signing.Signer, error) {
 	if rekor == "" {
 		rekor = signing.DefaultRekorURL
 	}
+	// Local pre-sign verification check: the same subject the certificate authority
+	// derives from the token's claims must be present before the token is
+	// handed off, so a token that structurally lacks a usable subject fails
+	// fast here with a precise diagnostic instead of as an opaque downstream
+	// "no subject found in claims". This decodes the token's claims without
+	// verifying its signature — it is a verification check, not a trust decision;
+	// the certificate authority still performs the real verification.
+	if err := checkIDTokenSubject(p.IDToken); err != nil {
+		return nil, err
+	}
 	return &signing.KeylessSigner{
 		IDToken:      p.IDToken,
 		FulcioURL:    fulcio,
 		RekorURL:     rekor,
 		TimestampURL: p.TimestampURL,
 	}, nil
+}
+
+// keylessSubjectFailure reports whether err is a keyless cert-issuance failure
+// caused by the identity token lacking a usable subject — either no verified
+// email and no subject claim at all, or an email present but not marked
+// verified by its identity provider. The certificate authority surfaces these
+// as plain string-wrapped errors with no typed signal, so the only available
+// classification is a defensive substring match on the wrapped text. A true
+// result means re-acquiring or re-exporting the token will not help: the
+// problem is the identity the OIDC flow returned, not the token's freshness.
+func keylessSubjectFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no subject found in claims") ||
+		strings.Contains(msg, "not verified by identity provider")
+}
+
+// tokenSubjectClaims is the minimal claims subset that decides whether an OIDC
+// identity token carries a usable signing subject. It mirrors exactly the
+// claims the certificate authority consults — email, email_verified, sub — and
+// nothing more, so the local check neither under- nor over-claims relative to
+// the authority's own subject derivation.
+type tokenSubjectClaims struct {
+	Email    string       `json:"email"`
+	Verified tolerantBool `json:"email_verified"`
+	Subject  string       `json:"sub"`
+}
+
+// tolerantBool decodes a JSON boolean that some identity providers emit as a
+// string rather than a bare literal. It accepts the bare and quoted forms of
+// true/false in either case, matching the certificate authority's own lenient
+// decoding so a provider that stringifies email_verified is not falsely read
+// as unverified. Any other value decodes to false rather than erroring, so a
+// malformed claim degrades to "not verified" rather than failing the decode.
+type tolerantBool bool
+
+func (b *tolerantBool) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "true", `"true"`, "True", `"True"`:
+		*b = true
+	default:
+		*b = false
+	}
+	return nil
+}
+
+// checkIDTokenSubject decodes the identity token's claims payload and verifies
+// a usable signing subject is present, mirroring the certificate authority's
+// subject derivation: a verified email is a subject; otherwise a non-empty sub
+// claim is a subject; an email present but unverified, or neither claim, has no
+// subject. The token's signature is NOT verified — this decodes the unverified
+// payload as a local verification check so a structurally subject-less token fails at
+// the command layer with a precise message rather than as an opaque downstream
+// error. It returns nil when a subject is present.
+func checkIDTokenSubject(rawToken string) error {
+	parts := strings.Split(rawToken, ".")
+	if len(parts) < 2 {
+		return fmt.Errorf("the identity token is not a well-formed JWT (expected header.payload.signature) — it cannot be used for keyless signing")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("the identity token's payload is not valid base64url and cannot be decoded — it is not a usable JWT for keyless signing: %w", err)
+	}
+	var c tokenSubjectClaims
+	if err := json.Unmarshal(payload, &c); err != nil {
+		return fmt.Errorf("the identity token's payload is not valid JSON and cannot be read for a signing subject: %w", err)
+	}
+	if c.Email != "" {
+		if !c.Verified {
+			return fmt.Errorf("the identity token carries an email that the OIDC identity provider did not mark verified — keyless signing needs a verified email; configure the OIDC flow/client to return a verified email-scoped identity")
+		}
+		return nil
+	}
+	if c.Subject == "" {
+		return fmt.Errorf("the identity token carries no verified email and no sub claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one")
+	}
+	return nil
 }
 
 // signDigest is the shared sign atom: it produces the signature bundle for a

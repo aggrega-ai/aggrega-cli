@@ -162,7 +162,7 @@ func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 // the keyless trusted timestamp comes from Rekor's transparency-log inclusion.
 func TestBuildSignerDefaultsToPublicGood(t *testing.T) {
 	t.Parallel()
-	signer, err := buildSigner(signerParams{IDToken: "tok"})
+	signer, err := buildSigner(signerParams{IDToken: subjectfulIDToken(t)})
 	if err != nil {
 		t.Fatalf("buildSigner: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestBuildSignerDefaultsToPublicGood(t *testing.T) {
 func TestBuildSignerTimestampOptIn(t *testing.T) {
 	t.Parallel()
 	signer, err := buildSigner(signerParams{
-		IDToken:      "tok",
+		IDToken:      subjectfulIDToken(t),
 		TimestampURL: "https://tsa.private/api/v1/timestamp",
 	})
 	if err != nil {
@@ -210,7 +210,7 @@ func TestBuildSignerTimestampOptIn(t *testing.T) {
 func TestBuildSignerFlagOverridesDefault(t *testing.T) {
 	t.Parallel()
 	signer, err := buildSigner(signerParams{
-		IDToken:   "tok",
+		IDToken:   subjectfulIDToken(t),
 		FulcioURL: "https://fulcio.private",
 	})
 	if err != nil {

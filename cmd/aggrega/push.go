@@ -345,6 +345,13 @@ func pushRun(cfg pushConfig) error {
 		}
 		signatureBundle, signatureType, err = signDigest(ctx, signer, proposedDigest)
 		if err != nil {
+			// A token without a usable signing subject is misdiagnosed by a
+			// generic rejection message; name the real cause — the identity the
+			// OIDC flow returned — so the operator fixes the provider/client/scope
+			// rather than re-exporting a token that cannot help.
+			if keylessSubjectFailure(err) {
+				return fmt.Errorf("aggrega push: sign %s:%s: the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+			}
 			return fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
 		}
 	}
