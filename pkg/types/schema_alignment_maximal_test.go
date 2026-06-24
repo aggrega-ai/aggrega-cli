@@ -162,9 +162,10 @@ func maximalWasmPlugin() types.WasmPlugin {
 			Deprecated:  false,
 		},
 		Spec: types.WasmPluginSpec{
-			Plugin:      "oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			PluginTypes: []string{"linter"},
-			AbiVersion:  "v1alpha1",
+			Plugin:              "oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PluginTypes:         []string{"linter"},
+			AbiVersion:          "v1alpha1",
+			CompatibleProviders: []string{"helm", "compose"},
 			Signature: &types.WasmPluginSignature{
 				Type:         "sigstore-cosign",
 				SignatureRef: "sha256:1111111111111111111111111111111111111111111111111111111111111111",

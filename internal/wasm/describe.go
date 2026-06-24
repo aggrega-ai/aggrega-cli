@@ -7,11 +7,13 @@ import "fmt"
 
 // PluginDescriptor is the output a Wasm plugin returns from its
 // describe() export — the plugin's self-declaration of the ABI version
-// it binds against, its plugin type, the exports it offers, and
-// optional authorship metadata. The host reads describe() once when it
-// loads a plugin, validates the declaration (see [PluginDescriptor.Validate]),
-// and uses the per-export declarations to bind the least-privilege host
-// surface each export needs before invoking it.
+// it binds against, its plugin type, the provider engines it is
+// compatible with, the exports it offers (each with its capability
+// declaration), and optional authorship metadata. The host reads
+// describe() once when it loads a plugin, validates the declaration (see
+// [PluginDescriptor.Validate]), and uses the per-export declarations to
+// bind the least-privilege host surface each export needs before
+// invoking it.
 //
 // describe() is cross-plugin-type: one shape covers provider, linter,
 // and feature-recipe-pipeline plugins. It is consumed by the host
@@ -52,6 +54,19 @@ type PluginDescriptor struct {
 	// input pattern.
 	PluginType PluginType `json:"plugin_type"`
 
+	// CompatibleProviders is the enumerated list of provider engines this
+	// plugin is tested-compatible with (provider names such as "helm" or
+	// "compose"), in declared order. A plugin is generic across artifacts
+	// that share a provider's output shape, not across all providers; the
+	// list is an explicit, tested-compatibility claim rather than an
+	// implicit "any similar provider". The runtime enforces it — for each
+	// scope a pipeline step touches, the provider rendering that scope's
+	// documents must appear here — but this load-time validator does not:
+	// entries are unchecked strings here, since no provider registry exists
+	// at the load boundary to check them against. An empty or absent list
+	// declares no compatibility claim.
+	CompatibleProviders []string `json:"compatible_providers,omitempty"`
+
 	// Exports lists the plugin's offered exports in declared order. The
 	// host validates that the per-type minimum export is present and
 	// binds the per-export host surface before invoking each.
@@ -91,6 +106,27 @@ type PluginExport struct {
 	// Stability is the export's stability level — stable, experimental,
 	// or deprecated. An omitted value carries no stability claim.
 	Stability Stability `json:"stability,omitempty"`
+
+	// Operates declares the pipeline operation this export performs:
+	// "patch" (modify an existing rendered document) or "emit" (add a new
+	// document). The value is shape-validated here — it must be patch,
+	// emit, or empty — but the host does not act on it at load; the
+	// runtime reads it when dispatching the step.
+	Operates string `json:"operates,omitempty"`
+
+	// Scope declares the document root this export operates on: "own" (the
+	// node's own rendered documents) or "host" (the documents of the
+	// component a component-scope FeatureRecipe is attached to). The value
+	// is shape-validated here — it must be own, host, or empty — but the
+	// host does not act on it at load; the runtime reads it when
+	// dispatching the step and resolves the scope's documents.
+	Scope string `json:"scope,omitempty"`
+
+	// Selector is a free-form, human-readable description of what the
+	// export acts on (for example "workloads carrying a pod template").
+	// It is documentation for catalog readers; the host neither validates
+	// its content nor acts on it.
+	Selector string `json:"selector,omitempty"`
 }
 
 // PluginDescriptorMeta is optional authorship metadata a plugin
@@ -167,6 +203,24 @@ const frpStepExportName = "step"
 // plugin.
 const providerRenderExportName = "render_node"
 
+// operatesPatch and operatesEmit are the two pipeline operations an
+// export may declare via [PluginExport.Operates]. The shape validator
+// accepts these two values or the empty string; it does not require the
+// field or act on its value — the runtime reads it when dispatching.
+const (
+	operatesPatch = "patch"
+	operatesEmit  = "emit"
+)
+
+// scopeOwn and scopeHost are the two document roots an export may declare
+// via [PluginExport.Scope]. The shape validator accepts these two values
+// or the empty string; it does not require the field or act on its value
+// — the runtime resolves the scope's documents when dispatching.
+const (
+	scopeOwn  = "own"
+	scopeHost = "host"
+)
+
 // Validate checks a parsed descriptor against the host's contract and
 // returns nil if the plugin is admissible, or an error wrapping
 // [ErrWasmManifestRejected] naming pluginIdentity and the specific
@@ -186,6 +240,13 @@ const providerRenderExportName = "render_node"
 //     validateDeclaredHostFunctions gate the loader applies to a
 //     PluginSpec, so describe()-declared host functions are checked
 //     against the single allowlist — no second list, no second gate.
+//   - every export's capability fields are well-shaped: operates is
+//     patch, emit, or empty; scope is own, host, or empty. This is shape
+//     validation only — the host does not check provider compatibility,
+//     require a capability per plugin type, or act on the values. The
+//     runtime enforces compatibleProviders and acts on operates/scope
+//     when it dispatches a step; here the values are checked for shape
+//     and otherwise piped through.
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -209,7 +270,39 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
-	return d.validateExportHostFunctions(pluginIdentity)
+	if err := d.validateExportHostFunctions(pluginIdentity); err != nil {
+		return err
+	}
+
+	return d.validateExportCapabilities(pluginIdentity)
+}
+
+// validateExportCapabilities shape-checks the per-export capability
+// fields: operates must be patch, emit, or empty; scope must be own,
+// host, or empty. selector is free-form and unchecked. This is shape
+// validation only — it does not require a capability per plugin type,
+// does not cross-check operates/scope against the plugin type or its
+// compatibleProviders, and does not consult a provider registry. The
+// runtime enforces compatibility and acts on these values when it
+// dispatches a step; this load-time gate only rejects a malformed value.
+func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) error {
+	for _, export := range d.Exports {
+		switch export.Operates {
+		case "", operatesPatch, operatesEmit:
+			// well-shaped
+		default:
+			return fmt.Errorf("plugin %q export %q declares unknown operates %q (want %q, %q, or empty): %w",
+				pluginIdentity, export.Name, export.Operates, operatesPatch, operatesEmit, ErrWasmManifestRejected)
+		}
+		switch export.Scope {
+		case "", scopeOwn, scopeHost:
+			// well-shaped
+		default:
+			return fmt.Errorf("plugin %q export %q declares unknown scope %q (want %q, %q, or empty): %w",
+				pluginIdentity, export.Name, export.Scope, scopeOwn, scopeHost, ErrWasmManifestRejected)
+		}
+	}
+	return nil
 }
 
 // validateMinimumExports enforces the per-plugin-type minimum-export

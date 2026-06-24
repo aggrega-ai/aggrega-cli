@@ -34,14 +34,28 @@ func orderedMap[V any](t *testing.T, pairs ...any) types.OrderedMap[V] {
 }
 
 // sampleFRPStepInput builds an FRP step input populated from the worked
-// vault-fetcher / env-injector pipeline: a cumulative AST, a
-// deliberately non-alphabetical author-ordered step input, a full render
-// context, a step index, and a preceding fetcher step that emitted a CRD.
+// vault-fetcher / env-injector pipeline: a keyed document set (own + a
+// cross-entity host root, each with deliberately non-alphabetical
+// author-ordered keys), a deliberately non-alphabetical author-ordered
+// step input, a full render context, a step index, and a preceding
+// fetcher step that emitted a CRD.
 func sampleFRPStepInput(t *testing.T) frp.FRPStepInput {
 	t.Helper()
 
 	return frp.FRPStepInput{
-		AST: json.RawMessage(`{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}}`),
+		Documents: frp.DocumentSet{
+			// Deliberately non-alphabetical author order: workload before
+			// service. A map would reorder these keys.
+			Own: orderedMap[json.RawMessage](t,
+				"workload.yaml", json.RawMessage(`{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}}`),
+				"service.yaml", json.RawMessage(`{"kind":"Service","spec":{"ports":[{"port":80}]}}`),
+			),
+			// The cross-entity host root: the documents of the component
+			// this component-scope FeatureRecipe is attached to.
+			Host: orderedMap[json.RawMessage](t,
+				"host-workload.yaml", json.RawMessage(`{"kind":"StatefulSet","spec":{"template":{"spec":{"containers":[{"name":"db"}]}}}}`),
+			),
+		},
 		// Deliberately non-alphabetical author order: secret before key
 		// before mount. A map would reorder these.
 		StepInput: orderedMap[any](t,
@@ -80,18 +94,23 @@ func sampleFRPStepInput(t *testing.T) frp.FRPStepInput {
 }
 
 // sampleFRPStepOutput builds an FRP step output populated from the worked
-// example: an add patch and a replace patch against the workload AST, an
-// emit_crd side effect (the vault fetch), an emit_file side effect, and a
-// reused renderer.Diagnostic.
+// example: an own-scoped add patch and a host-scoped replace patch, each
+// naming its target document by scope and key; an emit_crd side effect
+// (the vault fetch), a host-scoped emit_file side effect, and a reused
+// renderer.Diagnostic.
 func sampleFRPStepOutput() frp.FRPStepOutput {
 	return frp.FRPStepOutput{
-		ASTPatches: []frp.JSONPatchOp{
+		Patches: []frp.JSONPatchOp{
 			{
+				Scope: frp.DocumentScopeOwn,
+				Key:   "workload.yaml",
 				Op:    "add",
 				Path:  "/spec/template/spec/containers/0/env",
 				Value: []any{map[string]any{"name": "DB_PASSWORD", "valueFrom": "vault"}},
 			},
 			{
+				Scope: frp.DocumentScopeHost,
+				Key:   "host-workload.yaml",
 				Op:    "replace",
 				Path:  "/spec/template/spec/serviceAccountName",
 				Value: "payments-sa",
@@ -103,8 +122,9 @@ func sampleFRPStepOutput() frp.FRPStepOutput {
 				CRD:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
 			},
 			{
-				Kind: "emit_file",
-				File: &frp.SideEffectFile{Path: "secrets/payments-db.yaml", Content: "kind: VaultSecretFetch\n"},
+				Kind:  "emit_file",
+				Scope: frp.DocumentScopeHost,
+				File:  &frp.SideEffectFile{Path: "secrets/payments-db.yaml", Content: "kind: VaultSecretFetch\n"},
 			},
 		},
 		Diagnostics: []renderer.Diagnostic{
@@ -170,19 +190,20 @@ func TestFRPStepOutput_RoundTrip(t *testing.T) {
 }
 
 // TestJSONPatchOp_AllSixOps asserts every RFC 6902 operation round-trips
-// through the JSONPatchOp shape: add, remove, replace, move, copy, test.
+// through the JSONPatchOp shape — add, remove, replace, move, copy, test —
+// each addressed to its target document by scope and key.
 func TestJSONPatchOp_AllSixOps(t *testing.T) {
 	t.Parallel()
 	// JSON-native value types (float64, string, bool) so the round-trip
 	// is value-equal: an int operand would decode back as float64 and
 	// fail DeepEqual for a reason unrelated to the ABI shape.
 	ops := []frp.JSONPatchOp{
-		{Op: "add", Path: "/a", Value: float64(1)},
-		{Op: "remove", Path: "/b"},
-		{Op: "replace", Path: "/c", Value: "x"},
-		{Op: "move", Path: "/d", From: "/e"},
-		{Op: "copy", Path: "/f", From: "/g"},
-		{Op: "test", Path: "/h", Value: true},
+		{Scope: frp.DocumentScopeOwn, Key: "a.yaml", Op: "add", Path: "/a", Value: float64(1)},
+		{Scope: frp.DocumentScopeOwn, Key: "a.yaml", Op: "remove", Path: "/b"},
+		{Scope: frp.DocumentScopeOwn, Key: "a.yaml", Op: "replace", Path: "/c", Value: "x"},
+		{Scope: frp.DocumentScopeHost, Key: "b.yaml", Op: "move", Path: "/d", From: "/e"},
+		{Scope: frp.DocumentScopeHost, Key: "b.yaml", Op: "copy", Path: "/f", From: "/g"},
+		{Scope: frp.DocumentScopeHost, Key: "b.yaml", Op: "test", Path: "/h", Value: true},
 	}
 	first, err := json.Marshal(ops)
 	if err != nil {
@@ -195,8 +216,9 @@ func TestJSONPatchOp_AllSixOps(t *testing.T) {
 	if !reflect.DeepEqual(ops, round) {
 		t.Errorf("six-op round-trip inequality:\n  before: %+v\n  after:  %+v", ops, round)
 	}
-	// All six op strings reach the wire intact.
-	const want = `[{"op":"add","path":"/a","value":1},{"op":"remove","path":"/b"},{"op":"replace","path":"/c","value":"x"},{"op":"move","path":"/d","from":"/e"},{"op":"copy","path":"/f","from":"/g"},{"op":"test","path":"/h","value":true}]`
+	// All six op strings, plus the scope/key target address, reach the
+	// wire intact.
+	const want = `[{"scope":"own","key":"a.yaml","op":"add","path":"/a","value":1},{"scope":"own","key":"a.yaml","op":"remove","path":"/b"},{"scope":"own","key":"a.yaml","op":"replace","path":"/c","value":"x"},{"scope":"host","key":"b.yaml","op":"move","path":"/d","from":"/e"},{"scope":"host","key":"b.yaml","op":"copy","path":"/f","from":"/g"},{"scope":"host","key":"b.yaml","op":"test","path":"/h","value":true}]`
 	if string(first) != want {
 		t.Errorf("six-op wire mismatch:\n  want: %s\n  got:  %s", want, first)
 	}
@@ -234,16 +256,69 @@ func TestFRPStepInput_OrderedFieldByteIdentity(t *testing.T) {
 	}
 }
 
+// TestDocumentSet_OrderedByteIdentity proves the OrderedMap choice on the
+// keyed document set is load-bearing: a set whose keys are in deliberately
+// non-alphabetical author order (own: workload before service; host:
+// present) marshals to the same bytes across repeated marshals AND
+// preserves key order on the wire. A plain Go map would flake the
+// byte-identity because its iteration order is randomized, breaking the
+// host's apply-back addressing.
+func TestDocumentSet_OrderedByteIdentity(t *testing.T) {
+	t.Parallel()
+	fixture := sampleFRPStepInput(t).Documents
+
+	const iterations = 64
+	want, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatalf("marshal document set: %v", err)
+	}
+	for i := 0; i < iterations; i++ {
+		got, err := json.Marshal(fixture)
+		if err != nil {
+			t.Fatalf("marshal document set iteration %d: %v", i, err)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("document set marshal not stable across runs:\n  want: %s\n  got:  %s", want, got)
+		}
+	}
+
+	// own keys in author order (workload before service), then the host
+	// root — not an alphabetical reordering a sorting map would emit.
+	const wantWire = `{"own":{"workload.yaml":{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}},"service.yaml":{"kind":"Service","spec":{"ports":[{"port":80}]}}},"host":{"host-workload.yaml":{"kind":"StatefulSet","spec":{"template":{"spec":{"containers":[{"name":"db"}]}}}}}}`
+	if string(want) != wantWire {
+		t.Errorf("document set order not preserved on the wire:\n  want: %s\n  got:  %s", wantWire, want)
+	}
+}
+
+// TestDocumentSet_HostOmitzero proves the host root drops from the wire
+// when absent (a Recipe step or boundary-scope FeatureRecipe step has no
+// host component), while own always emits.
+func TestDocumentSet_HostOmitzero(t *testing.T) {
+	t.Parallel()
+	ownOnly := frp.DocumentSet{
+		Own: orderedMap[json.RawMessage](t, "workload.yaml", json.RawMessage(`{"kind":"Deployment"}`)),
+	}
+	raw, err := json.Marshal(ownOnly)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	const want = `{"own":{"workload.yaml":{"kind":"Deployment"}}}`
+	if string(raw) != want {
+		t.Errorf("absent host root did not drop from the wire:\n  want: %s\n  got:  %s", want, raw)
+	}
+}
+
 // TestJSONPatchOp_Omitempty asserts value and from drop from the wire when
-// unset: a remove op emits op and path only.
+// unset while the scope/key target address is always present: a remove op
+// emits scope, key, op, and path only.
 func TestJSONPatchOp_Omitempty(t *testing.T) {
 	t.Parallel()
-	remove := frp.JSONPatchOp{Op: "remove", Path: "/spec/template/spec/serviceAccountName"}
+	remove := frp.JSONPatchOp{Scope: frp.DocumentScopeOwn, Key: "workload.yaml", Op: "remove", Path: "/spec/template/spec/serviceAccountName"}
 	raw, err := json.Marshal(remove)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	const want = `{"op":"remove","path":"/spec/template/spec/serviceAccountName"}`
+	const want = `{"scope":"own","key":"workload.yaml","op":"remove","path":"/spec/template/spec/serviceAccountName"}`
 	if string(raw) != want {
 		t.Errorf("omitempty did not drop value/from:\n  want: %s\n  got:  %s", want, raw)
 	}
@@ -270,9 +345,22 @@ func TestSideEffect_Omitempty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal emit_file: %v", err)
 	}
+	// An absent scope drops from the wire — the apply machinery reads an
+	// absent scope as own.
 	const wantFile = `{"kind":"emit_file","file":{"path":"a.yaml","content":"x"}}`
 	if string(rawFile) != wantFile {
-		t.Errorf("emit_file did not drop crd:\n  want: %s\n  got:  %s", wantFile, rawFile)
+		t.Errorf("emit_file did not drop crd/scope:\n  want: %s\n  got:  %s", wantFile, rawFile)
+	}
+
+	// A host-scoped emit carries its scope explicitly.
+	hostFile := frp.SideEffect{Kind: "emit_file", Scope: frp.DocumentScopeHost, File: &frp.SideEffectFile{Path: "a.yaml", Content: "x"}}
+	rawHostFile, err := json.Marshal(hostFile)
+	if err != nil {
+		t.Fatalf("marshal host-scoped emit_file: %v", err)
+	}
+	const wantHostFile = `{"kind":"emit_file","scope":"host","file":{"path":"a.yaml","content":"x"}}`
+	if string(rawHostFile) != wantHostFile {
+		t.Errorf("host-scoped emit did not carry scope:\n  want: %s\n  got:  %s", wantHostFile, rawHostFile)
 	}
 }
 

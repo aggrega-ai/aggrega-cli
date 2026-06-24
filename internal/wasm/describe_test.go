@@ -46,6 +46,20 @@ func TestPluginDescriptorRoundTrip(t *testing.T) {
 				{Name: "step", InputPattern: InputPatternMinimal},
 			},
 		},
+		"frp-step-with-capabilities": {
+			ABIVersion:          ABIVersionV1Alpha1,
+			PluginType:          PluginTypeFRPStep,
+			CompatibleProviders: []string{"helm", "helm-chart"},
+			Exports: []PluginExport{
+				{
+					Name:         "step",
+					InputPattern: InputPatternMinimal,
+					Operates:     "patch",
+					Scope:        "host",
+					Selector:     "workloads carrying a pod template",
+				},
+			},
+		},
 	}
 
 	for name, want := range cases {
@@ -250,6 +264,83 @@ func TestPluginDescriptorValidateHostFunctionsSubsetOfAllowlist(t *testing.T) {
 	}
 	if err := accept.Validate("acme/provider"); err != nil {
 		t.Fatalf("baseline host functions: want accept, got %v", err)
+	}
+}
+
+// TestPluginDescriptorValidateCapabilityShape exercises the shape-only
+// capability validation: operates must be patch, emit, or empty; scope
+// must be own, host, or empty; selector is free-form. A malformed value
+// is rejected; a well-shaped or absent value passes. This validator does
+// NOT check provider compatibility, require a capability per plugin type,
+// or consult a provider registry — that enforcement is the runtime's.
+func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		export     PluginExport
+		wantReject bool
+	}{
+		"capabilities-absent": {
+			export: PluginExport{Name: "step"},
+		},
+		"operates-patch-scope-own": {
+			export: PluginExport{Name: "step", Operates: "patch", Scope: "own"},
+		},
+		"operates-emit-scope-host": {
+			export: PluginExport{Name: "step", Operates: "emit", Scope: "host"},
+		},
+		"selector-free-form": {
+			export: PluginExport{Name: "step", Selector: "anything at all is fine here"},
+		},
+		"operates-malformed": {
+			export:     PluginExport{Name: "step", Operates: "mutate"},
+			wantReject: true,
+		},
+		"scope-malformed": {
+			export:     PluginExport{Name: "step", Scope: "global"},
+			wantReject: true,
+		},
+	}
+
+	for name, tc := range cases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d := PluginDescriptor{
+				ABIVersion: ABIVersionV1Alpha1,
+				PluginType: PluginTypeFRPStep,
+				Exports:    []PluginExport{tc.export},
+			}
+			// The frp_step minimum export is "step"; every case names it so
+			// only the capability-shape check is under test.
+			err := d.Validate("acme/frp-step")
+			if tc.wantReject {
+				if !errors.Is(err, ErrWasmManifestRejected) {
+					t.Fatalf("want ErrWasmManifestRejected, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("want accept, got %v", err)
+			}
+		})
+	}
+}
+
+// TestPluginDescriptorCompatibleProvidersUnchecked proves compatible_providers
+// is piped through at load without a registry check: an arbitrary,
+// never-heard-of provider name is accepted here. The runtime — not this
+// load-time validator — enforces compatibility.
+func TestPluginDescriptorCompatibleProvidersUnchecked(t *testing.T) {
+	t.Parallel()
+	d := PluginDescriptor{
+		ABIVersion:          ABIVersionV1Alpha1,
+		PluginType:          PluginTypeFRPStep,
+		CompatibleProviders: []string{"a-provider-that-does-not-exist", "another"},
+		Exports:             []PluginExport{{Name: "step"}},
+	}
+	if err := d.Validate("acme/frp-step"); err != nil {
+		t.Fatalf("compatible_providers must be unchecked at load, got %v", err)
 	}
 }
 
