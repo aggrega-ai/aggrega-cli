@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/jsonpatch"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 	"gopkg.in/yaml.v3"
@@ -27,6 +27,15 @@ import (
 // optional per the step's Optional flag.
 type StepInvoker func(ctx context.Context, step types.PipelineStep, payload []byte) ([]byte, error)
 
+// TemplateEvaluator renders a Go template string against a data value and
+// returns the rendered text. It is the seam through which the walk reaches
+// the renderer's single template primitive without importing the renderer:
+// the caller passes the renderer's EvalTemplate, so a step's `with` body
+// sees the same funcmap, Sprig functions, and missing-key policy as every
+// other Recipe template surface. Its signature matches that primitive
+// exactly. A test supplies a stub.
+type TemplateEvaluator func(name, text string, data any) (string, error)
+
 // WalkResult is the outcome of a successful pipeline walk: the mutated
 // document set, the side effects every step accumulated in order, and the
 // warnings raised along the way (non-error guest diagnostics plus the loud
@@ -34,7 +43,7 @@ type StepInvoker func(ctx context.Context, step types.PipelineStep, payload []by
 type WalkResult struct {
 	Documents   DocumentSet
 	SideEffects []SideEffect
-	Warnings    []renderer.Diagnostic
+	Warnings    []renderctx.Diagnostic
 }
 
 // Walk executes a node's pipeline steps in order over the keyed document
@@ -55,18 +64,23 @@ type WalkResult struct {
 //
 // withCtx is the standard Recipe template context the `with` body evaluates
 // against; the caller builds it. renderCtx is threaded into every step's
-// [FRPStepInput.Context]. Walk does not resolve plugins, construct the
-// document set, or enforce provider compatibility — those are the caller's.
+// [FRPStepInput.Context]. eval is the template evaluator the walk renders
+// each step's `with` body through — injected as a seam (the caller passes
+// the renderer's EvalTemplate) so this package never imports the renderer
+// and the renderer can call Walk without an import cycle; a test supplies a
+// stub evaluator. Walk does not resolve plugins, construct the document
+// set, or enforce provider compatibility — those are the caller's.
 func Walk(
 	ctx context.Context,
 	docs DocumentSet,
 	steps []types.PipelineStep,
 	invoke StepInvoker,
 	withCtx *types.TemplateContext,
-	renderCtx renderer.RenderContext,
+	renderCtx renderctx.RenderContext,
+	eval TemplateEvaluator,
 ) (WalkResult, error) {
 	var sideEffects []SideEffect
-	var warnings []renderer.Diagnostic
+	var warnings []renderctx.Diagnostic
 	var preceding []PrecedingStep
 
 	// Operate on a private copy so the walk never mutates the caller's set
@@ -77,7 +91,7 @@ func Walk(
 	for i, step := range steps {
 		snap := snapshotDocumentSet(docs)
 
-		stepEffects, stepDiags, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx)
+		stepEffects, stepDiags, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx, eval)
 
 		// Non-error diagnostics surface regardless of the step's outcome.
 		for _, d := range stepDiags {
@@ -89,7 +103,7 @@ func Walk(
 		if err != nil {
 			docs = snap // whole-step rollback
 			if step.Optional {
-				warnings = append(warnings, renderer.Diagnostic{
+				warnings = append(warnings, renderctx.Diagnostic{
 					Severity: "warning",
 					Code:     "pipeline_step_skipped",
 					Message:  fmt.Sprintf("optional pipeline step %q skipped: %v", step.ID, err),
@@ -123,9 +137,10 @@ func runStep(
 	preceding []PrecedingStep,
 	invoke StepInvoker,
 	withCtx *types.TemplateContext,
-	renderCtx renderer.RenderContext,
-) ([]SideEffect, []renderer.Diagnostic, error) {
-	stepInput, err := evalWith(step, withCtx)
+	renderCtx renderctx.RenderContext,
+	eval TemplateEvaluator,
+) ([]SideEffect, []renderctx.Diagnostic, error) {
+	stepInput, err := evalWith(step, withCtx, eval)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed, step.ID, index, err)
 	}
@@ -167,15 +182,16 @@ func runStep(
 // evalWith renders the step's `with` template against the standard Recipe
 // template context and parses the result into the step input, preserving
 // author order. An empty `with` yields an empty step input. The evaluator
-// is the renderer's single template primitive — the walk does not build a
-// second one, so a `with` body sees the same funcmap, Sprig functions, and
-// missing-key policy as every other Recipe template surface.
-func evalWith(step types.PipelineStep, withCtx *types.TemplateContext) (types.OrderedMap[any], error) {
+// is injected ([TemplateEvaluator]) so the walk reaches the renderer's
+// single template primitive without importing the renderer — the walk does
+// not build a second one, so a `with` body sees the same funcmap, Sprig
+// functions, and missing-key policy as every other Recipe template surface.
+func evalWith(step types.PipelineStep, withCtx *types.TemplateContext, eval TemplateEvaluator) (types.OrderedMap[any], error) {
 	var stepInput types.OrderedMap[any]
 	if step.With == "" {
 		return stepInput, nil
 	}
-	rendered, err := renderer.EvalTemplate(fmt.Sprintf("pipeline-step[%s].with", step.ID), step.With, withCtx)
+	rendered, err := eval(fmt.Sprintf("pipeline-step[%s].with", step.ID), step.With, withCtx)
 	if err != nil {
 		return stepInput, err
 	}

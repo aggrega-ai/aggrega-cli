@@ -4,6 +4,7 @@
 package featurerecipe_pipeline_test
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -399,5 +400,43 @@ func TestFRPStepOutput_ReusesRendererDiagnostic(t *testing.T) {
 	}
 	if field.Type.Elem() != reflect.TypeOf(renderer.Diagnostic{}) {
 		t.Errorf("Diagnostics element type drifted from renderer.Diagnostic: %v", field.Type.Elem())
+	}
+}
+
+// TestWalk_WithEvalIntoStepInput exercises the injected template evaluator
+// end to end: a step with a non-empty `with` body renders through the
+// renderer's real EvalTemplate (passed as the walk's evaluator seam) and
+// the rendered key reaches the guest's step input. It lives in the external
+// test package so it may import the renderer without re-forming the cycle
+// the internal test package must avoid.
+func TestWalk_WithEvalIntoStepInput(t *testing.T) {
+	var received []byte
+	invoke := func(_ context.Context, _ types.PipelineStep, payload []byte) ([]byte, error) {
+		received = payload
+		return json.Marshal(frp.FRPStepOutput{})
+	}
+
+	var own types.OrderedMap[json.RawMessage]
+	own.Set("a.yaml", json.RawMessage(`{"x":"0"}`))
+	docs := frp.DocumentSet{Own: own}
+	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", With: "key: {{ .values.x }}"}}
+
+	withCtx := &types.TemplateContext{}
+	withCtx.Values.Set("x", "rendered-value")
+
+	_, err := frp.Walk(context.Background(), docs, steps, invoke, withCtx, renderer.RenderContext{}, renderer.EvalTemplate)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	var got frp.FRPStepInput
+	if err := json.Unmarshal(received, &got); err != nil {
+		t.Fatalf("unmarshal received payload: %v", err)
+	}
+	v, ok := got.StepInput.Get("key")
+	if !ok {
+		t.Fatalf("step input missing rendered `with` key; payload=%s", received)
+	}
+	if s, _ := v.(string); s != "rendered-value" {
+		t.Errorf("step input key = %v, want rendered-value", v)
 	}
 }

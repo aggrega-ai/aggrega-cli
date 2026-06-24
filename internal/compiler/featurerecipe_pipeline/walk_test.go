@@ -10,9 +10,15 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/jsonpatch"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// noEval is a stub TemplateEvaluator for steps whose `with` is empty (the
+// short-circuit path in evalWith never calls it). Tests that exercise a
+// non-empty `with` and need the renderer's real evaluator live in the
+// external test package, which may import the renderer without a cycle.
+func noEval(name, text string, data any) (string, error) { return text, nil }
 
 // rawMap builds a keyed RawMessage root from key/JSON-literal pairs in
 // order.
@@ -80,7 +86,7 @@ func TestWalk_CumulativeMultiStep(t *testing.T) {
 		{ID: "s1", Plugin: "p1", Function: "f"},
 		{ID: "s2", Plugin: "p2", Function: "f"},
 	}
-	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}
@@ -104,7 +110,7 @@ func TestWalk_OwnAndHostInOneStep(t *testing.T) {
 	}}
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}}
 
-	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}
@@ -124,7 +130,7 @@ func TestWalk_AbsentTargetStrictHalt(t *testing.T) {
 	inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "missing.yaml", "add", "/k", "v")}}
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}}
 
-	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if !errors.Is(err, ErrPipelineTargetAbsent) {
 		t.Fatalf("err = %v, want ErrPipelineTargetAbsent", err)
 	}
@@ -145,7 +151,7 @@ func TestWalk_AbsentTargetOptionalWarnContinue(t *testing.T) {
 		{ID: "s2", Plugin: "p", Function: "f"},
 	}
 
-	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err != nil {
 		t.Fatalf("Walk: optional step should not halt: %v", err)
 	}
@@ -171,7 +177,7 @@ func TestWalk_SnapshotRestoreByteIdentical(t *testing.T) {
 	}}
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}}
 
-	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err == nil {
 		t.Fatal("expected a strict halt from the failing second patch")
 	}
@@ -184,51 +190,25 @@ func TestWalk_SnapshotRestoreByteIdentical(t *testing.T) {
 func TestWalk_ErrorDiagnosticHalts(t *testing.T) {
 	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
-	inv.outputs["s1"] = FRPStepOutput{Diagnostics: []renderer.Diagnostic{
+	inv.outputs["s1"] = FRPStepOutput{Diagnostics: []renderctx.Diagnostic{
 		{Severity: "error", Code: "bad", Message: "guest refused"},
 	}}
 
 	// strict
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
-		inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if !errors.Is(err, ErrPipelineStepFailed) {
 		t.Fatalf("strict: err = %v, want ErrPipelineStepFailed", err)
 	}
 
 	// optional
 	res, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", Optional: true}},
-		inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err != nil {
 		t.Fatalf("optional: error diagnostic should warn, not halt: %v", err)
 	}
 	if len(res.Warnings) == 0 {
 		t.Errorf("optional error diagnostic: expected a warning")
-	}
-}
-
-func TestWalk_WithEvalIntoStepInput(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
-	inv := newScripted()
-	inv.outputs["s1"] = FRPStepOutput{}
-	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", With: "key: {{ .values.x }}"}}
-
-	withCtx := &types.TemplateContext{}
-	withCtx.Values.Set("x", "rendered-value")
-
-	_, err := Walk(context.Background(), docs, steps, inv.invoke, withCtx, renderer.RenderContext{})
-	if err != nil {
-		t.Fatalf("Walk: %v", err)
-	}
-	var got FRPStepInput
-	if err := json.Unmarshal(inv.received["s1"], &got); err != nil {
-		t.Fatalf("unmarshal received payload: %v", err)
-	}
-	v, ok := got.StepInput.Get("key")
-	if !ok {
-		t.Fatalf("step input missing rendered `with` key; payload=%s", inv.received["s1"])
-	}
-	if s, _ := v.(string); s != "rendered-value" {
-		t.Errorf("step input key = %v, want rendered-value", v)
 	}
 }
 
@@ -242,7 +222,7 @@ func TestWalk_SideEffectAndPrecedingThreading(t *testing.T) {
 		{ID: "s2", Plugin: "plugin-two", Function: "f"},
 	}
 
-	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}
@@ -271,13 +251,13 @@ func TestWalk_InvokeTrapStrictAndOptional(t *testing.T) {
 	inv.fail["s1"] = errors.New("guest trap")
 
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
-		inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if !errors.Is(err, ErrPipelineStepFailed) {
 		t.Fatalf("trap strict: err = %v, want ErrPipelineStepFailed", err)
 	}
 
 	res, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", Optional: true}},
-		inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if err != nil {
 		t.Fatalf("trap optional: should warn not halt: %v", err)
 	}
@@ -294,7 +274,7 @@ func TestWalk_FailedTestOpMatchesEngineSentinel(t *testing.T) {
 	inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "test", "/x", "expected")}}
 
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
-		inv.invoke, &types.TemplateContext{}, renderer.RenderContext{})
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
 	if !errors.Is(err, jsonpatch.ErrTestFailed) {
 		t.Fatalf("err = %v, want it to wrap jsonpatch.ErrTestFailed", err)
 	}

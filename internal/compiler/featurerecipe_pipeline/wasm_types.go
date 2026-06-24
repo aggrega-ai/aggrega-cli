@@ -6,7 +6,7 @@ package featurerecipe_pipeline
 import (
 	"encoding/json"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -44,7 +44,7 @@ type DocumentSet struct {
 // receives for one pipeline step. It carries the keyed document set the
 // host hands whole ([FRPStepInput.Documents]), the step-local input the
 // Recipe declared for this step (StepInput), the render-time
-// [renderer.RenderContext], the step's position in the pipeline
+// [renderctx.RenderContext], the step's position in the pipeline
 // (StepIndex), and a record of the steps that already ran
 // (PrecedingSteps).
 //
@@ -66,7 +66,7 @@ type DocumentSet struct {
 // order and break the determinism contract the rest of the pipeline
 // upholds.
 //
-// Context reuses [renderer.RenderContext] — the same render-time context
+// Context reuses [renderctx.RenderContext] — the same render-time context
 // shape every plugin boundary carries — rather than a package-local
 // redeclaration, so a render context is one type across every Wasm socket.
 //
@@ -76,7 +76,7 @@ type DocumentSet struct {
 type FRPStepInput struct {
 	Documents      DocumentSet            `json:"documents"`
 	StepInput      types.OrderedMap[any]  `json:"step_input,omitempty,omitzero"`
-	Context        renderer.RenderContext `json:"context"`
+	Context        renderctx.RenderContext `json:"context"`
 	StepIndex      int                    `json:"step_index"`
 	PrecedingSteps []PrecedingStep        `json:"preceding_steps,omitempty"`
 }
@@ -125,7 +125,7 @@ const (
 // here rather than opaque. The two patch surfaces serve different guest
 // contracts and are intentionally not unified.
 //
-// Diagnostics reuses [renderer.Diagnostic] so a diagnostic carries one
+// Diagnostics reuses [renderctx.Diagnostic] so a diagnostic carries one
 // shape across every plugin boundary.
 //
 // **Status: contract definition only — not yet executed.** The apply
@@ -134,7 +134,7 @@ const (
 type FRPStepOutput struct {
 	Patches     []JSONPatchOp         `json:"patches,omitempty"`
 	SideEffects []SideEffect          `json:"side_effects,omitempty"`
-	Diagnostics []renderer.Diagnostic `json:"diagnostics,omitempty"`
+	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty"`
 }
 
 // JSONPatchOp is one RFC 6902 JSON-Patch operation an FRP step emits
