@@ -6,7 +6,10 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"testing"
+
+	"github.com/pkg/browser"
 )
 
 // TestAuthTokenPrintsOnlyTheToken proves `auth token` writes exactly the token
@@ -46,5 +49,24 @@ func TestAuthTokenErrorLeavesStdoutEmpty(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Errorf("stdout = %q, want empty on error", out.String())
+	}
+}
+
+// TestRootCmdDiscardsBrowserOpenerStdout proves the process discards the
+// browser-opener subprocess's stdout, so a browser that prints to its stdout
+// (e.g. "Opening in existing browser session.") cannot prepend junk to a
+// captured token under `export AGGREGA_IDENTITY_TOKEN=$(aggrega auth token)`.
+// The redirect is a one-time process-startup setting (package init), and
+// building the root command exercises the same package whose init applies it.
+//
+// Not parallel: browser.Stdout is a process-global. The test reads it and
+// saves/restores it around the assertion so it cannot disturb other tests.
+func TestRootCmdDiscardsBrowserOpenerStdout(t *testing.T) {
+	saved := browser.Stdout
+	defer func() { browser.Stdout = saved }()
+
+	_ = newRootCmd()
+	if browser.Stdout != io.Discard {
+		t.Errorf("browser.Stdout = %v, want io.Discard so the opener subprocess's stdout never reaches a command's stdout", browser.Stdout)
 	}
 }

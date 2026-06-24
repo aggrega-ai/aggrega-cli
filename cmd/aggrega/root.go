@@ -5,10 +5,32 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 )
+
+// init discards the browser-opener's stdout process-wide. The interactive
+// OIDC flow opens a browser via a subprocess (xdg-open / open / start), and
+// some browsers print a line such as "Opening in existing browser session."
+// to their stdout. Under `export AGGREGA_IDENTITY_TOKEN=$(aggrega auth token)`
+// that capture pipe is the process's stdout, so the opener's stdout would
+// prepend junk to the token and yield a malformed JWT. browser.Stdout is the
+// io.Writer the opener assigns to the subprocess's stdout; pointing it at
+// io.Discard makes os/exec wire the child a pipe (copied into the discard
+// writer) rather than letting the child inherit fd 1, so the opener's stdout
+// never reaches any command's stdout. This is set once at process startup and
+// never toggled — before any goroutine exists, so there is no data race on the
+// global. It applies to every command (auth, sign, push) because the only
+// thing that opens a browser is the OIDC flow, whose own human-facing prompts
+// go to stderr; discarding the opener subprocess's stdout is harmless
+// everywhere. browser.Stderr is left at its default (os.Stderr) so those
+// prompts still reach the terminal.
+func init() {
+	browser.Stdout = io.Discard
+}
 
 var rootCmd = newRootCmd()
 
