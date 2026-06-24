@@ -64,6 +64,13 @@ type LinterFinding struct {
 	Message        string `json:"message"`
 }
 
+// lintExportName is the publishing-linter's rule-evaluation export.
+// It carries the lint_ prefix the shared describe() gate requires of a
+// linter plugin's minimum export; the host dispatches every rule
+// invocation to this single export, selecting the rule via
+// LinterInput.RuleID rather than per-rule exports.
+const lintExportName = "lint_rules"
+
 // DispatchPublishingLinter invokes the publishing-linter Wasm plugin
 // against the supplied LinterInput and returns its findings.
 //
@@ -72,10 +79,13 @@ type LinterFinding struct {
 // `aggrega lint --pre-publish` CLI mode arrives and consumes this
 // dispatcher with the resolved cache-slot path.
 //
-// Returns a wrapped error on loader failure, plugin call failure, or
-// output unmarshal failure. The plugin's `lint` entry point is the
-// single exported function the dispatcher invokes; rule selection
-// happens via LinterInput.RuleID, not via per-rule entry points.
+// The plugin loads through the shared describe() gate: the host calls
+// describe(), validates the descriptor (ABI version, plugin type,
+// minimum lint_* export) against its contract, then invokes the
+// lint_rules export. A plugin lacking describe() or carrying a bad
+// descriptor halts here with a loud guardrail. Returns a wrapped error
+// on loader/gate failure, plugin call failure, or output unmarshal
+// failure.
 func DispatchPublishingLinter(pluginPath string, input LinterInput) ([]LinterFinding, error) {
 	payload, err := json.Marshal(input)
 	if err != nil {
@@ -84,17 +94,18 @@ func DispatchPublishingLinter(pluginPath string, input LinterInput) ([]LinterFin
 
 	loader := &wasm.Loader{}
 	ctx := context.Background()
-	plugin, err := loader.Load(ctx, wasm.PluginSpec{
+	plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
 		Name: "publishing-linter",
 		Path: pluginPath,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("publishing_linter: load %s: %w", pluginPath, err)
 	}
+	defer plugin.Close(ctx)
 
-	out, err := plugin.Call(ctx, "lint", payload)
+	out, err := wasm.InvokeExport(ctx, plugin, desc, lintExportName, payload)
 	if err != nil {
-		return nil, fmt.Errorf("publishing_linter: call lint: %w", err)
+		return nil, fmt.Errorf("publishing_linter: call %s: %w", lintExportName, err)
 	}
 
 	var output LinterOutput
@@ -117,7 +128,7 @@ func DispatchPublishingLinter(pluginPath string, input LinterInput) ([]LinterFin
 func DispatchPublishingLinterBatch(pluginPath string, inputs []LinterInput) ([][]LinterFinding, error) {
 	loader := &wasm.Loader{}
 	ctx := context.Background()
-	plugin, err := loader.Load(ctx, wasm.PluginSpec{
+	plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
 		Name: "publishing-linter",
 		Path: pluginPath,
 	})
@@ -132,9 +143,9 @@ func DispatchPublishingLinterBatch(pluginPath string, inputs []LinterInput) ([][
 		if err != nil {
 			return nil, fmt.Errorf("publishing_linter: marshal input[%d]: %w", i, err)
 		}
-		out, err := plugin.Call(ctx, "lint", payload)
+		out, err := wasm.InvokeExport(ctx, plugin, desc, lintExportName, payload)
 		if err != nil {
-			return nil, fmt.Errorf("publishing_linter: call lint input[%d]: %w", i, err)
+			return nil, fmt.Errorf("publishing_linter: call %s input[%d]: %w", lintExportName, i, err)
 		}
 		var output LinterOutput
 		if err := json.Unmarshal(out, &output); err != nil {
