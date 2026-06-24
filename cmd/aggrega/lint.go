@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -651,49 +652,18 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 	return out
 }
 
-// resolvePluginPath implements three-tier resolution.
-// --plugin > workspace plugins.linter[0].uri > loud diagnostic.
-// No implicit dev fallback.
-//
-// Relative paths resolve against the workspace root, NOT the
-// invocation CWD. workspaceRoot walks up from CWD looking for
-// `.aggrega-config.yaml`; CWD is used as fallback only when no
-// marker is found.
 // resolvePluginPath returns the filesystem path of the publishing-linter Wasm
-// plugin. Precedence: the --plugin flag (resolved against the working directory
-// — it carries no declaring file), then plugins.linter[0].uri from the resolved
-// workspace config. Config URIs are already absolute (the cascade resolved them
-// against their declaring file at load), so they need no base here; a registry
-// reference is rejected until OCI plugin loading is wired.
+// plugin. It is the linter's per-socket URI feeder: the --plugin flag is the
+// explicit override, and plugins.linter[0].uri from the resolved workspace
+// config is the URI source. The generic URI→path resolution — local-path
+// handling and the uniform OCI-not-yet-wired rejection — lives once in
+// pkg/pluginpath and is shared with every other plugin socket.
 func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, error) {
-	if cliFlag != "" {
-		if filepath.IsAbs(cliFlag) {
-			return cliFlag, nil
-		}
-		abs, err := filepath.Abs(cliFlag)
-		if err != nil {
-			return "", fmt.Errorf("resolve --plugin %q: %w", cliFlag, err)
-		}
-		return abs, nil
-	}
+	uri := ""
 	if len(wsCfg.Plugins.Linter) > 0 {
-		uri := wsCfg.Plugins.Linter[0].URI
-		if workspaceconfig.LooksLikeOCIURI(uri) {
-			return "", fmt.Errorf(
-				"aggrega lint: workspace config plugins.linter[0].uri = %q is an OCI reference; "+
-					"OCI plugin URI resolution not yet wired. Either:\n"+
-					"  - pass --plugin <filesystem-path>\n"+
-					"  - or set plugins.linter[0].uri to a workspace-relative path until OCI loading lands\n"+
-					"(standard URI for the publishing-linter: hub.aggrega.ai/wasm/linter/aggrega-publishing:1.0.0)",
-				uri,
-			)
-		}
-		return uri, nil
+		uri = wsCfg.Plugins.Linter[0].URI
 	}
-	return "", fmt.Errorf(
-		"aggrega lint: no plugin path configured. Either:\n" +
-			"  - pass --plugin <filesystem-path>\n" +
-			"  - or set plugins.linter[0].uri in .aggrega-config.yaml to a workspace-relative path")
+	return pluginpath.Resolve(uri, cliFlag)
 }
 
 // looksLikeOCIURI returns true when the URI looks like an OCI
