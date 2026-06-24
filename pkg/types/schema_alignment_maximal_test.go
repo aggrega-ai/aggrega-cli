@@ -106,7 +106,7 @@ func maximalRecipe() types.Recipe {
 			Locals:     om[string]("svc", "{{ .context.instance_id }}"),
 			Provides:   om[string]("host", "{{ .context.instance_id }}"),
 			Workload:   types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: x:1"},
-			Pipeline:   []types.PipelineStep{{ID: "s1", Plugin: "p.wasm", Function: "render", With: "{}"}},
+			Pipeline:   []types.PipelineStep{{ID: "s1", Plugin: "p.wasm", Function: "render", With: "{}", Optional: true}},
 			Assertions: om[string]("rule", "{{ true }}"),
 		},
 	}

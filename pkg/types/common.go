@@ -377,4 +377,9 @@ type PipelineStep struct {
 	Plugin   string `json:"plugin" yaml:"plugin"`
 	Function string `json:"function" yaml:"function"`
 	With     string `json:"with,omitempty" yaml:"with,omitempty"`
+	// Optional downgrades a failure of this step from a build-halting
+	// error to a loud warning: the pre-step document set is restored, the
+	// step's output is discarded, and the pipeline continues. When false,
+	// any step failure halts after restoring the pre-step set.
+	Optional bool `json:"optional,omitempty" yaml:"optional,omitempty"`
 }
