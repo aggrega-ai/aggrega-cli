@@ -1,0 +1,13 @@
+{
+  "abi_version": "v1alpha1",
+  "plugin_type": "linter",
+  "exports": [
+    {
+      "name": "lint_rules"
+    }
+  ],
+  "metadata": {
+    "author": "aggrega",
+    "license": "Apache-2.0"
+  }
+}
