@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -41,12 +42,15 @@ func TestPhaseB6_NoFeatures(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
 	state := &PhaseBState{NodeID: "n"}
-	got, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, types.OrderedMap[types.IRSecretEntry]{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{})
+	got, hostPatched, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, types.OrderedMap[types.IRSecretEntry]{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{}, nil, false, renderctx.RenderContext{})
 	if err != nil {
 		t.Errorf("no features: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("no features should produce empty map; got %v", got)
+	}
+	if len(hostPatched) != 0 {
+		t.Errorf("no features should produce empty hostPatched; got %v", hostPatched)
 	}
 }
 

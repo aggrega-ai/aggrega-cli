@@ -335,13 +335,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 
-		// Phase C: validate pipeline (no execution today)
-		if recipe != nil && len(recipe.Spec.Pipeline) > 0 {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("node %q: Phase C pipeline (%d steps) validated but not executed", nodeID, len(recipe.Spec.Pipeline)),
-			)
-		}
-
 		// Resolve engine for this node's provider via factory
 		providerName := ""
 		if recipe != nil {
@@ -510,6 +503,29 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 path eval node %q", nodeID))
 		}
+
+		// Recipe pipeline (own scope). Runs per-node AFTER the primary render
+		// (state.EmittedFiles carries source/workload/artifacts — the node's
+		// own discrete documents) and BEFORE the dispatch snapshot below reads
+		// them. FeatureRecipe files are not yet in state.EmittedFiles (phaseB6
+		// returns them separately and merges them into the dispatch map), so
+		// the own set here is exactly the node's own output. The pipeline
+		// applies /own PATCHes and appends /own EMITs as EmitOriginPipeline
+		// files; re-running the rule-7 collision detector catches a pipeline
+		// EMIT clashing with a rendered filename.
+		if recipe != nil && len(recipe.Spec.Pipeline) > 0 {
+			renderCtx := buildPipelineRenderCtx(node, bi, parameters)
+			pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
+			if perr != nil {
+				return nil, perr
+			}
+			state.EmittedFiles = pres.Own
+			result.Warnings = append(result.Warnings, pres.Warnings...)
+			if err := phaseB5(state); err != nil {
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q pipeline EMIT collision", nodeID))
+			}
+		}
+
 		key := dispatchKey{Path: finalPath, Provider: providerName}
 		if _, ok := dispatch[key]; !ok {
 			dispatch[key] = &pendingDispatch{
@@ -580,11 +596,29 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			releaseForFR = input.ResolveResult.Release
 			boundaryAnnotationsForFR = input.ResolveResult.BoundaryAnnotations
 		}
-		frFiles, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input)
+		// Host docs a component-scope FR pipeline may /host PATCH or EMIT: the
+		// host component's own discrete documents (state.EmittedFiles).
+		// hostIsAssembler mirrors the per-node renderIsIntermediate predicate —
+		// an assembler that is not an ExternalArtifactsHandler renders
+		// pre-assembly fragments, so a /host PATCH against it halts (post-
+		// assembly territory). renderCtx is the render-time context every
+		// pipeline step receives.
+		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
+		frFiles, hostPatched, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}
 		for path, content := range frFiles {
+			dispatch[key].files[nodeID][path] = content
+		}
+		// Host-document write-back conduit: a component-scope FR pipeline's
+		// /host PATCH (a rewritten host doc) or /host EMIT (a new host doc)
+		// arrives keyed by the host doc's original emitted path. The host docs
+		// were snapshotted into dispatch[key].files[nodeID] before phaseB6 ran,
+		// so this merge — keyed by path — is the only live write-back path;
+		// mutating state.EmittedFiles would be inert. A PATCH overwrites the
+		// snapshotted host doc; an EMIT adds a new entry.
+		for path, content := range hostPatched {
 			dispatch[key].files[nodeID][path] = content
 		}
 		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The

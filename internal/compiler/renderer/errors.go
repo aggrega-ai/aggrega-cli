@@ -129,4 +129,31 @@ var (
 	// not segmented, so a non-structured file is an error only when a step
 	// tries to address a document inside it.
 	ErrPipelinePatchTargetNotStructured = errors.New("pipeline PATCH target is not parseable structured YAML/JSON")
+
+	// ErrPipelineTargetNotEmitted fires when a pipeline PATCH step addresses a
+	// document the keyed set does not hold — a scope/key pair absent from the
+	// node's emitted documents. It is the renderer's build-halting Loud
+	// Guardrail promoting the pipeline walk's local absent-target cause: the
+	// walk reports the typed condition; the integration halts the build with
+	// this sentinel, naming the offending step and the addressed key.
+	ErrPipelineTargetNotEmitted = errors.New("pipeline PATCH targets a document the node did not emit")
+
+	// ErrPipelineHostScopeUnavailable fires when a pipeline step performs a
+	// /host operation but the step has no host component — a boundary-scope
+	// FeatureRecipe step (which has no single host) or a Recipe step (whose
+	// only scope is its own output). The host root is absent for these
+	// surfaces, so a /host patch or emit halts loudly rather than silently
+	// resolving against an empty set.
+	ErrPipelineHostScopeUnavailable = errors.New("pipeline /host operation from a step with no host component")
+
+	// ErrPipelinePatchPreAssembly fires when a pipeline PATCH addresses a
+	// document rendered by an assembler provider before assembly produces the
+	// final documents — the target is a pre-assembly fragment, not a discrete
+	// document. The discreteness rule is per-provider and scope-symmetric: a
+	// PATCH against an own-scope fragment (the node's provider is an assembler)
+	// or a host-scope fragment (the host component's provider is an assembler)
+	// halts here; the post-assembly phase re-runs such a PATCH once the
+	// assembler produces discrete documents. EMIT is additive and runs
+	// per-node for every provider, so it is never gated by this guardrail.
+	ErrPipelinePatchPreAssembly = errors.New("pipeline PATCH targets an assembler provider's pre-assembly fragments")
 )

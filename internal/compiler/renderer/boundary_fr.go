@@ -45,6 +45,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -321,12 +322,44 @@ func dispatchBoundaryScopeFR(
 	if err != nil {
 		return err
 	}
+
+	// Boundary-scope FeatureRecipe pipeline (own only — a boundary-scope FR has
+	// no single host component, so host is nil and any /host operation halts
+	// with ErrPipelineHostScopeUnavailable).
+	if len(fr.Spec.Pipeline) > 0 {
+		var parameters map[string]any
+		if input.ResolveResult != nil {
+			parameters = input.ResolveResult.Parameters
+		}
+		renderCtx := buildBoundaryFRRenderCtx(key.BoundaryPath, parameters, boundaryAnnotations)
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, frNodeCtx.NodeID)
+		if perr != nil {
+			return perr
+		}
+		emitted = pres.Own
+		state.Warnings = append(state.Warnings, pres.Warnings...)
+	}
 	boundaryFRState.Files[key] = emitted
 
-	// Suppress unused-state warnings — state is reserved for future per-
-	// boundary-FR observations.
-	_ = state
 	return nil
+}
+
+// buildBoundaryFRRenderCtx assembles the render-time context a boundary-scope
+// FeatureRecipe pipeline step receives. A boundary-scope FR has no single host
+// component, so the context carries the boundary's metadata and the fulfilled
+// parameters; the boundary's cascaded annotations land on the boundary root.
+func buildBoundaryFRRenderCtx(boundaryPath string, parameters map[string]any, boundaryAnnotations map[string]types.OrderedMap[string]) renderctx.RenderContext {
+	rc := renderctx.RenderContext{
+		Boundary: renderctx.BoundaryContext{
+			Name: boundaryLeafName(boundaryPath),
+			Path: splitBoundaryPath(boundaryPath),
+		},
+	}
+	rc.Parameters = orderedParameters(parameters)
+	if ann, ok := boundaryAnnotations[boundaryPath]; ok {
+		rc.Boundary.Annotations = ann
+	}
+	return rc
 }
 
 // buildBoundaryFRTemplateContext assembles the FR-scoped TemplateContext for a

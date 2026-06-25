@@ -30,6 +30,13 @@ const (
 	// entry authored with $import: (file path). Reserved for the artifacts
 	// render path.
 	EmitOriginArtifactsImport
+
+	// EmitOriginPipeline — the file originated from a pipeline step's EMIT
+	// side effect (a new document a Wasm guest contributed to the node's
+	// own or host set). Distinct from the render-time origins above so the
+	// Phase B.5 cross-origin collision detector can name a pipeline EMIT
+	// that clashes with a rendered filename.
+	EmitOriginPipeline
 )
 
 // String returns a human-readable origin tag suitable for inclusion in
@@ -44,6 +51,8 @@ func (o EmitOrigin) String() string {
 		return "artifacts-inline"
 	case EmitOriginArtifactsImport:
 		return "artifacts-import"
+	case EmitOriginPipeline:
+		return "pipeline"
 	default:
 		return "unknown"
 	}

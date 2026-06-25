@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -99,6 +100,14 @@ type Inputs struct {
 	// a diagnostic rather than failing the inspection. Opt-out, not opt-in, so a
 	// caller that forgets the flag halts (safe) rather than silently skips.
 	TolerateCatalogViewInconsistency bool
+
+	// PluginPathLookup resolves a pipeline step's plugin URI to its .wasm
+	// filesystem path. When nil, RunPipeline binds the shared workspace
+	// resolver (pluginpath.Resolve); a caller may override it to point a
+	// fixture's plugin URI at a built artifact path. The renderer's per-node
+	// pipeline executor uses it to load each step's guest; a nil lookup
+	// reaching the renderer leaves pipelines validated-but-not-executed.
+	PluginPathLookup pluginpath.Lookup
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -529,6 +538,16 @@ func RunPipeline(
 			MappingLibraries: inputs.MappingLibraries,
 			Trace:            traceWriter,
 			YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
+			// Bind the shared plugin-path resolver so a Recipe / FeatureRecipe
+			// pipeline step's plugin URI resolves to its .wasm bytes. Resolve
+			// handles local/relative URIs verbatim and rejects OCI loudly; the
+			// per-step plugin loads through the describe() gate at execution. A
+			// caller-supplied override (e.g. a fixture pointing a plugin URI at
+			// a built artifact path) wins when present.
+			PluginPathLookup: inputs.PluginPathLookup,
+		}
+		if rendererInput.PluginPathLookup == nil {
+			rendererInput.PluginPathLookup = func(uri string) (string, error) { return pluginpath.Resolve(uri, "") }
 		}
 		// Build-time source-artifact resolution: when the caller supplies a
 		// lockfile and workspace root, the orchestrator resolves each remote

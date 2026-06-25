@@ -7,6 +7,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -53,6 +54,14 @@ type RendererInput struct {
 	// BoundaryInfo so the marshal sites apply one configured width. Clamped
 	// to [2,9] (default 2) at the marshal call; the zero value renders at 2.
 	YAMLIndent int
+
+	// PluginPathLookup resolves a pipeline step's plugin URI to the
+	// filesystem path of its .wasm bytes, binding the per-node pipeline
+	// executor to the shared plugin-path resolver. nil disables pipeline
+	// execution: each node's pipeline is validated but not run, and the
+	// renderer surfaces a validate-only warning — the non-regression path
+	// for callers that do not wire plugin loading.
+	PluginPathLookup pluginpath.Lookup
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

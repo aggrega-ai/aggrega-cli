@@ -34,6 +34,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -52,6 +53,14 @@ type Input struct {
 	ReleasePath  string
 	CatalogPaths []string
 	IncludeTrace bool
+
+	// PluginPathLookup, when set, overrides the build's pipeline plugin-path
+	// resolver so a fixture's Recipe / FeatureRecipe pipeline step URI resolves
+	// to a test-built .wasm artifact (commonly via wasmtest.EnsureFixtureBuilt).
+	// nil leaves the default workspace resolver in effect — a fixture without a
+	// pipeline, or one whose plugin URI is a real workspace path, needs no
+	// override.
+	PluginPathLookup pluginpath.Lookup
 }
 
 // Build compiles the workspace named by in through the real pipeline with the
@@ -132,6 +141,9 @@ func compile(in Input) (*pipeline.Result, error) {
 			// provenance stamp (and the aggrega.ai/compiler-version label it renders
 			// into artifacts) stays build-independent and golden output is stable.
 			CompilerVersion: "0.1.0",
+			// Fixture override: when set, points the renderer's pipeline executor
+			// at a test-built plugin artifact instead of the workspace resolver.
+			PluginPathLookup: in.PluginPathLookup,
 		},
 		buildLookup,
 		cat.RecipeLookupWithManifest(manifest),

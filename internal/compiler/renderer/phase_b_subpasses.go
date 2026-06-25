@@ -19,6 +19,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
@@ -314,8 +315,20 @@ func phaseB5(state *PhaseBState) error {
 //     "secrets/<name>/" prefix.
 //
 // Returns a map of prefixed paths (e.g. "features/mon/deployment.yaml")
-// to file contents. The orchestrator merges these into the per-node files
-// map alongside the source/workload outputs.
+// to file contents (the FR's own generated files), plus a second map of
+// host-document modifications keyed by their original emitted path. A
+// component-scope FeatureRecipe's pipeline may /host PATCH the host
+// component's existing documents or /host EMIT new ones; both surface in the
+// hostPatched map. The orchestrator merges out and hostPatched into the host
+// node's dispatched file map via the per-path merge conduit — the host docs
+// were snapshotted before this sub-pass ran, so write-back must flow through
+// the return value, not by mutating state.EmittedFiles (inert post-snapshot).
+//
+// hostOwn is the host component's own emitted documents (the cross-entity
+// surface a component-scope FR pipeline reads as /host). hostIsAssembler
+// reports whether the host's provider renders pre-assembly fragments; a /host
+// PATCH against an assembler host halts (post-assembly phase territory).
+// renderCtx is the render-time context every pipeline step receives.
 func phaseB6(
 	ctx context.Context,
 	tmplCtx *types.TemplateContext,
@@ -331,9 +344,20 @@ func phaseB6(
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 	input RendererInput,
-) (map[string][]byte, error) {
+	hostOwn []EmittedFile,
+	hostIsAssembler bool,
+	renderCtx renderctx.RenderContext,
+) (map[string][]byte, map[string][]byte, error) {
 	out := map[string][]byte{}
+	hostPatched := map[string][]byte{}
 	nodeID := state.NodeID
+
+	// Running host document set threaded across FRs in FeatureOrder: each
+	// component-scope FR's pipeline sees the host documents as modified by the
+	// FRs that ran before it (the existing Onion-order cascade), so a later FR
+	// patches on top of an earlier FR's host changes. Non-intermediate host
+	// docs only — intermediate fragments are not discrete /host targets.
+	runningHost := nonIntermediateFiles(hostOwn)
 
 	// Non-credential FR Resource Generation. For each attached FR that
 	// carries source or valuesMapping (resource-generating, i.e. not
@@ -369,7 +393,7 @@ func phaseB6(
 				ctx, fr, ref.InstanceName, key, state, boundaryFRState,
 				nodeCtx, engineFactory, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope feature %q", nodeID, ref.InstanceName))
+				return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope feature %q", nodeID, ref.InstanceName))
 			}
 			continue
 		}
@@ -385,18 +409,18 @@ func phaseB6(
 			fr, ref.InstanceName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
 		)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q locals", nodeID, ref.InstanceName))
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q locals", nodeID, ref.InstanceName))
 		}
 		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 
 		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q", nodeID, ref.InstanceName))
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q", nodeID, ref.InstanceName))
 		}
 
 		frEngine, err := engineFactory(fr.Spec.Provider)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q engine factory", nodeID, ref.InstanceName))
+			return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q engine factory", nodeID, ref.InstanceName))
 		}
 
 		frNodeCtx := nodeCtx
@@ -409,7 +433,7 @@ func phaseB6(
 		}
 		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frSrcValues, frInfra)
 		if err != nil {
-			return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q feature %q source resolution", nodeID, ref.InstanceName))
+			return nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q feature %q source resolution", nodeID, ref.InstanceName))
 		}
 		frNodeCtx.Source = resolvedSrc
 
@@ -419,7 +443,25 @@ func phaseB6(
 		// re-wrapping would bury the gate diagnostic the user needs to see.
 		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+
+		// Component-scope FeatureRecipe pipeline (own + host). own is the FR's
+		// own generated files; host is the running host-document set (the host
+		// component's own docs, modified by FRs that ran earlier in
+		// FeatureOrder). A /host PATCH rewrites a host doc and threads forward
+		// so a later FR sees it; a /host PATCH against an assembler host halts.
+		if len(fr.Spec.Pipeline) > 0 {
+			pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
+			if perr != nil {
+				return nil, nil, perr
+			}
+			frFiles = pres.Own
+			state.Warnings = append(state.Warnings, pres.Warnings...)
+			for path, content := range pres.HostPatched {
+				hostPatched[path] = content
+				runningHost = applyHostPatchToRunning(runningHost, path, content)
+			}
 		}
 
 		prefix := "features/" + ref.InstanceName + "/"
@@ -461,7 +503,7 @@ func phaseB6(
 				fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
 			)
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q locals", nodeID, secretName))
+				return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q locals", nodeID, secretName))
 			}
 			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 			frCtx.SecretName = secretName
@@ -477,25 +519,25 @@ func phaseB6(
 
 			frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q", nodeID, secretName))
+				return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q", nodeID, secretName))
 			}
 
 			frEngine, err := engineFactory(fr.Spec.Provider)
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q engine factory", nodeID, secretName))
+				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q engine factory", nodeID, secretName))
 			}
 
 			frNodeCtx := nodeCtx
 			frNodeCtx.OriginalSource = fr.Spec.Source
 			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Values.TemplateAlphabeticalMapDeep(), entry.Infra.TemplateAlphabeticalMapDeep())
 			if err != nil {
-				return nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
+				return nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
 			}
 			frNodeCtx.Source = resolvedSrc
 
 			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input))
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			prefix := "secrets/" + secretName + "/"
@@ -506,7 +548,34 @@ func phaseB6(
 	}
 
 	state.PhaseReached = 6
-	return out, nil
+	return out, hostPatched, nil
+}
+
+// nonIntermediateFiles returns the emitted files that are not pre-assembly
+// fragments — the discrete documents a /host pipeline operation may target.
+func nonIntermediateFiles(files []EmittedFile) []EmittedFile {
+	out := make([]EmittedFile, 0, len(files))
+	for _, f := range files {
+		if f.Intermediate {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// applyHostPatchToRunning rewrites the running host set with a host-document
+// modification so a later FeatureRecipe in FeatureOrder sees the change. An
+// existing file's bytes are replaced in place (position preserved); a /host
+// EMIT of a new file is appended.
+func applyHostPatchToRunning(running []EmittedFile, path string, content []byte) []EmittedFile {
+	for i := range running {
+		if running[i].Name == path {
+			running[i].Body = content
+			return running
+		}
+	}
+	return append(running, EmittedFile{Name: path, Origin: EmitOriginPipeline, Body: content})
 }
 
 // featureSecretSlots returns the secretsSchema slots of the Feature the given

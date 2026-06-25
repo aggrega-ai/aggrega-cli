@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: pipeline-render-test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/server: server-recipe:1.0.0
