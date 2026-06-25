@@ -515,7 +515,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// EMIT clashing with a rendered filename.
 		if recipe != nil && len(recipe.Spec.Pipeline) > 0 {
 			renderCtx := buildPipelineRenderCtx(node, bi, parameters)
-			pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
+			// own provider is this node's recipe provider; a Recipe step has no
+			// host scope (host nil), so hostProvider is empty.
+			pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
 			if perr != nil {
 				return nil, perr
 			}
@@ -601,10 +603,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// hostIsAssembler mirrors the per-node renderIsIntermediate predicate —
 		// an assembler that is not an ExternalArtifactsHandler renders
 		// pre-assembly fragments, so a /host PATCH against it halts (post-
-		// assembly territory). renderCtx is the render-time context every
-		// pipeline step receives.
+		// assembly territory). providerName is the host component's recipe
+		// provider, threaded in so a host-scope pipeline step's
+		// compatibleProviders is enforced against the provider rendering the
+		// /host documents. renderCtx is the render-time context every pipeline
+		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		frFiles, hostPatched, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, pipelineRenderCtx)
+		frFiles, hostPatched, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}

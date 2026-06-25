@@ -11,8 +11,25 @@ import (
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// compatibleDescriber returns a stepDescriber that always reports a descriptor
+// whose step export is own-scope and tested-compatible with the "helm" provider.
+// The sentinel tests pass ownProvider "helm" so the pre-walk compatibility check
+// proceeds, letting each test exercise its own downstream halt (absent target,
+// hostless /host) rather than tripping ErrPluginProviderIncompatible first.
+func compatibleDescriber() stepDescriber {
+	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
+		return wasm.PluginDescriptor{
+			ABIVersion:          wasm.ABIVersionV1Alpha1,
+			PluginType:          wasm.PluginTypeFRPStep,
+			CompatibleProviders: []string{"helm"},
+			Exports:             []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: wasm.ScopeOwn}},
+		}, nil
+	}
+}
 
 // cannedInvoker returns a StepInvoker that always replies with the marshalled
 // out, regardless of the payload. It is the test seam for driving the executor
@@ -64,8 +81,8 @@ func TestRunNodePipeline_TargetNotEmitted(t *testing.T) {
 	}}}
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
-		ownDeployment(), nil, false,
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), "node")
+		ownDeployment(), nil, false, "helm", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), compatibleDescriber(), "node")
 	if err == nil {
 		t.Fatalf("expected halt for PATCH to absent token; got nil")
 	}
@@ -91,8 +108,8 @@ func TestRunNodePipeline_HostEmitFromHostlessHalts(t *testing.T) {
 	}}}
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
-		ownDeployment(), nil /* hostless */, false,
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), "node")
+		ownDeployment(), nil /* hostless */, false, "helm", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), compatibleDescriber(), "node")
 	if err == nil {
 		t.Fatalf("expected halt for /host EMIT from a hostless step; got nil")
 	}
@@ -118,8 +135,8 @@ func TestRunNodePipeline_HostPatchFromHostlessHalts(t *testing.T) {
 	}}}
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
-		ownDeployment(), nil /* hostless */, false,
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), "node")
+		ownDeployment(), nil /* hostless */, false, "helm", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), compatibleDescriber(), "node")
 	if err == nil {
 		t.Fatalf("expected halt for /host PATCH from a hostless step; got nil")
 	}

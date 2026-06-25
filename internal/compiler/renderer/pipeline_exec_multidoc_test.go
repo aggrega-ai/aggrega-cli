@@ -61,7 +61,7 @@ func TestRunNodePipeline_MultiDocSiblingPreserved(t *testing.T) {
 	own := []EmittedFile{{Name: "bundle.yaml", Origin: EmitOriginWorkload, Body: []byte(multiDocOwn)}}
 	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
 
-	res, err := runNodePipeline(context.Background(), steps, own, nil, false,
+	res, err := runNodePipeline(context.Background(), steps, own, nil, false, "helm", "",
 		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, "node")
 	if err != nil {
 		t.Fatalf("runNodePipeline: %v", err)
@@ -123,7 +123,7 @@ func TestRunNodePipeline_AssemblerOwnPatchHalts(t *testing.T) {
 	}}
 	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
 
-	_, err := runNodePipeline(context.Background(), steps, frag, nil, false,
+	_, err := runNodePipeline(context.Background(), steps, frag, nil, false, "helm", "",
 		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, "node")
 	if err == nil {
 		t.Fatalf("expected pre-assembly halt; got nil error")
@@ -149,7 +149,7 @@ func TestRunNodePipeline_HostEmitWhenHostPresent(t *testing.T) {
 	host := []EmittedFile{{Name: "host-deployment.yaml", Origin: EmitOriginWorkload, Body: []byte("kind: Deployment\nmetadata:\n  annotations: {}\n")}}
 	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
 
-	res, err := runNodePipeline(context.Background(), steps, own, host, false,
+	res, err := runNodePipeline(context.Background(), steps, own, host, false, "helm", "helm",
 		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, "node")
 	if err != nil {
 		t.Fatalf("runNodePipeline: %v", err)
@@ -172,7 +172,7 @@ func TestRunNodePipeline_ValidateOnlyWhenNoLookup(t *testing.T) {
 	t.Parallel()
 	own := []EmittedFile{{Name: "a.yaml", Origin: EmitOriginWorkload, Body: []byte("kind: ConfigMap\n")}}
 	steps := []types.PipelineStep{{ID: "p", Plugin: "x.wasm", Function: "step"}}
-	res, err := runNodePipeline(context.Background(), steps, own, nil, false,
+	res, err := runNodePipeline(context.Background(), steps, own, nil, false, "helm", "",
 		renderctx.RenderContext{}, &types.TemplateContext{}, 2, nil, "node")
 	if err != nil {
 		t.Fatalf("validate-only path errored: %v", err)

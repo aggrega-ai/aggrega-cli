@@ -64,7 +64,8 @@ type PluginDescriptor struct {
 	// documents must appear here — but this load-time validator does not:
 	// entries are unchecked strings here, since no provider registry exists
 	// at the load boundary to check them against. An empty or absent list
-	// declares no compatibility claim.
+	// declares no compatibility claim, so it matches no provider and the
+	// runtime halts any pipeline step that uses the plugin.
 	CompatibleProviders []string `json:"compatible_providers,omitempty"`
 
 	// Exports lists the plugin's offered exports in declared order. The
@@ -212,13 +213,17 @@ const (
 	operatesEmit  = "emit"
 )
 
-// scopeOwn and scopeHost are the two document roots an export may declare
+// ScopeOwn and ScopeHost are the two document roots an export may declare
 // via [PluginExport.Scope]. The shape validator accepts these two values
 // or the empty string; it does not require the field or act on its value
-// — the runtime resolves the scope's documents when dispatching.
+// — the runtime resolves the scope's documents when dispatching, and the
+// renderer's pre-walk provider-compatibility check reads ScopeHost to decide
+// which provider an export's scope is checked against. Exported so the single
+// scope identity is shared between this load-time shape gate and the runtime
+// enforcement rather than each side re-spelling the literal.
 const (
-	scopeOwn  = "own"
-	scopeHost = "host"
+	ScopeOwn  = "own"
+	ScopeHost = "host"
 )
 
 // Validate checks a parsed descriptor against the host's contract and
@@ -295,11 +300,11 @@ func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) erro
 				pluginIdentity, export.Name, export.Operates, operatesPatch, operatesEmit, ErrWasmManifestRejected)
 		}
 		switch export.Scope {
-		case "", scopeOwn, scopeHost:
+		case "", ScopeOwn, ScopeHost:
 			// well-shaped
 		default:
 			return fmt.Errorf("plugin %q export %q declares unknown scope %q (want %q, %q, or empty): %w",
-				pluginIdentity, export.Name, export.Scope, scopeOwn, scopeHost, ErrWasmManifestRejected)
+				pluginIdentity, export.Name, export.Scope, ScopeOwn, ScopeHost, ErrWasmManifestRejected)
 		}
 	}
 	return nil

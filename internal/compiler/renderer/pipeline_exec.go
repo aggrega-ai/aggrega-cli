@@ -79,6 +79,14 @@ type pipelineFile0 struct {
 // ErrPipelinePatchPreAssembly; the post-assembly phase re-runs such a PATCH.
 // EMIT is additive and runs per-node for every provider.
 //
+// ownProvider is the provider rendering this node's own documents (the recipe's
+// or FeatureRecipe's spec.provider); hostProvider is the provider rendering the
+// host component's documents (empty when the call has no host — a Recipe or a
+// boundary-scope FeatureRecipe). They drive the pre-walk compatibility check:
+// each step's plugin declares an enumerated compatibleProviders set, and the
+// provider of every scope the step's export touches must appear in it, or the
+// build halts with ErrPluginProviderIncompatible before any guest runs.
+//
 // lookup nil disables execution: the steps are validated by their presence but
 // not run, and a validate-only warning is returned (the non-regression path).
 func runNodePipeline(
@@ -87,6 +95,8 @@ func runNodePipeline(
 	own []EmittedFile,
 	host []EmittedFile,
 	hostIsAssembler bool,
+	ownProvider string,
+	hostProvider string,
 	renderCtx renderctx.RenderContext,
 	withCtx *types.TemplateContext,
 	yamlIndent int,
@@ -103,33 +113,46 @@ func runNodePipeline(
 		return res, nil
 	}
 
-	// Build the StepInvoker over the shared resolver + describe() gate, then
-	// delegate to the executor body. The public function owns only invoker
-	// construction (and the empty-steps / nil-lookup short-circuits above); the
-	// executor body is single-sourced in runNodePipelineWithInvoker, which a
-	// test exercises with a canned invoker.
-	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, renderCtx, withCtx, yamlIndent, newStepInvoker(lookup), nodeID)
+	// Build the StepInvoker and the per-step descriptor accessor over the shared
+	// resolver + describe() gate, then delegate to the executor body. The public
+	// function owns only seam construction (and the empty-steps / nil-lookup
+	// short-circuits above); the executor body is single-sourced in
+	// runNodePipelineWithInvoker, which a test exercises with canned seams.
+	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, yamlIndent, newStepInvoker(lookup), newStepDescriber(lookup), nodeID)
 }
 
 // runNodePipelineWithInvoker is the executor body shared by the production path
-// (a real describe()-gated invoker) and tests (a canned invoker). It builds the
-// keyed document set, walks the steps through invoke, and folds the result back
-// — the one place the segmenter, walk, and apply-back are wired together. The
-// public runNodePipeline is the only production caller; it differs solely in
-// constructing the invoker from a plugin-path lookup. invoke must be non-nil.
+// (real describe()-gated seams) and tests (canned seams). It runs the pre-walk
+// provider-compatibility check, builds the keyed document set, walks the steps
+// through invoke, and folds the result back — the one place enforcement, the
+// segmenter, the walk, and apply-back are wired together. The public
+// runNodePipeline is the only production caller; it differs solely in
+// constructing invoke + describe from a plugin-path lookup. Both seams must be
+// non-nil.
 func runNodePipelineWithInvoker(
 	ctx context.Context,
 	steps []types.PipelineStep,
 	own []EmittedFile,
 	host []EmittedFile,
 	hostIsAssembler bool,
+	ownProvider string,
+	hostProvider string,
 	renderCtx renderctx.RenderContext,
 	withCtx *types.TemplateContext,
 	yamlIndent int,
 	invoke frp.StepInvoker,
+	describe stepDescriber,
 	nodeID string,
 ) (pipelineResult, error) {
 	res := pipelineResult{Own: own}
+
+	// 0. Pre-walk provider-compatibility enforcement. For each step, read the
+	//    plugin's describe() descriptor and assert the provider rendering every
+	//    scope the step's export touches is in the plugin's compatibleProviders.
+	//    Fail-fast: a mismatch halts before the walk runs any guest.
+	if err := enforceProviderCompatibility(ctx, steps, ownProvider, hostProvider, describe, nodeID); err != nil {
+		return pipelineResult{}, err
+	}
 
 	// 1. Build the keyed document set from the emitted files via the segmenter.
 	ownFiles, ownDocs, err := buildScopeDocs(own)
@@ -309,6 +332,106 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		defer plugin.Close(ctx)
 		return wasm.InvokeExport(ctx, plugin, desc, step.Function, payload)
 	}
+}
+
+// stepDescriber reads one pipeline step's plugin describe() descriptor — the
+// seam through which the executor reaches a plugin's declared compatibleProviders
+// and per-export capability declarations before any guest runs. The production
+// path binds it to the shared resolver + describe() gate (newStepDescriber); a
+// test supplies a canned descriptor so the pre-walk enforcement is exercised
+// without a real .wasm. It is separate from frp.StepInvoker because enforcement
+// needs the descriptor (which the invoker hides) ahead of the walk.
+type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error)
+
+// newStepDescriber binds the per-step descriptor read over the shared
+// plugin-path resolver and the describe() gate: resolve the step's plugin URI to
+// a .wasm path, load it through LoadAndDescribe (which validates the descriptor),
+// and return the validated descriptor, closing the plugin. The pre-walk
+// compatibility check consumes the descriptor's compatibleProviders. Loading
+// here and again in the invoker is the bounded double-load the per-step batch
+// amortisation follow-on addresses; loading per step is already accepted.
+func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
+	return func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error) {
+		path, err := lookup(step.Plugin)
+		if err != nil {
+			return wasm.PluginDescriptor{}, err
+		}
+		loader := &wasm.Loader{}
+		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{Name: step.Plugin, Path: path})
+		if err != nil {
+			return wasm.PluginDescriptor{}, err
+		}
+		_ = plugin.Close(ctx)
+		return desc, nil
+	}
+}
+
+// enforceProviderCompatibility runs the pre-walk provider-compatibility check
+// over every pipeline step. For each step it reads the plugin descriptor, finds
+// the step's export by name, and asserts the provider rendering every scope the
+// export declares is in the plugin's compatibleProviders (exact-string,
+// enumerated — no family abstraction). An own-scope export checks ownProvider;
+// a host-scope export checks hostProvider, but only when a host is present
+// (hostProvider != ""): a host operation from a hostless step is already caught
+// by ErrPipelineHostScopeUnavailable at the operation level, so the
+// compatibility check does not double-report it. An empty compatibleProviders
+// set declares no compatibility claim and therefore matches no provider, so any
+// step that uses such a plugin halts. The check is fail-fast: the first
+// mismatch halts the build before the walk runs any guest.
+func enforceProviderCompatibility(
+	ctx context.Context,
+	steps []types.PipelineStep,
+	ownProvider string,
+	hostProvider string,
+	describe stepDescriber,
+	nodeID string,
+) error {
+	for _, step := range steps {
+		desc, err := describe(ctx, step)
+		if err != nil {
+			return wrapPipelineErr(err, nodeID)
+		}
+		scope := exportScope(desc, step.Function)
+		switch scope {
+		case wasm.ScopeHost:
+			// Only enforce host compatibility when a host is present; a hostless
+			// /host op is the hostless guardrail's territory, not this check's.
+			if hostProvider != "" && !providerCompatible(hostProvider, desc.CompatibleProviders) {
+				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "host", hostProvider)
+			}
+		default: // own (empty scope defaults to own per the wire contract)
+			if !providerCompatible(ownProvider, desc.CompatibleProviders) {
+				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "own", ownProvider)
+			}
+		}
+	}
+	return nil
+}
+
+// exportScope returns the declared scope of the named export, or the empty
+// string when the descriptor declares no such export (the walk's InvokeExport
+// gate surfaces an undeclared export precisely; here an absent export yields the
+// own-scope default so a malformed descriptor is not silently treated as host).
+func exportScope(desc wasm.PluginDescriptor, function string) string {
+	for _, e := range desc.Exports {
+		if e.Name == function {
+			return e.Scope
+		}
+	}
+	return ""
+}
+
+// providerCompatible reports whether provider is an exact-string member of the
+// plugin's declared compatibleProviders. An empty set matches nothing, so it
+// returns false for every provider — an empty list declares no compatibility
+// claim and the caller halts.
+func providerCompatible(provider string, compatible []string) bool {
+	for _, c := range compatible {
+		if c == provider {
+			return true
+		}
+	}
+	return false
 }
 
 // buildScopeDocs segments each emitted file into discrete documents and keys
@@ -581,6 +704,23 @@ func pipelinePreAssemblyErr(nodeID, token, scope string) error {
 	return cerrors.Wrap(ErrPipelinePatchPreAssembly, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: %s (%s-scope document %q is rendered by an assembler provider; the post-assembly phase re-runs this PATCH once the documents are discrete)",
 			nodeID, ErrPipelinePatchPreAssembly.Error(), scope, token))
+}
+
+// pipelineProviderIncompatibleErr builds the Loud Guardrail for a step whose
+// plugin is not compatible with the provider rendering the scope it touches. The
+// message names the plugin, the offending provider and its scope, and the
+// plugin's declared compatibleProviders in declared order (the descriptor slice
+// is already author/declared order, so the message is byte-identical across
+// runs); an empty declared set renders as "(none)" so the no-claim case reads
+// clearly.
+func pipelineProviderIncompatibleErr(nodeID, plugin string, declared []string, scope, provider string) error {
+	declaredList := "(none)"
+	if len(declared) > 0 {
+		declaredList = strings.Join(declared, ", ")
+	}
+	return cerrors.Wrap(ErrPluginProviderIncompatible, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf("node %q: %s: plugin %q does not list provider %q (the %s-scope provider); declared compatibleProviders: [%s]",
+			nodeID, ErrPluginProviderIncompatible.Error(), plugin, provider, scope, declaredList))
 }
 
 func pipelineHostScopeErr(nodeID, name string) error {

@@ -328,7 +328,10 @@ func phaseB5(state *PhaseBState) error {
 // surface a component-scope FR pipeline reads as /host). hostIsAssembler
 // reports whether the host's provider renders pre-assembly fragments; a /host
 // PATCH against an assembler host halts (post-assembly phase territory).
-// renderCtx is the render-time context every pipeline step receives.
+// hostProvider is the host component's recipe provider — the provider rendering
+// the /host documents, against which a host-scope pipeline step's
+// compatibleProviders is enforced. renderCtx is the render-time context every
+// pipeline step receives.
 func phaseB6(
 	ctx context.Context,
 	tmplCtx *types.TemplateContext,
@@ -346,6 +349,7 @@ func phaseB6(
 	input RendererInput,
 	hostOwn []EmittedFile,
 	hostIsAssembler bool,
+	hostProvider string,
 	renderCtx renderctx.RenderContext,
 ) (map[string][]byte, map[string][]byte, error) {
 	out := map[string][]byte{}
@@ -452,7 +456,9 @@ func phaseB6(
 		// FeatureOrder). A /host PATCH rewrites a host doc and threads forward
 		// so a later FR sees it; a /host PATCH against an assembler host halts.
 		if len(fr.Spec.Pipeline) > 0 {
-			pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
+			// own provider is the FR's own provider; host provider is the host
+			// component's recipe provider (threaded in from the orchestrator).
+			pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, fr.Spec.Provider, hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
 			if perr != nil {
 				return nil, nil, perr
 			}

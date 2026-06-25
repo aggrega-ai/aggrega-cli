@@ -390,9 +390,18 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.DescendRecipeProviders(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
 		return fmt.Errorf("closure: provider descent: %w", err)
 	}
+	// Pull-side pipeline-plugin descent: read each in-closure Recipe / FeatureRecipe's
+	// spec.pipeline[].plugin URIs and pin a registry-resolved plugin into the closure,
+	// so a registry-published pipeline plugin participates in the deterministic lockfile
+	// pin like any other Wasm plugin. A Tier-1-local plugin is left out (resolved at
+	// build through its local path). Lock-time only — the build path reads plugin pins
+	// from the lockfile and never descends.
+	if err := closure.DescendRecipePlugins(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
+		return fmt.Errorf("closure: pipeline-plugin descent: %w", err)
+	}
 	// Refresh the pin set so it covers the descended sub-aggregates the source-
 	// descent flatten resolves through lazyView.SubAggregateLoader below, and the
-	// providers the descent just pinned.
+	// providers + pipeline plugins the descents just pinned.
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
 
 	// The pull-event tier diagnostic reads the closure's in-memory resolution

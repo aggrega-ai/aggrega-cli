@@ -156,4 +156,17 @@ var (
 	// assembler produces discrete documents. EMIT is additive and runs
 	// per-node for every provider, so it is never gated by this guardrail.
 	ErrPipelinePatchPreAssembly = errors.New("pipeline PATCH targets an assembler provider's pre-assembly fragments")
+
+	// ErrPluginProviderIncompatible fires when a pipeline step's plugin declares
+	// an enumerated compatibleProviders set that does not include the provider
+	// rendering the scope the step touches — the recipe's own provider for an
+	// own-scope step, the host component's provider for a host-scope step. The
+	// list is an explicit tested-compatibility claim, not an implicit "any
+	// similar provider"; running the plugin against an unlisted provider risks a
+	// wrong patch, so the build halts loudly rather than proceeding. An empty or
+	// absent set declares no compatibility claim, so it matches no provider and
+	// every step that uses the plugin halts here. The check is pre-invoke (read
+	// from describe() before any guest runs) and matches provider names exactly.
+	// Category: CATALOG_ERROR.
+	ErrPluginProviderIncompatible = errors.New("pipeline plugin is not compatible with the rendering provider")
 )
