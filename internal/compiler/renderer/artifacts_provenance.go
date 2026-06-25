@@ -317,19 +317,34 @@ func helmTokensPreserved(in, out string) bool {
 
 // decodeAllDocs decodes every document in a YAML stream (multi-document-aware).
 func decodeAllDocs(s string) ([]*yaml.Node, error) {
+	docs, _, err := decodeAllDocsWithLines(s)
+	return docs, err
+}
+
+// decodeAllDocsWithLines is the single multi-document decoder. It runs one
+// yaml.Decoder loop over the stream and returns, per document, the decoded
+// DocumentNode plus its 1-based start line — the DocumentNode's own Line, which
+// the parser reports as the line of the `---` separator that introduces the
+// document (or the first significant token for a leading document with no
+// separator). decodeAllDocs delegates here and discards the lines, so a single
+// decoder governs both the provenance splice and the byte-faithful segmenter;
+// there is no second YAML document decoder in the renderer.
+func decodeAllDocsWithLines(s string) ([]*yaml.Node, []int, error) {
 	dec := yaml.NewDecoder(strings.NewReader(s))
 	var docs []*yaml.Node
+	var startLines []int
 	for {
 		var n yaml.Node
 		if err := dec.Decode(&n); err != nil {
 			if err == io.EOF {
 				break
 			}
-			return nil, err
+			return nil, nil, err
 		}
 		docs = append(docs, &n)
+		startLines = append(startLines, n.Line)
 	}
-	return docs, nil
+	return docs, startLines, nil
 }
 
 func isFlow(n *yaml.Node) bool { return n != nil && n.Style&yaml.FlowStyle != 0 }
