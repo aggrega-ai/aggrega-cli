@@ -6,6 +6,8 @@ package renderer
 import (
 	"context"
 	"fmt"
+
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 )
 
 // Engine renders one node's values dictionary into on-disk-style artifacts.
@@ -20,6 +22,24 @@ type Engine interface {
 	// self-reports, so the central input-kind gate (orchestrator) reads a
 	// provider's support from the engine itself rather than a hardcoded table.
 	Capabilities() ProviderCapabilities
+}
+
+// CodecProvider is the optional capability an Engine implements to supply its
+// own [frp.Codec] for the pipeline — how the provider's emitted output is
+// carved into addressable units and reassembled byte-faithfully after a step
+// edits some of them. An engine that does not implement it borrows the core's
+// stock YAML codec ([NewStockYAMLCodec]); an engine that knows its own output
+// shape (a templated format the YAML parser cannot tree directly, for instance)
+// returns a codec that defines its own units.
+//
+// The pipeline executor type-asserts this capability off the engine rendering
+// the scope it is carving, exactly as it asserts BoundaryAssembler and
+// ExternalArtifactsHandler elsewhere: own-scope units use the own engine's
+// codec, host-scope units use the host engine's codec. The returned codec is
+// the provider's call about what is structured (a PATCH target) versus opaque,
+// keeping that policy in the provider rather than the dumb core.
+type CodecProvider interface {
+	Codec(yamlIndent int) frp.Codec
 }
 
 // ProviderCapabilities declares which of the three Recipe input kinds (LDR

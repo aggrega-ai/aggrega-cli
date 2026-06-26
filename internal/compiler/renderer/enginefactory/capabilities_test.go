@@ -70,3 +70,37 @@ func TestCapabilities_ProviderMatrix(t *testing.T) {
 		})
 	}
 }
+
+// TestCodecProvider_HelmChartOverridesStock pins the codec-selection seam at the
+// real factory: only helm-chart overrides the stock YAML codec (it renders chart
+// source whose templates the stock codec cannot tree), so only its engine
+// satisfies renderer.CodecProvider. The flat providers borrow the stock codec
+// and do not implement the interface — the pipeline executor's type assertion
+// then selects each scope's codec correctly by provider name.
+func TestCodecProvider_HelmChartOverridesStock(t *testing.T) {
+	t.Parallel()
+	overrides := map[string]bool{
+		"helm":       false,
+		"helm-chart": true,
+		"compose":    false,
+	}
+	for provider, want := range overrides {
+		provider, want := provider, want
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			engine, err := enginefactory.Dispatch(provider)
+			if err != nil {
+				t.Fatalf("Dispatch(%q): %v", provider, err)
+			}
+			cp, ok := engine.(renderer.CodecProvider)
+			if ok != want {
+				t.Fatalf("provider %q implements CodecProvider = %v; want %v", provider, ok, want)
+			}
+			if want {
+				if cp.Codec(2) == nil {
+					t.Errorf("provider %q CodecProvider.Codec returned nil", provider)
+				}
+			}
+		})
+	}
+}

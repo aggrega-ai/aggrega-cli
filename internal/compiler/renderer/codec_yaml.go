@@ -39,6 +39,19 @@ func newStockYAMLCodec(indent int) stockYAMLCodec {
 	return stockYAMLCodec{indent: ClampYAMLIndent(indent)}
 }
 
+// NewStockYAMLCodec returns the core's stock YAML codec as a reusable
+// [frp.Codec] primitive. It is the borrow default every YAML-shaped provider
+// uses, and the shared building block a provider codec composes on: a provider
+// that carves its own units (a templated format, for instance) delegates the
+// structural YAML scaffold to this codec so the node-span surgical machinery —
+// comment, anchor, merge-key, and scalar-style preservation — is single-sourced
+// rather than re-implemented per provider. The indent width is clamped to the
+// renderer's supported range and used only when an op must synthesise new YAML
+// text.
+func NewStockYAMLCodec(indent int) frp.Codec {
+	return newStockYAMLCodec(indent)
+}
+
 // Segment splits one emitted file into ordered units, one per YAML document.
 // Boundary detection delegates to the same parser-driven Split the renderer
 // uses elsewhere, so a `---` inside a block or flow scalar is never mistaken

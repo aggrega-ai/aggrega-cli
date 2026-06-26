@@ -517,7 +517,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			renderCtx := buildPipelineRenderCtx(node, bi, parameters)
 			// own provider is this node's recipe provider; a Recipe step has no
 			// host scope (host nil), so hostProvider is empty.
-			pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
+			pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 			if perr != nil {
 				return nil, perr
 			}

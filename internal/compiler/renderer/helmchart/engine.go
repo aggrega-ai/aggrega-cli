@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -26,7 +27,19 @@ var (
 	_ renderer.ExternalArtifactsHandler = (*HelmEngine)(nil)
 	_ renderer.ArtifactsPathProvider    = (*HelmEngine)(nil)
 	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
+	_ renderer.CodecProvider            = (*HelmEngine)(nil)
 )
+
+// Codec satisfies renderer.CodecProvider: the helm-chart provider overrides the
+// stock YAML codec with a structure-with-holes codec for its emitted chart
+// source. Chart templates carry Go-template actions (`{{ … }}`) that are not
+// valid YAML, so the stock codec cannot tree them directly; the helm-chart codec
+// blanks the actions to placeholders, trees and patches the structural scaffold,
+// and restores the actions verbatim on serialize — patching chart source ahead
+// of time without rendering it (Helm renders at deploy time).
+func (e *HelmEngine) Codec(yamlIndent int) frp.Codec {
+	return NewHelmChartCodec(yamlIndent)
+}
 
 // Capabilities reports helm-chart's input-kind support: sourced only. It
 // produces an umbrella chart from a chart source; it does not synthesise from a

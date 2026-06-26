@@ -458,7 +458,7 @@ func phaseB6(
 		if len(fr.Spec.Pipeline) > 0 {
 			// own provider is the FR's own provider; host provider is the host
 			// component's recipe provider (threaded in from the orchestrator).
-			pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, fr.Spec.Provider, hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, nodeID)
+			pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, fr.Spec.Provider, hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 			if perr != nil {
 				return nil, nil, perr
 			}

@@ -51,7 +51,7 @@ func TestProviderCompat_OwnScopeMismatchHalts(t *testing.T) {
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		ownDeployment(), nil, false,
 		"helm" /* ownProvider */, "", /* no host */
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2,
+		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2),
 		noopInvoker(t), describerFor(wasm.ScopeOwn, []string{"compose"}), "node")
 	if err == nil {
 		t.Fatalf("expected halt for own-scope provider mismatch; got nil")
@@ -81,7 +81,7 @@ func TestProviderCompat_HostScopeMismatchHalts(t *testing.T) {
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		ownDeployment(), host, false,
 		"compose" /* ownProvider */, "helm", /* hostProvider */
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2,
+		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2),
 		noopInvoker(t), describerFor(wasm.ScopeHost, []string{"compose"}), "node")
 	if err == nil {
 		t.Fatalf("expected halt for host-scope provider mismatch; got nil")
@@ -107,7 +107,7 @@ func TestProviderCompat_CompatibleProceeds(t *testing.T) {
 	res, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		own, nil, false,
 		"helm" /* ownProvider */, "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2,
+		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2),
 		noopInvoker(t), describerFor(wasm.ScopeOwn, []string{"helm", "compose"}), "node")
 	if err != nil {
 		t.Fatalf("compatible provider must proceed; got halt: %v", err)
@@ -127,7 +127,7 @@ func TestProviderCompat_EmptyCompatibleProvidersHalts(t *testing.T) {
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		ownDeployment(), nil, false,
 		"helm" /* ownProvider */, "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2,
+		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2),
 		noopInvoker(t), describerFor(wasm.ScopeOwn, nil /* empty compatibleProviders */), "node")
 	if err == nil {
 		t.Fatalf("expected halt for empty compatibleProviders; got nil")

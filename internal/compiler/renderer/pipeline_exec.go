@@ -101,6 +101,7 @@ func runNodePipeline(
 	withCtx *types.TemplateContext,
 	yamlIndent int,
 	lookup pluginpath.Lookup,
+	engineFactory EngineFactory,
 	nodeID string,
 ) (pipelineResult, error) {
 	res := pipelineResult{Own: own}
@@ -113,12 +114,39 @@ func runNodePipeline(
 		return res, nil
 	}
 
+	// Select the per-scope codec from each scope's rendering provider: the own
+	// engine's codec carves the node's own documents, the host engine's codec
+	// carves the host component's documents. A provider that implements
+	// CodecProvider supplies its own units (a templated format, for instance);
+	// every other provider borrows the stock YAML codec. Provider-name → engine
+	// → codec routes through the same engineFactory the orchestrator uses, so
+	// codec selection single-sources the provider→engine mapping.
+	ownCodec := selectCodec(engineFactory, ownProvider, yamlIndent)
+	hostCodec := selectCodec(engineFactory, hostProvider, yamlIndent)
+
 	// Build the StepInvoker and the per-step descriptor accessor over the shared
 	// resolver + describe() gate, then delegate to the executor body. The public
 	// function owns only seam construction (and the empty-steps / nil-lookup
 	// short-circuits above); the executor body is single-sourced in
 	// runNodePipelineWithInvoker, which a test exercises with canned seams.
-	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, yamlIndent, newStepInvoker(lookup), newStepDescriber(lookup), nodeID)
+	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, ownCodec, hostCodec, newStepInvoker(lookup), newStepDescriber(lookup), nodeID)
+}
+
+// selectCodec resolves the codec for the scope rendered by providerName: the
+// provider's own codec when its engine implements CodecProvider, otherwise the
+// stock YAML codec. An empty providerName (a scope the call has no provider for,
+// such as the host scope of a hostless step) or a provider whose engine does
+// not resolve falls back to the stock codec — the borrow default — so the
+// returned codec is never nil.
+func selectCodec(engineFactory EngineFactory, providerName string, yamlIndent int) frp.Codec {
+	if providerName != "" && engineFactory != nil {
+		if engine, err := engineFactory(providerName); err == nil {
+			if cp, ok := engine.(CodecProvider); ok {
+				return cp.Codec(yamlIndent)
+			}
+		}
+	}
+	return newStockYAMLCodec(yamlIndent)
 }
 
 // runNodePipelineWithInvoker is the executor body shared by the production path
@@ -139,19 +167,21 @@ func runNodePipelineWithInvoker(
 	hostProvider string,
 	renderCtx renderctx.RenderContext,
 	withCtx *types.TemplateContext,
-	yamlIndent int,
+	ownCodec frp.Codec,
+	hostCodec frp.Codec,
 	invoke frp.StepInvoker,
 	describe stepDescriber,
 	nodeID string,
 ) (pipelineResult, error) {
 	res := pipelineResult{Own: own}
 
-	// The codec is the seam every carve + reassemble routes through. The core
-	// ships the stock YAML codec as the borrow default; a provider override
-	// would replace this single assignment. The stock codec is node-span
-	// surgical, so a patched document edits only its own byte-spans and the
-	// surrounding comments/anchors/styles survive.
-	codec := newStockYAMLCodec(yamlIndent)
+	// The codec is the seam every carve + reassemble routes through, selected
+	// per scope from the provider rendering that scope: ownCodec carves the
+	// node's own documents, hostCodec the host component's. A provider that
+	// implements CodecProvider supplies its own units; every other provider
+	// borrows the stock YAML codec, which is node-span surgical so a patched
+	// document edits only its own byte-spans and the surrounding
+	// comments/anchors/styles survive.
 
 	// 0. Pre-walk provider-compatibility enforcement. For each step, read the
 	//    plugin's describe() descriptor and assert the provider rendering every
@@ -161,12 +191,12 @@ func runNodePipelineWithInvoker(
 		return pipelineResult{}, err
 	}
 
-	// 1. Build the keyed unit set from the emitted files via the codec.
-	ownFiles, ownDocs, err := buildScopeDocs(codec, own)
+	// 1. Build the keyed unit set from the emitted files via each scope's codec.
+	ownFiles, ownDocs, err := buildScopeDocs(ownCodec, own)
 	if err != nil {
 		return pipelineResult{}, wrapPipelineErr(err, nodeID)
 	}
-	hostFiles, hostDocs, err := buildScopeDocs(codec, host)
+	hostFiles, hostDocs, err := buildScopeDocs(hostCodec, host)
 	if err != nil {
 		return pipelineResult{}, wrapPipelineErr(err, nodeID)
 	}
@@ -192,16 +222,17 @@ func runNodePipelineWithInvoker(
 		}
 	}
 
-	// 5b. Apply PATCHes back into own files byte-faithfully via the codec.
-	ownOut, err := foldPatchesBack(codec, ownFiles, walkRes.AppliedOps.Own, nodeID)
+	// 5b. Apply PATCHes back into own files byte-faithfully via the own codec.
+	ownOut, err := foldPatchesBack(ownCodec, ownFiles, walkRes.AppliedOps.Own, nodeID)
 	if err != nil {
 		return pipelineResult{}, err
 	}
 
-	// 5c. Apply PATCHes back into host files; surface them keyed by path.
+	// 5c. Apply PATCHes back into host files via the host codec; surface them
+	//     keyed by path.
 	hostPatched := map[string][]byte{}
 	if len(host) > 0 {
-		hostOut, err := foldPatchesBack(codec, hostFiles, walkRes.AppliedOps.Host, nodeID)
+		hostOut, err := foldPatchesBack(hostCodec, hostFiles, walkRes.AppliedOps.Host, nodeID)
 		if err != nil {
 			return pipelineResult{}, err
 		}
