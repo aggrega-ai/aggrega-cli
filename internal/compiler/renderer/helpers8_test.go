@@ -42,7 +42,7 @@ func TestPhaseB6_NoFeatures(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
 	state := &PhaseBState{NodeID: "n"}
-	got, hostPatched, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, types.OrderedMap[types.IRSecretEntry]{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{}, nil, false, "", renderctx.RenderContext{})
+	got, hostPatched, deferred, err := phaseB6(nil, tmplCtx, state, nil, nil, NodeProvides{}, types.OrderedMap[types.IRSecretEntry]{}, RecipeLookup{}, NodeRenderContext{}, nil, nil, nil, nil, RendererInput{}, nil, false, "", renderctx.RenderContext{})
 	if err != nil {
 		t.Errorf("no features: %v", err)
 	}
@@ -51,6 +51,9 @@ func TestPhaseB6_NoFeatures(t *testing.T) {
 	}
 	if len(hostPatched) != 0 {
 		t.Errorf("no features should produce empty hostPatched; got %v", hostPatched)
+	}
+	if len(deferred) != 0 {
+		t.Errorf("no features should produce empty deferred; got %v", deferred)
 	}
 }
 

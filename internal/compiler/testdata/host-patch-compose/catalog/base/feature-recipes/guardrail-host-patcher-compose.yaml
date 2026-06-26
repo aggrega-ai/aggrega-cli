@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-host-patcher-compose
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: "feature.myco/guardrail"
+  # An artifacts: entry makes this FeatureRecipe resource-generating, so its
+  # pipeline runs. Its own output renders under features/guardrail/ via the
+  # flat helm provider (additive, per-node); the pipeline's work is the
+  # cross-entity /host PATCH below, which targets the compose host's MERGED
+  # docker-compose.yaml and therefore defers to the post-assembly phase.
+  artifacts:
+    guardrail-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: guardrail-config
+      data:
+        label: "{{ .values.label }}"
+  pipeline:
+    - id: inject_into_host
+      plugin: frp-step-host-patch-compose-rust.wasm
+      function: step

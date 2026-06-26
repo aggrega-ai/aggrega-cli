@@ -35,6 +35,35 @@ type pipelineResult struct {
 	Warnings    []string
 }
 
+// DeferredHostPatch carries everything the post-assembly phase needs to replay
+// a component-scope FeatureRecipe's /host pipeline against an assembler host's
+// merged documents. An assembler host (compose) renders pre-assembly fragments
+// per-node, so there is no discrete host document for the guest to
+// content-select while the node is processed; the FeatureRecipe's host pipeline
+// is recorded here and replayed against the merged documents once assembly has
+// produced them — neither halted nor dropped.
+//
+// Steps is the FeatureRecipe's pipeline; WithCtx and RenderCtx are the exact
+// contexts the per-node pass evaluated against, captured so the replayed `with`
+// renders identically. HostProvider is the host component's recipe provider
+// (the assembler — "compose"), driving codec selection and the host-scope
+// compatibility check on replay. NodeID is the host component node; FRInstance
+// names the attached FeatureRecipe. HostNodeOrder and FeatureOrderIndex are the
+// A1 replay-ordering keys: the host node's position in topology author order,
+// then the FeatureRecipe's position in the node's FeatureOrder cascade — so when
+// several deferred host pipelines replay they layer in the same deterministic
+// order the per-node host cascade uses.
+type DeferredHostPatch struct {
+	Steps             []types.PipelineStep
+	WithCtx           *types.TemplateContext
+	RenderCtx         renderctx.RenderContext
+	HostProvider      string
+	NodeID            string
+	FRInstance        string
+	HostNodeOrder     int
+	FeatureOrderIndex int
+}
+
 // pipelineFile pairs an emitted file with the codec's segmentation of its
 // bytes into addressable units. units is nil for a file the codec rejected
 // entirely (no addressable units): such a file passes through verbatim. A
@@ -209,10 +238,19 @@ func runNodePipelineWithInvoker(
 	}
 
 	// 5. Fold the walk result back into emitted files.
-	// 5a. Pre-assembly fragment guard (scope-symmetric): a PATCH that changed
+	// 5a. Pre-assembly fragment guard (scope-symmetric). A PATCH that changed
 	//     an own-scope document of an Intermediate file, or any host-scope
-	//     document when the host provider is an assembler, halts — the target
-	//     is a pre-assembly fragment.
+	//     document when the host provider is an assembler, halts — the target is
+	//     a pre-assembly fragment.
+	//
+	//     For the host scope this guard is the defensive floor, not the normal
+	//     path: a component-scope FeatureRecipe whose host is an assembler has
+	//     its host-scope pipeline DEFERRED whole to the post-assembly phase
+	//     before this executor runs (the per-node host set is empty, so the
+	//     guest cannot content-select a pre-assembly fragment). The guard
+	//     therefore catches an assembler-host PATCH only if one reaches the
+	//     executor through a future caller that did not defer — a bug it should
+	//     halt loudly rather than apply against fragments assembly will discard.
 	if step, ok := changedFragmentOwn(walkRes.AppliedOps.Own, ownFiles); ok {
 		return pipelineResult{}, pipelinePreAssemblyErr(nodeID, step, "own")
 	}

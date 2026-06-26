@@ -118,6 +118,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	dispatch := map[dispatchKey]*pendingDispatch{}
 	orderedDispatch := []dispatchKey{}
 
+	// Deferred host-PATCH accumulator, keyed by the dispatch group of the host
+	// component. A component-scope FeatureRecipe whose host's provider is an
+	// assembler cannot PATCH the host per-node — the host's merged documents are
+	// not discrete until assembly. Each such PATCH is recorded here and replayed
+	// in the post-assembly phase against the assembled documents. The records
+	// carry the A1 ordering keys (host-node author order, FeatureOrder index) so
+	// the replay layers deterministically.
+	deferredByDispatch := map[dispatchKey][]DeferredHostPatch{}
+
 	// Pre-compute the per-boundary evaluated `directory:` map for the
 	// .parent_boundary.directory cascade. Path-template eval at any
 	// boundary depth can read its IMMEDIATE parent's evaluated directory
@@ -164,8 +173,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		traceWriter = trace.New("")
 	}
 
-	// Per-node rendering
-	for _, nodeID := range nodeIDs {
+	// Per-node rendering. nodeIDs is sorted (topology author order for the
+	// deterministic walk); nodeOrder is the host node's position in that order,
+	// the outer A1 replay-ordering key for deferred host PATCHes.
+	for nodeOrder, nodeID := range nodeIDs {
 		node, _ := graph.Spec.Nodes.Get(nodeID)
 		recipe := nodeRecipes[nodeID]
 
@@ -609,9 +620,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		frFiles, hostPatched, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
+		frFiles, hostPatched, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
+		}
+		// Stash deferred host PATCHes under the host component's dispatch group.
+		// The host node IS this node (a component-scope FR patches the component
+		// it is attached to), so the merged documents the PATCH targets are the
+		// ones this dispatch group's assembler produces. Stamp the host-node
+		// author-order key for the A1 replay ordering.
+		for i := range deferred {
+			deferred[i].HostNodeOrder = nodeOrder
+			deferredByDispatch[key] = append(deferredByDispatch[key], deferred[i])
 		}
 		for path, content := range frFiles {
 			dispatch[key].files[nodeID][path] = content
@@ -894,6 +914,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			boundaryFiles, nestPerNode, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, fmt.Sprintf("Step 5 dispatch %q assemble", key.Path))
+			}
+			// Post-assembly /host PATCH replay. A component-scope FeatureRecipe
+			// whose host's provider is this assembler deferred its /host PATCH
+			// per-node (the merged documents were not discrete yet). Now that the
+			// assembler has produced them, replay the deferred steps host-scope-
+			// only against the assembled documents, in the deterministic A1
+			// cascade, rewriting boundaryFiles in place before they are written.
+			if recs := deferredByDispatch[key]; len(recs) > 0 {
+				warnings, perr := replayDeferredHostPatches(ctx, boundaryFiles, key.Provider, recs, engineFactory, input)
+				if perr != nil {
+					return nil, perr
+				}
+				result.Warnings = append(result.Warnings, warnings...)
 			}
 			for p, c := range boundaryFiles {
 				result.Files[dispatchPrefix+p] = c
