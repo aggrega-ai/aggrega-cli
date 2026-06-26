@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: host-patch-helmchart-test
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/compute/api-server
+      features:
+        guardrail:
+          type: feature.myco/guardrail
+          values:
+            label: injected

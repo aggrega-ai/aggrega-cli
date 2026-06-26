@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-host-patcher
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: "feature.myco/guardrail"
+  # An artifacts: entry makes this FeatureRecipe resource-generating, so its
+  # pipeline runs. Its own output renders under features/guardrail/; the
+  # pipeline's work is the cross-entity /host PATCH below.
+  artifacts:
+    guardrail-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: guardrail-config
+      data:
+        label: "{{ .values.label }}"
+  pipeline:
+    - id: inject_into_host
+      plugin: frp-step-host-patch-rust.wasm
+      function: step

@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: host-patch-helmchart-test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-chart-sourced:1.0.0
+    features:
+      type:
+        feature.myco/guardrail: guardrail-host-patcher:1.0.0

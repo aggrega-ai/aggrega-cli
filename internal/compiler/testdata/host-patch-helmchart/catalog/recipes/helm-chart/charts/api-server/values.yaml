@@ -1,0 +1,8 @@
+# Chart values for the api-server host component.
+# A pipeline /host PATCH injects an env var into the environment block below;
+# this comment and the sibling keys must survive the surgical edit verbatim.
+image: api-server:latest
+replicas: 1
+ports: []
+environment:
+  EXISTING_VAR: 'keep-me'

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-api-server-chart-sourced
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/compute/api-server
+  source: ./charts/api-server
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  valuesMapping: |
+    {
+      "image": "api-server:latest",
+      "replicas": {{ optional .infra `replicas` 1 }}
+    }
