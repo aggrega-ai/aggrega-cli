@@ -144,3 +144,46 @@ func TestRunNodePipeline_HostPatchFromHostlessHalts(t *testing.T) {
 		t.Errorf("expected ErrPipelineHostScopeUnavailable; got %v", err)
 	}
 }
+
+// ownOpaque is one emitted file the stock codec carves into an OPAQUE unit: a
+// bare scalar body has no RFC-6902-addressable object tree, so its unit
+// carries media type + bytes but no Tree. The guest still sees it (tagged),
+// but a PATCH against it must halt.
+func ownOpaque() []EmittedFile {
+	return []EmittedFile{{
+		Name:   "note.txt",
+		Origin: EmitOriginWorkload,
+		Body:   []byte("just a bare scalar, not an object\n"),
+	}}
+}
+
+// TestRunNodePipeline_PatchOpaqueUnitHalts drives a canned step that PATCHes an
+// opaque (no-tree) unit and asserts the build halts with the renderer's
+// ErrPipelinePatchTargetNotStructured Loud Guardrail. The opaque unit IS handed
+// to the guest tagged (a SELECT/EMIT target), but it is not an RFC-6902 PATCH
+// target — the not-structured guardrail is now provider/codec-defined. The
+// walk's typed ErrPipelineTargetOpaque remains in the errors.Is chain.
+func TestRunNodePipeline_PatchOpaqueUnitHalts(t *testing.T) {
+	t.Parallel()
+
+	out := frp.FRPStepOutput{Patches: []frp.JSONPatchOp{{
+		Scope: frp.DocumentScopeOwn,
+		Key:   "note.txt", // present in the set, but opaque (no tree)
+		Op:    "add",
+		Path:  "/k",
+		Value: "v",
+	}}}
+
+	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
+		ownOpaque(), nil, false, "helm", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, cannedInvoker(t, out), compatibleDescriber(), "node")
+	if err == nil {
+		t.Fatalf("expected halt for PATCH against an opaque unit; got nil")
+	}
+	if !errors.Is(err, ErrPipelinePatchTargetNotStructured) {
+		t.Errorf("expected ErrPipelinePatchTargetNotStructured; got %v", err)
+	}
+	if !errors.Is(err, frp.ErrPipelineTargetOpaque) {
+		t.Errorf("expected the walk's ErrPipelineTargetOpaque to remain in the errors.Is chain; got %v", err)
+	}
+}

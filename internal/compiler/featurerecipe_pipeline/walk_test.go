@@ -20,12 +20,23 @@ import (
 // external test package, which may import the renderer without a cycle.
 func noEval(name, text string, data any) (string, error) { return text, nil }
 
-// rawMap builds a keyed RawMessage root from key/JSON-literal pairs in
-// order.
-func rawMap(pairs ...string) types.OrderedMap[json.RawMessage] {
-	var m types.OrderedMap[json.RawMessage]
+// rawMap builds a keyed unit root from key/JSON-literal pairs in order. Each
+// value becomes a structured unit (a Tree-bearing PATCH target) tokened by
+// its key — the shape the walk operates on.
+func rawMap(pairs ...string) types.OrderedMap[Unit] {
+	var m types.OrderedMap[Unit]
 	for i := 0; i+1 < len(pairs); i += 2 {
-		m.Set(pairs[i], json.RawMessage(pairs[i+1]))
+		m.Set(pairs[i], Unit{Token: pairs[i], MediaType: "application/yaml", Tree: json.RawMessage(pairs[i+1])})
+	}
+	return m
+}
+
+// opaqueMap builds a keyed unit root whose entries are opaque (no Tree) —
+// SELECT/EMIT targets that halt a PATCH. Each pair is key/media-type.
+func opaqueMap(pairs ...string) types.OrderedMap[Unit] {
+	var m types.OrderedMap[Unit]
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i], Unit{Token: pairs[i], MediaType: pairs[i+1], Bytes: []byte("opaque-bytes")})
 	}
 	return m
 }
@@ -60,16 +71,16 @@ func patch(scope DocumentScope, key, op, path string, value any) JSONPatchOp {
 	return JSONPatchOp{Scope: scope, Key: key, Op: op, Path: path, Value: value}
 }
 
-// getString resolves a JSON string at a flat top-level key of a document
-// in the set.
-func getString(t *testing.T, root types.OrderedMap[json.RawMessage], docKey, field string) string {
+// getString resolves a JSON string at a flat top-level key of a unit's
+// tree-view in the set.
+func getString(t *testing.T, root types.OrderedMap[Unit], docKey, field string) string {
 	t.Helper()
-	raw, ok := root.Get(docKey)
+	u, ok := root.Get(docKey)
 	if !ok {
 		t.Fatalf("document %q absent", docKey)
 	}
 	var obj map[string]any
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	if err := json.Unmarshal(u.Tree, &obj); err != nil {
 		t.Fatalf("unmarshal %q: %v", docKey, err)
 	}
 	s, _ := obj[field].(string)
@@ -263,6 +274,54 @@ func TestWalk_InvokeTrapStrictAndOptional(t *testing.T) {
 	}
 	if len(res.Warnings) == 0 {
 		t.Errorf("trap optional: expected warning")
+	}
+}
+
+// TestWalk_PatchAgainstOpaqueUnitHalts proves a PATCH addressing an opaque
+// (no-tree) unit halts with ErrPipelineTargetOpaque rather than silently
+// skipping: an opaque unit is a SELECT/EMIT target only, never a PATCH target.
+func TestWalk_PatchAgainstOpaqueUnitHalts(t *testing.T) {
+	docs := DocumentSet{Own: opaqueMap("blob.bin", "application/octet-stream")}
+	inv := newScripted()
+	inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "blob.bin", "add", "/k", "v")}}
+	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}}
+
+	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if !errors.Is(err, ErrPipelineTargetOpaque) {
+		t.Fatalf("err = %v, want ErrPipelineTargetOpaque", err)
+	}
+}
+
+// TestWalk_AppliedOpsRecordedPerTouchedUnit proves the walk records, per
+// scope and token, the ops that successfully edited a unit — the surgical
+// reassembly input the caller's codec consumes. A rolled-back optional step
+// contributes nothing.
+func TestWalk_AppliedOpsRecordedPerTouchedUnit(t *testing.T) {
+	docs := DocumentSet{
+		Own:  rawMap("a.yaml", `{"x":"0"}`),
+		Host: rawMap("h.yaml", `{"y":"0"}`),
+	}
+	inv := newScripted()
+	inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{
+		patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "1"),
+		patch(DocumentScopeHost, "h.yaml", "replace", "/y", "2"),
+	}}
+	// An optional step that fails must not leave its ops in the record.
+	inv.outputs["s2"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/absent", "z")}}
+	steps := []types.PipelineStep{
+		{ID: "s1", Plugin: "p", Function: "f"},
+		{ID: "s2", Plugin: "p", Function: "f", Optional: true},
+	}
+
+	res, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if got := len(res.AppliedOps.Own["a.yaml"]); got != 1 {
+		t.Errorf("own a.yaml applied ops = %d, want 1 (the rolled-back optional step's op must be dropped)", got)
+	}
+	if got := len(res.AppliedOps.Host["h.yaml"]); got != 1 {
+		t.Errorf("host h.yaml applied ops = %d, want 1", got)
 	}
 }
 

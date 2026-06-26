@@ -22,3 +22,16 @@ var ErrPipelineTargetAbsent = errors.New("pipeline patch targets a document not 
 // underlying cause is wrapped with %w so a caller can still match the
 // specific engine error (for example jsonpatch.ErrTestFailed) through it.
 var ErrPipelineStepFailed = errors.New("pipeline step failed")
+
+// ErrPipelineTargetOpaque fires when a patch addresses a unit the codec
+// declined to give a tree-view — an opaque unit (a binary blob, free text,
+// or a region the provider cannot safely tree). An opaque unit is handed to
+// the guest tagged with its media type and bytes, so it is a SELECT and EMIT
+// target, but it carries no RFC-6902-addressable tree, so a PATCH against it
+// halts rather than silently skipping. What counts as structured is the
+// codec's call, not a fixed parser-accepted test.
+//
+// This is the walk's local surface for the not-structured condition. The
+// renderer integration promotes it to its own build-halting Loud Guardrail;
+// the walk reports the typed cause so callers can match it with errors.Is.
+var ErrPipelineTargetOpaque = errors.New("pipeline patch targets an opaque (non-structured) unit")

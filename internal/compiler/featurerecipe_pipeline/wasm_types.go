@@ -10,34 +10,41 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// DocumentSet is the keyed, scope-rooted set of rendered documents a
-// pipeline guest receives as its input surface. Own carries the node's
-// own rendered documents, keyed by emitted filename. Host carries the
-// rendered documents of the component a component-scope FeatureRecipe is
-// attached to — the cross-entity surface — and is absent for Recipe steps
-// and boundary-scope FeatureRecipe steps, which have no host component.
+// DocumentSet is the keyed, scope-rooted set of addressable units a
+// pipeline guest receives as its input surface. Own carries the node's own
+// rendered output, keyed by unit token. Host carries the rendered output of
+// the component a component-scope FeatureRecipe is attached to — the
+// cross-entity surface — and is absent for Recipe steps and boundary-scope
+// FeatureRecipe steps, which have no host component.
 //
-// Selection is by content, never by key. The keys are emitted filenames,
-// which are render-time products of the provider engine; a plugin author
-// cannot know them ahead of time. A guest therefore iterates the handed
-// set, inspects each document's content (for example `kind ∈ {Deployment,
-// StatefulSet}`, or "carries a pod template"), selects the entries its
-// domain logic targets, learns those keys at runtime, and roots its
-// patches at the selected key (`/own/<key>/…` or `/host/<key>/…`). The
-// filename is only the host's apply-back address; the host hands the
-// whole set and applies returned patches by key, never picking a document
-// or inferring intent.
+// Each entry is a [Unit] — the codec's hybrid view of one piece of output.
+// A structured unit carries a Tree (an RFC-6902-addressable view); an opaque
+// unit carries only its MediaType and Bytes (no Tree). Opaque units are
+// handed to the guest tagged so the guest's view of the output is complete:
+// they are SELECT and EMIT targets, but a PATCH against an opaque unit halts
+// loudly because it has no addressable tree.
+//
+// Selection is by content, never by key. The keys are unit tokens — opaque
+// positional addresses derived from render-time emitted filenames a plugin
+// author cannot know ahead of time. A guest therefore iterates the handed
+// set, inspects each structured unit's content (for example `kind ∈
+// {Deployment, StatefulSet}`, or "carries a pod template"), selects the
+// entries its domain logic targets, learns those keys at runtime, and roots
+// its patches at the selected key (`/own/<key>/…` or `/host/<key>/…`). The
+// token is only the host's apply-back address; the host hands the whole set
+// and applies returned patches by key, never picking a unit or inferring
+// intent.
 //
 // Each root is a types.OrderedMap so the set reaches the wire in a stable
-// order and the payload is byte-identical across runs of identical input.
-// A plain Go map would randomise the entry order and break the
-// determinism contract the rest of the pipeline upholds. A document value
-// is json.RawMessage: the document is opaque to the Go host, which pipes
-// the bytes through without interpreting them — the guest, and later the
-// apply engine, parse each document's content.
+// order and the payload is byte-identical across runs of identical input. A
+// plain Go map would randomise the entry order and break the determinism
+// contract the rest of the pipeline upholds. A unit's Tree is json.RawMessage:
+// the document is opaque to the Go host, which pipes the bytes through
+// without interpreting them — the guest, and later the apply engine, parse
+// each unit's content.
 type DocumentSet struct {
-	Own  types.OrderedMap[json.RawMessage] `json:"own"`
-	Host types.OrderedMap[json.RawMessage] `json:"host,omitempty,omitzero"`
+	Own  types.OrderedMap[Unit] `json:"own"`
+	Host types.OrderedMap[Unit] `json:"host,omitempty,omitzero"`
 }
 
 // FRPStepInput is the JSON payload a FeatureRecipe-pipeline Wasm guest
@@ -74,11 +81,11 @@ type DocumentSet struct {
 // caller constructs this payload today; the FRP runtime that builds the
 // keyed set and dispatches the guest is later work.
 type FRPStepInput struct {
-	Documents      DocumentSet            `json:"documents"`
-	StepInput      types.OrderedMap[any]  `json:"step_input,omitempty,omitzero"`
+	Documents      DocumentSet             `json:"documents"`
+	StepInput      types.OrderedMap[any]   `json:"step_input,omitempty,omitzero"`
 	Context        renderctx.RenderContext `json:"context"`
-	StepIndex      int                    `json:"step_index"`
-	PrecedingSteps []PrecedingStep        `json:"preceding_steps,omitempty"`
+	StepIndex      int                     `json:"step_index"`
+	PrecedingSteps []PrecedingStep         `json:"preceding_steps,omitempty"`
 }
 
 // PrecedingStep records one pipeline step that ran before the current
@@ -132,8 +139,8 @@ const (
 // engine that applies these patches and the machinery that emits these
 // side effects are later work.
 type FRPStepOutput struct {
-	Patches     []JSONPatchOp         `json:"patches,omitempty"`
-	SideEffects []SideEffect          `json:"side_effects,omitempty"`
+	Patches     []JSONPatchOp          `json:"patches,omitempty"`
+	SideEffects []SideEffect           `json:"side_effects,omitempty"`
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty"`
 }
 

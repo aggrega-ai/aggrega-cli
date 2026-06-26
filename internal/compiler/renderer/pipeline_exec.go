@@ -35,14 +35,14 @@ type pipelineResult struct {
 	Warnings    []string
 }
 
-// pipelineFile pairs an emitted file with the segmentation of its bytes into
-// discrete YAML documents. segs is nil for a file whose bytes are not
-// parseable structured YAML (an opaque/plain-text/binary EMIT target): such a
-// file passes through verbatim and can never be a PATCH target — a patch
-// addressing one of its (absent) tokens halts as a not-structured target.
+// pipelineFile pairs an emitted file with the codec's segmentation of its
+// bytes into addressable units. units is nil for a file the codec rejected
+// entirely (no addressable units): such a file passes through verbatim. A
+// unit the codec produced may itself be opaque (no Tree); a PATCH against an
+// opaque unit halts in the walk as a not-structured target.
 type pipelineFile struct {
-	file pipelineFile0
-	segs []Segment
+	file  pipelineFile0
+	units []frp.Unit
 }
 
 // pipelineFile0 is the EmittedFile fields the executor carries through the
@@ -146,6 +146,13 @@ func runNodePipelineWithInvoker(
 ) (pipelineResult, error) {
 	res := pipelineResult{Own: own}
 
+	// The codec is the seam every carve + reassemble routes through. The core
+	// ships the stock YAML codec as the borrow default; a provider override
+	// would replace this single assignment. The stock codec is node-span
+	// surgical, so a patched document edits only its own byte-spans and the
+	// surrounding comments/anchors/styles survive.
+	codec := newStockYAMLCodec(yamlIndent)
+
 	// 0. Pre-walk provider-compatibility enforcement. For each step, read the
 	//    plugin's describe() descriptor and assert the provider rendering every
 	//    scope the step's export touches is in the plugin's compatibleProviders.
@@ -154,25 +161,16 @@ func runNodePipelineWithInvoker(
 		return pipelineResult{}, err
 	}
 
-	// 1. Build the keyed document set from the emitted files via the segmenter.
-	ownFiles, ownDocs, err := buildScopeDocs(own)
+	// 1. Build the keyed unit set from the emitted files via the codec.
+	ownFiles, ownDocs, err := buildScopeDocs(codec, own)
 	if err != nil {
 		return pipelineResult{}, wrapPipelineErr(err, nodeID)
 	}
-	hostFiles, hostDocs, err := buildScopeDocs(host)
+	hostFiles, hostDocs, err := buildScopeDocs(codec, host)
 	if err != nil {
 		return pipelineResult{}, wrapPipelineErr(err, nodeID)
 	}
 	docs := frp.DocumentSet{Own: ownDocs, Host: hostDocs}
-
-	// Entry-time snapshot of each document's bytes, so fold-back re-serializes
-	// only the documents a step actually changed (byte-faithful apply-back).
-	ownBefore := snapshotDocBytes(ownDocs)
-	hostBefore := snapshotDocBytes(hostDocs)
-
-	// Token → un-segmentable file: a patch addressing such a token is a
-	// PATCH against a non-structured target and halts loudly.
-	ownNotStructured := unstructuredTokens(own, ownFiles)
 
 	// 3-4. Walk the steps. EvalTemplate is the injected template seam.
 	walkRes, werr := frp.Walk(ctx, docs, steps, invoke, withCtx, renderCtx, EvalTemplate)
@@ -185,17 +183,17 @@ func runNodePipelineWithInvoker(
 	//     an own-scope document of an Intermediate file, or any host-scope
 	//     document when the host provider is an assembler, halts — the target
 	//     is a pre-assembly fragment.
-	if step, ok := changedFragmentOwn(walkRes.Documents.Own, ownBefore, ownFiles); ok {
+	if step, ok := changedFragmentOwn(walkRes.AppliedOps.Own, ownFiles); ok {
 		return pipelineResult{}, pipelinePreAssemblyErr(nodeID, step, "own")
 	}
 	if hostIsAssembler {
-		if tok, ok := firstChangedToken(walkRes.Documents.Host, hostBefore); ok {
+		if tok, ok := firstChangedToken(walkRes.AppliedOps.Host); ok {
 			return pipelineResult{}, pipelinePreAssemblyErr(nodeID, tok, "host")
 		}
 	}
 
-	// 5b. Apply PATCHes back into own files byte-faithfully.
-	ownOut, err := foldPatchesBack(ownFiles, walkRes.Documents.Own, ownBefore, ownNotStructured, yamlIndent, nodeID)
+	// 5b. Apply PATCHes back into own files byte-faithfully via the codec.
+	ownOut, err := foldPatchesBack(codec, ownFiles, walkRes.AppliedOps.Own, nodeID)
 	if err != nil {
 		return pipelineResult{}, err
 	}
@@ -203,7 +201,7 @@ func runNodePipelineWithInvoker(
 	// 5c. Apply PATCHes back into host files; surface them keyed by path.
 	hostPatched := map[string][]byte{}
 	if len(host) > 0 {
-		hostOut, err := foldPatchesBack(hostFiles, walkRes.Documents.Host, hostBefore, nil, yamlIndent, nodeID)
+		hostOut, err := foldPatchesBack(codec, hostFiles, walkRes.AppliedOps.Host, nodeID)
 		if err != nil {
 			return pipelineResult{}, err
 		}
@@ -434,161 +432,118 @@ func providerCompatible(provider string, compatible []string) bool {
 	return false
 }
 
-// buildScopeDocs segments each emitted file into discrete documents and keys
-// each by its opaque positional token into an OrderedMap[json.RawMessage], the
-// scope root the walk operates on. Each document's YAML body is converted to
-// JSON (key order preserved via OrderedMap) so the guest and apply engine see
-// a JSON document; the original bytes and segments are retained so fold-back
-// can re-serialize a patched document into its file byte-faithfully.
+// buildScopeDocs carves each emitted file into addressable units via the
+// codec and keys each by its opaque positional token into an
+// OrderedMap[Unit], the scope root the walk operates on. A structured unit
+// carries a Tree (the guest's PATCH target); an opaque unit carries only its
+// media type and bytes (a SELECT/EMIT target). The file's units are retained
+// on the pipelineFile so fold-back can reassemble a patched file
+// byte-faithfully through the codec.
 //
-// A file whose bytes are not parseable structured YAML is recorded with nil
-// segments and contributes no documents to the set — it can only ever be an
-// EMIT sibling, never a PATCH target.
-func buildScopeDocs(files []EmittedFile) ([]pipelineFile, types.OrderedMap[json.RawMessage], error) {
+// A file the codec rejects entirely (no addressable units) is recorded with
+// nil units and contributes nothing to the set — it can only ever be an EMIT
+// sibling, never a PATCH target.
+func buildScopeDocs(codec frp.Codec, files []EmittedFile) ([]pipelineFile, types.OrderedMap[frp.Unit], error) {
 	out := make([]pipelineFile, 0, len(files))
-	var docs types.OrderedMap[json.RawMessage]
+	var docs types.OrderedMap[frp.Unit]
 	for _, f := range files {
 		pf := pipelineFile{file: pipelineFile0{Name: f.Name, Body: f.Body, Origin: f.Origin, Intermediate: f.Intermediate}}
-		segs, err := Split(f.Name, f.Body)
+		units, err := codec.Segment(f.Name, f.Body)
 		if err != nil {
-			// Not parseable structured YAML: retain verbatim, no documents.
-			// Only an actual PATCH addressing its token halts later.
-			pf.segs = nil
+			// The codec produced no addressable units: retain verbatim. Only
+			// an actual PATCH addressing a (non-existent) token halts later.
+			pf.units = nil
 			out = append(out, pf)
 			continue
 		}
-		pf.segs = segs
-		for _, sg := range segs {
-			body := f.Body[sg.bodyStart:sg.bodyEnd]
-			raw, cerr := yamlBodyToJSON(body)
-			if cerr != nil {
-				// A segment whose body fails JSON conversion is not an
-				// addressable structured document; treat the file as
-				// not-structured (verbatim pass-through, never a PATCH target).
-				pf.segs = nil
-				break
-			}
-			docs.Set(sg.Token, raw)
+		pf.units = units
+		for _, u := range units {
+			docs.Set(u.Token, u)
 		}
 		out = append(out, pf)
 	}
 	return out, docs, nil
 }
 
-// unstructuredTokens returns the set of tokens that belong to a file the
-// segmenter could not parse as structured YAML, so a returned PATCH addressing
-// one of them is reported as a not-structured target rather than an
-// absent-target. A file with nil segs after buildScopeDocs contributed no
-// tokens to the set, so the walk would already report absent-target; this map
-// lets the integration upgrade that to the precise not-structured diagnostic.
-func unstructuredTokens(files []EmittedFile, pfs []pipelineFile) map[string]bool {
-	out := map[string]bool{}
-	for _, pf := range pfs {
-		if pf.segs == nil {
-			out[pf.file.Name] = true
-		}
-	}
-	return out
-}
-
-// foldPatchesBack rebuilds each file from its segments, re-serializing only the
-// documents whose bytes changed during the walk. For a changed token the
-// patched JSON is converted back to YAML at the configured indent and spliced
-// into the file via ApplyBack (leading/trailing affixes preserved verbatim);
-// an unchanged token's document is re-joined from its original byte-range, so
-// an unpatched sibling in a patched file stays byte-identical.
+// foldPatchesBack rebuilds each file through the codec, splicing back only the
+// units a step actually patched (those carrying applied ops). For a file with
+// patched units the codec edits the addressed byte-spans surgically and
+// preserves every untouched byte; a file with no patched unit passes through
+// verbatim. A PATCH that addressed an opaque (non-structured) token surfaces
+// as the renderer's not-structured Loud Guardrail.
 func foldPatchesBack(
+	codec frp.Codec,
 	pfs []pipelineFile,
-	after types.OrderedMap[json.RawMessage],
-	before map[string][]byte,
-	notStructured map[string]bool,
-	yamlIndent int,
+	appliedByToken map[string][]frp.JSONPatchOp,
 	nodeID string,
 ) ([]EmittedFile, error) {
 	out := make([]EmittedFile, 0, len(pfs))
 	for _, pf := range pfs {
-		if pf.segs == nil {
-			// Verbatim pass-through. A patch could only have addressed it if a
-			// token mapped here, which it cannot (no tokens contributed), so
-			// nothing to fold.
-			out = append(out, EmittedFile{Name: pf.file.Name, Origin: pf.file.Origin, Body: pf.file.Body, Intermediate: pf.file.Intermediate})
-			continue
-		}
-		patched := map[string][]byte{}
-		for _, sg := range pf.segs {
-			newRaw, ok := after.Get(sg.Token)
-			if !ok {
+		var patched []frp.PatchedUnit
+		for _, u := range pf.units {
+			ops, ok := appliedByToken[u.Token]
+			if !ok || len(ops) == 0 {
 				continue
 			}
-			if oldRaw, had := before[sg.Token]; had && jsonEqual(oldRaw, newRaw) {
-				continue
+			if !u.Structured() {
+				return nil, pipelineNotStructuredErr(nodeID, u.Token)
 			}
-			if notStructured[pf.file.Name] {
-				return nil, pipelineNotStructuredErr(nodeID, sg.Token)
-			}
-			yamlBody, err := jsonToYAMLBody(newRaw, yamlIndent)
-			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-					fmt.Sprintf("node %q: pipeline: re-serialize patched document %q", nodeID, sg.Token))
-			}
-			patched[sg.Token] = yamlBody
+			patched = append(patched, frp.PatchedUnit{Token: u.Token, Tree: u.Tree, Ops: ops})
 		}
 		body := pf.file.Body
 		if len(patched) > 0 {
-			body = ApplyBack(pf.file.Body, pf.segs, patched)
+			b, err := codec.Reassemble(pf.file.Name, pf.file.Body, pf.units, patched)
+			if err != nil {
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+					fmt.Sprintf("node %q: pipeline: reassemble patched file %q", nodeID, pf.file.Name))
+			}
+			body = b
 		}
 		out = append(out, EmittedFile{Name: pf.file.Name, Origin: pf.file.Origin, Body: body, Intermediate: pf.file.Intermediate})
 	}
 	return out, nil
 }
 
-// changedFragmentOwn reports the first own-scope token whose document changed
-// and belongs to an Intermediate (pre-assembly fragment) file. A PATCH against
-// such a fragment halts: the assembler has not produced discrete documents yet.
-func changedFragmentOwn(after types.OrderedMap[json.RawMessage], before map[string][]byte, pfs []pipelineFile) (string, bool) {
+// changedFragmentOwn reports the first own-scope token a step patched that
+// belongs to an Intermediate (pre-assembly fragment) file. A PATCH against
+// such a fragment halts: the assembler has not produced discrete documents
+// yet. A patched token is one carrying applied ops, so an EMIT (a new token,
+// no ops) never trips this guard.
+func changedFragmentOwn(appliedByToken map[string][]frp.JSONPatchOp, pfs []pipelineFile) (string, bool) {
 	for _, pf := range pfs {
-		if !pf.file.Intermediate || pf.segs == nil {
+		if !pf.file.Intermediate {
 			continue
 		}
-		for _, sg := range pf.segs {
-			newRaw, ok := after.Get(sg.Token)
-			if !ok {
-				continue
-			}
-			if oldRaw, had := before[sg.Token]; had && !jsonEqual(oldRaw, newRaw) {
-				return sg.Token, true
+		for _, u := range pf.units {
+			if ops, ok := appliedByToken[u.Token]; ok && len(ops) > 0 {
+				return u.Token, true
 			}
 		}
 	}
 	return "", false
 }
 
-// firstChangedToken returns the first token in after whose bytes differ from
-// before — a changed (patched) document. A new token (present in after, absent
-// in before) is an EMIT, not a PATCH, and is not reported here.
-func firstChangedToken(after types.OrderedMap[json.RawMessage], before map[string][]byte) (string, bool) {
-	for k, v := range after.All() {
-		if oldRaw, had := before[k]; had && !jsonEqual(oldRaw, v) {
-			return k, true
+// firstChangedToken returns the lowest-sorted token a step patched in the
+// given applied-ops map. A new token an EMIT produced carries no applied ops,
+// so it is never reported here — only a PATCH trips this guard. Token order is
+// fixed (sorted) so the halt names the same token across runs.
+func firstChangedToken(appliedByToken map[string][]frp.JSONPatchOp) (string, bool) {
+	keys := make([]string, 0, len(appliedByToken))
+	for k, ops := range appliedByToken {
+		if len(ops) > 0 {
+			keys = append(keys, k)
 		}
 	}
-	return "", false
-}
-
-// snapshotDocBytes copies each document's bytes so fold-back can compare a
-// post-walk document against its entry-time bytes and re-serialize only the
-// ones that changed.
-func snapshotDocBytes(docs types.OrderedMap[json.RawMessage]) map[string][]byte {
-	out := map[string][]byte{}
-	for k, v := range docs.All() {
-		out[k] = append([]byte(nil), v...)
+	if len(keys) == 0 {
+		return "", false
 	}
-	return out
+	sort.Strings(keys)
+	return keys[0], true
 }
 
 // yamlBodyToJSON converts one YAML document body to a JSON RawMessage,
 // preserving object key order through OrderedMap so the wire payload is
-// deterministic.
+// deterministic. The stock codec uses it to build a unit's tree-view.
 func yamlBodyToJSON(body []byte) (json.RawMessage, error) {
 	var om types.OrderedMap[any]
 	if err := parse.TemplateOutput(body, &om); err != nil {
@@ -600,24 +555,6 @@ func yamlBodyToJSON(body []byte) (json.RawMessage, error) {
 	}
 	return raw, nil
 }
-
-// jsonToYAMLBody converts a patched JSON document back to a YAML body at the
-// configured indent, preserving object key order through OrderedMap. The
-// trailing newline yaml.v3 appends is retained so the spliced body sits flush
-// against the segment's trailing affix.
-func jsonToYAMLBody(raw json.RawMessage, indent int) ([]byte, error) {
-	var om types.OrderedMap[any]
-	if err := parse.IRPayload(raw, &om); err != nil {
-		return nil, err
-	}
-	return MarshalYAMLIndent(om, indent)
-}
-
-// jsonEqual reports whether two JSON documents are byte-identical. The walk
-// re-marshals a patched document through the apply engine's OrderedMap, so an
-// unchanged document round-trips to the same bytes; a byte compare therefore
-// reliably distinguishes patched from untouched.
-func jsonEqual(a, b []byte) bool { return bytes.Equal(a, b) }
 
 // lookupFile returns the pipelineFile for a given emitted-file name.
 func lookupFile(pfs []pipelineFile, name string) (pipelineFile, bool) {
@@ -659,10 +596,19 @@ func sideEffectName(se frp.SideEffect, idx int) string {
 
 // mapWalkError promotes the pipeline walk's local error causes to the
 // renderer's build-halting Loud Guardrails. An absent patch target becomes
-// ErrPipelineTargetNotEmitted; a /host operation from a hostless step becomes
-// ErrPipelineHostScopeUnavailable; any other walk failure is wrapped as a
-// catalog error naming the node.
+// ErrPipelineTargetNotEmitted; a PATCH against an opaque (non-structured)
+// unit becomes ErrPipelinePatchTargetNotStructured; a /host operation from a
+// hostless step becomes ErrPipelineHostScopeUnavailable; any other walk
+// failure is wrapped as a catalog error naming the node.
 func mapWalkError(err error, nodeID string, hasHost bool) error {
+	if errors.Is(err, frp.ErrPipelineTargetOpaque) {
+		// The codec declined a tree-view for the addressed unit; the guest
+		// addressed it with a PATCH anyway. Chain the walk's cause so both
+		// sentinels stay matchable via errors.Is.
+		inner := fmt.Errorf("%w: %w", ErrPipelinePatchTargetNotStructured, err)
+		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("node %q: %s", nodeID, ErrPipelinePatchTargetNotStructured.Error()))
+	}
 	if errors.Is(err, frp.ErrPipelineTargetAbsent) {
 		// A boundary-scope / hostless step that addressed /host surfaces here as
 		// an absent target on the empty Host root; report the precise host-scope

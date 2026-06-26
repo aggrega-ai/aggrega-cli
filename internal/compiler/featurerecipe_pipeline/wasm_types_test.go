@@ -34,6 +34,13 @@ func orderedMap[V any](t *testing.T, pairs ...any) types.OrderedMap[V] {
 	return *m
 }
 
+// structuredUnit builds a structured (Tree-bearing) unit tokened by name,
+// carrying the given JSON literal as its RFC-6902-addressable view. It is the
+// PATCH-target shape the keyed set hands a guest.
+func structuredUnit(token, treeJSON string) frp.Unit {
+	return frp.Unit{Token: token, MediaType: "application/yaml", Tree: json.RawMessage(treeJSON)}
+}
+
 // sampleFRPStepInput builds an FRP step input populated from the worked
 // vault-fetcher / env-injector pipeline: a keyed document set (own + a
 // cross-entity host root, each with deliberately non-alphabetical
@@ -46,15 +53,16 @@ func sampleFRPStepInput(t *testing.T) frp.FRPStepInput {
 	return frp.FRPStepInput{
 		Documents: frp.DocumentSet{
 			// Deliberately non-alphabetical author order: workload before
-			// service. A map would reorder these keys.
-			Own: orderedMap[json.RawMessage](t,
-				"workload.yaml", json.RawMessage(`{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}}`),
-				"service.yaml", json.RawMessage(`{"kind":"Service","spec":{"ports":[{"port":80}]}}`),
+			// service. A map would reorder these keys. Each entry is a
+			// structured unit (a Tree-bearing PATCH target).
+			Own: orderedMap[frp.Unit](t,
+				"workload.yaml", structuredUnit("workload.yaml", `{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}}`),
+				"service.yaml", structuredUnit("service.yaml", `{"kind":"Service","spec":{"ports":[{"port":80}]}}`),
 			),
-			// The cross-entity host root: the documents of the component
-			// this component-scope FeatureRecipe is attached to.
-			Host: orderedMap[json.RawMessage](t,
-				"host-workload.yaml", json.RawMessage(`{"kind":"StatefulSet","spec":{"template":{"spec":{"containers":[{"name":"db"}]}}}}`),
+			// The cross-entity host root: the units of the component this
+			// component-scope FeatureRecipe is attached to.
+			Host: orderedMap[frp.Unit](t,
+				"host-workload.yaml", structuredUnit("host-workload.yaml", `{"kind":"StatefulSet","spec":{"template":{"spec":{"containers":[{"name":"db"}]}}}}`),
 			),
 		},
 		// Deliberately non-alphabetical author order: secret before key
@@ -284,8 +292,9 @@ func TestDocumentSet_OrderedByteIdentity(t *testing.T) {
 	}
 
 	// own keys in author order (workload before service), then the host
-	// root — not an alphabetical reordering a sorting map would emit.
-	const wantWire = `{"own":{"workload.yaml":{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}},"service.yaml":{"kind":"Service","spec":{"ports":[{"port":80}]}}},"host":{"host-workload.yaml":{"kind":"StatefulSet","spec":{"template":{"spec":{"containers":[{"name":"db"}]}}}}}}`
+	// root — not an alphabetical reordering a sorting map would emit. Each
+	// entry is a tagged unit: token, media type, and the tree-view.
+	const wantWire = `{"own":{"workload.yaml":{"token":"workload.yaml","media_type":"application/yaml","tree":{"kind":"Deployment","spec":{"template":{"spec":{"containers":[{"name":"app"}]}}}}},"service.yaml":{"token":"service.yaml","media_type":"application/yaml","tree":{"kind":"Service","spec":{"ports":[{"port":80}]}}}},"host":{"host-workload.yaml":{"token":"host-workload.yaml","media_type":"application/yaml","tree":{"kind":"StatefulSet","spec":{"template":{"spec":{"containers":[{"name":"db"}]}}}}}}}`
 	if string(want) != wantWire {
 		t.Errorf("document set order not preserved on the wire:\n  want: %s\n  got:  %s", wantWire, want)
 	}
@@ -297,13 +306,13 @@ func TestDocumentSet_OrderedByteIdentity(t *testing.T) {
 func TestDocumentSet_HostOmitzero(t *testing.T) {
 	t.Parallel()
 	ownOnly := frp.DocumentSet{
-		Own: orderedMap[json.RawMessage](t, "workload.yaml", json.RawMessage(`{"kind":"Deployment"}`)),
+		Own: orderedMap[frp.Unit](t, "workload.yaml", structuredUnit("workload.yaml", `{"kind":"Deployment"}`)),
 	}
 	raw, err := json.Marshal(ownOnly)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	const want = `{"own":{"workload.yaml":{"kind":"Deployment"}}}`
+	const want = `{"own":{"workload.yaml":{"token":"workload.yaml","media_type":"application/yaml","tree":{"kind":"Deployment"}}}}`
 	if string(raw) != want {
 		t.Errorf("absent host root did not drop from the wire:\n  want: %s\n  got:  %s", want, raw)
 	}
@@ -416,8 +425,8 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 		return json.Marshal(frp.FRPStepOutput{})
 	}
 
-	var own types.OrderedMap[json.RawMessage]
-	own.Set("a.yaml", json.RawMessage(`{"x":"0"}`))
+	var own types.OrderedMap[frp.Unit]
+	own.Set("a.yaml", structuredUnit("a.yaml", `{"x":"0"}`))
 	docs := frp.DocumentSet{Own: own}
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", With: "key: {{ .values.x }}"}}
 
