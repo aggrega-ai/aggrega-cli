@@ -35,37 +35,15 @@ func determinismFixtureInput() pipelinetest.Input {
 	}
 }
 
-// TestDeterministicCompilation_FullPipeline compiles the determinism
-// fixture twice and asserts the resulting artifact maps are byte-identical
-// across all corresponding files. Repeats 10 times to guard against any
-// lingering map[string]X iteration that produces stable output most runs
-// but diverges occasionally due to Go's map-iteration randomization.
+// TestDeterministicCompilation_FullPipeline compiles the determinism fixture
+// repeatedly and asserts the resulting artifact maps are byte-identical across
+// all corresponding files. Repeats 10 times to guard against any lingering
+// map[string]X iteration that produces stable output most runs but diverges
+// occasionally due to Go's map-iteration randomization. This is the helm-flat
+// provider's always-on double-run guard.
 func TestDeterministicCompilation_FullPipeline(t *testing.T) {
 	t.Parallel()
-
-	first := pipelinetest.Build(t, determinismFixtureInput())
-
-	for i := 1; i < 10; i++ {
-		this := pipelinetest.Build(t, determinismFixtureInput())
-
-		if len(first.Artifacts) != len(this.Artifacts) {
-			t.Errorf("iteration %d: file-count mismatch: first %d, later %d", i, len(first.Artifacts), len(this.Artifacts))
-			continue
-		}
-
-		for path, firstContent := range first.Artifacts {
-			thisContent, ok := this.Artifacts[path]
-			if !ok {
-				t.Errorf("iteration %d: missing file %q (present in first run)", i, path)
-				continue
-			}
-			if !bytes.Equal(firstContent, thisContent) {
-				t.Errorf("iteration %d: byte-mismatch in %q\nfirst run:\n%s\nlater run:\n%s",
-					i, path, firstContent, thisContent)
-				return // First mismatch is sufficient — bail to avoid noise.
-			}
-		}
-	}
+	pipelinetest.AssertDeterministicN(t, determinismFixtureInput(), 10)
 }
 
 // TestDeterministicCompilation_IRAuthorOrder asserts that the IRGraph's

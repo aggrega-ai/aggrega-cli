@@ -165,6 +165,22 @@ func sliceContains(s []string, v string) bool {
 	return false
 }
 
+// TestComposeBridge_Deterministic is the compose provider's always-on
+// double-run guard: the compose-bridge fixture compiles to byte-identical
+// output across runs (the deterministic-output contract GitOps diffs rely on).
+func TestComposeBridge_Deterministic(t *testing.T) {
+	t.Parallel()
+	pipelinetest.AssertDeterministic(t, pipelinetest.Input{
+		ReleasePath: "testdata/compose-bridge/release.yaml",
+		CatalogPaths: []string{
+			"testdata/compose-bridge/catalog/base",
+			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge/1.0.0/feature.yaml",
+			"../../../aggrega-hub/aggrega-catalog/feature-recipe/compose/bridge",
+			"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
+		},
+	})
+}
+
 // bridgeStreamConfigContent pulls the inline content of the aggrega-gw-nginx
 // top-level compose config — the gateway's compiler-generated nginx stream
 // config, mounted as a file rather than delivered as a base64 command.

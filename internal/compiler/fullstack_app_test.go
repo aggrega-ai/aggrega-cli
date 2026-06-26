@@ -82,23 +82,39 @@ func runFullstackApp(t *testing.T, variant string) *fullstackAppResult {
 // build derives them.
 func runFullstackAppVariant(t *testing.T, fx variantFixture) *fullstackAppResult {
 	t.Helper()
+	result := pipelinetest.Build(t, fullstackVariantInput(fx))
+	return &fullstackAppResult{Files: result.Artifacts, Trace: result.Trace}
+}
 
+// fullstackVariantInput builds the pipelinetest.Input for a variant: the shared
+// base catalog plus the variant's recipe sub-directory, and the variant's
+// Release (defaulting to the per-variant Release whose Manifest names exactly
+// the recipes that sub-directory ships — recipe selection is explicit mapping,
+// never load-order or fallback). Single-sourced so the variant run and the
+// double-run guard build identical input.
+func fullstackVariantInput(fx variantFixture) pipelinetest.Input {
 	base := "testdata/fullstack-app/catalog/base"
 	recipesDir := filepath.Join("testdata/fullstack-app/catalog/recipes", fx.name)
 	releasePath := fx.releasePath
 	if releasePath == "" {
-		// Each variant has its own Release/Manifest pair naming exactly the
-		// recipes its recipe sub-directory ships — recipe selection is
-		// explicit mapping, never load-order or fallback.
 		releasePath = "testdata/fullstack-app/releases/" + fx.name + ".yaml"
 	}
-
-	result := pipelinetest.Build(t, pipelinetest.Input{
+	return pipelinetest.Input{
 		ReleasePath:  releasePath,
 		CatalogPaths: []string{base, recipesDir},
 		IncludeTrace: fx.includeTrace,
-	})
-	return &fullstackAppResult{Files: result.Artifacts, Trace: result.Trace}
+	}
+}
+
+// TestFullstackApp_HelmChartDeterministic is the helm-chart provider's
+// always-on double-run guard: the helm-chart variant compiles to byte-identical
+// output across runs (the deterministic-output contract GitOps diffs rely on).
+func TestFullstackApp_HelmChartDeterministic(t *testing.T) {
+	t.Parallel()
+	pipelinetest.AssertDeterministic(t, fullstackVariantInput(variantFixture{
+		name:        "helm-chart-with-artifacts",
+		releasePath: "testdata/fullstack-app/releases/helm-chart-with-artifacts.yaml",
+	}))
 }
 
 // assertCommonProof asserts the invariants for variants whose output is

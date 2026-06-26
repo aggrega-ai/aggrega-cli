@@ -4,7 +4,6 @@
 package compiler_test
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
@@ -78,31 +77,15 @@ func TestPipelineRender_PatchAndEmit(t *testing.T) {
 	}
 }
 
-// TestPipelineRender_Deterministic compiles the pipeline-render fixture twice
-// and asserts byte-identical output across the runs — the pipeline executor
-// (segmenter split, keyed-set construction, apply-back, EMIT ordering) is
-// order-preserving end-to-end (the deterministic-output invariant).
+// TestPipelineRender_Deterministic compiles the pipeline-render fixture
+// repeatedly and asserts byte-identical output across the runs — the pipeline
+// executor (segmenter split, keyed-set construction, apply-back, EMIT ordering)
+// is order-preserving end-to-end (the deterministic-output contract). This is
+// the helm provider's always-on double-run guard.
 func TestPipelineRender_Deterministic(t *testing.T) {
 	in := pipelineRenderFixtureInput(t)
 	t.Parallel()
-
-	first := pipelinetest.Build(t, in)
-	for i := 1; i < 5; i++ {
-		this := pipelinetest.Build(t, in)
-		if len(first.Artifacts) != len(this.Artifacts) {
-			t.Fatalf("iteration %d: artifact-count mismatch: first %d, later %d", i, len(first.Artifacts), len(this.Artifacts))
-		}
-		for path, firstContent := range first.Artifacts {
-			thisContent, ok := this.Artifacts[path]
-			if !ok {
-				t.Errorf("iteration %d: missing artifact %q", i, path)
-				continue
-			}
-			if !bytes.Equal(firstContent, thisContent) {
-				t.Errorf("iteration %d: artifact %q differs across runs", i, path)
-			}
-		}
-	}
+	pipelinetest.AssertDeterministic(t, in)
 }
 
 // artifactKeys returns the sorted artifact keys for diagnostic messages.
