@@ -6,7 +6,10 @@ package featurerecipe_pipeline_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
@@ -448,4 +451,69 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 	if s, _ := v.(string); s != "rendered-value" {
 		t.Errorf("step input key = %v, want rendered-value", v)
 	}
+}
+
+// TestFRPTypes_JSONSchemaFieldCoverage asserts every exported Go field of
+// the FRP step socket types appears as a property in the corresponding
+// $defs block of the JSON Schema. Catches "Go struct grew a field, schema
+// didn't" drift directly.
+//
+// The assertGoStructPropertiesIn helper deliberately parallels the one in
+// analyzer/wasm_types_test.go: each socket package's field-coverage test
+// must stand alone over its own types and schema, so the helper is copied
+// rather than shared — do not unify them into one importable helper, which
+// would couple two independent per-package cross-checks.
+func TestFRPTypes_JSONSchemaFieldCoverage(t *testing.T) {
+	t.Parallel()
+	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-frp-step-v1alpha1.schema.json")
+	schemaBytes, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Skipf("wasm-frp-step schema not reachable at %s: %v", schemaPath, err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(schemaBytes, &raw); err != nil {
+		t.Fatalf("unmarshal wasm-frp-step schema: %v", err)
+	}
+	defs, ok := raw["$defs"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema $defs missing or not an object")
+	}
+
+	assertGoStructPropertiesIn := func(t *testing.T, goType reflect.Type, defName string) {
+		t.Helper()
+		def, ok := defs[defName].(map[string]any)
+		if !ok {
+			t.Fatalf("schema $defs.%s missing or not an object", defName)
+			return
+		}
+		props, ok := def["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("schema $defs.%s.properties missing or not an object", defName)
+			return
+		}
+		for i := 0; i < goType.NumField(); i++ {
+			f := goType.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			tag := f.Tag.Get("json")
+			name := strings.Split(tag, ",")[0]
+			if name == "" {
+				name = f.Name
+			}
+			if _, present := props[name]; !present {
+				t.Errorf("schema $defs.%s.properties missing %q (Go field %s.%s)",
+					defName, name, goType.Name(), f.Name)
+			}
+		}
+	}
+
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.FRPStepInput{}), "FRPStepInput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.FRPStepOutput{}), "FRPStepOutput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.DocumentSet{}), "DocumentSet")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.Unit{}), "Unit")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.JSONPatchOp{}), "JSONPatchOp")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.SideEffect{}), "SideEffect")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.SideEffectFile{}), "SideEffectFile")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(frp.PrecedingStep{}), "PrecedingStep")
 }
