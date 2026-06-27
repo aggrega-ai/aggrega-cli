@@ -24,7 +24,7 @@ import (
 	"time"
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"

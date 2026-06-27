@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TemplateContext is the runtime view assembled by the Go compiler and injected into

@@ -4,7 +4,7 @@
 package compactform
 
 import (
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // dispatchMapping classifies a YAML mapping node into one of five

@@ -9,7 +9,7 @@ import (
 	"os"
 	"sort"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // WriteLockfile writes lf to path in canonical (deterministic) form.

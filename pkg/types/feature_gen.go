@@ -8,7 +8,7 @@
 
 package types
 
-import "gopkg.in/yaml.v3"
+import "go.yaml.in/yaml/v3"
 
 // Feature A modular operational feature that binds dynamically to components.
 type Feature struct {

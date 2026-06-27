@@ -6,7 +6,7 @@ package renderer
 import (
 	"bytes"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ClampYAMLIndent bounds a YAML indent width to the supported [2,9] range,

@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ValidateSchemaPillarOverlap walks an entity's spec.schema (a JSON

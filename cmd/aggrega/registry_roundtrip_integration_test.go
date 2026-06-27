@@ -29,7 +29,7 @@ import (
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/registry"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"

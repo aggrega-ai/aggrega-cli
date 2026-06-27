@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"

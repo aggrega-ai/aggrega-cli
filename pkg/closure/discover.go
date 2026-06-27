@@ -3,7 +3,7 @@
 
 package closure
 
-import "gopkg.in/yaml.v3"
+import "go.yaml.in/yaml/v3"
 
 // SchemaConsumer pairs a resolved Component/Feature URI with its schema body
 // (a yaml.Node) so DiscoverSchemaLibraries can scan it for cross-document

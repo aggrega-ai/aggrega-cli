@@ -8,7 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // renderFeatureFile renders a Feature authored as a standalone file. The schema

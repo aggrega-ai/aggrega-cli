@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // copySourcedChart walks a local Helm chart directory and returns its files

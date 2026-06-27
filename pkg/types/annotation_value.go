@@ -6,7 +6,7 @@ package types
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // AnnotationValue is the parsed value carried in annotation fields on

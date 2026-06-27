@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // UsesSocketValue is the typed value of one entry in a Component, Feature,

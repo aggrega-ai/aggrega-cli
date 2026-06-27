@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TestUsesSocketValue_UnmarshalYAML_NonEmptyScalarRejected pins the

@@ -13,7 +13,7 @@ import (
 	"reflect"
 	"sync"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ErrOrderedMapDecodeDepthExceeded fires when nested object recursion in

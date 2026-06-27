@@ -8,7 +8,7 @@
 
 package types
 
-import "gopkg.in/yaml.v3"
+import "go.yaml.in/yaml/v3"
 
 // Component The abstract definition of an atomic building block.
 type Component struct {

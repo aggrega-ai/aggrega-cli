@@ -42,7 +42,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // loadLibrary parses a SchemaLibrary YAML fixture into the typed struct

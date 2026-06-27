@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Author-order preservation tests for each 8-entity kind.

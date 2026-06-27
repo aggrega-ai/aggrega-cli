@@ -8,7 +8,7 @@ import (
 	"log"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // DiscourageDirectXAggregaInSchema walks a Component or Feature's
@@ -22,7 +22,7 @@ import (
 //
 // One log line per occurrence; multiple occurrences of the same
 // key at different paths produce multiple log lines. Logging
-// order follows the YAML authoring order via gopkg.in/yaml.v3:
+// order follows the YAML authoring order via go.yaml.in/yaml/v3:
 // mapping keys traverse in declared order; sequence items by
 // index.
 //

@@ -9,7 +9,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ResolveConfig configures the Step 1 resolver pipeline. All three paths are

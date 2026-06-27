@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 //go:generate go run ../../internal/tools/typegen feature_gen.go

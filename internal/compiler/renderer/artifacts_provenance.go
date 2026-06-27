@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // artifactInjectOutcome is the result of the multi-doc round-trip fallback.

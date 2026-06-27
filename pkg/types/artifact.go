@@ -6,7 +6,7 @@ package types
 import (
 	"errors"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ErrArtifactEntryShape fires when a Recipe `artifacts.<name>:` value

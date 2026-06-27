@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // CompletionItem mirrors the LSP CompletionItem wire shape. Defined

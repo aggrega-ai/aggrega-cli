@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )

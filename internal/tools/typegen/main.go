@@ -128,7 +128,7 @@ var codecTargets = map[string]codecTarget{
 // type (e.g. a future time.Duration inside a generic) is a one-line add here,
 // not a vocabulary-improvisation halt.
 var knownImports = map[string]string{
-	"yaml": "gopkg.in/yaml.v3",
+	"yaml": "go.yaml.in/yaml/v3",
 }
 
 // schemaNode is a decoded JSON Schema object node preserving the declared

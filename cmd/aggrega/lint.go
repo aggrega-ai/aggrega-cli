@@ -15,7 +15,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -691,7 +691,7 @@ func yamlToLinterJSON(yamlBytes []byte) (json.RawMessage, lintEntityHeader, erro
 }
 
 // convertYAMLMaps recursively converts map[interface{}]interface{}
-// (gopkg.in/yaml.v3 default for nested maps) to map[string]interface{}
+// (go.yaml.in/yaml/v3 default for nested maps) to map[string]interface{}
 // so json.Marshal accepts the value.
 func convertYAMLMaps(v interface{}) interface{} {
 	switch x := v.(type) {

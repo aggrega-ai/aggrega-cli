@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TemplateOutput decodes YAML emitted by Go-template execution at any of the

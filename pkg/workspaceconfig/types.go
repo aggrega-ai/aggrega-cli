@@ -45,7 +45,7 @@ package workspaceconfig
 // the JSON Schema property names via yaml tags (snake_case wire
 // format to PascalCase Go identifiers).
 //
-// YAML 1.2 boolean parsing note: gopkg.in/yaml.v3 treats `yes`/`no`/
+// YAML 1.2 boolean parsing note: go.yaml.in/yaml/v3 treats `yes`/`no`/
 // `on`/`off` as STRINGS, not booleans (unlike YAML 1.1). A workspace
 // file with `workspace.offline: yes` fails JSON Schema validation
 // with "expected boolean, got string" rather than silently being

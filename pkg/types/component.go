@@ -3,7 +3,7 @@
 
 package types
 
-import "gopkg.in/yaml.v3"
+import "go.yaml.in/yaml/v3"
 
 //go:generate go run ../../internal/tools/typegen component_gen.go
 

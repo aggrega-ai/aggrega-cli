@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Entity bundles the parsed YAML root + raw bytes of a hover target.

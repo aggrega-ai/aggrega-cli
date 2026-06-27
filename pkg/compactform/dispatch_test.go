@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TestDispatchEscape verifies the $jsonschema: escape hatch embeds

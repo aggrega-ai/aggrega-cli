@@ -5,7 +5,7 @@ package compactform
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Schema is the resolved JSON Schema 2020-12 output produced by Compile.

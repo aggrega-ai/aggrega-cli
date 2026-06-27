@@ -6,7 +6,7 @@ package hover
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // SchemaLibrary renders the hover content for a SchemaLibrary target.

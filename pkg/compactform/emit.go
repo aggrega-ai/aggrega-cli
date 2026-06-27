@@ -5,7 +5,7 @@ package compactform
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // emitCompactConstraint emits a compact-form leaf constraint as a JSON

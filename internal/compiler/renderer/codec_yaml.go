@@ -11,7 +11,7 @@ import (
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // stockYAMLMediaType tags a unit the stock codec carved from YAML output.

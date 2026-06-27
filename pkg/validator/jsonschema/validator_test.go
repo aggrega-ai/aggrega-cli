@@ -11,7 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/google/jsonschema-go/jsonschema"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TestNewNilSchema verifies the constructor rejects a nil schema with
