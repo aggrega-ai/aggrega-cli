@@ -33,6 +33,21 @@ func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginURI string) *t
 	return &r
 }
 
+// featureRecipeWithPipelinePlugin builds a FeatureRecipe fixture declaring
+// spec.provider plus a spec.pipeline step referencing the given plugin URI, for the
+// descent's RecipeLoader. Mirrors recipeWithPipelinePlugin on the FeatureRecipe axis.
+func featureRecipeWithPipelinePlugin(t *testing.T, name, provider, pluginURI string) *types.FeatureRecipe {
+	t.Helper()
+	src := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
+		"\n  version: 1.0.0\nspec:\n  provider: " + provider + "\n  implements: core/cred\n" +
+		"  pipeline:\n    - id: patch\n      plugin: " + pluginURI + "\n      function: step\n"
+	var fr types.FeatureRecipe
+	if err := yaml.Unmarshal([]byte(src), &fr); err != nil {
+		t.Fatalf("unmarshal feature recipe: %v", err)
+	}
+	return &fr
+}
+
 // pluginDescentLookup resolves the manifest/aggregate/component/recipe + provider
 // URIs the fixture reaches, and the two plugins: a registry-resolved plugin (tier-3)
 // and a Tier-1-local plugin, on the wasmPlugins axis ResolveWasmPlugin reads.
@@ -40,9 +55,9 @@ func pluginDescentLookup() *fakeLookup {
 	ents := map[string]closure.Resolution{
 		"hub.aggrega.ai/aggregate/example/app:1.0.0": resolutionOK("1.0.0", "sha256:agg", "tier-3-pull"),
 		"hub.aggrega.ai/manifest/example/app:1.0.0":  resolutionOK("1.0.0", "sha256:man", "tier-3-pull"),
-		"hub.aggrega.ai/component/core/svc:1.0.0":     resolutionOK("1.0.0", "sha256:svc", "tier-3-pull"),
-		recipeURI:                                     resolutionOK("1.0.0", "sha256:recipe", "tier-3-pull"),
-		registryProvider:                              resolutionOK("1.0.0", "sha256:compose", "tier-3-pull"),
+		"hub.aggrega.ai/component/core/svc:1.0.0":    resolutionOK("1.0.0", "sha256:svc", "tier-3-pull"),
+		recipeURI:        resolutionOK("1.0.0", "sha256:recipe", "tier-3-pull"),
+		registryProvider: resolutionOK("1.0.0", "sha256:compose", "tier-3-pull"),
 	}
 	plugins := map[string]closure.Resolution{
 		registryPlugin: resolutionOK("1.0.0", "sha256:plugin", "tier-3-pull"),
@@ -165,5 +180,77 @@ func TestPluginDescent_NilLoaderNoop(t *testing.T) {
 	}
 	if _, ok := wasmPluginByURI(cl, registryPlugin); ok {
 		t.Fatalf("nil-loader descent must not pin a plugin")
+	}
+}
+
+const (
+	frRecipeURI = "hub.aggrega.ai/featurerecipe/example/cred:1.0.0"
+	frPlugin    = "hub.aggrega.ai/wasm/frp/patch-credential:1.0.0"
+)
+
+// featureRecipeDescentManifest maps a Feature type to a FeatureRecipe URI so the
+// closure carries a FeatureRecipe entity (via the features-mapping value) whose
+// pipeline plugins the descent reads.
+const featureRecipeDescentManifest = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: app
+  version: 1.0.0
+spec:
+  mappings:
+    features:
+      type:
+        hub.aggrega.ai/feature/core/cred:1.0.0: ` + frRecipeURI + `
+`
+
+// featureRecipeDescentLookup resolves the manifest/aggregate/feature/feature_recipe
+// URIs the fixture reaches plus the registry-resolved FeatureRecipe pipeline plugin.
+func featureRecipeDescentLookup() *fakeLookup {
+	ents := map[string]closure.Resolution{
+		"hub.aggrega.ai/aggregate/example/app:1.0.0": resolutionOK("1.0.0", "sha256:agg", "tier-3-pull"),
+		"hub.aggrega.ai/manifest/example/app:1.0.0":  resolutionOK("1.0.0", "sha256:man", "tier-3-pull"),
+		"hub.aggrega.ai/feature/core/cred:1.0.0":     resolutionOK("1.0.0", "sha256:cred", "tier-3-pull"),
+		frRecipeURI:                                  resolutionOK("1.0.0", "sha256:fr", "tier-3-pull"),
+	}
+	plugins := map[string]closure.Resolution{
+		frPlugin: resolutionOK("1.0.0", "sha256:frplugin", "tier-3-pull"),
+	}
+	return &fakeLookup{entities: ents, wasmPlugins: plugins}
+}
+
+// TestPluginDescent_FeatureRecipePinned proves a registry-resolved FeatureRecipe
+// pipeline plugin is walked from the FeatureRecipe's spec.pipeline[].plugin, resolved
+// through the same ResolveWasmPlugin path the Recipe axis uses, and pinned into the
+// closure's WasmPlugins with its version + digest + plugin hint + FeatureRecipe
+// referenced-from provenance. The descent's FeatureRecipe branch is otherwise
+// unexercised; this closes that coverage hole.
+func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
+	loader := &fakeRecipeLoader{features: map[string]*types.FeatureRecipe{
+		frRecipeURI: featureRecipeWithPipelinePlugin(t, "cred", registryProvider, frPlugin),
+	}}
+	rel := loadRelease(t, providerDescentRelease)
+	man := loadManifest(t, featureRecipeDescentManifest)
+	lookup := featureRecipeDescentLookup()
+	cl, err := closure.ComputeClosure(rel, man, nil, workspaceconfig.Config{}, lookup)
+	if err != nil {
+		t.Fatalf("ComputeClosure: %v", err)
+	}
+	if err := closure.DescendRecipePlugins(&cl, loader, lookup); err != nil {
+		t.Fatalf("plugin descent: %v", err)
+	}
+
+	got, ok := wasmPluginByURI(cl, frPlugin)
+	if !ok {
+		t.Fatalf("registry-resolved FeatureRecipe pipeline plugin %q not pinned into the closure", frPlugin)
+	}
+	if got.ResolvedVersion != "1.0.0" || got.Digest != "sha256:frplugin" {
+		t.Errorf("plugin pin = {%q, %q}; want {1.0.0, sha256:frplugin}", got.ResolvedVersion, got.Digest)
+	}
+	if got.KindHint != "wasm_plugin" {
+		t.Errorf("plugin KindHint = %q; want wasm_plugin", got.KindHint)
+	}
+	if len(got.ReferencedFrom) != 1 || got.ReferencedFrom[0] != frRecipeURI {
+		t.Errorf("plugin ReferencedFrom = %v; want [%s]", got.ReferencedFrom, frRecipeURI)
 	}
 }
