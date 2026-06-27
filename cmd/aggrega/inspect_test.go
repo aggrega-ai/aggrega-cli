@@ -244,7 +244,7 @@ func TestProvenanceBracket(t *testing.T) {
 // otherwise-noisy literal construction.
 func perAttachmentBracketShim(origin, key, source string) string {
 	return perAttachmentBracket(types.IRFeatureEntry{
-		Origin:           origin,
+		Origin:           types.AttachmentOrigin(origin),
 		AnnotationKey:    key,
 		AnnotationSource: source,
 	})

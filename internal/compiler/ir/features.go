@@ -34,7 +34,7 @@ type featureResult struct {
 // only on the annotation path; all three of those fields are empty for
 // "explicit".
 type featureProvenance struct {
-	Origin           string
+	Origin           types.AttachmentOrigin
 	Side             string
 	AnnotationKey    string
 	AnnotationSource string
@@ -60,7 +60,7 @@ func (p featureProvenance) toFieldProvenance() types.FieldProvenance {
 // Aggregate subsystem features (Tier 3), and Release boundary-wide
 // features (Tier 4). Tier 5 callers compute provenance per-attachment
 // to distinguish explicit from annotation per the side-table lookup.
-var explicitProvenance = featureProvenance{Origin: "explicit"}
+var explicitProvenance = featureProvenance{Origin: types.OriginExplicit}
 
 // aggregateCanonicalPath reconstructs the canonical Aggregate-rooted
 // dotted path for a topology node so the IR builder can consult the
@@ -167,7 +167,7 @@ func collectNodeFeatures(
 			if canonicalPath != "" {
 				if record, ok := resolveResult.AnnotationProvenance[resolver.AnnotationProvenanceKey(canonicalPath, "", fa.InstanceName)]; ok {
 					prov = featureProvenance{
-						Origin:           "annotation",
+						Origin:           types.OriginAnnotation,
 						Side:             "aggregate",
 						AnnotationKey:    record.AnnotationKey,
 						AnnotationSource: record.AnnotationSource,
@@ -221,7 +221,7 @@ func collectNodeFeatures(
 			prov := explicitProvenance
 			if record, ok := resolveResult.AnnotationProvenance[resolver.AnnotationProvenanceKey(topoNode.BoundaryPath, nodeID, cf.name)]; ok {
 				prov = featureProvenance{
-					Origin:           "annotation",
+					Origin:           types.OriginAnnotation,
 					Side:             "release",
 					AnnotationKey:    record.AnnotationKey,
 					AnnotationSource: record.AnnotationSource,
@@ -524,14 +524,14 @@ func mergeLeaf(
 		pillarProv.Set(leafPath, incomingProv.toFieldProvenance())
 		return
 	}
-	if existingProv.Origin == "explicit" && incomingProv.Origin == "annotation" {
+	if existingProv.Origin == types.OriginExplicit && incomingProv.Origin == types.OriginAnnotation {
 		// Explicit already at this leaf; the annotation contribution is
 		// suppressed silently. The lint pass (separate run) emits the
 		// advisory if the suppressed annotation's effective value would
 		// have differed.
 		return
 	}
-	if existingProv.Origin == "annotation" && incomingProv.Origin == "explicit" {
+	if existingProv.Origin == types.OriginAnnotation && incomingProv.Origin == types.OriginExplicit {
 		suppressed := existingProv
 		newProv := incomingProv.toFieldProvenance()
 		newProv.OverridesAnnotation = &suppressed
@@ -578,7 +578,7 @@ func finalizeTopLevelOrigin(result *featureResult) {
 
 // deriveTopLevelOrigin computes the top-level Origin tuple for one
 // IRFeatureEntry from its per-leaf provenance maps.
-func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance]) (origin, key, source string) {
+func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance]) (origin types.AttachmentOrigin, key, source string) {
 	hasLeaf := false
 	var firstAnnotation types.FieldProvenance
 	allExplicit := true
@@ -587,10 +587,10 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 	walk := func(m types.OrderedMap[types.FieldProvenance]) {
 		for _, fp := range m.All() {
 			hasLeaf = true
-			if fp.Origin != "explicit" {
+			if fp.Origin != types.OriginExplicit {
 				allExplicit = false
 			}
-			if fp.Origin != "annotation" {
+			if fp.Origin != types.OriginAnnotation {
 				allAnnotation = false
 				sameAnnotation = false
 				continue
@@ -612,12 +612,12 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 		return "", "", ""
 	}
 	if allExplicit {
-		return "explicit", "", ""
+		return types.OriginExplicit, "", ""
 	}
 	if allAnnotation && sameAnnotation {
-		return "annotation", firstAnnotation.AnnotationKey, firstAnnotation.AnnotationSource
+		return types.OriginAnnotation, firstAnnotation.AnnotationKey, firstAnnotation.AnnotationSource
 	}
-	return "mixed", "", ""
+	return types.OriginMixed, "", ""
 }
 
 func isCredential(typeURI string, catalogLookup resolver.CatalogLookup) bool {

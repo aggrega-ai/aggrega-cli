@@ -26,7 +26,7 @@ func buildIRGraphWithFeature(nodeID, instanceName string, entry types.IRFeatureE
 
 func provenance(origin, side, key, source string) types.FieldProvenance {
 	return types.FieldProvenance{
-		Origin:           origin,
+		Origin:           types.AttachmentOrigin(origin),
 		Side:             side,
 		AnnotationKey:    key,
 		AnnotationSource: source,

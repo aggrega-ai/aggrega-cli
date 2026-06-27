@@ -49,6 +49,12 @@ var codecTargetPaths = map[string][]string{
 	"linter_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"linter_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"linter_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"ir_gen.go":      {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"ir_gen.rs":      {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"ir_gen.ts":      {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"policy_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"policy_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"policy_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.
 	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
 }

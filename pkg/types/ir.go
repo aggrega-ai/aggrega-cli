@@ -11,6 +11,29 @@ const IRAPIVersion = "aggrega.ai/v1alpha1"
 // IRKind is the canonical kind value for IR documents.
 const IRKind = "IR"
 
+// AttachmentOrigin is the provenance of a Feature attachment (or of one leaf in
+// its values/infra payload): whether it was authored explicitly, contributed by
+// the annotation-driven expansion pass, or — at the attachment top level — a mix
+// of both. It is a string newtype so the wire shape is unchanged (a plain JSON
+// string) while the value set is single-sourced here rather than re-spelled as
+// string literals across the IR builder. The ir-v1alpha1 attachment_entry.origin
+// enum is the cross-language contract for the same value set.
+type AttachmentOrigin string
+
+const (
+	// OriginExplicit marks a Feature attachment or leaf authored in an explicit
+	// features: block.
+	OriginExplicit AttachmentOrigin = "explicit"
+	// OriginAnnotation marks a Feature attachment or leaf contributed by the
+	// annotation-driven expansion pass.
+	OriginAnnotation AttachmentOrigin = "annotation"
+	// OriginMixed marks an attachment whose leaves carry a mix of explicit and
+	// annotation provenance; per-leaf detail then lives in the provenance maps.
+	// Reachable only at the attachment top level, never on a single leaf's
+	// FieldProvenance.
+	OriginMixed AttachmentOrigin = "mixed"
+)
+
 // IRGraph is the in-memory, target-agnostic intermediate representation emitted by the
 // topology builder. It strictly mirrors ir-v1alpha1.schema.json.
 type IRGraph struct {
@@ -218,7 +241,7 @@ type IRFeatureEntry struct {
 	Infra            OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject           OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 	Secrets          OrderedMap[IRSecretEntry]      `json:"secrets,omitempty,omitzero"`
-	Origin           string                         `json:"origin,omitempty"`
+	Origin           AttachmentOrigin               `json:"origin,omitempty"`
 	AnnotationKey    string                         `json:"annotation_key,omitempty"`
 	AnnotationSource string                         `json:"annotation_source,omitempty"`
 	ValuesProvenance OrderedMap[FieldProvenance]    `json:"values_provenance,omitempty,omitzero"`
@@ -248,7 +271,9 @@ type IRFeatureEntry struct {
 // override and the lint pass can emit explicit-overrides-annotation
 // warnings. Nil when no override occurred at this leaf.
 type FieldProvenance struct {
-	Origin              string           `json:"origin"`
+	// Origin is OriginExplicit or OriginAnnotation; a single leaf's provenance
+	// never widens to OriginMixed (mixing is an attachment-top-level notion).
+	Origin              AttachmentOrigin `json:"origin"`
 	Side                string           `json:"side,omitempty"`
 	AnnotationKey       string           `json:"annotation_key,omitempty"`
 	AnnotationSource    string           `json:"annotation_source,omitempty"`

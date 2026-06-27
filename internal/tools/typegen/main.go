@@ -110,6 +110,16 @@ type codecTarget struct {
 	// reference them. (Ignored by the Rust/TS backends, whose wire codec is the
 	// language's own serde/JSON runtime.)
 	helpers bool
+	// externalDefTypes names generated types that live in the same destination
+	// package but are emitted by a different codec target (a cross-codec, in-
+	// package reference — e.g. the policy codec's graph field whose type is the
+	// IRGraph emitted by the IR codec target into the same abi package). Listing
+	// them here lets the Go backend treat such a field as a generated def type and
+	// dispatch encode/decode directly to its own generated Marshal/UnmarshalJSON,
+	// keeping the codec dispatch-free across the cross-codec boundary rather than
+	// falling back to a reflective json.Marshal. (Ignored by the Rust/TS backends,
+	// whose runtime resolves the in-package type by name.)
+	externalDefTypes []string
 }
 
 // frpGuestNeutralVocabulary maps the FRP schema's host type spellings to a
@@ -137,20 +147,45 @@ var mutatorGuestVocabulary = map[string]string{
 	"OrderedMap[string]":      "map[string]string",
 }
 
-// mutatorHostVocabulary maps the mutator schema's annotation spellings to the
-// host realization. The host mutator graph is a plain Go map today; the
-// container annotations rewrite to plain maps so the generated host types match
-// the existing topology wire shape. (An ordered-container upgrade is a separate
-// change behind a vocabulary flip here.)
+// mutatorHostVocabulary maps the mutator schema's container annotations to the
+// host realization: the order-preserving types.OrderedMap (qualified, since the
+// codec lands in package topology) so the host wire is byte-deterministic across
+// runs of identical input (the determinism contract). The guest reads a plain
+// map (its vocabulary rewrites OrderedMap -> map): key order on the wire is the
+// emitting host's concern.
 var mutatorHostVocabulary = map[string]string{
-	"OrderedMap[MutatorNode]": "map[string]MutatorNode",
-	"OrderedMap[string]":      "map[string]string",
+	"OrderedMap[MutatorNode]": "types.OrderedMap[MutatorNode]",
+	"OrderedMap[string]":      "types.OrderedMap[string]",
 }
 
 // linterGuestVocabulary is empty: the linter schema's opaque fields already
 // carry the neutral json.RawMessage spelling, and it declares no host container
 // type. Absence of an entry passes each annotation through verbatim.
 var linterGuestVocabulary = map[string]string{}
+
+// irGuestVocabulary maps the IR schema's host container spellings to the neutral
+// guest vocabulary: every order-preserving OrderedMap becomes a plain map (the
+// guest reads a map; key order on the wire is the emitting host's concern). The
+// inject/values/infra fields already carry the opaque json.RawMessage spelling
+// from the schema annotations, and the recursive/pointer fields carry their
+// pointer spelling, so neither needs a vocabulary entry.
+var irGuestVocabulary = map[string]string{
+	"OrderedMap[IRNode]":                        "map[string]IRNode",
+	"OrderedMap[IREdge]":                        "map[string]IREdge",
+	"OrderedMap[string]":                        "map[string]string",
+	"OrderedMap[any]":                           "map[string]json.RawMessage",
+	"OrderedMap[FieldProvenance]":               "map[string]FieldProvenance",
+	"OrderedMap[IRFeatureEntry]":                "map[string]IRFeatureEntry",
+	"OrderedMap[OrderedMap[IRFeatureEntry]]":    "map[string]map[string]IRFeatureEntry",
+	"OrderedMap[OrderedMap[IRBoundaryFeature]]": "map[string]map[string]IRBoundaryFeature",
+}
+
+// policyGuestVocabulary is empty: the policy schema's graph field is annotated
+// with the IRGraph type (emitted by the IR codec target into the same abi
+// package and named in the policy target's externalDefTypes), and the rest are
+// plain scalars and string slices. Absence of an entry passes annotations
+// through verbatim.
+var policyGuestVocabulary = map[string]string{}
 
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
@@ -216,6 +251,60 @@ var codecTargets = map[string]codecTarget{
 		vocabulary: linterGuestVocabulary,
 		lang:       "ts",
 	},
+
+	// IR graph — guest codec into aggrega-abi (Go/Rust/TS). The full
+	// target-agnostic IR graph the Topology Builder emits; the policy socket's
+	// graph references it. inject/values/infra carry opaque (the schema annotates
+	// them json.RawMessage); the recursive provenance pointer and the secrets
+	// self-map break their cycles by pointer/map.
+	"ir_gen.go": {
+		schema:     schemas.IRSchemaV1alpha1,
+		schemaFile: "ir-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: irGuestVocabulary,
+	},
+	"ir_gen.rs": {
+		schema:     schemas.IRSchemaV1alpha1,
+		schemaFile: "ir-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: irGuestVocabulary,
+		lang:       "rust",
+	},
+	"ir_gen.ts": {
+		schema:     schemas.IRSchemaV1alpha1,
+		schemaFile: "ir-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: irGuestVocabulary,
+		lang:       "ts",
+	},
+
+	// Policy-validator socket — guest codec into aggrega-abi (Go/Rust/TS). The
+	// graph field references the IRGraph emitted by the IR codec into the same abi
+	// package; externalDefTypes makes the Go codec dispatch directly to IRGraph's
+	// generated codec rather than through a reflective json.Marshal.
+	"policy_gen.go": {
+		schema:           schemas.WasmPolicyValidatorV1alpha1,
+		schemaFile:       "wasm-policy-validator-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       policyGuestVocabulary,
+		externalDefTypes: []string{"IRGraph"},
+	},
+	"policy_gen.rs": {
+		schema:           schemas.WasmPolicyValidatorV1alpha1,
+		schemaFile:       "wasm-policy-validator-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       policyGuestVocabulary,
+		lang:             "rust",
+		externalDefTypes: []string{"IRGraph"},
+	},
+	"policy_gen.ts": {
+		schema:           schemas.WasmPolicyValidatorV1alpha1,
+		schemaFile:       "wasm-policy-validator-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       policyGuestVocabulary,
+		lang:             "ts",
+		externalDefTypes: []string{"IRGraph"},
+	},
 }
 
 // knownImports maps a package selector that may appear in an x-aggrega-go-type
@@ -223,7 +312,8 @@ var codecTargets = map[string]codecTarget{
 // type (e.g. a future time.Duration inside a generic) is a one-line add here,
 // not a vocabulary-improvisation halt.
 var knownImports = map[string]string{
-	"yaml": "go.yaml.in/yaml/v3",
+	"yaml":  "go.yaml.in/yaml/v3",
+	"types": "github.com/aggrega-ai/aggrega-cli/pkg/types",
 }
 
 // schemaNode is a decoded JSON Schema object node preserving the declared
@@ -1061,10 +1151,16 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 
 	// defTypes names the generated def struct types, so the codec emitter can
 	// tell a nested generated type — decoded by a direct call to its own
-	// UnmarshalJSON — from a scalar or an opaque passthrough.
+	// UnmarshalJSON — from a scalar or an opaque passthrough. It also includes
+	// externalDefTypes: types emitted by another codec target into the same
+	// package, so a cross-codec in-package field (the policy graph's IRGraph)
+	// dispatches directly to its generated codec rather than through json.Marshal.
 	defTypes := map[string]bool{}
 	for _, d := range root.defs {
 		defTypes[d.name] = true
+	}
+	for _, ext := range t.externalDefTypes {
+		defTypes[ext] = true
 	}
 
 	// The dispatch-free streaming codec for each emitted def type, in the same
@@ -1115,6 +1211,14 @@ func codecSpineImports(body string) []string {
 	for _, c := range candidates {
 		if strings.Contains(body, c.token) {
 			imports = append(imports, c.path)
+		}
+	}
+	// A codec field typed as a cross-package type (a host-vocabulary spelling like
+	// types.OrderedMap[...]) carries a package selector; emit its import via the
+	// knownImports table, the same mechanism the single-type entity path uses.
+	for sel, path := range knownImports {
+		if strings.Contains(body, sel+".") {
+			imports = append(imports, path)
 		}
 	}
 	return imports

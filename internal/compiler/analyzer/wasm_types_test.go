@@ -11,85 +11,37 @@ import (
 	"strings"
 	"testing"
 
-	libschema "github.com/google/jsonschema-go/jsonschema"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
-// policyValidatorSchemaValidator loads the shipped wasm-policy-validator
-// JSON Schema from the sibling aggrega-schemas repo and constructs a
-// Validator over it. Skips when the schema file is unreachable so the
-// test suite stays clean on consumer checkouts that do not vendor the
-// schemas submodule.
-func policyValidatorSchemaValidator(t *testing.T) jsonvalidator.Validator {
-	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-policy-validator-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("wasm-policy-validator schema not reachable at %s: %v", schemaPath, err)
-	}
-	schema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaBytes, schema); err != nil {
-		t.Fatalf("unmarshal policy-validator schema: %v", err)
-	}
-	v, err := jsonvalidator.New(schema)
-	if err != nil {
-		t.Fatalf("build validator: %v", err)
-	}
-	return v
-}
-
-// jsonInstance marshals v and unmarshals the result back to a generic
-// any value the validator's deterministic walker consumes.
-func jsonInstance(t *testing.T, v any) any {
-	t.Helper()
-	raw, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	var inst any
-	if err := json.Unmarshal(raw, &inst); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	return inst
-}
-
-// TestPolicyValidatorInput_RoundTripJSONSchema validates that a fixture
-// PolicyValidatorInput marshals to JSON that passes the schema and
-// unmarshals back to an equivalent Go value.
-func TestPolicyValidatorInput_RoundTripJSONSchema(t *testing.T) {
+// TestPolicyValidatorInput_RoundTrip exercises the b-full policy input: the
+// graph is the full types.IRGraph (single-sourced from ir-v1alpha1), so the
+// fixture is a real IR graph rather than a narrow projection. The input's wire
+// shape is schema-validated cross-language in aggrega-abi (the policy schema
+// references ir-v1alpha1 — a cross-file $ref the host validator does not resolve
+// here); this test pins the Go round-trip: the full IR graph survives marshal /
+// unmarshal with its OrderedMap author-order intact.
+func TestPolicyValidatorInput_RoundTrip(t *testing.T) {
 	t.Parallel()
-	v := policyValidatorSchemaValidator(t)
 
 	labelsAPI := types.NewOrderedMap[string]()
 	labelsAPI.Set("team", "payments")
 	labelsAPI.Set("tier", "service")
-	labelsDB := types.NewOrderedMap[string]()
-	labelsDB.Set("team", "payments")
-	labelsDB.Set("tier", "datastore")
+	nodes := types.NewOrderedMap[types.IRNode]()
+	nodes.Set("payments-api", types.IRNode{
+		Component:       "core/web-service",
+		ResolvedVersion: "1.4.2",
+		Labels:          *labelsAPI,
+	})
 
 	fixture := analyzer.PolicyValidatorInput{
-		Graph: analyzer.PolicyGraph{
-			Nodes: map[string]analyzer.PolicyNode{
-				"payments-api": {
-					Component:       "core/web-service",
-					ResolvedVersion: "1.4.2",
-					Labels:          *labelsAPI,
-				},
-				"payments-db": {
-					Component:       "core/postgres",
-					ResolvedVersion: "15.2.0",
-					Labels:          *labelsDB,
-				},
-			},
-			Edges: []analyzer.PolicyEdge{
-				{
-					Source: "payments-api",
-					Target: "payments-db",
-					Socket: "databases",
-				},
+		Graph: types.IRGraph{
+			APIVersion: types.IRAPIVersion,
+			Kind:       "IR",
+			Spec: types.IRSpec{
+				Nodes: *nodes,
+				Edges: []types.IREdge{{Source: "payments-api", Target: "payments-db", Socket: "databases"}},
 			},
 		},
 		PrecalculatedPaths: []analyzer.PrecalculatedPath{
@@ -101,15 +53,6 @@ func TestPolicyValidatorInput_RoundTripJSONSchema(t *testing.T) {
 		},
 	}
 
-	rpt, err := v.Validate(jsonInstance(t, fixture), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) != 0 {
-		t.Errorf("expected schema acceptance of PolicyValidatorInput fixture; got %d findings: %v",
-			len(rpt.Findings), rpt.Findings)
-	}
-
 	raw, err := json.Marshal(fixture)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
@@ -118,44 +61,33 @@ func TestPolicyValidatorInput_RoundTripJSONSchema(t *testing.T) {
 	if err := json.Unmarshal(raw, &round); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	// Field-by-field comparison: OrderedMap's iteration order survives
-	// the round-trip via its Marshal/Unmarshal pair; reflect.DeepEqual
-	// suffices for the scalar fields and the precalculated-paths slice.
 	if !reflect.DeepEqual(fixture.PrecalculatedPaths, round.PrecalculatedPaths) {
 		t.Errorf("PrecalculatedPaths round-trip inequality:\n  before: %+v\n  after:  %+v",
 			fixture.PrecalculatedPaths, round.PrecalculatedPaths)
 	}
-	if !reflect.DeepEqual(fixture.Graph.Edges, round.Graph.Edges) {
-		t.Errorf("Graph.Edges round-trip inequality:\n  before: %+v\n  after:  %+v",
-			fixture.Graph.Edges, round.Graph.Edges)
+	if !reflect.DeepEqual(fixture.Graph.Spec.Edges, round.Graph.Spec.Edges) {
+		t.Errorf("Graph edges round-trip inequality:\n  before: %+v\n  after:  %+v",
+			fixture.Graph.Spec.Edges, round.Graph.Spec.Edges)
 	}
-	if len(fixture.Graph.Nodes) != len(round.Graph.Nodes) {
-		t.Errorf("Graph.Nodes count mismatch: before=%d after=%d",
-			len(fixture.Graph.Nodes), len(round.Graph.Nodes))
+	if fixture.Graph.Spec.Nodes.Len() != round.Graph.Spec.Nodes.Len() {
+		t.Errorf("Graph nodes count mismatch: before=%d after=%d",
+			fixture.Graph.Spec.Nodes.Len(), round.Graph.Spec.Nodes.Len())
 	}
 }
 
-// TestPolicyValidatorOutput_RoundTripJSONSchema validates that a fixture
-// PolicyValidatorOutput marshals to JSON that passes the schema and
-// unmarshals back to an equal Go value.
-func TestPolicyValidatorOutput_RoundTripJSONSchema(t *testing.T) {
+// TestPolicyValidatorOutput_RoundTrip pins the Go round-trip of the
+// PolicyValidatorOutput envelope. The wire shape is schema-validated
+// cross-language in aggrega-abi (the policy schema references ir-v1alpha1 — a
+// cross-file $ref the host validator does not resolve without a loader), so the
+// host test exercises marshal / unmarshal equality.
+func TestPolicyValidatorOutput_RoundTrip(t *testing.T) {
 	t.Parallel()
-	v := policyValidatorSchemaValidator(t)
 
 	fixture := analyzer.PolicyValidatorOutput{
 		Results: []analyzer.PolicyResult{
 			{Pass: true, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
 			{Pass: false, Message: "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0"},
 		},
-	}
-
-	rpt, err := v.Validate(jsonInstance(t, fixture), nil)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if len(rpt.Findings) != 0 {
-		t.Errorf("expected schema acceptance of PolicyValidatorOutput fixture; got %d findings: %v",
-			len(rpt.Findings), rpt.Findings)
 	}
 
 	raw, err := json.Marshal(fixture)
@@ -220,11 +152,11 @@ func TestPolicyValidatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
 		}
 	}
 
+	// The envelope types carry local $defs. The graph field is a $ref to
+	// ir-v1alpha1's IRGraph (not a local projection), so it has no local $def to
+	// field-cover here — the IR graph's field coverage is the IR schema's concern.
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyValidatorInput{}), "PolicyValidatorInput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyValidatorOutput{}), "PolicyValidatorOutput")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyGraph{}), "PolicyGraph")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyNode{}), "PolicyNode")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyEdge{}), "PolicyEdge")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PrecalculatedPath{}), "PrecalculatedPath")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyResult{}), "PolicyResult")
 }

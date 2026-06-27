@@ -267,46 +267,17 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 	}, nil
 }
 
-// assemblePolicyInput projects the IR graph into the
-// [PolicyValidatorInput] ABI shape. The projection is narrower than
-// the IR by design (per the principle-of-least-authority discipline
-// applied to every Wasm plugin socket) and flattens
-// IRGraph.Spec.Nodes from OrderedMap to plain map[string]PolicyNode;
-// encoding/json alphabetises JSON object keys at marshal time, so
-// the wire payload stays deterministic across runs of identical
-// input even though the in-memory map type does not preserve
-// iteration order. IRGraph.Spec.Edges is forwarded as a slice with
-// field-narrowing; the per-node Features OrderedMap is forwarded
-// preserving author order.
+// assemblePolicyInput assembles the [PolicyValidatorInput] ABI payload from the
+// IR graph. The policy-validator socket sees the full target-agnostic IR graph
+// (single-sourced from ir-v1alpha1.schema.json) rather than a narrow
+// projection, so the graph is forwarded whole — the plugin reasons over the same
+// node, edge, and attachment detail the compiler holds. The graph carries its
+// own author-order determinism through the OrderedMap types it is built from;
+// no per-field narrowing or re-keying happens here. PrecalculatedPaths carries
+// the analyzer's enumerated routing paths alongside.
 func assemblePolicyInput(graph *types.IRGraph, paths []PrecalculatedPath) *PolicyValidatorInput {
-	policyNodes := make(map[string]PolicyNode, graph.Spec.Nodes.Len())
-	for id, node := range graph.Spec.Nodes.All() {
-		pn := PolicyNode{
-			Component:       node.Component,
-			ResolvedVersion: node.ResolvedVersion,
-			Labels:          node.Labels,
-		}
-		if fvm, ok := graph.Spec.FeatureValuesMapping.Get(id); ok {
-			pn.Features = fvm
-		}
-		policyNodes[id] = pn
-	}
-
-	policyEdges := make([]PolicyEdge, 0, len(graph.Spec.Edges))
-	for _, e := range graph.Spec.Edges {
-		policyEdges = append(policyEdges, PolicyEdge{
-			Source:        e.Source,
-			Target:        e.Target,
-			Socket:        e.Socket,
-			OriginFeature: e.OriginFeature,
-		})
-	}
-
 	return &PolicyValidatorInput{
-		Graph: PolicyGraph{
-			Nodes: policyNodes,
-			Edges: policyEdges,
-		},
+		Graph:              *graph,
 		PrecalculatedPaths: paths,
 	}
 }

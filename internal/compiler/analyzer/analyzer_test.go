@@ -559,12 +559,14 @@ func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 	if result.PolicyInput == nil {
 		t.Fatal("expected policy input")
 	}
-	if len(result.PolicyInput.Graph.Nodes) != 1 {
-		t.Errorf("expected 1 policy node, got %d", len(result.PolicyInput.Graph.Nodes))
+	// Under b-full the policy input carries the full IR graph; the nodes live at
+	// Graph.Spec.Nodes (an OrderedMap), not a narrow projection.
+	if result.PolicyInput.Graph.Spec.Nodes.Len() != 1 {
+		t.Errorf("expected 1 IR node, got %d", result.PolicyInput.Graph.Spec.Nodes.Len())
 	}
-	pn := result.PolicyInput.Graph.Nodes["api"]
-	if pn.Component != "core/compute/api-server" || pn.ResolvedVersion != "1.0.0" {
-		t.Errorf("policy node: %+v", pn)
+	pn, ok := result.PolicyInput.Graph.Spec.Nodes.Get("api")
+	if !ok || pn.Component != "core/compute/api-server" || pn.ResolvedVersion != "1.0.0" {
+		t.Errorf("IR node: %+v (found=%v)", pn, ok)
 	}
 }
 

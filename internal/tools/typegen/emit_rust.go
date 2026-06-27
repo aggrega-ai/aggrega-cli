@@ -39,6 +39,12 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	for _, d := range root.defs {
 		defTypes[d.name] = true
 	}
+	// externalDefTypes are emitted by a sibling codec target into the same crate;
+	// treat them as def types so a field annotated with one resolves to the type
+	// (not an opaque carrier), and import them from the crate root below.
+	for _, ext := range t.externalDefTypes {
+		defTypes[ext] = true
+	}
 
 	// Emit the structs into a temporary buffer first so the import block can
 	// declare only the items the generated code actually references (an unused
@@ -60,7 +66,21 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	if strings.Contains(structSrc, "BTreeMap<") {
 		body.WriteString("use std::collections::BTreeMap;\n")
 	}
+	// A field typed as a sibling-codec type (externalDefTypes) imports it from the
+	// crate root, where lib.rs re-exports every generated module's types.
+	for _, ext := range t.externalDefTypes {
+		if strings.Contains(structSrc, ext) {
+			fmt.Fprintf(&body, "use crate::%s;\n", ext)
+		}
+	}
 	body.WriteString("\n")
+	// is_default omits a scalar at its zero value on serialize, matching Go
+	// omitempty on a scalar field. Emitted only when a field references it.
+	if strings.Contains(structSrc, "is_default") {
+		body.WriteString("fn is_default<T: Default + PartialEq>(v: &T) -> bool {\n")
+		body.WriteString("    *v == T::default()\n")
+		body.WriteString("}\n\n")
+	}
 	body.WriteString(structSrc)
 
 	return []byte(body.String()), nil
@@ -76,11 +96,25 @@ func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map
 	// useful to plugin authors. PartialEq is omitted: serde_json::value::RawValue
 	// (the verbatim-opaque carrier) does not implement it, so a blanket PartialEq
 	// derive would not compile for any type carrying an opaque field. A wire-parity
-	// check compares serialized bytes rather than struct equality.
-	b.WriteString("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+	// check compares serialized bytes rather than struct equality. Default is
+	// derived only when every field is Default-able — a non-optional Box<RawValue>
+	// (a required opaque field) is not, so a type carrying one omits Default.
+	rustTypes := make([]string, len(fields))
+	defaultable := true
+	for i, f := range fields {
+		rustTypes[i] = rustFieldType(f, defTypes)
+		if rustTypes[i] == "Box<RawValue>" {
+			defaultable = false
+		}
+	}
+	if defaultable {
+		b.WriteString("#[derive(Debug, Clone, Default, Serialize, Deserialize)]\n")
+	} else {
+		b.WriteString("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
+	}
 	fmt.Fprintf(b, "pub struct %s {\n", typeName)
-	for _, f := range fields {
-		rustTy := rustFieldType(f, defTypes)
+	for i, f := range fields {
+		rustTy := rustTypes[i]
 		name, renamed := rustFieldName(f.key)
 		if f.desc != "" {
 			writeRustDoc(b, "    ", oneLine(f.desc))
@@ -124,8 +158,15 @@ func rustSerdeAttrs(f codecField, rustTy string, renamed bool) []string {
 		inner = append(inner, fmt.Sprintf("rename = %q", f.key))
 	}
 	if !f.required {
-		skip := rustSkipPredicate(rustTy)
-		if skip != "" {
+		// A non-required field with an omit notion (a scalar, collection, opaque,
+		// or pointer — anything with a skip predicate) gets default + the predicate
+		// so it decodes from a missing field to its zero value and serializes only
+		// when non-empty, matching the Go codec's omitempty. A predicate-less
+		// non-required field is a bare nested struct: Go's omitempty is a no-op on
+		// a struct value, so it is always emitted and always present on the wire —
+		// no default/skip, matching that always-present shape (and avoiding a
+		// Default bound on a struct that does not derive Default).
+		if skip := rustSkipPredicate(rustTy); skip != "" {
 			inner = append(inner, "default", fmt.Sprintf("skip_serializing_if = %q", skip))
 		}
 	}
@@ -143,10 +184,10 @@ func rustSkipPredicate(rustTy string) string {
 	switch {
 	case rustTy == "String":
 		return "String::is_empty"
-	case rustTy == "bool":
-		return "std::ops::Not::not"
-	case rustTy == "i64":
-		return "" // serde has no built-in is-zero; ints are emitted (Go omitempty on int omits 0, handled below)
+	case rustTy == "bool" || rustTy == "i64" || rustTy == "f64":
+		// Omit the zero value, matching Go omitempty on a scalar. is_default is a
+		// generated module helper (emitted when any field uses it).
+		return "is_default"
 	case strings.HasPrefix(rustTy, "BTreeMap<"):
 		return "BTreeMap::is_empty"
 	case strings.HasPrefix(rustTy, "Vec<"):
@@ -214,16 +255,42 @@ var rustKeywords = map[string]bool{
 	"mod": true, "pub": true, "return": true, "where": true, "const": true,
 }
 
-// rustFieldName maps a JSON wire key (snake_case) to a Rust struct field name.
-// The wire keys are already snake_case (the Rust idiom), so the name is the key
-// verbatim — except a key that is a Rust keyword takes the raw-identifier form
-// (r#type). Returns whether a #[serde(rename)] is needed (only for keywords,
-// since the raw identifier r#type serializes as "r#type" without the rename).
+// rustFieldName maps a JSON wire key to a Rust struct field name and reports
+// whether a #[serde(rename)] is needed to preserve the wire key. Most wire keys
+// are snake_case (the Rust idiom) and pass through verbatim. Two cases need a
+// rename so the wire key is preserved while the Rust identifier stays idiomatic:
+//   - a key that is a Rust keyword takes the raw-identifier form (r#type), and
+//     the rename keeps the wire key "type" (r#type would otherwise be fine, but
+//     the rename is harmless and explicit);
+//   - a camelCase key (e.g. apiVersion) converts to snake_case (api_version),
+//     and the rename preserves the camelCase wire key.
 func rustFieldName(key string) (string, bool) {
 	if rustKeywords[key] {
 		return "r#" + key, true
 	}
+	if snake := camelToSnake(key); snake != key {
+		return snake, true
+	}
 	return key, false
+}
+
+// camelToSnake converts a camelCase identifier to snake_case. A key with no
+// interior uppercase letter (already snake_case or all-lowercase) is returned
+// unchanged.
+func camelToSnake(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteByte(c - 'A' + 'a')
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // writeRustDoc writes a /// doc line at the given indent.

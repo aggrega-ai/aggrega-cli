@@ -14,6 +14,7 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
@@ -63,6 +64,24 @@ func TestMutatorInput_RoundTripJSONSchema(t *testing.T) {
 	t.Parallel()
 	v := mutatorSchemaValidator(t)
 
+	labelsAPI := types.NewOrderedMap[string]()
+	labelsAPI.Set("team", "payments")
+	labelsAPI.Set("tier", "service")
+	labelsDB := types.NewOrderedMap[string]()
+	labelsDB.Set("team", "payments")
+	labelsDB.Set("tier", "datastore")
+	nodes := types.NewOrderedMap[topology.MutatorNode]()
+	nodes.Set("payments-api", topology.MutatorNode{
+		Component:       "core/web-service",
+		ResolvedVersion: "1.4.2",
+		Labels:          *labelsAPI,
+	})
+	nodes.Set("payments-db", topology.MutatorNode{
+		Component:       "core/postgres",
+		ResolvedVersion: "15.2.0",
+		Labels:          *labelsDB,
+	})
+
 	fixture := topology.MutatorInput{
 		CompilationContext: topology.CompilationContext{
 			ReleaseDestination: "aws-prod/eks-main",
@@ -70,24 +89,7 @@ func TestMutatorInput_RoundTripJSONSchema(t *testing.T) {
 			Environment:        "prod",
 		},
 		Graph: topology.MutatorGraph{
-			Nodes: map[string]topology.MutatorNode{
-				"payments-api": {
-					Component:       "core/web-service",
-					ResolvedVersion: "1.4.2",
-					Labels: map[string]string{
-						"team": "payments",
-						"tier": "service",
-					},
-				},
-				"payments-db": {
-					Component:       "core/postgres",
-					ResolvedVersion: "15.2.0",
-					Labels: map[string]string{
-						"team": "payments",
-						"tier": "datastore",
-					},
-				},
-			},
+			Nodes: *nodes,
 		},
 	}
 
