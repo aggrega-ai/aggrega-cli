@@ -351,10 +351,10 @@ func phaseB6(
 	hostIsAssembler bool,
 	hostProvider string,
 	renderCtx renderctx.RenderContext,
-) (map[string][]byte, map[string][]byte, []DeferredHostPatch, error) {
+) (map[string][]byte, map[string][]byte, []DeferredPatch, error) {
 	out := map[string][]byte{}
 	hostPatched := map[string][]byte{}
-	var deferred []DeferredHostPatch
+	var deferred []DeferredPatch
 	nodeID := state.NodeID
 
 	// Running host document set threaded across FRs in FeatureOrder: each
@@ -465,17 +465,27 @@ func phaseB6(
 		// The host-scope pipeline is therefore DEFERRED whole to the
 		// post-assembly phase, which replays it against the merged document. The
 		// FR's own output (its artifacts / synthesized resources) is already
-		// rendered above; only its pipeline's host work defers. (Own-scope
-		// pipeline EMIT/PATCH for an assembler-hosted FR is the scope-symmetric
-		// own-on-assembler case, a follow-on coverage item; the cross-entity
-		// /host injector this path serves declares host-scope steps.)
+		// rendered above; only its pipeline's host work defers.
+		//
+		// Own-scope-on-assembler via a component-scope FeatureRecipe: a
+		// FeatureRecipe's own output is emitted under features/<instance>/ as
+		// discrete files — it is NOT routed to a BoundaryAssembler (only a
+		// component's own render output is), so there is no merged document for a
+		// post-assembly /own replay to target. An /own PATCH against an
+		// FR-rendered assembler fragment therefore stays a per-node concern and
+		// trips the executor's own-fragment guard loudly (correct: there is
+		// genuinely no discrete document and nothing to defer to). The replayable
+		// own-on-assembler case is a COMPONENT Recipe whose own provider is an
+		// assembler — handled at the orchestrator, whose own render output IS
+		// assembled. So this branch defers only the host scope.
 		if len(fr.Spec.Pipeline) > 0 {
 			if hostIsAssembler {
 				// Record the FR's pipeline for post-assembly replay. The host
 				// node and provider are stamped here; the orchestrator adds the
-				// host-node author-order key, and the post-assembly phase's C2
-				// guard asserts every replayed step declares the host scope.
-				deferred = append(deferred, DeferredHostPatch{
+				// host-node author-order key. HostProvider drives the host-scope
+				// codec + compatibility check on replay; OwnProvider is empty —
+				// this record carries no replayable own scope (see above).
+				deferred = append(deferred, DeferredPatch{
 					Steps:             fr.Spec.Pipeline,
 					WithCtx:           &frCtx,
 					RenderCtx:         renderCtx,

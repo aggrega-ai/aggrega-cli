@@ -146,26 +146,22 @@ var (
 	// resolving against an empty set.
 	ErrPipelineHostScopeUnavailable = errors.New("pipeline /host operation from a step with no host component")
 
-	// ErrPipelinePatchPreAssembly fires when an own-scope pipeline PATCH
-	// addresses a document rendered by an assembler provider before assembly
-	// produces the final documents — the target is a pre-assembly fragment, not
-	// a discrete document. The discreteness rule is per-provider: a PATCH
-	// against an own-scope fragment (the node's own provider is an assembler)
-	// halts here. The scope-symmetric host case does NOT halt: a /host PATCH
-	// against an assembler host is deferred to the post-assembly phase and
-	// re-run there once the assembler produces discrete documents. EMIT is
-	// additive and runs per-node for every provider, so it is never gated by
-	// this guardrail.
+	// ErrPipelinePatchPreAssembly fires when a pipeline PATCH addresses a
+	// document rendered by an assembler provider before assembly produces the
+	// final documents — the target is a pre-assembly fragment, not a discrete
+	// document. The discreteness rule is per-provider and scope-symmetric, and it
+	// is the defensive floor rather than the normal path: a pipeline against an
+	// assembler node is deferred whole to the post-assembly phase and replayed
+	// against the merged documents — a component Recipe (or component-scope
+	// FeatureRecipe) /own pipeline whose own provider is an assembler, and a
+	// component-scope FeatureRecipe /host pipeline whose host provider is an
+	// assembler. This guardrail therefore catches an assembler-fragment PATCH
+	// only when one reaches the per-node executor through a path that did not
+	// defer (a FeatureRecipe's own output is emitted as discrete fragment files,
+	// never assembled, so a /own PATCH against an FR-rendered assembler fragment
+	// has no merged target to defer to and halts here). EMIT is additive and runs
+	// per-node for every provider, so it is never gated by this guardrail.
 	ErrPipelinePatchPreAssembly = errors.New("pipeline PATCH targets an assembler provider's pre-assembly fragments")
-
-	// ErrPipelineDeferredScopeNotHost fires when a host-PATCH step deferred to
-	// the post-assembly phase declares an export scope other than host. A
-	// deferred PATCH is replayed host-scope-only against the assembler's merged
-	// documents; a non-host export cannot be faithfully replayed that way. The
-	// guard enforces the one-host-scope-per-deferred-step contract the replay
-	// relies on, so a future descriptor change that loosens it halts loudly
-	// rather than silently mis-routing the replayed operation.
-	ErrPipelineDeferredScopeNotHost = errors.New("deferred host PATCH step declares a non-host export scope")
 
 	// ErrPluginProviderIncompatible fires when a pipeline step's plugin declares
 	// an enumerated compatibleProviders set that does not include the provider

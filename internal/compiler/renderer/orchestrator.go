@@ -118,14 +118,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	dispatch := map[dispatchKey]*pendingDispatch{}
 	orderedDispatch := []dispatchKey{}
 
-	// Deferred host-PATCH accumulator, keyed by the dispatch group of the host
-	// component. A component-scope FeatureRecipe whose host's provider is an
-	// assembler cannot PATCH the host per-node — the host's merged documents are
-	// not discrete until assembly. Each such PATCH is recorded here and replayed
-	// in the post-assembly phase against the assembled documents. The records
-	// carry the A1 ordering keys (host-node author order, FeatureOrder index) so
-	// the replay layers deterministically.
-	deferredByDispatch := map[dispatchKey][]DeferredHostPatch{}
+	// Deferred-PATCH accumulator, keyed by the dispatch group of the assembler
+	// node. A pipeline against an assembler node cannot PATCH per-node — the
+	// merged documents are not discrete until assembly. This covers both scopes:
+	// a component-scope FeatureRecipe whose host's provider is an assembler (its
+	// /host pipeline) and a Recipe (or component-scope FeatureRecipe) whose own
+	// provider is an assembler (its /own pipeline). Each such pipeline is recorded
+	// here and replayed in the post-assembly phase against the assembled
+	// documents. The records carry the A1 ordering keys (node author order,
+	// FeatureOrder index) so the replay layers deterministically.
+	deferredByDispatch := map[dispatchKey][]DeferredPatch{}
 
 	// Pre-compute the per-boundary evaluated `directory:` map for the
 	// .parent_boundary.directory cascade. Path-template eval at any
@@ -524,22 +526,52 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// applies /own PATCHes and appends /own EMITs as EmitOriginPipeline
 		// files; re-running the rule-7 collision detector catches a pipeline
 		// EMIT clashing with a rendered filename.
+		//
+		// Own-on-assembler: when this node's own provider is an assembler
+		// (renderIsIntermediate — its per-node output is pre-assembly fragments,
+		// not discrete documents), a /own PATCH cannot run per-node. The pipeline
+		// is deferred whole to the post-assembly phase (recorded below, after the
+		// dispatch key exists) and replayed against the merged documents, exactly
+		// as an assembler host's /host pipeline defers. EMIT is additive and could
+		// run per-node, but the whole pipeline defers as one record so a mixed
+		// PATCH+EMIT pipeline replays in its declared step order on the merged
+		// document.
+		var recipeOwnDeferred *DeferredPatch
 		if recipe != nil && len(recipe.Spec.Pipeline) > 0 {
 			renderCtx := buildPipelineRenderCtx(node, bi, parameters)
-			// own provider is this node's recipe provider; a Recipe step has no
-			// host scope (host nil), so hostProvider is empty.
-			pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
-			if perr != nil {
-				return nil, perr
-			}
-			state.EmittedFiles = pres.Own
-			result.Warnings = append(result.Warnings, pres.Warnings...)
-			if err := phaseB5(state); err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q pipeline EMIT collision", nodeID))
+			if renderIsIntermediate {
+				recipeOwnDeferred = &DeferredPatch{
+					Steps:             recipe.Spec.Pipeline,
+					WithCtx:           tmplCtx,
+					RenderCtx:         renderCtx,
+					OwnProvider:       providerName,
+					NodeID:            nodeID,
+					FeatureOrderIndex: -1, // a Recipe own pipeline precedes every FeatureRecipe in the cascade
+				}
+			} else {
+				// own provider is this node's recipe provider; a Recipe step has no
+				// host scope (host nil), so hostProvider is empty.
+				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				if perr != nil {
+					return nil, perr
+				}
+				state.EmittedFiles = pres.Own
+				result.Warnings = append(result.Warnings, pres.Warnings...)
+				if err := phaseB5(state); err != nil {
+					return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q pipeline EMIT collision", nodeID))
+				}
 			}
 		}
 
 		key := dispatchKey{Path: finalPath, Provider: providerName}
+		// Stash a deferred own-scope Recipe pipeline under this node's dispatch
+		// group now that the key exists. The merged documents the /own PATCH
+		// targets are the ones this dispatch group's assembler produces, the same
+		// group an attached FeatureRecipe's deferred /host pipeline lands in.
+		if recipeOwnDeferred != nil {
+			recipeOwnDeferred.HostNodeOrder = nodeOrder
+			deferredByDispatch[key] = append(deferredByDispatch[key], *recipeOwnDeferred)
+		}
 		if _, ok := dispatch[key]; !ok {
 			dispatch[key] = &pendingDispatch{
 				files:           map[string]map[string][]byte{},
@@ -915,14 +947,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, fmt.Sprintf("Step 5 dispatch %q assemble", key.Path))
 			}
-			// Post-assembly /host PATCH replay. A component-scope FeatureRecipe
-			// whose host's provider is this assembler deferred its /host PATCH
-			// per-node (the merged documents were not discrete yet). Now that the
-			// assembler has produced them, replay the deferred steps host-scope-
-			// only against the assembled documents, in the deterministic A1
+			// Post-assembly PATCH replay (scope-symmetric). A pipeline against
+			// this assembler node deferred per-node because the merged documents
+			// were not discrete yet: a component-scope FeatureRecipe's /host
+			// pipeline, or a Recipe (or component-scope FeatureRecipe) whose own
+			// provider is this assembler (its /own pipeline). Now that the
+			// assembler has produced the merged documents, replay each deferred
+			// pipeline against them — own-scope routed to the own root, host-scope
+			// to the host root, own-before-host— in the deterministic A1
 			// cascade, rewriting boundaryFiles in place before they are written.
 			if recs := deferredByDispatch[key]; len(recs) > 0 {
-				warnings, perr := replayDeferredHostPatches(ctx, boundaryFiles, key.Provider, recs, engineFactory, input)
+				warnings, perr := replayDeferredPatches(ctx, boundaryFiles, key.Provider, recs, engineFactory, input)
 				if perr != nil {
 					return nil, perr
 				}

@@ -35,28 +35,40 @@ type pipelineResult struct {
 	Warnings    []string
 }
 
-// DeferredHostPatch carries everything the post-assembly phase needs to replay
-// a component-scope FeatureRecipe's /host pipeline against an assembler host's
-// merged documents. An assembler host (compose) renders pre-assembly fragments
-// per-node, so there is no discrete host document for the guest to
-// content-select while the node is processed; the FeatureRecipe's host pipeline
-// is recorded here and replayed against the merged documents once assembly has
-// produced them — neither halted nor dropped.
+// DeferredPatch carries everything the post-assembly phase needs to replay a
+// pipeline against an assembler node's merged documents. An assembler provider
+// (compose) renders pre-assembly fragments per-node, so there is no discrete
+// document for the guest to content-select while the node is processed: the
+// pipeline is recorded here and replayed against the merged documents once
+// assembly has produced them — neither halted nor dropped. The case is
+// scope-symmetric. A component-scope FeatureRecipe whose host is an assembler
+// defers its /host pipeline; a Recipe (or component-scope FeatureRecipe) whose
+// OWN provider is an assembler defers its /own pipeline. The same record carries
+// both: the replay mounts the merged document as both the own root and the host
+// root (for an assembler node the merged document is the node's own output and,
+// for an attached FeatureRecipe, the host surface), and routes each step's ops
+// by the step's declared scope.
 //
-// Steps is the FeatureRecipe's pipeline; WithCtx and RenderCtx are the exact
-// contexts the per-node pass evaluated against, captured so the replayed `with`
-// renders identically. HostProvider is the host component's recipe provider
-// (the assembler — "compose"), driving codec selection and the host-scope
-// compatibility check on replay. NodeID is the host component node; FRInstance
-// names the attached FeatureRecipe. HostNodeOrder and FeatureOrderIndex are the
-// A1 replay-ordering keys: the host node's position in topology author order,
-// then the FeatureRecipe's position in the node's FeatureOrder cascade — so when
-// several deferred host pipelines replay they layer in the same deterministic
-// order the per-node host cascade uses.
-type DeferredHostPatch struct {
+// Steps is the whole pipeline (the full step slice carried in one record so a
+// mixed own+host pipeline replays in its declared step order — splitting by
+// scope would break the ordering a later step depends on). WithCtx and RenderCtx
+// are the exact contexts the per-node pass evaluated against, captured so the
+// replayed `with` renders identically. OwnProvider is the provider rendering the
+// node's own documents (the FeatureRecipe's or Recipe's spec.provider — the
+// assembler for an own-on-assembler defer); HostProvider is the host component's
+// recipe provider (the assembler for a host-on-assembler defer). Both drive
+// per-scope codec selection and the per-scope compatibility check on replay; a
+// scope a record's steps never touch leaves its provider empty. NodeID is the
+// node; FRInstance names the attached FeatureRecipe ("" for a Recipe own
+// pipeline). HostNodeOrder and FeatureOrderIndex are the A1 replay-ordering keys:
+// the node's position in topology author order, then the pipeline's position in
+// the node's FeatureOrder cascade — so when several deferred pipelines replay
+// they layer in the same deterministic order the per-node cascade uses.
+type DeferredPatch struct {
 	Steps             []types.PipelineStep
 	WithCtx           *types.TemplateContext
 	RenderCtx         renderctx.RenderContext
+	OwnProvider       string
 	HostProvider      string
 	NodeID            string
 	FRInstance        string
@@ -243,14 +255,18 @@ func runNodePipelineWithInvoker(
 	//     document when the host provider is an assembler, halts — the target is
 	//     a pre-assembly fragment.
 	//
-	//     For the host scope this guard is the defensive floor, not the normal
-	//     path: a component-scope FeatureRecipe whose host is an assembler has
-	//     its host-scope pipeline DEFERRED whole to the post-assembly phase
-	//     before this executor runs (the per-node host set is empty, so the
-	//     guest cannot content-select a pre-assembly fragment). The guard
-	//     therefore catches an assembler-host PATCH only if one reaches the
-	//     executor through a future caller that did not defer — a bug it should
-	//     halt loudly rather than apply against fragments assembly will discard.
+	//     For BOTH scopes this guard is the defensive floor, not the normal
+	//     path. A pipeline against an assembler node — a component-scope
+	//     FeatureRecipe whose host is an assembler (its /host pipeline), or a
+	//     Recipe / component-scope FeatureRecipe whose OWN provider is an
+	//     assembler (its /own pipeline) — is DEFERRED whole to the post-assembly
+	//     phase before this executor runs against the fragments (the per-node set
+	//     for the deferred scope is empty, so the guest cannot content-select a
+	//     pre-assembly fragment). The guard therefore catches an assembler-scope
+	//     PATCH only if one reaches the executor through a caller that did not
+	//     defer — a bug it should halt loudly rather than apply against fragments
+	//     assembly will discard. On the post-assembly replay hostIsAssembler is
+	//     false and the documents are discrete, so neither branch fires.
 	if step, ok := changedFragmentOwn(walkRes.AppliedOps.Own, ownFiles); ok {
 		return pipelineResult{}, pipelinePreAssemblyErr(nodeID, step, "own")
 	}

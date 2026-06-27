@@ -1,0 +1,36 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-api-synthesized
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/compute/api-server
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      main:
+        image: api-server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+        variables:
+          PORT: "{{ optional .infra `port` 8080 }}"
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+  # Own-scope pipeline against a compose component. Compose is an assembler:
+  # this Recipe's per-node output is a pre-assembly fragment, merged into one
+  # docker-compose.yaml only at assembly, so the /own PATCH cannot run per-node.
+  # The host defers the whole pipeline to the post-assembly phase and replays
+  # it against the merged document, where the service is a discrete unit.
+  pipeline:
+    - id: inject_into_own
+      plugin: frp-step-own-patch-compose-rust.wasm
+      function: step
