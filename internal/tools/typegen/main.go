@@ -160,8 +160,21 @@ var mutatorHostVocabulary = map[string]string{
 
 // linterGuestVocabulary is empty: the linter schema's opaque fields already
 // carry the neutral json.RawMessage spelling, and it declares no host container
-// type. Absence of an entry passes each annotation through verbatim.
+// type. Absence of an entry passes each annotation through verbatim — including
+// the policies field, whose x-aggrega-go-type: Policies annotation resolves to
+// the typed Policies struct the guest realizes.
 var linterGuestVocabulary = map[string]string{}
+
+// linterHostVocabulary maps the linter schema's policies annotation to the host
+// realization. The host assembles the publishing-discipline configuration
+// dynamically from the workspace config plus CLI tri-state overrides and pipes
+// it through as opaque bytes (the proven cross-boundary json.RawMessage carry),
+// so the host LinterInput.Policies is a json.RawMessage rather than the typed
+// Policies struct the guest realizes. The proposed/previous/parent fields
+// already carry json.RawMessage from the schema annotations.
+var linterHostVocabulary = map[string]string{
+	"Policies": "json.RawMessage",
+}
 
 // irGuestVocabulary maps the IR schema's host container spellings to the neutral
 // guest vocabulary: every order-preserving OrderedMap becomes a plain map (the
@@ -228,9 +241,11 @@ var codecTargets = map[string]codecTarget{
 		helpers:    true, // the host mutator codec is alone in package topology
 	},
 
-	// Linter socket — guest codecs into aggrega-abi (Go/Rust/TS). The host has
-	// no linter wire type (the publishing-linter consumes its own
-	// workspaceconfig struct), so no host codec target.
+	// Linter socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host
+	// codec into aggrega-cli's validator package (the shipped `aggrega lint`
+	// publishing-linter dispatch). The host realizes policies as an opaque
+	// json.RawMessage it assembles dynamically; the guest realizes the typed
+	// Policies struct.
 	"linter_gen.go": {
 		schema:     schemas.WasmLinterV1alpha1,
 		schemaFile: "wasm-linter-v1alpha1.schema.json",
@@ -250,6 +265,13 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "abi",
 		vocabulary: linterGuestVocabulary,
 		lang:       "ts",
+	},
+	"linter_host_gen.go": {
+		schema:     schemas.WasmLinterV1alpha1,
+		schemaFile: "wasm-linter-v1alpha1.schema.json",
+		pkg:        "validator",
+		vocabulary: linterHostVocabulary,
+		helpers:    true, // the host linter codec is alone in package validator
 	},
 
 	// IR graph — guest codec into aggrega-abi (Go/Rust/TS). The full

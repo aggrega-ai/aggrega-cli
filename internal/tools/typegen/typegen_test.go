@@ -57,6 +57,8 @@ var codecTargetPaths = map[string][]string{
 	"policy_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.
 	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
+	// The host linter codec is committed inside aggrega-cli's validator package.
+	"linter_host_gen.go": {"..", "..", "..", "pkg", "validator"},
 }
 
 // TestRegenClean_Codec is the regen-drift gate for the multi-type codec
