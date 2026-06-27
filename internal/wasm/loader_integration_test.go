@@ -341,40 +341,27 @@ func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
 }
 
 // TestPluginRoundTrip_WasiProbeRust loads the WASI-importing probe
-// fixture and verifies the stubbed-WASI subset behaves as documented:
-// clock_time_get returns zero, random_get zero-fills, fd_write
-// reports the iovec length with errno 0 and does not write to host
-// stdout. The fixture writes its 40-byte observation buffer at
-// plugin-memory offset 0 and returns that offset from
-// probe_wasi_stubs(); the test inspects the bytes by re-loading the
-// plugin's memory through a second call that exposes them via the
-// guest's exported return path (Extism's call/return ABI returns the
-// bytes the guest writes via pdk.Output() — but this fixture doesn't
-// use the Extism PDK; it returns a memory offset).
+// fixture through the real loader and verifies it runs clean under the
+// deterministic, capability-denied WASI configuration: the firewall
+// accepts the WASI imports the fixture declares (clock_time_get,
+// random_get, fd_write), the Extism-bundled wazero WASI runtime serves
+// them under the loader's ModuleConfig, and the call returns without a
+// trap, an error, or a host-side side effect (fd_write's bytes are
+// discarded — nothing reaches host stdout).
 //
-// Because the fixture doesn't use the Extism PDK output mechanism,
-// the host can't read the 40 bytes via Plugin.Call's output channel
-// directly. The end-to-end assertion this test exercises is more
-// modest: probe_wasi_stubs() returns successfully (no trap, no error)
-// — which by itself proves that:
-//
-//   - The firewall accepted the WASI imports the fixture declares.
-//   - The host's stub host module registered under
-//     wasi_snapshot_preview1.
-//   - Each stub the fixture invoked (clock_time_get, random_get,
-//     fd_write) returned a value the plugin accepted.
-//   - fd_write did NOT panic the host (the host process's stdout
-//     remained unaffected; the bytes were discarded by the stub).
-//
-// Stronger byte-level assertions on the observation buffer require
-// changes to the fixture (using the Extism PDK's output channel or
-// using a Wazero-direct call path); that's a follow-up if needed.
+// The fixture writes its observed responses into a fixed memory buffer
+// rather than through the Extism call/return ABI, and the Extism Plugin
+// wrapper exposes only the Extism kernel's memory, not the guest main
+// module's — so the byte-level values of that buffer are not readable
+// through the production loader path. The deterministic VALUES the
+// configuration produces (frozen wall time, zero entropy, discarded
+// stdio) are proven byte-for-byte against the same fixture through a
+// direct wazero instantiation in TestWasiProbeDeterministicValues.
 func TestPluginRoundTrip_WasiProbeRust(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "wasi-probe-rust.wasm")
 	defer cleanup()
 
-	_, err := plugin.Call(context.Background(), "probe_wasi_stubs", nil)
-	if err != nil {
+	if _, err := plugin.Call(context.Background(), "probe_wasi_stubs", nil); err != nil {
 		t.Fatalf("plugin.Call probe_wasi_stubs: %v", err)
 	}
 }

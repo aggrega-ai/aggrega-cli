@@ -8,6 +8,120 @@ import (
 	"fmt"
 )
 
+// wasiSnapshotPreview1Namespace is the Wasm import namespace WASI
+// preview-1 imports declare. Plugins built for the standard-Go
+// GOOS=wasip1 target, the Rust wasm32-wasip1 target, the Extism JS PDK
+// (via extism-js / QuickJS), and AssemblyScript's WASI bindings all
+// import under this exact namespace string.
+const wasiSnapshotPreview1Namespace = "wasi_snapshot_preview1"
+
+// wasiImportAllowlist names the WASI preview-1 imports the firewall
+// permits. A plugin importing only these names loads through the
+// static import firewall; the Extism-bundled wazero WASI runtime,
+// instantiated under the deterministic ModuleConfig (see loader.go),
+// supplies their behaviour.
+//
+// The allowlist is bounded to benign runtime-init imports — the set a
+// language runtime touches unconditionally during startup (clocks,
+// entropy, stdio, environment and argument discovery, scheduler yield,
+// and process exit) plus the file-descriptor metadata calls a guest's
+// stdio layer issues. Imports outside this set (filesystem traversal,
+// directory access, network sockets) grant runtime capabilities and
+// are categorically rejected.
+//
+// The set is verified against the imports a standard-Go GOOS=wasip1
+// reactor emits; it may shift slightly by Go or toolchain version, in
+// which case a newly-emitted benign import is added here after review.
+var wasiImportAllowlist = map[string]bool{
+	"fd_write":            true,
+	"fd_read":             true,
+	"fd_close":            true,
+	"fd_seek":             true,
+	"fd_tell":             true,
+	"fd_fdstat_get":       true,
+	"fd_fdstat_set_flags": true,
+	"fd_prestat_get":      true,
+	"fd_prestat_dir_name": true,
+	"clock_time_get":      true,
+	"clock_res_get":       true,
+	"random_get":          true,
+	"environ_get":         true,
+	"environ_sizes_get":   true,
+	"args_get":            true,
+	"args_sizes_get":      true,
+	"poll_oneoff":         true,
+	"sched_yield":         true,
+	"proc_exit":           true,
+}
+
+// wasiCapabilityDenylist names WASI preview-1 imports the firewall
+// rejects with an explanatory diagnostic. The map's value is the
+// human-readable capability the import would grant; the firewall
+// embeds it in the rejection error so callers see exactly which
+// invariant the rejection protects.
+//
+// Imports not on either the allowlist or the denylist default-deny;
+// the firewall produces a generic "not on the import allowlist"
+// diagnostic for those. The denylist exists to give frequently-
+// encountered rejections a clear capability label.
+var wasiCapabilityDenylist = map[string]string{
+	"path_open":               "filesystem capability (violates No Ghost Infrastructure)",
+	"path_create_directory":   "filesystem capability (violates No Ghost Infrastructure)",
+	"path_filestat_get":       "filesystem capability (violates No Ghost Infrastructure)",
+	"path_filestat_set_size":  "filesystem capability (violates No Ghost Infrastructure)",
+	"path_filestat_set_times": "filesystem capability (violates No Ghost Infrastructure)",
+	"path_link":               "filesystem capability (violates No Ghost Infrastructure)",
+	"path_readlink":           "filesystem capability (violates No Ghost Infrastructure)",
+	"path_remove_directory":   "filesystem capability (violates No Ghost Infrastructure)",
+	"path_rename":             "filesystem capability (violates No Ghost Infrastructure)",
+	"path_symlink":            "filesystem capability (violates No Ghost Infrastructure)",
+	"path_unlink_file":        "filesystem capability (violates No Ghost Infrastructure)",
+	"fd_readdir":              "filesystem-traversal capability (violates No Ghost Infrastructure)",
+	"sock_accept":             "network capability (violates AOT Purity)",
+	"sock_recv":               "network capability (violates AOT Purity)",
+	"sock_send":               "network capability (violates AOT Purity)",
+	"sock_shutdown":           "network capability (violates AOT Purity)",
+}
+
+// validateWasiImports walks the plugin Wasm binary's import section
+// and applies the static import firewall pass. Each function import
+// under wasi_snapshot_preview1 must be in wasiImportAllowlist; any
+// import in wasiCapabilityDenylist is rejected with a capability-
+// label diagnostic; any other wasi_snapshot_preview1 import is
+// rejected as "not on the import allowlist".
+//
+// Returns nil on success; returns an error wrapping
+// ErrWasmManifestRejected on the first rejection encountered. The
+// function name embedded in the error message identifies the
+// violating import.
+//
+// Imports under namespaces other than wasi_snapshot_preview1
+// (extism:host/env, extism:host/user, etc.) are not the concern of
+// this pass; the host-function allowlist in manifest_translate.go
+// handles those.
+func validateWasiImports(pluginName string, wasmBytes []byte) error {
+	imports, err := parseFunctionImports(wasmBytes)
+	if err != nil {
+		return fmt.Errorf("plugin %q: parsing wasm import section: %w",
+			pluginName, err)
+	}
+	for _, imp := range imports {
+		if imp.Module != wasiSnapshotPreview1Namespace {
+			continue
+		}
+		if wasiImportAllowlist[imp.Name] {
+			continue
+		}
+		if capability, denied := wasiCapabilityDenylist[imp.Name]; denied {
+			return fmt.Errorf("plugin %q imports wasi_snapshot_preview1.%s: %s: %w",
+				pluginName, imp.Name, capability, ErrWasmManifestRejected)
+		}
+		return fmt.Errorf("plugin %q imports wasi_snapshot_preview1.%s: not on the import allowlist: %w",
+			pluginName, imp.Name, ErrWasmManifestRejected)
+	}
+	return nil
+}
+
 // wasmMagicBytes is the four-byte preamble every Wasm binary begins
 // with ("\0asm" in ASCII; 0x00 0x61 0x73 0x6d in network order).
 var wasmMagicBytes = [4]byte{0x00, 0x61, 0x73, 0x6d}

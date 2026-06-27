@@ -9,29 +9,47 @@
 // linter sockets — receives a *Plugin constructed by Loader.Load and
 // invokes it through Plugin.Call.
 //
-// The package's AOT-purity firewall (see manifest_translate.go) rejects
-// any plugin configuration that would let guest code reach beyond its
-// in-memory inputs at run time: outbound network access via
-// AllowedHosts, filesystem access via AllowedPaths, WASI stdio
-// passthrough, wall-time access, or host functions outside the curated
-// allowlist (see hostfuncs.go). The discipline preserves Aggrega's
-// determinism and ahead-of-time guarantees regardless of which plugin
-// runs.
+// The package's AOT-purity firewall has two layers. The manifest
+// firewall (see manifest_translate.go) rejects any plugin
+// configuration that would let guest code reach beyond its in-memory
+// inputs at run time: outbound network access via AllowedHosts,
+// filesystem access via AllowedPaths, or host functions outside the
+// curated allowlist (see hostfuncs.go). The static import firewall
+// (see wasi_imports.go) walks the plugin's Wasm import section and
+// rejects any WASI import outside a curated allowlist of benign
+// runtime-init imports — filesystem traversal, network sockets, and
+// directory access are all default-denied.
+//
+// WASI itself is enabled, but configured deterministically and
+// capability-denied: the loader hands the Extism runtime a wazero
+// ModuleConfig with frozen observable wall time, real monotonic time
+// (the guest language runtime needs an advancing monotonic clock to
+// bootstrap), a zero entropy source, discarded stdio, and no
+// filesystem, argument, or environment passthrough. The guest's
+// language runtime bootstraps against real WASI behaviour, yet every
+// value it can observe is a deterministic function of the build input.
+// This preserves Aggrega's determinism and ahead-of-time guarantees
+// regardless of which plugin runs.
 //
 // Plugin.Call wraps the Extism call boundary with a deferred recover()
 // that converts a Go-side panic into an ErrWasmGuestPanic-wrapped
 // error. The wrap is a safety net behind Extism's normal error
 // envelope; most Wasm-side traps surface as ordinary Go errors through
-// the SDK and never trigger the panic path.
+// the SDK and never trigger the panic path. A guest that invokes
+// proc_exit surfaces as a non-zero exit code wrapped in
+// ErrWasmPluginExited.
 package wasm
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
 	extism "github.com/extism/go-sdk"
+	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/sys"
 )
 
 // Loader is the package's entry point for constructing a Plugin from a
@@ -116,17 +134,17 @@ func (p *Plugin) appendWarning(formatted string) {
 //  1. Translate the spec into an Extism manifest and run the
 //     AOT-purity firewall against the manifest fields.
 //  2. Read the plugin Wasm bytes from spec.Path once into memory.
-//  3. Walk the bytes' import section and apply the WASI per-import
-//     firewall: stubbed-subset names are allowed; capability-
-//     granting names are rejected with ErrWasmManifestRejected.
-//  4. Select the curated host functions the spec declares plus the
-//     deterministic WASI stubs the firewall promises.
+//  3. Walk the bytes' import section and apply the static import
+//     firewall: allowlisted WASI imports pass; capability-granting
+//     names are rejected with ErrWasmManifestRejected.
+//  4. Select the curated host functions the spec declares (aggrega_log,
+//     aggrega_emit_warning, and future per-socket host functions).
 //  5. Construct the underlying extism.Plugin from the same in-memory
-//     byte slice (via extism.WasmData), with EnableWasi: false. The
-//     WASI stub HostFunction values bind under the
-//     wasi_snapshot_preview1 namespace at plugin instantiation; the
-//     plugin's WASI imports resolve to the host stubs rather than
-//     to a real WASI runtime.
+//     byte slice (via extism.WasmData), with EnableWasi: true and the
+//     deterministic, capability-denied ModuleConfig from
+//     deterministicModuleConfig. The plugin's WASI imports resolve to
+//     the Extism-bundled wazero WASI runtime, whose observable
+//     behaviour the ModuleConfig pins to deterministic values.
 //
 // Reading the bytes once and threading the same slice through both
 // firewall inspection and Extism instantiation eliminates the
@@ -163,17 +181,10 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	p := &Plugin{name: spec.Name}
 
 	functions := p.hostFunctionsForDeclared(spec.DeclaredHostFunctions)
-	functions = append(functions, buildWasiStubHostFunctions()...)
 
 	config := extism.PluginConfig{
-		EnableWasi: false,
-		// ModuleConfig deliberately left nil: no wall-time, no env
-		// passthrough, no stdio passthrough. The Extism runtime uses
-		// its own zero-config default which is what Aggrega's
-		// AOT-purity guarantee depends on. The wasi_snapshot_preview1
-		// import slots the firewall permits are satisfied by the
-		// stub HostFunction values appended above — not by Extism's
-		// bundled WASI module.
+		EnableWasi:   true,
+		ModuleConfig: deterministicModuleConfig(),
 	}
 
 	extismPlugin, err := extism.NewPlugin(ctx, manifest, config, functions)
@@ -183,6 +194,58 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 
 	p.plugin = extismPlugin
 	return p, nil
+}
+
+// zeroEntropyReader is an io.Reader that fills every read with zero
+// bytes. It backs the guest's WASI random_get so a plugin observes a
+// deterministic entropy source — never real host randomness, which
+// would break the Deterministic Output invariant.
+type zeroEntropyReader struct{}
+
+func (zeroEntropyReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
+}
+
+// deterministicModuleConfig returns the wazero ModuleConfig the loader
+// hands the Extism runtime when instantiating a guest. The config
+// enables real WASI behaviour (the guest language runtime bootstraps
+// against it) while denying every capability that would let the guest
+// observe host state varying across builds:
+//
+//   - WithWalltime fixed at the Unix epoch (0s, 0ns): the guest's
+//     observable wall clock is a build-invariant constant, so a guest
+//     reading the time cannot leak real time into the output. This is
+//     the Deterministic Output invariant at the clock surface.
+//   - WithSysNanotime: a REAL advancing monotonic clock. A guest
+//     language runtime that reads monotonic time during bootstrap
+//     requires it to advance — a frozen monotonic clock makes the Go
+//     runtime spin (it loops waiting for the clock to move) and a
+//     zero monotonic clock trips the runtime's "nanotime returning
+//     zero" guard. Monotonic time measures elapsed duration, not a
+//     wall-clock instant, so a guest that does not deliberately encode
+//     elapsed time into its output stays deterministic; encoding
+//     elapsed monotonic time into output is an authoring-level
+//     determinism violation a guest must avoid, caught by the
+//     determinism guards rather than prevented by construction.
+//   - WithRandSource(zeroEntropyReader): the guest's entropy source
+//     yields zero bytes, never real host randomness.
+//   - WithStdout/WithStderr(io.Discard): the guest's stdio is
+//     discarded; nothing the guest writes reaches the host's streams.
+//   - No FSConfig, no args, no environment: wazero's defaults deny the
+//     filesystem and present empty args and environment, so the guest
+//     reads nothing from the host process. The static import firewall
+//     additionally rejects the filesystem-traversal and socket WASI
+//     imports a guest would need to reach beyond this sandbox.
+func deterministicModuleConfig() wazero.ModuleConfig {
+	return wazero.NewModuleConfig().
+		WithWalltime(func() (sec int64, nsec int32) { return 0, 0 }, sys.ClockResolution(1)).
+		WithSysNanotime().
+		WithRandSource(zeroEntropyReader{}).
+		WithStdout(io.Discard).
+		WithStderr(io.Discard)
 }
 
 // Name returns the plugin's diagnostic identifier (the Name field of
@@ -199,10 +262,11 @@ func (p *Plugin) Name() string {
 // ErrWasmGuestPanic. The error message names the plugin and the
 // invoked function.
 //
-// On non-zero exit code from the guest function, returns an error
-// citing the exit code; this matches Aggrega's preference for exit
-// code zero as the only "ran successfully" signal under the AOT-purity
-// discipline.
+// On a non-zero exit code from the guest function, returns an error
+// wrapping ErrWasmPluginExited and carrying the exit code. A guest
+// reaches a non-zero exit code by invoking WASI proc_exit; under the
+// AOT-purity discipline exit code zero is the only "ran successfully"
+// signal, so any non-zero code is an error the caller surfaces.
 func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 	return callWithPanicRecovery(p.name, funcName, func() ([]byte, error) {
 		exitCode, output, err := p.plugin.CallWithContext(ctx, funcName, input)
@@ -210,37 +274,26 @@ func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byt
 			return nil, fmt.Errorf("wasm: plugin %q call to %s: %w", p.name, funcName, err)
 		}
 		if exitCode != 0 {
-			return nil, fmt.Errorf("wasm: plugin %q call to %s exited with code %d", p.name, funcName, exitCode)
+			return nil, fmt.Errorf("wasm: plugin %q call to %s invoked proc_exit(%d): %w",
+				p.name, funcName, exitCode, ErrWasmPluginExited)
 		}
 		return output, nil
 	})
 }
 
-// callWithPanicRecovery invokes f and converts any panic into a
-// wrapped error. The wrap distinguishes two panic shapes:
+// callWithPanicRecovery invokes f and converts any panic into an error
+// wrapping ErrWasmGuestPanic. Extism translates most Wasm-side traps
+// into ordinary Go errors; this wrap is the safety net behind that
+// error path, catching a Go-side panic that escapes Extism's normal
+// error envelope.
 //
-//   - wasiProcExitTrap (panicked by the stubbed proc_exit host
-//     function): the plugin invoked WASI's proc_exit during the
-//     call. The recovered value carries the exit code; the returned
-//     error satisfies errors.Is(err, ErrWasmPluginExited) and
-//     records the code in its message.
-//   - any other panic: a Go-side panic that escaped Extism's normal
-//     error envelope. The returned error satisfies
-//     errors.Is(err, ErrWasmGuestPanic).
-//
-// Extracted from Plugin.Call so that both wrap shapes are
-// independently testable without needing a real Wasm-side panic
-// source — tests pass a function that panics with the relevant
-// typed value directly.
+// Extracted from Plugin.Call so the wrap shape is independently
+// testable without needing a real Wasm-side panic source — tests pass
+// a function that panics directly.
 func callWithPanicRecovery(pluginName, funcName string, f func() ([]byte, error)) (output []byte, err error) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			return
-		}
-		if trap, ok := r.(wasiProcExitTrap); ok {
-			err = fmt.Errorf("wasm: plugin %q invoked proc_exit(%d) in %s: %w",
-				pluginName, trap.code, funcName, ErrWasmPluginExited)
 			return
 		}
 		err = fmt.Errorf("wasm: guest plugin %q panicked in %s: %v: %w",

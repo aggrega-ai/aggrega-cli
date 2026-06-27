@@ -12,16 +12,48 @@ import (
 )
 
 // TestValidateWasiImportsAcceptsAllowlistedNames builds a Wasm
-// binary fragment importing every name in wasiStubAllowlist and
+// binary fragment importing every name in wasiImportAllowlist and
 // asserts the firewall accepts the module. The fragment is
 // deliberately minimal — header + import section + nothing else —
 // because the firewall walks only the import section.
 func TestValidateWasiImportsAcceptsAllowlistedNames(t *testing.T) {
 	t.Parallel()
-	names := sortedKeys(wasiStubAllowlist)
+	names := sortedKeys(wasiImportAllowlist)
 	wasmBytes := buildWasmModuleWithImports(t, importsForNames(wasiSnapshotPreview1Namespace, names))
 	if err := validateWasiImports("allowlist-probe", wasmBytes); err != nil {
 		t.Errorf("validateWasiImports rejected an allowlist-only module: %v", err)
+	}
+}
+
+// stdGoWasip1Imports is the WASI preview-1 import set a standard-Go
+// GOOS=wasip1 reactor emits. The firewall MUST accept every one of
+// these, otherwise a std-Go guest cannot load. Verified against a
+// std-Go c-shared probe's import section.
+var stdGoWasip1Imports = []string{
+	"args_get", "args_sizes_get",
+	"clock_time_get",
+	"environ_get", "environ_sizes_get",
+	"fd_close", "fd_fdstat_get", "fd_fdstat_set_flags",
+	"fd_prestat_dir_name", "fd_prestat_get", "fd_write",
+	"poll_oneoff", "proc_exit", "random_get", "sched_yield",
+}
+
+// TestValidateWasiImportsAcceptsStdGoWasip1Set asserts the firewall
+// accepts the exact import set a standard-Go GOOS=wasip1 reactor
+// emits — the load-bearing property that lets the Go PDK ship as a
+// std-Go wasip1 plugin. A regression that drops any of these names
+// from the allowlist fails here loudly.
+func TestValidateWasiImportsAcceptsStdGoWasip1Set(t *testing.T) {
+	t.Parallel()
+	wasmBytes := buildWasmModuleWithImports(t, importsForNames(wasiSnapshotPreview1Namespace, stdGoWasip1Imports))
+	if err := validateWasiImports("stdgo-wasip1-probe", wasmBytes); err != nil {
+		t.Errorf("validateWasiImports rejected the std-Go GOOS=wasip1 import set: %v", err)
+	}
+	// Every name in the std-Go set must be on the allowlist explicitly.
+	for _, name := range stdGoWasip1Imports {
+		if !wasiImportAllowlist[name] {
+			t.Errorf("std-Go wasip1 import %q missing from wasiImportAllowlist", name)
+		}
 	}
 }
 
@@ -50,6 +82,33 @@ func TestValidateWasiImportsRejectsCapabilityGrantingNames(t *testing.T) {
 			}
 			if !strings.Contains(msg, capability) {
 				t.Errorf("error message missing capability label %q: %v", capability, err)
+			}
+		})
+	}
+}
+
+// TestValidateWasiImportsRejectsFilesystemAndSocketImports pins the
+// specific capability-granting imports that MUST stay rejected even
+// though the allowlist expanded for the std-Go reactor set: directory
+// traversal (fd_readdir), file paths (path_open), and sockets
+// (sock_*). These are the capabilities the firewall exists to deny.
+func TestValidateWasiImportsRejectsFilesystemAndSocketImports(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"fd_readdir", "path_open", "sock_open", "sock_connect"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			wasmBytes := buildWasmModuleWithImports(t, importsForNames(
+				wasiSnapshotPreview1Namespace, []string{name}))
+			err := validateWasiImports("denied-probe", wasmBytes)
+			if err == nil {
+				t.Fatalf("expected rejection of wasi_snapshot_preview1.%s; got nil", name)
+			}
+			if !errors.Is(err, ErrWasmManifestRejected) {
+				t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
+			}
+			if wasiImportAllowlist[name] {
+				t.Errorf("capability-granting import %q must not be on the allowlist", name)
 			}
 		})
 	}
@@ -127,33 +186,12 @@ func TestParseFunctionImportsRejectsBadHeader(t *testing.T) {
 	}
 }
 
-// TestCallWithPanicRecoveryTranslatesProcExitTrap exercises the
-// recovery wrap's typed-value branch: a wasiProcExitTrap panic
-// translates to an error wrapping ErrWasmPluginExited carrying the
-// exit code in its message.
-func TestCallWithPanicRecoveryTranslatesProcExitTrap(t *testing.T) {
-	t.Parallel()
-	_, err := callWithPanicRecovery("test-plugin", "test-func", func() ([]byte, error) {
-		panic(wasiProcExitTrap{code: 42})
-	})
-	if err == nil {
-		t.Fatal("expected error from proc_exit trap; got nil")
-	}
-	if !errors.Is(err, ErrWasmPluginExited) {
-		t.Errorf("error does not wrap ErrWasmPluginExited: %v", err)
-	}
-	if errors.Is(err, ErrWasmGuestPanic) {
-		t.Errorf("proc_exit trap must not also wrap ErrWasmGuestPanic: %v", err)
-	}
-	if !strings.Contains(err.Error(), "proc_exit(42)") {
-		t.Errorf("error message missing exit code 42: %v", err)
-	}
-}
-
-// TestCallWithPanicRecoveryDistinguishesPanicKinds confirms a
-// non-wasiProcExitTrap panic still wraps ErrWasmGuestPanic — the
-// proc_exit branch is the special case, not the default.
-func TestCallWithPanicRecoveryDistinguishesPanicKinds(t *testing.T) {
+// TestCallWithPanicRecoveryWrapsGuestPanic confirms a Go-side panic
+// escaping Extism's error envelope translates to an error wrapping
+// ErrWasmGuestPanic. proc_exit no longer routes through a panic; it
+// surfaces as a non-zero exit code in Plugin.Call (see
+// TestPluginRoundTrip_WasiProbeRust's sibling exit-code coverage).
+func TestCallWithPanicRecoveryWrapsGuestPanic(t *testing.T) {
 	t.Parallel()
 	_, err := callWithPanicRecovery("test-plugin", "test-func", func() ([]byte, error) {
 		panic("generic panic")
@@ -169,32 +207,15 @@ func TestCallWithPanicRecoveryDistinguishesPanicKinds(t *testing.T) {
 	}
 }
 
-// TestWasiStubAllowlistAndDenylistDisjoint confirms no import name
+// TestWasiImportAllowlistAndDenylistDisjoint confirms no import name
 // appears on both maps — the firewall classification would be
-// ambiguous otherwise.
-func TestWasiStubAllowlistAndDenylistDisjoint(t *testing.T) {
+// ambiguous otherwise. poll_oneoff moved from the denylist to the
+// allowlist; this guards against a future re-introduction collision.
+func TestWasiImportAllowlistAndDenylistDisjoint(t *testing.T) {
 	t.Parallel()
-	for name := range wasiStubAllowlist {
+	for name := range wasiImportAllowlist {
 		if _, denied := wasiCapabilityDenylist[name]; denied {
 			t.Errorf("name %q appears on both allowlist and denylist", name)
-		}
-	}
-}
-
-// TestBuildWasiStubHostFunctionsNamespace confirms every returned
-// HostFunction carries Namespace = "wasi_snapshot_preview1". This is
-// the load-bearing field that causes Extism to register the stubs
-// under the WASI namespace.
-func TestBuildWasiStubHostFunctionsNamespace(t *testing.T) {
-	t.Parallel()
-	stubs := buildWasiStubHostFunctions()
-	if len(stubs) != len(wasiStubAllowlist) {
-		t.Errorf("expected %d stub functions; got %d", len(wasiStubAllowlist), len(stubs))
-	}
-	for _, stub := range stubs {
-		if stub.Namespace != wasiSnapshotPreview1Namespace {
-			t.Errorf("stub %q has namespace %q; want %q",
-				stub.Name, stub.Namespace, wasiSnapshotPreview1Namespace)
 		}
 	}
 }
@@ -259,7 +280,7 @@ func buildWasmModuleWithImports(t *testing.T, imps []functionImport) []byte {
 	for _, imp := range imps {
 		writeWasmName(&importBody, imp.Module)
 		writeWasmName(&importBody, imp.Name)
-		importBody.WriteByte(0x00) // kind: function
+		importBody.WriteByte(0x00)   // kind: function
 		writeULEB128(&importBody, 0) // type index 0
 	}
 	writeSection(&buf, 0x02, importBody.Bytes())
