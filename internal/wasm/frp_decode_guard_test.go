@@ -60,19 +60,18 @@ func frpStepInputPayload(t *testing.T) []byte {
 
 // TestFRPDecodeGuard is the build-and-run regression guard for the
 // Go-PDK FeatureRecipe-pipeline decode capability. It builds the Go
-// reference plugin (TinyGo), loads it through the live host gate,
-// dispatches the step export over a realistic FRPStepInput, and asserts
-// the guest decoded the reshaped wire and produced the reference
-// behaviour: one own-scope PATCH on the content-selected Deployment (the
-// Service untouched), one own-scope ConfigMap EMIT, and one host-scope
-// marker EMIT. A future TinyGo reflect/generics regression that breaks
-// the decode fails this test loudly rather than silently degrading the
-// Go PDK.
+// reference plugin (standard Go, GOOS=wasip1), loads it through the live
+// host gate, dispatches the step export over a realistic FRPStepInput,
+// and asserts the guest decoded the reshaped wire and produced the
+// reference behaviour: one own-scope PATCH on the content-selected
+// Deployment (the Service untouched), one own-scope ConfigMap EMIT, and
+// one host-scope marker EMIT. A future regression that breaks the decode
+// fails this test loudly rather than silently degrading the Go PDK.
 //
 // The test also asserts byte-identical output across two invocations of
 // the same input — the determinism contract the pipeline upholds.
 //
-// Skips cleanly when the PDK source or the TinyGo toolchain is absent.
+// Skips cleanly when the PDK source or the Go wasip1 toolchain is absent.
 func TestFRPDecodeGuard(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 
