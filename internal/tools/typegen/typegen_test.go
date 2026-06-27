@@ -42,7 +42,15 @@ func TestRegenClean(t *testing.T) {
 // umbrella root, then into aggrega-abi); the gate reads it with os.ReadFile,
 // not a Go import, so the cross-module read needs no go.work membership.
 var codecTargetPaths = map[string][]string{
-	"frp_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"frp_gen.go":     {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"mutator_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"mutator_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"mutator_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"linter_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"linter_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"linter_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	// The host mutator codec is committed inside aggrega-cli's topology package.
+	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
 }
 
 // TestRegenClean_Codec is the regen-drift gate for the multi-type codec

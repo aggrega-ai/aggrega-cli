@@ -88,14 +88,28 @@ var kindSources = map[string]kindSource{
 
 // codecTarget binds an output filename to a multi-type codec emission: the
 // embedded `$defs`-shaped schema, the schema file basename for the generated
-// header, the destination package name, and the per-target type vocabulary
-// that rewrites x-aggrega-go-type values. Each `$defs` entry becomes one Go
-// type plus a reflect-free streaming JSON codec (Marshal/UnmarshalJSON).
+// header, the destination package name, the per-target type vocabulary that
+// rewrites x-aggrega-go-type values, and the target language. Each `$defs`
+// entry becomes one typed value plus a streaming JSON codec.
+//
+// lang selects the backend: "" or "go" emits the reflect-free Go codec
+// (Marshal/UnmarshalJSON); "rust" emits serde-derive structs (BTreeMap for
+// sorted map keys, RawValue for verbatim opaque carry); "ts" emits TypeScript
+// interfaces plus thin per-type sorting encoders. The Go, Rust, and TS codecs
+// produce byte-identical wire output from one schema: maps emit in sorted key
+// order and opaque values carry verbatim.
 type codecTarget struct {
 	schema     string
 	schemaFile string
 	pkg        string
 	vocabulary map[string]string
+	lang       string
+	// helpers controls whether the Go backend emits the shared streaming-decode
+	// helpers (expectDelim, readKey, writeJSONString, …) into this file. Exactly
+	// one Go codec file per package emits them; the others in the same package
+	// reference them. (Ignored by the Rust/TS backends, whose wire codec is the
+	// language's own serde/JSON runtime.)
+	helpers bool
 }
 
 // frpGuestNeutralVocabulary maps the FRP schema's host type spellings to a
@@ -114,12 +128,93 @@ var frpGuestNeutralVocabulary = map[string]string{
 	"DocumentScope":           "string",
 }
 
+// mutatorGuestVocabulary maps the mutator schema's host container spellings to
+// the neutral guest vocabulary: the order-preserving host containers become
+// plain maps (the guest reads a map; key order on the wire is the host's
+// concern). The mutator carries no cross-package opaque host type.
+var mutatorGuestVocabulary = map[string]string{
+	"OrderedMap[MutatorNode]": "map[string]MutatorNode",
+	"OrderedMap[string]":      "map[string]string",
+}
+
+// mutatorHostVocabulary maps the mutator schema's annotation spellings to the
+// host realization. The host mutator graph is a plain Go map today; the
+// container annotations rewrite to plain maps so the generated host types match
+// the existing topology wire shape. (An ordered-container upgrade is a separate
+// change behind a vocabulary flip here.)
+var mutatorHostVocabulary = map[string]string{
+	"OrderedMap[MutatorNode]": "map[string]MutatorNode",
+	"OrderedMap[string]":      "map[string]string",
+}
+
+// linterGuestVocabulary is empty: the linter schema's opaque fields already
+// carry the neutral json.RawMessage spelling, and it declares no host container
+// type. Absence of an entry passes each annotation through verbatim.
+var linterGuestVocabulary = map[string]string{}
+
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
 		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
 		pkg:        "abi",
 		vocabulary: frpGuestNeutralVocabulary,
+		helpers:    true, // FRP owns the shared streaming-decode helpers in package abi
+	},
+
+	// Mutator socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host
+	// codec into aggrega-cli's topology package. The abi Go codec references the
+	// helpers FRP owns in package abi (helpers: false); the topology host codec
+	// is alone in its package and owns its helpers (helpers: true).
+	"mutator_gen.go": {
+		schema:     schemas.WasmMutatorV1alpha1,
+		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: mutatorGuestVocabulary,
+	},
+	"mutator_gen.rs": {
+		schema:     schemas.WasmMutatorV1alpha1,
+		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: mutatorGuestVocabulary,
+		lang:       "rust",
+	},
+	"mutator_gen.ts": {
+		schema:     schemas.WasmMutatorV1alpha1,
+		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: mutatorGuestVocabulary,
+		lang:       "ts",
+	},
+	"wasm_types_gen.go": {
+		schema:     schemas.WasmMutatorV1alpha1,
+		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		pkg:        "topology",
+		vocabulary: mutatorHostVocabulary,
+		helpers:    true, // the host mutator codec is alone in package topology
+	},
+
+	// Linter socket — guest codecs into aggrega-abi (Go/Rust/TS). The host has
+	// no linter wire type (the publishing-linter consumes its own
+	// workspaceconfig struct), so no host codec target.
+	"linter_gen.go": {
+		schema:     schemas.WasmLinterV1alpha1,
+		schemaFile: "wasm-linter-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: linterGuestVocabulary,
+	},
+	"linter_gen.rs": {
+		schema:     schemas.WasmLinterV1alpha1,
+		schemaFile: "wasm-linter-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: linterGuestVocabulary,
+		lang:       "rust",
+	},
+	"linter_gen.ts": {
+		schema:     schemas.WasmLinterV1alpha1,
+		schemaFile: "wasm-linter-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: linterGuestVocabulary,
+		lang:       "ts",
 	},
 }
 
@@ -403,13 +498,15 @@ func oneLine(s string) string {
 }
 
 // codecField is one struct field resolved for codec emission: the Go field
-// name, the JSON wire key, the resolved Go type, and whether it is required
-// (required fields are never omitted on marshal).
+// name, the JSON wire key, the resolved Go type, whether it is required
+// (required fields are never omitted on marshal), and the property description
+// (carried for the Rust/TS backends, which render it as a doc comment).
 type codecField struct {
 	field    string
 	key      string
 	goType   string
 	required bool
+	desc     string
 }
 
 // resolveCodecFields resolves a def node's properties into codec field
@@ -430,6 +527,7 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 			key:      p.name,
 			goType:   goType(p.node, field, vocab),
 			required: required[p.name],
+			desc:     p.node.Description,
 		})
 	}
 	return fields
@@ -756,9 +854,10 @@ func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("// Decoder.InputOffset — no Decoder.Decode dispatch.\n")
 	b.WriteString("func readRaw(dec *json.Decoder, data []byte) (json.RawMessage, error) {\n")
 	b.WriteString("\t// InputOffset before the first value token points just past the\n")
-	b.WriteString("\t// preceding token (an object key, or nothing), so the slice may carry a\n")
-	b.WriteString("\t// leading key/value separator and whitespace; the value's own bytes are\n")
-	b.WriteString("\t// recovered by trimming those leading non-value bytes. The trailing\n")
+	b.WriteString("\t// preceding token (an object key, a preceding array element, or\n")
+	b.WriteString("\t// nothing), so the slice may carry a leading key/value separator (:),\n")
+	b.WriteString("\t// an array-element separator (,), and whitespace; the value's own bytes\n")
+	b.WriteString("\t// are recovered by trimming those leading non-value bytes. The trailing\n")
 	b.WriteString("\t// offset is exact (just past the value's last token).\n")
 	b.WriteString("\tstart := dec.InputOffset()\n")
 	b.WriteString("\tdepth := 0\n")
@@ -771,7 +870,7 @@ func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("\t\tif depth == 0 {\n\t\t\tbreak\n\t\t}\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\tend := dec.InputOffset()\n")
-	b.WriteString("\tvalue := bytes.TrimLeft(data[start:end], \" \\t\\n\\r:\")\n")
+	b.WriteString("\tvalue := bytes.TrimLeft(data[start:end], \" \\t\\n\\r:,\")\n")
 	b.WriteString("\tout := make(json.RawMessage, len(value))\n")
 	b.WriteString("\tcopy(out, value)\n")
 	b.WriteString("\treturn out, nil\n")
@@ -917,12 +1016,29 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 	return formatSource(head, body.String())
 }
 
-// generateDefs produces the formatted Go source for a multi-type codec
+// generateDefs dispatches a multi-type codec target to its language backend.
+// The front-end (schema decode, `$defs` walk, vocabulary rewrite, field
+// resolution) is shared; only the emission half forks per language. An empty
+// lang defaults to the Go backend so existing Go targets need no lang field.
+func generateDefs(t codecTarget) ([]byte, error) {
+	switch t.lang {
+	case "", "go":
+		return generateDefsGo(t)
+	case "rust":
+		return generateDefsRust(t)
+	case "ts":
+		return generateDefsTS(t)
+	default:
+		return nil, fmt.Errorf("typegen: unknown codec target language %q", t.lang)
+	}
+}
+
+// generateDefsGo produces the formatted Go source for a multi-type codec
 // package: one Go type per `$defs` entry (in declared order) plus, per type, a
 // reflect-free streaming JSON codec. The top-level `oneOf` wire-discriminator
 // is not a Go type and is ignored — the walk reads `$defs` only and never the
 // root's oneOf/type. The target's vocabulary rewrites x-aggrega-go-type values.
-func generateDefs(t codecTarget) ([]byte, error) {
+func generateDefsGo(t codecTarget) ([]byte, error) {
 	root, err := decodeNode(json.RawMessage(t.schema))
 	if err != nil {
 		return nil, fmt.Errorf("decode schema: %w", err)
@@ -959,18 +1075,49 @@ func generateDefs(t codecTarget) ([]byte, error) {
 	for _, d := range root.defs {
 		emitCodec(&body, d.name, d.node, t.vocabulary, defTypes)
 	}
-	emitCodecHelpers(&body)
+	if t.helpers {
+		emitCodecHelpers(&body)
+	}
 
-	// The codec spine imports bytes (buffer/reader), encoding/base64 ([]byte
-	// leaf codec), encoding/json (Decoder/RawMessage and the opaque-any
-	// fallback), fmt (error wrapping), sort (deterministic map-key order on
-	// encode), strconv (number formatting), and unicode/utf8 (string escaping).
+	// The codec spine's imports are derived from the emitted body so a file that
+	// omits the shared helpers (one per-package file owns them; the rest
+	// reference them) does not carry an unused import. A helpers-bearing file
+	// references all of bytes, encoding/base64, encoding/json, fmt, sort,
+	// strconv, and unicode/utf8; a helpers-free codec file references the subset
+	// its own Marshal/Unmarshal touch.
 	head := genHeaderImports("package "+t.pkg,
 		fmt.Sprintf("// aggrega-schemas/json/%s. DO NOT EDIT.\n", t.schemaFile),
 		"// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
-		[]string{"bytes", "encoding/base64", "encoding/json", "fmt", "sort", "strconv", "unicode/utf8"})
+		codecSpineImports(body.String()))
 
 	return formatSource(head, body.String())
+}
+
+// codecSpineImports returns the standard-library import paths the generated
+// codec body references, derived by scanning for each package's selector token.
+// Deriving from the body (rather than a fixed list) keeps a helpers-free codec
+// file free of unused imports while leaving a helpers-bearing file's import set
+// unchanged. The returned slice is in a stable order; genHeaderImports sorts it.
+func codecSpineImports(body string) []string {
+	candidates := []struct {
+		token string
+		path  string
+	}{
+		{"bytes.", "bytes"},
+		{"base64.", "encoding/base64"},
+		{"json.", "encoding/json"},
+		{"fmt.", "fmt"},
+		{"sort.", "sort"},
+		{"strconv.", "strconv"},
+		{"utf8.", "unicode/utf8"},
+	}
+	var imports []string
+	for _, c := range candidates {
+		if strings.Contains(body, c.token) {
+			imports = append(imports, c.path)
+		}
+	}
+	return imports
 }
 
 // emitQueue drains a breadth-first struct-emission queue into body, emitting
