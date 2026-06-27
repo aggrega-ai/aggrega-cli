@@ -6,6 +6,7 @@
 *.dylib
 bin/
 /aggrega
+/mutation-baseline
 
 # Test binary, built with `go test -c`
 *.test

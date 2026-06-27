@@ -227,8 +227,8 @@ func TestOutcome_String(t *testing.T) {
 // TestPackageRelPath_AndRelativeFile pins the path-trimming helpers.
 func TestPackageRelPath_AndRelativeFile(t *testing.T) {
 	t.Parallel()
-	root := "/home/dev/aggrega-cli"
-	file := "/home/dev/aggrega-cli/pkg/resolver/main.go"
+	root := "/aggrega-cli"
+	file := "/aggrega-cli/pkg/resolver/main.go"
 	if got := packageRelPath(file, root); got != "pkg/resolver" {
 		t.Errorf("packageRelPath = %q; want pkg/resolver", got)
 	}
@@ -256,7 +256,7 @@ func TestPackageRelPath_AndRelativeFile(t *testing.T) {
 // come from outside the conventional layout.
 func TestPackageImportPathForFile(t *testing.T) {
 	t.Parallel()
-	root := "/home/dev/aggrega-cli"
+	root := "/aggrega-cli"
 
 	if got := packageImportPathForFile(root+"/pkg/resolver/main.go", root); got != "./pkg/resolver" {
 		t.Errorf("inside-root: packageImportPathForFile = %q; want ./pkg/resolver", got)
