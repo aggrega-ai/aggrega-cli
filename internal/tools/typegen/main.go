@@ -98,15 +98,15 @@ type codecTarget struct {
 	vocabulary map[string]string
 }
 
-// frpHostNeutralVocabulary maps the FRP schema's host type spellings to a
-// neutral, cycle-free vocabulary: an opaque cross-package host type becomes
-// json.RawMessage (verbatim passthrough preserves its bytes), and the
+// frpGuestNeutralVocabulary maps the FRP schema's host type spellings to a
+// neutral, cycle-free guest vocabulary: an opaque cross-package host type
+// becomes json.RawMessage (verbatim passthrough preserves its bytes), and the
 // order-preserving host container becomes a plain map (key order is the
-// emitting host's concern; a consumer that selects by content reads a map).
-// With this vocabulary the generated codec references only builtins,
-// encoding/json, and its own def-local types — no cross-package import, so it
-// is free of the import cycle a renderctx-spelled codec would carry.
-var frpHostNeutralVocabulary = map[string]string{
+// emitting host's concern; a guest that selects by content reads a map). With
+// this vocabulary the generated codec references only builtins, encoding/json,
+// and its own def-local types — no cross-package import, so the codec compiles
+// in a standalone, dependency-free module a Wasm guest can import directly.
+var frpGuestNeutralVocabulary = map[string]string{
 	"renderctx.RenderContext": "json.RawMessage",
 	"renderctx.Diagnostic":    "json.RawMessage",
 	"OrderedMap[Unit]":        "map[string]Unit",
@@ -118,8 +118,8 @@ var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
 		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
-		pkg:        "frpcodec",
-		vocabulary: frpHostNeutralVocabulary,
+		pkg:        "abi",
+		vocabulary: frpGuestNeutralVocabulary,
 	},
 }
 
@@ -435,26 +435,35 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 	return fields
 }
 
-// emitCodec writes a reflect-free streaming JSON codec — MarshalJSON and
+// emitCodec writes a dispatch-free streaming JSON codec — MarshalJSON and
 // UnmarshalJSON — for one def struct type. Composite fields (named structs,
-// slices of named structs, maps) are walked by generated code so no stdlib
-// reflective struct/map-walk remains; scalar leaf fields (string, int,
-// []byte, json.RawMessage) use a per-field decode/marshal that is
-// non-reflective for those leaf types. The generated code references no
-// `reflect` symbol — the reflect-free guarantee is by construction.
-func emitCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string) {
+// slices of named structs, maps) are walked by generated code, and each
+// nested def value is decoded by a direct call to that type's own generated
+// UnmarshalJSON rather than a json.Decoder.Decode dispatch — so no stdlib
+// interface-dispatch through reflect remains on the decode path. Scalar leaf
+// fields are decoded by hand from a single json.Token. The generated code
+// references no `reflect` symbol — the dispatch-free guarantee is by
+// construction.
+//
+// defTypes names the generated def struct types, so the emitter can tell a
+// nested generated type (direct UnmarshalJSON call) from a scalar or an
+// opaque passthrough.
+func emitCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
 	fields := resolveCodecFields(n, vocab)
-	emitMarshal(b, typeName, fields)
-	emitUnmarshal(b, typeName, fields)
+	emitMarshal(b, typeName, fields, defTypes)
+	emitUnmarshal(b, typeName, fields, defTypes)
 }
 
 // emitMarshal writes T.MarshalJSON: it builds the JSON object manually in
 // field-declaration order (the determinism contract), honouring omitempty for
 // non-required fields by Go type so the output matches encoding/json on the
-// equivalent struct tags byte-for-byte.
-func emitMarshal(b *strings.Builder, typeName string, fields []codecField) {
+// equivalent struct tags byte-for-byte. Each nested def value is encoded by a
+// direct call to that type's own MarshalJSON, and leaves are written by hand —
+// no json.Marshal dispatch through reflect remains on the encode path (except
+// the residual opaque-`any` fallback).
+func emitMarshal(b *strings.Builder, typeName string, fields []codecField, defTypes map[string]bool) {
 	fmt.Fprintf(b, "// MarshalJSON encodes %s in field-declaration order, omitting\n", typeName)
-	fmt.Fprintf(b, "// empty non-required fields, reflect-free.\n")
+	fmt.Fprintf(b, "// empty non-required fields, dispatch-free.\n")
 	fmt.Fprintf(b, "func (t %s) MarshalJSON() ([]byte, error) {\n", typeName)
 	b.WriteString("\tvar buf bytes.Buffer\n")
 	b.WriteString("\tbuf.WriteByte('{')\n")
@@ -463,10 +472,10 @@ func emitMarshal(b *strings.Builder, typeName string, fields []codecField) {
 		guard := omitGuard("t."+f.field, f.goType)
 		if !f.required && guard != "" {
 			fmt.Fprintf(b, "\tif %s {\n", guard)
-			emitMarshalField(b, f, "\t\t")
+			emitMarshalField(b, f, "\t\t", defTypes)
 			b.WriteString("\t}\n")
 		} else {
-			emitMarshalField(b, f, "\t")
+			emitMarshalField(b, f, "\t", defTypes)
 		}
 	}
 	b.WriteString("\tbuf.WriteByte('}')\n")
@@ -474,17 +483,94 @@ func emitMarshal(b *strings.Builder, typeName string, fields []codecField) {
 	b.WriteString("}\n\n")
 }
 
-// emitMarshalField writes the separator + key + json.Marshal of one field
-// value into buf. The value is a concrete typed field, so json.Marshal is the
-// non-reflective-by-construction leaf encode (and for a composite field the
-// field type's own generated MarshalJSON runs).
-func emitMarshalField(b *strings.Builder, f codecField, indent string) {
+// emitMarshalField writes the separator + key + encoded value of one field
+// into buf, dispatching the encode by Go type via emitEncodeValue.
+func emitMarshalField(b *strings.Builder, f codecField, indent string, defTypes map[string]bool) {
 	fmt.Fprintf(b, "%sif !first {\n%s\tbuf.WriteByte(',')\n%s}\n", indent, indent, indent)
 	b.WriteString(indent + "first = false\n")
 	fmt.Fprintf(b, "%sbuf.WriteString(%q)\n", indent, `"`+f.key+`":`)
-	fmt.Fprintf(b, "%s%s, err := json.Marshal(t.%s)\n", indent, f.field+"Bytes", f.field)
-	fmt.Fprintf(b, "%sif err != nil {\n%s\treturn nil, err\n%s}\n", indent, indent, indent)
-	fmt.Fprintf(b, "%sbuf.Write(%s)\n", indent, f.field+"Bytes")
+	emitEncodeValue(b, "t."+f.field, f.goType, indent, defTypes)
+}
+
+// emitEncodeValue writes the dispatch-free encode of the lvalue `src` of Go
+// type `goType` into buf. A nested generated def type (or a pointer to one) is
+// encoded by a direct call to its own MarshalJSON — never json.Marshal, whose
+// reflective buffer allocation the TinyGo bare collector corrupts. Scalars are
+// written by hand; json.RawMessage is written verbatim; an opaque `any` value
+// falls back to json.Marshal (the one residual, reached only for a value the
+// guest authors, never for a typed field on the decode path).
+func emitEncodeValue(b *strings.Builder, src, goType, indent string, defTypes map[string]bool) {
+	switch {
+	case goType == "string":
+		fmt.Fprintf(b, "%swriteJSONString(&buf, %s)\n", indent, src)
+	case goType == "int" || goType == "int64":
+		fmt.Fprintf(b, "%sbuf.WriteString(strconv.FormatInt(int64(%s), 10))\n", indent, src)
+	case goType == "float64":
+		fmt.Fprintf(b, "%sif err := writeJSONFloat(&buf, %s); err != nil {\n%s\treturn nil, err\n%s}\n", indent, src, indent, indent)
+	case goType == "bool":
+		fmt.Fprintf(b, "%sif %s {\n%s\tbuf.WriteString(\"true\")\n%s} else {\n%s\tbuf.WriteString(\"false\")\n%s}\n", indent, src, indent, indent, indent, indent)
+	case goType == "[]byte":
+		fmt.Fprintf(b, "%swriteJSONBytes(&buf, %s)\n", indent, src)
+	case goType == "json.RawMessage":
+		fmt.Fprintf(b, "%sbuf.Write(%s)\n", indent, src)
+	case strings.HasPrefix(goType, "*"):
+		elem := goType[1:]
+		if defTypes[elem] {
+			fmt.Fprintf(b, "%sif enc, err := %s.MarshalJSON(); err != nil {\n%s\treturn nil, err\n%s} else {\n%s\tbuf.Write(enc)\n%s}\n", indent, src, indent, indent, indent, indent)
+		} else {
+			emitEncodeAnyFallback(b, src, indent)
+		}
+	case defTypes[goType]:
+		fmt.Fprintf(b, "%sif enc, err := %s.MarshalJSON(); err != nil {\n%s\treturn nil, err\n%s} else {\n%s\tbuf.Write(enc)\n%s}\n", indent, src, indent, indent, indent, indent)
+	case strings.HasPrefix(goType, "map["):
+		valType := goType[strings.IndexByte(goType, ']')+1:]
+		emitEncodeMap(b, src, valType, indent, defTypes)
+	case strings.HasPrefix(goType, "[]"):
+		elemType := goType[2:]
+		emitEncodeSlice(b, src, elemType, indent, defTypes)
+	default:
+		emitEncodeAnyFallback(b, src, indent)
+	}
+}
+
+// emitEncodeMap writes a map's JSON object encode. Map key order is sorted so
+// the output matches encoding/json's sorted map-key marshal byte-for-byte (the
+// determinism contract). Each value encodes through emitEncodeValue.
+func emitEncodeMap(b *strings.Builder, src, valType, indent string, defTypes map[string]bool) {
+	fmt.Fprintf(b, "%s{\n", indent)
+	fmt.Fprintf(b, "%s\tkeys := make([]string, 0, len(%s))\n", indent, src)
+	fmt.Fprintf(b, "%s\tfor k := range %s {\n%s\t\tkeys = append(keys, k)\n%s\t}\n", indent, src, indent, indent)
+	fmt.Fprintf(b, "%s\tsort.Strings(keys)\n", indent)
+	fmt.Fprintf(b, "%s\tbuf.WriteByte('{')\n", indent)
+	fmt.Fprintf(b, "%s\tfor i, k := range keys {\n", indent)
+	fmt.Fprintf(b, "%s\t\tif i > 0 {\n%s\t\t\tbuf.WriteByte(',')\n%s\t\t}\n", indent, indent, indent)
+	fmt.Fprintf(b, "%s\t\twriteJSONString(&buf, k)\n", indent)
+	fmt.Fprintf(b, "%s\t\tbuf.WriteByte(':')\n", indent)
+	fmt.Fprintf(b, "%s\t\tmv := %s[k]\n", indent, src)
+	emitEncodeValue(b, "mv", valType, indent+"\t\t", defTypes)
+	fmt.Fprintf(b, "%s\t}\n", indent)
+	fmt.Fprintf(b, "%s\tbuf.WriteByte('}')\n", indent)
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
+// emitEncodeSlice writes a slice's JSON array encode. Each element encodes
+// through emitEncodeValue in order.
+func emitEncodeSlice(b *strings.Builder, src, elemType, indent string, defTypes map[string]bool) {
+	fmt.Fprintf(b, "%sbuf.WriteByte('[')\n", indent)
+	fmt.Fprintf(b, "%sfor i := range %s {\n", indent, src)
+	fmt.Fprintf(b, "%s\tif i > 0 {\n%s\t\tbuf.WriteByte(',')\n%s\t}\n", indent, indent, indent)
+	fmt.Fprintf(b, "%s\tev := %s[i]\n", indent, src)
+	emitEncodeValue(b, "ev", elemType, indent+"\t", defTypes)
+	fmt.Fprintf(b, "%s}\n", indent)
+	fmt.Fprintf(b, "%sbuf.WriteByte(']')\n", indent)
+}
+
+// emitEncodeAnyFallback encodes an opaque value (an `any` field, or a pointer
+// to a non-def type) via json.Marshal. It is the one place a stdlib reflective
+// encode remains; it is reached for a value the guest authors on the output
+// side, not for a typed field on the decode path.
+func emitEncodeAnyFallback(b *strings.Builder, src, indent string) {
+	fmt.Fprintf(b, "%sif enc, err := json.Marshal(%s); err != nil {\n%s\treturn nil, err\n%s} else {\n%s\tbuf.Write(enc)\n%s}\n", indent, src, indent, indent, indent, indent)
 }
 
 // omitGuard returns a boolean expression that is true when a non-required
@@ -518,11 +604,15 @@ func omitGuard(expr, goType string) string {
 
 // emitUnmarshal writes T.UnmarshalJSON: a streaming json.Decoder object walk
 // that dispatches each known key to a per-field decode and descends fully into
-// composite fields. Unknown keys decode into a discarded json.RawMessage
-// (forward-compatible). No reflect symbol appears.
-func emitUnmarshal(b *strings.Builder, typeName string, fields []codecField) {
+// composite fields. Each nested def value is decoded by a direct call to that
+// type's own generated UnmarshalJSON — never a json.Decoder.Decode dispatch —
+// so no stdlib interface-dispatch through reflect remains on the decode path.
+// Unknown keys are skipped by reading and discarding their raw value. No
+// reflect symbol appears.
+func emitUnmarshal(b *strings.Builder, typeName string, fields []codecField, defTypes map[string]bool) {
 	fmt.Fprintf(b, "// UnmarshalJSON decodes %s with a streaming token walk, descending\n", typeName)
-	fmt.Fprintf(b, "// into composite fields, reflect-free. Unknown keys are skipped.\n")
+	fmt.Fprintf(b, "// into composite fields by direct call to each nested type's generated\n")
+	fmt.Fprintf(b, "// UnmarshalJSON, dispatch-free. Unknown keys are skipped.\n")
 	fmt.Fprintf(b, "func (t *%s) UnmarshalJSON(data []byte) error {\n", typeName)
 	b.WriteString("\tdec := json.NewDecoder(bytes.NewReader(data))\n")
 	b.WriteString("\tif err := expectDelim(dec, '{'); err != nil {\n\t\treturn err\n\t}\n")
@@ -531,11 +621,10 @@ func emitUnmarshal(b *strings.Builder, typeName string, fields []codecField) {
 	b.WriteString("\t\tswitch key {\n")
 	for _, f := range fields {
 		fmt.Fprintf(b, "\t\tcase %q:\n", f.key)
-		emitUnmarshalField(b, f, "\t\t\t")
+		emitUnmarshalField(b, f, "\t\t\t", defTypes)
 	}
 	b.WriteString("\t\tdefault:\n")
-	b.WriteString("\t\t\tvar skip json.RawMessage\n")
-	b.WriteString("\t\t\tif err := dec.Decode(&skip); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n")
+	b.WriteString("\t\t\tif _, err := readRaw(dec, data); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n")
 	b.WriteString("\t\t}\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\tif err := expectDelim(dec, '}'); err != nil {\n\t\treturn err\n\t}\n")
@@ -544,10 +633,10 @@ func emitUnmarshal(b *strings.Builder, typeName string, fields []codecField) {
 }
 
 // emitUnmarshalField writes the per-field decode for one key. Maps and slices
-// are token-walked element-wise so each composite value routes through its own
-// generated decode; scalar and named-struct fields decode via dec.Decode into
-// the concrete field (the named struct's own generated UnmarshalJSON runs).
-func emitUnmarshalField(b *strings.Builder, f codecField, indent string) {
+// are token-walked element-wise; each element decodes through emitDecodeValue,
+// which calls a nested def type's own generated UnmarshalJSON directly rather
+// than dispatching through json.Decoder.Decode.
+func emitUnmarshalField(b *strings.Builder, f codecField, indent string, defTypes map[string]bool) {
 	switch {
 	case strings.HasPrefix(f.goType, "map["):
 		valType := f.goType[strings.IndexByte(f.goType, ']')+1:]
@@ -556,7 +645,7 @@ func emitUnmarshalField(b *strings.Builder, f codecField, indent string) {
 		fmt.Fprintf(b, "%sfor dec.More() {\n", indent)
 		fmt.Fprintf(b, "%s\tmk, err := readKey(dec)\n%s\tif err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent, indent)
 		fmt.Fprintf(b, "%s\tvar mv %s\n", indent, valType)
-		fmt.Fprintf(b, "%s\tif err := dec.Decode(&mv); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent)
+		emitDecodeValue(b, "mv", valType, indent+"\t", defTypes)
 		fmt.Fprintf(b, "%s\tt.%s[mk] = mv\n", indent, f.field)
 		fmt.Fprintf(b, "%s}\n", indent)
 		fmt.Fprintf(b, "%sif err := expectDelim(dec, '}'); err != nil {\n%s\treturn err\n%s}\n", indent, indent, indent)
@@ -566,18 +655,75 @@ func emitUnmarshalField(b *strings.Builder, f codecField, indent string) {
 		fmt.Fprintf(b, "%sif err := expectDelim(dec, '['); err != nil {\n%s\treturn err\n%s}\n", indent, indent, indent)
 		fmt.Fprintf(b, "%sfor dec.More() {\n", indent)
 		fmt.Fprintf(b, "%s\tvar elem %s\n", indent, elemType)
-		fmt.Fprintf(b, "%s\tif err := dec.Decode(&elem); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent)
+		emitDecodeValue(b, "elem", elemType, indent+"\t", defTypes)
 		fmt.Fprintf(b, "%s\tt.%s = append(t.%s, elem)\n", indent, f.field, f.field)
 		fmt.Fprintf(b, "%s}\n", indent)
 		fmt.Fprintf(b, "%sif err := expectDelim(dec, ']'); err != nil {\n%s\treturn err\n%s}\n", indent, indent, indent)
 	default:
-		fmt.Fprintf(b, "%sif err := dec.Decode(&t.%s); err != nil {\n%s\treturn err\n%s}\n", indent, f.field, indent, indent)
+		emitDecodeValue(b, "t."+f.field, f.goType, indent, defTypes)
 	}
 }
 
+// emitDecodeValue writes the dispatch-free decode of the next JSON value into
+// the lvalue `dst` of Go type `goType`. A nested generated def type (or a
+// pointer to one) is decoded by capturing the next value's raw bytes and
+// calling that type's own UnmarshalJSON directly — never json.Decoder.Decode,
+// whose interface-dispatch routes through stdlib reflection that the TinyGo
+// bare collector breaks. Scalars are decoded by hand from a single token;
+// json.RawMessage and `any` carry the raw bytes through.
+func emitDecodeValue(b *strings.Builder, dst, goType, indent string, defTypes map[string]bool) {
+	switch {
+	case goType == "string":
+		fmt.Fprintf(b, "%sif s, err := readString(dec); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = s\n%s}\n", indent, indent, indent, indent, dst, indent)
+	case goType == "int" || goType == "int64":
+		fmt.Fprintf(b, "%sif n, err := readInt(dec); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = %s(n)\n%s}\n", indent, indent, indent, indent, dst, goType, indent)
+	case goType == "float64":
+		fmt.Fprintf(b, "%sif n, err := readFloat(dec); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = n\n%s}\n", indent, indent, indent, indent, dst, indent)
+	case goType == "bool":
+		fmt.Fprintf(b, "%sif v, err := readBool(dec); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = v\n%s}\n", indent, indent, indent, indent, dst, indent)
+	case goType == "[]byte":
+		fmt.Fprintf(b, "%sif v, err := readBytes(dec); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = v\n%s}\n", indent, indent, indent, indent, dst, indent)
+	case goType == "json.RawMessage":
+		fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = raw\n%s}\n", indent, indent, indent, indent, dst, indent)
+	case strings.HasPrefix(goType, "*"):
+		elem := goType[1:]
+		if defTypes[elem] {
+			fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else {\n", indent, indent, indent)
+			fmt.Fprintf(b, "%s\tv := new(%s)\n", indent, elem)
+			fmt.Fprintf(b, "%s\tif err := v.UnmarshalJSON(raw); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent)
+			fmt.Fprintf(b, "%s\t%s = v\n%s}\n", indent, dst, indent)
+		} else {
+			emitDecodeAnyFallback(b, dst, goType, indent)
+		}
+	case defTypes[goType]:
+		fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else {\n", indent, indent, indent)
+		fmt.Fprintf(b, "%s\tif err := %s.UnmarshalJSON(raw); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, dst, indent, indent)
+		fmt.Fprintf(b, "%s}\n", indent)
+	default:
+		// any / interface{} and any other shape with no generated codec:
+		// capture the raw value and unmarshal it. This is the only residual
+		// stdlib decode; it is reached for an opaque `any` value the guest
+		// authors on the output side, never for a typed field on the decode
+		// hot path.
+		emitDecodeAnyFallback(b, dst, goType, indent)
+	}
+}
+
+// emitDecodeAnyFallback decodes an opaque value (an `any` field, or a pointer
+// to a non-def type) by capturing its raw bytes and unmarshaling them. It is
+// the one place a stdlib reflective decode remains; it is not on the typed
+// decode path of the input payload.
+func emitDecodeAnyFallback(b *strings.Builder, dst, goType, indent string) {
+	fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else if err := json.Unmarshal(raw, &%s); err != nil {\n%s\treturn err\n%s}\n", indent, indent, indent, dst, indent, indent)
+}
+
 // emitCodecHelpers writes the shared streaming-decode helpers the generated
-// UnmarshalJSON methods call: expectDelim consumes an expected JSON delimiter,
-// readKey reads an object key token. Both use json.Decoder.Token — no reflect.
+// UnmarshalJSON methods call. expectDelim and readKey read a single token;
+// readRaw captures the next complete JSON value's exact source bytes via a
+// depth-tracking token scan (so an opaque passthrough re-marshals
+// byte-identically); the readScalar helpers decode one leaf token by hand.
+// None dispatches through json.Decoder.Decode, so none routes through the
+// stdlib reflective decode the TinyGo bare collector breaks.
 func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("// expectDelim reads the next token and asserts it is the given delimiter.\n")
 	b.WriteString("func expectDelim(dec *json.Decoder, want json.Delim) error {\n")
@@ -585,7 +731,7 @@ func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("\tif err != nil {\n\t\treturn err\n\t}\n")
 	b.WriteString("\td, ok := tok.(json.Delim)\n")
 	b.WriteString("\tif !ok || d != want {\n")
-	b.WriteString("\t\treturn fmt.Errorf(\"frpcodec: expected %q, got %v\", want, tok)\n")
+	b.WriteString("\t\treturn fmt.Errorf(\"abi: expected %q, got %v\", want, tok)\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\treturn nil\n")
 	b.WriteString("}\n\n")
@@ -596,9 +742,152 @@ func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("\tif err != nil {\n\t\treturn \"\", err\n\t}\n")
 	b.WriteString("\tkey, ok := tok.(string)\n")
 	b.WriteString("\tif !ok {\n")
-	b.WriteString("\t\treturn \"\", fmt.Errorf(\"frpcodec: expected string key, got %v\", tok)\n")
+	b.WriteString("\t\treturn \"\", fmt.Errorf(\"abi: expected string key, got %v\", tok)\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\treturn key, nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// readRaw captures the next complete JSON value's exact source bytes by\n")
+	b.WriteString("// slicing the original input between the decoder's offsets before and after\n")
+	b.WriteString("// a depth-tracking token scan of the value. The returned bytes are verbatim\n")
+	b.WriteString("// (no re-serialization), so an opaque passthrough field re-marshals\n")
+	b.WriteString("// byte-identically and a nested def value can be handed to its own\n")
+	b.WriteString("// UnmarshalJSON. It uses only Decoder.More, Decoder.Token, and\n")
+	b.WriteString("// Decoder.InputOffset — no Decoder.Decode dispatch.\n")
+	b.WriteString("func readRaw(dec *json.Decoder, data []byte) (json.RawMessage, error) {\n")
+	b.WriteString("\t// InputOffset before the first value token points just past the\n")
+	b.WriteString("\t// preceding token (an object key, or nothing), so the slice may carry a\n")
+	b.WriteString("\t// leading key/value separator and whitespace; the value's own bytes are\n")
+	b.WriteString("\t// recovered by trimming those leading non-value bytes. The trailing\n")
+	b.WriteString("\t// offset is exact (just past the value's last token).\n")
+	b.WriteString("\tstart := dec.InputOffset()\n")
+	b.WriteString("\tdepth := 0\n")
+	b.WriteString("\tfor {\n")
+	b.WriteString("\t\ttok, err := dec.Token()\n")
+	b.WriteString("\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n")
+	b.WriteString("\t\tif d, ok := tok.(json.Delim); ok {\n")
+	b.WriteString("\t\t\tif d == '{' || d == '[' {\n\t\t\t\tdepth++\n\t\t\t} else {\n\t\t\t\tdepth--\n\t\t\t}\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t\tif depth == 0 {\n\t\t\tbreak\n\t\t}\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tend := dec.InputOffset()\n")
+	b.WriteString("\tvalue := bytes.TrimLeft(data[start:end], \" \\t\\n\\r:\")\n")
+	b.WriteString("\tout := make(json.RawMessage, len(value))\n")
+	b.WriteString("\tcopy(out, value)\n")
+	b.WriteString("\treturn out, nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// readString decodes the next token as a JSON string.\n")
+	b.WriteString("func readString(dec *json.Decoder) (string, error) {\n")
+	b.WriteString("\ttok, err := dec.Token()\n")
+	b.WriteString("\tif err != nil {\n\t\treturn \"\", err\n\t}\n")
+	b.WriteString("\ts, ok := tok.(string)\n")
+	b.WriteString("\tif !ok {\n\t\treturn \"\", fmt.Errorf(\"abi: expected string, got %v\", tok)\n\t}\n")
+	b.WriteString("\treturn s, nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// readFloat decodes the next token as a JSON number.\n")
+	b.WriteString("func readFloat(dec *json.Decoder) (float64, error) {\n")
+	b.WriteString("\ttok, err := dec.Token()\n")
+	b.WriteString("\tif err != nil {\n\t\treturn 0, err\n\t}\n")
+	b.WriteString("\tf, ok := tok.(float64)\n")
+	b.WriteString("\tif !ok {\n\t\treturn 0, fmt.Errorf(\"abi: expected number, got %v\", tok)\n\t}\n")
+	b.WriteString("\treturn f, nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// readInt decodes the next token as a JSON number and truncates to int.\n")
+	b.WriteString("func readInt(dec *json.Decoder) (int, error) {\n")
+	b.WriteString("\tf, err := readFloat(dec)\n")
+	b.WriteString("\tif err != nil {\n\t\treturn 0, err\n\t}\n")
+	b.WriteString("\treturn int(f), nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// readBool decodes the next token as a JSON bool.\n")
+	b.WriteString("func readBool(dec *json.Decoder) (bool, error) {\n")
+	b.WriteString("\ttok, err := dec.Token()\n")
+	b.WriteString("\tif err != nil {\n\t\treturn false, err\n\t}\n")
+	b.WriteString("\tv, ok := tok.(bool)\n")
+	b.WriteString("\tif !ok {\n\t\treturn false, fmt.Errorf(\"abi: expected bool, got %v\", tok)\n\t}\n")
+	b.WriteString("\treturn v, nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// readBytes decodes the next token as a base64 JSON string into bytes,\n")
+	b.WriteString("// matching encoding/json's []byte wire form.\n")
+	b.WriteString("func readBytes(dec *json.Decoder) ([]byte, error) {\n")
+	b.WriteString("\ts, err := readString(dec)\n")
+	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
+	b.WriteString("\treturn base64.StdEncoding.DecodeString(s)\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// hexDigits is the lowercase hex alphabet for \\u escapes.\n")
+	b.WriteString("const hexDigits = \"0123456789abcdef\"\n\n")
+
+	b.WriteString("// writeJSONString writes s as a JSON string literal, matching\n")
+	b.WriteString("// encoding/json's default (HTML-safe) string escaping byte-for-byte:\n")
+	b.WriteString("// it escapes the quote, backslash, control characters, the HTML-sensitive\n")
+	b.WriteString("// bytes <, >, and &, and the line/paragraph separators U+2028/U+2029.\n")
+	b.WriteString("func writeJSONString(buf *bytes.Buffer, s string) {\n")
+	b.WriteString("\tbuf.WriteByte('\"')\n")
+	b.WriteString("\tstart := 0\n")
+	b.WriteString("\tfor i := 0; i < len(s); {\n")
+	b.WriteString("\t\tif c := s[i]; c < utf8.RuneSelf {\n")
+	b.WriteString("\t\t\tif c >= ' ' && c != '\"' && c != '\\\\' && c != '<' && c != '>' && c != '&' {\n")
+	b.WriteString("\t\t\t\ti++\n\t\t\t\tcontinue\n")
+	b.WriteString("\t\t\t}\n")
+	b.WriteString("\t\t\tif start < i {\n\t\t\t\tbuf.WriteString(s[start:i])\n\t\t\t}\n")
+	b.WriteString("\t\t\tswitch c {\n")
+	b.WriteString("\t\t\tcase '\"':\n\t\t\t\tbuf.WriteString(`\\\"`)\n")
+	b.WriteString("\t\t\tcase '\\\\':\n\t\t\t\tbuf.WriteString(`\\\\`)\n")
+	b.WriteString("\t\t\tcase '\\n':\n\t\t\t\tbuf.WriteString(`\\n`)\n")
+	b.WriteString("\t\t\tcase '\\r':\n\t\t\t\tbuf.WriteString(`\\r`)\n")
+	b.WriteString("\t\t\tcase '\\t':\n\t\t\t\tbuf.WriteString(`\\t`)\n")
+	b.WriteString("\t\t\tdefault:\n")
+	b.WriteString("\t\t\t\tbuf.WriteString(`\\u00`)\n")
+	b.WriteString("\t\t\t\tbuf.WriteByte(hexDigits[c>>4])\n")
+	b.WriteString("\t\t\t\tbuf.WriteByte(hexDigits[c&0xF])\n")
+	b.WriteString("\t\t\t}\n")
+	b.WriteString("\t\t\ti++\n\t\t\tstart = i\n\t\t\tcontinue\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t\tr, size := utf8.DecodeRuneInString(s[i:])\n")
+	b.WriteString("\t\tif r == '\\u2028' || r == '\\u2029' {\n")
+	b.WriteString("\t\t\tif start < i {\n\t\t\t\tbuf.WriteString(s[start:i])\n\t\t\t}\n")
+	b.WriteString("\t\t\tbuf.WriteString(`\\u202`)\n")
+	b.WriteString("\t\t\tbuf.WriteByte(hexDigits[r&0xF])\n")
+	b.WriteString("\t\t\ti += size\n\t\t\tstart = i\n\t\t\tcontinue\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t\ti += size\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tif start < len(s) {\n\t\tbuf.WriteString(s[start:])\n\t}\n")
+	b.WriteString("\tbuf.WriteByte('\"')\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// writeJSONFloat writes f as a JSON number, matching encoding/json's\n")
+	b.WriteString("// float formatting (the shortest round-trippable form, with the small\n")
+	b.WriteString("// exponent-notation cutover encoding/json uses).\n")
+	b.WriteString("func writeJSONFloat(buf *bytes.Buffer, f float64) error {\n")
+	b.WriteString("\tif f != f || f-f != 0 {\n")
+	b.WriteString("\t\treturn fmt.Errorf(\"abi: unsupported float value %v\", f)\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tabs := f\n\tif abs < 0 {\n\t\tabs = -abs\n\t}\n")
+	b.WriteString("\tfmt := byte('f')\n")
+	b.WriteString("\tif abs != 0 && (abs < 1e-6 || abs >= 1e21) {\n\t\tfmt = 'e'\n\t}\n")
+	b.WriteString("\tout := strconv.AppendFloat(nil, f, fmt, -1, 64)\n")
+	b.WriteString("\tif fmt == 'e' {\n")
+	b.WriteString("\t\tn := len(out)\n")
+	b.WriteString("\t\tif n >= 4 && out[n-4] == 'e' && out[n-3] == '-' && out[n-2] == '0' {\n")
+	b.WriteString("\t\t\tout[n-2] = out[n-1]\n\t\t\tout = out[:n-1]\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tbuf.Write(out)\n")
+	b.WriteString("\treturn nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// writeJSONBytes writes b as a base64 JSON string, matching\n")
+	b.WriteString("// encoding/json's []byte wire form.\n")
+	b.WriteString("func writeJSONBytes(buf *bytes.Buffer, b []byte) {\n")
+	b.WriteString("\tbuf.WriteByte('\"')\n")
+	b.WriteString("\tbuf.WriteString(base64.StdEncoding.EncodeToString(b))\n")
+	b.WriteString("\tbuf.WriteByte('\"')\n")
 	b.WriteString("}\n\n")
 }
 
@@ -654,20 +943,32 @@ func generateDefs(t codecTarget) ([]byte, error) {
 	}
 	emitQueue(&body, queue, used, t.vocabulary)
 
-	// The reflect-free streaming codec for each emitted def type, in the same
-	// declared order. Codec emission descends into each field's composite
-	// shape (map/struct/slice) so no stdlib reflective struct-walk remains.
+	// defTypes names the generated def struct types, so the codec emitter can
+	// tell a nested generated type — decoded by a direct call to its own
+	// UnmarshalJSON — from a scalar or an opaque passthrough.
+	defTypes := map[string]bool{}
 	for _, d := range root.defs {
-		emitCodec(&body, d.name, d.node, t.vocabulary)
+		defTypes[d.name] = true
+	}
+
+	// The dispatch-free streaming codec for each emitted def type, in the same
+	// declared order. Codec emission descends into each field's composite shape
+	// (map/struct/slice) and decodes each nested def value by a direct call to
+	// its own UnmarshalJSON, so no stdlib reflective struct-walk or
+	// interface-dispatch remains on the decode path.
+	for _, d := range root.defs {
+		emitCodec(&body, d.name, d.node, t.vocabulary, defTypes)
 	}
 	emitCodecHelpers(&body)
 
-	// The codec spine always imports bytes (buffer/reader), encoding/json
-	// (Decoder/Marshal/RawMessage), and fmt (decode error wrapping).
+	// The codec spine imports bytes (buffer/reader), encoding/base64 ([]byte
+	// leaf codec), encoding/json (Decoder/RawMessage and the opaque-any
+	// fallback), fmt (error wrapping), sort (deterministic map-key order on
+	// encode), strconv (number formatting), and unicode/utf8 (string escaping).
 	head := genHeaderImports("package "+t.pkg,
 		fmt.Sprintf("// aggrega-schemas/json/%s. DO NOT EDIT.\n", t.schemaFile),
-		"// Regenerate with `go generate ./...` from the package directory.\n",
-		[]string{"bytes", "encoding/json", "fmt"})
+		"// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		[]string{"bytes", "encoding/base64", "encoding/json", "fmt", "sort", "strconv", "unicode/utf8"})
 
 	return formatSource(head, body.String())
 }

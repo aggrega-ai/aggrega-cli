@@ -37,9 +37,12 @@ func TestRegenClean(t *testing.T) {
 // codecTargetPaths maps each codec target's output basename to the directory
 // (relative to this test package) holding the committed generated file. The
 // regen-drift gate reads the committed file there and byte-compares it to a
-// fresh generation.
+// fresh generation. The guest codec is committed in the sibling aggrega-abi
+// module, so its path reaches across the submodule boundary (up to the
+// umbrella root, then into aggrega-abi); the gate reads it with os.ReadFile,
+// not a Go import, so the cross-module read needs no go.work membership.
 var codecTargetPaths = map[string][]string{
-	"frp_gen.go": {"..", "..", "abi", "frpcodec"},
+	"frp_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 }
 
 // TestRegenClean_Codec is the regen-drift gate for the multi-type codec
