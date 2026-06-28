@@ -51,6 +51,7 @@ type Catalog struct {
 	Providers        map[string]types.Provider       // keyed by metadata.name (e.g. "helm", "helm-chart")
 	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
 	MappingLibraries map[string]types.MappingLibrary // keyed by metadata.name (PascalCase library identifier)
+	WasmPlugins      map[string]types.WasmPlugin     // keyed by identity (metadata.name:version)
 
 	// componentSources / featureSources / providerSources track the file path
 	// each entity was loaded from. Populated by Pass 1 (indexFile) and
@@ -127,7 +128,7 @@ type Catalog struct {
 }
 
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml
-// file under each, and indexes all six catalog-resident entity kinds into a
+// file under each, and indexes every catalog-resident entity kind into a
 // single Catalog. Files are dispatched by their top-level "kind:" field; see
 // indexFile for the dispatch table.
 //
@@ -361,6 +362,7 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 		Providers:        make(map[string]types.Provider),
 		SchemaLibraries:  make(map[string]types.SchemaLibrary),
 		MappingLibraries: make(map[string]types.MappingLibrary),
+		WasmPlugins:      make(map[string]types.WasmPlugin),
 		componentSources: make(map[string]string),
 		featureSources:   make(map[string]string),
 		providerSources:  make(map[string]string),
@@ -461,6 +463,15 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	})
 	mergeKind(acc, "MappingLibrary", acc.MappingLibraries, perDir.MappingLibraries, perDir, perDirRoot, winnerDir, func(k string) {
 		bk := entityBytesKey("MappingLibrary", k)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	// WasmPlugin carries no per-kind source side-table (no wasmPluginSources):
+	// nothing reads a WasmPlugin's source file path. The bytes side-table keys on
+	// metadata.name (the closure walker hashes them for the lockfile pin) while
+	// the typed map keys on identity (name:version) — same split the Recipe /
+	// Library kinds use, which likewise merge without a *Sources table.
+	mergeKind(acc, "WasmPlugin", acc.WasmPlugins, perDir.WasmPlugins, perDir, perDirRoot, winnerDir, func(k string) {
+		bk := entityBytesKey("WasmPlugin", perDir.WasmPlugins[k].Metadata.Name)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 }
@@ -688,13 +699,14 @@ type entityHeader struct {
 	Kind string `yaml:"kind"`
 }
 
-// indexFile is the single point of dispatch over the six catalog-resident
+// indexFile is the single point of dispatch over the catalog-resident
 // entity kinds — the SSOT for "what counts as a catalog entity" in this
-// package. The switch arms enumerate exactly the eight catalog entity
-// kinds minus Manifest and Release (which are deployment-side and are
-// silently skipped — see LoadAll's error model). Adding a new
-// catalog-resident kind requires extending the switch here AND adding
-// the matching map field on Catalog.
+// package. The switch arms enumerate every catalog entity kind
+// (Component, Feature, Recipe, FeatureRecipe, Aggregate, Provider,
+// SchemaLibrary, MappingLibrary, WasmPlugin), leaving out Manifest and
+// Release (which are deployment-side and are silently skipped — see
+// LoadAll's error model). Adding a new catalog-resident kind requires
+// extending the switch here AND adding the matching map field on Catalog.
 func (c *Catalog) indexFile(data []byte, path string) error {
 	var header entityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
@@ -823,6 +835,20 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.MappingLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
+	case "WasmPlugin":
+		if _, eerr := envelope.ValidateBytes(envelope.KindWasmPlugin, data, path); eerr != nil {
+			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+		}
+		var e types.WasmPlugin
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal WasmPlugin")
+		}
+		wkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("WasmPlugin:"+wkey, fmt.Sprintf("WasmPlugin identity %q", wkey), path); err != nil {
+			return err
+		}
+		c.WasmPlugins[wkey] = e
+		c.entityBytes[entityBytesKey("WasmPlugin", e.Metadata.Name)] = data
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil
@@ -1362,6 +1388,12 @@ func (c *Catalog) resolveProviderKey(name string) (string, bool, error) {
 
 func (c *Catalog) resolveAggregateKey(name string) (string, bool, error) {
 	return selectEntityVersion(c.Aggregates, name, func(v types.Aggregate) (string, string) {
+		return v.Metadata.Name, v.Metadata.Version
+	})
+}
+
+func (c *Catalog) resolveWasmPluginKey(uri string) (string, bool, error) {
+	return selectEntityVersion(c.WasmPlugins, uri, func(v types.WasmPlugin) (string, string) {
 		return v.Metadata.Name, v.Metadata.Version
 	})
 }

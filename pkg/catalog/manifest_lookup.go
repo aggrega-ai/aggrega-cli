@@ -343,6 +343,27 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 	return match, n == 1
 }
 
+// WasmPluginByURI returns the WasmPlugin entity whose identity matches uri, plus
+// a found flag. A WasmPlugin is a by-name entity (keyed metadata.name:version,
+// like Provider / Component), not a provider-qualified one, so resolution goes
+// through the shared three-form version select (exact / caret / unversioned ->
+// highest-satisfying) rather than the provider-scan ladder RecipeByURI uses. The
+// returned entity carries spec.plugin (the OCI artifact reference); resolving that
+// reference to a pinned artifact is a separate concern (the closure's artifact
+// resolution), not this accessor's job — this serves the entity struct only.
+//
+// Served by both catalog backings: the lazy backing exposes its enumerated
+// WasmPlugin set through the recipeCatalog() *Catalog shell, so its
+// WasmPluginByURI delegates here against the same matcher (no per-backing
+// reimplementation).
+func (c *Catalog) WasmPluginByURI(uri string) (types.WasmPlugin, bool) {
+	key, ok, _ := c.resolveWasmPluginKey(uri)
+	if !ok {
+		return types.WasmPlugin{}, false
+	}
+	return c.WasmPlugins[key], true
+}
+
 // implementsSatisfies reports whether a recipe declaring spec.implements==impl
 // satisfies a request for componentType, under the three-form matching rule
 // (exact, caret-range, unversioned base) — the same precedence matchImplements
