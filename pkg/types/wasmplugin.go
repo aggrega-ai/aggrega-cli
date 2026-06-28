@@ -29,6 +29,31 @@ package types
 // that omits them round-trips without emitting an empty block — a
 // value-typed nested struct would re-marshal as `{}`.
 
+// WasmPluginExport is one export the plugin offers, with its declared
+// capability. An export is a named entry point the host dispatches to (for
+// example "render_node", "lint_naming", "step"); the capability fields are the
+// authored claim of what the export does, which the host cross-checks against
+// the plugin's self-report at publish and at load. Entries preserve author
+// order. The element type is hand-written because the generator names it via
+// x-aggrega-go-type on the schema's items node and does not descend into it.
+type WasmPluginExport struct {
+	// Name is the export's ABI name — the name the host dispatches to (for
+	// example "render_node", "lint_naming", "step").
+	Name string `json:"name" yaml:"name"`
+	// Operates declares the pipeline operation this export performs: "patch"
+	// (modify an existing rendered document) or "emit" (add a new document).
+	// Empty carries no operation claim.
+	Operates string `json:"operates,omitempty" yaml:"operates,omitempty"`
+	// Scope declares the document root this export operates on: "own" (the
+	// node's own rendered documents) or "host" (the documents of the component a
+	// component-scope FeatureRecipe is attached to). Empty carries no scope claim.
+	Scope string `json:"scope,omitempty" yaml:"scope,omitempty"`
+	// Selector is a free-form, human-readable description of what the export
+	// acts on (for example "workloads carrying a pod template"). Documentation
+	// for catalog readers; the compiler does not interpret it.
+	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
+}
+
 // WasmPluginSignature is the optional, documentation-only pointer to a
 // plugin's attached signature. It records where the signature lives and
 // how it was produced for catalog readers; it does not itself gate or

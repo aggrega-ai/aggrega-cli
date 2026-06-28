@@ -51,4 +51,6 @@ type WasmPluginSpec struct {
 	Signature *WasmPluginSignature `json:"signature,omitempty" yaml:"signature,omitempty"`
 	// Runtime Optional execution constraints the host applies when loading and running the plugin. The fields are field-aligned with the loader's plugin input so a catalog-loaded entity maps to the loader's runtime block without field reinvention. Outbound network access is not an authoring field: a plugin never reaches the network at build time (the ahead-of-time boundary), so there is no host-allowlist field to author here.
 	Runtime *WasmPluginRuntime `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+	// Exports The exports this plugin offers, each with its declared capability. An export is one named entry point the host dispatches to (for example `render_node`, `lint_naming`, `step`); the per-export capability block is the authored claim of what that export does, which the host cross-checks against the plugin's self-report at publish and at load. Entries preserve author order. Absent declares no authored export surface.
+	Exports []WasmPluginExport `json:"exports,omitempty" yaml:"exports,omitempty"`
 }

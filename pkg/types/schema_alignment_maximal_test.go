@@ -177,6 +177,10 @@ func maximalWasmPlugin() types.WasmPlugin {
 				DeclaredHostFunctions: []string{"log"},
 				ConfigKV:              cfg,
 			},
+			Exports: []types.WasmPluginExport{
+				{Name: "lint_naming", Operates: "patch", Scope: "own", Selector: "workloads carrying a pod template"},
+				{Name: "step", Operates: "emit", Scope: "host"},
+			},
 		},
 	}
 }
