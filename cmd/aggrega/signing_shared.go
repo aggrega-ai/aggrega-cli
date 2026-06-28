@@ -16,6 +16,7 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
@@ -243,6 +244,60 @@ func checkIDTokenSubject(rawToken string) error {
 // to; the bundle is identical whether produced before or after the bytes land.
 func signDigest(ctx context.Context, signer signing.Signer, digest string) (bundle []byte, artifactType string, err error) {
 	return signer.Sign(ctx, digest)
+}
+
+// signPushDigest is the shared push-time signing atom: it resolves a signer
+// (the injected cfg.Signer, or one constructed from the config-resolved keyed/
+// keyless inputs) and signs proposedDigest, returning the signature bundle and
+// its artifact type. It is called BEFORE any bytes reach the registry, so a
+// signer that cannot be constructed or a signing failure refuses the push with
+// nothing published. Both the catalog-kind push and the WasmPlugin push call it
+// so the signer-construction precedence, the identity-token resolution, and the
+// keyless-subject diagnostic have one home. reference and tag name the artifact
+// in any rejection message.
+func signPushDigest(ctx context.Context, cfg pushConfig, registry, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
+	signer := cfg.Signer
+	if signer == nil {
+		rw, werr := workspaceOrResolve(cfg.ws)
+		if werr != nil {
+			return nil, "", fmt.Errorf("workspaceconfig: %w", werr)
+		}
+		resolved := rw.Config().ResolveSigning(registryhost.Of(registry))
+		keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
+		// Only the keyless branch resolves an identity token; the keyed path
+		// never reaches acquisition. Resolve (or interactively acquire) the
+		// token before constructing the signer so a missing token refuses
+		// BEFORE any bytes reach the registry.
+		var idToken string
+		if keyPath == "" {
+			idToken, err = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
+			if err != nil {
+				return nil, "", fmt.Errorf("aggrega push: %w: %w", err, signing.ErrUnsignedPushRefused)
+			}
+		}
+		signer, err = buildSigner(signerParams{
+			KeyPath:      keyPath,
+			IDToken:      idToken,
+			FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
+			RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
+			TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
+		})
+		if err != nil {
+			return nil, "", fmt.Errorf("aggrega push: construct signer: %w: %w", err, signing.ErrUnsignedPushRefused)
+		}
+	}
+	bundle, artifactType, err = signDigest(ctx, signer, proposedDigest)
+	if err != nil {
+		// A token without a usable signing subject is misdiagnosed by a generic
+		// rejection message; name the real cause — the identity the OIDC flow
+		// returned — so the operator fixes the provider/client/scope rather than
+		// re-exporting a token that cannot help.
+		if keylessSubjectFailure(err) {
+			return nil, "", fmt.Errorf("aggrega push: sign %s:%s: the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+		}
+		return nil, "", fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+	}
+	return bundle, artifactType, nil
 }
 
 // attachBundle is the shared attach atom: it attaches a signature bundle as an

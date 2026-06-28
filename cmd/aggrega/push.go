@@ -30,6 +30,7 @@ var (
 	pushRekor      string
 	pushTimestamp  string
 	pushIDToken    string
+	pushPluginPath string
 )
 
 func newPushCmd() *cobra.Command {
@@ -55,6 +56,7 @@ func newPushCmd() *cobra.Command {
 				RekorURL:     pushRekor,
 				TimestampURL: pushTimestamp,
 				IDToken:      pushIDToken,
+				PluginPath:   pushPluginPath,
 				ws:           rw,
 			}
 			// --sign is tri-state: when the operator passes it explicitly we
@@ -76,6 +78,7 @@ func newPushCmd() *cobra.Command {
 	c.Flags().StringVar(&pushRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
 	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
 	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
+	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a WasmPlugin entity. Required when publishing a WasmPlugin: publish pushes the .wasm artifact, computes its content digest, stamps spec.plugin, and pushes the entity.")
 	return c
 }
 
@@ -110,6 +113,14 @@ type pushConfig struct {
 	RekorURL     string
 	TimestampURL string
 	IDToken      string
+
+	// PluginPath is the local filesystem path to the .wasm artifact, required
+	// when publishing a WasmPlugin entity. Publish reads these bytes,
+	// cross-checks them against the entity's authored claims, computes their
+	// content digest, pushes them as an OCI artifact, and stamps spec.plugin
+	// with the digest pin before pushing the entity. Empty for every non-
+	// WasmPlugin kind.
+	PluginPath string
 
 	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
 	// when a test invokes pushRun directly; workspaceOrResolve then resolves
@@ -255,6 +266,16 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: %s: missing metadata.version", cfg.EntityPath)
 	}
 
+	// A WasmPlugin publishes two artifacts in order — the .wasm first, then the
+	// entity referencing it by content-digest pin — with a publish-time
+	// describe()-cross-check against the .wasm bytes. The ordered, two-artifact
+	// flow and the entity-body stamping differ enough from the single-artifact
+	// catalog-kind path that it has its own helper; signing, the immutability
+	// guard, and the content-digest spelling are reused, not re-spelled.
+	if header.Kind == "WasmPlugin" {
+		return pushWasmPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, data)
+	}
+
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
 	if err != nil {
 		return fmt.Errorf("aggrega push: bundle %s: %w", cfg.EntityPath, err)
@@ -317,42 +338,9 @@ func pushRun(cfg pushConfig) error {
 		signatureType   string
 	)
 	if wantSign {
-		signer := cfg.Signer
-		if signer == nil {
-			resolved := wsCfg.ResolveSigning(registryhost.Of(registry))
-			keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
-			// Only the keyless branch resolves an identity token; the keyed
-			// path never reaches acquisition. Resolve (or interactively
-			// acquire) the token before constructing the signer so a missing
-			// token refuses BEFORE any bytes reach the registry.
-			var idToken string
-			if keyPath == "" {
-				idToken, err = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
-				if err != nil {
-					return fmt.Errorf("aggrega push: %w: %w", err, signing.ErrUnsignedPushRefused)
-				}
-			}
-			signer, err = buildSigner(signerParams{
-				KeyPath:      keyPath,
-				IDToken:      idToken,
-				FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
-				RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
-				TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
-			})
-			if err != nil {
-				return fmt.Errorf("aggrega push: construct signer: %w: %w", err, signing.ErrUnsignedPushRefused)
-			}
-		}
-		signatureBundle, signatureType, err = signDigest(ctx, signer, proposedDigest)
+		signatureBundle, signatureType, err = signPushDigest(ctx, cfg, registry, reference, tag, proposedDigest)
 		if err != nil {
-			// A token without a usable signing subject is misdiagnosed by a
-			// generic rejection message; name the real cause — the identity the
-			// OIDC flow returned — so the operator fixes the provider/client/scope
-			// rather than re-exporting a token that cannot help.
-			if keylessSubjectFailure(err) {
-				return fmt.Errorf("aggrega push: sign %s:%s: the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
-			}
-			return fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+			return err
 		}
 	}
 

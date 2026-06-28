@@ -65,8 +65,8 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // switches on):
 //
 //   - Component / Feature / Provider / Aggregate / SchemaLibrary /
-//     MappingLibrary → bare YAML, no archive; bytes are the file
-//     contents unchanged.
+//     MappingLibrary / WasmPlugin → bare YAML, no archive; bytes are
+//     the file contents unchanged.
 //   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
 //     co-located source: directories, $import:-referenced files in
 //     the same directory tree, and inline artifacts: payloads. File
@@ -74,26 +74,33 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 //     carry zeroed timestamps so two independent Bundle invocations
 //     against the same input produce byte-identical archives.
 //
-// For every publishable kind, Bundle first invokes
-// validateEntityVersionPathSubdir on the entityPath; a mismatch between
-// the path's version segment (the entity file's parent directory) and
-// the entity's metadata.version returns ErrEntityVersionPathMismatch
-// wrapped with both values.
+// For every publishable kind that sits in a per-version subdirectory,
+// Bundle first invokes validateEntityVersionPathSubdir on the
+// entityPath; a mismatch between the path's version segment (the entity
+// file's parent directory) and the entity's metadata.version returns
+// ErrEntityVersionPathMismatch wrapped with both values. WasmPlugin is
+// the exception: it has no per-version subdirectory — its version comes
+// from metadata.version and its repository location is the socket-path
+// (wasm/<socket>/<name>) — so the per-version guard does not apply to it.
 func Bundle(kind, entityPath string) ([]byte, string, error) {
 	mediaType, err := MediaTypeForKind(kind)
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Every publishable kind sits in a per-version subdirectory whose name
-	// equals the entity's metadata.version. The entity file (component.yaml,
-	// recipe.yaml, library.yaml, …) is the parent-dir anchor for all kinds.
-	if err := validateEntityVersionPathSubdir(entityPath); err != nil {
-		return nil, "", err
+	// Every publishable kind except WasmPlugin sits in a per-version
+	// subdirectory whose name equals the entity's metadata.version. The
+	// entity file (component.yaml, recipe.yaml, library.yaml, …) is the
+	// parent-dir anchor for those kinds. WasmPlugin authoring carries no
+	// version subdir, so it is excluded from the guard.
+	if kind != "WasmPlugin" {
+		if err := validateEntityVersionPathSubdir(entityPath); err != nil {
+			return nil, "", err
+		}
 	}
 
 	switch kind {
-	case "Component", "Feature", "Provider", "Aggregate", "SchemaLibrary", "MappingLibrary":
+	case "Component", "Feature", "Provider", "Aggregate", "SchemaLibrary", "MappingLibrary", "WasmPlugin":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)

@@ -174,6 +174,58 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 	}
 }
 
+// TestBundleWasmPluginNoVersionSubdir proves the WasmPlugin arm: it bundles to
+// bare YAML under the WasmPlugin entity mediatype, and the per-version
+// subdirectory guard does NOT apply — a WasmPlugin entity authored OUTSIDE a
+// version-named directory bundles cleanly, where every version-subdir kind
+// would halt with ErrEntityVersionPathMismatch. The version comes from
+// metadata.version; the repository location is the socket-path.
+func TestBundleWasmPluginNoVersionSubdir(t *testing.T) {
+	t.Parallel()
+	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: WasmPlugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/wasm/frp/patch:1.0.0\"\n")
+	// Authored at a path whose parent dir is NOT the version (here the kind name)
+	// — a Component here would fail the version-subdir guard.
+	dir := filepath.Join(t.TempDir(), "wasm-plugins")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "frp-step-patch.yaml")
+	mustWrite(t, path, body)
+
+	data, mt, err := oci.Bundle("WasmPlugin", path)
+	if err != nil {
+		t.Fatalf("WasmPlugin should bundle without a version subdir; got %v", err)
+	}
+	if mt != oci.MediaTypeWasmPlugin {
+		t.Errorf("WasmPlugin mediatype = %q; want %q", mt, oci.MediaTypeWasmPlugin)
+	}
+	if string(data) != string(body) {
+		t.Errorf("WasmPlugin bundle should be the verbatim entity YAML")
+	}
+
+	// Confirm the contrast: a Component at the same off-layout path DOES halt.
+	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
+	compPath := filepath.Join(dir, "component.yaml")
+	mustWrite(t, compPath, compBody)
+	if _, _, err := oci.Bundle("Component", compPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+		t.Errorf("Component off-layout should still wrap ErrEntityVersionPathMismatch; got %v", err)
+	}
+}
+
+// TestMediaTypeForKindWasmPlugin proves MediaTypeForKind resolves the WasmPlugin
+// entity mediatype, so the kind is in the publishable set the bundle dispatch
+// gates on.
+func TestMediaTypeForKindWasmPlugin(t *testing.T) {
+	t.Parallel()
+	mt, err := oci.MediaTypeForKind("WasmPlugin")
+	if err != nil {
+		t.Fatalf("MediaTypeForKind(WasmPlugin): %v", err)
+	}
+	if mt != oci.MediaTypeWasmPlugin {
+		t.Errorf("MediaTypeForKind(WasmPlugin) = %q; want %q", mt, oci.MediaTypeWasmPlugin)
+	}
+}
+
 func mustWrite(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0o644); err != nil {

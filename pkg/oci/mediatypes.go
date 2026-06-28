@@ -35,6 +35,15 @@ const (
 	MediaTypeSchemaLibrary  = "application/vnd.aggrega.schemalibrary.v1+json"
 	MediaTypeMappingLibrary = "application/vnd.aggrega.mappinglibrary.v1+json"
 	MediaTypeAggregate      = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
+	// MediaTypeWasmPlugin is the mediatype of the WasmPlugin entity's YAML —
+	// the authoring/metadata surface that pins the .wasm artifact by digest.
+	MediaTypeWasmPlugin = "application/vnd.aggrega.wasmplugin.v1alpha1+yaml"
+	// MediaTypeWasm is the mediatype of the raw .wasm artifact a WasmPlugin
+	// entity references by ref+digest. It is published as its own OCI artifact,
+	// separate from the entity, and is passed directly to Push rather than
+	// resolved through MediaTypeForKind (the .wasm is an artifact, not a
+	// catalog entity kind).
+	MediaTypeWasm = "application/vnd.aggrega.wasm.v1alpha1+wasm"
 )
 
 // kindMediaTypes maps the catalog entity kind string (matching the
@@ -49,6 +58,7 @@ var kindMediaTypes = map[string]string{
 	"SchemaLibrary":  MediaTypeSchemaLibrary,
 	"MappingLibrary": MediaTypeMappingLibrary,
 	"Aggregate":      MediaTypeAggregate,
+	"WasmPlugin":     MediaTypeWasmPlugin,
 }
 
 // MediaTypeForKind returns the canonical OCI mediatype for the given
