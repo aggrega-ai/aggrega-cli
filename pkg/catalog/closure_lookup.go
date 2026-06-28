@@ -426,6 +426,8 @@ func ociKindForHint(hint string) string {
 		return "FeatureRecipe"
 	case "provider":
 		return "Provider"
+	case "wasm_plugin":
+		return "WasmPlugin"
 	default:
 		return ""
 	}
@@ -550,6 +552,15 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	if key, ok, _ := l.catalog.resolveProviderKey(uri); ok {
 		p := l.catalog.Providers[key]
 		return l.tier1Resolution("Provider", p.Metadata.Name, p.Metadata.Version, version), true
+	}
+	// A WasmPlugin is a by-name entity (keyed metadata.name:version, like
+	// Provider). A workspace plugin socket or a recipe pipeline step references a
+	// WasmPlugin ENTITY URI, which the closure walk resolves here; a local
+	// (Tier-1) entity must resolve at Tier-1 like every other local entity rather
+	// than falling through to a fatal Tier-3 NotFound.
+	if key, ok, _ := l.catalog.resolveWasmPluginKey(uri); ok {
+		wp := l.catalog.WasmPlugins[key]
+		return l.tier1Resolution("WasmPlugin", wp.Metadata.Name, wp.Metadata.Version, version), true
 	}
 	if key, ok, _ := l.catalog.resolveAggregateKey(uri); ok {
 		a := l.catalog.Aggregates[key]

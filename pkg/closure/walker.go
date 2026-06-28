@@ -66,7 +66,6 @@ func ComputeClosure(
 // aggregate trees.
 type walkState struct {
 	entities    map[string]*pendingRef
-	wasmPlugins map[string]*pendingRef
 	schemaLibs  map[string]*pendingLibrary
 	mappingLibs map[string]*pendingLibrary
 }
@@ -98,7 +97,6 @@ type pendingLibrary struct {
 func newWalkState() *walkState {
 	return &walkState{
 		entities:    map[string]*pendingRef{},
-		wasmPlugins: map[string]*pendingRef{},
 		schemaLibs:  map[string]*pendingLibrary{},
 		mappingLibs: map[string]*pendingLibrary{},
 	}
@@ -268,19 +266,30 @@ func (s *walkState) walkBoundary(b types.Boundary, path string) {
 }
 
 // walkWorkspacePlugins collects URIs from the four workspace-level
-// plugin sockets (mutator, policy, linter, importer).
+// plugin sockets (mutator, policy, linter, importer). Each socket URI is a
+// WasmPlugin ENTITY URI; the entity carries the .wasm artifact reference in
+// spec.plugin. The walk records the entity on the catalog-entity axis (so
+// ComputeClosure resolves and pins the entity, halting loudly on a missing one);
+// the entity's .wasm artifact is pinned at pull time by the pipeline-plugin
+// descent, which descends every wasm_plugin-kinded entity to its spec.plugin.
 func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
+	record := func(uri, refPath string) {
+		if uri == "" {
+			return
+		}
+		s.addEntityKind(uri, refPath, "wasm_plugin")
+	}
 	for _, p := range cfg.Plugins.Mutator {
-		s.addWasmPlugin(p.URI, ".aggrega-config.yaml.plugins.mutator")
+		record(p.URI, ".aggrega-config.yaml.plugins.mutator")
 	}
 	for _, p := range cfg.Plugins.Policy {
-		s.addWasmPlugin(p.URI, ".aggrega-config.yaml.plugins.policy")
+		record(p.URI, ".aggrega-config.yaml.plugins.policy")
 	}
 	for _, p := range cfg.Plugins.Linter {
-		s.addWasmPlugin(p.URI, ".aggrega-config.yaml.plugins.linter")
+		record(p.URI, ".aggrega-config.yaml.plugins.linter")
 	}
 	for _, p := range cfg.Plugins.Importer {
-		s.addWasmPlugin(p.URI, ".aggrega-config.yaml.plugins.importer")
+		record(p.URI, ".aggrega-config.yaml.plugins.importer")
 	}
 }
 
@@ -450,16 +459,13 @@ func (s *walkState) walkMappingImportInto(template, consumerURI string) error {
 	return nil
 }
 
-// resolveAll iterates the pending entity / wasm plugin / library
-// maps and invokes the Lookup interface per URI. NotFound on a
-// catalog entity is a fatal closure gap and returns
-// ErrUnresolvableURI. Library resolution feeds the minimum
-// version selection pass before invoking the library lookup.
+// resolveAll iterates the pending entity / library maps and invokes
+// the Lookup interface per URI. NotFound on a catalog entity is a
+// fatal closure gap and returns ErrUnresolvableURI. Library
+// resolution feeds the minimum version selection pass before invoking
+// the library lookup.
 func (s *walkState) resolveAll(lookup Lookup) error {
 	if err := s.resolveEntities(lookup); err != nil {
-		return err
-	}
-	if err := s.resolveWasmPlugins(lookup); err != nil {
 		return err
 	}
 	if err := s.resolveLibraries(lookup, true /* schema */); err != nil {
@@ -487,21 +493,6 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 		}
 		if res.NotFound {
 			return fmt.Errorf("%w: entity %q (referenced from %s)",
-				ErrUnresolvableURI, uri, referencedFromPreview(pending.referencedFrom))
-		}
-		pending.resolution = &res
-	}
-	return nil
-}
-
-func (s *walkState) resolveWasmPlugins(lookup Lookup) error {
-	for uri, pending := range s.wasmPlugins {
-		res, err := lookup.ResolveWasmPlugin(uri)
-		if err != nil {
-			return fmt.Errorf("closure: resolve wasm plugin %q: %w", uri, err)
-		}
-		if res.NotFound {
-			return fmt.Errorf("%w: wasm plugin %q (referenced from %s)",
 				ErrUnresolvableURI, uri, referencedFromPreview(pending.referencedFrom))
 		}
 		pending.resolution = &res
@@ -691,12 +682,10 @@ func (s *walkState) materialise() Closure {
 		}
 		c.Entities = append(c.Entities, p.toResolvedRef(uri))
 	}
-	for uri, p := range s.wasmPlugins {
-		if p.resolution == nil {
-			continue
-		}
-		c.WasmPlugins = append(c.WasmPlugins, p.toResolvedRef(uri))
-	}
+	// c.WasmPlugins is populated at pull time by DescendRecipePlugins, which
+	// descends every wasm_plugin-kinded entity (workspace-socket plugins recorded
+	// here on the entity axis, plus Recipe / FeatureRecipe pipeline-step plugins) to
+	// its spec.plugin .wasm artifact. ComputeClosure pins only the entities.
 	c.SchemaLibraries = s.materialiseSchemaLibs()
 	c.MappingLibraries = s.materialiseMappingLibs()
 	return c
@@ -754,9 +743,9 @@ func sortLibrary(lib *ResolvedLibrary) {
 
 // ---- helper accessors on the pending types ----
 
-// addEntity / addWasmPlugin / addSchemaLibrary / addMappingLibrary
-// are the structural accumulator entry points used by every per-
-// axis sub-walker.
+// addEntity / addSchemaLibrary / addMappingLibrary are the
+// structural accumulator entry points used by every per-axis
+// sub-walker.
 
 func (s *walkState) addEntity(uri, refPath string) {
 	if s.entities[uri] == nil {
@@ -794,16 +783,6 @@ func (s *walkState) addEntityKind(uri, refPath, kind string) {
 // hint on a URI shared across kinds.
 func isWeakKindHint(kind string) bool {
 	return kind == "component" || kind == "feature"
-}
-
-func (s *walkState) addWasmPlugin(uri, refPath string) {
-	if uri == "" {
-		return
-	}
-	if s.wasmPlugins[uri] == nil {
-		s.wasmPlugins[uri] = &pendingRef{referencedFrom: map[string]struct{}{}}
-	}
-	s.wasmPlugins[uri].referencedFrom[refPath] = struct{}{}
 }
 
 func (s *walkState) addSchemaLibrary(libURI, version, consumerURI, fragment string) {

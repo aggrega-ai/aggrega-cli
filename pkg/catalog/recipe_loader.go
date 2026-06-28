@@ -39,3 +39,11 @@ func (l *catalogRecipeLoader) LoadFeatureRecipe(uri string) (*types.FeatureRecip
 	}
 	return &fr, nil
 }
+
+func (l *catalogRecipeLoader) LoadWasmPlugin(uri string) (*types.WasmPlugin, error) {
+	wp, ok := l.catalog.WasmPluginByURI(uri)
+	if !ok {
+		return nil, fmt.Errorf("catalog: WasmPlugin %q not found", uri)
+	}
+	return &wp, nil
+}

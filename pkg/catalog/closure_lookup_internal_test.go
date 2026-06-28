@@ -76,3 +76,34 @@ func TestSchemaLibraryNameFromURI_TakesLastSegment(t *testing.T) {
 		})
 	}
 }
+
+// TestOCIKindForHint_MapsWasmPlugin pins that the closure KindHint "wasm_plugin"
+// maps to the catalog kind "WasmPlugin" the OCI location rule consumes — the
+// name→location binding for a registry-published bare-name WasmPlugin entity at
+// Tier-3. An unmapped hint returns "" and leaves the entity on the legacy
+// already-located reference path (no binding), so the wasm_plugin arm is what
+// gives a bare-name plugin entity its registry location.
+func TestOCIKindForHint_MapsWasmPlugin(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		hint string
+		want string
+	}{
+		{"component", "Component"},
+		{"feature", "Feature"},
+		{"recipe", "Recipe"},
+		{"feature_recipe", "FeatureRecipe"},
+		{"provider", "Provider"},
+		{"wasm_plugin", "WasmPlugin"},
+		{"", ""},
+		{"unknown", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.hint, func(t *testing.T) {
+			t.Parallel()
+			if got := ociKindForHint(tc.hint); got != tc.want {
+				t.Errorf("ociKindForHint(%q) = %q; want %q", tc.hint, got, tc.want)
+			}
+		})
+	}
+}

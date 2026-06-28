@@ -19,5 +19,5 @@ spec:
         label: "{{ .values.label }}"
   pipeline:
     - id: inject_into_host
-      plugin: frp-step-host-patch-rust.wasm
+      plugin: core/frp/host-patch:1.0.0
       function: step

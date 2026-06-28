@@ -171,8 +171,13 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	agg := loadAggregate(t, fullFixtureAggregate)
 
 	cfg := workspaceconfig.Default()
+	// A workspace plugin socket references a WasmPlugin ENTITY URI; the entity
+	// rides the catalog-entity axis (resolved via ResolveCatalogEntity), and its
+	// .wasm artifact is pinned later at pull time by DescendRecipePlugins. So
+	// ComputeClosure records the entity in c.Entities, not c.WasmPlugins.
+	const policyPluginEntity = "core/policy-validator/aggrega-security-baseline:1.0.0"
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
-		{URI: "oci://hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline:1.0.0"},
+		{URI: policyPluginEntity},
 	}
 
 	lookup := &fakeLookup{
@@ -186,9 +191,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 			"hub.aggrega.ai/recipe/core/helm/api-server:1.2.0":            resolutionOK("1.2.0", "sha256:fff", "tier3-registry"),
 			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":              resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
 			"hub.aggrega.ai/feature-recipe/core/helm/ingress-nginx:1.0.0": resolutionOK("1.0.0", "sha256:hhh", "tier3-registry"),
-		},
-		wasmPlugins: map[string]closure.Resolution{
-			"oci://hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline:1.0.0": resolutionOK("1.0.0", "sha256:wasm", "tier3-registry"),
+			policyPluginEntity: resolutionOK("1.0.0", "sha256:wasm", "tier3-registry"),
 		},
 	}
 
@@ -201,8 +204,10 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	// release-attached ingress on the api component plus the manifest-side
 	// hub.aggrega.ai/feature/core/ingress mapping key — currently dedup'd
 	// to one entry because both reference the same URI). Plus 2 Recipes
-	// and 1 FeatureRecipe from the manifest.
+	// and 1 FeatureRecipe from the manifest, plus the workspace-socket
+	// WasmPlugin entity.
 	wantEntities := []string{
+		policyPluginEntity,
 		"hub.aggrega.ai/aggregate/example/app:1.0.0",
 		"hub.aggrega.ai/component/core/api-server",
 		"hub.aggrega.ai/component/core/datastore",
@@ -221,10 +226,10 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 		t.Errorf("entities mismatch.\n  got:  %v\n  want: %v", got, wantEntities)
 	}
 
-	if len(c.WasmPlugins) != 1 {
-		t.Errorf("wasm plugins: got %d; want 1", len(c.WasmPlugins))
-	} else if c.WasmPlugins[0].URI != "oci://hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline:1.0.0" {
-		t.Errorf("wasm plugin URI: %q", c.WasmPlugins[0].URI)
+	// ComputeClosure pins only the entities; the .wasm artifact axis is populated
+	// at pull time by DescendRecipePlugins, so c.WasmPlugins is empty here.
+	if len(c.WasmPlugins) != 0 {
+		t.Errorf("wasm plugins: got %d; want 0 (the workspace plugin rides the entity axis)", len(c.WasmPlugins))
 	}
 
 	if len(c.SchemaLibraries) != 0 || len(c.MappingLibraries) != 0 {

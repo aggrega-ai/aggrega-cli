@@ -36,7 +36,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// pluginSidecarWorkspaceConfig returns the default workspace config with the
+// plugin sidecar directory set, so the build's plugin-resolution cascade resolves
+// a WasmPlugin entity's spec.plugin .wasm artifact from a test-staged sidecar
+// directory. An empty dir leaves the default (no sidecar tier).
+func pluginSidecarWorkspaceConfig(sidecarDir string) workspaceconfig.Config {
+	cfg := workspaceconfig.Default()
+	cfg.PluginSidecarDir = sidecarDir
+	return cfg
+}
 
 // Input identifies a workspace to compile. ReleasePath is the Release YAML;
 // the Aggregate and Manifest are derived from the Release's spec.aggregate /
@@ -55,12 +66,19 @@ type Input struct {
 	IncludeTrace bool
 
 	// PluginPathLookup, when set, overrides the build's pipeline plugin-path
-	// resolver so a fixture's Recipe / FeatureRecipe pipeline step URI resolves
-	// to a test-built .wasm artifact (commonly via wasmtest.EnsureFixtureBuilt).
-	// nil leaves the default workspace resolver in effect — a fixture without a
-	// pipeline, or one whose plugin URI is a real workspace path, needs no
-	// override.
+	// resolver entirely, bypassing the production entity-front. Reserved for a
+	// negative-path test that needs to inject a canned resolver; an entity-aware
+	// fixture leaves it nil and uses PluginSidecarDir so the build's real
+	// entity-front (catalog WasmPlugin entity → spec.plugin → cascade) fires.
 	PluginPathLookup pluginpath.Lookup
+
+	// PluginSidecarDir, when set, configures the build's plugin-resolution cascade
+	// sidecar tier so a WasmPlugin entity's spec.plugin .wasm artifact resolves to
+	// a test-built artifact staged in that directory (keyed by
+	// pluginpath.SidecarLeaf of the artifact reference). The fixture then exercises
+	// the PRODUCTION entity-front — the same entity URI → spec.plugin → cascade
+	// path a real build runs — rather than a hand-rolled test resolver.
+	PluginSidecarDir string
 }
 
 // Build compiles the workspace named by in through the real pipeline with the
@@ -141,9 +159,12 @@ func compile(in Input) (*pipeline.Result, error) {
 			// provenance stamp (and the aggrega.ai/compiler-version label it renders
 			// into artifacts) stays build-independent and golden output is stable.
 			CompilerVersion: "0.1.0",
-			// Fixture override: when set, points the renderer's pipeline executor
-			// at a test-built plugin artifact instead of the workspace resolver.
+			// Fixture override (rare): when set, replaces the renderer's pipeline
+			// resolver wholesale. Left nil, the build's entity-front fires from the
+			// loaded catalog's WasmPlugin accessor, resolving spec.plugin through the
+			// cascade — including the sidecar tier the fixture stages below.
 			PluginPathLookup: in.PluginPathLookup,
+			WorkspaceConfig:  pluginSidecarWorkspaceConfig(in.PluginSidecarDir),
 		},
 		buildLookup,
 		cat.RecipeLookupWithManifest(manifest),

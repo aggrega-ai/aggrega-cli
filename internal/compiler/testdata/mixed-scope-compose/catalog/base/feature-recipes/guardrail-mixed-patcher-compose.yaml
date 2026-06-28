@@ -31,8 +31,8 @@ spec:
   # the build halts with a scope-specific diagnostic.
   pipeline:
     - id: inject_into_own
-      plugin: frp-step-own-patch-compose-rust.wasm
+      plugin: core/frp/own-patch-compose:1.0.0
       function: step
     - id: inject_into_host
-      plugin: frp-step-host-patch-compose-rust.wasm
+      plugin: core/frp/host-patch-compose:1.0.0
       function: step

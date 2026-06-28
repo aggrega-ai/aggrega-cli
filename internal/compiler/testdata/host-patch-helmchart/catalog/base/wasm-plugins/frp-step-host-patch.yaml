@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: core/frp/host-patch
+  version: "1.0.0"
+spec:
+  plugin: "oci://hub.aggrega.ai/wasm/frp/host-patch@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  pluginTypes:
+    - frp_step
+  abiVersion: v1alpha1
+  compatibleProviders:
+    - helm-chart

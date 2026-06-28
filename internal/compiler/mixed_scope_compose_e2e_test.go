@@ -5,15 +5,11 @@ package compiler_test
 
 import (
 	"errors"
-	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
 // mixedScopeComposeFixtureInput names the mixed-scope-compose fixture: a single
@@ -25,31 +21,25 @@ import (
 // post-assembly phase. The host-scope step replays fine against the merged
 // document, but the FeatureRecipe's own output is emitted as discrete fragment
 // files and is never assembled — the deferred own-scope step has no merged own
-// document to patch, so the build halts. Both reference plugins are built on
-// demand from the Rust PDK examples and bound via a URI-dispatching
-// PluginPathLookup; when the wasm toolchain is absent EnsureFixtureBuilt skips
-// the calling test.
+// document to patch, so the build halts. Each step references a distinct WasmPlugin
+// ENTITY URI; both entities' spec.plugin .wasm artifacts are built on demand from
+// the Rust PDK examples and staged into ONE sidecar directory keyed by their
+// artifact references, so the build's entity-front dispatches each step to its own
+// plugin through the sidecar tier. When the wasm toolchain is absent the staging
+// build skips the calling test.
 func mixedScopeComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	ownBytes := wasmtest.EnsureFixtureBytes(t, "frp-step-own-patch-compose-rust.wasm")
-	hostBytes := wasmtest.EnsureFixtureBytes(t, "frp-step-host-patch-compose-rust.wasm")
-	lookup := func(uri string) (pluginpath.ResolvedPlugin, error) {
-		switch filepath.Base(uri) {
-		case "frp-step-own-patch-compose-rust.wasm":
-			return pluginpath.ResolvedPlugin{Bytes: ownBytes, Tier: pluginpath.TierLocal, URI: uri}, nil
-		case "frp-step-host-patch-compose-rust.wasm":
-			return pluginpath.ResolvedPlugin{Bytes: hostBytes, Tier: pluginpath.TierLocal, URI: uri}, nil
-		default:
-			return pluginpath.ResolvedPlugin{}, fmt.Errorf("mixed-scope-compose fixture: unknown plugin uri %q", uri)
-		}
-	}
+	sidecarDir := stagePluginSidecar(t, map[string]string{
+		"oci://hub.aggrega.ai/wasm/frp/own-patch-compose@sha256:2222222222222222222222222222222222222222222222222222222222222222":  "frp-step-own-patch-compose-rust.wasm",
+		"oci://hub.aggrega.ai/wasm/frp/host-patch-compose@sha256:3333333333333333333333333333333333333333333333333333333333333333": "frp-step-host-patch-compose-rust.wasm",
+	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/mixed-scope-compose/release.yaml",
 		CatalogPaths: []string{
 			"testdata/mixed-scope-compose/catalog/base",
 			"testdata/mixed-scope-compose/catalog/recipes/compose",
 		},
-		PluginPathLookup: lookup,
+		PluginSidecarDir: sidecarDir,
 	}
 }
 

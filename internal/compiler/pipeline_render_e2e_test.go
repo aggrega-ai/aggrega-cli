@@ -8,27 +8,29 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
 // pipelineRenderFixtureInput names the pipeline-render fixture for the
 // build-faithful harness: a single helm-synthesised component whose Recipe
-// carries one pipeline step. The step content-selects the rendered Deployment,
-// PATCHes it (own-scope annotation), and EMITs an own-scope ConfigMap. The
-// reference plugin is built on demand from the Rust PDK example and bound via a
-// PluginPathLookup override so the fixture's plugin URI resolves to it; when the
-// wasm toolchain is absent EnsureFixtureBuilt skips the calling test.
+// carries one pipeline step referencing a WasmPlugin ENTITY URI. The step
+// content-selects the rendered Deployment, PATCHes it (own-scope annotation), and
+// EMITs an own-scope ConfigMap. The fixture exercises the production entity-front:
+// the entity's spec.plugin .wasm artifact is built on demand from the Rust PDK
+// example and staged into a sidecar directory keyed by its artifact reference, so
+// the build resolves entity URI → spec.plugin → cascade end-to-end. When the wasm
+// toolchain is absent EnsureFixtureBuilt skips the calling test.
 func pipelineRenderFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-patch-rust.wasm")
+	sidecarDir := stagePluginSidecar(t, map[string]string{
+		"oci://hub.aggrega.ai/wasm/frp/patch@sha256:1111111111111111111111111111111111111111111111111111111111111111": "frp-step-patch-rust.wasm",
+	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/pipeline-render/release.yaml",
 		CatalogPaths: []string{
 			"testdata/pipeline-render/catalog/base",
 			"testdata/pipeline-render/catalog/recipes/helm",
 		},
-		PluginPathLookup: (pluginpath.Resolver{Override: pluginPath}).Resolve,
+		PluginSidecarDir: sidecarDir,
 	}
 }
 

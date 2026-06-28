@@ -566,6 +566,8 @@ func classifyEntityKind(uri string) (string, bool) {
 		return "recipe", true
 	case strings.Contains(uri, "/feature-recipe/"), strings.Contains(uri, "/featurerecipe/"):
 		return "feature_recipe", true
+	case strings.Contains(uri, "/wasm-plugin/"), strings.Contains(uri, "/wasmplugin/"):
+		return "wasm_plugin", true
 	default:
 		return "", false
 	}

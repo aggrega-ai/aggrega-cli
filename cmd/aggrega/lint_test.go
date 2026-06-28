@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -226,7 +229,9 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 	wsCfg := workspaceconfig.Default()
-	got, err := resolvePluginBytes(path, wsCfg)
+	// The --plugin override is the artifact-direct escape hatch; it never consults
+	// the entity model, so a nil entity lookup is fine.
+	got, err := resolvePluginBytes(path, wsCfg, nil)
 	if err != nil {
 		t.Fatalf("resolvePluginBytes: %v", err)
 	}
@@ -235,19 +240,45 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 	}
 }
 
-// TestResolvePluginBytesOCIUnresolvable: the linter wires no puller, so an
-// OCI URI with nothing cached halts loudly through the cascade.
+// TestResolvePluginBytesOCIUnresolvable: the configured linter URI is a
+// WasmPlugin entity URI whose spec.plugin is an uncached OCI artifact; the linter
+// wires no puller, so the entity-front resolves the artifact through the cascade
+// and halts loudly when nothing is cached.
 func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
-		{URI: "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing:1.0.0"},
+		{URI: "core/linter/aggrega-publishing:1.0.0"},
 	}
-	_, err := resolvePluginBytes("", wsCfg)
+	wasmPluginByURI := func(uri string) (types.WasmPlugin, bool) {
+		wp := types.WasmPlugin{}
+		wp.Spec.Plugin = "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+		return wp, true
+	}
+	_, err := resolvePluginBytes("", wsCfg, wasmPluginByURI)
 	if err == nil {
-		t.Fatal("expected error for OCI URI; got nil")
+		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
 	if !strings.Contains(err.Error(), "not resolvable") {
-		t.Errorf("error should describe the unresolvable OCI URI; got: %v", err)
+		t.Errorf("error should describe the unresolvable OCI artifact; got: %v", err)
+	}
+}
+
+// TestResolvePluginBytesEntityNotFound: a configured linter URI that matches no
+// WasmPlugin entity halts loudly with the entity-not-found Loud Guardrail.
+func TestResolvePluginBytesEntityNotFound(t *testing.T) {
+	wsCfg := workspaceconfig.Default()
+	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
+		{URI: "core/linter/absent:1.0.0"},
+	}
+	wasmPluginByURI := func(uri string) (types.WasmPlugin, bool) {
+		return types.WasmPlugin{}, false
+	}
+	_, err := resolvePluginBytes("", wsCfg, wasmPluginByURI)
+	if err == nil {
+		t.Fatal("expected error for a non-entity linter URI; got nil")
+	}
+	if !errors.Is(err, pluginpath.ErrWasmPluginEntityNotFound) {
+		t.Errorf("error should be ErrWasmPluginEntityNotFound; got: %v", err)
 	}
 }
 
@@ -255,7 +286,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 // --plugin nor workspace config provides a URI.
 func TestResolvePluginBytesDiagnosticOnUnset(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	_, err := resolvePluginBytes("", wsCfg)
+	_, err := resolvePluginBytes("", wsCfg, nil)
 	if err == nil {
 		t.Fatal("expected error for unset plugin path; got nil")
 	}

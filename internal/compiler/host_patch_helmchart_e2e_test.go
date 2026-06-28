@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
 // hostPatchHelmchartFixtureInput names the host-patch-helmchart fixture: a
@@ -19,19 +17,23 @@ import (
 // Because helm-chart is a BoundaryAssembler that is ALSO an
 // ExternalArtifactsHandler, its per-node chart source is discrete (not a
 // pre-assembly fragment), so the /host PATCH runs per-node through the
-// helm-chart codec — no post-assembly phase. The reference plugin is built on
-// demand from the Rust PDK example and bound via a PluginPathLookup override;
-// when the wasm toolchain is absent EnsureFixtureBuilt skips the calling test.
+// helm-chart codec — no post-assembly phase. The step references a WasmPlugin
+// ENTITY URI; the entity's spec.plugin .wasm artifact is built on demand from the
+// Rust PDK example and staged into a sidecar directory so the build's entity-front
+// resolves it. When the wasm toolchain is absent the staging build skips the
+// calling test.
 func hostPatchHelmchartFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-host-patch-rust.wasm")
+	sidecarDir := stagePluginSidecar(t, map[string]string{
+		"oci://hub.aggrega.ai/wasm/frp/host-patch@sha256:4444444444444444444444444444444444444444444444444444444444444444": "frp-step-host-patch-rust.wasm",
+	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/host-patch-helmchart/release.yaml",
 		CatalogPaths: []string{
 			"testdata/host-patch-helmchart/catalog/base",
 			"testdata/host-patch-helmchart/catalog/recipes/helm-chart",
 		},
-		PluginPathLookup: (pluginpath.Resolver{Override: pluginPath}).Resolve,
+		PluginSidecarDir: sidecarDir,
 	}
 }
 

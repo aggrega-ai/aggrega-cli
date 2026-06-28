@@ -493,6 +493,29 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 	return r
 }
 
+// buildEntityPluginLookup fronts the build-time artifact cascade with the
+// WasmPlugin entity translation: a pipeline step references a WasmPlugin entity
+// URI, and the front reads the entity's spec.plugin (the .wasm artifact
+// reference) before the cascade resolves the bytes. The catalog's WasmPlugin
+// accessor supplies the entity → spec.plugin translation; the cascade keys its
+// pins by the artifact reference, so the front leaves the pin model unchanged.
+// A reference that matches no WasmPlugin entity halts with
+// ErrWasmPluginEntityNotFound. This is the same entity-front the linter's
+// workspace-config path binds, so the entity → artifact linkage is single-sourced.
+func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pluginpath.Lookup {
+	cascade := buildPluginResolver(inputs).Resolve
+	return pluginpath.EntityLookup(func(uri string) (string, bool) {
+		if catalogLookup.WasmPlugin == nil {
+			return "", false
+		}
+		entity, ok := catalogLookup.WasmPlugin(uri)
+		if !ok {
+			return "", false
+		}
+		return entity.Spec.Plugin, true
+	}, cascade)
+}
+
 // RunPipeline shares Steps 1-4 with RunTier4Pipeline through the
 // unexported runStepsOneToFour helper, then runs Step 4b + Step 5.
 // First-error-fatal semantic is preserved for terminal phases:
@@ -570,18 +593,21 @@ func RunPipeline(
 			MappingLibraries: inputs.MappingLibraries,
 			Trace:            traceWriter,
 			YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
-			// Bind the shared plugin-resolution cascade so a Recipe /
-			// FeatureRecipe pipeline step's plugin URI resolves to its verified
-			// .wasm bytes (embed → sidecar → local → cache → registry). The
-			// build configures it hermetic (nil puller) with the lockfile digest
-			// pins, so a cache miss is a loud halt and a drifted artifact halts
-			// on the pin. The per-step plugin loads through the describe() gate
-			// at execution. A caller-supplied override (e.g. a fixture pointing a
-			// plugin URI at a built artifact) wins when present.
+			// Bind the entity-fronted plugin-resolution path so a Recipe /
+			// FeatureRecipe pipeline step's plugin URI — a WasmPlugin entity URI —
+			// resolves to its verified .wasm bytes: the entity-front translates the
+			// entity URI to its spec.plugin artifact reference, then the shared
+			// cascade (embed → sidecar → local → cache → registry) resolves the
+			// artifact. The build configures the cascade hermetic (nil puller) with
+			// the lockfile digest pins keyed by the artifact reference, so a cache
+			// miss is a loud halt and a drifted artifact halts on the pin. The
+			// per-step plugin loads through the describe() gate at execution. A
+			// caller-supplied override (e.g. a fixture pointing a plugin URI at a
+			// built artifact) wins when present.
 			PluginPathLookup: inputs.PluginPathLookup,
 		}
 		if rendererInput.PluginPathLookup == nil {
-			rendererInput.PluginPathLookup = buildPluginResolver(inputs).Resolve
+			rendererInput.PluginPathLookup = buildEntityPluginLookup(inputs, catalogLookup)
 		}
 		// Build-time source-artifact resolution: when the caller supplies a
 		// lockfile and workspace root, the orchestrator resolves each remote

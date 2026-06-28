@@ -547,7 +547,17 @@ func lintRun(cfg lintConfig) error {
 	}
 	wsCfg := rw.Config()
 
-	pluginBytes, err := resolvePluginBytes(cfg.PluginPath, wsCfg)
+	// The workspace-config linter URI is a WasmPlugin entity URI; the entity-front
+	// reads spec.plugin from the catalog. A lazy lookup over the workspace catalog
+	// dirs serves the entity by URI. The --plugin override path is artifact-direct
+	// and never consults this, so the catalog is built only for the URI path.
+	var wasmPluginByURI func(uri string) (types.WasmPlugin, bool)
+	if cfg.PluginPath == "" {
+		dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
+		lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
+		wasmPluginByURI = lazyView.WasmPluginByURI
+	}
+	pluginBytes, err := resolvePluginBytes(cfg.PluginPath, wsCfg, wasmPluginByURI)
 	if err != nil {
 		return err
 	}
@@ -653,29 +663,62 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 }
 
 // resolvePluginBytes returns the resolved .wasm bytes of the publishing-linter
-// Wasm plugin. It is the linter's per-socket URI feeder: the --plugin flag is
-// the explicit override, and plugins.linter[0].uri from the resolved workspace
-// config is the URI source. Resolution runs through the shared plugin cascade
-// (pkg/pluginpath) — embed → sidecar → local → cache — so the linter sees the
-// same tier model every plugin socket does, including the embedded built-ins
-// (the publishing-linter is the natural first embedded-core candidate) and the
-// operator's sidecar directory.
+// Wasm plugin. It is the linter's per-socket URI feeder. The --plugin flag is
+// the explicit escape-hatch override: a direct artifact path read verbatim
+// through the cascade's override, bypassing the entity model. The workspace
+// config's plugins.linter[0].uri is a WasmPlugin entity URI, resolved through
+// the shared entity-front: entity URI → spec.plugin → the cascade
+// (embed → sidecar → local → cache), so the linter sees the same entity model
+// and the same tier model every plugin socket does, including the embedded
+// built-ins and the operator's sidecar directory.
+//
+// wasmPluginByURI translates a WasmPlugin entity URI to its spec.plugin artifact
+// reference, supplied by the caller from the catalog (nil in a catalog-less path,
+// where a configured entity URI then halts as not-an-entity). The --plugin
+// override path does not consult it — the escape hatch is artifact-direct.
 //
 // The linter passes NO digest pins: it lints a not-yet-pinned proposed entity
 // at publish time, so there is no lockfile to verify the plugin against. It
 // wires no puller — the linter resolves locally (embed / sidecar / local); an
-// OCI URI with nothing cached halts with the cascade's not-resolvable message.
-func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config) ([]byte, error) {
-	uri := ""
-	if len(wsCfg.Plugins.Linter) > 0 {
-		uri = wsCfg.Plugins.Linter[0].URI
-	}
-	r := pluginpath.Resolver{
+// OCI artifact reference with nothing cached halts with the cascade's
+// not-resolvable message.
+func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config, wasmPluginByURI func(uri string) (types.WasmPlugin, bool)) ([]byte, error) {
+	cascade := pluginpath.Resolver{
 		SidecarDir:  wsCfg.PluginSidecarDir,
 		Override:    cliFlag,
 		OverrideLog: func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
 	}
-	resolved, err := r.Resolve(uri)
+	// The --plugin override is the artifact-direct escape hatch: resolve it
+	// verbatim through the cascade override, never the entity model.
+	if cliFlag != "" {
+		resolved, err := cascade.Resolve("")
+		if err != nil {
+			return nil, err
+		}
+		return resolved.Bytes, nil
+	}
+	uri := ""
+	if len(wsCfg.Plugins.Linter) > 0 {
+		uri = wsCfg.Plugins.Linter[0].URI
+	}
+	if uri == "" {
+		// No --plugin override and no configured linter URI: surface the cascade's
+		// canonical no-path diagnostic rather than the entity-not-found halt, which
+		// would mis-read an unconfigured socket as a bad entity reference.
+		_, err := cascade.Resolve("")
+		return nil, err
+	}
+	front := pluginpath.EntityLookup(func(entityURI string) (string, bool) {
+		if wasmPluginByURI == nil {
+			return "", false
+		}
+		entity, ok := wasmPluginByURI(entityURI)
+		if !ok {
+			return "", false
+		}
+		return entity.Spec.Plugin, true
+	}, cascade.Resolve)
+	resolved, err := front(uri)
 	if err != nil {
 		return nil, err
 	}

@@ -121,6 +121,11 @@ type ComponentSourceInfra struct {
 type RecipeLoader interface {
 	LoadRecipe(uri string) (*types.Recipe, error)
 	LoadFeatureRecipe(uri string) (*types.FeatureRecipe, error)
+	// LoadWasmPlugin loads a WasmPlugin entity body by URI. The pipeline-plugin
+	// descent reads spec.plugin (the .wasm artifact reference) from it to pin the
+	// artifact alongside the entity. Not-found surfaces as a wrapped error so the
+	// descent can distinguish a missing-entity failure from other parse errors.
+	LoadWasmPlugin(uri string) (*types.WasmPlugin, error)
 }
 
 // SourceResolver matches the contract of sourceresolver.Resolve

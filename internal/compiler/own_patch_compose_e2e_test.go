@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
 // ownPatchComposeFixtureInput names the own-patch-compose fixture: a single
@@ -20,19 +18,22 @@ import (
 // phase, where the merged document is re-segmented and the deferred step
 // replayed own-scope against it. This is the scope-symmetric mirror of the
 // host-patch-compose fixture (which defers a component-scope FeatureRecipe's
-// /host pipeline). The reference plugin is built on demand from the Rust PDK
-// example and bound via a PluginPathLookup override; when the wasm toolchain is
-// absent EnsureFixtureBuilt skips the calling test.
+// /host pipeline). The step references a WasmPlugin ENTITY URI; the entity's
+// spec.plugin .wasm artifact is built on demand from the Rust PDK example and
+// staged into a sidecar directory so the build's entity-front resolves it. When
+// the wasm toolchain is absent the staging build skips the calling test.
 func ownPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-own-patch-compose-rust.wasm")
+	sidecarDir := stagePluginSidecar(t, map[string]string{
+		"oci://hub.aggrega.ai/wasm/frp/own-patch-compose@sha256:2222222222222222222222222222222222222222222222222222222222222222": "frp-step-own-patch-compose-rust.wasm",
+	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/own-patch-compose/release.yaml",
 		CatalogPaths: []string{
 			"testdata/own-patch-compose/catalog/base",
 			"testdata/own-patch-compose/catalog/recipes/compose",
 		},
-		PluginPathLookup: (pluginpath.Resolver{Override: pluginPath}).Resolve,
+		PluginSidecarDir: sidecarDir,
 	}
 }
 

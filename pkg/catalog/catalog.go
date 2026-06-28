@@ -1431,6 +1431,7 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			}
 			return compactform.Schema{}, false
 		},
+		WasmPlugin: c.WasmPluginByURI,
 	}
 }
 

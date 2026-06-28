@@ -159,6 +159,10 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// ResolveClosureExtends. Returns (_, false) for a non-extends or
 		// not-yet-resolved type, so consumers fall back to the authored schema.
 		EffectiveSchema: l.effectiveSchema,
+		// WasmPlugin serves the WasmPlugin entity by URI over the lazily-walked
+		// set, so the build-load pipeline socket fronts the artifact cascade with
+		// the entity → spec.plugin two-step from the lazy backing too.
+		WasmPlugin: l.WasmPluginByURI,
 	}
 }
 

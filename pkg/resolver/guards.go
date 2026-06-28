@@ -23,6 +23,12 @@ type CatalogLookup struct {
 	Component func(typeURI string) (types.Component, bool)
 	// Feature returns the catalog Feature for a type URI. Returns false if not found.
 	Feature func(typeURI string) (types.Feature, bool)
+	// WasmPlugin returns the catalog WasmPlugin entity for an entity URI, plus a
+	// found flag. The entity carries spec.plugin — the .wasm artifact reference —
+	// so a plugin socket fronts the artifact-resolving cascade with this lookup:
+	// entity URI → spec.plugin → cascade. May be nil in catalog-less paths; a
+	// socket that needs it then resolves nothing and halts as not-an-entity.
+	WasmPlugin func(uri string) (types.WasmPlugin, bool)
 	// SchemaLibraries is the catalog's resolved SchemaLibrary set keyed by
 	// library metadata.name, used to resolve cross-library schema `$ref`s when
 	// compiling a Component's schema (whole-pillar and base+flavor composition).
