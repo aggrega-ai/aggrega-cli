@@ -17,10 +17,21 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
+
+// memStorePuller wraps an in-memory oras store so it satisfies catalog.OCIPuller.
+// The reference is ignored — a single store holds every artifact in these
+// single-registry round-trip tests — and the pull is by tag, exactly as the
+// production remote-repository adapter pulls.
+type memStorePuller struct{ store *memory.Store }
+
+func (p *memStorePuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
+	return oci.Pull(ctx, p.store, tag)
+}
 
 // agreeingPluginEntity is a WasmPlugin entity whose authored export claim
 // agrees with the frp-step-go fixture's describe() (export "step",
@@ -379,4 +390,111 @@ func (f *failSecondPushTarget) Tag(ctx context.Context, desc ocispec.Descriptor,
 		return errors.New("simulated entity push failure")
 	}
 	return f.Target.Tag(ctx, desc, reference)
+}
+
+// TestContentDigestTagPushPullParity pins the single-source tag contract: the
+// .wasm-publishing tag the push derives and the tag the consume side derives to
+// FETCH it both come from the one oci.ContentDigestTag function. A divergence
+// here would mean the push tags the artifact under one tag and the pull looks
+// under another — a published plugin that silently cannot be located.
+func TestContentDigestTagPushPullParity(t *testing.T) {
+	ctx := context.Background()
+	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	store := memory.New()
+
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		PushTarget: store,
+	}); err != nil {
+		t.Fatalf("pushRun: %v", err)
+	}
+
+	// The single shared derivation: the tag the push published the .wasm under is
+	// exactly the tag the consume side computes to fetch it.
+	tag := oci.ContentDigestTag(contentDigest)
+	if _, err := oci.Pull(ctx, store, tag); err != nil {
+		t.Fatalf("the .wasm is not resolvable under oci.ContentDigestTag(%q)=%q: %v", contentDigest, tag, err)
+	}
+}
+
+// TestPublishPullRoundTripWasmPlugin proves the consume-side gap is closed: a
+// WasmPlugin published via the real push path (the .wasm tagged by its content
+// digest, the entity spec.plugin content-pinned) resolves end-to-end through
+// ResolveWasmPlugin — the pull fetches the .wasm by its content-digest tag,
+// content-digest-verifies it, caches it, re-resolves from cache, and a tampered
+// cache slot halts with ErrFetchIntegrity.
+func TestPublishPullRoundTripWasmPlugin(t *testing.T) {
+	ctx := context.Background()
+	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	store := memory.New()
+
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		PushTarget: store,
+	}); err != nil {
+		t.Fatalf("pushRun: %v", err)
+	}
+
+	// Read the artifact URI from the PUBLISHED entity's stamped spec.plugin rather
+	// than hand-spelling it — the pull resolves exactly what publish stamped.
+	entityPull, err := oci.Pull(ctx, store, "1.0.0")
+	if err != nil {
+		t.Fatalf("pull entity: %v", err)
+	}
+	artifactURI := "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
+	if !strings.Contains(string(entityPull.Bytes), artifactURI) {
+		t.Fatalf("published entity spec.plugin not content-pinned to %q:\n%s", artifactURI, entityPull.Bytes)
+	}
+
+	root := t.TempDir()
+	cat, err := catalog.LoadAll("", root)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	lookup := cat.ClosureLookup(&memStorePuller{store: store}, root, ".aggrega/cache")
+
+	// Pull: tier-3, content-digest-verified, cached.
+	res, err := lookup.ResolveWasmPlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolveWasmPlugin (pull): %v", err)
+	}
+	if res.ResolutionPath != "tier-3-pull" {
+		t.Errorf("ResolutionPath = %q; want tier-3-pull", res.ResolutionPath)
+	}
+	if res.Digest != contentDigest {
+		t.Errorf("Digest = %q; want %q", res.Digest, contentDigest)
+	}
+
+	// The .wasm bytes are in the cache slot the build re-reads (keyed by the pin).
+	cached, err := oci.ReadCached(root, ".aggrega/cache", artifactURI, contentDigest)
+	if err != nil {
+		t.Fatalf("expected .wasm cached after pull: %v", err)
+	}
+	if got := digest.ContentDigest(cached); got != contentDigest {
+		t.Errorf("cached .wasm digest = %q; want %q", got, contentDigest)
+	}
+
+	// Second resolve with no puller: a cache hit (tier-2), proving lock-write slot
+	// == cache-read slot.
+	cachedLookup := cat.ClosureLookup(nil, root, ".aggrega/cache")
+	res2, err := cachedLookup.ResolveWasmPlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolveWasmPlugin (cache): %v", err)
+	}
+	if res2.NotFound || res2.Digest != contentDigest {
+		t.Errorf("cache-hit resolution = %+v; want digest %q", res2, contentDigest)
+	}
+
+	// Tamper the cached blob: the content-digest check halts with ErrFetchIntegrity.
+	slot := oci.CachePath(root, ".aggrega/cache", artifactURI, contentDigest)
+	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
+		t.Fatalf("tamper write: %v", err)
+	}
+	if _, err := cachedLookup.ResolveWasmPlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
+	}
 }

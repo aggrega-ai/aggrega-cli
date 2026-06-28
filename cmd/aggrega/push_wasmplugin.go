@@ -134,7 +134,7 @@ func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign boo
 	// then the entity tagged by its version. A failure between the two leaves an
 	// orphan .wasm (harmless, addressed only by digest) and no entity tag, so
 	// the consume side fails at pull rather than loading a broken plugin.
-	wasmTag := contentDigestTag(contentDigest)
+	wasmTag := oci.ContentDigestTag(contentDigest)
 	if _, err := oci.Push(ctx, target, wasmTag, oci.MediaTypeWasm, wasmBytes); err != nil {
 		return fmt.Errorf("aggrega push: push .wasm %s@%s: %w", reference, contentDigest, err)
 	}
@@ -188,14 +188,6 @@ func authoredHostFunctions(entity types.WasmPlugin) []string {
 // double scheme if the input ever carries one.
 func stripRegistryScheme(reference string) string {
 	return strings.TrimPrefix(reference, "oci://")
-}
-
-// contentDigestTag converts a content digest ("sha256:<hex>") into a valid OCI
-// tag for the .wasm artifact: a tag may not contain ":", so the algorithm and
-// hex are joined with "-". The .wasm is addressed by this digest-derived tag,
-// keeping it distinct from the entity's version tag in the same repository.
-func contentDigestTag(contentDigest string) string {
-	return strings.ReplaceAll(contentDigest, ":", "-")
 }
 
 // stampPluginDigest returns the entity YAML with spec.plugin set to the

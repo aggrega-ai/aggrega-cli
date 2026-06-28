@@ -517,11 +517,88 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 }
 
 func (l *catalogLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
+	// A WasmPlugin entity's spec.plugin pins the .wasm artifact by content
+	// (oci://<repo>@sha256:<digest>). That form is the canonical published shape
+	// (every push stamps it), so it is the primary path: the artifact is fetched
+	// by its content-digest-derived tag and the bytes are verified against the
+	// pinned digest, keyed in the cache by the pinned digest so the build re-reads
+	// the identical slot.
+	if reference, pinDigest, ok := SplitPluginArtifactURI(uri); ok {
+		return l.resolvePinnedPluginArtifact(uri, reference, pinDigest)
+	}
+	// Non-content-pinned form (a bare path or a legacy "<repo>:<version>" tag
+	// reference): the generic catalog-entity tiers handle it unchanged.
 	if _, res, ok := l.tier2(uri); ok {
 		return res, nil
 	}
 	_, res, err := l.tier3CatalogEntity(uri, "")
 	return res, err
+}
+
+// resolvePinnedPluginArtifact resolves a content-pinned .wasm artifact reference
+// (oci://<repo>@sha256:<digest>) through a dedicated cache/pull flow:
+//
+//   - Tier 2 (cache / re-pull): read the cache slot keyed by (uri, contentDigest)
+//     and content-digest-verify the bytes against the pin.
+//   - Tier 3 (lock-time pull): fetch the .wasm by its content-digest-derived tag
+//     (oci.ContentDigestTag), content-digest-verify, and write it to the same
+//     (uri, contentDigest) cache slot the build re-reads.
+//
+// The cache slot is keyed by the pinned content digest, and the resolution pins
+// ResolvedVersion = contentDigest. The build derives its cache-read version from
+// the lockfile's ResolvedVersion, so lock-write and build-read address the
+// identical slot. A bytes-vs-pin mismatch halts with oci.ErrFetchIntegrity.
+func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest string) (closure.Resolution, error) {
+	if l.cacheDir != "" {
+		if bytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, pinDigest); err == nil {
+			if got := contentDigest(bytes); got != pinDigest {
+				return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
+					uri, got, pinDigest, oci.ErrFetchIntegrity)
+			}
+			return pinnedPluginResolution(pinDigest), nil
+		} else if !errors.Is(err, oci.ErrFetchNotFound) {
+			return closure.Resolution{}, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
+		}
+	}
+
+	if l.ociPuller == nil {
+		return closure.Resolution{NotFound: true}, nil
+	}
+
+	tag := oci.ContentDigestTag(pinDigest)
+	result, err := l.ociPuller.Pull(context.Background(), reference, tag)
+	if err != nil {
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			return closure.Resolution{NotFound: true}, nil
+		}
+		if rem := oci.RemediationFor(err, registryhost.Of(reference)); rem != "" {
+			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull plugin artifact %s: %w\n  %s", uri, err, rem)
+		}
+		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull plugin artifact %s: %w", uri, err)
+	}
+	if got := contentDigest(result.Bytes); got != pinDigest {
+		return closure.Resolution{}, fmt.Errorf("catalog: pulled plugin artifact %s content digest %s does not match pin %s: %w",
+			uri, got, pinDigest, oci.ErrFetchIntegrity)
+	}
+	if l.cacheDir != "" {
+		if err := oci.WriteCached(l.workspaceRoot, l.cacheDir, uri, pinDigest, result.Bytes); err != nil {
+			return closure.Resolution{}, fmt.Errorf("catalog: cache write plugin artifact %s: %w", uri, err)
+		}
+	}
+	return pinnedPluginResolution(pinDigest), nil
+}
+
+// pinnedPluginResolution is the resolution descriptor for a content-pinned .wasm
+// artifact: ResolvedVersion and Digest are both the pinned content digest, so
+// the lockfile pin (Digest) and the cache-read key (ResolvedVersion) name the
+// same content. ResolutionPath marks it a registry-tier pin, like every other
+// above-Tier-1 resolution the closure records.
+func pinnedPluginResolution(pinDigest string) closure.Resolution {
+	return closure.Resolution{
+		ResolvedVersion: pinDigest,
+		Digest:          pinDigest,
+		ResolutionPath:  "tier-3-pull",
+	}
 }
 
 func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool) {
@@ -1041,6 +1118,34 @@ func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
 		return "", "", false
 	}
 	return base, version, true
+}
+
+// SplitPluginArtifactURI splits a content-pinned plugin-artifact reference
+// (oci://<repo>@sha256:<hex>) into its repository reference and content digest.
+// The leading "oci://" scheme is stripped; the split is on the LAST "@" so a
+// repository path that itself contains "@" still parses, with reference=<repo>
+// and contentDigest="sha256:<hex>". Returns ok=false when the URI carries no
+// "@sha256:" segment, so a non-content-pinned reference (a bare path or a
+// "<repo>:<version>" tag form) falls through cleanly to the version-tag path.
+//
+// This is the inverse of the publish-side content-pin construction: publish
+// stamps a WasmPlugin entity's spec.plugin to oci://<repo>@sha256:<content-digest>;
+// the consume side parses it back here to fetch the .wasm by its content-digest
+// tag. The split is deliberately NOT routed through SplitURIForOCI, whose
+// last-colon rule mis-parses the "@sha256:<hex>" form (the hex tail past the
+// colon would read as a version).
+func SplitPluginArtifactURI(uri string) (reference, contentDigest string, ok bool) {
+	trimmed := strings.TrimPrefix(uri, "oci://")
+	at := strings.LastIndex(trimmed, "@")
+	if at < 0 {
+		return "", "", false
+	}
+	reference = trimmed[:at]
+	contentDigest = trimmed[at+1:]
+	if reference == "" || !strings.HasPrefix(contentDigest, "sha256:") {
+		return "", "", false
+	}
+	return reference, contentDigest, true
 }
 
 // EntityNameFromURI returns the catalog index name for an entity URI — the URI

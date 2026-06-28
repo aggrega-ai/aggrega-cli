@@ -73,6 +73,16 @@ func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) erro
 	return nil
 }
 
+// ContentDigestTag converts a content digest ("sha256:<hex>") into a valid OCI
+// tag: a tag may not contain ":", so the algorithm and hex are joined with "-"
+// ("sha256-<hex>"). An artifact addressed by content can then be tagged by this
+// digest-derived tag, distinct from any version tag in the same repository. The
+// push that publishes an artifact and the pull that fetches it both derive the
+// tag here, so the two sides never disagree on the tag string.
+func ContentDigestTag(contentDigest string) string {
+	return strings.ReplaceAll(contentDigest, ":", "-")
+}
+
 // encodeURI maps an OCI URI (e.g.,
 // `oci://hub.aggrega.ai/component/core/api-server` or
 // `hub.aggrega.ai/component/core/api-server`) to a single

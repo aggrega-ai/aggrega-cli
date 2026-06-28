@@ -14,6 +14,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -305,5 +306,146 @@ spec:
 	}
 	if string(got) != string(libBody) {
 		t.Errorf("library.yaml content mismatch")
+	}
+}
+
+func TestSplitPluginArtifactURI(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		uri        string
+		wantRef    string
+		wantDigest string
+		wantOK     bool
+	}{
+		{
+			name:       "content-pin form",
+			uri:        "oci://hub.aggrega.ai/wasm/frp/patch@sha256:abc123",
+			wantRef:    "hub.aggrega.ai/wasm/frp/patch",
+			wantDigest: "sha256:abc123",
+			wantOK:     true,
+		},
+		{
+			name:       "content-pin form without scheme",
+			uri:        "hub.aggrega.ai/wasm/frp/patch@sha256:abc123",
+			wantRef:    "hub.aggrega.ai/wasm/frp/patch",
+			wantDigest: "sha256:abc123",
+			wantOK:     true,
+		},
+		{
+			name:   "version-tag form is not a content pin",
+			uri:    "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0",
+			wantOK: false,
+		},
+		{
+			name:   "bare path is not a content pin",
+			uri:    "hub.aggrega.ai/wasm/frp/patch",
+			wantOK: false,
+		},
+		{
+			name:   "non-sha256 digest after @ is rejected",
+			uri:    "oci://hub.aggrega.ai/wasm/frp/patch@md5:abc",
+			wantOK: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ref, dgst, ok := catalog.SplitPluginArtifactURI(tc.uri)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
+			}
+			if !tc.wantOK {
+				return
+			}
+			if ref != tc.wantRef {
+				t.Errorf("reference = %q; want %q", ref, tc.wantRef)
+			}
+			if dgst != tc.wantDigest {
+				t.Errorf("contentDigest = %q; want %q", dgst, tc.wantDigest)
+			}
+		})
+	}
+}
+
+// TestResolveWasmPluginContentPinRoundTrip drives the content-pin .wasm pull
+// flow directly: a .wasm artifact published under its content-digest-derived tag
+// resolves through ResolveWasmPlugin's content-pin path (tier-3 pull), lands in
+// the cache keyed by the pinned content digest, re-resolves from cache on a
+// second call, and a tampered cache slot halts with ErrFetchIntegrity.
+func TestResolveWasmPluginContentPinRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 content-pin round-trip fixture")
+	contentDigest := digest.ContentDigest(wasmBytes)
+	const repo = "hub.aggrega.ai/wasm/frp/patch"
+	artifactURI := "oci://" + repo + "@" + contentDigest
+
+	store := memory.New()
+	// Publish the .wasm under its content-digest-derived tag — the same tag the
+	// push side derives via oci.ContentDigestTag.
+	if _, err := oci.Push(ctx, store, oci.ContentDigestTag(contentDigest), oci.MediaTypeWasm, wasmBytes); err != nil {
+		t.Fatalf("oci.Push .wasm: %v", err)
+	}
+
+	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
+
+	// First resolution: tier-3 pull, content-digest-verified, cached.
+	res, err := lookup.ResolveWasmPlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolveWasmPlugin (pull): %v", err)
+	}
+	if res.NotFound {
+		t.Fatal("expected a tier-3 pull hit; got NotFound")
+	}
+	if res.ResolutionPath != "tier-3-pull" {
+		t.Errorf("ResolutionPath = %q; want %q", res.ResolutionPath, "tier-3-pull")
+	}
+	if res.Digest != contentDigest {
+		t.Errorf("Digest = %q; want %q", res.Digest, contentDigest)
+	}
+	if res.ResolvedVersion != contentDigest {
+		t.Errorf("ResolvedVersion = %q; want %q", res.ResolvedVersion, contentDigest)
+	}
+
+	// The cache slot the build re-reads is keyed by (artifactURI, contentDigest)
+	// — the exact (uri, version) pair the build derives from the lockfile pin.
+	cached, err := oci.ReadCached(dir, ".aggrega/cache", artifactURI, contentDigest)
+	if err != nil {
+		t.Fatalf("expected .wasm in cache after pull: %v", err)
+	}
+	if string(cached) != string(wasmBytes) {
+		t.Errorf("cached .wasm bytes differ from published bytes")
+	}
+
+	// Second resolution with no puller: a hit from the cache (tier-2), proving the
+	// lock-write slot is the slot the cache read addresses.
+	cachedLookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
+	res2, err := cachedLookup.ResolveWasmPlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolveWasmPlugin (cache): %v", err)
+	}
+	if res2.NotFound {
+		t.Fatal("expected a cache hit on the second resolve; got NotFound")
+	}
+	if res2.Digest != contentDigest || res2.ResolvedVersion != contentDigest {
+		t.Errorf("cache-hit resolution = %+v; want digest/version %q", res2, contentDigest)
+	}
+
+	// Tamper: corrupt the cached blob; the content-digest check must halt with
+	// ErrFetchIntegrity rather than return drifted bytes.
+	slot := oci.CachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
+	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
+		t.Fatalf("tamper write: %v", err)
+	}
+	if _, err := cachedLookup.ResolveWasmPlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }
