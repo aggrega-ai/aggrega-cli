@@ -10,6 +10,7 @@
 package resolver_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -34,6 +35,7 @@ func TestResolveAndUse_PurgesParametersAfterCallback(t *testing.T) {
 	var captured *resolver.ResolveResult
 	var sawValueInScope bool
 	err := resolver.ResolveAndUse(
+		context.Background(),
 		resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg},
 		func(rr *resolver.ResolveResult) error {
 			captured = rr
@@ -75,6 +77,7 @@ func TestResolveAndUse_PurgesEvenWhenCallbackErrors(t *testing.T) {
 
 	var captured *resolver.ResolveResult
 	_ = resolver.ResolveAndUse(
+		context.Background(),
 		resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg},
 		func(rr *resolver.ResolveResult) error {
 			captured = rr

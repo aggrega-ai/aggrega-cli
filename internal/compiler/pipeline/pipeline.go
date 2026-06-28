@@ -280,7 +280,7 @@ func ResolveAndValidate(
 		return err
 	}
 
-	return resolver.ResolveAndUse(resolver.ResolveInputs{
+	return resolver.ResolveAndUse(ctx, resolver.ResolveInputs{
 		Release:           inputs.Release,
 		Manifest:          inputs.Manifest,
 		AggregateRawBytes: inputs.AggregateRawBytes,

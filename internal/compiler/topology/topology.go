@@ -332,11 +332,12 @@ func Build(cfg BuildConfig) (*TopologyResult, error) {
 }
 
 // BuildContext is Build with cooperative cancellation: it checks
-// ctx.Err() at the per-node label-population boundary so a long
-// topology pass over a large workspace can be interrupted (e.g. by the
-// daemon's shutdown drain) rather than running to completion. Build is
-// the background-context convenience wrapper for callers that do not
-// participate in cancellation.
+// ctx.Err() at its phase boundaries — before the flatten pass, in the
+// per-node label-population loop, and in the per-node edge-normalization
+// loop — so a long topology pass over a large workspace can be
+// interrupted (e.g. by the daemon's shutdown drain) rather than running
+// to completion. Build is the background-context convenience wrapper for
+// callers that do not participate in cancellation.
 func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error) {
 	agg := cfg.ResolveResult.Aggregate
 
@@ -351,6 +352,13 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		if _, hasDefault := agg.Spec.Subsystems.Get("default"); hasDefault && agg.Spec.Components.Len() > 0 {
 			return nil, fmt.Errorf("%w: construct aggregates through the normalization core (types.Normalize via the parse path), not a hand-built literal", ErrUnnormalizedAggregate)
 		}
+	}
+
+	// Phase boundary: a cancelled context (e.g. the daemon's shutdown drain)
+	// aborts before the flatten pass, which descends the whole sub-aggregate
+	// tree and is the heavy front of topology on a large workspace.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// 1. Flatten
@@ -392,6 +400,13 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// in internal/compiler/ir/doc.go).
 	var edges []NormalizedEdge
 	for nodeID, node := range flat.Nodes.All() {
+		// Phase boundary: the edge cross-product scales with node count, so a
+		// cancelled context aborts cooperatively within this loop on a large
+		// workspace rather than running every node's uses/feature/secret edges.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		// Component uses. Read the authored block from the node (carried during
 		// flattening) rather than resolving by name against the root Aggregate —
 		// sub-aggregate components are not in the root, so a root lookup would

@@ -4,6 +4,7 @@
 package resolver_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestResolveFromInputs_UnnormalizedReleaseFailsLoud(t *testing.T) {
 	b.Set("default", types.Boundary{Synthesized: true})
 	rel.Spec.Boundaries = b
 
-	err := resolver.ResolveAndUse(resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}}, func(*resolver.ResolveResult) error { return nil })
+	err := resolver.ResolveAndUse(context.Background(), resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}}, func(*resolver.ResolveResult) error { return nil })
 	if !errors.Is(err, resolver.ErrUnnormalizedRelease) {
 		t.Fatalf("a bypass release (raw components + default boundary) must fail loud with ErrUnnormalizedRelease; got %v", err)
 	}
@@ -51,7 +52,7 @@ func TestResolveFromInputs_NormalizedReleaseClearsAssert(t *testing.T) {
 	rel.Spec.Boundaries = b
 	agg := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  components: {}\n")
 
-	err := resolver.ResolveAndUse(resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg}, func(*resolver.ResolveResult) error { return nil })
+	err := resolver.ResolveAndUse(context.Background(), resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg}, func(*resolver.ResolveResult) error { return nil })
 	if errors.Is(err, resolver.ErrUnnormalizedRelease) {
 		t.Fatalf("a normalized release must not trip the un-normalized assert; got %v", err)
 	}

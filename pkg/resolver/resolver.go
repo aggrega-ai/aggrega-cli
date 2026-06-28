@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -114,8 +115,13 @@ type ResolveResult struct {
 // internal/compiler/pipeline's ResolveAndValidate / ResolveAndFlatten call
 // ResolveAndUse and thread their own continuations, so the whole pipeline —
 // including render — runs inside the scope and the purge fires after it.
-func ResolveAndUse(in ResolveInputs, use func(*ResolveResult) error) error {
-	result, err := resolveFromInputs(in)
+//
+// ctx carries cooperative cancellation: a cancelled context aborts at the
+// resolve-phase boundary before any resolve work begins. Cancellation only
+// aborts — it never alters a successful resolve's output. Callers that do not
+// participate in cancellation pass context.Background().
+func ResolveAndUse(ctx context.Context, in ResolveInputs, use func(*ResolveResult) error) error {
+	result, err := resolveFromInputs(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -133,7 +139,14 @@ func ResolveAndUse(in ResolveInputs, use func(*ResolveResult) error) error {
 // ResolveResult.AggregatePath and .ReleasePath are forwarded verbatim from the
 // input labels (they drive annotation source-location strings); the resolve
 // pipeline never touches the filesystem through them.
-func resolveFromInputs(in ResolveInputs) (*ResolveResult, error) {
+func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, error) {
+	// Resolve-phase boundary: a cancelled context (e.g. the daemon's shutdown
+	// drain) aborts before the resolve work begins. Cancellation only aborts —
+	// it never alters a successful resolve's output, so determinism is preserved.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	release := in.Release
 	manifest := in.Manifest
 

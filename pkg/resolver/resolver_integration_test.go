@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -42,7 +43,7 @@ func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
 	}
 	var captured *ResolveResult
 	var paramSnapshot map[string]any
-	err = ResolveAndUse(ResolveInputs{
+	err = ResolveAndUse(context.Background(), ResolveInputs{
 		Release:           release,
 		Manifest:          manifest,
 		AggregateRawBytes: rawAgg,

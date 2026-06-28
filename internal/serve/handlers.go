@@ -217,6 +217,17 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 // scaffold case (no Release at all) returns Tier-1 diagnostics only:
 // the 1002 path fires only when the cascade attempted to find a
 // Release and could not.
+//
+// Cancellation limit: cooperative cancellation (the shutdown drain) bites
+// at the Tier-4 phase boundaries — resolve, topology, IR, analyze — and at
+// the per-node loops within topology, IR, and analyze. A single heavy phase
+// is NOT interruptible mid-phase: a drain-cancel arriving during the resolve
+// phase waits for resolve to finish before aborting, and on a large document
+// resolve dominates the runtime (parameter interpolation over the whole
+// document, contract validation, and per-component boundary wiring all run as
+// one straight-line block), so the wait is seconds. The initial document
+// parse below is a minor fraction of that — the heavy uncancellable cost is
+// the resolve sub-steps, not the parse.
 func (s *Server) handleValidate(ctx context.Context, params validateParams) (validateResult, *jsonRPCError) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
