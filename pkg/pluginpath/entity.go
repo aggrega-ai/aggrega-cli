@@ -26,29 +26,32 @@ var ErrWasmPluginEntityNotFound = errors.New("plugin reference is not a WasmPlug
 // exists exactly once.
 //
 // entityToArtifact translates a WasmPlugin entity URI to its spec.plugin
-// artifact reference and the entity's authored capability claim, returning false
-// when no WasmPlugin entity matches the URI. The caller supplies it as a closure
-// over the catalog's WasmPlugin accessor reading .Spec.Plugin and .Spec.Exports,
-// so this package stays ignorant of pkg/types; resolving the entity once here
-// yields both the artifact reference and the claim, so the load path never
+// artifact reference, the entity's authored capability claim, and the entity's
+// authored runtime limits, returning false when no WasmPlugin entity matches the
+// URI. The caller supplies it as a closure over the catalog's WasmPlugin accessor
+// reading .Spec.Plugin, .Spec.Exports, and .Spec.Runtime, so this package stays
+// ignorant of pkg/types; resolving the entity once here yields the artifact
+// reference, the claim, and the limits together, so the load path never
 // re-resolves the entity. cascade is the artifact-resolving Lookup (a
 // build-configured Resolver's Resolve method); it keys its pins and verification
 // by the ARTIFACT reference, so translating before the cascade leaves the pin
 // model unchanged. The claim is attached to the cascade's ResolvedPlugin so the
-// load gate can cross-check it against the plugin's describe().
+// load gate can cross-check it against the plugin's describe(); the limits are
+// attached so the loader caps the plugin's memory and per-call wall time.
 //
 // A reference that does not match a WasmPlugin entity halts with
 // ErrWasmPluginEntityNotFound, naming the offending reference and stating that a
 // WasmPlugin entity URI is required. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
-func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginCapabilityClaim, ok bool), cascade Lookup) Lookup {
+func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginCapabilityClaim, limits *PluginRuntimeLimits, ok bool), cascade Lookup) Lookup {
 	return func(entityURI string) (ResolvedPlugin, error) {
 		var artifactURI string
 		var claim *PluginCapabilityClaim
+		var limits *PluginRuntimeLimits
 		var ok bool
 		if entityToArtifact != nil {
-			artifactURI, claim, ok = entityToArtifact(entityURI)
+			artifactURI, claim, limits, ok = entityToArtifact(entityURI)
 		}
 		if !ok {
 			return ResolvedPlugin{}, fmt.Errorf(
@@ -61,6 +64,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 			return ResolvedPlugin{}, err
 		}
 		resolved.Capability = claim
+		resolved.Limits = limits
 		return resolved, nil
 	}
 }

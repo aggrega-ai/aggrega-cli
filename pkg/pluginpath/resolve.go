@@ -74,6 +74,33 @@ type ResolvedPlugin struct {
 	// (the bare cascade, the linter's --plugin override) so the cross-check is
 	// skipped.
 	Capability *PluginCapabilityClaim
+
+	// Limits is the entity's authored runtime resource limits (memory and
+	// per-call wall time), attached by the entity-fronted Lookup (EntityLookup)
+	// from the in-hand WasmPlugin entity. Like Capability it is neutral — a
+	// pluginpath-owned shape carrying no internal/wasm dependency; the loader's
+	// caller maps it onto the load spec. Unlike Capability the limits are not
+	// cross-checked against the plugin (a plugin does not self-report limits),
+	// so they ride a sibling field rather than the capability claim. nil when
+	// the resolution is not entity-fronted; the loader then applies the
+	// platform default cap, so a load is never unbounded.
+	Limits *PluginRuntimeLimits
+}
+
+// PluginRuntimeLimits is the neutral, pluginpath-owned shape of an entity's
+// authored runtime resource limits: the linear-memory cap (in Wasm pages) and
+// the per-call wall-time cap (in milliseconds). It carries no dependency on
+// internal/wasm; the loader's caller maps it onto the load spec. A zero field
+// means the entity declared no limit for that dimension — the loader substitutes
+// the platform default cap, so a zero is "apply default", never "unbounded".
+type PluginRuntimeLimits struct {
+	// MaxMemoryPages caps the plugin's linear memory in Wasm pages (64 KiB per
+	// page). Zero applies the platform default cap.
+	MaxMemoryPages uint32
+
+	// TimeoutMs caps per-call execution wall time in milliseconds. Zero applies
+	// the platform default cap.
+	TimeoutMs uint64
 }
 
 // PluginCapabilityClaim is the neutral, pluginpath-owned shape of an entity's

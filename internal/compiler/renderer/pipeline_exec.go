@@ -428,6 +428,19 @@ func claimedHostFunctions(claim *pluginpath.PluginCapabilityClaim) []string {
 	return claim.DeclaredHostFunctions
 }
 
+// pluginRuntimeLimits maps the neutral runtime limits the plugin entity-front
+// attached to a resolved plugin into the loader's spec fields, so the loader caps
+// the plugin's memory and per-call wall time. A nil neutral limits (a non-entity
+// resolution, or an entity with no runtime block) maps to the zero pair; the
+// loader's chokepoint reads a zero field as "apply the platform default cap", so
+// a load is never unbounded.
+func pluginRuntimeLimits(limits *pluginpath.PluginRuntimeLimits) (maxMemoryPages uint32, timeoutMs uint64) {
+	if limits == nil {
+		return 0, 0
+	}
+	return limits.MaxMemoryPages, limits.TimeoutMs
+}
+
 // newStepInvoker binds the pipeline's per-step guest dispatch over the shared
 // plugin-resolution cascade and the describe() gate: resolve the step's plugin
 // URI to its verified .wasm bytes, load them through LoadAndDescribe (which
@@ -440,12 +453,15 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		if err != nil {
 			return nil, err
 		}
+		maxPages, timeoutMs := pluginRuntimeLimits(resolved.Limits)
 		loader := &wasm.Loader{}
 		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
 			Name:                  step.Plugin,
 			Bytes:                 resolved.Bytes,
 			Capability:            pluginCapabilityClaim(resolved.Capability),
 			DeclaredHostFunctions: claimedHostFunctions(resolved.Capability),
+			MaxMemoryPages:        maxPages,
+			TimeoutMs:             timeoutMs,
 		})
 		if err != nil {
 			return nil, err
@@ -478,12 +494,15 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}
+		maxPages, timeoutMs := pluginRuntimeLimits(resolved.Limits)
 		loader := &wasm.Loader{}
 		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
 			Name:                  step.Plugin,
 			Bytes:                 resolved.Bytes,
 			Capability:            pluginCapabilityClaim(resolved.Capability),
 			DeclaredHostFunctions: claimedHostFunctions(resolved.Capability),
+			MaxMemoryPages:        maxPages,
+			TimeoutMs:             timeoutMs,
 		})
 		if err != nil {
 			return wasm.PluginDescriptor{}, err

@@ -22,11 +22,12 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 		return ResolvedPlugin{Bytes: []byte("\x00asm-bytes"), Tier: TierSidecar, URI: uri}, nil
 	}
 	claim := &PluginCapabilityClaim{Exports: []PluginExportClaim{{Name: "step", Operates: "patch", Scope: "own"}}}
-	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, bool) {
+	limits := &PluginRuntimeLimits{MaxMemoryPages: 64, TimeoutMs: 1500}
+	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, *PluginRuntimeLimits, bool) {
 		if uri == entityURI {
-			return artifactURI, claim, true
+			return artifactURI, claim, limits, true
 		}
-		return "", nil, false
+		return "", nil, nil, false
 	}, cascade)
 
 	res, err := front(entityURI)
@@ -44,6 +45,11 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	if res.Capability != claim {
 		t.Errorf("resolved Capability = %v; want the entity's claim attached", res.Capability)
 	}
+	// The entity-front attaches the entity's authored runtime limits as a
+	// sibling field so the loader caps the plugin's memory and wall time.
+	if res.Limits != limits {
+		t.Errorf("resolved Limits = %v; want the entity's limits attached", res.Limits)
+	}
 }
 
 // TestEntityLookup_BareWasmHaltsLoudly proves the named gate: a reference that
@@ -57,7 +63,9 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 		return ResolvedPlugin{}, nil
 	}
 	// An entity lookup that finds nothing — every reference is a miss.
-	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, bool) { return "", nil, false }, cascade)
+	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, *PluginRuntimeLimits, bool) {
+		return "", nil, nil, false
+	}, cascade)
 
 	const bareWasm = "frp-step-patch-rust.wasm"
 	_, err := front(bareWasm)

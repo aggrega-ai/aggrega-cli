@@ -81,10 +81,12 @@ type WasmPluginSignature struct {
 // never reaches the network at build time, so there is nothing to allow.
 type WasmPluginRuntime struct {
 	// MaxMemoryPages caps the plugin's linear memory in Wasm pages (64 KiB
-	// per page). Zero leaves the runtime's default memory policy in effect.
+	// per page). Zero or absent applies the platform default cap, so a load
+	// is never unbounded; an attachment that needs more raises this value.
 	MaxMemoryPages uint32 `json:"maxMemoryPages,omitempty" yaml:"maxMemoryPages,omitempty"`
-	// TimeoutMs caps per-call execution wall time in milliseconds. Zero
-	// leaves the call unbounded; production attachments set a non-zero ceiling.
+	// TimeoutMs caps per-call execution wall time in milliseconds. Zero or
+	// absent applies the platform default cap, so a call is never
+	// uncancellable; an attachment that runs longer raises this value.
 	TimeoutMs uint64 `json:"timeoutMs,omitempty" yaml:"timeoutMs,omitempty"`
 	// DeclaredHostFunctions lists the host function names the plugin imports.
 	// The host validates every entry against the curated allowlist and

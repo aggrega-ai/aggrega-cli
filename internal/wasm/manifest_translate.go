@@ -25,16 +25,19 @@ func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
 		return extism.Manifest{}, err
 	}
 
+	// Apply the platform default cap when the spec leaves a limit zero, at this
+	// single chokepoint so every load path — entity, linter, and test — gets a
+	// consistent cap. A zero is "apply the default cap", never "unbounded": the
+	// Memory block and Timeout are ALWAYS set, so the runtime always enforces a
+	// memory ceiling and a per-call wall-time ceiling.
 	manifest := extism.Manifest{
 		Wasm: []extism.Wasm{
 			extism.WasmFile{Path: spec.Path, Name: spec.Name},
 		},
 		Config:       spec.ConfigKV,
 		AllowedHosts: spec.AllowedHosts,
-		Timeout:      spec.TimeoutMs,
-	}
-	if spec.MaxMemoryPages != 0 {
-		manifest.Memory = &extism.ManifestMemory{MaxPages: spec.MaxMemoryPages}
+		Timeout:      effectiveTimeoutMs(spec),
+		Memory:       &extism.ManifestMemory{MaxPages: effectiveMaxPages(spec)},
 	}
 
 	if err := enforceAOTPurityFirewall(manifest, spec.Name); err != nil {

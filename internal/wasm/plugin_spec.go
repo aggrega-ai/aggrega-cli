@@ -36,13 +36,13 @@ type PluginSpec struct {
 	Bytes []byte
 
 	// MaxMemoryPages caps the plugin's linear memory in Wasm pages
-	// (64 KiB per page). Zero leaves the Extism runtime's default
-	// memory policy in effect.
+	// (64 KiB per page). Zero or absent applies the platform default cap
+	// (DefaultMaxMemoryPages), so a load is never unbounded.
 	MaxMemoryPages uint32
 
-	// TimeoutMs caps per-Call execution wall time in milliseconds.
-	// Zero leaves the call unbounded (suitable for tests; production
-	// callers SHOULD set a non-zero ceiling).
+	// TimeoutMs caps per-Call execution wall time in milliseconds. Zero
+	// or absent applies the platform default cap (DefaultTimeoutMs), so a
+	// Call is never uncancellable.
 	TimeoutMs uint64
 
 	// DeclaredHostFunctions is the authored claim of the host function names

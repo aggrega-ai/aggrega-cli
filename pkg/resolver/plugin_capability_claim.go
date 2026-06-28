@@ -43,3 +43,24 @@ func WasmPluginCapabilityClaim(entity types.WasmPlugin) *pluginpath.PluginCapabi
 		DeclaredHostFunctions: declaredHostFunctions,
 	}
 }
+
+// WasmPluginRuntimeLimits maps a catalog WasmPlugin entity's authored runtime
+// resource limits into the neutral limits the plugin entity-front attaches to a
+// resolved plugin, so the loader caps the plugin's memory and per-call wall time.
+// It is the single home of the entity → neutral-limits mapping; both plugin
+// sockets that front the cascade with the entity translation call it rather than
+// each re-spelling the field copy.
+//
+// An entity with no runtime block authors no limits and yields nil; the loader
+// then applies the platform default cap, so a load is never unbounded. Limits are
+// a sibling of the capability claim, not part of it: a plugin does not
+// self-report limits, so there is no describe()-vs-entity cross-check to feed.
+func WasmPluginRuntimeLimits(entity types.WasmPlugin) *pluginpath.PluginRuntimeLimits {
+	if entity.Spec.Runtime == nil {
+		return nil
+	}
+	return &pluginpath.PluginRuntimeLimits{
+		MaxMemoryPages: entity.Spec.Runtime.MaxMemoryPages,
+		TimeoutMs:      entity.Spec.Runtime.TimeoutMs,
+	}
+}

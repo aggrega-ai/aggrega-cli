@@ -708,15 +708,15 @@ func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config, wasmPlugin
 		_, err := cascade.Resolve("")
 		return nil, err
 	}
-	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginCapabilityClaim, bool) {
+	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
 		if wasmPluginByURI == nil {
-			return "", nil, false
+			return "", nil, nil, false
 		}
 		entity, ok := wasmPluginByURI(entityURI)
 		if !ok {
-			return "", nil, false
+			return "", nil, nil, false
 		}
-		return entity.Spec.Plugin, resolver.WasmPluginCapabilityClaim(entity), true
+		return entity.Spec.Plugin, resolver.WasmPluginCapabilityClaim(entity), resolver.WasmPluginRuntimeLimits(entity), true
 	}, cascade.Resolve)
 	resolved, err := front(uri)
 	if err != nil {

@@ -119,6 +119,32 @@ func TestTranslateAppliesMemoryAndTimeout(t *testing.T) {
 	}
 }
 
+// TestTranslateAppliesDefaultLimitsWhenZero is the behavior-change proof: a spec
+// that declares no limits yields a manifest carrying the platform default cap on
+// BOTH memory and per-call wall time — never an unbounded memory (nil Memory) or
+// an uncancellable call (zero Timeout). This is the floor every load path gets
+// when the entity authors no runtime limits.
+func TestTranslateAppliesDefaultLimitsWhenZero(t *testing.T) {
+	spec := PluginSpec{
+		Name: "test-plugin",
+		Path: "fixture.wasm",
+		// MaxMemoryPages and TimeoutMs left zero on purpose.
+	}
+	manifest, err := translateToManifest(spec)
+	if err != nil {
+		t.Fatalf("expected success for a zero-limit spec, got error: %v", err)
+	}
+	if manifest.Memory == nil {
+		t.Fatalf("zero MaxMemoryPages must apply the default cap, not leave memory unbounded (nil Memory)")
+	}
+	if manifest.Memory.MaxPages != DefaultMaxMemoryPages {
+		t.Errorf("expected MaxPages=%d (DefaultMaxMemoryPages), got %d", DefaultMaxMemoryPages, manifest.Memory.MaxPages)
+	}
+	if manifest.Timeout != DefaultTimeoutMs {
+		t.Errorf("expected Timeout=%d (DefaultTimeoutMs), got %d", DefaultTimeoutMs, manifest.Timeout)
+	}
+}
+
 func TestAllowlistContainsBaselineHostFunctions(t *testing.T) {
 	for _, name := range []string{"aggrega_log", "aggrega_emit_warning"} {
 		if _, ok := hostFunctionAllowlist[name]; !ok {
