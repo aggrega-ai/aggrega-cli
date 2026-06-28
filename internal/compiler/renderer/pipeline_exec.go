@@ -461,6 +461,14 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 // set declares no compatibility claim and therefore matches no provider, so any
 // step that uses such a plugin halts. The check is fail-fast: the first
 // mismatch halts the build before the walk runs any guest.
+//
+// An own-scope step with an empty ownProvider is the post-assembly replay of a
+// deferred host-only record — a component-scope FeatureRecipe whose host is an
+// assembler defers its whole pipeline but records no own provider, because the
+// FeatureRecipe's own output is never assembled. That step has no merged own
+// document to patch after assembly; it halts via pipelineOwnOnAssemblerErr with
+// a cause-naming message rather than reporting an empty-provider compatibility
+// claim.
 func enforceProviderCompatibility(
 	ctx context.Context,
 	steps []types.PipelineStep,
@@ -483,6 +491,19 @@ func enforceProviderCompatibility(
 				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "host", hostProvider)
 			}
 		default: // own (empty scope defaults to own per the wire contract)
+			if ownProvider == "" {
+				// A deferred host-only record (a component-scope FeatureRecipe
+				// whose host is an assembler) carries no own provider: the FR's
+				// own output is emitted as discrete fragment files and is never
+				// assembled, so a deferred own-scope step has no merged own
+				// document to replay against. The empty ownProvider is the
+				// signature of that case here (a per-node own pipeline always
+				// carries its spec.provider). Halt with a cause-naming message
+				// rather than the bare provider-incompatibility report, whose
+				// empty provider name reads as a malformed claim. The replay
+				// wrap names the FeatureRecipe instance and node around this.
+				return pipelineOwnOnAssemblerErr(nodeID, step.ID)
+			}
 			if !providerCompatible(ownProvider, desc.CompatibleProviders) {
 				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "own", ownProvider)
 			}
@@ -735,6 +756,22 @@ func pipelinePreAssemblyErr(nodeID, token, scope string) error {
 	return cerrors.Wrap(ErrPipelinePatchPreAssembly, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: %s (%s-scope document %q is rendered by an assembler provider; the post-assembly phase re-runs this PATCH once the documents are discrete)",
 			nodeID, ErrPipelinePatchPreAssembly.Error(), scope, token))
+}
+
+// pipelineOwnOnAssemblerErr is the Loud Guardrail for a deferred own-scope
+// pipeline step that has no merged own document to run against: a
+// component-scope FeatureRecipe whose host is an assembler defers its whole
+// pipeline to the post-assembly phase, but the FeatureRecipe's own output is
+// emitted as discrete fragment files and is never assembled, so the deferred
+// record carries no own provider and an own-scope step has nothing to patch
+// after assembly. It reuses ErrPipelinePatchPreAssembly (the own target would
+// be an unassembled assembler fragment) and names the real cause plus the
+// remedies, instead of the bare provider-incompatibility report whose empty
+// provider name reads as a malformed compatibility claim.
+func pipelineOwnOnAssemblerErr(nodeID, stepID string) error {
+	return cerrors.Wrap(ErrPipelinePatchPreAssembly, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf("node %q: own-scope pipeline step %q cannot run on an assembler provider. A component-scope FeatureRecipe's own output is emitted as discrete fragment files and is never assembled, so an own-scope step has no merged document to patch after assembly. Remedy: target a non-assembler provider for the FeatureRecipe's own output, or move the step to /host, or remove it",
+			nodeID, stepID))
 }
 
 // pipelineProviderIncompatibleErr builds the Loud Guardrail for a step whose

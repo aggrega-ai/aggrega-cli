@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-mixed-patcher-compose
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: "feature.myco/guardrail"
+  # A workload makes this FeatureRecipe resource-generating, so its pipeline
+  # runs. Its own provider is compose (an assembler), so its own output is a
+  # pre-assembly fragment that is never assembled — a component-scope
+  # FeatureRecipe's own output is emitted as discrete fragment files under
+  # features/<instance>/.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      sidecar:
+        image: guardrail:latest
+        variables:
+          LABEL: "{{ .values.label }}"
+    services:
+      guardrail:
+        type: ClusterIP
+        ports:
+          web: 9090
+  # Mixed pipeline: an own-scope PATCH step AND a host-scope PATCH step on a
+  # compose (assembler) host. The host step defers and replays against the
+  # merged document; the own step has no merged own document to defer to, so
+  # the build halts with a scope-specific diagnostic.
+  pipeline:
+    - id: inject_into_own
+      plugin: frp-step-own-patch-compose-rust.wasm
+      function: step
+    - id: inject_into_host
+      plugin: frp-step-host-patch-compose-rust.wasm
+      function: step

@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: mixed-scope-compose-test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: compose-api-synthesized:1.0.0
+    features:
+      type:
+        feature.myco/guardrail: guardrail-mixed-patcher-compose:1.0.0

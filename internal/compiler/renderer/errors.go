@@ -161,6 +161,16 @@ var (
 	// never assembled, so a /own PATCH against an FR-rendered assembler fragment
 	// has no merged target to defer to and halts here). EMIT is additive and runs
 	// per-node for every provider, so it is never gated by this guardrail.
+	//
+	// It also fires from the post-assembly replay's pre-walk compatibility gate
+	// for an own-scope step in a deferred host-only record: a component-scope
+	// FeatureRecipe whose host is an assembler defers its whole pipeline, but the
+	// FeatureRecipe's own output is never assembled, so the deferral records no
+	// own provider. An own-scope step in that record (a mixed own + host pipeline)
+	// has no merged own document to patch after assembly; the gate halts here with
+	// a cause-naming message rather than reporting an empty-provider compatibility
+	// claim. The remedy is to target a non-assembler provider for the
+	// FeatureRecipe's own output, move the step to /host, or remove it.
 	ErrPipelinePatchPreAssembly = errors.New("pipeline PATCH targets an assembler provider's pre-assembly fragments")
 
 	// ErrPluginProviderIncompatible fires when a pipeline step's plugin declares
