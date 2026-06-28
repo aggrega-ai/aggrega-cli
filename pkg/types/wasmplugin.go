@@ -4,6 +4,7 @@
 package types
 
 //go:generate go run ../../internal/tools/typegen wasmplugin_gen.go
+//go:generate go run ../../internal/tools/typegen wasmplugin_enums_gen.go
 
 // WasmPlugin's top-level struct declarations (WasmPlugin,
 // WasmPluginMetadata, WasmPluginSpec) are generated into

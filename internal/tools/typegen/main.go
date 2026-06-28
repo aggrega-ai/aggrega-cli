@@ -86,6 +86,46 @@ var kindSources = map[string]kindSource{
 	"wasmplugin_gen.go":     {"WasmPlugin", schemas.WasmPluginV1alpha1},
 }
 
+// enumSource binds an output filename to a string-enum-const emission: the
+// embedded schema, the destination package, the schema file basename for the
+// generated header, and the explicit set of enum-bearing field names to emit.
+//
+// The emitter is a general string-enum → Go bare-const capability: for each
+// named field it locates the field's string `enum` anywhere in the schema
+// (recursing through `properties`, `items`, and `x-aggrega-go-type`-annotated
+// nodes alike) and emits one bare untyped string const per value, named
+// Pascal(field)+Pascal(value). `fields` scopes the emission to the enums this
+// file owns rather than every enum in the schema — the schema also carries
+// enums (pluginTypes, abiVersion) whose Go identity lives in hand-written
+// homes; listing only the owned fields keeps a single home per enum.
+type enumSource struct {
+	schema     string
+	schemaFile string
+	pkg        string
+	fields     []string
+	// doc is a file-level documentation comment emitted after the header,
+	// explaining the file's single-source role and any deliberately-separate
+	// sibling vocabularies. Each line is emitted as a `//` comment.
+	doc string
+}
+
+var enumSources = map[string]enumSource{
+	"wasmplugin_enums_gen.go": {
+		schema:     schemas.WasmPluginV1alpha1,
+		schemaFile: "wasmplugin-v1alpha1.schema.json",
+		pkg:        "types",
+		fields:     []string{"operates", "scope"},
+		doc: "These consts are the single source for the WasmPlugin entity's per-export\n" +
+			"operates and scope vocabularies. The describe() host descriptor re-exports\n" +
+			"them so the load-time shape gate and the runtime read one set of values.\n" +
+			"\n" +
+			"The feature-recipe-pipeline wire scope vocabulary (the runtime document-set\n" +
+			"scoping and patch-op scope) is a separate surface — a different package and a\n" +
+			"different schema — and is not generated here. Its own/host values must agree\n" +
+			"with these by hand for now; unifying the two is a tracked follow-up.",
+	},
+}
+
 // codecTarget binds an output filename to a multi-type codec emission: the
 // embedded `$defs`-shaped schema, the schema file basename for the generated
 // header, the destination package name, the per-target type vocabulary that
@@ -346,6 +386,7 @@ type schemaNode struct {
 	GoType      string // x-aggrega-go-type override (names a hand-written or generic type)
 	Ref         string // $ref target (e.g. #/$defs/Unit); resolves to a Go type name
 	Required    []string
+	Enum        []string // enum values, in declared order (string enums only)
 	props       []namedNode // in declared order
 	Items       *schemaNode
 	defs        []namedNode // $defs entries, in declared order (multi-type schemas only)
@@ -365,6 +406,7 @@ func decodeNode(raw json.RawMessage) (schemaNode, error) {
 		GoType      string          `json:"x-aggrega-go-type"`
 		Ref         string          `json:"$ref"`
 		Required    []string        `json:"required"`
+		Enum        []string        `json:"enum"`
 		Items       json.RawMessage `json:"items"`
 		Properties  json.RawMessage `json:"properties"`
 		Defs        json.RawMessage `json:"$defs"`
@@ -372,7 +414,7 @@ func decodeNode(raw json.RawMessage) (schemaNode, error) {
 	if err := json.Unmarshal(raw, &flat); err != nil {
 		return n, err
 	}
-	n.Type, n.Description, n.GoType, n.Ref, n.Required = flat.Type, flat.Description, flat.GoType, flat.Ref, flat.Required
+	n.Type, n.Description, n.GoType, n.Ref, n.Required, n.Enum = flat.Type, flat.Description, flat.GoType, flat.Ref, flat.Required, flat.Enum
 	if len(flat.Items) > 0 {
 		it, err := decodeNode(flat.Items)
 		if err != nil {
@@ -1128,6 +1170,99 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 	return formatSource(head, body.String())
 }
 
+// namedEnum is one field's resolved string enum: the schema field name and its
+// declared-order enum values.
+type namedEnum struct {
+	field  string
+	values []string
+}
+
+// collectEnums walks a schema node depth-first, in declared order, collecting
+// every string `enum` whose owning field name is in want. It recurses through
+// `properties` and `items` and does NOT stop at an x-aggrega-go-type annotation
+// — the enum-bearing fields (e.g. exports.items.operates/scope) live under
+// items nodes the struct path skips, so the enum walk must descend through them.
+// A field name appears at most once: the first match in declared order wins, so
+// a duplicated name across branches is collected once deterministically.
+func collectEnums(n schemaNode, want map[string]bool, seen map[string]bool, out *[]namedEnum) {
+	for _, p := range n.props {
+		if len(p.node.Enum) > 0 && want[p.name] && !seen[p.name] {
+			seen[p.name] = true
+			*out = append(*out, namedEnum{field: p.name, values: p.node.Enum})
+		}
+		collectEnums(p.node, want, seen, out)
+	}
+	if n.Items != nil {
+		collectEnums(*n.Items, want, seen, out)
+	}
+}
+
+// generateEnums produces the formatted Go source for a string-enum-const file:
+// one bare untyped string const per enum value of each requested field, named
+// Pascal(field)+Pascal(value), in (field-declaration, then enum-array) order so
+// regeneration is byte-stable. It is the single-type enum-emit path. Bare
+// untyped consts (not a typed enum) keep the consts drop-in for a string-typed
+// consumer (a string switch scrutinee, a string struct field) without forcing a
+// type conversion at the comparison site.
+func generateEnums(e enumSource) ([]byte, error) {
+	root, err := decodeNode(json.RawMessage(e.schema))
+	if err != nil {
+		return nil, fmt.Errorf("decode schema: %w", err)
+	}
+
+	want := map[string]bool{}
+	for _, f := range e.fields {
+		want[f] = true
+	}
+	var enums []namedEnum
+	collectEnums(root, want, map[string]bool{}, &enums)
+
+	// Every requested field must resolve to an enum; a missing one means the
+	// schema changed (the field was renamed or its enum dropped) and the
+	// generated consts would silently vanish. Fail loudly instead.
+	for _, f := range e.fields {
+		found := false
+		for _, en := range enums {
+			if en.field == f {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("enum field %q not found in schema %s", f, e.schemaFile)
+		}
+	}
+
+	var body strings.Builder
+	for _, en := range enums {
+		fieldPascal := pascal(en.field)
+		fmt.Fprintf(&body, "const (\n")
+		for _, v := range en.values {
+			fmt.Fprintf(&body, "\t%s%s = %q\n", fieldPascal, pascal(v), v)
+		}
+		body.WriteString(")\n\n")
+	}
+
+	var docLines string
+	if e.doc != "" {
+		for _, line := range strings.Split(e.doc, "\n") {
+			if line == "" {
+				docLines += "//\n"
+			} else {
+				docLines += "// " + line + "\n"
+			}
+		}
+		docLines += "\n"
+	}
+
+	head := genHeader("package "+e.pkg,
+		fmt.Sprintf("// aggrega-schemas/json/%s. DO NOT EDIT.\n", e.schemaFile),
+		"// Regenerate with `go generate ./pkg/types/...`.\n",
+		map[string]bool{})
+
+	return formatSource(head, docLines+body.String())
+}
+
 // generateDefs dispatches a multi-type codec target to its language backend.
 // The front-end (schema decode, `$defs` walk, vocabulary rewrite, field
 // resolution) is shared; only the emission half forks per language. An empty
@@ -1336,8 +1471,11 @@ func generateFor(base string) ([]byte, error) {
 	if src, ok := kindSources[base]; ok {
 		return generate(src.typeName, src.schema)
 	}
+	if e, ok := enumSources[base]; ok {
+		return generateEnums(e)
+	}
 	if t, ok := codecTargets[base]; ok {
 		return generateDefs(t)
 	}
-	return nil, fmt.Errorf("typegen: no kind or codec target registered for %q", base)
+	return nil, fmt.Errorf("typegen: no kind, enum, or codec target registered for %q", base)
 }

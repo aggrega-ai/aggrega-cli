@@ -34,6 +34,33 @@ func TestRegenClean(t *testing.T) {
 	}
 }
 
+// TestRegenClean_Enums is the regen-drift gate for the string-enum-const
+// targets: the generator's output must byte-match the committed
+// <kind>_enums_gen.go in pkg/types. A failure means the schema's enum (or the
+// generator) changed without regenerating — run `go generate ./pkg/types/...`
+// and commit. This extends the entity regen-drift contract to the enum-const
+// spine, so the consts a consumer aliases stay in lockstep with the schema by
+// construction.
+func TestRegenClean_Enums(t *testing.T) {
+	for outFile := range enumSources {
+		t.Run(outFile, func(t *testing.T) {
+			got, err := generateFor(outFile)
+			if err != nil {
+				t.Fatalf("generate enums %s: %v", outFile, err)
+			}
+			path := filepath.Join("..", "..", "..", "pkg", "types", outFile)
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read committed %s: %v", path, err)
+			}
+			if string(got) != string(want) {
+				t.Errorf("%s is stale: generator output differs from the committed file.\n"+
+					"Run `go generate ./pkg/types/...` and commit the result.", outFile)
+			}
+		})
+	}
+}
+
 // codecTargetPaths maps each codec target's output basename to the directory
 // (relative to this test package) holding the committed generated file. The
 // regen-drift gate reads the committed file there and byte-compares it to a

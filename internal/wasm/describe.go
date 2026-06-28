@@ -3,7 +3,11 @@
 
 package wasm
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // PluginDescriptor is the output a Wasm plugin returns from its
 // describe() export — the plugin's self-declaration of the ABI version
@@ -207,10 +211,13 @@ const providerRenderExportName = "render_node"
 // operatesPatch and operatesEmit are the two pipeline operations an
 // export may declare via [PluginExport.Operates]. The shape validator
 // accepts these two values or the empty string; it does not require the
-// field or act on its value — the runtime reads it when dispatching.
+// field or act on its value — the runtime reads it when dispatching. The
+// values are the schema-generated WasmPlugin operates vocabulary, re-exported
+// here so this load-time gate and the entity authoring surface read one set of
+// values rather than each re-spelling the literals.
 const (
-	operatesPatch = "patch"
-	operatesEmit  = "emit"
+	operatesPatch = types.OperatesPatch
+	operatesEmit  = types.OperatesEmit
 )
 
 // ScopeOwn and ScopeHost are the two document roots an export may declare
@@ -220,10 +227,12 @@ const (
 // renderer's pre-walk provider-compatibility check reads ScopeHost to decide
 // which provider an export's scope is checked against. Exported so the single
 // scope identity is shared between this load-time shape gate and the runtime
-// enforcement rather than each side re-spelling the literal.
+// enforcement rather than each side re-spelling the literal. The values are the
+// schema-generated WasmPlugin scope vocabulary, re-exported here so this gate,
+// the renderer, and the entity authoring surface read one set of values.
 const (
-	ScopeOwn  = "own"
-	ScopeHost = "host"
+	ScopeOwn  = types.ScopeOwn
+	ScopeHost = types.ScopeHost
 )
 
 // Validate checks a parsed descriptor against the host's contract and
