@@ -15,6 +15,22 @@ import (
 // import under this exact namespace string.
 const wasiSnapshotPreview1Namespace = "wasi_snapshot_preview1"
 
+// extismHostUserNamespace is the Wasm import namespace Extism custom host
+// functions declare. The host registers each curated host function (aggrega_log,
+// aggrega_emit_warning, and future per-socket functions) without an explicit
+// namespace, so the SDK binds it under this default; a guest importing a custom
+// host function imports it under this exact module string. Derivation reads the
+// guest's imports under this namespace to learn which host functions it actually
+// calls.
+const extismHostUserNamespace = "extism:host/user"
+
+// extismHostEnvNamespace is the Wasm import namespace the Extism runtime ABI
+// declares (the PDK's memory and IO intrinsics — input/output length, allocate,
+// load/store). These are the runtime's own machinery, not Aggrega's curated host
+// surface, so derivation excludes them: a plugin importing only extism:host/env
+// declares no custom host functions.
+const extismHostEnvNamespace = "extism:host/env"
+
 // wasiImportAllowlist names the WASI preview-1 imports the firewall
 // permits. A plugin importing only these names loads through the
 // static import firewall; the Extism-bundled wazero WASI runtime,

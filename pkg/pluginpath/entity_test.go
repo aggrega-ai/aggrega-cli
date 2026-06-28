@@ -21,11 +21,12 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 		sawArtifact = uri
 		return ResolvedPlugin{Bytes: []byte("\x00asm-bytes"), Tier: TierSidecar, URI: uri}, nil
 	}
-	front := EntityLookup(func(uri string) (string, bool) {
+	claim := &PluginCapabilityClaim{Exports: []PluginExportClaim{{Name: "step", Operates: "patch", Scope: "own"}}}
+	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, bool) {
 		if uri == entityURI {
-			return artifactURI, true
+			return artifactURI, claim, true
 		}
-		return "", false
+		return "", nil, false
 	}, cascade)
 
 	res, err := front(entityURI)
@@ -37,6 +38,11 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	}
 	if string(res.Bytes) != "\x00asm-bytes" {
 		t.Errorf("resolved bytes = %q; want the cascade's bytes", res.Bytes)
+	}
+	// The entity-front attaches the entity's authored capability claim to the
+	// cascade's ResolvedPlugin so the load gate can cross-check it.
+	if res.Capability != claim {
+		t.Errorf("resolved Capability = %v; want the entity's claim attached", res.Capability)
 	}
 }
 
@@ -51,7 +57,7 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 		return ResolvedPlugin{}, nil
 	}
 	// An entity lookup that finds nothing — every reference is a miss.
-	front := EntityLookup(func(uri string) (string, bool) { return "", false }, cascade)
+	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, bool) { return "", nil, false }, cascade)
 
 	const bareWasm = "frp-step-patch-rust.wasm"
 	_, err := front(bareWasm)

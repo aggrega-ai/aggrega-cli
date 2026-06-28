@@ -137,20 +137,30 @@ func (p *Plugin) appendWarning(formatted string) {
 //  3. Walk the bytes' import section and apply the static import
 //     firewall: allowlisted WASI imports pass; capability-granting
 //     names are rejected with ErrWasmManifestRejected.
-//  4. Select the curated host functions the spec declares (aggrega_log,
-//     aggrega_emit_warning, and future per-socket host functions).
-//  5. Construct the underlying extism.Plugin from the same in-memory
+//  4. Derive the host functions the guest actually imports from the
+//     same byte slice, verify the derived set is a subset of the
+//     curated allowlist, and — when the spec carries an authored
+//     declaration — cross-check that authored declaration against the
+//     derived truth, halting on disagreement.
+//  5. Register the derived host functions (aggrega_log,
+//     aggrega_emit_warning, and future per-socket host functions);
+//     the derived set, not an authored list, is what the plugin's
+//     bound surface is built from.
+//  6. Construct the underlying extism.Plugin from the same in-memory
 //     byte slice (via extism.WasmData), with EnableWasi: true and the
 //     deterministic, capability-denied ModuleConfig from
 //     deterministicModuleConfig. The plugin's WASI imports resolve to
 //     the Extism-bundled wazero WASI runtime, whose observable
 //     behaviour the ModuleConfig pins to deterministic values.
 //
-// Reading the bytes once and threading the same slice through both
-// firewall inspection and Extism instantiation eliminates the
-// TOCTOU window between validation and execution. Returns an error
-// wrapping ErrWasmManifestRejected if the firewall rejects the
-// manifest or any import; returns the Extism SDK's error otherwise.
+// Reading the bytes once and threading the same slice through firewall
+// inspection, host-function derivation, and Extism instantiation
+// eliminates the TOCTOU window between validation and execution.
+// Returns an error wrapping ErrWasmManifestRejected if the firewall
+// rejects the manifest or any import or a derived host function is
+// outside the allowlist; ErrWasmHostFunctionsDeclarationMismatch if an
+// authored declaration disagrees with the derived set; the Extism SDK's
+// error otherwise.
 func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	manifest, err := translateToManifest(spec)
 	if err != nil {
@@ -159,8 +169,8 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 
 	// Bytes supplied directly (embedded / verified-cache content with no
 	// stable filesystem location) win over Path; otherwise read Path once.
-	// Reading once and threading the same slice through both firewall
-	// inspection and Extism instantiation eliminates the TOCTOU window
+	// Reading once and threading the same slice through firewall inspection,
+	// derivation, and Extism instantiation eliminates the TOCTOU window
 	// between validation and execution.
 	wasmBytes := spec.Bytes
 	if wasmBytes == nil {
@@ -173,6 +183,31 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 
 	if err := validateWasiImports(spec.Name, wasmBytes); err != nil {
 		return nil, err
+	}
+
+	// Derive the host functions the guest actually imports from the bytes,
+	// then verify the derived set against the curated allowlist by reusing
+	// the loader's single subset gate. The derived set is authoritative —
+	// the .wasm import section is ground truth for which host functions the
+	// guest calls.
+	declaredHostFunctions, err := deriveDeclaredHostFunctions(spec.Name, wasmBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDeclaredHostFunctions(PluginSpec{
+		Name:                  spec.Name,
+		DeclaredHostFunctions: declaredHostFunctions,
+	}); err != nil {
+		return nil, err
+	}
+
+	// When the entity authored a host-function declaration, cross-check it
+	// against the derived truth. The authored field is a deliberate
+	// independent claim, not a mirror; a disagreement is a Loud Guardrail.
+	if len(spec.DeclaredHostFunctions) > 0 {
+		if err := crossCheckAuthoredHostFunctions(spec.Name, spec.DeclaredHostFunctions, declaredHostFunctions); err != nil {
+			return nil, err
+		}
 	}
 
 	// Replace the manifest's WasmFile entry (which would have Extism
@@ -189,7 +224,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	// Extism plugin handle is attached to p after NewPlugin returns.
 	p := &Plugin{name: spec.Name}
 
-	functions := p.hostFunctionsForDeclared(spec.DeclaredHostFunctions)
+	functions := p.hostFunctionsForDeclared(declaredHostFunctions)
 
 	config := extism.PluginConfig{
 		EnableWasi:   true,

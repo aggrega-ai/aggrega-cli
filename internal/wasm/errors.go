@@ -59,3 +59,33 @@ var ErrWasmGuestPanic = errors.New("wasm: guest plugin panicked during call")
 // The wrapping error carries the exit code the plugin passed to
 // proc_exit so callers see the failure code in the message.
 var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
+
+// ErrWasmCapabilityMismatch indicates that a catalog WasmPlugin entity's
+// authored capability claim disagrees with the plugin's self-reported describe()
+// descriptor at load. The cross-check is per-export, keyed by export name:
+// either the entity claims an export the plugin's describe() does not declare, or
+// a claimed export's operates or scope field does not match the plugin's
+// self-report. This is a structural contract check — the authored claim and the
+// plugin's own report must agree — not semantic policing of what an export does.
+//
+// The wrapping error names the entity, the offending export, the disagreeing
+// field, and both values so the author sees exactly which claim diverged from
+// the plugin's self-report. The same cross-check runs at publish time, so a
+// mismatch surfaces before the entity is published rather than at load.
+var ErrWasmCapabilityMismatch = errors.New("wasm: entity capability claim does not match plugin describe()")
+
+// ErrWasmHostFunctionsDeclarationMismatch indicates that a catalog WasmPlugin
+// entity's authored runtime host-function declaration disagrees with the host
+// functions the .wasm binary actually imports. The loader derives the imported
+// host functions from the binary itself — the authoritative truth for which host
+// functions the guest calls — and, when the entity authored a declaration,
+// cross-checks the two as sets. A declaration that claims a host function the
+// binary does not import, or omits one the binary does import, is a Loud
+// Guardrail.
+//
+// The wrapping error names the plugin, the declared-but-not-imported names, and
+// the imported-but-not-declared names so the author sees both directions of the
+// drift. This sentinel is distinct from ErrWasmCapabilityMismatch: that covers
+// the export operates/scope claim against describe(); this covers the
+// host-function declaration against the binary's imports.
+var ErrWasmHostFunctionsDeclarationMismatch = errors.New("wasm: entity host-function declaration does not match .wasm imports")

@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package wasm
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+// TestCrossCheckCapabilities exercises the single contract check the load gate
+// and the publish path share: an entity's authored capability claim against a
+// plugin's self-reported describe() descriptor.
+func TestCrossCheckCapabilities(t *testing.T) {
+	t.Parallel()
+
+	desc := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeFRPStep,
+		Exports: []PluginExport{
+			{Name: "step", Operates: operatesPatch, Scope: ScopeOwn, Selector: "the plugin's own description"},
+			{Name: "extra", Operates: operatesEmit, Scope: ScopeHost},
+		},
+	}
+
+	cases := []struct {
+		name      string
+		claim     EntityCapabilityClaim
+		wantErr   bool
+		wantField string // substring expected in the error message
+	}{
+		{
+			name: "agreeing claim returns nil",
+			claim: EntityCapabilityClaim{Exports: []EntityExportClaim{
+				{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
+			}},
+		},
+		{
+			name: "claim omitting an export the descriptor declares returns nil (entity-claim subset of describe)",
+			claim: EntityCapabilityClaim{Exports: []EntityExportClaim{
+				{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
+			}},
+		},
+		{
+			name: "selector-only difference does not halt",
+			claim: EntityCapabilityClaim{Exports: []EntityExportClaim{
+				// No selector field on the claim at all; the descriptor carries
+				// one. Selector is excluded from the cross-check.
+				{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
+			}},
+		},
+		{
+			name: "operates disagrees halts",
+			claim: EntityCapabilityClaim{Exports: []EntityExportClaim{
+				{Name: "step", Operates: operatesEmit, Scope: ScopeOwn},
+			}},
+			wantErr:   true,
+			wantField: "operates",
+		},
+		{
+			name: "scope disagrees halts",
+			claim: EntityCapabilityClaim{Exports: []EntityExportClaim{
+				{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
+			}},
+			wantErr:   true,
+			wantField: "scope",
+		},
+		{
+			name: "claimed export absent from describe halts",
+			claim: EntityCapabilityClaim{Exports: []EntityExportClaim{
+				{Name: "does_not_exist", Operates: operatesPatch, Scope: ScopeOwn},
+			}},
+			wantErr:   true,
+			wantField: "does not declare",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := CrossCheckCapabilities("frp/patch:1.0.0", tc.claim, desc)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !errors.Is(err, ErrWasmCapabilityMismatch) {
+				t.Fatalf("error does not wrap ErrWasmCapabilityMismatch: %v", err)
+			}
+			if !strings.Contains(err.Error(), "frp/patch:1.0.0") {
+				t.Errorf("error should name the entity identity; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantField) {
+				t.Errorf("error should mention %q; got: %v", tc.wantField, err)
+			}
+		})
+	}
+}
+
+// TestCrossCheckCapabilities_EmptyClaim proves an entity with no authored
+// exports declares no claim and never halts, regardless of what the plugin
+// reports.
+func TestCrossCheckCapabilities_EmptyClaim(t *testing.T) {
+	t.Parallel()
+	desc := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeFRPStep,
+		Exports:    []PluginExport{{Name: "step", Operates: operatesPatch, Scope: ScopeOwn}},
+	}
+	if err := CrossCheckCapabilities("frp/patch:1.0.0", EntityCapabilityClaim{}, desc); err != nil {
+		t.Fatalf("empty claim should not halt; got %v", err)
+	}
+}

@@ -45,14 +45,24 @@ type PluginSpec struct {
 	// callers SHOULD set a non-zero ceiling).
 	TimeoutMs uint64
 
-	// DeclaredHostFunctions lists the host function names the plugin
-	// imports. The Loader validates that every entry appears in the
-	// curated allowlist (see hostfuncs.go); a declared function outside
-	// the allowlist triggers ErrWasmManifestRejected. Only declared
-	// functions are registered on the constructed plugin; undeclared
-	// allowlist members are not exposed, giving each plugin the
-	// least-privilege host surface it actually needs.
+	// DeclaredHostFunctions is the authored claim of the host function names
+	// the plugin imports. The loader does NOT register from this field — it
+	// derives the imported host functions from the .wasm bytes themselves
+	// (deriveDeclaredHostFunctions) and registers the derived set, which is
+	// ground truth. When this authored field is non-empty the loader
+	// cross-checks it against the derived set and halts on disagreement
+	// (ErrWasmHostFunctionsDeclarationMismatch); an empty field skips that
+	// cross-check. This authored field is a DELIBERATE independent cross-check
+	// of the derived truth, not a silent mirror — keep it rather than
+	// "unifying" it into the derived set.
 	DeclaredHostFunctions []string
+
+	// Capability is the optional authored capability claim the load gate
+	// cross-checks against the plugin's self-reported describe() descriptor (see
+	// CrossCheckCapabilities). nil disables the cross-check — the path every
+	// non-entity caller and the publish path take. The entity-fronted load path
+	// populates it from the catalog WasmPlugin entity's exports.
+	Capability *EntityCapabilityClaim
 
 	// ConfigKV carries plugin-specific configuration that the Extism
 	// runtime hands to the plugin at start. Nil leaves the runtime's

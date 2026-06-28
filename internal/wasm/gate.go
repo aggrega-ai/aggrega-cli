@@ -47,6 +47,18 @@ func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 		return nil, PluginDescriptor{}, err
 	}
 
+	// When the spec carries an authored capability claim (the entity-fronted
+	// load path), cross-check it against the validated descriptor. A nil claim
+	// — every non-entity caller and the publish path — skips the cross-check.
+	// On mismatch, Close before returning so a rejected load leaks no instance,
+	// matching the descriptor-rejection discipline above.
+	if spec.Capability != nil {
+		if err := CrossCheckCapabilities(spec.Name, *spec.Capability, desc); err != nil {
+			_ = plugin.Close(ctx)
+			return nil, PluginDescriptor{}, err
+		}
+	}
+
 	return plugin, desc, nil
 }
 

@@ -65,6 +65,44 @@ type ResolvedPlugin struct {
 	Bytes []byte
 	Tier  Tier
 	URI   string
+
+	// Capability is the entity's authored capability claim, attached by the
+	// entity-fronted Lookup (EntityLookup) from the in-hand WasmPlugin entity.
+	// It is neutral — a pluginpath-owned shape, not the loader's — so this
+	// package stays free of any internal/wasm dependency; the loader's caller
+	// maps it onto the load spec. nil when the resolution is not entity-fronted
+	// (the bare cascade, the linter's --plugin override) so the cross-check is
+	// skipped.
+	Capability *PluginCapabilityClaim
+}
+
+// PluginCapabilityClaim is the neutral, pluginpath-owned shape of an entity's
+// authored capability declaration: the per-export name/operates/scope triples
+// the load gate cross-checks against the plugin's self-report, plus the optional
+// authored host-function list the gate cross-checks against the set derived from
+// the .wasm imports. It carries no dependency on internal/wasm; the loader's
+// caller maps it onto the wasm-side claim shape.
+type PluginCapabilityClaim struct {
+	// Exports is the authored per-export capability claim, in author order.
+	Exports []PluginExportClaim
+
+	// DeclaredHostFunctions is the entity's optional authored host-function
+	// declaration (runtime.declaredHostFunctions). When non-empty the load gate
+	// cross-checks it against the set derived from the .wasm imports and halts on
+	// disagreement; empty omits the cross-check. It is a deliberate independent
+	// claim against the derived truth, not the registration input — the loader
+	// registers the derived set.
+	DeclaredHostFunctions []string
+}
+
+// PluginExportClaim is one export's authored capability in the neutral shape:
+// the export name and the operates/scope fields cross-checked against the
+// plugin's describe(). The selector is intentionally absent — it is free-form
+// documentation, not a structurally cross-checkable claim.
+type PluginExportClaim struct {
+	Name     string
+	Operates string
+	Scope    string
 }
 
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each
