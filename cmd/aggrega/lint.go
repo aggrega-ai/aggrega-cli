@@ -547,7 +547,7 @@ func lintRun(cfg lintConfig) error {
 	}
 	wsCfg := rw.Config()
 
-	pluginPath, err := resolvePluginPath(cfg.PluginPath, wsCfg)
+	pluginBytes, err := resolvePluginBytes(cfg.PluginPath, wsCfg)
 	if err != nil {
 		return err
 	}
@@ -585,7 +585,7 @@ func lintRun(cfg lintConfig) error {
 	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath, cfg.DiagOut)
 
 	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, cfg.PrePublish)
-	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginPath, inputs)
+	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginBytes, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
 	}
@@ -652,18 +652,34 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 	return out
 }
 
-// resolvePluginPath returns the filesystem path of the publishing-linter Wasm
-// plugin. It is the linter's per-socket URI feeder: the --plugin flag is the
-// explicit override, and plugins.linter[0].uri from the resolved workspace
-// config is the URI source. The generic URI→path resolution — local-path
-// handling and the uniform OCI-not-yet-wired rejection — lives once in
-// pkg/pluginpath and is shared with every other plugin socket.
-func resolvePluginPath(cliFlag string, wsCfg workspaceconfig.Config) (string, error) {
+// resolvePluginBytes returns the resolved .wasm bytes of the publishing-linter
+// Wasm plugin. It is the linter's per-socket URI feeder: the --plugin flag is
+// the explicit override, and plugins.linter[0].uri from the resolved workspace
+// config is the URI source. Resolution runs through the shared plugin cascade
+// (pkg/pluginpath) — embed → sidecar → local → cache — so the linter sees the
+// same tier model every plugin socket does, including the embedded built-ins
+// (the publishing-linter is the natural first embedded-core candidate) and the
+// operator's sidecar directory.
+//
+// The linter passes NO digest pins: it lints a not-yet-pinned proposed entity
+// at publish time, so there is no lockfile to verify the plugin against. It
+// wires no puller — the linter resolves locally (embed / sidecar / local); an
+// OCI URI with nothing cached halts with the cascade's not-resolvable message.
+func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config) ([]byte, error) {
 	uri := ""
 	if len(wsCfg.Plugins.Linter) > 0 {
 		uri = wsCfg.Plugins.Linter[0].URI
 	}
-	return pluginpath.Resolve(uri, cliFlag)
+	r := pluginpath.Resolver{
+		SidecarDir:  wsCfg.PluginSidecarDir,
+		Override:    cliFlag,
+		OverrideLog: func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
+	}
+	resolved, err := r.Resolve(uri)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.Bytes, nil
 }
 
 // looksLikeOCIURI returns true when the URI looks like an OCI

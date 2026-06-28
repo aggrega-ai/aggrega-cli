@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
 // mixedScopeComposeFixtureInput names the mixed-scope-compose fixture: a single
@@ -30,16 +31,16 @@ import (
 // the calling test.
 func mixedScopeComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	ownPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-own-patch-compose-rust.wasm")
-	hostPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-host-patch-compose-rust.wasm")
-	lookup := func(uri string) (string, error) {
+	ownBytes := wasmtest.EnsureFixtureBytes(t, "frp-step-own-patch-compose-rust.wasm")
+	hostBytes := wasmtest.EnsureFixtureBytes(t, "frp-step-host-patch-compose-rust.wasm")
+	lookup := func(uri string) (pluginpath.ResolvedPlugin, error) {
 		switch filepath.Base(uri) {
 		case "frp-step-own-patch-compose-rust.wasm":
-			return ownPath, nil
+			return pluginpath.ResolvedPlugin{Bytes: ownBytes, Tier: pluginpath.TierLocal, URI: uri}, nil
 		case "frp-step-host-patch-compose-rust.wasm":
-			return hostPath, nil
+			return pluginpath.ResolvedPlugin{Bytes: hostBytes, Tier: pluginpath.TierLocal, URI: uri}, nil
 		default:
-			return "", fmt.Errorf("mixed-scope-compose fixture: unknown plugin uri %q", uri)
+			return pluginpath.ResolvedPlugin{}, fmt.Errorf("mixed-scope-compose fixture: unknown plugin uri %q", uri)
 		}
 	}
 	return pipelinetest.Input{

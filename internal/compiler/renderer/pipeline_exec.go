@@ -396,19 +396,19 @@ func splitBoundaryPath(bp string) []string {
 }
 
 // newStepInvoker binds the pipeline's per-step guest dispatch over the shared
-// plugin-path resolver and the describe() gate: resolve the step's plugin URI
-// to a .wasm path, load it through LoadAndDescribe (which validates the
-// descriptor), invoke the step's named export, and close the plugin. It
-// mirrors the publishing-linter's dispatch precedent; loading per step is
-// acceptable (batch amortisation is a follow-on).
+// plugin-resolution cascade and the describe() gate: resolve the step's plugin
+// URI to its verified .wasm bytes, load them through LoadAndDescribe (which
+// validates the descriptor), invoke the step's named export, and close the
+// plugin. It mirrors the publishing-linter's dispatch precedent; loading per
+// step is acceptable (batch amortisation is a follow-on).
 func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 	return func(ctx context.Context, step types.PipelineStep, payload []byte) ([]byte, error) {
-		path, err := lookup(step.Plugin)
+		resolved, err := lookup(step.Plugin)
 		if err != nil {
 			return nil, err
 		}
 		loader := &wasm.Loader{}
-		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{Name: step.Plugin, Path: path})
+		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{Name: step.Plugin, Bytes: resolved.Bytes})
 		if err != nil {
 			return nil, err
 		}
@@ -427,20 +427,21 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error)
 
 // newStepDescriber binds the per-step descriptor read over the shared
-// plugin-path resolver and the describe() gate: resolve the step's plugin URI to
-// a .wasm path, load it through LoadAndDescribe (which validates the descriptor),
-// and return the validated descriptor, closing the plugin. The pre-walk
-// compatibility check consumes the descriptor's compatibleProviders. Loading
-// here and again in the invoker is the bounded double-load the per-step batch
-// amortisation follow-on addresses; loading per step is already accepted.
+// plugin-resolution cascade and the describe() gate: resolve the step's plugin
+// URI to its verified .wasm bytes, load them through LoadAndDescribe (which
+// validates the descriptor), and return the validated descriptor, closing the
+// plugin. The pre-walk compatibility check consumes the descriptor's
+// compatibleProviders. Loading here and again in the invoker is the bounded
+// double-load the per-step batch amortisation follow-on addresses; loading per
+// step is already accepted.
 func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 	return func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error) {
-		path, err := lookup(step.Plugin)
+		resolved, err := lookup(step.Plugin)
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}
 		loader := &wasm.Loader{}
-		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{Name: step.Plugin, Path: path})
+		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{Name: step.Plugin, Bytes: resolved.Bytes})
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}

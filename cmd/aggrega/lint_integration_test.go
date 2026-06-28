@@ -220,7 +220,11 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 		input.Parent = parentJSON
 	}
 
-	findings, err := validator.DispatchPublishingLinter(pluginPath, input)
+	pluginBytes, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("read plugin %s: %v", pluginPath, err)
+	}
+	findings, err := validator.DispatchPublishingLinter(pluginBytes, input)
 	if err != nil {
 		t.Fatalf("DispatchPublishingLinter(%s): %v", c.ruleID, err)
 	}
@@ -332,6 +336,11 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 	}
 	policies := buildParticipationPolicies(nil)
 
+	pluginBytes, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("read plugin %s: %v", pluginPath, err)
+	}
+
 	fired := map[string]bool{}
 	for _, ruleID := range defaultRuleIDs(false) {
 		input := validator.LinterInput{
@@ -343,7 +352,7 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 		if ruleID == "category-matches-directory" {
 			input.SourcePath = entityPath
 		}
-		findings, err := validator.DispatchPublishingLinter(pluginPath, input)
+		findings, err := validator.DispatchPublishingLinter(pluginBytes, input)
 		if err != nil {
 			t.Fatalf("dispatch %s: %v", ruleID, err)
 		}

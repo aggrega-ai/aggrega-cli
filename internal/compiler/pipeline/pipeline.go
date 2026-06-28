@@ -101,12 +101,15 @@ type Inputs struct {
 	// caller that forgets the flag halts (safe) rather than silently skips.
 	TolerateCatalogViewInconsistency bool
 
-	// PluginPathLookup resolves a pipeline step's plugin URI to its .wasm
-	// filesystem path. When nil, RunPipeline binds the shared workspace
-	// resolver (pluginpath.Resolve); a caller may override it to point a
-	// fixture's plugin URI at a built artifact path. The renderer's per-node
-	// pipeline executor uses it to load each step's guest; a nil lookup
-	// reaching the renderer leaves pipelines validated-but-not-executed.
+	// PluginPathLookup resolves a pipeline step's plugin URI to its verified
+	// .wasm bytes. When nil, RunPipeline binds the shared plugin-resolution
+	// cascade (embed → sidecar → local → cache → registry) configured from the
+	// build context — the lockfile digest pins, the workspace root + cache dir,
+	// and the configured sidecar directory, with a nil puller (the build is
+	// hermetic). A caller may override it to point a fixture's plugin URI at a
+	// built artifact. The renderer's per-node pipeline executor uses it to load
+	// each step's guest; a nil lookup reaching the renderer leaves pipelines
+	// validated-but-not-executed.
 	PluginPathLookup pluginpath.Lookup
 }
 
@@ -461,6 +464,35 @@ func RunTier4Pipeline(
 // the callback and the deferred PurgeParameters fires after it returns, so
 // RunPipeline holds no purge defer of its own.
 //
+// buildPluginResolver constructs the hermetic build-time plugin-resolution
+// cascade from the pipeline inputs: the configured sidecar directory, the
+// workspace root + resolved cache directory, and the lockfile digest pins. The
+// puller is left nil — the build never fetches from a registry (AOT purity), so
+// a cache miss is a loud halt rather than a network round-trip. Pins make every
+// tier's resolved bytes verify against the lockfile digest, so a drifted or
+// substituted artifact halts on the pin regardless of which tier produced it.
+// The sidecar-overrides-embed notice is surfaced to stderr alongside the
+// pipeline's other mid-build diagnostics.
+func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
+	r := pluginpath.Resolver{
+		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
+		WorkspaceRoot: inputs.WorkspaceRoot,
+		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
+		OverrideLog:   func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
+	}
+	if inputs.Lockfile != nil && len(inputs.Lockfile.WasmPlugins) > 0 {
+		pins := make(map[string]string, len(inputs.Lockfile.WasmPlugins))
+		versions := make(map[string]string, len(inputs.Lockfile.WasmPlugins))
+		for _, wp := range inputs.Lockfile.WasmPlugins {
+			pins[wp.URI] = wp.Digest
+			versions[wp.URI] = wp.ResolvedVersion
+		}
+		r.Pins = pins
+		r.PinVersions = versions
+	}
+	return r
+}
+
 // RunPipeline shares Steps 1-4 with RunTier4Pipeline through the
 // unexported runStepsOneToFour helper, then runs Step 4b + Step 5.
 // First-error-fatal semantic is preserved for terminal phases:
@@ -538,16 +570,18 @@ func RunPipeline(
 			MappingLibraries: inputs.MappingLibraries,
 			Trace:            traceWriter,
 			YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
-			// Bind the shared plugin-path resolver so a Recipe / FeatureRecipe
-			// pipeline step's plugin URI resolves to its .wasm bytes. Resolve
-			// handles local/relative URIs verbatim and rejects OCI loudly; the
-			// per-step plugin loads through the describe() gate at execution. A
-			// caller-supplied override (e.g. a fixture pointing a plugin URI at
-			// a built artifact path) wins when present.
+			// Bind the shared plugin-resolution cascade so a Recipe /
+			// FeatureRecipe pipeline step's plugin URI resolves to its verified
+			// .wasm bytes (embed → sidecar → local → cache → registry). The
+			// build configures it hermetic (nil puller) with the lockfile digest
+			// pins, so a cache miss is a loud halt and a drifted artifact halts
+			// on the pin. The per-step plugin loads through the describe() gate
+			// at execution. A caller-supplied override (e.g. a fixture pointing a
+			// plugin URI at a built artifact) wins when present.
 			PluginPathLookup: inputs.PluginPathLookup,
 		}
 		if rendererInput.PluginPathLookup == nil {
-			rendererInput.PluginPathLookup = func(uri string) (string, error) { return pluginpath.Resolve(uri, "") }
+			rendererInput.PluginPathLookup = buildPluginResolver(inputs).Resolve
 		}
 		// Build-time source-artifact resolution: when the caller supplies a
 		// lockfile and workspace root, the orchestrator resolves each remote

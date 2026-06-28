@@ -63,6 +63,17 @@ type Config struct {
 	AutoPull         bool   `yaml:"auto_pull"`
 	ArtifactCacheDir string `yaml:"artifact_cache_dir"`
 
+	// PluginSidecarDir is an on-disk directory the plugin resolver checks
+	// ahead of the local / cache / registry tiers (and behind the embedded
+	// built-ins): the operator drops a .wasm there to override an embedded
+	// core plugin or to supply a third-party local plugin without publishing
+	// it. A relative path resolves to absolute at load against the declaring
+	// config file's directory, like ArtifactCacheDir. Empty disables the
+	// sidecar tier. The resolved bytes are still verified against the lockfile
+	// digest pin, so a sidecar override is determinism-safe when it matches the
+	// pin and halts when it does not.
+	PluginSidecarDir string `yaml:"plugin_sidecar_dir"`
+
 	Build       BuildConfig       `yaml:"build"`
 	Plugins     PluginsConfig     `yaml:"plugins"`
 	Lint        LintConfig        `yaml:"lint"`

@@ -21,7 +21,7 @@ import (
 func refPluginLookup(t *testing.T) pluginpath.Lookup {
 	t.Helper()
 	path := wasmtest.EnsureFixtureBuilt(t, "frp-step-patch-rust.wasm")
-	return func(uri string) (string, error) { return pluginpath.Resolve(uri, path) }
+	return (pluginpath.Resolver{Override: path}).Resolve
 }
 
 // multiDocOwn is one emitted file carrying two YAML documents: a Deployment

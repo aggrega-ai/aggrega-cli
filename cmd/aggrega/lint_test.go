@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -215,42 +216,46 @@ spec:
 	}
 }
 
-// TestResolvePluginPathDirect: --plugin flag
-// resolution, filesystem-absolute path used verbatim.
-func TestResolvePluginPathDirect(t *testing.T) {
-	wsCfg := workspaceconfig.Default()
-	path, err := resolvePluginPath("/abs/path/to/plugin.wasm", wsCfg)
-	if err != nil {
-		t.Fatalf("resolvePluginPath: %v", err)
+// TestResolvePluginBytesOverride: the --plugin flag override reads the
+// artifact's bytes directly through the cascade's override path.
+func TestResolvePluginBytesOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plugin.wasm")
+	content := []byte("\x00asm-fixture-bytes")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
 	}
-	if path != "/abs/path/to/plugin.wasm" {
-		t.Errorf("got %q; want /abs/path/to/plugin.wasm", path)
+	wsCfg := workspaceconfig.Default()
+	got, err := resolvePluginBytes(path, wsCfg)
+	if err != nil {
+		t.Fatalf("resolvePluginBytes: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Errorf("got %q; want %q", got, content)
 	}
 }
 
-// TestResolvePluginPathRejectsOCIURI: loud-error
-// behavior when the workspace config carries an OCI URI rather than
-// a filesystem path.
-func TestResolvePluginPathRejectsOCIURI(t *testing.T) {
+// TestResolvePluginBytesOCIUnresolvable: the linter wires no puller, so an
+// OCI URI with nothing cached halts loudly through the cascade.
+func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
 		{URI: "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing:1.0.0"},
 	}
-	_, err := resolvePluginPath("", wsCfg)
+	_, err := resolvePluginBytes("", wsCfg)
 	if err == nil {
 		t.Fatal("expected error for OCI URI; got nil")
 	}
-	if !strings.Contains(err.Error(), "OCI plugin URI resolution not yet wired") {
-		t.Errorf("error should describe OCI-URI deferral; got: %v", err)
+	if !strings.Contains(err.Error(), "not resolvable") {
+		t.Errorf("error should describe the unresolvable OCI URI; got: %v", err)
 	}
 }
 
-// TestResolvePluginPathDiagnosticOnUnset:
-// loud-error behavior when neither --plugin nor workspace config
-// provides a path.
-func TestResolvePluginPathDiagnosticOnUnset(t *testing.T) {
+// TestResolvePluginBytesDiagnosticOnUnset: loud-error behavior when neither
+// --plugin nor workspace config provides a URI.
+func TestResolvePluginBytesDiagnosticOnUnset(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	_, err := resolvePluginPath("", wsCfg)
+	_, err := resolvePluginBytes("", wsCfg)
 	if err == nil {
 		t.Fatal("expected error for unset plugin path; got nil")
 	}

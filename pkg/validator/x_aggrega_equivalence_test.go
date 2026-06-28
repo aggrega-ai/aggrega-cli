@@ -195,7 +195,7 @@ func buildProposedJSON(entityName string, schemaJSON json.RawMessage) json.RawMe
 // NO t.Parallel() — log.SetOutput is process-wide state; subtests
 // share the test binary's global logger.
 func TestXAggregaWalkerAndRuleProduceEquivalentFindings(t *testing.T) {
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	fixtures, err := filepath.Glob("testdata/x_aggrega_equivalence/*.yaml")
 	if err != nil {
 		t.Fatalf("glob fixtures: %v", err)
@@ -228,7 +228,7 @@ func TestXAggregaWalkerAndRuleProduceEquivalentFindings(t *testing.T) {
 
 			// Drive Wasm rule via Extism through DispatchPublishingLinter.
 			proposed := buildProposedJSON(entityName, schemaJSON)
-			wasmRaw, err := DispatchPublishingLinter(pluginPath, LinterInput{
+			wasmRaw, err := DispatchPublishingLinter(pluginBytes, LinterInput{
 				RuleID:     "x-aggrega-discouragement",
 				EntityKind: "Component",
 				Proposed:   proposed,

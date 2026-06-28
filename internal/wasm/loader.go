@@ -157,9 +157,18 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 		return nil, err
 	}
 
-	wasmBytes, err := os.ReadFile(spec.Path)
-	if err != nil {
-		return nil, fmt.Errorf("wasm: read plugin %q from %s: %w", spec.Name, spec.Path, err)
+	// Bytes supplied directly (embedded / verified-cache content with no
+	// stable filesystem location) win over Path; otherwise read Path once.
+	// Reading once and threading the same slice through both firewall
+	// inspection and Extism instantiation eliminates the TOCTOU window
+	// between validation and execution.
+	wasmBytes := spec.Bytes
+	if wasmBytes == nil {
+		var err error
+		wasmBytes, err = os.ReadFile(spec.Path)
+		if err != nil {
+			return nil, fmt.Errorf("wasm: read plugin %q from %s: %w", spec.Name, spec.Path, err)
+		}
 	}
 
 	if err := validateWasiImports(spec.Name, wasmBytes); err != nil {

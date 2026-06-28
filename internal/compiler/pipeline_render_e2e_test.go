@@ -28,7 +28,7 @@ func pipelineRenderFixtureInput(t *testing.T) pipelinetest.Input {
 			"testdata/pipeline-render/catalog/base",
 			"testdata/pipeline-render/catalog/recipes/helm",
 		},
-		PluginPathLookup: func(uri string) (string, error) { return pluginpath.Resolve(uri, pluginPath) },
+		PluginPathLookup: (pluginpath.Resolver{Override: pluginPath}).Resolve,
 	}
 }
 

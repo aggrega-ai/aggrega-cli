@@ -92,6 +92,21 @@ func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 	return ""
 }
 
+// EnsureFixtureBytes builds the fixture (via EnsureFixtureBuilt) and returns its
+// .wasm bytes. It is the byte-oriented companion for callers that load a plugin
+// from in-memory content (the publishing-linter dispatcher takes resolved bytes,
+// not a path), so tests feed it the same fixture without each one re-reading the
+// file. Skips the test under the same conditions EnsureFixtureBuilt does.
+func EnsureFixtureBytes(t *testing.T, artifactName string) []byte {
+	t.Helper()
+	path := EnsureFixtureBuilt(t, artifactName)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read built fixture %s: %v", path, err)
+	}
+	return b
+}
+
 func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang string) string {
 	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
 	artifactPath := filepath.Join(testdataDir, artifactName)

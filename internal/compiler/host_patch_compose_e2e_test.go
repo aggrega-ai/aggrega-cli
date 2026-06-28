@@ -31,7 +31,7 @@ func hostPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 			"testdata/host-patch-compose/catalog/base",
 			"testdata/host-patch-compose/catalog/recipes/compose",
 		},
-		PluginPathLookup: func(uri string) (string, error) { return pluginpath.Resolve(uri, pluginPath) },
+		PluginPathLookup: (pluginpath.Resolver{Override: pluginPath}).Resolve,
 	}
 }
 

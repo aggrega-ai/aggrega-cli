@@ -408,6 +408,7 @@ func resolveConfigPaths(cfg *Config, dir string) {
 	for i, d := range cfg.Workspace.CatalogDirs {
 		cfg.Workspace.CatalogDirs[i] = resolveFilesystemPath(dir, d)
 	}
+	cfg.PluginSidecarDir = resolveFilesystemPath(dir, cfg.PluginSidecarDir)
 	resolvePluginURIs(cfg.Plugins.Mutator, dir)
 	resolvePluginURIs(cfg.Plugins.Policy, dir)
 	resolvePluginURIs(cfg.Plugins.Linter, dir)

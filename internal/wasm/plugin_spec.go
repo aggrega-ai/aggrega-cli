@@ -23,8 +23,17 @@ type PluginSpec struct {
 
 	// Path is the filesystem path to the .wasm artifact bytes. Upstream
 	// resolution (catalog URI to local path) happens elsewhere; the
-	// Loader treats Path as an opaque resolved location.
+	// Loader treats Path as an opaque resolved location. Ignored when
+	// Bytes is non-nil.
 	Path string
+
+	// Bytes is the .wasm artifact content supplied directly, bypassing a
+	// filesystem read. A non-nil Bytes wins over Path: the Loader compiles
+	// these bytes and never reads from disk. This is the path for an artifact
+	// with no stable filesystem location — bytes embedded in the binary, or
+	// content resolved from a verified cache slot — where reading "the file"
+	// is not meaningful. When Bytes is nil the Loader reads Path as before.
+	Bytes []byte
 
 	// MaxMemoryPages caps the plugin's linear memory in Wasm pages
 	// (64 KiB per page). Zero leaves the Extism runtime's default

@@ -31,7 +31,7 @@ func hostPatchHelmchartFixtureInput(t *testing.T) pipelinetest.Input {
 			"testdata/host-patch-helmchart/catalog/base",
 			"testdata/host-patch-helmchart/catalog/recipes/helm-chart",
 		},
-		PluginPathLookup: func(uri string) (string, error) { return pluginpath.Resolve(uri, pluginPath) },
+		PluginPathLookup: (pluginpath.Resolver{Override: pluginPath}).Resolve,
 	}
 }
 
