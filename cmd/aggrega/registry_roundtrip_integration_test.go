@@ -452,6 +452,18 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 // (resolved before any chdir). Returns the .wasm content digest the closure pins.
 func publishPluginEntity(t *testing.T, host, socketName, version, pluginPath string) string {
 	t.Helper()
+	return publishPluginEntityWithRuntime(t, host, socketName, version, pluginPath, "")
+}
+
+// publishPluginEntityWithRuntime is publishPluginEntity plus an optional
+// authored spec.runtime block. runtimeBlock is the YAML body indented two
+// spaces under spec (e.g. "  runtime:\n    timeoutMs: 1\n"); an empty string
+// authors no runtime block, which is the bare publishPluginEntity behaviour.
+// Authoring an explicit runtime block is how a test drives an entity-declared
+// execution constraint (a memory or per-call wall-time cap) through the publish
+// path, so the constraint can be observed flowing to the build-time load.
+func publishPluginEntityWithRuntime(t *testing.T, host, socketName, version, pluginPath, runtimeBlock string) string {
+	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("read plugin fixture %s: %v", pluginPath, err)
@@ -474,7 +486,7 @@ spec:
     - name: step
       operates: patch
       scope: own
-`)
+`+runtimeBlock)
 	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish plugin entity %s:%s: %v", socketName, version, err)
 	}
@@ -742,6 +754,219 @@ spec:
 	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build (resolving the bare plugin entity refs from cache): %v", err)
 	}
+}
+
+// writePipelinePluginFixtureCatalog writes a controlled fixture catalog with a
+// single helm-provider Component whose Recipe carries a one-step pipeline that
+// references the named WasmPlugin entity by its bare identity, and writes a
+// consumer workspace (aggregate / manifest / release / workspace config) wired to
+// build that Component over the registry at host. The committed frp-step-go
+// fixture self-describes as a helm-compatible frp_step plugin (export "step",
+// patch, own-scope), so the Recipe renders under the helm provider and the build
+// invokes the plugin. Returns the consumer workspace path (not yet chdir'd into).
+//
+// This is the shared scaffolding for the runtime-limit-flows-to-build proof: two
+// arms build the SAME catalog + workspace shape, differing only in the published
+// plugin entity's authored runtime block, so a fail-vs-succeed outcome is
+// attributable to that one authored difference and nothing else.
+func writePipelinePluginFixtureCatalog(t *testing.T, host, pluginURI string) string {
+	t.Helper()
+	cat := t.TempDir()
+	writeFixtureEntity(t, cat, "provider/helm/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  baseSchema: |
+    type: object
+    properties:
+      image: { type: string }
+      replicas: { type: integer, default: 1 }
+    additionalProperties: true
+`)
+	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: test/svc
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }
+`)
+	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: svc
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: test/svc
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `+"`replicas`"+` 1 }}
+    containers:
+      server:
+        image: test-server:latest
+        ports:
+          web: {{ optional .infra `+"`port`"+` 8080 }}
+  pipeline:
+    - id: patch
+      plugin: `+pluginURI+`
+      function: step
+`)
+	pushCatalog(t, host, cat)
+
+	ws := t.TempDir()
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: test/svc
+`)
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        test/svc:1.0.0: helm/svc:1.0.0
+`)
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: rel
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        app:
+          infra:
+            replicas: 1
+`)
+	// The fixture plugin is published unsigned to the unsigned in-process
+	// registry, so signature verification has nothing legitimate to check;
+	// disable it loudly so the pull exercises the plugin-pin path, not the
+	// signature path (which the dedicated pull-verify suites cover).
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\nskip_signature_verification: true")
+	return ws
+}
+
+// TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild closes the one
+// lifecycle leg the round-trip test does not exercise: an entity-authored runtime
+// LIMIT flowing publish → pull → build to the load. The round-trip / cross-check /
+// trust / limits-enforcement legs are proven elsewhere and are NOT rebuilt here;
+// the round-trip publishes the plugin with NO runtime block, so the
+// entity.runtime.limits → published entity → pulled → build-load chain is what
+// this test adds end-to-end.
+//
+// The proof is a fail-vs-succeed contrast on the one authored difference. The
+// fail arm publishes a WasmPlugin entity authoring spec.runtime.timeoutMs: 1 — a
+// per-call wall-time cap far below what a real guest's describe()/step Call needs.
+// The runtime cap is Call-scoped, and the build invokes the plugin, so the 1 ms
+// cap trips at the guest Call and the build halts with a context-deadline
+// cancellation. The success arm publishes the SAME fixture against the SAME
+// catalog + workspace shape with a generous runtime.timeoutMs, and the build
+// completes. Because the two arms differ ONLY in the authored runtime block, the
+// fail-vs-succeed outcome is attributable to the entity's authored timeout
+// reaching the loader — proving the limit flowed the full publish → pull → build
+// path, not that some unrelated error fired.
+func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
+	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root discovery
+	// walks up from cwd); a clean skip if the toolchain is absent.
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+
+	const (
+		pluginName   = "patch-server"
+		pluginSocket = "pipeline"
+	)
+	// BARE WasmPlugin entity identity — the canonical reference shape the recipe
+	// pipeline step names; the pull binds <socket>/<name> to the registry repo.
+	pluginURI := pluginSocket + "/" + pluginName + ":1.0.0"
+
+	t.Run("tiny_timeout_fails_at_guest_call", func(t *testing.T) {
+		host := startRegistry(t, nil)
+		// Author spec.runtime.timeoutMs: 1 — a wall-time cap a real guest's Call
+		// cannot meet. Indented two spaces under spec.
+		publishPluginEntityWithRuntime(t, host, pluginSocket+"/"+pluginName, "1.0.0", pluginPath,
+			"  runtime:\n    timeoutMs: 1\n")
+		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
+		t.Chdir(ws)
+
+		if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+			t.Fatalf("registry pull: %v", err)
+		}
+
+		err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout)
+		if err == nil {
+			t.Fatal("build SUCCEEDED with an entity-authored timeoutMs: 1; the tiny per-call cap did not reach the loader")
+		}
+		// Attributability: the failure must be a per-call wall-time cancellation,
+		// not any error. The runtime cap surfaces from the guest Call as the wazero
+		// cancellation message "module closed with context deadline exceeded" — the
+		// distinctive phrase no other build-halt path produces. It is matched by
+		// walking the error chain, because the per-call deadline trips while the
+		// guest's language runtime is initialising and the runtime SDK renders that
+		// cancellation into its message text (not as a wrapped error value), so an
+		// errors.Is(context.DeadlineExceeded) over the chain does not reach it; the
+		// message-substring match over the chain is the robust attributable signal.
+		// The top CompilerError flattens its own Error() to its message, so the scan
+		// must traverse the chain rather than read err.Error() alone.
+		const deadlinePhrase = "module closed with context deadline exceeded"
+		if !chainContains(err, deadlinePhrase) {
+			t.Fatalf("build err chain = %q; want a %q cancellation — the entity's timeoutMs: 1 must surface as a per-call wall-time cancellation at the guest Call (not an unrelated error)",
+				chainString(err), deadlinePhrase)
+		}
+		t.Logf("build halted attributably on the entity-authored timeout cap; chain:\n%s", chainString(err))
+	})
+
+	t.Run("generous_timeout_succeeds", func(t *testing.T) {
+		host := startRegistry(t, nil)
+		// The SAME fixture + catalog + workspace shape, with a generous wall-time
+		// cap the guest Call comfortably meets. The only difference from the fail
+		// arm is this authored runtime block, so the build completing here vs.
+		// halting there is attributable to the authored timeout reaching the loader.
+		publishPluginEntityWithRuntime(t, host, pluginSocket+"/"+pluginName, "1.0.0", pluginPath,
+			"  runtime:\n    timeoutMs: 60000\n")
+		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
+		t.Chdir(ws)
+
+		if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+			t.Fatalf("registry pull: %v", err)
+		}
+		if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+			t.Fatalf("build FAILED under a generous entity-authored timeout; the same shape that succeeds with timeoutMs: 60000 must build: %v", err)
+		}
+	})
+}
+
+// chainString renders an error and every error it wraps, one per line, for a
+// diagnostic that survives CompilerError flattening its own Error() to the top
+// message. (chainContains, the sibling membership check, lives in build_test.go
+// and is shared across the package's test binary.)
+func chainString(err error) string {
+	var b strings.Builder
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		b.WriteString(e.Error())
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // containsRef reports whether any referenced-from entry contains substr.
