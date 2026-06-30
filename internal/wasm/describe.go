@@ -212,7 +212,7 @@ const providerRenderExportName = "render_node"
 // export may declare via [PluginExport.Operates]. The shape validator
 // accepts these two values or the empty string; it does not require the
 // field or act on its value — the runtime reads it when dispatching. The
-// values are the schema-generated WasmPlugin operates vocabulary, re-exported
+// values are the schema-generated Plugin operates vocabulary, re-exported
 // here so this load-time gate and the entity authoring surface read one set of
 // values rather than each re-spelling the literals.
 const (
@@ -228,7 +228,7 @@ const (
 // which provider an export's scope is checked against. Exported so the single
 // scope identity is shared between this load-time shape gate and the runtime
 // enforcement rather than each side re-spelling the literal. The values are the
-// schema-generated WasmPlugin scope vocabulary, re-exported here so this gate,
+// schema-generated Plugin scope vocabulary, re-exported here so this gate,
 // the renderer, and the entity authoring surface read one set of values.
 const (
 	ScopeOwn  = types.ScopeOwn

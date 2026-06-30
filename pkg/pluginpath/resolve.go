@@ -67,7 +67,7 @@ type ResolvedPlugin struct {
 	URI   string
 
 	// Capability is the entity's authored capability claim, attached by the
-	// entity-fronted Lookup (EntityLookup) from the in-hand WasmPlugin entity.
+	// entity-fronted Lookup (EntityLookup) from the in-hand Plugin entity.
 	// It is neutral — a pluginpath-owned shape, not the loader's — so this
 	// package stays free of any internal/wasm dependency; the loader's caller
 	// maps it onto the load spec. nil when the resolution is not entity-fronted
@@ -77,7 +77,7 @@ type ResolvedPlugin struct {
 
 	// Limits is the entity's authored runtime resource limits (memory and
 	// per-call wall time), attached by the entity-fronted Lookup (EntityLookup)
-	// from the in-hand WasmPlugin entity. Like Capability it is neutral — a
+	// from the in-hand Plugin entity. Like Capability it is neutral — a
 	// pluginpath-owned shape carrying no internal/wasm dependency; the loader's
 	// caller maps it onto the load spec. Unlike Capability the limits are not
 	// cross-checked against the plugin (a plugin does not self-report limits),

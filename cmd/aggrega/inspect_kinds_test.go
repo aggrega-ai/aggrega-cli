@@ -559,7 +559,7 @@ func TestInspectDispatch_RegisteredKinds(t *testing.T) {
 		"Recipe":         recipeSynthesizedFixture,
 		"FeatureRecipe":  featureRecipeFixture,
 		"Provider":       providerFixture,
-		"WasmPlugin":     wasmPluginFixture,
+		"Plugin":         pluginFixture,
 		"MappingLibrary": mappingLibraryFixture,
 		"SchemaLibrary":  schemaLibraryFixture,
 	}

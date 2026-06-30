@@ -17,9 +17,9 @@ import (
 //   - Top-level keys emitted in alphabetical order (driven by struct
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
-//     SchemaLibraries, MappingLibraries, WasmPlugins by URI;
+//     SchemaLibraries, MappingLibraries, Plugins by URI;
 //     SourceArtifacts by the composite (Kind, URL, PinnedVersion).
-//   - Inside each Entity / WasmPlugin: ReferencedFrom sorted
+//   - Inside each Entity / Plugin: ReferencedFrom sorted
 //     lexicographically.
 //   - Inside each SchemaLibrary / MappingLibrary: Consumers sorted by
 //     ConsumerURI; within each LibraryConsumer, Fragments sorted
@@ -120,7 +120,7 @@ func generatedAtValue(b []byte) string {
 // sortedCopy or canonicaliseConsumers.
 //
 // Maintenance hazard: any new field added to Entity / SchemaLibrary
-// / MappingLibrary / WasmPlugin / LibraryConsumer that holds a slice
+// / MappingLibrary / Plugin / LibraryConsumer that holds a slice
 // MUST be reallocated here. The outer struct-copy via `entryCopy := m`
 // clones scalar fields but shares slice headers, so without explicit
 // reallocation a subsequent sort would mutate the caller's slice. The
@@ -187,8 +187,8 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return a.PinnedVersion < b.PinnedVersion
 	})
 
-	out.WasmPlugins = make([]WasmPlugin, len(lf.WasmPlugins))
-	for i, p := range lf.WasmPlugins {
+	out.Plugins = make([]Plugin, len(lf.Plugins))
+	for i, p := range lf.Plugins {
 		entryCopy := p
 		entryCopy.ReferencedFrom = sortedCopy(p.ReferencedFrom)
 		// The Signature pointer is shared by the struct-copy; clone it so a
@@ -198,10 +198,10 @@ func canonicalise(lf *Lockfile) *Lockfile {
 			sig := *p.Signature
 			entryCopy.Signature = &sig
 		}
-		out.WasmPlugins[i] = entryCopy
+		out.Plugins[i] = entryCopy
 	}
-	sort.Slice(out.WasmPlugins, func(i, j int) bool {
-		return out.WasmPlugins[i].URI < out.WasmPlugins[j].URI
+	sort.Slice(out.Plugins, func(i, j int) bool {
+		return out.Plugins[i].URI < out.Plugins[j].URI
 	})
 
 	return out

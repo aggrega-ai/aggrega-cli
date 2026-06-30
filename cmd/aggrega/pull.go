@@ -627,15 +627,15 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	}
 	sort.Slice(lf.MappingLibraries, func(i, j int) bool { return lf.MappingLibraries[i].URI < lf.MappingLibraries[j].URI })
 
-	for _, w := range cl.WasmPlugins {
-		lf.WasmPlugins = append(lf.WasmPlugins, lockfile.WasmPlugin{
+	for _, w := range cl.Plugins {
+		lf.Plugins = append(lf.Plugins, lockfile.Plugin{
 			URI:             w.URI,
 			ResolvedVersion: w.ResolvedVersion,
 			Digest:          w.Digest,
 			ReferencedFrom:  append([]string(nil), w.ReferencedFrom...),
 		})
 	}
-	sort.Slice(lf.WasmPlugins, func(i, j int) bool { return lf.WasmPlugins[i].URI < lf.WasmPlugins[j].URI })
+	sort.Slice(lf.Plugins, func(i, j int) bool { return lf.Plugins[i].URI < lf.Plugins[j].URI })
 
 	for _, s := range cl.SourceArtifacts {
 		refs := make([]lockfile.SourceArtifactReference, 0, len(s.ReferencedBy))

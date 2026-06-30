@@ -343,8 +343,8 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 	return match, n == 1
 }
 
-// WasmPluginByURI returns the WasmPlugin entity whose identity matches uri, plus
-// a found flag. A WasmPlugin is a by-name entity (keyed metadata.name:version,
+// PluginByURI returns the Plugin entity whose identity matches uri, plus
+// a found flag. A Plugin is a by-name entity (keyed metadata.name:version,
 // like Provider / Component), not a provider-qualified one, so resolution goes
 // through the shared three-form version select (exact / caret / unversioned ->
 // highest-satisfying) rather than the provider-scan ladder RecipeByURI uses. The
@@ -353,15 +353,15 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 // resolution), not this accessor's job — this serves the entity struct only.
 //
 // Served by both catalog backings: the lazy backing exposes its enumerated
-// WasmPlugin set through the recipeCatalog() *Catalog shell, so its
-// WasmPluginByURI delegates here against the same matcher (no per-backing
+// Plugin set through the recipeCatalog() *Catalog shell, so its
+// PluginByURI delegates here against the same matcher (no per-backing
 // reimplementation).
-func (c *Catalog) WasmPluginByURI(uri string) (types.WasmPlugin, bool) {
-	key, ok, _ := c.resolveWasmPluginKey(uri)
+func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
+	key, ok, _ := c.resolvePluginKey(uri)
 	if !ok {
-		return types.WasmPlugin{}, false
+		return types.Plugin{}, false
 	}
-	return c.WasmPlugins[key], true
+	return c.Plugins[key], true
 }
 
 // implementsSatisfies reports whether a recipe declaring spec.implements==impl

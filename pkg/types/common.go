@@ -374,7 +374,7 @@ type SecretInstance struct {
 // Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/pipeline/items.
 type PipelineStep struct {
 	ID string `json:"id" yaml:"id"`
-	// Plugin is the URI of the WasmPlugin entity this step runs (e.g.
+	// Plugin is the URI of the Plugin entity this step runs (e.g.
 	// `name:version` or `provider/name:version`). The entity's spec.plugin is the
 	// content-addressed .wasm artifact; the build resolves the entity to its
 	// artifact and loads the bytes. A bare .wasm or artifact reference is not

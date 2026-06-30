@@ -13,8 +13,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-const validWasmPlugin = `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+const validPlugin = `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
 metadata:
   name: publishing-linter
   version: 1.0.0
@@ -35,23 +35,23 @@ spec:
       MIKE: middle
 `
 
-// TestWasmPlugin_EnvelopeAcceptsValidInstance is the positive control: a
-// fully-populated WasmPlugin validates through the registered kind with zero
+// TestPlugin_EnvelopeAcceptsValidInstance is the positive control: a
+// fully-populated Plugin validates through the registered kind with zero
 // findings, proving the kind is wired into the envelope validator.
-func TestWasmPlugin_EnvelopeAcceptsValidInstance(t *testing.T) {
+func TestPlugin_EnvelopeAcceptsValidInstance(t *testing.T) {
 	t.Parallel()
-	if _, err := envelope.ValidateBytes(envelope.KindWasmPlugin, []byte(validWasmPlugin), "plugin.yaml"); err != nil {
-		t.Fatalf("valid WasmPlugin rejected: %v", err)
+	if _, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(validPlugin), "plugin.yaml"); err != nil {
+		t.Fatalf("valid Plugin rejected: %v", err)
 	}
 }
 
-// TestWasmPlugin_RoundTripPreservesConfigKVOrder proves the entity unmarshals
+// TestPlugin_RoundTripPreservesConfigKVOrder proves the entity unmarshals
 // into the typed struct and re-marshals with configKV in author order — the
 // determinism contract for the ordered string→string runtime map.
-func TestWasmPlugin_RoundTripPreservesConfigKVOrder(t *testing.T) {
+func TestPlugin_RoundTripPreservesConfigKVOrder(t *testing.T) {
 	t.Parallel()
-	var wp types.WasmPlugin
-	if err := yaml.Unmarshal([]byte(validWasmPlugin), &wp); err != nil {
+	var wp types.Plugin
+	if err := yaml.Unmarshal([]byte(validPlugin), &wp); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
 	if wp.Spec.Runtime == nil {
@@ -73,7 +73,7 @@ func TestWasmPlugin_RoundTripPreservesConfigKVOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("yaml.Marshal: %v", err)
 	}
-	var again types.WasmPlugin
+	var again types.Plugin
 	if err := yaml.Unmarshal(out, &again); err != nil {
 		t.Fatalf("re-unmarshal: %v", err)
 	}
@@ -82,13 +82,13 @@ func TestWasmPlugin_RoundTripPreservesConfigKVOrder(t *testing.T) {
 	}
 }
 
-// TestWasmPlugin_OmittedOptionalBlocksRoundTripClean proves a minimal entity
+// TestPlugin_OmittedOptionalBlocksRoundTripClean proves a minimal entity
 // (no signature, no runtime) round-trips without re-emitting an empty block —
 // the reason the nested blocks are pointer-typed.
-func TestWasmPlugin_OmittedOptionalBlocksRoundTripClean(t *testing.T) {
+func TestPlugin_OmittedOptionalBlocksRoundTripClean(t *testing.T) {
 	t.Parallel()
 	const minimal = `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: p
   version: 1.0.0
@@ -97,7 +97,7 @@ spec:
   pluginTypes: [provider]
   abiVersion: v1alpha1
 `
-	var wp types.WasmPlugin
+	var wp types.Plugin
 	if err := yaml.Unmarshal([]byte(minimal), &wp); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
@@ -110,26 +110,26 @@ spec:
 	}
 	// The re-marshalled document must validate (no `signature: {}` /
 	// `runtime: {}` blocks that would violate required-field constraints).
-	if _, err := envelope.ValidateBytes(envelope.KindWasmPlugin, out, "min.yaml"); err != nil {
+	if _, err := envelope.ValidateBytes(envelope.KindPlugin, out, "min.yaml"); err != nil {
 		t.Fatalf("re-marshalled minimal plugin failed envelope: %v\n%s", err, out)
 	}
 }
 
-// TestWasmPlugin_EnvelopeRejectsMalformed proves the envelope schema halts the
+// TestPlugin_EnvelopeRejectsMalformed proves the envelope schema halts the
 // authoring mistakes the kind must catch: a missing plugin reference, a bad
 // content-address form, and an unknown plugin type.
-func TestWasmPlugin_EnvelopeRejectsMalformed(t *testing.T) {
+func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"missing plugin ref": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   pluginTypes: [linter]
   abiVersion: v1alpha1
 `,
 		"bad oci@sha256 form": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://hub.aggrega.ai/wasm/linter/p:1.0.0
@@ -137,7 +137,7 @@ spec:
   abiVersion: v1alpha1
 `,
 		"unknown pluginType": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -145,7 +145,7 @@ spec:
   abiVersion: v1alpha1
 `,
 		"unknown abiVersion": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -153,7 +153,7 @@ spec:
   abiVersion: v2
 `,
 		"unknown spec sibling": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -166,7 +166,7 @@ spec:
 		src := src
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, err := envelope.ValidateBytes(envelope.KindWasmPlugin, []byte(src), "bad.yaml")
+			_, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(src), "bad.yaml")
 			if err == nil {
 				t.Fatalf("expected envelope rejection for %q; got nil", name)
 			}
@@ -177,8 +177,8 @@ spec:
 	}
 }
 
-const wasmPluginWithExports = `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+const pluginWithExports = `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
 metadata:
   name: publishing-linter
   version: 1.0.0
@@ -196,23 +196,23 @@ spec:
       scope: host
 `
 
-// TestWasmPlugin_EnvelopeAcceptsExports is the positive control for the
+// TestPlugin_EnvelopeAcceptsExports is the positive control for the
 // per-export capability block: a plugin declaring an exports array with the
 // operates/scope enums and a free-form selector validates through the kind.
-func TestWasmPlugin_EnvelopeAcceptsExports(t *testing.T) {
+func TestPlugin_EnvelopeAcceptsExports(t *testing.T) {
 	t.Parallel()
-	if _, err := envelope.ValidateBytes(envelope.KindWasmPlugin, []byte(wasmPluginWithExports), "plugin.yaml"); err != nil {
-		t.Fatalf("WasmPlugin with exports rejected: %v", err)
+	if _, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(pluginWithExports), "plugin.yaml"); err != nil {
+		t.Fatalf("Plugin with exports rejected: %v", err)
 	}
 }
 
-// TestWasmPlugin_ExportsAreAdditive proves the exports block is additive: a
+// TestPlugin_ExportsAreAdditive proves the exports block is additive: a
 // document that omits exports validates exactly as one that declares them — so
-// existing WasmPlugin documents authored before the block stay valid.
-func TestWasmPlugin_ExportsAreAdditive(t *testing.T) {
+// existing Plugin documents authored before the block stay valid.
+func TestPlugin_ExportsAreAdditive(t *testing.T) {
 	t.Parallel()
 	const withoutExports = `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: publishing-linter
   version: 1.0.0
@@ -221,18 +221,18 @@ spec:
   pluginTypes: [linter, frp_step]
   abiVersion: v1alpha1
 `
-	if _, err := envelope.ValidateBytes(envelope.KindWasmPlugin, []byte(withoutExports), "no-exports.yaml"); err != nil {
-		t.Fatalf("WasmPlugin omitting exports rejected (the block must be additive): %v", err)
+	if _, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(withoutExports), "no-exports.yaml"); err != nil {
+		t.Fatalf("Plugin omitting exports rejected (the block must be additive): %v", err)
 	}
 }
 
-// TestWasmPlugin_ExportsRoundTripPreservesOrder proves the exports array
+// TestPlugin_ExportsRoundTripPreservesOrder proves the exports array
 // unmarshals into the typed slice, preserves author order and each capability
 // field, and survives a marshal→unmarshal round-trip.
-func TestWasmPlugin_ExportsRoundTripPreservesOrder(t *testing.T) {
+func TestPlugin_ExportsRoundTripPreservesOrder(t *testing.T) {
 	t.Parallel()
-	var wp types.WasmPlugin
-	if err := yaml.Unmarshal([]byte(wasmPluginWithExports), &wp); err != nil {
+	var wp types.Plugin
+	if err := yaml.Unmarshal([]byte(pluginWithExports), &wp); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
 	if got := len(wp.Spec.Exports); got != 2 {
@@ -250,7 +250,7 @@ func TestWasmPlugin_ExportsRoundTripPreservesOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("yaml.Marshal: %v", err)
 	}
-	var again types.WasmPlugin
+	var again types.Plugin
 	if err := yaml.Unmarshal(out, &again); err != nil {
 		t.Fatalf("re-unmarshal: %v", err)
 	}
@@ -259,14 +259,14 @@ func TestWasmPlugin_ExportsRoundTripPreservesOrder(t *testing.T) {
 	}
 }
 
-// TestWasmPlugin_EnvelopeRejectsBadExportEnum proves the operates/scope enums
+// TestPlugin_EnvelopeRejectsBadExportEnum proves the operates/scope enums
 // are live at the envelope: an out-of-vocabulary value, or an unknown sibling
 // inside an export entry, is rejected.
-func TestWasmPlugin_EnvelopeRejectsBadExportEnum(t *testing.T) {
+func TestPlugin_EnvelopeRejectsBadExportEnum(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"bad operates": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -277,7 +277,7 @@ spec:
       operates: rewrite
 `,
 		"bad scope": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -288,7 +288,7 @@ spec:
       scope: cluster
 `,
 		"export missing name": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -298,7 +298,7 @@ spec:
     - operates: patch
 `,
 		"unknown export sibling": `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -313,7 +313,7 @@ spec:
 		src := src
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, err := envelope.ValidateBytes(envelope.KindWasmPlugin, []byte(src), "bad.yaml")
+			_, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(src), "bad.yaml")
 			if err == nil {
 				t.Fatalf("expected envelope rejection for %q; got nil", name)
 			}

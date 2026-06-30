@@ -9,10 +9,10 @@ package wasm
 // parser and the catalog source-resolver) that populate a PluginSpec
 // and hand it to Load.
 //
-// Field shape mirrors the runtime block of the WasmPlugin catalog
+// Field shape mirrors the runtime block of the Plugin catalog
 // entity (whose canonical authoring surface is documented at the
 // language-reference's Wasm-plugin contract page) so that a future
-// translation from a catalog-loaded WasmPlugin entity to PluginSpec is
+// translation from a catalog-loaded Plugin entity to PluginSpec is
 // a field-for-field map, no field reinvention.
 type PluginSpec struct {
 	// Name is the plugin's identifier for diagnostics. The Loader
@@ -61,7 +61,7 @@ type PluginSpec struct {
 	// cross-checks against the plugin's self-reported describe() descriptor (see
 	// CrossCheckCapabilities). nil disables the cross-check — the path every
 	// non-entity caller and the publish path take. The entity-fronted load path
-	// populates it from the catalog WasmPlugin entity's exports.
+	// populates it from the catalog Plugin entity's exports.
 	Capability *EntityCapabilityClaim
 
 	// ConfigKV carries plugin-specific configuration that the Extism

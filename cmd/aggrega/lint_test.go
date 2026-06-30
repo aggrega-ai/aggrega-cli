@@ -241,7 +241,7 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 }
 
 // TestResolvePluginBytesOCIUnresolvable: the configured linter URI is a
-// WasmPlugin entity URI whose spec.plugin is an uncached OCI artifact; the linter
+// Plugin entity URI whose spec.plugin is an uncached OCI artifact; the linter
 // wires no puller, so the entity-front resolves the artifact through the cascade
 // and halts loudly when nothing is cached.
 func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
@@ -249,12 +249,12 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
 		{URI: "core/linter/aggrega-publishing:1.0.0"},
 	}
-	wasmPluginByURI := func(uri string) (types.WasmPlugin, bool) {
-		wp := types.WasmPlugin{}
+	pluginByURI := func(uri string) (types.Plugin, bool) {
+		wp := types.Plugin{}
 		wp.Spec.Plugin = "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 		return wp, true
 	}
-	_, err := resolvePluginBytes("", wsCfg, wasmPluginByURI)
+	_, err := resolvePluginBytes("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
@@ -264,21 +264,21 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 }
 
 // TestResolvePluginBytesEntityNotFound: a configured linter URI that matches no
-// WasmPlugin entity halts loudly with the entity-not-found Loud Guardrail.
+// Plugin entity halts loudly with the entity-not-found Loud Guardrail.
 func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
 		{URI: "core/linter/absent:1.0.0"},
 	}
-	wasmPluginByURI := func(uri string) (types.WasmPlugin, bool) {
-		return types.WasmPlugin{}, false
+	pluginByURI := func(uri string) (types.Plugin, bool) {
+		return types.Plugin{}, false
 	}
-	_, err := resolvePluginBytes("", wsCfg, wasmPluginByURI)
+	_, err := resolvePluginBytes("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
-	if !errors.Is(err, pluginpath.ErrWasmPluginEntityNotFound) {
-		t.Errorf("error should be ErrWasmPluginEntityNotFound; got: %v", err)
+	if !errors.Is(err, pluginpath.ErrPluginEntityNotFound) {
+		t.Errorf("error should be ErrPluginEntityNotFound; got: %v", err)
 	}
 }
 

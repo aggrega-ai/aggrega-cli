@@ -137,7 +137,7 @@ spec:
 			"app/literal-credential:1.0.0":  resolutionOK("1.0.0", "sha256:c", "tier1-local"),
 			"literal-credential-helm:1.0.0": resolutionOK("1.0.0", "sha256:d", "tier1-local"),
 		},
-		wasmPlugins: map[string]closure.Resolution{},
+		plugins: map[string]closure.Resolution{},
 	}
 
 	c, err := closure.ComputeClosure(rel, man, nil, cfg, lookup)

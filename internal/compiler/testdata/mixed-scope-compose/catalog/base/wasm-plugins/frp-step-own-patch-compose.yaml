@@ -1,5 +1,5 @@
 apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: core/frp/own-patch-compose
   version: "1.0.0"

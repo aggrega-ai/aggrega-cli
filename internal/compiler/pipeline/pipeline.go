@@ -480,10 +480,10 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 		OverrideLog:   func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
 	}
-	if inputs.Lockfile != nil && len(inputs.Lockfile.WasmPlugins) > 0 {
-		pins := make(map[string]string, len(inputs.Lockfile.WasmPlugins))
-		versions := make(map[string]string, len(inputs.Lockfile.WasmPlugins))
-		for _, wp := range inputs.Lockfile.WasmPlugins {
+	if inputs.Lockfile != nil && len(inputs.Lockfile.Plugins) > 0 {
+		pins := make(map[string]string, len(inputs.Lockfile.Plugins))
+		versions := make(map[string]string, len(inputs.Lockfile.Plugins))
+		for _, wp := range inputs.Lockfile.Plugins {
 			pins[wp.URI] = wp.Digest
 			versions[wp.URI] = wp.ResolvedVersion
 		}
@@ -494,25 +494,25 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 }
 
 // buildEntityPluginLookup fronts the build-time artifact cascade with the
-// WasmPlugin entity translation: a pipeline step references a WasmPlugin entity
+// Plugin entity translation: a pipeline step references a Plugin entity
 // URI, and the front reads the entity's spec.plugin (the .wasm artifact
-// reference) before the cascade resolves the bytes. The catalog's WasmPlugin
+// reference) before the cascade resolves the bytes. The catalog's Plugin
 // accessor supplies the entity → spec.plugin translation; the cascade keys its
 // pins by the artifact reference, so the front leaves the pin model unchanged.
-// A reference that matches no WasmPlugin entity halts with
-// ErrWasmPluginEntityNotFound. This is the same entity-front the linter's
+// A reference that matches no Plugin entity halts with
+// ErrPluginEntityNotFound. This is the same entity-front the linter's
 // workspace-config path binds, so the entity → artifact linkage is single-sourced.
 func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pluginpath.Lookup {
 	cascade := buildPluginResolver(inputs).Resolve
 	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
-		if catalogLookup.WasmPlugin == nil {
+		if catalogLookup.Plugin == nil {
 			return "", nil, nil, false
 		}
-		entity, ok := catalogLookup.WasmPlugin(uri)
+		entity, ok := catalogLookup.Plugin(uri)
 		if !ok {
 			return "", nil, nil, false
 		}
-		return entity.Spec.Plugin, resolver.WasmPluginCapabilityClaim(entity), resolver.WasmPluginRuntimeLimits(entity), true
+		return entity.Spec.Plugin, resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
 	}, cascade)
 }
 
@@ -594,7 +594,7 @@ func RunPipeline(
 			Trace:            traceWriter,
 			YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
 			// Bind the entity-fronted plugin-resolution path so a Recipe /
-			// FeatureRecipe pipeline step's plugin URI — a WasmPlugin entity URI —
+			// FeatureRecipe pipeline step's plugin URI — a Plugin entity URI —
 			// resolves to its verified .wasm bytes: the entity-front translates the
 			// entity URI to its spec.plugin artifact reference, then the shared
 			// cascade (embed → sidecar → local → cache → registry) resolves the

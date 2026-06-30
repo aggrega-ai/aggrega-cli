@@ -61,17 +61,17 @@ func TestSelectPullVersion(t *testing.T) {
 	}
 }
 
-// TestEntityReference_WasmPluginGuard pins the WasmPlugin reference guard: a bare
+// TestEntityReference_PluginGuard pins the Plugin reference guard: a bare
 // plugin entity identity binds to <registry>/wasm/<socket>/<name>, while an
 // already-qualified reference (a leading registry-host-shaped segment — a DNS
 // host or a host:port) is refused with ErrQualifiedPluginReference rather than
 // double-prefixed into an unfetchable location.
-func TestEntityReference_WasmPluginGuard(t *testing.T) {
+func TestEntityReference_PluginGuard(t *testing.T) {
 	t.Parallel()
 	const registry = "hub.aggrega.ai"
 
 	t.Run("bare identity binds to the wasm location", func(t *testing.T) {
-		got, err := entityReference(registry, "WasmPlugin", "pipeline/patch-credential")
+		got, err := entityReference(registry, "Plugin", "pipeline/patch-credential")
 		if err != nil {
 			t.Fatalf("bare plugin identity should bind cleanly; got error %v", err)
 		}
@@ -89,7 +89,7 @@ func TestEntityReference_WasmPluginGuard(t *testing.T) {
 		{"host:port-qualified", "127.0.0.1:5000/wasm/pipeline/patch-credential"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := entityReference(registry, "WasmPlugin", tc.identity)
+			_, err := entityReference(registry, "Plugin", tc.identity)
 			if !errors.Is(err, ErrQualifiedPluginReference) {
 				t.Fatalf("entityReference(%q) error = %v; want errors.Is(ErrQualifiedPluginReference)", tc.identity, err)
 			}

@@ -11,25 +11,25 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestWasmPluginCapabilityClaim proves the single-source entity → neutral-claim
+// TestPluginCapabilityClaim proves the single-source entity → neutral-claim
 // mapping: authored exports map to the per-export operates/scope claim (selector
 // dropped), and the authored runtime.declaredHostFunctions threads through for
 // the load gate's authored-vs-derived cross-check.
-func TestWasmPluginCapabilityClaim(t *testing.T) {
+func TestPluginCapabilityClaim(t *testing.T) {
 	t.Parallel()
 
 	t.Run("maps exports and host functions", func(t *testing.T) {
 		t.Parallel()
-		entity := types.WasmPlugin{}
-		entity.Spec.Exports = []types.WasmPluginExport{
+		entity := types.Plugin{}
+		entity.Spec.Exports = []types.PluginExport{
 			{Name: "step", Operates: "patch", Scope: "own", Selector: "dropped"},
 			{Name: "render_node", Operates: "emit", Scope: "host"},
 		}
-		entity.Spec.Runtime = &types.WasmPluginRuntime{
+		entity.Spec.Runtime = &types.PluginRuntime{
 			DeclaredHostFunctions: []string{"aggrega_log"},
 		}
 
-		got := WasmPluginCapabilityClaim(entity)
+		got := PluginCapabilityClaim(entity)
 		if got == nil {
 			t.Fatal("expected a non-nil claim")
 		}
@@ -47,11 +47,11 @@ func TestWasmPluginCapabilityClaim(t *testing.T) {
 
 	t.Run("host functions only (no exports) still yields a claim", func(t *testing.T) {
 		t.Parallel()
-		entity := types.WasmPlugin{}
-		entity.Spec.Runtime = &types.WasmPluginRuntime{
+		entity := types.Plugin{}
+		entity.Spec.Runtime = &types.PluginRuntime{
 			DeclaredHostFunctions: []string{"aggrega_log"},
 		}
-		got := WasmPluginCapabilityClaim(entity)
+		got := PluginCapabilityClaim(entity)
 		if got == nil {
 			t.Fatal("an entity authoring only host functions should yield a claim")
 		}
@@ -62,7 +62,7 @@ func TestWasmPluginCapabilityClaim(t *testing.T) {
 
 	t.Run("no authored capability yields nil", func(t *testing.T) {
 		t.Parallel()
-		if got := WasmPluginCapabilityClaim(types.WasmPlugin{}); got != nil {
+		if got := PluginCapabilityClaim(types.Plugin{}); got != nil {
 			t.Errorf("an entity with no authored exports or host functions should yield nil; got %+v", got)
 		}
 	})

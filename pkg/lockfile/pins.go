@@ -14,7 +14,7 @@ package lockfile
 // a cached slot whose recomputed digest no longer matches its pin here
 // is re-fetched rather than re-pinned from drifted content.
 func (lf *Lockfile) PinsByURI() map[string]string {
-	pins := make(map[string]string, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WasmPlugins))
+	pins := make(map[string]string, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.Plugins))
 	for _, e := range lf.Entities {
 		pins[e.URI] = e.Digest
 	}
@@ -24,7 +24,7 @@ func (lf *Lockfile) PinsByURI() map[string]string {
 	for _, l := range lf.MappingLibraries {
 		pins[l.URI] = l.Digest
 	}
-	for _, p := range lf.WasmPlugins {
+	for _, p := range lf.Plugins {
 		pins[p.URI] = p.Digest
 	}
 	return pins

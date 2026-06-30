@@ -77,7 +77,7 @@ source_artifacts:
         uri: hub.aggrega.ai/recipe/helm/mariadb-bitnami:1.0.0
         field: spec.source
 
-wasm_plugins:
+plugins:
   - uri: hub.aggrega.ai/wasm/policy-validator/aggrega-security-baseline
     resolved_version: 1.2.5
     digest: sha256:s9t0u1
@@ -116,8 +116,8 @@ func TestLoadReturnsAllFiveSections(t *testing.T) {
 	if len(lf.MappingLibraries) != 1 {
 		t.Fatalf("MappingLibraries len: %d", len(lf.MappingLibraries))
 	}
-	if len(lf.WasmPlugins) != 1 {
-		t.Fatalf("WasmPlugins len: %d", len(lf.WasmPlugins))
+	if len(lf.Plugins) != 1 {
+		t.Fatalf("Plugins len: %d", len(lf.Plugins))
 	}
 }
 
@@ -524,7 +524,7 @@ generated_at: 2026-05-22T10:23:14Z
 entities: []
 schema_libraries: []
 mapping_libraries: []
-wasm_plugins: []
+plugins: []
 `
 	path := writeFixture(t, content)
 	_, diagnostics, err := lockfile.LoadLockfile(path)
@@ -554,7 +554,7 @@ entities: []
 schema_libraries: []
 mapping_libraries: []
 source_artifacts: []
-wasm_plugins: []
+plugins: []
 `
 	path := writeFixture(t, content)
 	_, diagnostics, err := lockfile.LoadLockfile(path)
@@ -688,7 +688,7 @@ source_artifacts:
       - entity: aggregate
         uri: u
         field: spec.source
-wasm_plugins: []
+plugins: []
 `
 	path := writeFixture(t, content)
 	_, _, err := lockfile.LoadLockfile(path)
@@ -718,7 +718,7 @@ source_artifacts:
       - entity: recipe
         uri: u
         field: spec.source
-wasm_plugins: []
+plugins: []
 `
 	path := writeFixture(t, content)
 	_, _, err := lockfile.LoadLockfile(path)
@@ -745,7 +745,7 @@ source_artifacts:
     digest: sha256:x
     mediatype: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     referenced_by: []
-wasm_plugins: []
+plugins: []
 `
 	path := writeFixture(t, content)
 	_, _, err := lockfile.LoadLockfile(path)

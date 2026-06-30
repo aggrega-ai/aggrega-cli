@@ -3,16 +3,16 @@
 
 package types
 
-//go:generate go run ../../internal/tools/typegen wasmplugin_gen.go
-//go:generate go run ../../internal/tools/typegen wasmplugin_enums_gen.go
+//go:generate go run ../../internal/tools/typegen plugin_gen.go
+//go:generate go run ../../internal/tools/typegen plugin_enums_gen.go
 
-// WasmPlugin's top-level struct declarations (WasmPlugin,
-// WasmPluginMetadata, WasmPluginSpec) are generated into
-// wasmplugin_gen.go from the published wasmplugin-v1alpha1 schema; their
+// Plugin's top-level struct declarations (Plugin,
+// PluginMetadata, PluginSpec) are generated into
+// plugin_gen.go from the published plugin-v1alpha1 schema; their
 // godoc is the schema's descriptions. This hand-written companion holds
 // the two optional nested blocks the generator names but does not
-// descend into (WasmPluginSignature, WasmPluginRuntime), plus any future
-// WasmPlugin methods or marshalers. The shared Maintainer type the
+// descend into (PluginSignature, PluginRuntime), plus any future
+// Plugin methods or marshalers. The shared Maintainer type the
 // generated metadata references lives in common.go.
 //
 // The runtime block stays field-aligned with the loader's plugin input
@@ -25,19 +25,19 @@ package types
 // name and resolved artifact path) are resolution internals supplied by
 // upstream layers, not entity authoring fields.
 //
-// WasmPluginSignature and WasmPluginRuntime are referenced by pointer
+// PluginSignature and PluginRuntime are referenced by pointer
 // (named via x-aggrega-go-type on the schema's object nodes) so an entity
 // that omits them round-trips without emitting an empty block — a
 // value-typed nested struct would re-marshal as `{}`.
 
-// WasmPluginExport is one export the plugin offers, with its declared
+// PluginExport is one export the plugin offers, with its declared
 // capability. An export is a named entry point the host dispatches to (for
 // example "render_node", "lint_naming", "step"); the capability fields are the
 // authored claim of what the export does, which the host cross-checks against
 // the plugin's self-report at publish and at load. Entries preserve author
 // order. The element type is hand-written because the generator names it via
 // x-aggrega-go-type on the schema's items node and does not descend into it.
-type WasmPluginExport struct {
+type PluginExport struct {
 	// Name is the export's ABI name — the name the host dispatches to (for
 	// example "render_node", "lint_naming", "step").
 	Name string `json:"name" yaml:"name"`
@@ -55,13 +55,13 @@ type WasmPluginExport struct {
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
 }
 
-// WasmPluginSignature is the optional, documentation-only pointer to a
+// PluginSignature is the optional, documentation-only pointer to a
 // plugin's attached signature. It records where the signature lives and
 // how it was produced for catalog readers; it does not itself gate or
 // admit the plugin. The enforcing check is the per-registry trust policy
 // applied at pull, which verifies the signature referrer and records a
 // verified fact in the lockfile.
-type WasmPluginSignature struct {
+type PluginSignature struct {
 	// Type is the signature scheme. "sigstore-cosign" is the supported scheme.
 	Type string `json:"type" yaml:"type"`
 	// SignatureRef is the OCI referrer reference of the attached signature
@@ -74,12 +74,12 @@ type WasmPluginSignature struct {
 	PublicKeyRef string `json:"publicKeyRef,omitempty" yaml:"publicKeyRef,omitempty"`
 }
 
-// WasmPluginRuntime is the optional execution-constraints block. Its
+// PluginRuntime is the optional execution-constraints block. Its
 // fields are field-aligned with the loader's plugin input so a
 // catalog-loaded entity maps to the loader's runtime shape
 // field-for-field. Outbound network access has no field here: a plugin
 // never reaches the network at build time, so there is nothing to allow.
-type WasmPluginRuntime struct {
+type PluginRuntime struct {
 	// MaxMemoryPages caps the plugin's linear memory in Wasm pages (64 KiB
 	// per page). Zero or absent applies the platform default cap, so a load
 	// is never unbounded; an attachment that needs more raises this value.

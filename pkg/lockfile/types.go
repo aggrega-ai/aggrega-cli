@@ -10,7 +10,7 @@
 // relationships:
 //
 //   - referenced_from (list of strings, dotted authoring-site paths)
-//     appears on entities and wasm_plugins. It records where in the
+//     appears on entities and plugins. It records where in the
 //     Release / Aggregate / Manifest / .aggrega-config.yaml each URI
 //     was pulled in from — answers "why is this in the closure?".
 //   - consumers (list of {consumer_uri, fragments} records) appears on
@@ -39,11 +39,11 @@ type Lockfile struct {
 	Entities         []Entity         `yaml:"entities"`
 	GeneratedAt      string           `yaml:"generated_at"`
 	MappingLibraries []MappingLibrary `yaml:"mapping_libraries"`
+	Plugins          []Plugin         `yaml:"plugins"`
 	Release          string           `yaml:"release"`
 	SchemaLibraries  []SchemaLibrary  `yaml:"schema_libraries"`
 	SourceArtifacts  []SourceArtifact `yaml:"source_artifacts"`
 	Version          int              `yaml:"version"`
-	WasmPlugins      []WasmPlugin     `yaml:"wasm_plugins"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
@@ -161,11 +161,11 @@ type SourceArtifactReference struct {
 	RequestedRef string `yaml:"requested_ref,omitempty"`
 }
 
-// WasmPlugin carries a Wasm-plugin pin. ReferencedFrom records the
+// Plugin carries a Wasm-plugin pin. ReferencedFrom records the
 // authoring-site origins (e.g. `.aggrega-config.yaml.plugins.policy`,
 // `recipe.<provider>.<name>.spec.pipeline`) that pulled the URI into
 // closure.
-type WasmPlugin struct {
+type Plugin struct {
 	URI             string             `yaml:"uri"`
 	ResolvedVersion string             `yaml:"resolved_version"`
 	Digest          string             `yaml:"digest"`

@@ -78,7 +78,7 @@ func newPushCmd() *cobra.Command {
 	c.Flags().StringVar(&pushRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
 	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
 	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
-	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a WasmPlugin entity. Required when publishing a WasmPlugin: publish pushes the .wasm artifact, computes its content digest, stamps spec.plugin, and pushes the entity.")
+	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, stamps spec.plugin, and pushes the entity.")
 	return c
 }
 
@@ -115,11 +115,11 @@ type pushConfig struct {
 	IDToken      string
 
 	// PluginPath is the local filesystem path to the .wasm artifact, required
-	// when publishing a WasmPlugin entity. Publish reads these bytes,
+	// when publishing a Plugin entity. Publish reads these bytes,
 	// cross-checks them against the entity's authored claims, computes their
 	// content digest, pushes them as an OCI artifact, and stamps spec.plugin
 	// with the digest pin before pushing the entity. Empty for every non-
-	// WasmPlugin kind.
+	// Plugin kind.
 	PluginPath string
 
 	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
@@ -266,14 +266,14 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: %s: missing metadata.version", cfg.EntityPath)
 	}
 
-	// A WasmPlugin publishes two artifacts in order — the .wasm first, then the
+	// A Plugin publishes two artifacts in order — the .wasm first, then the
 	// entity referencing it by content-digest pin — with a publish-time
 	// describe()-cross-check against the .wasm bytes. The ordered, two-artifact
 	// flow and the entity-body stamping differ enough from the single-artifact
 	// catalog-kind path that it has its own helper; signing, the immutability
 	// guard, and the content-digest spelling are reused, not re-spelled.
-	if header.Kind == "WasmPlugin" {
-		return pushWasmPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, data)
+	if header.Kind == "Plugin" {
+		return pushPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, data)
 	}
 
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
@@ -367,8 +367,8 @@ func pushRun(cfg pushConfig) error {
 // metadata.name may itself contain "/" separators (e.g.,
 // "core/server", "core/compute/api-server") and is preserved verbatim.
 //
-// Wasm-plugin kinds are special: the path segment is the canonical
-// `wasm` (not `wasmplugin`), and the plugin's metadata.name path-
+// Plugin kinds are special: the path segment is the canonical
+// `wasm` (not `plugin`), and the plugin's metadata.name path-
 // encodes the socket — e.g., metadata.name="linter/aggrega-publishing"
 // produces <registry>/wasm/linter/aggrega-publishing. The
 // socket segment is part of the plugin's identity (same name in

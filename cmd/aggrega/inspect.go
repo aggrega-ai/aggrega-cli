@@ -190,7 +190,7 @@ var kindRenderers = map[string]kindRenderer{
 	"Recipe":         renderRecipeFile,
 	"FeatureRecipe":  renderFeatureRecipeFile,
 	"Provider":       renderProviderFile,
-	"WasmPlugin":     renderWasmPluginFile,
+	"Plugin":         renderPluginFile,
 	"MappingLibrary": renderMappingLibraryFile,
 	"SchemaLibrary":  renderSchemaLibraryFile,
 	"Manifest":       renderManifestFile,

@@ -13,11 +13,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// localWasmPluginEntity is a minimal schema-conforming WasmPlugin entity authored
+// localPluginEntity is a minimal schema-conforming Plugin entity authored
 // in a local catalog directory — the Tier-1 case a workspace plugin socket (or a
 // recipe pipeline step) references by entity URI.
-const localWasmPluginEntity = `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+const localPluginEntity = `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
 metadata:
   name: core/linter/baseline
   version: 1.0.0
@@ -28,24 +28,24 @@ spec:
   abiVersion: v1alpha1
 `
 
-// TestClosureLookupResolvesLocalWasmPluginEntityAtTier1 proves a local WasmPlugin
+// TestClosureLookupResolvesLocalPluginEntityAtTier1 proves a local Plugin
 // entity resolves through the PRODUCTION catalogLookup at Tier-1 — assertion (a),
 // the direct unit assertion that closes the local-plugin-halts-the-build gap. Run
 // through both backings (eager + lazy) for parity — assertion (c).
-func TestClosureLookupResolvesLocalWasmPluginEntityAtTier1(t *testing.T) {
+func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeYAMLToCatalog(t, dir, "wasm-plugins/baseline.yaml", localWasmPluginEntity)
+	writeYAMLToCatalog(t, dir, "wasm-plugins/baseline.yaml", localPluginEntity)
 
 	const entityURI = "core/linter/baseline:1.0.0"
 
 	check := func(t *testing.T, lookup closure.Lookup, backing string) {
-		res, err := lookup.ResolveCatalogEntity(entityURI, "wasm_plugin")
+		res, err := lookup.ResolveCatalogEntity(entityURI, "plugin")
 		if err != nil {
 			t.Fatalf("[%s] ResolveCatalogEntity: %v", backing, err)
 		}
 		if res.NotFound {
-			t.Fatalf("[%s] expected Tier-1 hit for a local WasmPlugin entity; got NotFound", backing)
+			t.Fatalf("[%s] expected Tier-1 hit for a local Plugin entity; got NotFound", backing)
 		}
 		if res.ResolutionPath != "tier-1-catalog" {
 			t.Errorf("[%s] ResolutionPath: got %q; want tier-1-catalog", backing, res.ResolutionPath)
@@ -67,7 +67,7 @@ func TestClosureLookupResolvesLocalWasmPluginEntityAtTier1(t *testing.T) {
 	var eagerRes closure.Resolution
 	t.Run("eager", func(t *testing.T) {
 		check(t, eager, "eager")
-		eagerRes, _ = eager.ResolveCatalogEntity(entityURI, "wasm_plugin")
+		eagerRes, _ = eager.ResolveCatalogEntity(entityURI, "plugin")
 	})
 
 	// Lazy backing — parity (c).
@@ -75,22 +75,22 @@ func TestClosureLookupResolvesLocalWasmPluginEntityAtTier1(t *testing.T) {
 	lazyLookup := lazy.ClosureLookup(nil, "", ".aggrega/cache", nil)
 	t.Run("lazy", func(t *testing.T) {
 		check(t, lazyLookup, "lazy")
-		lazyRes, _ := lazyLookup.ResolveCatalogEntity(entityURI, "wasm_plugin")
+		lazyRes, _ := lazyLookup.ResolveCatalogEntity(entityURI, "plugin")
 		if lazyRes != eagerRes {
 			t.Errorf("eager/lazy parity: eager=%+v lazy=%+v", eagerRes, lazyRes)
 		}
 	})
 }
 
-// TestComputeClosureLocalWasmPluginSocketDoesNotHalt proves ComputeClosure over a
-// Release whose workspace plugin socket references a LOCAL WasmPlugin entity does
+// TestComputeClosureLocalPluginSocketDoesNotHalt proves ComputeClosure over a
+// Release whose workspace plugin socket references a LOCAL Plugin entity does
 // NOT halt with ErrUnresolvableURI — assertion (b). The socket rides the
 // catalog-entity axis; the local entity must resolve at Tier-1 rather than
 // falling to a fatal Tier-3 NotFound. Run through the production catalogLookup.
-func TestComputeClosureLocalWasmPluginSocketDoesNotHalt(t *testing.T) {
+func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeYAMLToCatalog(t, dir, "wasm-plugins/baseline.yaml", localWasmPluginEntity)
+	writeYAMLToCatalog(t, dir, "wasm-plugins/baseline.yaml", localPluginEntity)
 
 	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestComputeClosureLocalWasmPluginSocketDoesNotHalt(t *testing.T) {
 
 	// A minimal Release (non-nil so the walk reaches the workspace-plugin axis;
 	// nil aggregate/manifest leave those axes empty). The workspace config wires a
-	// policy plugin socket at the local WasmPlugin entity URI.
+	// policy plugin socket at the local Plugin entity URI.
 	rel := &types.Release{}
 	rel.Metadata.Name = "prod"
 	rel.Metadata.Version = "1.0.0"
@@ -113,7 +113,7 @@ func TestComputeClosureLocalWasmPluginSocketDoesNotHalt(t *testing.T) {
 	cl, err := closure.ComputeClosure(rel, nil, nil, cfg, lookup)
 	if err != nil {
 		if errors.Is(err, closure.ErrUnresolvableURI) {
-			t.Fatalf("ComputeClosure halted on a LOCAL WasmPlugin socket (the closed gap): %v", err)
+			t.Fatalf("ComputeClosure halted on a LOCAL Plugin socket (the closed gap): %v", err)
 		}
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -123,8 +123,8 @@ func TestComputeClosureLocalWasmPluginSocketDoesNotHalt(t *testing.T) {
 	for _, e := range cl.Entities {
 		if e.URI == "core/linter/baseline:1.0.0" {
 			found = true
-			if e.KindHint != "wasm_plugin" {
-				t.Errorf("entity KindHint: got %q; want wasm_plugin", e.KindHint)
+			if e.KindHint != "plugin" {
+				t.Errorf("entity KindHint: got %q; want plugin", e.KindHint)
 			}
 		}
 	}

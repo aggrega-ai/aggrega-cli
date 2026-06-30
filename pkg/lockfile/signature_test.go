@@ -115,7 +115,7 @@ func signedPluginLockfile(stamp string) *lockfile.Lockfile {
 		Version:     1,
 		Release:     "release.yaml",
 		GeneratedAt: stamp,
-		WasmPlugins: []lockfile.WasmPlugin{
+		Plugins: []lockfile.Plugin{
 			{
 				URI:             "z-plugin",
 				ResolvedVersion: "1.0.0",
@@ -142,10 +142,10 @@ func signedPluginLockfile(stamp string) *lockfile.Lockfile {
 	}
 }
 
-// TestWasmPluginSignatureByteIdentity proves the deterministic-output
-// invariant extends to the WasmPlugin signature field — two independent
+// TestPluginSignatureByteIdentity proves the deterministic-output
+// invariant extends to the Plugin signature field — two independent
 // writes of the same in-memory lockfile produce byte-identical output.
-func TestWasmPluginSignatureByteIdentity(t *testing.T) {
+func TestPluginSignatureByteIdentity(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	const stamp = "2026-06-22T00:00:00Z"
@@ -165,10 +165,10 @@ func TestWasmPluginSignatureByteIdentity(t *testing.T) {
 	}
 }
 
-// TestWasmPluginSignatureRoundTrip proves the plugin signature fact survives
+// TestPluginSignatureRoundTrip proves the plugin signature fact survives
 // a write/load round-trip with all fields intact, and that an unsigned plugin
 // loads with a nil signature.
-func TestWasmPluginSignatureRoundTrip(t *testing.T) {
+func TestPluginSignatureRoundTrip(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rt.lock")
@@ -180,8 +180,8 @@ func TestWasmPluginSignatureRoundTrip(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 
-	byURI := map[string]lockfile.WasmPlugin{}
-	for _, p := range lf.WasmPlugins {
+	byURI := map[string]lockfile.Plugin{}
+	for _, p := range lf.Plugins {
 		byURI[p.URI] = p
 	}
 
@@ -211,11 +211,11 @@ func TestCanonicaliseDoesNotAliasPluginSignature(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	lf := signedPluginLockfile("2026-06-22T00:00:00Z")
-	orig := lf.WasmPlugins[0].Signature
+	orig := lf.Plugins[0].Signature
 	if err := lockfile.WriteLockfile(filepath.Join(dir, "c.lock"), lf); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if lf.WasmPlugins[0].Signature != orig {
+	if lf.Plugins[0].Signature != orig {
 		t.Error("WriteLockfile mutated the caller's plugin signature pointer")
 	}
 }

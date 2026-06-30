@@ -17,7 +17,7 @@ import (
 // only at assembly, so the host's documents are pre-assembly fragments per-node
 // — the /host PATCH defers to the post-assembly phase, where the merged
 // document is re-segmented and the deferred step replayed host-scope-only. The
-// step references a WasmPlugin ENTITY URI; the entity's spec.plugin .wasm
+// step references a Plugin ENTITY URI; the entity's spec.plugin .wasm
 // artifact is built on demand from the Rust PDK example and staged into a sidecar
 // directory so the build's entity-front resolves it. When the wasm toolchain is
 // absent the staging build skips the calling test.

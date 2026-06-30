@@ -426,8 +426,8 @@ func ociKindForHint(hint string) string {
 		return "FeatureRecipe"
 	case "provider":
 		return "Provider"
-	case "wasm_plugin":
-		return "WasmPlugin"
+	case "plugin":
+		return "Plugin"
 	default:
 		return ""
 	}
@@ -516,8 +516,8 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 	return closure.LibraryResolution{Resolution: res}, err
 }
 
-func (l *catalogLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
-	// A WasmPlugin entity's spec.plugin pins the .wasm artifact by content
+func (l *catalogLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
+	// A Plugin entity's spec.plugin pins the .wasm artifact by content
 	// (oci://<repo>@sha256:<digest>). That form is the canonical published shape
 	// (every push stamps it), so it is the primary path: the artifact is fetched
 	// by its content-digest-derived tag and the bytes are verified against the
@@ -630,14 +630,14 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 		p := l.catalog.Providers[key]
 		return l.tier1Resolution("Provider", p.Metadata.Name, p.Metadata.Version, version), true
 	}
-	// A WasmPlugin is a by-name entity (keyed metadata.name:version, like
+	// A Plugin is a by-name entity (keyed metadata.name:version, like
 	// Provider). A workspace plugin socket or a recipe pipeline step references a
-	// WasmPlugin ENTITY URI, which the closure walk resolves here; a local
+	// Plugin ENTITY URI, which the closure walk resolves here; a local
 	// (Tier-1) entity must resolve at Tier-1 like every other local entity rather
 	// than falling through to a fatal Tier-3 NotFound.
-	if key, ok, _ := l.catalog.resolveWasmPluginKey(uri); ok {
-		wp := l.catalog.WasmPlugins[key]
-		return l.tier1Resolution("WasmPlugin", wp.Metadata.Name, wp.Metadata.Version, version), true
+	if key, ok, _ := l.catalog.resolvePluginKey(uri); ok {
+		wp := l.catalog.Plugins[key]
+		return l.tier1Resolution("Plugin", wp.Metadata.Name, wp.Metadata.Version, version), true
 	}
 	if key, ok, _ := l.catalog.resolveAggregateKey(uri); ok {
 		a := l.catalog.Aggregates[key]
@@ -1129,7 +1129,7 @@ func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
 // "<repo>:<version>" tag form) falls through cleanly to the version-tag path.
 //
 // This is the inverse of the publish-side content-pin construction: publish
-// stamps a WasmPlugin entity's spec.plugin to oci://<repo>@sha256:<content-digest>;
+// stamps a Plugin entity's spec.plugin to oci://<repo>@sha256:<content-digest>;
 // the consume side parses it back here to fetch the .wasm by its content-digest
 // tag. The split is deliberately NOT routed through SplitURIForOCI, whose
 // last-colon rule mis-parses the "@sha256:<hex>" form (the hex tail past the

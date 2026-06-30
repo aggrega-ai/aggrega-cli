@@ -251,7 +251,7 @@ func signDigest(ctx context.Context, signer signing.Signer, digest string) (bund
 // keyless inputs) and signs proposedDigest, returning the signature bundle and
 // its artifact type. It is called BEFORE any bytes reach the registry, so a
 // signer that cannot be constructed or a signing failure refuses the push with
-// nothing published. Both the catalog-kind push and the WasmPlugin push call it
+// nothing published. Both the catalog-kind push and the Plugin push call it
 // so the signer-construction precedence, the identity-token resolution, and the
 // keyless-subject diagnostic have one home. reference and tag name the artifact
 // in any rejection message.

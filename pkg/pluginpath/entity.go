@@ -8,16 +8,16 @@ import (
 	"fmt"
 )
 
-// ErrWasmPluginEntityNotFound is the Loud Guardrail for a plugin reference that
-// does not resolve to a WasmPlugin entity. A plugin is referenced by its
-// WasmPlugin entity URI (`name:version` or `provider/name:version`); the entity
+// ErrPluginEntityNotFound is the Loud Guardrail for a plugin reference that
+// does not resolve to a Plugin entity. A plugin is referenced by its
+// Plugin entity URI (`name:version` or `provider/name:version`); the entity
 // carries the .wasm artifact reference in spec.plugin. A bare .wasm reference or
 // an artifact reference is no longer accepted: the build halts here naming the
 // offending reference.
-var ErrWasmPluginEntityNotFound = errors.New("plugin reference is not a WasmPlugin entity")
+var ErrPluginEntityNotFound = errors.New("plugin reference is not a Plugin entity")
 
 // EntityLookup adapts the artifact-resolving cascade into an entity-fronted
-// Lookup: a plugin reference is a WasmPlugin entity URI, and resolution is a
+// Lookup: a plugin reference is a Plugin entity URI, and resolution is a
 // two-step — translate the entity URI to its .wasm artifact reference, then run
 // the cascade on the artifact. This is the single home of the
 // entity → spec.plugin → cascade two-step; every socket that loads a pipeline
@@ -25,10 +25,10 @@ var ErrWasmPluginEntityNotFound = errors.New("plugin reference is not a WasmPlug
 // workspace-config linter path) binds the Lookup this returns, so the linkage
 // exists exactly once.
 //
-// entityToArtifact translates a WasmPlugin entity URI to its spec.plugin
+// entityToArtifact translates a Plugin entity URI to its spec.plugin
 // artifact reference, the entity's authored capability claim, and the entity's
-// authored runtime limits, returning false when no WasmPlugin entity matches the
-// URI. The caller supplies it as a closure over the catalog's WasmPlugin accessor
+// authored runtime limits, returning false when no Plugin entity matches the
+// URI. The caller supplies it as a closure over the catalog's Plugin accessor
 // reading .Spec.Plugin, .Spec.Exports, and .Spec.Runtime, so this package stays
 // ignorant of pkg/types; resolving the entity once here yields the artifact
 // reference, the claim, and the limits together, so the load path never
@@ -39,9 +39,9 @@ var ErrWasmPluginEntityNotFound = errors.New("plugin reference is not a WasmPlug
 // load gate can cross-check it against the plugin's describe(); the limits are
 // attached so the loader caps the plugin's memory and per-call wall time.
 //
-// A reference that does not match a WasmPlugin entity halts with
-// ErrWasmPluginEntityNotFound, naming the offending reference and stating that a
-// WasmPlugin entity URI is required. A nil entityToArtifact disables the entity
+// A reference that does not match a Plugin entity halts with
+// ErrPluginEntityNotFound, naming the offending reference and stating that a
+// Plugin entity URI is required. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
 func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginCapabilityClaim, limits *PluginRuntimeLimits, ok bool), cascade Lookup) Lookup {
@@ -55,9 +55,9 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 		}
 		if !ok {
 			return ResolvedPlugin{}, fmt.Errorf(
-				"%w: %q must be a WasmPlugin entity URI (e.g. `name:version` or `provider/name:version`); "+
+				"%w: %q must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`); "+
 					"bare-`.wasm` and artifact references are no longer accepted",
-				ErrWasmPluginEntityNotFound, entityURI)
+				ErrPluginEntityNotFound, entityURI)
 		}
 		resolved, err := cascade(artifactURI)
 		if err != nil {

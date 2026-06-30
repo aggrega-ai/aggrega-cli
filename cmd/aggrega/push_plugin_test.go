@@ -33,12 +33,12 @@ func (p *memStorePuller) Pull(ctx context.Context, reference, tag string) (*oci.
 	return oci.Pull(ctx, p.store, tag)
 }
 
-// agreeingPluginEntity is a WasmPlugin entity whose authored export claim
+// agreeingPluginEntity is a Plugin entity whose authored export claim
 // agrees with the frp-step-go fixture's describe() (export "step",
 // operates=patch, scope=own, no custom host functions). spec.plugin is a
 // placeholder reference that publish stamps to the .wasm content digest.
 const agreeingPluginEntity = `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: frp/patch
   version: "1.0.0"
@@ -75,11 +75,11 @@ func writeAgreeingPlugin(t *testing.T) (entityPath, pluginPath, contentDigest st
 	return entityPath, pluginPath, contentDigest
 }
 
-// TestPushWasmPluginOrderedPublish proves the ordered, two-artifact publish:
+// TestPushPluginOrderedPublish proves the ordered, two-artifact publish:
 // the .wasm artifact lands (addressed by its content-digest tag) and the entity
 // lands (tagged by metadata.version, referencing the .wasm by content-digest
 // pin in spec.plugin). Both are resolvable in the registry double after publish.
-func TestPushWasmPluginOrderedPublish(t *testing.T) {
+func TestPushPluginOrderedPublish(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	store := memory.New()
@@ -99,8 +99,8 @@ func TestPushWasmPluginOrderedPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pull entity: %v", err)
 	}
-	if entityPull.MediaType != oci.MediaTypeWasmPlugin {
-		t.Errorf("entity mediatype: got %q want %q", entityPull.MediaType, oci.MediaTypeWasmPlugin)
+	if entityPull.MediaType != oci.MediaTypePlugin {
+		t.Errorf("entity mediatype: got %q want %q", entityPull.MediaType, oci.MediaTypePlugin)
 	}
 	wantPin := "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
 	if !strings.Contains(string(entityPull.Bytes), wantPin) {
@@ -122,9 +122,9 @@ func TestPushWasmPluginOrderedPublish(t *testing.T) {
 	}
 }
 
-// TestPushWasmPluginRequiresPluginFlag proves a WasmPlugin push without
+// TestPushPluginRequiresPluginFlag proves a Plugin push without
 // --plugin halts before any bytes land.
-func TestPushWasmPluginRequiresPluginFlag(t *testing.T) {
+func TestPushPluginRequiresPluginFlag(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "frp-step-patch.yaml")
@@ -137,17 +137,17 @@ func TestPushWasmPluginRequiresPluginFlag(t *testing.T) {
 		PushTarget: store,
 	})
 	if err == nil {
-		t.Fatal("expected an error when --plugin is omitted for a WasmPlugin; got nil")
+		t.Fatal("expected an error when --plugin is omitted for a Plugin; got nil")
 	}
 	if !strings.Contains(err.Error(), "--plugin") {
 		t.Errorf("error should name the missing --plugin requirement; got %v", err)
 	}
 }
 
-// TestPushWasmPluginDescribeMismatchHaltsNoBytes proves the publish-time
+// TestPushPluginDescribeMismatchHaltsNoBytes proves the publish-time
 // describe()-cross-check: an entity whose authored exports disagree with the
 // .wasm's describe() halts with ErrWasmCapabilityMismatch and pushes NO bytes.
-func TestPushWasmPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
+func TestPushPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
 	ctx := context.Background()
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -161,7 +161,7 @@ func TestPushWasmPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
 	entityPath := filepath.Join(root, "frp-step-patch.yaml")
 	// scope=host disagrees with the fixture's describe() (scope=own).
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: frp/patch
   version: "1.0.0"
@@ -198,17 +198,17 @@ spec:
 	}
 }
 
-// TestPushWasmPluginPrePinnedMismatchHalts proves the digest-stamp guard: an
+// TestPushPluginPrePinnedMismatchHalts proves the digest-stamp guard: an
 // on-disk spec.plugin already pinning a DIFFERENT @sha256: digest than the
 // published .wasm halts loudly rather than silently overwriting the pin.
-func TestPushWasmPluginPrePinnedMismatchHalts(t *testing.T) {
+func TestPushPluginPrePinnedMismatchHalts(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "frp-step-patch.yaml")
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: frp/patch
   version: "1.0.0"
@@ -238,10 +238,10 @@ spec:
 	}
 }
 
-// TestPushWasmPluginPrePinnedMatchSucceeds proves an on-disk spec.plugin
+// TestPushPluginPrePinnedMatchSucceeds proves an on-disk spec.plugin
 // already pinned to the EXACT published .wasm content digest is accepted (the
 // pin agrees with the bytes) and publishes without re-stamping.
-func TestPushWasmPluginPrePinnedMatchSucceeds(t *testing.T) {
+func TestPushPluginPrePinnedMatchSucceeds(t *testing.T) {
 	ctx := context.Background()
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -254,7 +254,7 @@ func TestPushWasmPluginPrePinnedMatchSucceeds(t *testing.T) {
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "frp-step-patch.yaml")
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: frp/patch
   version: "1.0.0"
@@ -283,14 +283,14 @@ spec:
 	}
 }
 
-// TestPushWasmPluginPartialPushSafety proves the ordering makes the safe
+// TestPushPluginPartialPushSafety proves the ordering makes the safe
 // interleaving the only one: the .wasm is pushed FIRST (addressed by content
 // digest), so a failure before the entity push leaves an orphan .wasm
 // (harmless, addressed by digest) and NO entity tag — the consume side fails at
 // pull on the absent entity rather than loading a broken plugin. Driven by a
 // target that fails the entity (second) push while letting the .wasm (first)
 // push through.
-func TestPushWasmPluginPartialPushSafety(t *testing.T) {
+func TestPushPluginPartialPushSafety(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 
@@ -325,11 +325,11 @@ func TestPushWasmPluginPartialPushSafety(t *testing.T) {
 	}
 }
 
-// TestPushWasmPluginSignedAndVerifiable proves the entity is signed at publish
+// TestPushPluginSignedAndVerifiable proves the entity is signed at publish
 // (the entity manifest digest is signed and attached as a referrer) and the
 // signature verifies against the published entity digest with the held key —
 // reusing the same verify path the catalog-kind signing uses.
-func TestPushWasmPluginSignedAndVerifiable(t *testing.T) {
+func TestPushPluginSignedAndVerifiable(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 
@@ -419,13 +419,13 @@ func TestContentDigestTagPushPullParity(t *testing.T) {
 	}
 }
 
-// TestPublishPullRoundTripWasmPlugin proves the consume-side gap is closed: a
-// WasmPlugin published via the real push path (the .wasm tagged by its content
+// TestPublishPullRoundTripPlugin proves the consume-side gap is closed: a
+// Plugin published via the real push path (the .wasm tagged by its content
 // digest, the entity spec.plugin content-pinned) resolves end-to-end through
-// ResolveWasmPlugin — the pull fetches the .wasm by its content-digest tag,
+// ResolvePlugin — the pull fetches the .wasm by its content-digest tag,
 // content-digest-verifies it, caches it, re-resolves from cache, and a tampered
 // cache slot halts with ErrFetchIntegrity.
-func TestPublishPullRoundTripWasmPlugin(t *testing.T) {
+func TestPublishPullRoundTripPlugin(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	store := memory.New()
@@ -458,9 +458,9 @@ func TestPublishPullRoundTripWasmPlugin(t *testing.T) {
 	lookup := cat.ClosureLookup(&memStorePuller{store: store}, root, ".aggrega/cache")
 
 	// Pull: tier-3, content-digest-verified, cached.
-	res, err := lookup.ResolveWasmPlugin(artifactURI)
+	res, err := lookup.ResolvePlugin(artifactURI)
 	if err != nil {
-		t.Fatalf("ResolveWasmPlugin (pull): %v", err)
+		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
 	if res.ResolutionPath != "tier-3-pull" {
 		t.Errorf("ResolutionPath = %q; want tier-3-pull", res.ResolutionPath)
@@ -481,9 +481,9 @@ func TestPublishPullRoundTripWasmPlugin(t *testing.T) {
 	// Second resolve with no puller: a cache hit (tier-2), proving lock-write slot
 	// == cache-read slot.
 	cachedLookup := cat.ClosureLookup(nil, root, ".aggrega/cache")
-	res2, err := cachedLookup.ResolveWasmPlugin(artifactURI)
+	res2, err := cachedLookup.ResolvePlugin(artifactURI)
 	if err != nil {
-		t.Fatalf("ResolveWasmPlugin (cache): %v", err)
+		t.Fatalf("ResolvePlugin (cache): %v", err)
 	}
 	if res2.NotFound || res2.Digest != contentDigest {
 		t.Errorf("cache-hit resolution = %+v; want digest %q", res2, contentDigest)
@@ -494,7 +494,7 @@ func TestPublishPullRoundTripWasmPlugin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolveWasmPlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := cachedLookup.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }

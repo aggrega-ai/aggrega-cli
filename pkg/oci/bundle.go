@@ -65,7 +65,7 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // switches on):
 //
 //   - Component / Feature / Provider / Aggregate / SchemaLibrary /
-//     MappingLibrary / WasmPlugin → bare YAML, no archive; bytes are
+//     MappingLibrary / Plugin → bare YAML, no archive; bytes are
 //     the file contents unchanged.
 //   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
 //     co-located source: directories, $import:-referenced files in
@@ -78,7 +78,7 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // Bundle first invokes validateEntityVersionPathSubdir on the
 // entityPath; a mismatch between the path's version segment (the entity
 // file's parent directory) and the entity's metadata.version returns
-// ErrEntityVersionPathMismatch wrapped with both values. WasmPlugin is
+// ErrEntityVersionPathMismatch wrapped with both values. Plugin is
 // the exception: it has no per-version subdirectory — its version comes
 // from metadata.version and its repository location is the socket-path
 // (wasm/<socket>/<name>) — so the per-version guard does not apply to it.
@@ -88,19 +88,19 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 		return nil, "", err
 	}
 
-	// Every publishable kind except WasmPlugin sits in a per-version
+	// Every publishable kind except Plugin sits in a per-version
 	// subdirectory whose name equals the entity's metadata.version. The
 	// entity file (component.yaml, recipe.yaml, library.yaml, …) is the
-	// parent-dir anchor for those kinds. WasmPlugin authoring carries no
+	// parent-dir anchor for those kinds. Plugin authoring carries no
 	// version subdir, so it is excluded from the guard.
-	if kind != "WasmPlugin" {
+	if kind != "Plugin" {
 		if err := validateEntityVersionPathSubdir(entityPath); err != nil {
 			return nil, "", err
 		}
 	}
 
 	switch kind {
-	case "Component", "Feature", "Provider", "Aggregate", "SchemaLibrary", "MappingLibrary", "WasmPlugin":
+	case "Component", "Feature", "Provider", "Aggregate", "SchemaLibrary", "MappingLibrary", "Plugin":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)

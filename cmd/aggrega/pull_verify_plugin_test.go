@@ -60,19 +60,19 @@ func pluginTargetFor(store oras.ReadOnlyTarget, subjectRef string) pullverify.Ta
 // TestVerifyClosurePluginSignatureRecordsFact proves a signed Wasm plugin in
 // the closure verifies through the SAME pull-verify pass as catalog entities —
 // against the same per-registry trust policy — and the verified fact folds
-// into the lockfile WasmPlugin row.
+// into the lockfile Plugin row.
 func TestVerifyClosurePluginSignatureRecordsFact(t *testing.T) {
 	t.Parallel()
 	store, dg, pubPEM := signedPluginStore(t)
 
 	const uri = "keyed.example.com/wasm/linter/publishing-linter"
 	cl := closure.Closure{
-		WasmPlugins: []closure.ResolvedRef{
+		Plugins: []closure.ResolvedRef{
 			{URI: uri, Digest: dg, ResolutionPath: "tier-3"},
 		},
 	}
 	lf := &lockfile.Lockfile{
-		WasmPlugins: []lockfile.WasmPlugin{{URI: uri, Digest: dg}},
+		Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}},
 	}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
@@ -83,7 +83,7 @@ func TestVerifyClosurePluginSignatureRecordsFact(t *testing.T) {
 	if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0")); err != nil {
 		t.Fatalf("verifyClosureSignatures: %v", err)
 	}
-	sig := lf.WasmPlugins[0].Signature
+	sig := lf.Plugins[0].Signature
 	if sig == nil {
 		t.Fatal("plugin signature fact was not recorded on the lockfile row")
 	}
@@ -105,9 +105,9 @@ func TestVerifyClosurePluginWrongKeyHalts(t *testing.T) {
 
 	const uri = "keyed.example.com/wasm/linter/p"
 	cl := closure.Closure{
-		WasmPlugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
+		Plugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
 	}
-	lf := &lockfile.Lockfile{WasmPlugins: []lockfile.WasmPlugin{{URI: uri, Digest: dg}}}
+	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}}}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(otherPub)},
@@ -132,9 +132,9 @@ func TestVerifyClosurePluginMissingSignatureHalts(t *testing.T) {
 	}
 	const uri = "req.example.com/wasm/linter/unsigned"
 	cl := closure.Closure{
-		WasmPlugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
+		Plugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
 	}
-	lf := &lockfile.Lockfile{WasmPlugins: []lockfile.WasmPlugin{{URI: uri, Digest: dg}}}
+	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}}}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{Host: "req.example.com", RequiresSignatures: true, PublicKey: "irrelevant"},

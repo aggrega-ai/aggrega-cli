@@ -83,7 +83,7 @@ var kindSources = map[string]kindSource{
 	"aggregate_gen.go":      {"Aggregate", schemas.AggregateV1alpha1},
 	"release_gen.go":        {"Release", schemas.ReleaseV1alpha1},
 	"component_gen.go":      {"Component", schemas.ComponentV1alpha1},
-	"wasmplugin_gen.go":     {"WasmPlugin", schemas.WasmPluginV1alpha1},
+	"plugin_gen.go":         {"Plugin", schemas.PluginV1alpha1},
 }
 
 // enumSource binds an output filename to a string-enum-const emission: the
@@ -110,12 +110,12 @@ type enumSource struct {
 }
 
 var enumSources = map[string]enumSource{
-	"wasmplugin_enums_gen.go": {
-		schema:     schemas.WasmPluginV1alpha1,
-		schemaFile: "wasmplugin-v1alpha1.schema.json",
+	"plugin_enums_gen.go": {
+		schema:     schemas.PluginV1alpha1,
+		schemaFile: "plugin-v1alpha1.schema.json",
 		pkg:        "types",
 		fields:     []string{"operates", "scope"},
-		doc: "These consts are the single source for the WasmPlugin entity's per-export\n" +
+		doc: "These consts are the single source for the Plugin entity's per-export\n" +
 			"operates and scope vocabularies. The describe() host descriptor re-exports\n" +
 			"them so the load-time shape gate and the runtime read one set of values.\n" +
 			"\n" +
@@ -386,7 +386,7 @@ type schemaNode struct {
 	GoType      string // x-aggrega-go-type override (names a hand-written or generic type)
 	Ref         string // $ref target (e.g. #/$defs/Unit); resolves to a Go type name
 	Required    []string
-	Enum        []string // enum values, in declared order (string enums only)
+	Enum        []string    // enum values, in declared order (string enums only)
 	props       []namedNode // in declared order
 	Items       *schemaNode
 	defs        []namedNode // $defs entries, in declared order (multi-type schemas only)

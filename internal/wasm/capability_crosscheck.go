@@ -6,7 +6,7 @@ package wasm
 import "fmt"
 
 // EntityCapabilityClaim is the authored capability declaration carried by a
-// catalog WasmPlugin entity, in the neutral shape this package compares against
+// catalog Plugin entity, in the neutral shape this package compares against
 // a plugin's self-reported [PluginDescriptor]. The caller maps the entity's
 // exports into this shape so this package stays ignorant of pkg/types; the claim
 // is the authored promise of what each export does, checked at load against the

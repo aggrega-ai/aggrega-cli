@@ -10,7 +10,7 @@ import (
 )
 
 // TestEntityLookup_TranslatesEntityToArtifact proves the entity-front translates a
-// WasmPlugin entity URI to its spec.plugin artifact reference and runs the cascade
+// Plugin entity URI to its spec.plugin artifact reference and runs the cascade
 // on the ARTIFACT, not the entity URI — the entity → spec.plugin → cascade two-step.
 func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	const entityURI = "core/frp/patch:1.0.0"
@@ -53,8 +53,8 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 }
 
 // TestEntityLookup_BareWasmHaltsLoudly proves the named gate: a reference that
-// matches no WasmPlugin entity (a bare-.wasm or artifact reference) halts with
-// ErrWasmPluginEntityNotFound, naming the offending reference, and never reaches
+// matches no Plugin entity (a bare-.wasm or artifact reference) halts with
+// ErrPluginEntityNotFound, naming the offending reference, and never reaches
 // the cascade.
 func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 	cascadeRan := false
@@ -72,17 +72,17 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a loud halt for a bare-.wasm reference; got nil")
 	}
-	if !errors.Is(err, ErrWasmPluginEntityNotFound) {
-		t.Errorf("error should wrap ErrWasmPluginEntityNotFound; got: %v", err)
+	if !errors.Is(err, ErrPluginEntityNotFound) {
+		t.Errorf("error should wrap ErrPluginEntityNotFound; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), bareWasm) {
 		t.Errorf("error should name the offending reference %q; got: %v", bareWasm, err)
 	}
-	if !strings.Contains(err.Error(), "WasmPlugin entity URI") {
-		t.Errorf("error should state a WasmPlugin entity URI is required; got: %v", err)
+	if !strings.Contains(err.Error(), "Plugin entity URI") {
+		t.Errorf("error should state a Plugin entity URI is required; got: %v", err)
 	}
 	if cascadeRan {
-		t.Errorf("cascade must not run when the reference is not a WasmPlugin entity")
+		t.Errorf("cascade must not run when the reference is not a Plugin entity")
 	}
 }
 
@@ -94,7 +94,7 @@ func TestEntityLookup_NilTranslatorHaltsLoudly(t *testing.T) {
 		return ResolvedPlugin{}, nil
 	})
 	_, err := front("core/frp/patch:1.0.0")
-	if !errors.Is(err, ErrWasmPluginEntityNotFound) {
-		t.Errorf("nil translator should halt with ErrWasmPluginEntityNotFound; got: %v", err)
+	if !errors.Is(err, ErrPluginEntityNotFound) {
+		t.Errorf("nil translator should halt with ErrPluginEntityNotFound; got: %v", err)
 	}
 }

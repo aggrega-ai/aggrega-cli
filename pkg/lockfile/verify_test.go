@@ -25,7 +25,7 @@ func TestVerifyAcceptsMatchingClosure(t *testing.T) {
 		MappingLibraries: []lockfile.MappingLibrary{
 			{URI: "core/BaseMappings", ResolvedVersion: "1.0.0", Digest: "sha256:ddd"},
 		},
-		WasmPlugins: []lockfile.WasmPlugin{
+		Plugins: []lockfile.Plugin{
 			{URI: "core/mutator", ResolvedVersion: "0.1.0", Digest: "sha256:eee"},
 		},
 	}
@@ -40,7 +40,7 @@ func TestVerifyAcceptsMatchingClosure(t *testing.T) {
 		MappingLibraries: []closure.ResolvedLibrary{
 			{URI: "core/BaseMappings", ResolvedVersion: "1.0.0", Digest: "sha256:ddd"},
 		},
-		WasmPlugins: []closure.ResolvedRef{
+		Plugins: []closure.ResolvedRef{
 			{URI: "core/mutator", ResolvedVersion: "0.1.0", Digest: "sha256:eee"},
 		},
 	}
@@ -115,7 +115,7 @@ func TestVerifyReportsAllDriftEntriesAcrossAxes(t *testing.T) {
 			{URI: "core/orphan-1", ResolvedVersion: "1.0.0", Digest: "sha256:o1"},
 			{URI: "core/orphan-2", ResolvedVersion: "1.0.0", Digest: "sha256:o2"},
 		},
-		WasmPlugins: []lockfile.WasmPlugin{
+		Plugins: []lockfile.Plugin{
 			{URI: "core/plugin-stale", ResolvedVersion: "0.1.0", Digest: "sha256:stale"},
 		},
 	}
@@ -123,7 +123,7 @@ func TestVerifyReportsAllDriftEntriesAcrossAxes(t *testing.T) {
 		Entities: []closure.ResolvedRef{
 			{URI: "core/new-entity", ResolvedVersion: "1.0.0", Digest: "sha256:new"},
 		},
-		WasmPlugins: []closure.ResolvedRef{
+		Plugins: []closure.ResolvedRef{
 			{URI: "core/plugin-stale", ResolvedVersion: "0.2.0", Digest: "sha256:new-plugin"},
 		},
 	}

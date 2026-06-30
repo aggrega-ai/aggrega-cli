@@ -21,7 +21,7 @@ import (
 // post-assembly phase. The host-scope step replays fine against the merged
 // document, but the FeatureRecipe's own output is emitted as discrete fragment
 // files and is never assembled — the deferred own-scope step has no merged own
-// document to patch, so the build halts. Each step references a distinct WasmPlugin
+// document to patch, so the build halts. Each step references a distinct Plugin
 // ENTITY URI; both entities' spec.plugin .wasm artifacts are built on demand from
 // the Rust PDK examples and staged into ONE sidecar directory keyed by their
 // artifact references, so the build's entity-front dispatches each step to its own

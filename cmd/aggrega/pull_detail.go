@@ -47,10 +47,10 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 			hasRef: true,
 		})
 	}
-	for _, w := range cl.WasmPlugins {
+	for _, w := range cl.Plugins {
 		rows = append(rows, row{
 			tier:   pullEventTier(w.ResolutionPath),
-			kind:   "WasmPlugin",
+			kind:   "Plugin",
 			uri:    w.URI,
 			ref:    joinReferencedFrom(w.ReferencedFrom),
 			hasRef: true,

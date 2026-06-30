@@ -27,7 +27,7 @@ func TestPinsByURI(t *testing.T) {
 		MappingLibraries: []lockfile.MappingLibrary{
 			{URI: "core/BaseMappings:1.0.0", Digest: "sha256:ddd"},
 		},
-		WasmPlugins: []lockfile.WasmPlugin{
+		Plugins: []lockfile.Plugin{
 			{URI: "core/policy:1.0.0", Digest: "sha256:eee"},
 		},
 		SourceArtifacts: []lockfile.SourceArtifact{

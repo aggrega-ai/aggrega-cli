@@ -41,6 +41,7 @@ entities:
         - manifest.spec.mappings.components.type.app/service:1.0.0
 generated_at: ""
 mapping_libraries: []
+plugins: []
 release: release.yaml
 schema_libraries:
     - uri: BaseComponents
@@ -55,4 +56,3 @@ schema_libraries:
             - '#/schemas/BaseFeatureParameter'
 source_artifacts: []
 version: 1
-wasm_plugins: []

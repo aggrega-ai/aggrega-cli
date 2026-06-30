@@ -17,7 +17,7 @@ import (
 // Because helm-chart is a BoundaryAssembler that is ALSO an
 // ExternalArtifactsHandler, its per-node chart source is discrete (not a
 // pre-assembly fragment), so the /host PATCH runs per-node through the
-// helm-chart codec — no post-assembly phase. The step references a WasmPlugin
+// helm-chart codec — no post-assembly phase. The step references a Plugin
 // ENTITY URI; the entity's spec.plugin .wasm artifact is built on demand from the
 // Rust PDK example and staged into a sidecar directory so the build's entity-front
 // resolves it. When the wasm toolchain is absent the staging build skips the

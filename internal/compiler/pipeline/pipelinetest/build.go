@@ -41,7 +41,7 @@ import (
 
 // pluginSidecarWorkspaceConfig returns the default workspace config with the
 // plugin sidecar directory set, so the build's plugin-resolution cascade resolves
-// a WasmPlugin entity's spec.plugin .wasm artifact from a test-staged sidecar
+// a Plugin entity's spec.plugin .wasm artifact from a test-staged sidecar
 // directory. An empty dir leaves the default (no sidecar tier).
 func pluginSidecarWorkspaceConfig(sidecarDir string) workspaceconfig.Config {
 	cfg := workspaceconfig.Default()
@@ -69,11 +69,11 @@ type Input struct {
 	// resolver entirely, bypassing the production entity-front. Reserved for a
 	// negative-path test that needs to inject a canned resolver; an entity-aware
 	// fixture leaves it nil and uses PluginSidecarDir so the build's real
-	// entity-front (catalog WasmPlugin entity → spec.plugin → cascade) fires.
+	// entity-front (catalog Plugin entity → spec.plugin → cascade) fires.
 	PluginPathLookup pluginpath.Lookup
 
 	// PluginSidecarDir, when set, configures the build's plugin-resolution cascade
-	// sidecar tier so a WasmPlugin entity's spec.plugin .wasm artifact resolves to
+	// sidecar tier so a Plugin entity's spec.plugin .wasm artifact resolves to
 	// a test-built artifact staged in that directory (keyed by
 	// pluginpath.SidecarLeaf of the artifact reference). The fixture then exercises
 	// the PRODUCTION entity-front — the same entity URI → spec.plugin → cascade
@@ -161,7 +161,7 @@ func compile(in Input) (*pipeline.Result, error) {
 			CompilerVersion: "0.1.0",
 			// Fixture override (rare): when set, replaces the renderer's pipeline
 			// resolver wholesale. Left nil, the build's entity-front fires from the
-			// loaded catalog's WasmPlugin accessor, resolving spec.plugin through the
+			// loaded catalog's Plugin accessor, resolving spec.plugin through the
 			// cascade — including the sidecar tier the fixture stages below.
 			PluginPathLookup: in.PluginPathLookup,
 			WorkspaceConfig:  pluginSidecarWorkspaceConfig(in.PluginSidecarDir),

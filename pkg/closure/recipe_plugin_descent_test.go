@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// registryPluginEntity is the WasmPlugin ENTITY URI a recipe pipeline step
+	// registryPluginEntity is the Plugin ENTITY URI a recipe pipeline step
 	// references; registryPluginArtifact is the .wasm artifact the entity's
 	// spec.plugin names.
 	registryPluginEntity   = "core/frp/patch-workloads:1.0.0"
@@ -24,21 +24,21 @@ const (
 	localPluginArtifact    = "plugins/patch-local.wasm"
 )
 
-// wasmPluginEntity builds a WasmPlugin entity body whose spec.plugin is the given
-// artifact reference, for the descent's RecipeLoader.LoadWasmPlugin.
-func wasmPluginEntity(t *testing.T, name, artifactURI string) *types.WasmPlugin {
+// pluginEntity builds a Plugin entity body whose spec.plugin is the given
+// artifact reference, for the descent's RecipeLoader.LoadPlugin.
+func pluginEntity(t *testing.T, name, artifactURI string) *types.Plugin {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: WasmPlugin\nmetadata:\n  name: " + name +
+	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  plugin: \"" + artifactURI + "\"\n  pluginTypes:\n    - frp_step\n  abiVersion: v1alpha1\n"
-	var wp types.WasmPlugin
+	var wp types.Plugin
 	if err := yaml.Unmarshal([]byte(src), &wp); err != nil {
-		t.Fatalf("unmarshal wasm plugin: %v", err)
+		t.Fatalf("unmarshal plugin: %v", err)
 	}
 	return &wp
 }
 
 // recipeWithPipelinePlugin builds a Recipe fixture declaring spec.provider plus a
-// spec.pipeline step referencing the given WasmPlugin entity URI, for the descent's
+// spec.pipeline step referencing the given Plugin entity URI, for the descent's
 // RecipeLoader.
 func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.Recipe {
 	t.Helper()
@@ -53,7 +53,7 @@ func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI stri
 }
 
 // featureRecipeWithPipelinePlugin builds a FeatureRecipe fixture declaring
-// spec.provider plus a spec.pipeline step referencing the given WasmPlugin entity
+// spec.provider plus a spec.pipeline step referencing the given Plugin entity
 // URI, for the descent's RecipeLoader. Mirrors recipeWithPipelinePlugin on the
 // FeatureRecipe axis.
 func featureRecipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.FeatureRecipe {
@@ -69,9 +69,9 @@ func featureRecipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityU
 }
 
 // pluginDescentLookup resolves the manifest/aggregate/component/recipe + provider
-// URIs the fixture reaches, the WasmPlugin ENTITY URIs (on the catalog-entity axis),
-// and the .wasm artifacts the entities' spec.plugin names (on the wasmPlugins axis
-// ResolveWasmPlugin reads): a registry-resolved entity+artifact (tier-3) and a
+// URIs the fixture reaches, the Plugin ENTITY URIs (on the catalog-entity axis),
+// and the .wasm artifacts the entities' spec.plugin names (on the plugins axis
+// ResolvePlugin reads): a registry-resolved entity+artifact (tier-3) and a
 // Tier-1-local pair.
 func pluginDescentLookup() *fakeLookup {
 	ents := map[string]closure.Resolution{
@@ -87,7 +87,7 @@ func pluginDescentLookup() *fakeLookup {
 		registryPluginArtifact: resolutionOK("1.0.0", "sha256:plugin", "tier-3-pull"),
 		localPluginArtifact:    resolutionOK("", "sha256:local", "tier-1-catalog"),
 	}
-	return &fakeLookup{entities: ents, wasmPlugins: plugins}
+	return &fakeLookup{entities: ents, plugins: plugins}
 }
 
 // descendPlugins runs the two-pass pipeline-plugin descent (Phase A pins plugin
@@ -117,8 +117,8 @@ func runPluginDescent(t *testing.T, lookup *fakeLookup, loader closure.RecipeLoa
 	return cl, derr
 }
 
-func wasmPluginByURI(cl closure.Closure, uri string) (closure.ResolvedRef, bool) {
-	for _, p := range cl.WasmPlugins {
+func pluginByURI(cl closure.Closure, uri string) (closure.ResolvedRef, bool) {
+	for _, p := range cl.Plugins {
 		if p.URI == uri {
 			return p, true
 		}
@@ -129,15 +129,15 @@ func wasmPluginByURI(cl closure.Closure, uri string) (closure.ResolvedRef, bool)
 // TestPluginDescent_RegistryResolvedPinned proves a registry-resolved pipeline
 // plugin entity is walked from the recipe's spec.pipeline[].plugin, the entity is
 // resolved through ResolveCatalogEntity and pinned into the closure's Entities set,
-// and its spec.plugin .wasm artifact is resolved through ResolveWasmPlugin and
-// pinned into the closure's WasmPlugins set — the entity→.wasm round-trip.
+// and its spec.plugin .wasm artifact is resolved through ResolvePlugin and
+// pinned into the closure's Plugins set — the entity→.wasm round-trip.
 func TestPluginDescent_RegistryResolvedPinned(t *testing.T) {
 	loader := &fakeRecipeLoader{
 		recipes: map[string]*types.Recipe{
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, registryPluginEntity),
 		},
-		wasmPlugins: map[string]*types.WasmPlugin{
-			registryPluginEntity: wasmPluginEntity(t, "patch-workloads", registryPluginArtifact),
+		plugins: map[string]*types.Plugin{
+			registryPluginEntity: pluginEntity(t, "patch-workloads", registryPluginArtifact),
 		},
 	}
 	cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -145,7 +145,7 @@ func TestPluginDescent_RegistryResolvedPinned(t *testing.T) {
 		t.Fatalf("plugin descent: %v", err)
 	}
 
-	// The ENTITY is pinned on the catalog-entity axis with KindHint wasm_plugin.
+	// The ENTITY is pinned on the catalog-entity axis with KindHint plugin.
 	gotEnt, ok := entityByURI(cl, registryPluginEntity)
 	if !ok {
 		t.Fatalf("registry-resolved plugin ENTITY %q not pinned into the closure entities", registryPluginEntity)
@@ -153,23 +153,23 @@ func TestPluginDescent_RegistryResolvedPinned(t *testing.T) {
 	if gotEnt.ResolvedVersion != "1.0.0" || gotEnt.Digest != "sha256:plugin-entity" {
 		t.Errorf("entity pin = {%q, %q}; want {1.0.0, sha256:plugin-entity}", gotEnt.ResolvedVersion, gotEnt.Digest)
 	}
-	if gotEnt.KindHint != "wasm_plugin" {
-		t.Errorf("entity KindHint = %q; want wasm_plugin", gotEnt.KindHint)
+	if gotEnt.KindHint != "plugin" {
+		t.Errorf("entity KindHint = %q; want plugin", gotEnt.KindHint)
 	}
 	if len(gotEnt.ReferencedFrom) != 1 || gotEnt.ReferencedFrom[0] != recipeURI {
 		t.Errorf("entity ReferencedFrom = %v; want [%s]", gotEnt.ReferencedFrom, recipeURI)
 	}
 
 	// The .wasm ARTIFACT is pinned on the plugin axis, referenced from its entity.
-	gotArt, ok := wasmPluginByURI(cl, registryPluginArtifact)
+	gotArt, ok := pluginByURI(cl, registryPluginArtifact)
 	if !ok {
-		t.Fatalf("registry-resolved plugin ARTIFACT %q not pinned into the closure wasm_plugins", registryPluginArtifact)
+		t.Fatalf("registry-resolved plugin ARTIFACT %q not pinned into the closure plugins", registryPluginArtifact)
 	}
 	if gotArt.ResolvedVersion != "1.0.0" || gotArt.Digest != "sha256:plugin" {
 		t.Errorf("artifact pin = {%q, %q}; want {1.0.0, sha256:plugin}", gotArt.ResolvedVersion, gotArt.Digest)
 	}
-	if gotArt.KindHint != "wasm_plugin" {
-		t.Errorf("artifact KindHint = %q; want wasm_plugin", gotArt.KindHint)
+	if gotArt.KindHint != "plugin" {
+		t.Errorf("artifact KindHint = %q; want plugin", gotArt.KindHint)
 	}
 	if len(gotArt.ReferencedFrom) != 1 || gotArt.ReferencedFrom[0] != registryPluginEntity {
 		t.Errorf("artifact ReferencedFrom = %v; want [%s]", gotArt.ReferencedFrom, registryPluginEntity)
@@ -184,8 +184,8 @@ func TestPluginDescent_Tier1LocalNotPinned(t *testing.T) {
 		recipes: map[string]*types.Recipe{
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, localPluginEntity),
 		},
-		wasmPlugins: map[string]*types.WasmPlugin{
-			localPluginEntity: wasmPluginEntity(t, "patch-local", localPluginArtifact),
+		plugins: map[string]*types.Plugin{
+			localPluginEntity: pluginEntity(t, "patch-local", localPluginArtifact),
 		},
 	}
 	cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -195,7 +195,7 @@ func TestPluginDescent_Tier1LocalNotPinned(t *testing.T) {
 	if _, ok := entityByURI(cl, localPluginEntity); ok {
 		t.Fatalf("Tier-1-local plugin entity %q must not be pinned; it resolves locally at build", localPluginEntity)
 	}
-	if _, ok := wasmPluginByURI(cl, localPluginArtifact); ok {
+	if _, ok := pluginByURI(cl, localPluginArtifact); ok {
 		t.Fatalf("Tier-1-local plugin artifact %q must not be pinned", localPluginArtifact)
 	}
 }
@@ -221,7 +221,7 @@ func TestPluginDescent_NotFoundSkipped(t *testing.T) {
 }
 
 // TestPluginDescent_Deterministic descends the same Release twice and asserts the
-// pinned Entities + WasmPlugins sets are byte-identical (Invariant 8): the pins sort
+// pinned Entities + Plugins sets are byte-identical (Invariant 8): the pins sort
 // deterministically regardless of descent order.
 func TestPluginDescent_Deterministic(t *testing.T) {
 	build := func() closure.Closure {
@@ -229,8 +229,8 @@ func TestPluginDescent_Deterministic(t *testing.T) {
 			recipes: map[string]*types.Recipe{
 				recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, registryPluginEntity),
 			},
-			wasmPlugins: map[string]*types.WasmPlugin{
-				registryPluginEntity: wasmPluginEntity(t, "patch-workloads", registryPluginArtifact),
+			plugins: map[string]*types.Plugin{
+				registryPluginEntity: pluginEntity(t, "patch-workloads", registryPluginArtifact),
 			},
 		}
 		cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -241,8 +241,8 @@ func TestPluginDescent_Deterministic(t *testing.T) {
 	}
 	first := build()
 	second := build()
-	if !reflect.DeepEqual(first.WasmPlugins, second.WasmPlugins) {
-		t.Fatalf("plugin descent is non-deterministic (wasm_plugins):\n first=%#v\nsecond=%#v", first.WasmPlugins, second.WasmPlugins)
+	if !reflect.DeepEqual(first.Plugins, second.Plugins) {
+		t.Fatalf("plugin descent is non-deterministic (plugins):\n first=%#v\nsecond=%#v", first.Plugins, second.Plugins)
 	}
 	if !reflect.DeepEqual(first.Entities, second.Entities) {
 		t.Fatalf("plugin descent is non-deterministic (entities):\n first=%#v\nsecond=%#v", first.Entities, second.Entities)
@@ -255,15 +255,15 @@ func TestPluginDescent_NilLoaderNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nil-loader descent: %v", err)
 	}
-	if _, ok := wasmPluginByURI(cl, registryPluginArtifact); ok {
+	if _, ok := pluginByURI(cl, registryPluginArtifact); ok {
 		t.Fatalf("nil-loader descent must not pin a plugin")
 	}
 }
 
 const (
-	frRecipeURI       = "hub.aggrega.ai/featurerecipe/example/cred:1.0.0"
-	frPluginEntity    = "core/frp/patch-credential:1.0.0"
-	frPluginArtifact  = "oci://hub.aggrega.ai/wasm/frp/patch-credential@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	frRecipeURI      = "hub.aggrega.ai/featurerecipe/example/cred:1.0.0"
+	frPluginEntity   = "core/frp/patch-credential:1.0.0"
+	frPluginArtifact = "oci://hub.aggrega.ai/wasm/frp/patch-credential@sha256:2222222222222222222222222222222222222222222222222222222222222222"
 )
 
 // featureRecipeDescentManifest maps a Feature type to a FeatureRecipe URI so the
@@ -290,13 +290,13 @@ func featureRecipeDescentLookup() *fakeLookup {
 		"hub.aggrega.ai/aggregate/example/app:1.0.0": resolutionOK("1.0.0", "sha256:agg", "tier-3-pull"),
 		"hub.aggrega.ai/manifest/example/app:1.0.0":  resolutionOK("1.0.0", "sha256:man", "tier-3-pull"),
 		"hub.aggrega.ai/feature/core/cred:1.0.0":     resolutionOK("1.0.0", "sha256:cred", "tier-3-pull"),
-		frRecipeURI:    resolutionOK("1.0.0", "sha256:fr", "tier-3-pull"),
-		frPluginEntity: resolutionOK("1.0.0", "sha256:frplugin-entity", "tier-3-pull"),
+		frRecipeURI:                                  resolutionOK("1.0.0", "sha256:fr", "tier-3-pull"),
+		frPluginEntity:                               resolutionOK("1.0.0", "sha256:frplugin-entity", "tier-3-pull"),
 	}
 	plugins := map[string]closure.Resolution{
 		frPluginArtifact: resolutionOK("1.0.0", "sha256:frplugin", "tier-3-pull"),
 	}
-	return &fakeLookup{entities: ents, wasmPlugins: plugins}
+	return &fakeLookup{entities: ents, plugins: plugins}
 }
 
 // TestPluginDescent_FeatureRecipePinned proves a registry-resolved FeatureRecipe
@@ -308,8 +308,8 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 		features: map[string]*types.FeatureRecipe{
 			frRecipeURI: featureRecipeWithPipelinePlugin(t, "cred", registryProvider, frPluginEntity),
 		},
-		wasmPlugins: map[string]*types.WasmPlugin{
-			frPluginEntity: wasmPluginEntity(t, "patch-credential", frPluginArtifact),
+		plugins: map[string]*types.Plugin{
+			frPluginEntity: pluginEntity(t, "patch-credential", frPluginArtifact),
 		},
 	}
 	rel := loadRelease(t, providerDescentRelease)
@@ -327,22 +327,22 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 	if !ok {
 		t.Fatalf("registry-resolved FeatureRecipe plugin ENTITY %q not pinned", frPluginEntity)
 	}
-	if gotEnt.KindHint != "wasm_plugin" {
-		t.Errorf("entity KindHint = %q; want wasm_plugin", gotEnt.KindHint)
+	if gotEnt.KindHint != "plugin" {
+		t.Errorf("entity KindHint = %q; want plugin", gotEnt.KindHint)
 	}
 	if len(gotEnt.ReferencedFrom) != 1 || gotEnt.ReferencedFrom[0] != frRecipeURI {
 		t.Errorf("entity ReferencedFrom = %v; want [%s]", gotEnt.ReferencedFrom, frRecipeURI)
 	}
 
-	gotArt, ok := wasmPluginByURI(cl, frPluginArtifact)
+	gotArt, ok := pluginByURI(cl, frPluginArtifact)
 	if !ok {
 		t.Fatalf("registry-resolved FeatureRecipe plugin ARTIFACT %q not pinned", frPluginArtifact)
 	}
 	if gotArt.ResolvedVersion != "1.0.0" || gotArt.Digest != "sha256:frplugin" {
 		t.Errorf("artifact pin = {%q, %q}; want {1.0.0, sha256:frplugin}", gotArt.ResolvedVersion, gotArt.Digest)
 	}
-	if gotArt.KindHint != "wasm_plugin" {
-		t.Errorf("artifact KindHint = %q; want wasm_plugin", gotArt.KindHint)
+	if gotArt.KindHint != "plugin" {
+		t.Errorf("artifact KindHint = %q; want plugin", gotArt.KindHint)
 	}
 	if len(gotArt.ReferencedFrom) != 1 || gotArt.ReferencedFrom[0] != frPluginEntity {
 		t.Errorf("artifact ReferencedFrom = %v; want [%s]", gotArt.ReferencedFrom, frPluginEntity)
@@ -350,7 +350,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 }
 
 // TestPluginDescent_WorkspaceSocketEntityArtifactPinned proves a workspace plugin
-// socket — a WasmPlugin entity ComputeClosure pinned on the entity axis — is descended
+// socket — a Plugin entity ComputeClosure pinned on the entity axis — is descended
 // to its spec.plugin .wasm artifact at pull time even though no Recipe references it.
 func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 	const socketEntity = "core/policy-validator/baseline:1.0.0"
@@ -358,7 +358,7 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 
 	lookup := pluginDescentLookup()
 	lookup.entities[socketEntity] = resolutionOK("1.0.0", "sha256:socket-entity", "tier-3-pull")
-	lookup.wasmPlugins[socketArtifact] = resolutionOK("1.0.0", "sha256:socket-artifact", "tier-3-pull")
+	lookup.plugins[socketArtifact] = resolutionOK("1.0.0", "sha256:socket-artifact", "tier-3-pull")
 
 	loader := &fakeRecipeLoader{
 		// The provider-descent manifest carries this recipe (no pipeline); the
@@ -366,8 +366,8 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 		recipes: map[string]*types.Recipe{
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, ""),
 		},
-		wasmPlugins: map[string]*types.WasmPlugin{
-			socketEntity: wasmPluginEntity(t, "baseline", socketArtifact),
+		plugins: map[string]*types.Plugin{
+			socketEntity: pluginEntity(t, "baseline", socketArtifact),
 		},
 	}
 
@@ -383,14 +383,14 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 	if _, ok := entityByURI(cl, socketEntity); !ok {
 		t.Fatalf("workspace socket entity %q not pinned by ComputeClosure", socketEntity)
 	}
-	if _, ok := wasmPluginByURI(cl, socketArtifact); ok {
+	if _, ok := pluginByURI(cl, socketArtifact); ok {
 		t.Fatalf("ComputeClosure must not pin the artifact; that is the pull-time descent's job")
 	}
 
 	if err := descendPlugins(&cl, loader, lookup); err != nil {
 		t.Fatalf("plugin descent: %v", err)
 	}
-	gotArt, ok := wasmPluginByURI(cl, socketArtifact)
+	gotArt, ok := pluginByURI(cl, socketArtifact)
 	if !ok {
 		t.Fatalf("workspace socket plugin artifact %q not pinned after descent", socketArtifact)
 	}

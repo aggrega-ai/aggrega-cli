@@ -5,7 +5,7 @@ package wasm
 
 import "context"
 
-// CrossCheckPublishedPlugin verifies, at publish time, that a WasmPlugin
+// CrossCheckPublishedPlugin verifies, at publish time, that a Plugin
 // entity's authored claims agree with the .wasm bytes about to be published.
 // It is the single home for the publish-side checks: the entity's authored
 // capability claim and host-function declaration are cross-checked against the

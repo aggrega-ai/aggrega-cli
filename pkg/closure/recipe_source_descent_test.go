@@ -15,9 +15,9 @@ import (
 
 // fakeRecipeLoader is a static-result RecipeLoader keyed by URI.
 type fakeRecipeLoader struct {
-	recipes     map[string]*types.Recipe
-	features    map[string]*types.FeatureRecipe
-	wasmPlugins map[string]*types.WasmPlugin
+	recipes  map[string]*types.Recipe
+	features map[string]*types.FeatureRecipe
+	plugins  map[string]*types.Plugin
 }
 
 func (f *fakeRecipeLoader) LoadRecipe(uri string) (*types.Recipe, error) {
@@ -36,10 +36,10 @@ func (f *fakeRecipeLoader) LoadFeatureRecipe(uri string) (*types.FeatureRecipe, 
 	return r, nil
 }
 
-func (f *fakeRecipeLoader) LoadWasmPlugin(uri string) (*types.WasmPlugin, error) {
-	wp, ok := f.wasmPlugins[uri]
+func (f *fakeRecipeLoader) LoadPlugin(uri string) (*types.Plugin, error) {
+	wp, ok := f.plugins[uri]
 	if !ok {
-		return nil, fmt.Errorf("wasm plugin %q not in fixture loader", uri)
+		return nil, fmt.Errorf("plugin %q not in fixture loader", uri)
 	}
 	return wp, nil
 }

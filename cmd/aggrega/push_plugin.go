@@ -18,7 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// pushWasmPlugin publishes a WasmPlugin entity and its .wasm artifact as two
+// pushPlugin publishes a Plugin entity and its .wasm artifact as two
 // ordered OCI artifacts: the .wasm first (addressed by its content digest),
 // then the entity referencing it by content-digest pin in spec.plugin. The
 // ordering plus the existing content-digest-pin makes partial-push safe — a
@@ -42,14 +42,14 @@ import (
 // The .wasm artifact is not signed separately — the signed entity commits to
 // the .wasm content digest through spec.plugin, so tampering with the .wasm
 // breaks the pin and fails at pull.
-func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version string, entityYAML []byte) error {
+func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version string, entityYAML []byte) error {
 	if cfg.PluginPath == "" {
-		return fmt.Errorf("aggrega push: WasmPlugin %s: --plugin <path-to-.wasm> is required to publish a WasmPlugin (publish pushes the .wasm artifact, stamps spec.plugin, then pushes the entity)", name)
+		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish pushes the .wasm artifact, stamps spec.plugin, then pushes the entity)", name)
 	}
 
-	var entity types.WasmPlugin
+	var entity types.Plugin
 	if err := yaml.Unmarshal(entityYAML, &entity); err != nil {
-		return fmt.Errorf("aggrega push: parse WasmPlugin %s: %w", name, err)
+		return fmt.Errorf("aggrega push: parse Plugin %s: %w", name, err)
 	}
 
 	wasmBytes, err := os.ReadFile(cfg.PluginPath)
@@ -62,7 +62,7 @@ func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign boo
 	ctx := context.Background()
 	entityIdentity := name + ":" + version
 	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, entityCapabilityClaim(entity), authoredHostFunctions(entity), wasmBytes); err != nil {
-		return fmt.Errorf("aggrega push: WasmPlugin %s: %w", entityIdentity, err)
+		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 
 	// The content digest is the pin the consume side verifies the .wasm bytes
@@ -72,17 +72,17 @@ func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign boo
 	// The entity and the .wasm share the same repository location
 	// (<registry>/wasm/<socket>/<name>); the entity is addressed by its version
 	// tag, the .wasm by its content digest, so the two never collide on a tag.
-	reference := buildPushReference(registry, "WasmPlugin", "", name)
+	reference := buildPushReference(registry, "Plugin", "", name)
 	wasmRepoRef := stripRegistryScheme(reference)
 
 	stampedEntity, err := stampPluginDigest(entityYAML, wasmRepoRef, contentDigest)
 	if err != nil {
-		return fmt.Errorf("aggrega push: WasmPlugin %s: %w", entityIdentity, err)
+		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 
 	if cfg.DryRun {
-		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: WasmPlugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
-			reference, version, oci.MediaTypeWasmPlugin, oci.MediaTypeWasm, contentDigest, len(stampedEntity), len(wasmBytes))
+		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
+			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(stampedEntity), len(wasmBytes))
 		return nil
 	}
 
@@ -103,7 +103,7 @@ func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign boo
 	if err != nil {
 		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, version, err)
 	}
-	proposedEntityDigest, err := oci.ManifestDigest(ctx, oci.MediaTypeWasmPlugin, stampedEntity)
+	proposedEntityDigest, err := oci.ManifestDigest(ctx, oci.MediaTypePlugin, stampedEntity)
 	if err != nil {
 		return fmt.Errorf("aggrega push: %s:%s: %w", reference, version, err)
 	}
@@ -140,7 +140,7 @@ func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign boo
 	}
 	fmt.Fprintf(out, "Push complete (.wasm artifact): %s@%s\n", reference, contentDigest)
 
-	entityManifestDigest, err := oci.Push(ctx, target, version, oci.MediaTypeWasmPlugin, stampedEntity)
+	entityManifestDigest, err := oci.Push(ctx, target, version, oci.MediaTypePlugin, stampedEntity)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push entity %s:%s: %w", reference, version, err)
 	}
@@ -155,12 +155,12 @@ func pushWasmPlugin(out io.Writer, cfg pushConfig, registry string, wantSign boo
 	return nil
 }
 
-// entityCapabilityClaim maps a WasmPlugin entity's authored exports into the
+// entityCapabilityClaim maps a Plugin entity's authored exports into the
 // neutral capability-claim shape internal/wasm cross-checks against the
 // plugin's describe() self-report. The mapping mirrors the load-side claim
 // construction so the publish and load surfaces agree on what an authored
 // export claim is.
-func entityCapabilityClaim(entity types.WasmPlugin) wasm.EntityCapabilityClaim {
+func entityCapabilityClaim(entity types.Plugin) wasm.EntityCapabilityClaim {
 	exports := make([]wasm.EntityExportClaim, 0, len(entity.Spec.Exports))
 	for _, e := range entity.Spec.Exports {
 		exports = append(exports, wasm.EntityExportClaim{
@@ -175,7 +175,7 @@ func entityCapabilityClaim(entity types.WasmPlugin) wasm.EntityCapabilityClaim {
 // authoredHostFunctions returns the entity's authored host-function declaration
 // for the publish-time authored-vs-derived cross-check, or nil when the entity
 // authored no runtime block or no declaration (which skips that cross-check).
-func authoredHostFunctions(entity types.WasmPlugin) []string {
+func authoredHostFunctions(entity types.Plugin) []string {
 	if entity.Spec.Runtime == nil {
 		return nil
 	}
@@ -228,7 +228,7 @@ func stampPluginDigest(entityYAML []byte, wasmRepoRef, contentDigest string) ([]
 		}
 		return stamped, nil
 	}
-	return nil, fmt.Errorf("WasmPlugin entity has no spec.plugin field to stamp with the .wasm content digest")
+	return nil, fmt.Errorf("Plugin entity has no spec.plugin field to stamp with the .wasm content digest")
 }
 
 // specNode returns the "spec" mapping node of a parsed document, or nil.

@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// renderWasmPluginFile renders a WasmPlugin authored as a standalone file. The
+// renderPluginFile renders a Plugin authored as a standalone file. The
 // plugin's declared capability surface is shown first: the content-addressed
 // .wasm artifact reference, the socket type(s) it implements, the ABI version
 // it targets, and the provider engines it claims compatibility with. The
@@ -26,13 +26,13 @@ import (
 //   - levelDefault: plugin, plugin types, ABI version, compatible providers,
 //     the exports table, and the runtime block.
 //   - levelDetail: adds the signature pointer and the runtime config keys.
-func renderWasmPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}
-	var wp types.WasmPlugin
+	var wp types.Plugin
 	if err := yaml.Unmarshal(data, &wp); err != nil {
-		return fmt.Errorf("parse WasmPlugin at %q: %w", path, err)
+		return fmt.Errorf("parse Plugin at %q: %w", path, err)
 	}
 	identifier := identifierVersion(wp.Metadata.Name, wp.Metadata.Version)
 
@@ -43,7 +43,7 @@ func renderWasmPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, dat
 		return nil
 	}
 
-	renderHeader(opts, "WasmPlugin", identifier)
+	renderHeader(opts, "Plugin", identifier)
 
 	plugin := wp.Spec.Plugin
 	if plugin == "" {
@@ -59,21 +59,21 @@ func renderWasmPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, dat
 	fmt.Fprintf(opts.out, "ABI version: %s\n", abiVersion)
 	fmt.Fprintf(opts.out, "Compatible providers: %s\n", joinedOrNone(wp.Spec.CompatibleProviders))
 
-	renderWasmPluginExports(opts, wp.Spec.Exports)
-	renderWasmPluginRuntime(opts, wp.Spec.Runtime)
+	renderPluginExports(opts, wp.Spec.Exports)
+	renderPluginRuntime(opts, wp.Spec.Runtime)
 
 	if opts.level == levelDetail {
-		renderWasmPluginSignature(opts, wp.Spec.Signature)
-		renderWasmPluginConfigKeys(opts, wp.Spec.Runtime)
+		renderPluginSignature(opts, wp.Spec.Signature)
+		renderPluginConfigKeys(opts, wp.Spec.Runtime)
 	}
 	return nil
 }
 
-// renderWasmPluginExports prints the exports table in author order: each entry
+// renderPluginExports prints the exports table in author order: each entry
 // names the export, then its authored capability claim (operates / scope /
 // selector), omitting an unset claim line. An empty export list reports
 // `(none declared)`.
-func renderWasmPluginExports(opts inspectOptions, exports []types.WasmPluginExport) {
+func renderPluginExports(opts inspectOptions, exports []types.PluginExport) {
 	if len(exports) == 0 {
 		fmt.Fprintln(opts.out, "Exports: (none declared)")
 		return
@@ -93,13 +93,13 @@ func renderWasmPluginExports(opts inspectOptions, exports []types.WasmPluginExpo
 	}
 }
 
-// renderWasmPluginRuntime prints the runtime constraints block. An absent
+// renderPluginRuntime prints the runtime constraints block. An absent
 // runtime reports that platform defaults apply across the board; a present
 // runtime reports each cap, describing the platform default qualitatively when
 // a limit is unset (zero) rather than printing the host's fixed number, so the
 // displayed surface single-sources to the loader and cannot drift from it. The
 // declared host functions list reports `(none declared)` when empty.
-func renderWasmPluginRuntime(opts inspectOptions, rt *types.WasmPluginRuntime) {
+func renderPluginRuntime(opts inspectOptions, rt *types.PluginRuntime) {
 	if rt == nil {
 		fmt.Fprintln(opts.out, "Runtime: (platform defaults apply)")
 		return
@@ -117,10 +117,10 @@ func renderWasmPluginRuntime(opts inspectOptions, rt *types.WasmPluginRuntime) {
 	}
 }
 
-// renderWasmPluginSignature prints the optional signature pointer at --detail:
+// renderPluginSignature prints the optional signature pointer at --detail:
 // the scheme and, when authored, the signature and public-key referrer
 // references. An absent block reports `(none declared)`.
-func renderWasmPluginSignature(opts inspectOptions, sig *types.WasmPluginSignature) {
+func renderPluginSignature(opts inspectOptions, sig *types.PluginSignature) {
 	if sig == nil {
 		fmt.Fprintln(opts.out, "Signature: (none declared)")
 		return
@@ -135,10 +135,10 @@ func renderWasmPluginSignature(opts inspectOptions, sig *types.WasmPluginSignatu
 	}
 }
 
-// renderWasmPluginConfigKeys prints the runtime config keys in author order at
+// renderPluginConfigKeys prints the runtime config keys in author order at
 // --detail. It is silent when the runtime is absent or carries no config keys —
 // the runtime block itself is already reported at the default level.
-func renderWasmPluginConfigKeys(opts inspectOptions, rt *types.WasmPluginRuntime) {
+func renderPluginConfigKeys(opts inspectOptions, rt *types.PluginRuntime) {
 	if rt == nil || rt.ConfigKV.Len() == 0 {
 		return
 	}

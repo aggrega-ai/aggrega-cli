@@ -13,7 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// ErrQualifiedPluginReference is returned when a WasmPlugin reference carries a
+// ErrQualifiedPluginReference is returned when a Plugin reference carries a
 // leading registry-host segment (or an artifact path) instead of the bare plugin
 // entity identity. A plugin entity is addressed by its bare identity
 // (<socket>/<name>:<version>); the pull binds that identity to its physical
@@ -175,15 +175,15 @@ func (p DefaultOCIPuller) RegistryHost() string {
 // provider/name; it is split on the first "/" to feed the provider-scoped
 // location branch. Other kinds pass the whole identity as the name.
 //
-// A WasmPlugin identity must be bare (<socket>/<name>): the binder prefixes the
+// A Plugin identity must be bare (<socket>/<name>): the binder prefixes the
 // registry and the wasm path segment itself, so an identity that already leads
 // with a registry-host-shaped segment (the part before the first "/" carrying a
 // "." or ":") would be double-prefixed into an unfetchable location. Such a
 // reference is refused with ErrQualifiedPluginReference rather than bound. The
-// guard is WasmPlugin-scoped; the Component / Feature / Recipe / Provider binders
+// guard is Plugin-scoped; the Component / Feature / Recipe / Provider binders
 // are unchanged.
 func entityReference(registry, kind, identity string) (string, error) {
-	if kind == "WasmPlugin" && hasRegistryHostSegment(identity) {
+	if kind == "Plugin" && hasRegistryHostSegment(identity) {
 		return "", fmt.Errorf("%w: %q", ErrQualifiedPluginReference, identity)
 	}
 	provider, name := "", identity

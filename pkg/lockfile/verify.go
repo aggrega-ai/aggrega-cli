@@ -38,7 +38,7 @@ var ErrLockfileDrift = errors.New("lockfile: out of date; it no longer matches t
 // operators see the full picture.
 //
 // Walks four axes: Entities, SchemaLibraries, MappingLibraries,
-// WasmPlugins. SourceArtifacts are not verified here — they pass
+// Plugins. SourceArtifacts are not verified here — they pass
 // through pkg/sourcecache.LookupAndExtract's existing digest gate at
 // build-time read, which compares the cached blob's content digest
 // against the lockfile-supplied digest the orchestrator routes
@@ -49,7 +49,7 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 	driftErrs = append(driftErrs, collectEntityDrift(lf.Entities, expected.Entities)...)
 	driftErrs = append(driftErrs, collectSchemaLibraryDrift(lf.SchemaLibraries, expected.SchemaLibraries)...)
 	driftErrs = append(driftErrs, collectMappingLibraryDrift(lf.MappingLibraries, expected.MappingLibraries)...)
-	driftErrs = append(driftErrs, collectWasmPluginDrift(lf.WasmPlugins, expected.WasmPlugins)...)
+	driftErrs = append(driftErrs, collectPluginDrift(lf.Plugins, expected.Plugins)...)
 	if len(driftErrs) == 0 {
 		return nil
 	}
@@ -131,8 +131,8 @@ func collectMappingLibraryDrift(have []MappingLibrary, want []closure.ResolvedLi
 	return out
 }
 
-func collectWasmPluginDrift(have []WasmPlugin, want []closure.ResolvedRef) []error {
-	haveByURI := make(map[string]WasmPlugin, len(have))
+func collectPluginDrift(have []Plugin, want []closure.ResolvedRef) []error {
+	haveByURI := make(map[string]Plugin, len(have))
 	for _, e := range have {
 		haveByURI[e.URI] = e
 	}

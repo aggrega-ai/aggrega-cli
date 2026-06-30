@@ -22,7 +22,7 @@ import (
 // + *oci.Client without requiring either to be present.
 type fakeLookup struct {
 	entities    map[string]closure.Resolution
-	wasmPlugins map[string]closure.Resolution
+	plugins     map[string]closure.Resolution
 	schemaLibs  map[string]closure.LibraryResolution
 	mappingLibs map[string]closure.LibraryResolution
 }
@@ -62,8 +62,8 @@ func (f *fakeLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolutio
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
 }
 
-func (f *fakeLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
-	if res, ok := f.wasmPlugins[uri]; ok {
+func (f *fakeLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
+	if res, ok := f.plugins[uri]; ok {
 		return res, nil
 	}
 	return closure.Resolution{NotFound: true}, nil
@@ -171,10 +171,10 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	agg := loadAggregate(t, fullFixtureAggregate)
 
 	cfg := workspaceconfig.Default()
-	// A workspace plugin socket references a WasmPlugin ENTITY URI; the entity
+	// A workspace plugin socket references a Plugin ENTITY URI; the entity
 	// rides the catalog-entity axis (resolved via ResolveCatalogEntity), and its
 	// .wasm artifact is pinned later at pull time by the pipeline-plugin descent. So
-	// ComputeClosure records the entity in c.Entities, not c.WasmPlugins.
+	// ComputeClosure records the entity in c.Entities, not c.Plugins.
 	const policyPluginEntity = "core/policy-validator/aggrega-security-baseline:1.0.0"
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
 		{URI: policyPluginEntity},
@@ -205,7 +205,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	// hub.aggrega.ai/feature/core/ingress mapping key — currently dedup'd
 	// to one entry because both reference the same URI). Plus 2 Recipes
 	// and 1 FeatureRecipe from the manifest, plus the workspace-socket
-	// WasmPlugin entity.
+	// Plugin entity.
 	wantEntities := []string{
 		policyPluginEntity,
 		"hub.aggrega.ai/aggregate/example/app:1.0.0",
@@ -227,9 +227,9 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	}
 
 	// ComputeClosure pins only the entities; the .wasm artifact axis is populated
-	// at pull time by the pipeline-plugin descent, so c.WasmPlugins is empty here.
-	if len(c.WasmPlugins) != 0 {
-		t.Errorf("wasm plugins: got %d; want 0 (the workspace plugin rides the entity axis)", len(c.WasmPlugins))
+	// at pull time by the pipeline-plugin descent, so c.Plugins is empty here.
+	if len(c.Plugins) != 0 {
+		t.Errorf("wasm plugins: got %d; want 0 (the workspace plugin rides the entity axis)", len(c.Plugins))
 	}
 
 	if len(c.SchemaLibraries) != 0 || len(c.MappingLibraries) != 0 {
@@ -382,15 +382,15 @@ func TestEmptyReleaseProducesEmptyClosure(t *testing.T) {
 	rel := &types.Release{}
 	cfg := workspaceconfig.Default()
 	lookup := &fakeLookup{
-		entities:    map[string]closure.Resolution{},
-		wasmPlugins: map[string]closure.Resolution{},
+		entities: map[string]closure.Resolution{},
+		plugins:  map[string]closure.Resolution{},
 	}
 
 	c, err := closure.ComputeClosure(rel, nil, nil, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
-	if len(c.Entities) != 0 || len(c.WasmPlugins) != 0 ||
+	if len(c.Entities) != 0 || len(c.Plugins) != 0 ||
 		len(c.SchemaLibraries) != 0 || len(c.MappingLibraries) != 0 {
 		t.Errorf("expected empty closure; got %+v", c)
 	}
@@ -522,7 +522,7 @@ func newBaseLookup() *fakeLookup {
 			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":              resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
 			"hub.aggrega.ai/feature-recipe/core/helm/ingress-nginx:1.0.0": resolutionOK("1.0.0", "sha256:hhh", "tier3-registry"),
 		},
-		wasmPlugins: map[string]closure.Resolution{},
+		plugins:     map[string]closure.Resolution{},
 		schemaLibs:  map[string]closure.LibraryResolution{},
 		mappingLibs: map[string]closure.LibraryResolution{},
 	}

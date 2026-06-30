@@ -46,7 +46,7 @@ import (
 // targetFor resolves each verifiable item's OCI target for referrer discovery;
 // production passes remoteTargetFor (a real remote repository per registry).
 func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
-	verifiable := make([]pullverify.Entity, 0, len(cl.Entities)+len(cl.WasmPlugins))
+	verifiable := make([]pullverify.Entity, 0, len(cl.Entities)+len(cl.Plugins))
 	collect := func(refs []closure.ResolvedRef) {
 		for _, e := range refs {
 			// Verify only items freshly resolved from a registry (Tier-3).
@@ -65,7 +65,7 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		}
 	}
 	collect(cl.Entities)
-	collect(cl.WasmPlugins)
+	collect(cl.Plugins)
 	if len(verifiable) == 0 {
 		return nil
 	}
@@ -94,15 +94,15 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		}
 		lf.Entities[i].Signature = signatureFact(r)
 	}
-	for i := range lf.WasmPlugins {
-		r, ok := factByURI[lf.WasmPlugins[i].URI]
+	for i := range lf.Plugins {
+		r, ok := factByURI[lf.Plugins[i].URI]
 		if !ok {
 			continue
 		}
 		if err := cacheBundleBlob(sigDir, r.BundleDigest, r.Bundle); err != nil {
 			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
 		}
-		lf.WasmPlugins[i].Signature = signatureFact(r)
+		lf.Plugins[i].Signature = signatureFact(r)
 	}
 	return nil
 }

@@ -441,7 +441,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	}
 }
 
-// publishPluginEntity publishes a REAL kind:WasmPlugin entity to the in-process
+// publishPluginEntity publishes a REAL kind:Plugin entity to the in-process
 // registry through the production entity-publish path (pushRun with --plugin): the
 // .wasm fixture lands first (addressed by its content-digest tag), then the entity
 // lands at <host>/wasm/<socket>/<name>:<version> with spec.plugin stamped to the
@@ -473,7 +473,7 @@ func publishPluginEntityWithRuntime(t *testing.T, host, socketName, version, plu
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
 	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: WasmPlugin
+kind: Plugin
 metadata:
   name: `+socketName+`
   version: "`+version+`"
@@ -494,14 +494,14 @@ spec:
 }
 
 // TestIntegration_PipelinePluginPinning_RoundTrip proves the full publish → pull →
-// build round-trip for a recipe/FR-referenced WasmPlugin entity. A controlled
+// build round-trip for a recipe/FR-referenced Plugin entity. A controlled
 // fixture catalog declares a Component with a pipeline-bearing Recipe and a Feature
 // with a pipeline-bearing FeatureRecipe; both reference their pipeline plugin by the
-// BARE WasmPlugin entity identity (<socket>/<name>:<version>). Both plugins are
-// published as REAL kind:WasmPlugin entities (the .wasm fixture + the stamped
+// BARE Plugin entity identity (<socket>/<name>:<version>). Both plugins are
+// published as REAL kind:Plugin entities (the .wasm fixture + the stamped
 // entity). After a real pull the written lockfile carries BOTH the plugin ENTITY
 // rows (in entities, referenced_from the recipe / feature-recipe URI) and BOTH the
-// .wasm ARTIFACT rows (in wasm_plugins, referenced_from the entity URI, digest =
+// .wasm ARTIFACT rows (in plugins, referenced_from the entity URI, digest =
 // the .wasm content digest) — the two-pass descent's entity-axis + artifact-axis
 // pins. A build then resolves each bare entity reference through the entity-front
 // and reads the cached .wasm, proving the round-trip end-to-end.
@@ -517,7 +517,7 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 		frPluginName     = "patch-credential"
 		pluginSocket     = "pipeline"
 	)
-	// BARE WasmPlugin entity identities — the canonical reference shape. The pull
+	// BARE Plugin entity identities — the canonical reference shape. The pull
 	// binds <socket>/<name> to <registry>/wasm/<socket>/<name> itself; a
 	// registry-qualified reference would be refused with ErrQualifiedPluginReference.
 	recipePluginURI := pluginSocket + "/" + recipePluginName + ":1.0.0"
@@ -614,14 +614,14 @@ spec:
 `)
 	pushCatalog(t, host, cat)
 
-	// Publish both pipeline plugins as REAL WasmPlugin entities (the .wasm fixture +
+	// Publish both pipeline plugins as REAL Plugin entities (the .wasm fixture +
 	// the stamped entity) so each resolves above Tier-1 and participates in the
 	// lockfile pin on both axes. Both reuse the same committed .wasm fixture; their
 	// distinct OCI locations give distinct artifact URIs (same content digest).
 	recipePluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+recipePluginName, "1.0.0", pluginPath)
 	frPluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+frPluginName, "1.0.0", pluginPath)
 	// The .wasm ARTIFACT URIs the entities' stamped spec.plugin names — what the
-	// wasm_plugins rows pin (the content-digest pin push stamps).
+	// plugins rows pin (the content-digest pin push stamps).
 	recipeArtifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + recipePluginName + "@" + recipePluginDigest
 	frArtifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + frPluginName + "@" + frPluginDigest
 
@@ -692,8 +692,8 @@ spec:
 	for _, e := range lf.Entities {
 		entityByURI[e.URI] = e
 	}
-	pluginByURI := map[string]lockfile.WasmPlugin{}
-	for _, p := range lf.WasmPlugins {
+	pluginByURI := map[string]lockfile.Plugin{}
+	for _, p := range lf.Plugins {
 		pluginByURI[p.URI] = p
 	}
 
@@ -720,8 +720,8 @@ spec:
 		}
 	}
 
-	// Artifact-axis pins: each .wasm ARTIFACT is in lf.wasm_plugins, referenced_from
-	// its WasmPlugin entity URI, with the content digest of the .wasm fixture.
+	// Artifact-axis pins: each .wasm ARTIFACT is in lf.plugins, referenced_from
+	// its Plugin entity URI, with the content digest of the .wasm fixture.
 	artifactCases := []struct {
 		uri          string
 		wantDigest   string
@@ -734,7 +734,7 @@ spec:
 	for _, tc := range artifactCases {
 		got, ok := pluginByURI[tc.uri]
 		if !ok {
-			t.Fatalf("%s %q absent from written lockfile wasm_plugins (have %v)", tc.label, tc.uri, lf.WasmPlugins)
+			t.Fatalf("%s %q absent from written lockfile plugins (have %v)", tc.label, tc.uri, lf.Plugins)
 		}
 		if got.Digest != tc.wantDigest {
 			t.Errorf("%s digest = %q; want %q", tc.label, got.Digest, tc.wantDigest)
@@ -758,7 +758,7 @@ spec:
 
 // writePipelinePluginFixtureCatalog writes a controlled fixture catalog with a
 // single helm-provider Component whose Recipe carries a one-step pipeline that
-// references the named WasmPlugin entity by its bare identity, and writes a
+// references the named Plugin entity by its bare identity, and writes a
 // consumer workspace (aggregate / manifest / release / workspace config) wired to
 // build that Component over the registry at host. The committed frp-step-go
 // fixture self-describes as a helm-compatible frp_step plugin (export "step",
@@ -877,7 +877,7 @@ spec:
 // this test adds end-to-end.
 //
 // The proof is a fail-vs-succeed contrast on the one authored difference. The
-// fail arm publishes a WasmPlugin entity authoring spec.runtime.timeoutMs: 1 — a
+// fail arm publishes a Plugin entity authoring spec.runtime.timeoutMs: 1 — a
 // per-call wall-time cap far below what a real guest's describe()/step Call needs.
 // The runtime cap is Call-scoped, and the build invokes the plugin, so the 1 ms
 // cap trips at the guest Call and the build halts with a context-deadline
@@ -896,7 +896,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		pluginName   = "patch-server"
 		pluginSocket = "pipeline"
 	)
-	// BARE WasmPlugin entity identity — the canonical reference shape the recipe
+	// BARE Plugin entity identity — the canonical reference shape the recipe
 	// pipeline step names; the pull binds <socket>/<name> to the registry repo.
 	pluginURI := pluginSocket + "/" + pluginName + ":1.0.0"
 

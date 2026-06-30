@@ -267,17 +267,17 @@ func (s *walkState) walkBoundary(b types.Boundary, path string) {
 
 // walkWorkspacePlugins collects URIs from the four workspace-level
 // plugin sockets (mutator, policy, linter, importer). Each socket URI is a
-// WasmPlugin ENTITY URI; the entity carries the .wasm artifact reference in
+// Plugin ENTITY URI; the entity carries the .wasm artifact reference in
 // spec.plugin. The walk records the entity on the catalog-entity axis (so
 // ComputeClosure resolves and pins the entity, halting loudly on a missing one);
 // the entity's .wasm artifact is pinned at pull time by the pipeline-plugin
-// descent, which descends every wasm_plugin-kinded entity to its spec.plugin.
+// descent, which descends every plugin-kinded entity to its spec.plugin.
 func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 	record := func(uri, refPath string) {
 		if uri == "" {
 			return
 		}
-		s.addEntityKind(uri, refPath, "wasm_plugin")
+		s.addEntityKind(uri, refPath, pluginKindHint)
 	}
 	for _, p := range cfg.Plugins.Mutator {
 		record(p.URI, ".aggrega-config.yaml.plugins.mutator")
@@ -682,8 +682,8 @@ func (s *walkState) materialise() Closure {
 		}
 		c.Entities = append(c.Entities, p.toResolvedRef(uri))
 	}
-	// c.WasmPlugins is populated at pull time by the pipeline-plugin descent, which
-	// descends every wasm_plugin-kinded entity (workspace-socket plugins recorded
+	// c.Plugins is populated at pull time by the pipeline-plugin descent, which
+	// descends every plugin-kinded entity (workspace-socket plugins recorded
 	// here on the entity axis, plus Recipe / FeatureRecipe pipeline-step plugins) to
 	// its spec.plugin .wasm artifact. ComputeClosure pins only the entities.
 	c.SchemaLibraries = s.materialiseSchemaLibs()
@@ -714,15 +714,15 @@ func (s *walkState) materialiseMappingLibs() []ResolvedLibrary {
 // bytes after this pass.
 func canonicaliseClosure(c *Closure) {
 	sort.Slice(c.Entities, func(i, j int) bool { return c.Entities[i].URI < c.Entities[j].URI })
-	sort.Slice(c.WasmPlugins, func(i, j int) bool { return c.WasmPlugins[i].URI < c.WasmPlugins[j].URI })
+	sort.Slice(c.Plugins, func(i, j int) bool { return c.Plugins[i].URI < c.Plugins[j].URI })
 	sort.Slice(c.SchemaLibraries, func(i, j int) bool { return c.SchemaLibraries[i].URI < c.SchemaLibraries[j].URI })
 	sort.Slice(c.MappingLibraries, func(i, j int) bool { return c.MappingLibraries[i].URI < c.MappingLibraries[j].URI })
 
 	for i := range c.Entities {
 		sort.Strings(c.Entities[i].ReferencedFrom)
 	}
-	for i := range c.WasmPlugins {
-		sort.Strings(c.WasmPlugins[i].ReferencedFrom)
+	for i := range c.Plugins {
+		sort.Strings(c.Plugins[i].ReferencedFrom)
 	}
 	for i := range c.SchemaLibraries {
 		sortLibrary(&c.SchemaLibraries[i])

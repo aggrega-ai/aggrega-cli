@@ -18,7 +18,7 @@ import (
 // phase, where the merged document is re-segmented and the deferred step
 // replayed own-scope against it. This is the scope-symmetric mirror of the
 // host-patch-compose fixture (which defers a component-scope FeatureRecipe's
-// /host pipeline). The step references a WasmPlugin ENTITY URI; the entity's
+// /host pipeline). The step references a Plugin ENTITY URI; the entity's
 // spec.plugin .wasm artifact is built on demand from the Rust PDK example and
 // staged into a sidecar directory so the build's entity-front resolves it. When
 // the wasm toolchain is absent the staging build skips the calling test.

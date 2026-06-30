@@ -368,12 +368,12 @@ func TestSplitPluginArtifactURI(t *testing.T) {
 	}
 }
 
-// TestResolveWasmPluginContentPinRoundTrip drives the content-pin .wasm pull
+// TestResolvePluginContentPinRoundTrip drives the content-pin .wasm pull
 // flow directly: a .wasm artifact published under its content-digest-derived tag
-// resolves through ResolveWasmPlugin's content-pin path (tier-3 pull), lands in
+// resolves through ResolvePlugin's content-pin path (tier-3 pull), lands in
 // the cache keyed by the pinned content digest, re-resolves from cache on a
 // second call, and a tampered cache slot halts with ErrFetchIntegrity.
-func TestResolveWasmPluginContentPinRoundTrip(t *testing.T) {
+func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -398,9 +398,9 @@ func TestResolveWasmPluginContentPinRoundTrip(t *testing.T) {
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
 
 	// First resolution: tier-3 pull, content-digest-verified, cached.
-	res, err := lookup.ResolveWasmPlugin(artifactURI)
+	res, err := lookup.ResolvePlugin(artifactURI)
 	if err != nil {
-		t.Fatalf("ResolveWasmPlugin (pull): %v", err)
+		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
 	if res.NotFound {
 		t.Fatal("expected a tier-3 pull hit; got NotFound")
@@ -428,9 +428,9 @@ func TestResolveWasmPluginContentPinRoundTrip(t *testing.T) {
 	// Second resolution with no puller: a hit from the cache (tier-2), proving the
 	// lock-write slot is the slot the cache read addresses.
 	cachedLookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
-	res2, err := cachedLookup.ResolveWasmPlugin(artifactURI)
+	res2, err := cachedLookup.ResolvePlugin(artifactURI)
 	if err != nil {
-		t.Fatalf("ResolveWasmPlugin (cache): %v", err)
+		t.Fatalf("ResolvePlugin (cache): %v", err)
 	}
 	if res2.NotFound {
 		t.Fatal("expected a cache hit on the second resolve; got NotFound")
@@ -445,7 +445,7 @@ func TestResolveWasmPluginContentPinRoundTrip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolveWasmPlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := cachedLookup.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }

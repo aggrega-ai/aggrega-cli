@@ -60,7 +60,7 @@ var ErrWasmGuestPanic = errors.New("wasm: guest plugin panicked during call")
 // proc_exit so callers see the failure code in the message.
 var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
 
-// ErrWasmCapabilityMismatch indicates that a catalog WasmPlugin entity's
+// ErrWasmCapabilityMismatch indicates that a catalog Plugin entity's
 // authored capability claim disagrees with the plugin's self-reported describe()
 // descriptor at load. The cross-check is per-export, keyed by export name:
 // either the entity claims an export the plugin's describe() does not declare, or
@@ -74,7 +74,7 @@ var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
 // mismatch surfaces before the entity is published rather than at load.
 var ErrWasmCapabilityMismatch = errors.New("wasm: entity capability claim does not match plugin describe()")
 
-// ErrWasmHostFunctionsDeclarationMismatch indicates that a catalog WasmPlugin
+// ErrWasmHostFunctionsDeclarationMismatch indicates that a catalog Plugin
 // entity's authored runtime host-function declaration disagrees with the host
 // functions the .wasm binary actually imports. The loader derives the imported
 // host functions from the binary itself — the authoritative truth for which host

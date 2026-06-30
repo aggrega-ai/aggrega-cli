@@ -22,8 +22,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
@@ -82,7 +82,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		aggregates:       map[string]types.Aggregate{},
 		providers:        map[string]types.Provider{},
 		mappingLibraries: map[string]types.MappingLibrary{},
-		wasmPlugins:      map[string]types.WasmPlugin{},
+		plugins:          map[string]types.Plugin{},
 		aggregateSources: map[string]string{},
 		recipeSkips:      map[string]error{},
 		entityBytes:      map[string][]byte{},
@@ -159,10 +159,10 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// ResolveClosureExtends. Returns (_, false) for a non-extends or
 		// not-yet-resolved type, so consumers fall back to the authored schema.
 		EffectiveSchema: l.effectiveSchema,
-		// WasmPlugin serves the WasmPlugin entity by URI over the lazily-walked
+		// Plugin serves the Plugin entity by URI over the lazily-walked
 		// set, so the build-load pipeline socket fronts the artifact cascade with
 		// the entity → spec.plugin two-step from the lazy backing too.
-		WasmPlugin: l.WasmPluginByURI,
+		Plugin: l.PluginByURI,
 	}
 }
 
@@ -227,7 +227,7 @@ func (l *LazyLookup) Reset() {
 	l.aggregates = map[string]types.Aggregate{}
 	l.providers = map[string]types.Provider{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
-	l.wasmPlugins = map[string]types.WasmPlugin{}
+	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
 	l.recipeIndexBuilt = false
@@ -388,9 +388,9 @@ type LazyLookup struct {
 	aggregates       map[string]types.Aggregate
 	providers        map[string]types.Provider
 	mappingLibraries map[string]types.MappingLibrary
-	wasmPlugins      map[string]types.WasmPlugin // keyed by identity (metadata.name:version), like the eager catalog
+	plugins          map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
 	aggregateSources map[string]string
-	recipeSkips      map[string]error // skipped recipe/FR/aggregate/provider/maplib/wasmplugin file path -> reason
+	recipeSkips      map[string]error // skipped recipe/FR/aggregate/provider/maplib/plugin file path -> reason
 	recipeIndexBuilt bool
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
@@ -457,7 +457,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.aggregates = map[string]types.Aggregate{}
 	l.providers = map[string]types.Provider{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
-	l.wasmPlugins = map[string]types.WasmPlugin{}
+	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
 }
@@ -511,7 +511,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	if lf == nil {
 		return nil
 	}
-	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WasmPlugins))
+	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.Plugins))
 	for _, e := range lf.Entities {
 		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
 	}
@@ -521,7 +521,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	for _, ml := range lf.MappingLibraries {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
 	}
-	for _, wp := range lf.WasmPlugins {
+	for _, wp := range lf.Plugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
 	}
 	return pins
@@ -533,7 +533,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 // libraries, wasm plugins), each carrying the version the walk resolved so a
 // bare-URI pin addresses its versioned cache slot. Source artifacts are excluded.
 func PinsFromClosure(cl closure.Closure) map[string]Pin {
-	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.WasmPlugins))
+	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.Plugins))
 	for _, e := range cl.Entities {
 		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
 	}
@@ -543,7 +543,7 @@ func PinsFromClosure(cl closure.Closure) map[string]Pin {
 	for _, ml := range cl.MappingLibraries {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
 	}
-	for _, wp := range cl.WasmPlugins {
+	for _, wp := range cl.Plugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
 	}
 	return pins
@@ -907,8 +907,8 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 
 // buildRecipeIndex walks the catalog directories once and TOLERANTLY enumerates
 // every recipe-shell kind (Recipe, FeatureRecipe, Aggregate, Provider,
-// MappingLibrary, WasmPlugin) into the hot maps, keyed exactly as the eager
-// catalog keys them (recipes/FRs by provider/name:version, WasmPlugins by
+// MappingLibrary, Plugin) into the hot maps, keyed exactly as the eager
+// catalog keys them (recipes/FRs by provider/name:version, Plugins by
 // name:version, aggregates/providers/libraries by metadata.name). A file that
 // won't parse — or whose recipe/FR identity
 // collides with one already indexed — is skipped with a one-line stderr warning
@@ -960,12 +960,12 @@ func (l *LazyLookup) buildRecipeIndex() {
 	// cache slot folds here into l.providers; a locally-authored provider still
 	// resolves through the Tier-1 walk above.
 	l.foldPinnedCacheEntities(map[string]bool{
-		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "Provider": true, "WasmPlugin": true,
+		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "Provider": true, "Plugin": true,
 	})
 }
 
 // foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
-// FeatureRecipe, Aggregate, Provider, MappingLibrary, or WasmPlugin) and folds it into the hot
+// FeatureRecipe, Aggregate, Provider, MappingLibrary, or Plugin) and folds it into the hot
 // maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
 // collision (a later duplicate is skipped and recorded). parseData is the YAML to
 // parse; rawBytes is retained as entityBytes for digest fidelity — identical to
@@ -1041,23 +1041,23 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		}
 		l.mappingLibraries[e.Metadata.Name] = e
 		l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
-	case "WasmPlugin":
-		if _, eerr := envelope.ValidateBytes(envelope.KindWasmPlugin, parseData, src); eerr != nil {
+	case "Plugin":
+		if _, eerr := envelope.ValidateBytes(envelope.KindPlugin, parseData, src); eerr != nil {
 			l.recordRecipeSkip(src, eerr)
 			return
 		}
-		var e types.WasmPlugin
+		var e types.Plugin
 		if uerr := yaml.Unmarshal(parseData, &e); uerr != nil {
 			l.recordRecipeSkip(src, uerr)
 			return
 		}
 		key := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
-		if _, dup := l.wasmPlugins[key]; dup {
+		if _, dup := l.plugins[key]; dup {
 			l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))
 			return
 		}
-		l.wasmPlugins[key] = e
-		l.entityBytes[entityBytesKey("WasmPlugin", e.Metadata.Name)] = rawBytes
+		l.plugins[key] = e
+		l.entityBytes[entityBytesKey("Plugin", e.Metadata.Name)] = rawBytes
 	}
 }
 
@@ -1150,7 +1150,7 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		Providers:        l.providers,
 		SchemaLibraries:  l.schemaLibraries,
 		MappingLibraries: l.mappingLibraries,
-		WasmPlugins:      l.wasmPlugins,
+		Plugins:          l.plugins,
 		aggregateSources: l.aggregateSources,
 		entityBytes:      l.entityBytes,
 		workspaceRoot:    l.workspaceRoot,
@@ -1256,14 +1256,14 @@ func (l *LazyLookup) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) 
 	return l.recipeCatalog().FeatureRecipeByURI(uri)
 }
 
-// WasmPluginByURI resolves a WasmPlugin entity by its catalog URI over the
+// PluginByURI resolves a Plugin entity by its catalog URI over the
 // lazily-enumerated (Tier-1 + pinned Tier-2) set. It delegates to the same
 // *Catalog matcher the eager backing uses (via the recipeCatalog() shell), so the
 // two backings resolve identically — no per-backing matcher.
-func (l *LazyLookup) WasmPluginByURI(uri string) (types.WasmPlugin, bool) {
+func (l *LazyLookup) PluginByURI(uri string) (types.Plugin, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.recipeCatalog().WasmPluginByURI(uri)
+	return l.recipeCatalog().PluginByURI(uri)
 }
 
 // ClosureRecipeLoader exposes the source-descent recipe loader over the lazily-
@@ -1619,10 +1619,10 @@ func (x *lazyClosureLookup) ResolveMappingLibrary(uri string) (closure.LibraryRe
 	return x.base.ResolveMappingLibrary(uri)
 }
 
-func (x *lazyClosureLookup) ResolveWasmPlugin(uri string) (closure.Resolution, error) {
+func (x *lazyClosureLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
-	return x.base.ResolveWasmPlugin(uri)
+	return x.base.ResolvePlugin(uri)
 }
 
 // resolveComponentForClosure resolves a Component URI for the closure walk —

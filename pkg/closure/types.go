@@ -51,7 +51,7 @@ type Closure struct {
 	MappingLibraries []ResolvedLibrary
 	SchemaLibraries  []ResolvedLibrary
 	SourceArtifacts  []SourceArtifact
-	WasmPlugins      []ResolvedRef
+	Plugins          []ResolvedRef
 }
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
@@ -121,11 +121,11 @@ type ComponentSourceInfra struct {
 type RecipeLoader interface {
 	LoadRecipe(uri string) (*types.Recipe, error)
 	LoadFeatureRecipe(uri string) (*types.FeatureRecipe, error)
-	// LoadWasmPlugin loads a WasmPlugin entity body by URI. The pipeline-plugin
+	// LoadPlugin loads a Plugin entity body by URI. The pipeline-plugin
 	// descent reads spec.plugin (the .wasm artifact reference) from it to pin the
 	// artifact alongside the entity. Not-found surfaces as a wrapped error so the
 	// descent can distinguish a missing-entity failure from other parse errors.
-	LoadWasmPlugin(uri string) (*types.WasmPlugin, error)
+	LoadPlugin(uri string) (*types.Plugin, error)
 }
 
 // SourceResolver matches the contract of sourceresolver.Resolve
@@ -194,7 +194,7 @@ var ErrSourceTemplateProvidesRef = errors.New("closure: source-template referenc
 
 // ResolvedRef captures a single catalog-entity or Wasm-plugin
 // resolution result. Mirrors the lockfile package's Entity /
-// WasmPlugin wire shapes so the lockfile writer can copy
+// Plugin wire shapes so the lockfile writer can copy
 // field-for-field.
 type ResolvedRef struct {
 	URI             string
@@ -269,7 +269,7 @@ type Lookup interface {
 	ResolveAggregate(uri string) (Resolution, error)
 	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
 	ResolveMappingLibrary(uri string) (LibraryResolution, error)
-	ResolveWasmPlugin(uri string) (Resolution, error)
+	ResolvePlugin(uri string) (Resolution, error)
 }
 
 // Resolution is the common output shape for catalog-entity and

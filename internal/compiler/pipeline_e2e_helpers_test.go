@@ -13,12 +13,12 @@ import (
 )
 
 // stagePluginSidecar builds each fixture .wasm and stages it into a fresh temp
-// sidecar directory, keyed by pluginpath.SidecarLeaf of the WasmPlugin entity's
+// sidecar directory, keyed by pluginpath.SidecarLeaf of the Plugin entity's
 // spec.plugin artifact reference. It returns the directory to set on
 // pipelinetest.Input.PluginSidecarDir, so the build's PRODUCTION entity-front
 // resolves entity URI → spec.plugin → cascade (sidecar tier) end-to-end — no
 // hand-rolled test resolver. The map keys are the artifact references the
-// WasmPlugin entities declare; the values are the wasmtest fixture artifact names.
+// Plugin entities declare; the values are the wasmtest fixture artifact names.
 // When the wasm toolchain is absent, the underlying build skips the calling test.
 func stagePluginSidecar(t *testing.T, artifactToFixture map[string]string) string {
 	t.Helper()

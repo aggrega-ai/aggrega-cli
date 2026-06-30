@@ -93,12 +93,12 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 
 	const uri = "keyed.example.com/wasm/linter/publishing-linter"
 	cl := closure.Closure{
-		WasmPlugins: []closure.ResolvedRef{
+		Plugins: []closure.ResolvedRef{
 			{URI: uri, Digest: dg, ResolutionPath: "tier-3"},
 		},
 	}
 	lf := &lockfile.Lockfile{
-		WasmPlugins: []lockfile.WasmPlugin{{URI: uri, Digest: dg}},
+		Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}},
 	}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
@@ -109,7 +109,7 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 	if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0")); err != nil {
 		t.Fatalf("verifyClosureSignatures: %v", err)
 	}
-	if lf.WasmPlugins[0].Signature == nil {
+	if lf.Plugins[0].Signature == nil {
 		t.Fatal("plugin signature fact was not recorded on the lockfile row")
 	}
 
@@ -159,9 +159,9 @@ func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
 
 	const uri = "keyed.example.com/wasm/linter/publishing-linter"
 	cl := closure.Closure{
-		WasmPlugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
+		Plugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
 	}
-	lf := &lockfile.Lockfile{WasmPlugins: []lockfile.WasmPlugin{{URI: uri, Digest: dg}}}
+	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}}}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(otherPub)},

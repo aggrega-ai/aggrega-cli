@@ -201,11 +201,11 @@ func alignmentCases() []alignmentCase {
 			maximal:    maximalProvider(),
 		},
 		{
-			kind:       envelope.KindWasmPlugin,
-			schema:     schemas.WasmPluginV1alpha1,
-			roots:      []reflect.Type{reflect.TypeOf(types.WasmPlugin{})},
+			kind:       envelope.KindPlugin,
+			schema:     schemas.PluginV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(types.Plugin{})},
 			exceptions: map[string]string{},
-			maximal:    maximalWasmPlugin(),
+			maximal:    maximalPlugin(),
 		},
 		{
 			kind:       envelope.KindSchemaLibrary,
