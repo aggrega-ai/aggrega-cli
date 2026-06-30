@@ -5,19 +5,25 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -105,6 +111,111 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		lf.Plugins[i].Signature = signatureFact(r)
 	}
 	return nil
+}
+
+// verifyPluginHostFunctions re-derives each in-closure plugin's host functions
+// from its freshly-cached, content-digest-verified .wasm and verifies the result
+// matches the machine-owned stamp the publish flow wrote into the entity's
+// spec.runtime.hostFunctions. It is called only on the pull path (write and
+// verify), never on build, which reads the recorded closure and never re-derives
+// (the ahead-of-time boundary).
+//
+// The check is defense-in-depth over the content-digest pin: the digest pin
+// guarantees the bytes are the bytes the entity committed to, but it does not
+// catch a binary published by something other than the aggrega publish flow
+// (which would carry no stamp, or one that does not match its own imports) or a
+// publish-side stamping bug. Re-deriving from the verified bytes and comparing to
+// the stamp catches both, and HALTS the pull on any divergence
+// (ErrWasmHostFunctionsStampMismatch).
+//
+// It iterates the artifact axis (registry-resolved .wasm pins), the same scope
+// the signature verify covers: a host-less / local plugin carries no cached
+// artifact and no registry stamp to re-derive against. The .wasm bytes are read
+// once from the cache slot the artifact descent populated, keyed by the artifact
+// URI and its content-digest pin. The single derivation primitive
+// (wasm.DeriveHostFunctions) is the same one publish stamped with and the loader
+// registers from, so the three surfaces cannot drift.
+//
+// diagOut receives a per-plugin verification notice (os.Stderr in production).
+func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader closure.RecipeLoader, workspaceRoot, cacheDir string, diagOut io.Writer) error {
+	_ = ctx
+	// Collect the artifact URIs sorted so the verify order is deterministic and
+	// independent of closure order.
+	artifactURIs := make([]string, 0, len(cl.Plugins))
+	entityByArtifact := make(map[string]string, len(cl.Plugins))
+	for _, art := range cl.Plugins {
+		if len(art.ReferencedFrom) == 0 {
+			continue
+		}
+		artifactURIs = append(artifactURIs, art.URI)
+		// The artifact is referenced from its Plugin entity; the first
+		// referencing entity carries the stamp to verify against (every entity
+		// pinning the same .wasm content shares its derived imports).
+		entityByArtifact[art.URI] = art.ReferencedFrom[0]
+	}
+	sort.Strings(artifactURIs)
+
+	for _, artifactURI := range artifactURIs {
+		entityURI := entityByArtifact[artifactURI]
+		_, pinDigest, ok := catalog.SplitPluginArtifactURI(artifactURI)
+		if !ok {
+			// A non-content-pinned artifact reference carries no cache slot keyed
+			// by digest; skip it, mirroring the signature verify's host-less skip.
+			continue
+		}
+
+		entity, err := loader.LoadPlugin(entityURI)
+		if err != nil {
+			return fmt.Errorf("load plugin entity %q for host-function verify: %w", entityURI, err)
+		}
+
+		wasmBytes, err := oci.ReadCached(workspaceRoot, cacheDir, artifactURI, pinDigest)
+		if err != nil {
+			if errors.Is(err, oci.ErrFetchNotFound) {
+				// No cached artifact (offline / hermetic): nothing to re-derive
+				// against, so there is no stamp to contradict.
+				continue
+			}
+			return fmt.Errorf("read cached .wasm %s for host-function verify: %w", artifactURI, err)
+		}
+
+		derived, err := wasm.DeriveHostFunctions(entityURI, wasmBytes)
+		if err != nil {
+			return fmt.Errorf("derive host functions from .wasm %s: %w", artifactURI, err)
+		}
+
+		stamped := stampedHostFunctions(entity)
+		if !canonicalStringSetsEqual(stamped, derived) {
+			return fmt.Errorf("plugin %q: stamped spec.runtime.hostFunctions %v does not match %v derived from the verified .wasm %s: %w",
+				entityURI, stamped, derived, artifactURI, wasm.ErrWasmHostFunctionsStampMismatch)
+		}
+		fmt.Fprintf(diagOut, "  verify: plugin %s host functions match the published .wasm\n", entityURI)
+	}
+	return nil
+}
+
+// stampedHostFunctions returns the entity's machine-owned host-function stamp, or
+// nil when the entity carries no runtime block.
+func stampedHostFunctions(entity *types.Plugin) []string {
+	if entity == nil || entity.Spec.Runtime == nil {
+		return nil
+	}
+	return entity.Spec.Runtime.HostFunctions
+}
+
+// canonicalStringSetsEqual reports whether two string slices are equal as sets
+// (order and duplicates ignored). The derived set is canonical (sorted,
+// de-duplicated) by construction; canonicalising the stamp before comparison
+// keeps the check robust against a hand-edited stamp whose order or duplicates
+// drifted, so the comparison is a true set equality rather than a slice equality.
+func canonicalStringSetsEqual(a, b []string) bool {
+	ca := slices.Clone(a)
+	cb := slices.Clone(b)
+	slices.Sort(ca)
+	slices.Sort(cb)
+	ca = slices.Compact(ca)
+	cb = slices.Compact(cb)
+	return slices.Equal(ca, cb)
 }
 
 // signatureFact turns a pullverify result into the durable lockfile fact.

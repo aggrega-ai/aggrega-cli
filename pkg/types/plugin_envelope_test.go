@@ -28,7 +28,7 @@ spec:
   runtime:
     maxMemoryPages: 16
     timeoutMs: 5000
-    declaredHostFunctions: [log]
+    hostFunctions: [log]
     configKV:
       ZEBRA: last
       ALPHA: first

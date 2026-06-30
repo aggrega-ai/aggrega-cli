@@ -74,18 +74,23 @@ var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
 // mismatch surfaces before the entity is published rather than at load.
 var ErrWasmCapabilityMismatch = errors.New("wasm: entity capability claim does not match plugin describe()")
 
-// ErrWasmHostFunctionsDeclarationMismatch indicates that a catalog Plugin
-// entity's authored runtime host-function declaration disagrees with the host
-// functions the .wasm binary actually imports. The loader derives the imported
-// host functions from the binary itself — the authoritative truth for which host
-// functions the guest calls — and, when the entity authored a declaration,
-// cross-checks the two as sets. A declaration that claims a host function the
-// binary does not import, or omits one the binary does import, is a Loud
-// Guardrail.
+// ErrWasmHostFunctionsStampMismatch indicates that a Plugin entity's stamped
+// runtime host-function record disagrees with the host functions the verified
+// .wasm binary actually imports. The host-function record is machine-owned: the
+// publish flow derives it from the binary's import section and stamps the
+// canonical (sorted, de-duplicated) set into the entity. At pull, after the
+// .wasm is content-digest-verified, the host re-derives the set from the
+// verified bytes and compares it to the stamp; a divergence in either direction
+// is a Loud Guardrail that halts the pull.
 //
-// The wrapping error names the plugin, the declared-but-not-imported names, and
-// the imported-but-not-declared names so the author sees both directions of the
-// drift. This sentinel is distinct from ErrWasmCapabilityMismatch: that covers
-// the export operates/scope claim against describe(); this covers the
-// host-function declaration against the binary's imports.
-var ErrWasmHostFunctionsDeclarationMismatch = errors.New("wasm: entity host-function declaration does not match .wasm imports")
+// This is defense-in-depth over the content-digest pin: it uniquely catches a
+// binary published by something other than the aggrega publish flow (which would
+// carry no stamp, or a stamp that does not match its own bytes) and a
+// publish-side stamping bug, neither of which the digest pin alone surfaces.
+//
+// The wrapping error names the plugin, the stamped set, and the derived set so
+// the divergence is visible. This sentinel is distinct from
+// ErrWasmCapabilityMismatch: that covers the export operates/scope claim against
+// describe(); this covers the stamped host-function record against the verified
+// binary's imports.
+var ErrWasmHostFunctionsStampMismatch = errors.New("wasm: stamped host-function record does not match .wasm imports")

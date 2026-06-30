@@ -5,14 +5,42 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
+
+// TestInspectRawPlugin_DerivesFromBinary proves the pre-publish authoring view:
+// inspect --plugin <path> reads a raw .wasm and prints the host functions it
+// imports via the single derivation primitive, labelled as derived-from-binary
+// and not-yet-stamped. The frp-step-go fixture imports no custom host functions,
+// so the not-yet-stamped view reports none — exercising the derive path against
+// a real toolchain-built binary.
+func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
+	t.Parallel()
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+	if _, err := os.Stat(pluginPath); err != nil {
+		t.Fatalf("fixture missing: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := inspectRawPlugin(&buf, pluginPath); err != nil {
+		t.Fatalf("inspectRawPlugin: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "derived from binary, not yet stamped") {
+		t.Errorf("output should label the set as derived-from-binary and not-yet-stamped; got:\n%s", out)
+	}
+	if !strings.Contains(out, "(none)") {
+		t.Errorf("the frp-step-go fixture imports no custom host functions; expected (none); got:\n%s", out)
+	}
+}
 
 // pluginFixture declares a Plugin with a content-addressed artifact,
 // two exports carrying full capability claims (operates / scope / selector),
-// and an explicit runtime block (both limits set, declared host functions). It
-// drives the golden harness across all four render levels.
+// and an explicit runtime block (both limits set, a stamped host-function
+// record). It drives the golden harness across all four render levels.
 const pluginFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
@@ -35,7 +63,7 @@ spec:
   runtime:
     maxMemoryPages: 256
     timeoutMs: 3000
-    declaredHostFunctions:
+    hostFunctions:
       - log_message
       - read_config
     configKV:

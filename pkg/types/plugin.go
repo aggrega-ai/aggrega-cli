@@ -16,9 +16,9 @@ package types
 // generated metadata references lives in common.go.
 //
 // The runtime block stays field-aligned with the loader's plugin input
-// (max-memory pages, per-call timeout, declared host functions, the
-// config key/value map) so a catalog-loaded entity maps to the loader's
-// runtime shape field-for-field, no field reinvention. The loader's
+// (max-memory pages, per-call timeout, the machine-derived host-function
+// record, the config key/value map) so a catalog-loaded entity maps to the
+// loader's runtime shape field-for-field, no field reinvention. The loader's
 // network-firewall input has no authoring counterpart here: a plugin
 // never reaches the network at build time, so there is no host-allowlist
 // field to author. The loader identity inputs (the plugin's diagnostic
@@ -88,11 +88,14 @@ type PluginRuntime struct {
 	// absent applies the platform default cap, so a call is never
 	// uncancellable; an attachment that runs longer raises this value.
 	TimeoutMs uint64 `json:"timeoutMs,omitempty" yaml:"timeoutMs,omitempty"`
-	// DeclaredHostFunctions lists the host function names the plugin imports.
-	// The host validates every entry against the curated allowlist and
-	// registers only the declared functions, giving each plugin the
-	// least-privilege host surface it actually needs.
-	DeclaredHostFunctions []string `json:"declaredHostFunctions,omitempty" yaml:"declaredHostFunctions,omitempty"`
+	// HostFunctions is the machine-owned record of the host functions the
+	// plugin imports, in canonical (sorted, de-duplicated) form. It is derived
+	// from the published .wasm import section at publish, stamped into the
+	// entity, and re-derived and verified at pull — an author never writes it.
+	// The host registers exactly this derived set and validates every entry
+	// against the curated allowlist, giving each plugin the least-privilege host
+	// surface its binary actually needs.
+	HostFunctions []string `json:"hostFunctions,omitempty" yaml:"hostFunctions,omitempty"`
 	// ConfigKV carries plugin-specific configuration the runtime hands to the
 	// plugin at start, as string-to-string pairs in author order so the
 	// emitted record is byte-identical across runs.

@@ -87,10 +87,11 @@ func encodeULEB128(v uint32) []byte {
 	}
 }
 
-// TestDeriveDeclaredHostFunctions_NamespaceContract pins the namespace contract:
+// TestDeriveHostFunctions_NamespaceContract pins the namespace contract:
 // imports under extism:host/user ARE derived; imports under extism:host/env and
-// wasi_snapshot_preview1 are EXCLUDED.
-func TestDeriveDeclaredHostFunctions_NamespaceContract(t *testing.T) {
+// wasi_snapshot_preview1 are EXCLUDED. The output is canonical (sorted), so the
+// expected set is in sorted order regardless of import order.
+func TestDeriveHostFunctions_NamespaceContract(t *testing.T) {
 	t.Parallel()
 	wasmBytes := buildWasmWithImports([]wasmImport{
 		{module: extismHostUserNamespace, name: "aggrega_log"},
@@ -99,22 +100,22 @@ func TestDeriveDeclaredHostFunctions_NamespaceContract(t *testing.T) {
 		{module: extismHostUserNamespace, name: "aggrega_emit_warning"},
 	})
 
-	got, err := deriveDeclaredHostFunctions("test-plugin", wasmBytes)
+	got, err := DeriveHostFunctions("test-plugin", wasmBytes)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	want := []string{"aggrega_log", "aggrega_emit_warning"}
+	want := []string{"aggrega_emit_warning", "aggrega_log"}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("derived = %v; want %v (import order, custom-host namespace only)", got, want)
+		t.Errorf("derived = %v; want %v (canonical sorted, custom-host namespace only)", got, want)
 	}
 }
 
-// TestDeriveDeclaredHostFunctions_EmptyImportSection proves a module with no
+// TestDeriveHostFunctions_EmptyImportSection proves a module with no
 // import section yields an empty derived set.
-func TestDeriveDeclaredHostFunctions_EmptyImportSection(t *testing.T) {
+func TestDeriveHostFunctions_EmptyImportSection(t *testing.T) {
 	t.Parallel()
 	wasmBytes := buildWasmWithImports(nil)
-	got, err := deriveDeclaredHostFunctions("test-plugin", wasmBytes)
+	got, err := DeriveHostFunctions("test-plugin", wasmBytes)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -123,17 +124,17 @@ func TestDeriveDeclaredHostFunctions_EmptyImportSection(t *testing.T) {
 	}
 }
 
-// TestDeriveDeclaredHostFunctions_NoCustomImports proves a module that imports
+// TestDeriveHostFunctions_NoCustomImports proves a module that imports
 // only runtime-ABI and WASI functions yields an empty custom-host set — the
 // shape every existing toolchain-built fixture has.
-func TestDeriveDeclaredHostFunctions_NoCustomImports(t *testing.T) {
+func TestDeriveHostFunctions_NoCustomImports(t *testing.T) {
 	t.Parallel()
 	wasmBytes := buildWasmWithImports([]wasmImport{
 		{module: extismHostEnvNamespace, name: "input_length"},
 		{module: extismHostEnvNamespace, name: "output_set"},
 		{module: wasiSnapshotPreview1Namespace, name: "fd_write"},
 	})
-	got, err := deriveDeclaredHostFunctions("test-plugin", wasmBytes)
+	got, err := DeriveHostFunctions("test-plugin", wasmBytes)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -142,22 +143,24 @@ func TestDeriveDeclaredHostFunctions_NoCustomImports(t *testing.T) {
 	}
 }
 
-// TestDeriveDeclaredHostFunctions_Dedup proves a repeated custom-host import is
-// de-duplicated, keeping first-seen import order.
-func TestDeriveDeclaredHostFunctions_Dedup(t *testing.T) {
+// TestDeriveHostFunctions_CanonicalSortedAndDeduped proves the output is
+// canonical: imports out of alphabetical order, with a duplicate, yield a
+// sorted, de-duplicated set, so a re-derive of the same .wasm is byte-identical
+// and a stamp comparison is a plain equality.
+func TestDeriveHostFunctions_CanonicalSortedAndDeduped(t *testing.T) {
 	t.Parallel()
 	wasmBytes := buildWasmWithImports([]wasmImport{
 		{module: extismHostUserNamespace, name: "aggrega_log"},
-		{module: extismHostUserNamespace, name: "aggrega_log"},
 		{module: extismHostUserNamespace, name: "aggrega_emit_warning"},
+		{module: extismHostUserNamespace, name: "aggrega_log"},
 	})
-	got, err := deriveDeclaredHostFunctions("test-plugin", wasmBytes)
+	got, err := DeriveHostFunctions("test-plugin", wasmBytes)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	want := []string{"aggrega_log", "aggrega_emit_warning"}
+	want := []string{"aggrega_emit_warning", "aggrega_log"}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("derived = %v; want %v (deduplicated, first-seen order)", got, want)
+		t.Errorf("derived = %v; want %v (canonical: sorted + de-duplicated)", got, want)
 	}
 }
 
@@ -169,11 +172,11 @@ func TestVerifyDerivedAgainstAllowlist(t *testing.T) {
 	wasmBytes := buildWasmWithImports([]wasmImport{
 		{module: extismHostUserNamespace, name: "rogue_function"},
 	})
-	derived, err := deriveDeclaredHostFunctions("test-plugin", wasmBytes)
+	derived, err := DeriveHostFunctions("test-plugin", wasmBytes)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	err = validateDeclaredHostFunctions(PluginSpec{Name: "test-plugin", DeclaredHostFunctions: derived})
+	err = validateHostFunctionsSubset("test-plugin", derived)
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("expected ErrWasmManifestRejected for a non-allowlisted derived host function; got %v", err)
 	}
@@ -182,12 +185,12 @@ func TestVerifyDerivedAgainstAllowlist(t *testing.T) {
 	}
 }
 
-// TestDeriveDeclaredHostFunctions_RealToolchainModule proves the derivation
+// TestDeriveHostFunctions_RealToolchainModule proves the derivation
 // namespace contract against a real wat2wasm-built module that imports a custom
 // host function under extism:host/user.
-func TestDeriveDeclaredHostFunctions_RealToolchainModule(t *testing.T) {
+func TestDeriveHostFunctions_RealToolchainModule(t *testing.T) {
 	t.Parallel()
-	got, err := deriveDeclaredHostFunctions("custom-host", customHostWasm)
+	got, err := DeriveHostFunctions("custom-host", customHostWasm)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -213,99 +216,4 @@ func TestLoad_RegistersDerivedNonEmptyHostFunctionSet(t *testing.T) {
 		t.Fatalf("Load with a derived non-empty allowlisted host-function set should succeed; got %v", err)
 	}
 	defer plugin.Close(context.Background())
-}
-
-// TestLoad_AuthoredHostFunctionsDisagreeWithDerived proves the full load path
-// fires the authored-vs-derived cross-check: the real module imports aggrega_log
-// only, but the spec authors [aggrega_log, aggrega_emit_warning] (both
-// allowlisted, so the allowlist gate passes), so Load halts with the distinct
-// ErrWasmHostFunctionsDeclarationMismatch naming the declared-but-not-imported
-// name.
-func TestLoad_AuthoredHostFunctionsDisagreeWithDerived(t *testing.T) {
-	t.Parallel()
-	loader := &Loader{}
-	_, err := loader.Load(context.Background(), PluginSpec{
-		Name:                  "custom-host",
-		Bytes:                 customHostWasm,
-		DeclaredHostFunctions: []string{"aggrega_log", "aggrega_emit_warning"},
-	})
-	if !errors.Is(err, ErrWasmHostFunctionsDeclarationMismatch) {
-		t.Fatalf("authored set disagreeing with derived should halt with ErrWasmHostFunctionsDeclarationMismatch; got %v", err)
-	}
-	if !strings.Contains(err.Error(), "aggrega_emit_warning") {
-		t.Errorf("halt should name the declared-but-not-imported function; got %v", err)
-	}
-}
-
-// TestLoad_AuthoredHostFunctionsAgreeWithDerived proves the cross-check passes
-// when the authored set matches the derived set through the full load path.
-func TestLoad_AuthoredHostFunctionsAgreeWithDerived(t *testing.T) {
-	t.Parallel()
-	loader := &Loader{}
-	plugin, err := loader.Load(context.Background(), PluginSpec{
-		Name:                  "custom-host",
-		Bytes:                 customHostWasm,
-		DeclaredHostFunctions: []string{"aggrega_log"},
-	})
-	if err != nil {
-		t.Fatalf("authored set matching derived should load; got %v", err)
-	}
-	defer plugin.Close(context.Background())
-}
-
-// TestCrossCheckAuthoredHostFunctions proves the authored-vs-derived cross-check:
-// agreement returns nil; a disagreement (either direction) halts with the
-// distinct ErrWasmHostFunctionsDeclarationMismatch naming both diff directions.
-func TestCrossCheckAuthoredHostFunctions(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name      string
-		authored  []string
-		derived   []string
-		wantErr   bool
-		wantParts []string
-	}{
-		{
-			name:     "set-equal (order ignored) returns nil",
-			authored: []string{"aggrega_emit_warning", "aggrega_log"},
-			derived:  []string{"aggrega_log", "aggrega_emit_warning"},
-		},
-		{
-			name:      "authored claims one the binary does not import",
-			authored:  []string{"aggrega_log", "aggrega_emit_warning"},
-			derived:   []string{"aggrega_log"},
-			wantErr:   true,
-			wantParts: []string{"declared-but-not-imported", "aggrega_emit_warning"},
-		},
-		{
-			name:      "binary imports one the authored set omits",
-			authored:  []string{"aggrega_log"},
-			derived:   []string{"aggrega_log", "aggrega_emit_warning"},
-			wantErr:   true,
-			wantParts: []string{"imported-but-not-declared", "aggrega_emit_warning"},
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			err := crossCheckAuthoredHostFunctions("test-plugin", tc.authored, tc.derived)
-			if !tc.wantErr {
-				if err != nil {
-					t.Fatalf("expected nil, got %v", err)
-				}
-				return
-			}
-			if !errors.Is(err, ErrWasmHostFunctionsDeclarationMismatch) {
-				t.Fatalf("error does not wrap ErrWasmHostFunctionsDeclarationMismatch: %v", err)
-			}
-			for _, part := range tc.wantParts {
-				if !strings.Contains(err.Error(), part) {
-					t.Errorf("error should mention %q; got %v", part, err)
-				}
-			}
-		})
-	}
 }

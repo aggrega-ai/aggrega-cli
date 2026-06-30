@@ -50,29 +50,21 @@ func TestTranslateRejectsAllowedPaths(t *testing.T) {
 	}
 }
 
-func TestTranslateRejectsDeclaredHostFunctionOutsideAllowlist(t *testing.T) {
-	spec := PluginSpec{
-		Name:                  "test-plugin",
-		Path:                  "fixture.wasm",
-		DeclaredHostFunctions: []string{"aggrega_log", "rogue_function"},
-	}
-	_, err := translateToManifest(spec)
+func TestHostFunctionsSubsetRejectsOutsideAllowlist(t *testing.T) {
+	err := validateHostFunctionsSubset("test-plugin", []string{"aggrega_log", "rogue_function"})
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("expected ErrWasmManifestRejected, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "rogue_function") {
 		t.Errorf("error should name the violating host function; got: %s", err.Error())
 	}
+	if !strings.Contains(err.Error(), "test-plugin") {
+		t.Errorf("error should name the plugin identifier; got: %s", err.Error())
+	}
 }
 
-func TestTranslateAcceptsAllowlistedHostFunctions(t *testing.T) {
-	spec := PluginSpec{
-		Name:                  "test-plugin",
-		Path:                  "fixture.wasm",
-		DeclaredHostFunctions: []string{"aggrega_log", "aggrega_emit_warning"},
-	}
-	_, err := translateToManifest(spec)
-	if err != nil {
+func TestHostFunctionsSubsetAcceptsAllowlisted(t *testing.T) {
+	if err := validateHostFunctionsSubset("test-plugin", []string{"aggrega_log", "aggrega_emit_warning"}); err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 }

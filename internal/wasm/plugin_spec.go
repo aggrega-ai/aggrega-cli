@@ -45,18 +45,6 @@ type PluginSpec struct {
 	// Call is never uncancellable.
 	TimeoutMs uint64
 
-	// DeclaredHostFunctions is the authored claim of the host function names
-	// the plugin imports. The loader does NOT register from this field — it
-	// derives the imported host functions from the .wasm bytes themselves
-	// (deriveDeclaredHostFunctions) and registers the derived set, which is
-	// ground truth. When this authored field is non-empty the loader
-	// cross-checks it against the derived set and halts on disagreement
-	// (ErrWasmHostFunctionsDeclarationMismatch); an empty field skips that
-	// cross-check. This authored field is a DELIBERATE independent cross-check
-	// of the derived truth, not a silent mirror — keep it rather than
-	// "unifying" it into the derived set.
-	DeclaredHostFunctions []string
-
 	// Capability is the optional authored capability claim the load gate
 	// cross-checks against the plugin's self-reported describe() descriptor (see
 	// CrossCheckCapabilities). nil disables the cross-check — the path every

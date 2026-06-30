@@ -105,21 +105,17 @@ type PluginRuntimeLimits struct {
 
 // PluginCapabilityClaim is the neutral, pluginpath-owned shape of an entity's
 // authored capability declaration: the per-export name/operates/scope triples
-// the load gate cross-checks against the plugin's self-report, plus the optional
-// authored host-function list the gate cross-checks against the set derived from
-// the .wasm imports. It carries no dependency on internal/wasm; the loader's
-// caller maps it onto the wasm-side claim shape.
+// the load gate cross-checks against the plugin's self-report. It carries no
+// dependency on internal/wasm; the loader's caller maps it onto the wasm-side
+// claim shape.
+//
+// The host-function surface is not part of the authored claim: it is
+// machine-owned, derived from the .wasm import section at publish and stamped
+// into the entity, so there is no authored list to cross-check at load. The
+// loader registers exactly the derived set.
 type PluginCapabilityClaim struct {
 	// Exports is the authored per-export capability claim, in author order.
 	Exports []PluginExportClaim
-
-	// DeclaredHostFunctions is the entity's optional authored host-function
-	// declaration (runtime.declaredHostFunctions). When non-empty the load gate
-	// cross-checks it against the set derived from the .wasm imports and halts on
-	// disagreement; empty omits the cross-check. It is a deliberate independent
-	// claim against the derived truth, not the registration input — the loader
-	// registers the derived set.
-	DeclaredHostFunctions []string
 }
 
 // PluginExportClaim is one export's authored capability in the neutral shape:

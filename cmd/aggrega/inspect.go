@@ -39,15 +39,35 @@ func newInspectCmd() *cobra.Command {
 		colorFlag    string
 		noColorFlag  bool
 		outputFlag   string
+		pluginFlag   string
 
 		showImplementsFlag bool
 		flatFlag           bool
 	)
 	c := &cobra.Command{
-		Use:   "inspect <identifier>",
+		Use:   "inspect [identifier]",
 		Short: "Inspect a catalog Component or a Release file (resolves by entity kind)",
-		Args:  cobra.ExactArgs(1),
+		// Arg-count contract enforced before RunE (so genuine misuse surfaces the
+		// Usage block): exactly one identifier in the normal path; zero when
+		// --plugin names a raw .wasm to derive host functions from.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("plugin") {
+				if len(args) > 0 {
+					return fmt.Errorf("inspect --plugin <path-to-.wasm> takes no identifier argument")
+				}
+				return nil
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			// --plugin <path> is the pre-publish authoring loop: derive the host
+			// functions from a raw .wasm not yet published or stamped, via the same
+			// derivation primitive publish stamps and the loader registers from. It
+			// takes no identifier argument.
+			if pluginFlag != "" {
+				return inspectRawPlugin(out, pluginFlag)
+			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
 				return err
@@ -66,7 +86,6 @@ func newInspectCmd() *cobra.Command {
 				return err
 			}
 
-			out := cmd.OutOrStdout()
 			_, noColorSet := os.LookupEnv("NO_COLOR")
 			opts := inspectOptions{
 				level:          resolveLevel(listFlag, detailFlag),
@@ -91,6 +110,7 @@ func newInspectCmd() *cobra.Command {
 	c.Flags().StringVar(&outputFlag, "output", "text", "Output format: text|yaml.")
 	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
 	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
+	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports (the pre-publish, not-yet-stamped view). Takes no identifier argument.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")

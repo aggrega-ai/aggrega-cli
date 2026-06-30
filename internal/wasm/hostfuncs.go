@@ -13,9 +13,9 @@ import (
 )
 
 // hostFunctionAllowlist is the curated set of host function names the
-// AOT-purity firewall permits a plugin to import. Every plugin's
-// PluginSpec.DeclaredHostFunctions MUST be a subset of this set; a
-// declared function outside the set triggers ErrWasmManifestRejected.
+// AOT-purity firewall permits a plugin to import. The set derived from a
+// plugin's .wasm imports MUST be a subset of this set; a derived function
+// outside the set triggers ErrWasmManifestRejected.
 //
 // The map's role is closed-set membership for the allowlist check;
 // it does not own HostFunction values. Per-plugin closures are built
@@ -33,7 +33,7 @@ var hostFunctionAllowlist = map[string]bool{
 }
 
 // allowlistedHostFunctionNames returns the curated names as a slice,
-// useful for inclusion-checks against PluginSpec.DeclaredHostFunctions.
+// useful for inclusion-checks against the set derived from a .wasm.
 // The slice is sorted alphabetically so error messages embedding it
 // (for example the firewall's "outside the allowlist X" diagnostic)
 // produce identical text across runs of the same input — Go map
@@ -49,16 +49,15 @@ func allowlistedHostFunctionNames() []string {
 }
 
 // hostFunctionsForDeclared returns the per-Plugin HostFunction
-// closures the caller's DeclaredHostFunctions slice asks for. Each
+// closures the caller's derived host-function slice asks for. Each
 // returned closure captures *Plugin so the host-side body can
 // accumulate warnings into Plugin.warnings or format log lines
 // keyed by the plugin's identifier.
 //
 // The caller is responsible for validating that every name in
 // `declared` is in the allowlist first; this method assumes that
-// check has already passed (manifest_translate.go's
-// validateDeclaredHostFunctions enforces the subset check before
-// Load's flow reaches here).
+// check has already passed (validateHostFunctionsSubset enforces the
+// subset check before Load's flow reaches here).
 func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFunction {
 	out := make([]extism.HostFunction, 0, len(declared))
 	for _, name := range declared {
@@ -68,7 +67,7 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 		case "aggrega_emit_warning":
 			out = append(out, p.hostFunctionAggregaEmitWarning())
 		default:
-			// Invariant violation: validateDeclaredHostFunctions
+			// Invariant violation: validateHostFunctionsSubset
 			// admitted a name the builder switch doesn't handle.
 			// This is a maintenance safety net for the case where a
 			// future change adds a name to hostFunctionAllowlist

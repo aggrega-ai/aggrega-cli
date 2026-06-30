@@ -172,10 +172,10 @@ func maximalPlugin() types.Plugin {
 				PublicKeyRef: "cosign.pub",
 			},
 			Runtime: &types.PluginRuntime{
-				MaxMemoryPages:        16,
-				TimeoutMs:             5000,
-				DeclaredHostFunctions: []string{"log"},
-				ConfigKV:              cfg,
+				MaxMemoryPages: 16,
+				TimeoutMs:      5000,
+				HostFunctions:  []string{"log"},
+				ConfigKV:       cfg,
 			},
 			Exports: []types.PluginExport{
 				{Name: "lint_naming", Operates: "patch", Scope: "own", Selector: "workloads carrying a pod template"},

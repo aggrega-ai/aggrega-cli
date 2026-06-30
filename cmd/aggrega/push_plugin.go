@@ -58,10 +58,19 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	}
 
 	// Publish-time describe()-cross-check: refuse before any bytes land if the
-	// .wasm disagrees with the entity's authored claims.
+	// .wasm disagrees with the entity's authored capability claims.
 	ctx := context.Background()
 	entityIdentity := name + ":" + version
-	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, entityCapabilityClaim(entity), authoredHostFunctions(entity), wasmBytes); err != nil {
+	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, entityCapabilityClaim(entity), wasmBytes); err != nil {
+		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
+	}
+
+	// Derive the host functions the .wasm actually imports, in canonical form.
+	// The set is machine-owned: it is stamped into the published entity below,
+	// not authored. The same primitive runs at load and at pull, so the stamp,
+	// the registered surface, and the pull-time verification can never diverge.
+	derivedHostFunctions, err := wasm.DeriveHostFunctions(entityIdentity, wasmBytes)
+	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 
@@ -76,6 +85,16 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	wasmRepoRef := stripRegistryScheme(reference)
 
 	stampedEntity, err := stampPluginDigest(entityYAML, wasmRepoRef, contentDigest)
+	if err != nil {
+		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
+	}
+
+	// Chain the host-function stamp onto the digest-stamped bytes so both
+	// machine-owned fields land in the single published entity. Unlike the
+	// digest (partly authored, so a divergent pin halts), the host-function
+	// record is fully derived: a divergent on-disk value is overwritten with a
+	// warning, never a halt.
+	stampedEntity, err = stampHostFunctions(out, entityIdentity, stampedEntity, derivedHostFunctions)
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
@@ -172,16 +191,6 @@ func entityCapabilityClaim(entity types.Plugin) wasm.EntityCapabilityClaim {
 	return wasm.EntityCapabilityClaim{Exports: exports}
 }
 
-// authoredHostFunctions returns the entity's authored host-function declaration
-// for the publish-time authored-vs-derived cross-check, or nil when the entity
-// authored no runtime block or no declaration (which skips that cross-check).
-func authoredHostFunctions(entity types.Plugin) []string {
-	if entity.Spec.Runtime == nil {
-		return nil
-	}
-	return entity.Spec.Runtime.DeclaredHostFunctions
-}
-
 // stripRegistryScheme returns the registry repository path without any leading
 // "oci://" — buildPushReference yields a scheme-less <registry>/<location>, and
 // the stamped spec.plugin adds the oci:// scheme back, so this guards against a
@@ -229,6 +238,100 @@ func stampPluginDigest(entityYAML []byte, wasmRepoRef, contentDigest string) ([]
 		return stamped, nil
 	}
 	return nil, fmt.Errorf("Plugin entity has no spec.plugin field to stamp with the .wasm content digest")
+}
+
+// stampHostFunctions returns the entity YAML with spec.runtime.hostFunctions set
+// to the canonical (sorted, de-duplicated) host-function set derived from the
+// .wasm. The field is machine-owned: unlike the content-digest stamp, a
+// divergent on-disk value does NOT halt — it is overwritten, with a warning that
+// shows the on-disk-vs-derived sets, because the binary is the sole source of
+// truth for the field. A spec.runtime block absent on disk is created so the
+// stamp always lands. The edit is a targeted YAML-node replacement so the rest
+// of the entity bytes are preserved, and the canonical ordering makes a
+// re-publish of the same .wasm byte-identical.
+func stampHostFunctions(out io.Writer, entityIdentity string, entityYAML []byte, derived []string) ([]byte, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(entityYAML, &doc); err != nil {
+		return nil, fmt.Errorf("parse entity for host-function stamping: %w", err)
+	}
+	spec := specNode(&doc)
+	if spec == nil {
+		return nil, fmt.Errorf("Plugin entity has no spec block to stamp with the derived host functions")
+	}
+
+	runtime := findMappingValue(spec, "runtime")
+	if runtime == nil || runtime.Kind != yaml.MappingNode {
+		runtime = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		spec.Content = append(spec.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "runtime"},
+			runtime)
+	}
+
+	if existing := findMappingValue(runtime, "hostFunctions"); existing != nil {
+		if onDisk := sequenceValues(existing); !canonicalHostFunctionsEqual(onDisk, derived) {
+			fmt.Fprintf(out, "  warning: Plugin %s spec.runtime.hostFunctions is machine-derived; overwriting on-disk %v with %v derived from the .wasm\n",
+				entityIdentity, onDisk, derived)
+		}
+		*existing = *hostFunctionsSequenceNode(derived)
+	} else {
+		runtime.Content = append(runtime.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "hostFunctions"},
+			hostFunctionsSequenceNode(derived))
+	}
+
+	return marshalNode(&doc)
+}
+
+// hostFunctionsSequenceNode builds the YAML sequence node for a derived
+// host-function set. An empty set yields an explicit empty flow sequence ([]),
+// so the machine-owned record is present and visible rather than absent.
+func hostFunctionsSequenceNode(names []string) *yaml.Node {
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	if len(names) == 0 {
+		seq.Style = yaml.FlowStyle
+		return seq
+	}
+	for _, n := range names {
+		seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: n})
+	}
+	return seq
+}
+
+// sequenceValues returns the scalar values of a YAML sequence node, or nil when
+// the node is not a sequence.
+func sequenceValues(node *yaml.Node) []string {
+	if node == nil || node.Kind != yaml.SequenceNode {
+		return nil
+	}
+	out := make([]string, 0, len(node.Content))
+	for _, c := range node.Content {
+		out = append(out, c.Value)
+	}
+	return out
+}
+
+// canonicalHostFunctionsEqual reports whether two host-function sets are equal
+// as sets (order and duplicates ignored), so a re-published-identical .wasm whose
+// on-disk stamp is already canonical is recognised as a no-change overwrite and
+// emits no warning.
+func canonicalHostFunctionsEqual(a, b []string) bool {
+	seen := make(map[string]bool, len(a))
+	for _, x := range a {
+		seen[x] = true
+	}
+	other := make(map[string]bool, len(b))
+	for _, x := range b {
+		other[x] = true
+	}
+	if len(seen) != len(other) {
+		return false
+	}
+	for x := range seen {
+		if !other[x] {
+			return false
+		}
+	}
+	return true
 }
 
 // specNode returns the "spec" mapping node of a parsed document, or nil.

@@ -415,19 +415,6 @@ func pluginCapabilityClaim(claim *pluginpath.PluginCapabilityClaim) *wasm.Entity
 	return &wasm.EntityCapabilityClaim{Exports: exports}
 }
 
-// claimedHostFunctions returns the entity's authored host-function declaration
-// from the neutral capability claim, for the loader's authored-vs-derived
-// cross-check. nil (a non-entity resolution, or an entity that authored no
-// runtime.declaredHostFunctions) maps to nil, which the loader reads as "no
-// host-function cross-check". This is the authored claim, not the registration
-// input — the loader registers the set derived from the .wasm imports.
-func claimedHostFunctions(claim *pluginpath.PluginCapabilityClaim) []string {
-	if claim == nil {
-		return nil
-	}
-	return claim.DeclaredHostFunctions
-}
-
 // pluginRuntimeLimits maps the neutral runtime limits the plugin entity-front
 // attached to a resolved plugin into the loader's spec fields, so the loader caps
 // the plugin's memory and per-call wall time. A nil neutral limits (a non-entity
@@ -456,12 +443,11 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		maxPages, timeoutMs := pluginRuntimeLimits(resolved.Limits)
 		loader := &wasm.Loader{}
 		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
-			Name:                  step.Plugin,
-			Bytes:                 resolved.Bytes,
-			Capability:            pluginCapabilityClaim(resolved.Capability),
-			DeclaredHostFunctions: claimedHostFunctions(resolved.Capability),
-			MaxMemoryPages:        maxPages,
-			TimeoutMs:             timeoutMs,
+			Name:           step.Plugin,
+			Bytes:          resolved.Bytes,
+			Capability:     pluginCapabilityClaim(resolved.Capability),
+			MaxMemoryPages: maxPages,
+			TimeoutMs:      timeoutMs,
 		})
 		if err != nil {
 			return nil, err
@@ -497,12 +483,11 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 		maxPages, timeoutMs := pluginRuntimeLimits(resolved.Limits)
 		loader := &wasm.Loader{}
 		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
-			Name:                  step.Plugin,
-			Bytes:                 resolved.Bytes,
-			Capability:            pluginCapabilityClaim(resolved.Capability),
-			DeclaredHostFunctions: claimedHostFunctions(resolved.Capability),
-			MaxMemoryPages:        maxPages,
-			TimeoutMs:             timeoutMs,
+			Name:           step.Plugin,
+			Bytes:          resolved.Bytes,
+			Capability:     pluginCapabilityClaim(resolved.Capability),
+			MaxMemoryPages: maxPages,
+			TimeoutMs:      timeoutMs,
 		})
 		if err != nil {
 			return wasm.PluginDescriptor{}, err

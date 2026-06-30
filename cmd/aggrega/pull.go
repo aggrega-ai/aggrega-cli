@@ -408,6 +408,14 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.DescendRecipePluginArtifacts(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
 		return fmt.Errorf("closure: pipeline-plugin artifact descent: %w", err)
 	}
+	// Re-derive each plugin's host functions from the freshly-cached, digest-
+	// verified .wasm and verify they match the machine-owned stamp the publish
+	// flow wrote into the entity. Defense-in-depth over the content-digest pin:
+	// halts on a divergence the digest alone would not surface (a non-aggrega
+	// push, a publish-side stamping bug).
+	if err := verifyPluginHostFunctions(context.Background(), &cl, lazyView.ClosureRecipeLoader(), workspaceRoot, cacheDir, cfg.DiagOut); err != nil {
+		return fmt.Errorf("verify plugin host functions: %w", err)
+	}
 	// Refresh the pin set so it covers the descended sub-aggregates the source-
 	// descent flatten resolves through lazyView.SubAggregateLoader below, and the
 	// providers + pipeline plugins the descents just pinned.

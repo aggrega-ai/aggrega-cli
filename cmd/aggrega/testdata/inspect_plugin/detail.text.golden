@@ -15,7 +15,7 @@ Exports:
 Runtime:
   maxMemoryPages: 256
   timeoutMs: 3000
-  declaredHostFunctions:
+  hostFunctions:
     - log_message
     - read_config
 Signature:

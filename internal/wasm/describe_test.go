@@ -240,7 +240,7 @@ func TestPluginDescriptorValidateHostFunctionsSubsetOfAllowlist(t *testing.T) {
 	t.Parallel()
 
 	// A descriptor declaring an un-allowlisted host function is rejected.
-	// This exercises the real loader gate (validateDeclaredHostFunctions),
+	// This exercises the real loader gate (validateHostFunctionsSubset),
 	// not a stub: the only bindable host functions in v1alpha1 are the two
 	// baseline diagnostics, so a catalog_lookup declaration is refused.
 	reject := PluginDescriptor{

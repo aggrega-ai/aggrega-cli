@@ -5,12 +5,45 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"go.yaml.in/yaml/v3"
 )
+
+// inspectRawPlugin derives and prints the host functions a raw .wasm artifact
+// imports — the pre-publish authoring view of a binary not yet published or
+// stamped into a Plugin entity. It reads the bytes and runs the single
+// derivation primitive (wasm.DeriveHostFunctions), the same one the publish flow
+// stamps with and the loader registers from, so what an author sees here is
+// exactly what publish would stamp. The set is labelled as derived-from-binary
+// and not-yet-stamped to distinguish it from the entity-read view inspect shows
+// for a published Plugin.
+func inspectRawPlugin(out io.Writer, wasmPath string) error {
+	wasmBytes, err := os.ReadFile(wasmPath)
+	if err != nil {
+		return fmt.Errorf("read .wasm %q: %w", wasmPath, err)
+	}
+	derived, err := wasm.DeriveHostFunctions(filepath.Base(wasmPath), wasmBytes)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Plugin .wasm: %s\n", wasmPath)
+	if len(derived) == 0 {
+		fmt.Fprintln(out, "hostFunctions (derived from binary, not yet stamped): (none)")
+		return nil
+	}
+	fmt.Fprintln(out, "hostFunctions (derived from binary, not yet stamped):")
+	for _, fn := range derived {
+		fmt.Fprintf(out, "  - %s\n", fn)
+	}
+	return nil
+}
 
 // renderPluginFile renders a Plugin authored as a standalone file. The
 // plugin's declared capability surface is shown first: the content-addressed
@@ -98,7 +131,9 @@ func renderPluginExports(opts inspectOptions, exports []types.PluginExport) {
 // runtime reports each cap, describing the platform default qualitatively when
 // a limit is unset (zero) rather than printing the host's fixed number, so the
 // displayed surface single-sources to the loader and cannot drift from it. The
-// declared host functions list reports `(none declared)` when empty.
+// host functions list is the machine-owned stamp read straight from the entity
+// (the published .wasm's imports, snapshotted at publish); it reports `(none)`
+// when empty.
 func renderPluginRuntime(opts inspectOptions, rt *types.PluginRuntime) {
 	if rt == nil {
 		fmt.Fprintln(opts.out, "Runtime: (platform defaults apply)")
@@ -107,11 +142,11 @@ func renderPluginRuntime(opts inspectOptions, rt *types.PluginRuntime) {
 	fmt.Fprintln(opts.out, "Runtime:")
 	fmt.Fprintf(opts.out, "  maxMemoryPages: %s\n", limitOrDefault(uint64(rt.MaxMemoryPages)))
 	fmt.Fprintf(opts.out, "  timeoutMs: %s\n", limitOrDefault(rt.TimeoutMs))
-	if len(rt.DeclaredHostFunctions) == 0 {
-		fmt.Fprintln(opts.out, "  declaredHostFunctions: (none declared)")
+	if len(rt.HostFunctions) == 0 {
+		fmt.Fprintln(opts.out, "  hostFunctions: (none)")
 	} else {
-		fmt.Fprintln(opts.out, "  declaredHostFunctions:")
-		for _, fn := range rt.DeclaredHostFunctions {
+		fmt.Fprintln(opts.out, "  hostFunctions:")
+		for _, fn := range rt.HostFunctions {
 			fmt.Fprintf(opts.out, "    - %s\n", fn)
 		}
 	}

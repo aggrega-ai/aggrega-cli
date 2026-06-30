@@ -138,10 +138,9 @@ func (p *Plugin) appendWarning(formatted string) {
 //     firewall: allowlisted WASI imports pass; capability-granting
 //     names are rejected with ErrWasmManifestRejected.
 //  4. Derive the host functions the guest actually imports from the
-//     same byte slice, verify the derived set is a subset of the
-//     curated allowlist, and — when the spec carries an authored
-//     declaration — cross-check that authored declaration against the
-//     derived truth, halting on disagreement.
+//     same byte slice and verify the derived set is a subset of the
+//     curated allowlist. The .wasm import section is ground truth; no
+//     authored list participates.
 //  5. Register the derived host functions (aggrega_log,
 //     aggrega_emit_warning, and future per-socket host functions);
 //     the derived set, not an authored list, is what the plugin's
@@ -158,9 +157,7 @@ func (p *Plugin) appendWarning(formatted string) {
 // eliminates the TOCTOU window between validation and execution.
 // Returns an error wrapping ErrWasmManifestRejected if the firewall
 // rejects the manifest or any import or a derived host function is
-// outside the allowlist; ErrWasmHostFunctionsDeclarationMismatch if an
-// authored declaration disagrees with the derived set; the Extism SDK's
-// error otherwise.
+// outside the allowlist; the Extism SDK's error otherwise.
 func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	manifest, err := translateToManifest(spec)
 	if err != nil {
@@ -189,25 +186,13 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	// then verify the derived set against the curated allowlist by reusing
 	// the loader's single subset gate. The derived set is authoritative —
 	// the .wasm import section is ground truth for which host functions the
-	// guest calls.
-	declaredHostFunctions, err := deriveDeclaredHostFunctions(spec.Name, wasmBytes)
+	// guest calls — and is what the loader registers.
+	hostFunctions, err := DeriveHostFunctions(spec.Name, wasmBytes)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateDeclaredHostFunctions(PluginSpec{
-		Name:                  spec.Name,
-		DeclaredHostFunctions: declaredHostFunctions,
-	}); err != nil {
+	if err := validateHostFunctionsSubset(spec.Name, hostFunctions); err != nil {
 		return nil, err
-	}
-
-	// When the entity authored a host-function declaration, cross-check it
-	// against the derived truth. The authored field is a deliberate
-	// independent claim, not a mirror; a disagreement is a Loud Guardrail.
-	if len(spec.DeclaredHostFunctions) > 0 {
-		if err := crossCheckAuthoredHostFunctions(spec.Name, spec.DeclaredHostFunctions, declaredHostFunctions); err != nil {
-			return nil, err
-		}
 	}
 
 	// Replace the manifest's WasmFile entry (which would have Extism
@@ -224,7 +209,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	// Extism plugin handle is attached to p after NewPlugin returns.
 	p := &Plugin{name: spec.Name}
 
-	functions := p.hostFunctionsForDeclared(declaredHostFunctions)
+	functions := p.hostFunctionsForDeclared(hostFunctions)
 
 	config := extism.PluginConfig{
 		EnableWasi:   true,

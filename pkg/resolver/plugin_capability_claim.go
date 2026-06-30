@@ -16,18 +16,13 @@ import (
 // pipeline's per-step load and the publishing-linter's workspace-config path)
 // call it rather than each re-spelling the field copy.
 //
-// Two authored surfaces cross the boundary: the per-export operates/scope (the
+// One authored surface crosses the boundary: the per-export operates/scope (the
 // export name keys the cross-check; the selector is free-form documentation and
-// is not carried), and the optional runtime.declaredHostFunctions list the gate
-// cross-checks against the host functions derived from the .wasm imports. An
-// entity that authors neither yields nil — no claim, so both cross-checks are
-// skipped for that plugin.
+// is not carried). The host-function surface is machine-derived and stamped, not
+// authored, so it never participates in a load-time claim. An entity that authors
+// no exports yields nil — no claim, so the cross-check is skipped for that plugin.
 func PluginCapabilityClaim(entity types.Plugin) *pluginpath.PluginCapabilityClaim {
-	var declaredHostFunctions []string
-	if entity.Spec.Runtime != nil {
-		declaredHostFunctions = entity.Spec.Runtime.DeclaredHostFunctions
-	}
-	if len(entity.Spec.Exports) == 0 && len(declaredHostFunctions) == 0 {
+	if len(entity.Spec.Exports) == 0 {
 		return nil
 	}
 	exports := make([]pluginpath.PluginExportClaim, 0, len(entity.Spec.Exports))
@@ -39,8 +34,7 @@ func PluginCapabilityClaim(entity types.Plugin) *pluginpath.PluginCapabilityClai
 		})
 	}
 	return &pluginpath.PluginCapabilityClaim{
-		Exports:               exports,
-		DeclaredHostFunctions: declaredHostFunctions,
+		Exports: exports,
 	}
 }
 

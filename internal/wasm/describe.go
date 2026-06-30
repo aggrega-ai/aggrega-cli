@@ -251,9 +251,9 @@ const (
 //     feature-recipe-pipeline step declares step.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
-//     validateDeclaredHostFunctions gate the loader applies to a
-//     PluginSpec, so describe()-declared host functions are checked
-//     against the single allowlist — no second list, no second gate.
+//     validateHostFunctionsSubset gate the loader applies to the set
+//     derived from a .wasm, so describe()-declared host functions are
+//     checked against the single allowlist — no second list, no second gate.
 //   - every export's capability fields are well-shaped: operates is
 //     patch, emit, or empty; scope is own, host, or empty. This is shape
 //     validation only — the host does not check provider compatibility,
@@ -345,7 +345,7 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 
 // validateExportHostFunctions checks that every export's declared host
 // functions are a subset of the host-function allowlist, reusing the
-// loader's validateDeclaredHostFunctions gate so the describe()-declared
+// loader's validateHostFunctionsSubset gate so the describe()-declared
 // host functions are checked against the single allowlist the loader
 // already enforces. The check runs per export so the rejection message
 // names the offending export.
@@ -354,11 +354,7 @@ func (d PluginDescriptor) validateExportHostFunctions(pluginIdentity string) err
 		if len(export.HostFunctions) == 0 {
 			continue
 		}
-		spec := PluginSpec{
-			Name:                  fmt.Sprintf("%s/%s", pluginIdentity, export.Name),
-			DeclaredHostFunctions: export.HostFunctions,
-		}
-		if err := validateDeclaredHostFunctions(spec); err != nil {
+		if err := validateHostFunctionsSubset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), export.HostFunctions); err != nil {
 			return err
 		}
 	}

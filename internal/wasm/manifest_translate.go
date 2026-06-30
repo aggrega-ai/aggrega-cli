@@ -21,10 +21,6 @@ import (
 // the firewall's rejection messages reference manifest fields the
 // runtime would otherwise act on.
 func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
-	if err := validateDeclaredHostFunctions(spec); err != nil {
-		return extism.Manifest{}, err
-	}
-
 	// Apply the platform default cap when the spec leaves a limit zero, at this
 	// single chokepoint so every load path — entity, linter, and test — gets a
 	// consistent cap. A zero is "apply the default cap", never "unbounded": the
@@ -58,9 +54,10 @@ func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
 // cannot be requested through the PluginSpec API; the firewall has
 // nothing to check at the manifest level.
 //
-// Host-function-allowlist enforcement runs at translateToManifest's
-// entry via validateDeclaredHostFunctions; if a plugin declares a host
-// function outside the curated set, the firewall rejects there.
+// Host-function-allowlist enforcement is not at the manifest level: the
+// loader derives the host functions from the .wasm import section and runs
+// the subset gate (validateHostFunctionsSubset) against the derived set, so
+// a host function outside the curated set is rejected at derivation, not here.
 func enforceAOTPurityFirewall(manifest extism.Manifest, pluginName string) error {
 	if len(manifest.AllowedHosts) > 0 {
 		return fmt.Errorf("plugin %q declares AllowedHosts %v: %w",
@@ -78,16 +75,18 @@ func enforceAOTPurityFirewall(manifest extism.Manifest, pluginName string) error
 	return nil
 }
 
-// validateDeclaredHostFunctions ensures every name in
-// PluginSpec.DeclaredHostFunctions appears in the host-function
-// allowlist. Returns nil if the declared set is a subset of the
-// allowlist; otherwise returns an error wrapping
-// ErrWasmManifestRejected naming the violating function.
-func validateDeclaredHostFunctions(spec PluginSpec) error {
-	for _, name := range spec.DeclaredHostFunctions {
-		if _, ok := hostFunctionAllowlist[name]; !ok {
+// validateHostFunctionsSubset ensures every name in names appears in the
+// host-function allowlist. It is the single subset gate the loader applies to
+// the set derived from a .wasm binary and the descriptor applies to a per-export
+// host-function set. Returns nil if names is a subset of the allowlist;
+// otherwise returns an error wrapping ErrWasmManifestRejected naming the
+// violating function. name identifies the plugin (or plugin/export) in that
+// message.
+func validateHostFunctionsSubset(name string, names []string) error {
+	for _, fn := range names {
+		if _, ok := hostFunctionAllowlist[fn]; !ok {
 			return fmt.Errorf("plugin %q declares host function %q outside the allowlist %v: %w",
-				spec.Name, name, allowlistedHostFunctionNames(), ErrWasmManifestRejected)
+				name, fn, allowlistedHostFunctionNames(), ErrWasmManifestRejected)
 		}
 	}
 	return nil
