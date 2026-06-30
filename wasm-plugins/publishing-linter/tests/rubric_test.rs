@@ -10,7 +10,7 @@
 
 mod common;
 
-use aggrega_pdk_rust::{LinterClassification, LinterInput};
+use aggrega_pdk_rust::LinterInput;
 use publishing_linter::rubric;
 use serde_json::json;
 
@@ -18,10 +18,12 @@ fn fixture(kind: &str, previous: serde_json::Value, proposed: serde_json::Value)
     common::fixture(kind, proposed, Some(previous), None, None)
 }
 
-fn classify_once(input: &LinterInput) -> LinterClassification {
+fn classify_once(input: &LinterInput) -> String {
     let findings = rubric::classify(input);
     assert_eq!(findings.len(), 1, "expected exactly one finding");
-    findings[0].classification.expect("classification populated")
+    let c = findings[0].classification.clone();
+    assert!(!c.is_empty(), "classification populated");
+    c
 }
 
 // ----- Component -----
@@ -40,7 +42,7 @@ fn component_patch_documentation_only_change() {
         "metadata": {"name": "core/api-server", "version": "1.0.0", "description": "rewritten for clarity"},
         "spec": {"schema": {"values": {"type": "object"}}},
     });
-    assert_eq!(classify_once(&fixture("Component", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("Component", prev, prop)), "PATCH");
 }
 
 #[test]
@@ -57,7 +59,7 @@ fn component_minor_new_optional_field() {
         "metadata": {"name": "core/api-server", "version": "1.0.0"},
         "spec": {"schema": {"values": {"type": "object", "properties": {"port": {"type": "integer"}, "host": {"type": "string"}}}}},
     });
-    assert_eq!(classify_once(&fixture("Component", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("Component", prev, prop)), "MINOR");
 }
 
 #[test]
@@ -74,7 +76,7 @@ fn component_major_field_removed() {
         "metadata": {"name": "core/api-server", "version": "1.0.0"},
         "spec": {"schema": {"values": {"type": "object", "properties": {"port": {"type": "integer"}}}}},
     });
-    assert_eq!(classify_once(&fixture("Component", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("Component", prev, prop)), "MAJOR");
 }
 
 // ----- Feature -----
@@ -83,21 +85,21 @@ fn component_major_field_removed() {
 fn feature_patch_description_change() {
     let prev = json!({"kind": "Feature", "metadata": {"description": "old"}, "spec": {"schema": {"values": {"type": "object"}}}});
     let prop = json!({"kind": "Feature", "metadata": {"description": "new"}, "spec": {"schema": {"values": {"type": "object"}}}});
-    assert_eq!(classify_once(&fixture("Feature", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("Feature", prev, prop)), "PATCH");
 }
 
 #[test]
 fn feature_minor_appliestoinfra_added() {
     let prev = json!({"kind": "Feature", "spec": {"schema": {}}});
     let prop = json!({"kind": "Feature", "spec": {"schema": {}, "appliesToInfra": ["compute"]}});
-    assert_eq!(classify_once(&fixture("Feature", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("Feature", prev, prop)), "MINOR");
 }
 
 #[test]
 fn feature_major_extends_removed() {
     let prev = json!({"kind": "Feature", "spec": {"schema": {}, "extends": "base/feature"}});
     let prop = json!({"kind": "Feature", "spec": {"schema": {}}});
-    assert_eq!(classify_once(&fixture("Feature", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("Feature", prev, prop)), "MAJOR");
 }
 
 // ----- Provider -----
@@ -106,21 +108,21 @@ fn feature_major_extends_removed() {
 fn provider_patch_description_change() {
     let prev = json!({"kind": "Provider", "metadata": {"description": "v1"}, "spec": {"baseSchema": "type: object"}});
     let prop = json!({"kind": "Provider", "metadata": {"description": "v1 (clarified)"}, "spec": {"baseSchema": "type: object"}});
-    assert_eq!(classify_once(&fixture("Provider", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("Provider", prev, prop)), "PATCH");
 }
 
 #[test]
 fn provider_minor_workloadschema_added() {
     let prev = json!({"kind": "Provider", "spec": {"baseSchema": "type: object"}});
     let prop = json!({"kind": "Provider", "spec": {"baseSchema": "type: object", "workloadSchema": "type: object"}});
-    assert_eq!(classify_once(&fixture("Provider", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("Provider", prev, prop)), "MINOR");
 }
 
 #[test]
 fn provider_major_baseschema_narrowed() {
     let prev = json!({"kind": "Provider", "spec": {"baseSchema": {"a": 1, "b": 2}}});
     let prop = json!({"kind": "Provider", "spec": {"baseSchema": {"a": 1}}});
-    assert_eq!(classify_once(&fixture("Provider", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("Provider", prev, prop)), "MAJOR");
 }
 
 // ----- SchemaLibrary -----
@@ -129,21 +131,21 @@ fn provider_major_baseschema_narrowed() {
 fn schemalibrary_patch_same_entries() {
     let prev = json!({"kind": "SchemaLibrary", "spec": {"schemas": {"Probe": {"type": "object"}}}});
     let prop = json!({"kind": "SchemaLibrary", "spec": {"schemas": {"Probe": {"type": "object"}}}});
-    assert_eq!(classify_once(&fixture("SchemaLibrary", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("SchemaLibrary", prev, prop)), "PATCH");
 }
 
 #[test]
 fn schemalibrary_minor_entry_added() {
     let prev = json!({"kind": "SchemaLibrary", "spec": {"schemas": {"Probe": {"type": "object"}}}});
     let prop = json!({"kind": "SchemaLibrary", "spec": {"schemas": {"Probe": {"type": "object"}, "Liveness": {"type": "object"}}}});
-    assert_eq!(classify_once(&fixture("SchemaLibrary", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("SchemaLibrary", prev, prop)), "MINOR");
 }
 
 #[test]
 fn schemalibrary_major_entry_removed() {
     let prev = json!({"kind": "SchemaLibrary", "spec": {"schemas": {"Probe": {"type": "object"}, "Liveness": {"type": "object"}}}});
     let prop = json!({"kind": "SchemaLibrary", "spec": {"schemas": {"Probe": {"type": "object"}}}});
-    assert_eq!(classify_once(&fixture("SchemaLibrary", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("SchemaLibrary", prev, prop)), "MAJOR");
 }
 
 // ----- MappingLibrary -----
@@ -152,21 +154,21 @@ fn schemalibrary_major_entry_removed() {
 fn mappinglibrary_minor_mapping_added() {
     let prev = json!({"kind": "MappingLibrary", "spec": {"mappings": {"SimpleValues": "image: {{ .Values.image }}"}}});
     let prop = json!({"kind": "MappingLibrary", "spec": {"mappings": {"SimpleValues": "image: {{ .Values.image }}", "Replicas": "replicas: 1"}}});
-    assert_eq!(classify_once(&fixture("MappingLibrary", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("MappingLibrary", prev, prop)), "MINOR");
 }
 
 #[test]
 fn mappinglibrary_major_mapping_removed() {
     let prev = json!({"kind": "MappingLibrary", "spec": {"mappings": {"SimpleValues": "a", "Replicas": "b"}}});
     let prop = json!({"kind": "MappingLibrary", "spec": {"mappings": {"SimpleValues": "a"}}});
-    assert_eq!(classify_once(&fixture("MappingLibrary", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("MappingLibrary", prev, prop)), "MAJOR");
 }
 
 #[test]
 fn mappinglibrary_major_body_changed() {
     let prev = json!({"kind": "MappingLibrary", "spec": {"mappings": {"SimpleValues": "image: {{ .Values.image }}"}}});
     let prop = json!({"kind": "MappingLibrary", "spec": {"mappings": {"SimpleValues": "image: {{ .Values.image | quote }}"}}});
-    assert_eq!(classify_once(&fixture("MappingLibrary", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("MappingLibrary", prev, prop)), "MAJOR");
 }
 
 // ----- Recipe -----
@@ -175,21 +177,21 @@ fn mappinglibrary_major_body_changed() {
 fn recipe_patch_no_load_bearing_diff() {
     let prev = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload"}});
     let prop = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload"}});
-    assert_eq!(classify_once(&fixture("Recipe", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("Recipe", prev, prop)), "PATCH");
 }
 
 #[test]
 fn recipe_minor_artifact_added() {
     let prev = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload", "artifacts": {}}});
     let prop = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload", "artifacts": {"header": "x"}}});
-    assert_eq!(classify_once(&fixture("Recipe", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("Recipe", prev, prop)), "MINOR");
 }
 
 #[test]
 fn recipe_major_provider_changed() {
     let prev = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload"}});
     let prop = json!({"kind": "Recipe", "spec": {"provider": "compose", "implements": "core/server", "workload": "kind: Workload"}});
-    assert_eq!(classify_once(&fixture("Recipe", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("Recipe", prev, prop)), "MAJOR");
 }
 
 // ----- FeatureRecipe -----
@@ -203,21 +205,21 @@ fn recipe_major_provider_changed() {
 fn featurerecipe_patch_no_load_bearing_diff() {
     let prev = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
     let prop = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
-    assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), "PATCH");
 }
 
 #[test]
 fn featurerecipe_minor_artifact_added() {
     let prev = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
     let prop = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress", "artifacts": {"a": "b"}}});
-    assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), "MINOR");
 }
 
 #[test]
 fn featurerecipe_major_provider_changed() {
     let prev = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
     let prop = json!({"kind": "FeatureRecipe", "spec": {"provider": "compose", "implements": "core/ingress"}});
-    assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), "MAJOR");
 }
 
 // ----- Aggregate -----
@@ -226,21 +228,21 @@ fn featurerecipe_major_provider_changed() {
 fn aggregate_patch_no_diff() {
     let prev = json!({"kind": "Aggregate", "spec": {"components": {"api": {"type": "core/server"}}}});
     let prop = json!({"kind": "Aggregate", "spec": {"components": {"api": {"type": "core/server"}}}});
-    assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), LinterClassification::Patch);
+    assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), "PATCH");
 }
 
 #[test]
 fn aggregate_minor_component_added() {
     let prev = json!({"kind": "Aggregate", "spec": {"components": {"api": {"type": "core/server"}}}});
     let prop = json!({"kind": "Aggregate", "spec": {"components": {"api": {"type": "core/server"}, "db": {"type": "core/datastore"}}}});
-    assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), LinterClassification::Minor);
+    assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), "MINOR");
 }
 
 #[test]
 fn aggregate_major_component_removed() {
     let prev = json!({"kind": "Aggregate", "spec": {"components": {"api": {"type": "core/server"}, "db": {"type": "core/datastore"}}}});
     let prop = json!({"kind": "Aggregate", "spec": {"components": {"api": {"type": "core/server"}}}});
-    assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), LinterClassification::Major);
+    assert_eq!(classify_once(&fixture("Aggregate", prev, prop)), "MAJOR");
 }
 
 // ----- First publication -----
@@ -257,5 +259,5 @@ fn first_publication_classifies_patch() {
         None,
         None,
     );
-    assert_eq!(classify_once(&input), LinterClassification::Patch);
+    assert_eq!(classify_once(&input), "PATCH");
 }

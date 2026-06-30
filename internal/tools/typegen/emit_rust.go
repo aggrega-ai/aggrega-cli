@@ -46,12 +46,25 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 		defTypes[ext] = true
 	}
 
+	// Compute, for every def type, whether its struct derives Default — in a
+	// pre-pass over all defs so a field can consult the defaultability of a type
+	// emitted later in the file (a forward reference within the same module, e.g.
+	// LinterInput's policies field referencing the Policies struct below it). This
+	// is the single source of the Default-derive predicate: emitRustStruct reads
+	// it to decide its own derive, and rustSerdeAttrs reads it to decide whether a
+	// non-required nested-struct field may carry #[serde(default)] (which requires
+	// the referenced type to implement Default).
+	defaultableTypes := map[string]bool{}
+	for _, d := range root.defs {
+		defaultableTypes[d.name] = rustDefDefaultable(d.node, t.vocabulary, defTypes)
+	}
+
 	// Emit the structs into a temporary buffer first so the import block can
 	// declare only the items the generated code actually references (an unused
 	// `use` is a Rust warning).
 	var structs strings.Builder
 	for _, d := range root.defs {
-		emitRustStruct(&structs, d.name, d.node, t.vocabulary, defTypes)
+		emitRustStruct(&structs, d.name, d.node, t.vocabulary, defTypes, defaultableTypes)
 	}
 	structSrc := structs.String()
 
@@ -86,8 +99,27 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	return []byte(body.String()), nil
 }
 
-// emitRustStruct writes one serde-derive struct for a def node.
-func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
+// rustDefDefaultable reports whether the struct emitted for a def node derives
+// Default. A struct derives Default unless it carries a required opaque field —
+// a bare Box<RawValue> (json.RawMessage / any), which has no Default impl. This
+// is the single predicate behind both the Default derive on the struct and the
+// per-field decision to emit #[serde(default)] on a non-required nested-struct
+// field that references the type; keeping it in one function prevents the two
+// from diverging.
+func rustDefDefaultable(n schemaNode, vocab map[string]string, defTypes map[string]bool) bool {
+	for _, f := range resolveCodecFields(n, vocab) {
+		if rustFieldType(f, defTypes) == "Box<RawValue>" {
+			return false
+		}
+	}
+	return true
+}
+
+// emitRustStruct writes one serde-derive struct for a def node. defaultableTypes
+// maps every def type name in the module to whether its struct derives Default,
+// computed in a pre-pass so a field's serde attributes can consult the
+// defaultability of a type emitted later in the same module.
+func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool, defaultableTypes map[string]bool) {
 	fields := resolveCodecFields(n, vocab)
 	if n.Description != "" {
 		writeRustDoc(b, "", oneLine(n.Description))
@@ -100,14 +132,10 @@ func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map
 	// derived only when every field is Default-able — a non-optional Box<RawValue>
 	// (a required opaque field) is not, so a type carrying one omits Default.
 	rustTypes := make([]string, len(fields))
-	defaultable := true
 	for i, f := range fields {
 		rustTypes[i] = rustFieldType(f, defTypes)
-		if rustTypes[i] == "Box<RawValue>" {
-			defaultable = false
-		}
 	}
-	if defaultable {
+	if defaultableTypes[typeName] {
 		b.WriteString("#[derive(Debug, Clone, Default, Serialize, Deserialize)]\n")
 	} else {
 		b.WriteString("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
@@ -119,7 +147,7 @@ func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map
 		if f.desc != "" {
 			writeRustDoc(b, "    ", oneLine(f.desc))
 		}
-		attrs := rustSerdeAttrs(f, rustTy, renamed)
+		attrs := rustSerdeAttrs(f, rustTy, renamed, defaultableTypes)
 		for _, a := range attrs {
 			fmt.Fprintf(b, "    %s\n", a)
 		}
@@ -150,9 +178,10 @@ func isRustOpaque(rustTy string) bool {
 
 // rustSerdeAttrs builds the #[serde(...)] attribute lines for one field: a
 // rename when the wire key differs from the Rust identifier, and a
-// default + skip_serializing_if pair for non-required fields so an empty value
-// is omitted on the wire (matching Go omitempty).
-func rustSerdeAttrs(f codecField, rustTy string, renamed bool) []string {
+// default (with skip_serializing_if where a skip predicate exists) for
+// non-required fields so a missing field decodes to the zero value and an empty
+// value is omitted on serialize (matching Go omitempty).
+func rustSerdeAttrs(f codecField, rustTy string, renamed bool, defaultableTypes map[string]bool) []string {
 	var inner []string
 	if renamed {
 		inner = append(inner, fmt.Sprintf("rename = %q", f.key))
@@ -161,13 +190,25 @@ func rustSerdeAttrs(f codecField, rustTy string, renamed bool) []string {
 		// A non-required field with an omit notion (a scalar, collection, opaque,
 		// or pointer — anything with a skip predicate) gets default + the predicate
 		// so it decodes from a missing field to its zero value and serializes only
-		// when non-empty, matching the Go codec's omitempty. A predicate-less
-		// non-required field is a bare nested struct: Go's omitempty is a no-op on
-		// a struct value, so it is always emitted and always present on the wire —
-		// no default/skip, matching that always-present shape (and avoiding a
-		// Default bound on a struct that does not derive Default).
+		// when non-empty, matching the Go codec's omitempty.
+		//
+		// A predicate-less non-required field is a bare nested struct: Go's
+		// omitempty is a no-op on a struct value, so a struct-typed *guest* field
+		// would always be present. But a host twin may realize the same field as an
+		// opaque, omittable payload (a json.RawMessage with omitempty that the host
+		// assembles dynamically) and so OMIT it when empty — and the guest must
+		// then tolerate the missing field rather than fail with "missing field". So
+		// the guest emits a bare #[serde(default)] (no skip_serializing_if: a
+		// struct has no "empty" predicate) whenever the referenced type derives
+		// Default, giving deserialize tolerance while keeping serialize behavior.
+		// A nested-struct type that does NOT derive Default (it carries a required
+		// Box<RawValue>) cannot take #[serde(default)] — it would not compile — so
+		// it is left bare; a host that omits such a field would break the guest,
+		// but no such non-required field exists today.
 		if skip := rustSkipPredicate(rustTy); skip != "" {
 			inner = append(inner, "default", fmt.Sprintf("skip_serializing_if = %q", skip))
+		} else if defaultableTypes[rustTy] {
+			inner = append(inner, "default")
 		}
 	}
 	if len(inner) == 0 {

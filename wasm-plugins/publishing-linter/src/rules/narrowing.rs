@@ -45,10 +45,10 @@
 //! a violation at `entity X` `path P` is exempted when an exemption
 //! entry has `entity == X` AND `paths` contains `P`.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity, NarrowingExemption};
+use aggrega_pdk_rust::{LinterFinding, LinterInput, NarrowingExemption};
 use serde_json::Value;
 
-use crate::policies;
+use crate::raw;
 
 const ANNOTATION_KEYWORDS: &[&str] = &[
     "title",
@@ -74,14 +74,14 @@ const NAMESPACING_KEYS: &[&str] = &[
 ];
 
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
 
     // Default OFF — workspaces opt in explicitly.
     if !policies.enforce_monotonic_narrowing {
         return vec![];
     }
 
-    let parent = match input.parent.as_ref() {
+    let parent = match raw::parse_opt(&input.parent) {
         Some(p) => p,
         None => {
             // No parent supplied; nothing to compare against. The
@@ -91,7 +91,9 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
         }
     };
 
-    let child_schema = match input.proposed.get("spec").and_then(|s| s.get("schema")) {
+    let proposed = raw::parse(&input.proposed);
+
+    let child_schema = match proposed.get("spec").and_then(|s| s.get("schema")) {
         Some(s) => s,
         None => return vec![],
     };
@@ -100,8 +102,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
         None => return vec![],
     };
 
-    let entity_name = input
-        .proposed
+    let entity_name = proposed
         .get("metadata")
         .and_then(|m| m.get("name"))
         .and_then(|n| n.as_str())
@@ -116,14 +117,14 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
         .filter(|path| !is_exempted(entity_name, path, exemptions))
         .map(|path| LinterFinding {
             rule_id: "narrowing".to_string(),
-            severity: LinterSeverity::Error,
-            classification: None,
+            severity: "error".to_string(),
             message: format!(
                 "entity {entity_name:?} extends-chain narrowing violation at {path}: \
                  child's schema is broader than parent's. The workspace's \
                  enforce_monotonic_narrowing flag is on; suppress per-path via \
                  narrowing_exemptions[] or workspace-wide by flipping the flag false."
             ),
+            ..Default::default()
         })
         .collect()
 }

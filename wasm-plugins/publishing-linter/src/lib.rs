@@ -13,10 +13,11 @@
 //! descriptor against its plugin contract before invoking
 //! [`lint_rules`].
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterOutput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterOutput};
 use extism_pdk::{plugin_fn, FnResult, Json};
 
 pub mod policies;
+pub mod raw;
 pub mod rubric;
 pub mod rules;
 
@@ -38,7 +39,7 @@ pub fn describe() -> FnResult<String> {
 /// `lint_rules` is the plugin's rule-evaluation entry point. Dispatches
 /// on `LinterInput.rule_id` to the appropriate rule's classifier and
 /// returns its findings inside a `LinterOutput`. Unknown rule_ids
-/// produce a single `unknown_rule` finding with severity `Error` and
+/// produce a single `unknown_rule` finding with severity `"error"` and
 /// no classification — the graceful-degradation pattern that lets
 /// later rules register without re-versioning the plugin's exported
 /// surface.
@@ -54,11 +55,12 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "id-overrides" => rules::id_overrides::classify(&input),
         "category-matches-directory" => rules::category_vs_directory::classify(&input),
         "x-aggrega-discouragement" => rules::x_aggrega_discouragement::classify(&input),
+        "plugin-default-limits" => rules::plugin_default_limits::classify(&input),
         other => vec![LinterFinding {
             rule_id: "unknown_rule".to_string(),
-            severity: LinterSeverity::Error,
-            classification: None,
+            severity: "error".to_string(),
             message: format!("rule_id {other:?} not implemented at this plugin version"),
+            ..Default::default()
         }],
     };
     Ok(Json(LinterOutput { findings }))

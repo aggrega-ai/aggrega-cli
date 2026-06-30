@@ -26,9 +26,9 @@
 //! preserve that invariant; the test
 //! `category_workspace_flag_suppresses_unknown_category_too` pins it.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 
-use crate::policies;
+use crate::raw;
 
 const KNOWN_CATEGORIES: &[&str] = &[
     "ai-agent",
@@ -52,12 +52,15 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
     if input.entity_kind != "Component" {
         return vec![];
     }
-    let source_path = match input.source_path.as_deref() {
-        Some(p) => p,
-        None => return vec![],
-    };
+    // An empty source_path is the absent sentinel (the wire field omits
+    // an empty string); the rule needs a filesystem path to derive a
+    // category from, so it passes silently when none is supplied.
+    if input.source_path.is_empty() {
+        return vec![];
+    }
+    let source_path = input.source_path.as_str();
 
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
     if policies.allow_category_mismatches {
         return vec![];
     }
@@ -73,8 +76,8 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
              categories ({KNOWN_CATEGORIES:?})"
         ))];
     }
-    let label = input
-        .proposed
+    let proposed = raw::parse(&input.proposed);
+    let label = proposed
         .get("metadata")
         .and_then(|m| m.get("labels"))
         .and_then(|l| l.get("component.aggrega.ai/category"))
@@ -105,8 +108,8 @@ fn derive_core_category(path: &str) -> Option<String> {
 fn finding(message: String) -> LinterFinding {
     LinterFinding {
         rule_id: "category-matches-directory".to_string(),
-        severity: LinterSeverity::Error,
-        classification: None,
+        severity: "error".to_string(),
         message,
+        ..Default::default()
     }
 }

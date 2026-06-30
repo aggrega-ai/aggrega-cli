@@ -27,23 +27,23 @@
 //! `allow_direct_x_aggrega_extensions: true` under
 //! `lint.publishing_discipline` in `.aggrega-config.yaml`.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 use serde_json::Value;
 
-use crate::policies;
+use crate::raw;
 
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
     if policies.allow_direct_x_aggrega_extensions {
         return vec![];
     }
 
-    let schema = match input.proposed.get("spec").and_then(|s| s.get("schema")) {
+    let proposed = raw::parse(&input.proposed);
+    let schema = match proposed.get("spec").and_then(|s| s.get("schema")) {
         Some(s) => s,
         None => return vec![],
     };
-    let entity_name = input
-        .proposed
+    let entity_name = proposed
         .get("metadata")
         .and_then(|m| m.get("name"))
         .and_then(|n| n.as_str())
@@ -73,12 +73,12 @@ fn collect_x_aggrega_occurrences(
                     // containing spaces.
                     findings.push(LinterFinding {
                         rule_id: "x-aggrega-discouragement".to_string(),
-                        severity: LinterSeverity::Error,
-                        classification: None,
+                        severity: "error".to_string(),
                         message: format!(
                             "entity \"{entity_name}\" authors {key} at <{child_pointer}> in schema content; \
                              recommended path is {recommended}"
                         ),
+                        ..Default::default()
                     });
                 }
                 collect_x_aggrega_occurrences(child, &child_pointer, entity_name, findings);

@@ -19,23 +19,23 @@
 //! suppresses the rule entirely (matches the workspace-config flag
 //! that the build-time `linter.wasm` warning path also honours).
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 use regex::Regex;
 
-use crate::policies;
+use crate::raw;
 
 /// `classify` returns at most one finding. Returns an empty vector
 /// when the name matches the per-kind pattern, when the rule is
 /// suppressed by `allow_nonstandard_names`, or when the entity kind
 /// has no documented pattern.
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
     if policies.allow_nonstandard_names {
         return vec![];
     }
 
-    let name = match input
-        .proposed
+    let proposed = raw::parse(&input.proposed);
+    let name = match proposed
         .get("metadata")
         .and_then(|m| m.get("name"))
         .and_then(|n| n.as_str())
@@ -60,9 +60,9 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
         Err(e) => {
             return vec![LinterFinding {
                 rule_id: "name-shape".to_string(),
-                severity: LinterSeverity::Error,
-                classification: None,
+                severity: "error".to_string(),
                 message: format!("name-shape rule: regex compile failure: {e}"),
+                ..Default::default()
             }];
         }
     };
@@ -73,12 +73,12 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
 
     vec![LinterFinding {
         rule_id: "name-shape".to_string(),
-        severity: LinterSeverity::Error,
-        classification: None,
+        severity: "error".to_string(),
         message: format!(
             "metadata.name {name:?} does not match the documented pattern for {} entities ({pattern})",
             input.entity_kind
         ),
+        ..Default::default()
     }]
 }
 

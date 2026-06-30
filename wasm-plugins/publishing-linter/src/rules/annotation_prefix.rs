@@ -31,22 +31,22 @@
 //! suppresses both checks. The flag covers the reserved-namespace
 //! family uniformly; per-prefix granularity is a future iteration.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 
-use crate::policies;
+use crate::raw;
 
 /// `classify` walks the entity's `metadata.annotations` object and
 /// emits one finding per reserved-prefix violation. Returns an empty
 /// vector when no violations are found OR when the per-workspace
 /// opt-out is set.
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
     if policies.allow_aggrega_ai_prefix {
         return vec![];
     }
 
-    let annotations = match input
-        .proposed
+    let proposed = raw::parse(&input.proposed);
+    let annotations = match proposed
         .get("metadata")
         .and_then(|m| m.get("annotations"))
         .and_then(|a| a.as_object())
@@ -62,26 +62,26 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
         if is_bare_aggrega_ai(key) && !WELL_KNOWN_ANNOTATIONS.contains(&key.as_str()) {
             findings.push(LinterFinding {
                 rule_id: "annotation-prefix".to_string(),
-                severity: LinterSeverity::Error,
-                classification: None,
+                severity: "error".to_string(),
                 message: format!(
                     "annotation key {key:?} uses the reserved bare aggrega.ai/ prefix; \
                      this prefix is reserved for platform-native annotations. Use a sub-prefix \
                      (e.g., feature.aggrega.ai/ for Feature-scoped conventions) or a custom non-aggrega.ai/ prefix."
                 ),
+                ..Default::default()
             });
             continue;
         }
         if is_feature_aggrega_ai(key) && entity_kind != "Feature" {
             findings.push(LinterFinding {
                 rule_id: "annotation-prefix".to_string(),
-                severity: LinterSeverity::Error,
-                classification: None,
+                severity: "error".to_string(),
                 message: format!(
                     "annotation key {key:?} uses the feature.aggrega.ai/ prefix on entity kind {entity_kind:?}; \
                      this prefix is reserved for Feature-scoped conventions. \
                      Use a custom non-aggrega.ai/ prefix for cross-kind annotations."
                 ),
+                ..Default::default()
             });
         }
     }

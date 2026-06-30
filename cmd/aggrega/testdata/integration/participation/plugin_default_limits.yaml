@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: core/example-renderer
+  version: 1.0.0
+spec:
+  plugin: oci://hub.aggrega.ai/plugins/example-renderer@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pluginTypes:
+    - provider
+  abiVersion: v1alpha1

@@ -24,23 +24,22 @@
 //! `.aggrega-config.yaml` suppresses every finding from this rule
 //! uniformly across the depth.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 use serde_json::Value;
 
-use crate::policies;
 use crate::rules::schema_library_walker::visit_schemas_recursive;
 
 /// `classify` walks every entry under `spec.schemas` and descends
 /// into sub-schema positions via the shared walker. Each visited
 /// node is checked for `$id`; one finding per occurrence. `rule_id:
-/// "id-overrides"`, `severity: Error`, `classification: None`.
+/// "id-overrides"`, `severity: "error"`, no classification.
 ///
 /// Returns an empty vector when the per-workspace flag
 /// `allow_id_overrides` is true OR when no entry carries an
 /// explicit `$id` at any sub-schema position OR when the entity is
 /// not a SchemaLibrary.
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
     if policies.allow_id_overrides {
         return vec![];
     }
@@ -56,14 +55,14 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
                 };
                 findings.push(LinterFinding {
                     rule_id: "id-overrides".to_string(),
-                    severity: LinterSeverity::Error,
-                    classification: None,
+                    severity: "error".to_string(),
                     message: format!(
                         "SchemaLibrary entry {entry_name:?} declares an explicit $id{location}; \
                          the platform owns each entry's host-less canonical identity \
                          (<Library>#/schemas/<name>); author overrides \
                          conflict with cross-document $ref resolution + lockfile pinning"
                     ),
+                    ..Default::default()
                 });
             }
         }

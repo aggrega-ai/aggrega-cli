@@ -172,6 +172,7 @@ func TestRuleParticipation(t *testing.T) {
 		{ruleID: "id-overrides", fixtureFile: "id_overrides.yaml"},
 		{ruleID: "category-matches-directory", fixtureFile: "category_mismatch.yaml"},
 		{ruleID: "x-aggrega-discouragement", fixtureFile: "x_aggrega_in_schema.yaml"},
+		{ruleID: "plugin-default-limits", fixtureFile: "plugin_default_limits.yaml"},
 	}
 
 	for _, c := range cases {
@@ -367,6 +368,99 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 	return fired
 }
 
+// TestPluginDefaultLimits exercises the publish-time advisory that
+// warns when a Plugin entity declares no explicit runtime cap. It
+// proves the silent half (a Plugin with a non-zero cap produces no
+// finding) and that the warning is non-halting (default-mode lintRun
+// returns nil even though the finding is present).
+func TestPluginDefaultLimits(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+	pluginBytes, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("read plugin %s: %v", pluginPath, err)
+	}
+
+	dispatch := func(yamlBytes []byte) []validator.LinterFinding {
+		t.Helper()
+		proposedJSON, header, err := yamlToLinterJSON(yamlBytes)
+		if err != nil {
+			t.Fatalf("yaml→json: %v", err)
+		}
+		input := validator.LinterInput{
+			RuleID:     "plugin-default-limits",
+			EntityKind: header.Kind,
+			Proposed:   proposedJSON,
+			Policies:   buildParticipationPolicies(nil),
+		}
+		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, input)
+		if err != nil {
+			t.Fatalf("DispatchPublishingLinter: %v", err)
+		}
+		return findings
+	}
+
+	hasRuleFinding := func(findings []validator.LinterFinding) *validator.LinterFinding {
+		for i := range findings {
+			if findings[i].RuleID == "plugin-default-limits" {
+				return &findings[i]
+			}
+		}
+		return nil
+	}
+
+	// A Plugin with no spec.runtime fires the warning.
+	noRuntime := readFixture(t, "participation", "plugin_default_limits.yaml")
+	t.Run("no_runtime_warns", func(t *testing.T) {
+		f := hasRuleFinding(dispatch(noRuntime))
+		if f == nil {
+			t.Fatal("expected a plugin-default-limits finding; got none")
+		}
+		if f.Severity != "warning" {
+			t.Errorf("severity: got %q; want %q", f.Severity, "warning")
+		}
+	})
+
+	// A Plugin with an explicit non-zero runtime cap is silent.
+	withCap := []byte(`apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: core/capped-renderer
+  version: 1.0.0
+spec:
+  plugin: oci://hub.aggrega.ai/plugins/capped-renderer@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pluginTypes:
+    - provider
+  abiVersion: v1alpha1
+  runtime:
+    maxMemoryPages: 256
+    timeoutMs: 3000
+`)
+	t.Run("with_cap_silent", func(t *testing.T) {
+		if f := hasRuleFinding(dispatch(withCap)); f != nil {
+			t.Errorf("expected no plugin-default-limits finding; got %+v", *f)
+		}
+	})
+
+	// The warning does not halt default-mode lintRun.
+	t.Run("non_halting", func(t *testing.T) {
+		dir := t.TempDir()
+		entityPath := filepath.Join(dir, "plugin.yaml")
+		if err := os.WriteFile(entityPath, noRuntime, 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		cfg := lintConfig{
+			EntityPath:     entityPath,
+			PrePublish:     false,
+			PluginPath:     pluginPath,
+			PolicyResolver: func(_ string, ws bool) bool { return ws },
+			ws:             resolveTempWorkspace(t),
+		}
+		if err := lintRun(cfg); err != nil {
+			t.Errorf("default mode should not halt on a warning; got: %v", err)
+		}
+	})
+}
+
 // Verifying the lint command's rule slice includes every
 // participation rule (defensive: if a maintainer drops a rule
 // from defaultRuleIDs, TestRuleParticipation would still pass
@@ -386,6 +480,7 @@ func TestRuleParticipationCoversAllDispatchedRules(t *testing.T) {
 		"id-overrides",
 		"category-matches-directory",
 		"x-aggrega-discouragement",
+		"plugin-default-limits",
 	}
 	for _, ruleID := range expectedInParticipation {
 		if !dispatched[ruleID] {

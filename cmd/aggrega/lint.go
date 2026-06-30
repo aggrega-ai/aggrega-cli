@@ -527,6 +527,7 @@ func defaultRuleIDs(prePublish bool) []string {
 		"id-overrides",
 		"category-matches-directory",
 		"x-aggrega-discouragement",
+		"plugin-default-limits",
 	}
 	if prePublish {
 		return append([]string{"schema-evolution"}, rules...)

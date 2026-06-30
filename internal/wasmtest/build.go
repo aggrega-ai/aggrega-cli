@@ -165,24 +165,26 @@ func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) 
 	}
 
 	cargoArtifact := filepath.Join(pluginDir, "target", "wasm32-unknown-unknown", "release", strings.ReplaceAll(name, "-", "_")+".wasm")
-	srcDir := filepath.Join(pluginDir, "src")
 
-	if isFresh(cargoArtifact, srcDir) {
+	// Freshness watches the plugin's own src/ AND the path-dependency
+	// source trees the plugin builds against (the Rust PDK and the
+	// generated ABI). A change to a dependency moves the artifact stale
+	// even though the plugin's own src/ is untouched, so a regenerated
+	// ABI forces a rebuild rather than reusing a now-incompatible
+	// prebuilt artifact. buildPluginArtifact knows the plugin's deps;
+	// isFresh stays a generic newest-mtime walk over the dirs it is given.
+	srcDir := filepath.Join(pluginDir, "src")
+	pdkSrc := filepath.Join(umbrellaRoot, "aggrega-pdk", "rust", "src")
+	abiSrc := filepath.Join(umbrellaRoot, "aggrega-abi", "rust", "src")
+
+	if isFresh(cargoArtifact, srcDir, pdkSrc, abiSrc) {
 		fixtureBuildOnce.Store(artifactName, cargoArtifact)
 		return cargoArtifact
 	}
 
-	cmd := exec.Command("cargo", "build", "--release", "--target", "wasm32-unknown-unknown", "--manifest-path", manifestPath)
-	cmd.Dir = pluginDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		outStr := string(output)
-		if strings.Contains(outStr, "wasm32-unknown-unknown") && strings.Contains(outStr, "not installed") {
-			skipErr := fmt.Errorf("wasm32-unknown-unknown target not installed; run `rustup target add wasm32-unknown-unknown`\ncargo output:\n%s", outStr)
-			fixtureBuildOnce.Store(artifactName, skipErr)
-			t.Skipf("%v", skipErr)
-		}
-		t.Fatalf("cargo build failed for %s: %v\noutput:\n%s", artifactName, err, outStr)
+	if skipErr := cargoBuildWasm(t, pluginDir, manifestPath, artifactName); skipErr != nil {
+		fixtureBuildOnce.Store(artifactName, skipErr)
+		t.Skipf("%v", skipErr)
 	}
 
 	if _, err := os.Stat(cargoArtifact); err != nil {
@@ -191,6 +193,94 @@ func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) 
 
 	fixtureBuildOnce.Store(artifactName, cargoArtifact)
 	return cargoArtifact
+}
+
+// cargoBuildWasm runs `cargo build --release --target
+// wasm32-unknown-unknown` for the plugin at pluginDir. It returns a
+// non-nil error ONLY for the skippable case — the wasm32 target or
+// toolchain is absent — which the caller turns into a clean test skip.
+// A genuine compile failure is a hard t.Fatalf here: the source does
+// not compile, which the gate must surface as a FAIL, never a skip.
+func cargoBuildWasm(t *testing.T, pluginDir, manifestPath, artifactName string) error {
+	t.Helper()
+	cmd := exec.Command("cargo", "build", "--release", "--target", "wasm32-unknown-unknown", "--manifest-path", manifestPath)
+	cmd.Dir = pluginDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outStr := string(output)
+		if strings.Contains(outStr, "wasm32-unknown-unknown") && strings.Contains(outStr, "not installed") {
+			return fmt.Errorf("wasm32-unknown-unknown target not installed; run `rustup target add wasm32-unknown-unknown`\ncargo output:\n%s", outStr)
+		}
+		t.Fatalf("cargo build failed for %s: %v\noutput:\n%s", artifactName, err, outStr)
+	}
+	return nil
+}
+
+// ForcePluginBuild compiles a production plugin's crate unconditionally,
+// bypassing the mtime freshness cache, and returns the built artifact
+// path. It exists for the build-gate test: a non-compiling crate must
+// FAIL the gate even if a stale prebuilt artifact would otherwise look
+// fresh. The skip/fatal contract matches buildPluginArtifact — a missing
+// Cargo.toml or post-build artifact is a hard fail; an absent wasm32
+// target/toolchain is a clean skip; a compile error is a FAIL.
+//
+// name is the plugin directory name under aggrega-cli/wasm-plugins/
+// (e.g. "publishing-linter").
+func ForcePluginBuild(t *testing.T, name string) string {
+	t.Helper()
+
+	umbrellaRoot, err := resolveUmbrellaRoot()
+	if err != nil {
+		t.Skipf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
+	}
+
+	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "wasm-plugins", name)
+	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
+	}
+
+	cargoArtifact := filepath.Join(pluginDir, "target", "wasm32-unknown-unknown", "release", strings.ReplaceAll(name, "-", "_")+".wasm")
+
+	if skipErr := cargoBuildWasm(t, pluginDir, manifestPath, name+".wasm"); skipErr != nil {
+		t.Skipf("%v", skipErr)
+	}
+
+	if _, err := os.Stat(cargoArtifact); err != nil {
+		t.Fatalf("cargo build succeeded but %s is missing afterwards: %v", cargoArtifact, err)
+	}
+	return cargoArtifact
+}
+
+// ForcePluginTest runs the plugin crate's Rust unit/integration tests
+// (`cargo test`, host target) unconditionally and FAILs the calling test
+// on any non-zero exit. cargo test builds for the host target — the Rust
+// tests call the rule classifiers directly rather than through wasm — so
+// the wasm32 target is not required here; a cargo present on PATH implies
+// the host target is present, so any failure is a genuine test failure,
+// not a toolchain skip.
+//
+// name is the plugin directory name under aggrega-cli/wasm-plugins/.
+func ForcePluginTest(t *testing.T, name string) {
+	t.Helper()
+
+	umbrellaRoot, err := resolveUmbrellaRoot()
+	if err != nil {
+		t.Skipf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
+	}
+
+	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "wasm-plugins", name)
+	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
+	}
+
+	cmd := exec.Command("cargo", "test", "--manifest-path", manifestPath)
+	cmd.Dir = pluginDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cargo test failed for %s: %v\noutput:\n%s", name, err, string(output))
+	}
 }
 
 // parsePDKFixtureName matches "<socket>-<lang>.wasm" with at least
@@ -261,13 +351,17 @@ func resolveUmbrellaRoot() (string, error) {
 }
 
 // isFresh returns true when artifactPath exists and its mtime is at or
-// after the latest mtime among the source files under sourceDir.
+// after the latest mtime among the source files under every sourceDir.
 // Mtime-based freshness is sufficient for development cadence: a
 // source edit moves the mtime forward and forces a rebuild; a fresh
 // CI checkout has no artifact and forces a rebuild. The walker skips
 // hidden directories so build sidecars (e.g. .git, node_modules) and
 // cargo's own target/ dir don't pin freshness to unrelated changes.
-func isFresh(artifactPath, sourceDir string) bool {
+//
+// Callers pass every directory whose contents the artifact is built
+// from — the plugin's own source plus any path-dependency source trees
+// — so a change anywhere in the dependency closure forces a rebuild.
+func isFresh(artifactPath string, sourceDirs ...string) bool {
 	artifactInfo, err := os.Stat(artifactPath)
 	if err != nil {
 		return false
@@ -275,30 +369,32 @@ func isFresh(artifactPath, sourceDir string) bool {
 	artifactMtime := artifactInfo.ModTime()
 
 	var newestSrc int64
-	err = filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".") && path != sourceDir {
-				return filepath.SkipDir
+	for _, sourceDir := range sourceDirs {
+		err = filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
-			if d.Name() == "target" {
-				return filepath.SkipDir
+			if d.IsDir() {
+				if strings.HasPrefix(d.Name(), ".") && path != sourceDir {
+					return filepath.SkipDir
+				}
+				if d.Name() == "target" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if t := info.ModTime().UnixNano(); t > newestSrc {
+				newestSrc = t
 			}
 			return nil
-		}
-		info, err := d.Info()
+		})
 		if err != nil {
-			return err
+			return false
 		}
-		if t := info.ModTime().UnixNano(); t > newestSrc {
-			newestSrc = t
-		}
-		return nil
-	})
-	if err != nil {
-		return false
 	}
 	return artifactMtime.UnixNano() >= newestSrc
 }

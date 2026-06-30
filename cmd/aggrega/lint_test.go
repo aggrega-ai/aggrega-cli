@@ -484,7 +484,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 	defaultRules := defaultRuleIDs(false)
 	prePublishRules := defaultRuleIDs(true)
 
-	wantDefault := []string{"annotation-prefix", "name-shape", "narrowing", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement"}
+	wantDefault := []string{"annotation-prefix", "name-shape", "narrowing", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement", "plugin-default-limits"}
 	if len(defaultRules) != len(wantDefault) {
 		t.Fatalf("default mode rule count: got %d; want %d", len(defaultRules), len(wantDefault))
 	}

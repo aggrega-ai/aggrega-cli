@@ -26,24 +26,23 @@
 //! `allow_dynamic_refs: true` under `lint.publishing_discipline` in
 //! `.aggrega-config.yaml`.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 use serde_json::Value;
 
-use crate::policies;
 use crate::rules::schema_library_walker::visit_schemas_recursive;
 
 /// `classify` walks every entry under `spec.schemas` and descends
 /// into JSON Schema 2020-12 sub-schema positions via the shared
 /// walker. Each visited node is checked for `$dynamicAnchor` or
 /// `$dynamicRef`; one finding per occurrence. `rule_id:
-/// "dynamic-refs"`, `severity: Error`, `classification: None`.
+/// "dynamic-refs"`, `severity: "error"`, no classification.
 ///
 /// Returns an empty vector when the per-workspace flag
 /// `allow_dynamic_refs` is true OR when no offending construct is
 /// found at a sub-schema position OR when the entity is not a
 /// SchemaLibrary.
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
-    let policies = policies::effective(input.policies.as_ref());
+    let policies = &input.policies;
     if policies.allow_dynamic_refs {
         return vec![];
     }
@@ -60,13 +59,13 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
                     };
                     findings.push(LinterFinding {
                         rule_id: "dynamic-refs".to_string(),
-                        severity: LinterSeverity::Error,
-                        classification: None,
+                        severity: "error".to_string(),
                         message: format!(
                             "SchemaLibrary entry {entry_name:?} uses forbidden keyword {key:?}{location}; \
                              the platform's compile-time $ref expansion cannot resolve \
                              dynamic-scope-chain constructs"
                         ),
+                        ..Default::default()
                     });
                 }
             }

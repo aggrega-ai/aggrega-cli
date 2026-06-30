@@ -34,26 +34,29 @@
 //! - Recipe / FeatureRecipe: load-bearing-field diff.
 //! - Aggregate: catalog-aggregate diff.
 
-use aggrega_pdk_rust::{LinterClassification, LinterFinding, LinterInput, LinterSeverity};
+use aggrega_pdk_rust::{LinterFinding, LinterInput};
 use serde_json::Value;
+
+use crate::raw;
 
 /// `classify` is the entry point invoked by the plugin dispatcher when
 /// `LinterInput.rule_id == "schema-evolution"`. Returns a vector
 /// carrying exactly one finding: the classification verdict for the
-/// supplied entity pair.
+/// supplied entity pair. The verdict string is one of "PATCH" / "MINOR"
+/// / "MAJOR".
 pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
     let (verdict, message) = classify_one(input);
     vec![LinterFinding {
         rule_id: "schema-evolution".to_string(),
-        severity: LinterSeverity::Error,
-        classification: Some(verdict),
+        severity: "error".to_string(),
+        classification: verdict,
         message,
     }]
 }
 
-fn classify_one(input: &LinterInput) -> (LinterClassification, String) {
-    let proposed = &input.proposed;
-    let previous = match &input.previous {
+fn classify_one(input: &LinterInput) -> (String, String) {
+    let proposed = raw::parse(&input.proposed);
+    let previous = match raw::parse_opt(&input.previous) {
         Some(v) => v,
         None => {
             // First publication; no previous version exists. Treat as
@@ -61,11 +64,13 @@ fn classify_one(input: &LinterInput) -> (LinterClassification, String) {
             // the catalog-level convention is that v1.0.0 IS the
             // first version.
             return (
-                LinterClassification::Patch,
+                "PATCH".to_string(),
                 "no previous version supplied; treating as first publication".to_string(),
             );
         }
     };
+    let previous = &previous;
+    let proposed = &proposed;
 
     match input.entity_kind.as_str() {
         "Component" => classify_with_allowlists(previous, proposed, COMPONENT_DOCS_PATHS, COMPONENT_FIELD_PATHS, "Component"),
@@ -77,7 +82,7 @@ fn classify_one(input: &LinterInput) -> (LinterClassification, String) {
         "FeatureRecipe" => classify_recipe_like(previous, proposed, "FeatureRecipe"),
         "Aggregate" => classify_aggregate(previous, proposed),
         other => (
-            LinterClassification::Major,
+            "MAJOR".to_string(),
             format!("entity_kind {other:?} unrecognised; conservative MAJOR default"),
         ),
     }
@@ -134,7 +139,7 @@ fn classify_with_allowlists(
     docs_paths: &[&str],
     field_paths: &[&str],
     kind: &str,
-) -> (LinterClassification, String) {
+) -> (String, String) {
     let mut field_changes: Vec<String> = vec![];
     let mut docs_changes: Vec<String> = vec![];
 
@@ -151,13 +156,13 @@ fn classify_with_allowlists(
 
     if field_changes.is_empty() && docs_changes.is_empty() {
         return (
-            LinterClassification::Patch,
+            "PATCH".to_string(),
             format!("{kind}: no diff detected across tracked fields"),
         );
     }
     if field_changes.is_empty() {
         return (
-            LinterClassification::Patch,
+            "PATCH".to_string(),
             format!("{kind}: only documentation paths changed: {}", docs_changes.join(", ")),
         );
     }
@@ -167,57 +172,57 @@ fn classify_with_allowlists(
         let prop = get_path(proposed, path);
         if is_subtractive(prev, prop) {
             return (
-                LinterClassification::Major,
+                "MAJOR".to_string(),
                 format!("{kind}: {path} carries subtractive or narrowing change"),
             );
         }
     }
 
     (
-        LinterClassification::Minor,
+        "MINOR".to_string(),
         format!("{kind}: additive changes at: {}", field_changes.join(", ")),
     )
 }
 
-fn classify_schema_library(previous: &Value, proposed: &Value) -> (LinterClassification, String) {
+fn classify_schema_library(previous: &Value, proposed: &Value) -> (String, String) {
     let prev_schemas = get_path(previous, "spec.schemas");
     let prop_schemas = get_path(proposed, "spec.schemas");
     let prev_templates = get_path(previous, "spec.templates");
     let prop_templates = get_path(proposed, "spec.templates");
 
     let (verdict_s, msg_s) = diff_named_entries(prev_schemas, prop_schemas, "spec.schemas");
-    if matches!(verdict_s, LinterClassification::Major) {
+    if verdict_s == "MAJOR" {
         return (verdict_s, format!("SchemaLibrary: {msg_s}"));
     }
     let (verdict_t, msg_t) = diff_named_entries(prev_templates, prop_templates, "spec.templates");
-    if matches!(verdict_t, LinterClassification::Major) {
+    if verdict_t == "MAJOR" {
         return (verdict_t, format!("SchemaLibrary: {msg_t}"));
     }
 
-    if matches!(verdict_s, LinterClassification::Minor) || matches!(verdict_t, LinterClassification::Minor) {
+    if verdict_s == "MINOR" || verdict_t == "MINOR" {
         return (
-            LinterClassification::Minor,
+            "MINOR".to_string(),
             format!("SchemaLibrary: additive — {msg_s}; {msg_t}"),
         );
     }
 
     (
-        LinterClassification::Patch,
+        "PATCH".to_string(),
         "SchemaLibrary: no entry-set changes detected".to_string(),
     )
 }
 
-fn classify_mapping_library(previous: &Value, proposed: &Value) -> (LinterClassification, String) {
+fn classify_mapping_library(previous: &Value, proposed: &Value) -> (String, String) {
     let prev_mappings = get_path(previous, "spec.mappings");
     let prop_mappings = get_path(proposed, "spec.mappings");
 
     let (verdict, msg) = diff_named_entries(prev_mappings, prop_mappings, "spec.mappings");
-    if matches!(verdict, LinterClassification::Major) {
+    if verdict == "MAJOR" {
         return (verdict, format!("MappingLibrary: {msg}"));
     }
-    if matches!(verdict, LinterClassification::Minor) {
+    if verdict == "MINOR" {
         return (
-            LinterClassification::Minor,
+            "MINOR".to_string(),
             format!("MappingLibrary: additive entries in {msg}"),
         );
     }
@@ -231,17 +236,17 @@ fn classify_mapping_library(previous: &Value, proposed: &Value) -> (LinterClassi
             if let Some(prop_value) = prop_map.get(key) {
                 if prev_value != prop_value {
                     return (
-                        LinterClassification::Major,
+                        "MAJOR".to_string(),
                         format!("MappingLibrary: entry {key:?} body changed (structural pathway)"),
                     );
                 }
             }
         }
     }
-    (LinterClassification::Patch, "MappingLibrary: no diff detected".to_string())
+    ("PATCH".to_string(), "MappingLibrary: no diff detected".to_string())
 }
 
-fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (LinterClassification, String) {
+fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (String, String) {
     let load_bearing = &[
         "spec.provider",
         "spec.implements",
@@ -261,20 +266,20 @@ fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (Lint
     }
     if changed.is_empty() {
         return (
-            LinterClassification::Patch,
+            "PATCH".to_string(),
             format!("{kind}: no diff across load-bearing fields"),
         );
     }
     // provider or pipeline changes are always MAJOR.
     if changed.iter().any(|p| p == "spec.provider") {
         return (
-            LinterClassification::Major,
+            "MAJOR".to_string(),
             format!("{kind}: spec.provider changed (different rendering engine)"),
         );
     }
     if changed.iter().any(|p| p == "spec.pipeline") {
         return (
-            LinterClassification::Major,
+            "MAJOR".to_string(),
             format!("{kind}: spec.pipeline changed (pipeline reordering or step removal/addition)"),
         );
     }
@@ -282,18 +287,18 @@ fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (Lint
     for path in &changed {
         if is_subtractive(get_path(previous, path), get_path(proposed, path)) {
             return (
-                LinterClassification::Major,
+                "MAJOR".to_string(),
                 format!("{kind}: {path} carries subtractive change"),
             );
         }
     }
     (
-        LinterClassification::Minor,
+        "MINOR".to_string(),
         format!("{kind}: additive changes at: {}", changed.join(", ")),
     )
 }
 
-fn classify_aggregate(previous: &Value, proposed: &Value) -> (LinterClassification, String) {
+fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
     let scope = &["spec.parameters", "spec.components", "spec.subsystems", "spec.exports"];
     let mut changed: Vec<String> = vec![];
     for path in scope {
@@ -302,18 +307,18 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (LinterClassificati
         }
     }
     if changed.is_empty() {
-        return (LinterClassification::Patch, "Aggregate: no diff".to_string());
+        return ("PATCH".to_string(), "Aggregate: no diff".to_string());
     }
     for path in &changed {
         if is_subtractive(get_path(previous, path), get_path(proposed, path)) {
             return (
-                LinterClassification::Major,
+                "MAJOR".to_string(),
                 format!("Aggregate: {path} carries subtractive change"),
             );
         }
     }
     (
-        LinterClassification::Minor,
+        "MINOR".to_string(),
         format!("Aggregate: additive changes at: {}", changed.join(", ")),
     )
 }
@@ -340,7 +345,7 @@ fn diff_named_entries(
     previous: Option<&Value>,
     proposed: Option<&Value>,
     field_label: &str,
-) -> (LinterClassification, String) {
+) -> (String, String) {
     let prev_map = previous.and_then(|v| v.as_object());
     let prop_map = proposed.and_then(|v| v.as_object());
 
@@ -352,17 +357,17 @@ fn diff_named_entries(
 
     if !removed.is_empty() {
         return (
-            LinterClassification::Major,
+            "MAJOR".to_string(),
             format!("{field_label}: removed entries: {}", removed.join(", ")),
         );
     }
     if !added.is_empty() {
         return (
-            LinterClassification::Minor,
+            "MINOR".to_string(),
             format!("{field_label}: added entries: {}", added.join(", ")),
         );
     }
-    (LinterClassification::Patch, format!("{field_label}: same key set"))
+    ("PATCH".to_string(), format!("{field_label}: same key set"))
 }
 
 /// `is_subtractive` returns true when `proposed` represents a

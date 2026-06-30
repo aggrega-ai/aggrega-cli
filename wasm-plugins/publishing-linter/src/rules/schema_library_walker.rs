@@ -6,27 +6,16 @@
 //! a SchemaLibrary consume this walker rather than re-implementing
 //! map traversal.
 //!
-//! API stability: `visit_schemas`'s signature is **additive-only**.
-//! Future extensions of this module add new functions (e.g.,
-//! `visit_templates`, `visit_recursive_refs`); they MUST NOT modify
-//! or remove the existing function. Multiple rule modules depend on
-//! the exact signature; reviewers gate against breaking changes.
-//!
-//! Two walker functions ship:
-//!
-//!   - [`visit_schemas`] — top-level only. Yields each entry under
-//!     `proposed.spec.schemas` as `(entry_name, entry_value)`. The
-//!     entry value is the whole JSON Schema body; the caller decides
-//!     how (or whether) to descend.
-//!   - [`visit_schemas_recursive`] — descends into JSON Schema
-//!     2020-12 sub-schema-bearing keywords. Yields each visited
-//!     sub-schema node as `(entry_name, json_pointer, value)`. The
-//!     pointer is RFC 6901-formatted; sub-schema positions only —
-//!     annotation values (`examples`, `default`, `const`, etc.) are
-//!     NOT descended into.
+//! [`visit_schemas_recursive`] descends into JSON Schema 2020-12
+//! sub-schema-bearing keywords. It calls the visitor for each visited
+//! sub-schema node as `(entry_name, json_pointer, value)`. The pointer
+//! is RFC 6901-formatted; sub-schema positions only — annotation values
+//! (`examples`, `default`, `const`, etc.) are NOT descended into.
 
 use aggrega_pdk_rust::LinterInput;
 use serde_json::Value;
+
+use crate::raw;
 
 // Object-valued sub-schema-bearing keywords (each value IS a sub-schema)
 const OBJECT_SUBSCHEMA_KEYS: &[&str] = &[
@@ -58,32 +47,6 @@ const ARRAY_SUBSCHEMA_KEYS: &[&str] = &[
     "oneOf",
     "prefixItems",
 ];
-
-/// `visit_schemas` iterates the entries under `proposed.spec.schemas`,
-/// yielding `(entry_name, entry_value)` pairs. Returns an empty
-/// iterator when:
-///
-///   - The entity kind is not `SchemaLibrary`.
-///   - `proposed.spec.schemas` is absent.
-///   - `proposed.spec.schemas` is not a JSON object.
-///
-/// Callers iterate over the result; per-entry policing logic lives
-/// in the calling rule module (this walker is intentionally minimal
-/// — it provides access, not policy).
-pub fn visit_schemas(input: &LinterInput) -> impl Iterator<Item = (&str, &Value)> {
-    let entries: Option<&serde_json::Map<String, Value>> = if input.entity_kind == "SchemaLibrary" {
-        input
-            .proposed
-            .get("spec")
-            .and_then(|s| s.get("schemas"))
-            .and_then(|s| s.as_object())
-    } else {
-        None
-    };
-    entries
-        .into_iter()
-        .flat_map(|m| m.iter().map(|(k, v)| (k.as_str(), v)))
-}
 
 /// `visit_schemas_recursive` walks each entry under `spec.schemas`
 /// and descends into every JSON Schema 2020-12 sub-schema-bearing
@@ -120,7 +83,23 @@ pub fn visit_schemas_recursive<F>(input: &LinterInput, mut visitor: F)
 where
     F: FnMut(&str, &str, &Value),
 {
-    for (entry_name, entry_value) in visit_schemas(input) {
+    if input.entity_kind != "SchemaLibrary" {
+        return;
+    }
+    // The proposed structure arrives as verbatim wire JSON; parse it
+    // into an owned tree so the per-entry sub-schemas can be walked. The
+    // tree is local to this call, so the visitor receives borrows into
+    // it rather than into the input.
+    let proposed = raw::parse(&input.proposed);
+    let entries = match proposed
+        .get("spec")
+        .and_then(|s| s.get("schemas"))
+        .and_then(|s| s.as_object())
+    {
+        Some(m) => m,
+        None => return,
+    };
+    for (entry_name, entry_value) in entries {
         walk_subschemas(entry_name, "", entry_value, &mut visitor);
     }
 }
