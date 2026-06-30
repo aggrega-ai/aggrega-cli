@@ -131,6 +131,7 @@ func DescendRecipeProviders(c *Closure, loader RecipeLoader, lookup Lookup) erro
 			URI:             name,
 			ResolvedVersion: res.ResolvedVersion,
 			Digest:          res.Digest,
+			ManifestDigest:  res.ManifestDigest,
 			ResolutionPath:  res.ResolutionPath,
 			ReferencedFrom:  refs,
 			KindHint:        providerKindHint,

@@ -22,6 +22,7 @@ func signedLockfile(stamp string) *lockfile.Lockfile {
 				URI:             "z-server",
 				ResolvedVersion: "1.0.0",
 				Digest:          "sha256:zzzz",
+				ManifestDigest:  "sha256:zzzzmanifest",
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyless",
 					Identity:     "m.ferrero@cognitio.it",
@@ -33,6 +34,7 @@ func signedLockfile(stamp string) *lockfile.Lockfile {
 				URI:             "a-db",
 				ResolvedVersion: "2.0.0",
 				Digest:          "sha256:aaaa",
+				ManifestDigest:  "sha256:aaaamanifest",
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyed",
 					BundleDigest: "sha256:cccc",
@@ -88,6 +90,13 @@ func TestVerifiedSignatureRoundTrip(t *testing.T) {
 		byURI[e.URI] = e
 	}
 
+	if byURI["z-server"].ManifestDigest != "sha256:zzzzmanifest" {
+		t.Errorf("manifest_digest round-trip lost data: %q", byURI["z-server"].ManifestDigest)
+	}
+	if byURI["m-cache"].ManifestDigest != "" {
+		t.Errorf("unsigned entity should round-trip with an empty manifest_digest, got %q", byURI["m-cache"].ManifestDigest)
+	}
+
 	keyless := byURI["z-server"].Signature
 	if keyless == nil {
 		t.Fatal("z-server should carry a signature")
@@ -120,6 +129,7 @@ func signedPluginLockfile(stamp string) *lockfile.Lockfile {
 				URI:             "z-plugin",
 				ResolvedVersion: "1.0.0",
 				Digest:          "sha256:zzzz",
+				ManifestDigest:  "sha256:zzzzmanifest",
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyless",
 					Identity:     "m.ferrero@cognitio.it",
@@ -131,6 +141,7 @@ func signedPluginLockfile(stamp string) *lockfile.Lockfile {
 				URI:             "a-plugin",
 				ResolvedVersion: "2.0.0",
 				Digest:          "sha256:aaaa",
+				ManifestDigest:  "sha256:aaaamanifest",
 				Signature: &lockfile.VerifiedSignature{
 					Mode:         "keyed",
 					BundleDigest: "sha256:cccc",
@@ -183,6 +194,13 @@ func TestPluginSignatureRoundTrip(t *testing.T) {
 	byURI := map[string]lockfile.Plugin{}
 	for _, p := range lf.Plugins {
 		byURI[p.URI] = p
+	}
+
+	if byURI["z-plugin"].ManifestDigest != "sha256:zzzzmanifest" {
+		t.Errorf("manifest_digest round-trip lost data: %q", byURI["z-plugin"].ManifestDigest)
+	}
+	if byURI["m-plugin"].ManifestDigest != "" {
+		t.Errorf("unsigned plugin should round-trip with an empty manifest_digest, got %q", byURI["m-plugin"].ManifestDigest)
 	}
 
 	keyless := byURI["z-plugin"].Signature

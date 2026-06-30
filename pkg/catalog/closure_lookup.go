@@ -555,7 +555,15 @@ func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest st
 				return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
 					uri, got, pinDigest, oci.ErrFetchIntegrity)
 			}
-			return pinnedPluginResolution(pinDigest), nil
+			// A cache hit recovers the manifest digest deterministically without a
+			// registry round-trip: the manifest is a pure function of the content
+			// (its creation annotation is epoch-pinned), so the digest a push
+			// produced equals the digest computed from the cached bytes.
+			manifestDigest, mderr := oci.ManifestDigest(context.Background(), oci.MediaTypeWasm, bytes)
+			if mderr != nil {
+				return closure.Resolution{}, fmt.Errorf("catalog: manifest digest of cached plugin artifact %s: %w", uri, mderr)
+			}
+			return pinnedPluginResolution(pinDigest, manifestDigest), nil
 		} else if !errors.Is(err, oci.ErrFetchNotFound) {
 			return closure.Resolution{}, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
 		}
@@ -585,18 +593,21 @@ func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest st
 			return closure.Resolution{}, fmt.Errorf("catalog: cache write plugin artifact %s: %w", uri, err)
 		}
 	}
-	return pinnedPluginResolution(pinDigest), nil
+	return pinnedPluginResolution(pinDigest, result.Digest), nil
 }
 
 // pinnedPluginResolution is the resolution descriptor for a content-pinned .wasm
 // artifact: ResolvedVersion and Digest are both the pinned content digest, so
 // the lockfile pin (Digest) and the cache-read key (ResolvedVersion) name the
-// same content. ResolutionPath marks it a registry-tier pin, like every other
-// above-Tier-1 resolution the closure records.
-func pinnedPluginResolution(pinDigest string) closure.Resolution {
+// same content. ManifestDigest is the .wasm's OCI manifest digest — the verify
+// subject, distinct from the content pin. ResolutionPath marks it a
+// registry-tier pin, like every other above-Tier-1 resolution the closure
+// records.
+func pinnedPluginResolution(pinDigest, manifestDigest string) closure.Resolution {
 	return closure.Resolution{
 		ResolvedVersion: pinDigest,
 		Digest:          pinDigest,
+		ManifestDigest:  manifestDigest,
 		ResolutionPath:  "tier-3-pull",
 	}
 }
@@ -877,6 +888,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 		return result.Bytes, closure.Resolution{
 			ResolvedVersion: pinnedVersion,
 			Digest:          contentDigest(result.Bytes),
+			ManifestDigest:  result.Digest,
 			ResolutionPath:  "tier-3-pull",
 		}, nil
 	}
@@ -906,6 +918,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 	return result.Bytes, closure.Resolution{
 		ResolvedVersion: tag,
 		Digest:          contentDigest(result.Bytes),
+		ManifestDigest:  result.Digest,
 		ResolutionPath:  "tier-3-pull",
 	}, nil
 }
@@ -953,6 +966,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 		return closure.Resolution{
 			ResolvedVersion: pinnedVersion,
 			Digest:          digest,
+			ManifestDigest:  result.Digest,
 			ResolutionPath:  "tier-3-pull",
 		}, nil
 	}
@@ -978,6 +992,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	return closure.Resolution{
 		ResolvedVersion: tag,
 		Digest:          digest,
+		ManifestDigest:  result.Digest,
 		ResolutionPath:  "tier-3-pull",
 	}, nil
 }
@@ -993,7 +1008,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 // AggregatePuller capability resolves NotFound, so the registry tier never
 // fetches at build.
 func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
-	_, version, digest, found, err := PullAndCacheAggregate(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+	_, version, digest, manifestDigest, found, err := PullAndCacheAggregate(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
 	if err != nil {
 		return closure.Resolution{}, err
 	}
@@ -1004,6 +1019,7 @@ func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
 	return closure.Resolution{
 		ResolvedVersion: version,
 		Digest:          digest,
+		ManifestDigest:  manifestDigest,
 		ResolutionPath:  "tier-3-pull",
 	}, nil
 }
@@ -1011,27 +1027,28 @@ func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
 // PullAndCacheAggregate fetches a bare-name published Aggregate via the puller's
 // AggregatePuller capability, caches it under name:metadata.version, and returns
 // the verified bytes + resolved version (the fetched metadata.version identity)
-// + content digest. found is false when the puller is nil (the hermetic build
-// path), lacks the AggregatePuller capability, or the registry has no such
-// aggregate (ErrFetchNotFound) — so a build, or an offline pull, never networks.
-// It is the single fetch+cache+pin primitive shared by the closure's
-// tier3Aggregate (sub path) and the triad resolver's Tier-3 seam (top-level
-// path): one cache layout, one identity rule, two call sites.
-func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest string, found bool, err error) {
+// + content digest + the OCI manifest digest the artifact's signature commits
+// to. found is false when the puller is nil (the hermetic build path), lacks the
+// AggregatePuller capability, or the registry has no such aggregate
+// (ErrFetchNotFound) — so a build, or an offline pull, never networks. It is the
+// single fetch+cache+pin primitive shared by the closure's tier3Aggregate (sub
+// path) and the triad resolver's Tier-3 seam (top-level path): one cache layout,
+// one identity rule, two call sites.
+func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest, manifestDigest string, found bool, err error) {
 	if puller == nil {
-		return nil, "", "", false, nil
+		return nil, "", "", "", false, nil
 	}
 	ap, ok := puller.(AggregatePuller)
 	if !ok {
-		return nil, "", "", false, nil
+		return nil, "", "", "", false, nil
 	}
 	name, floor, _ := splitVersionedURI(ref)
 	result, fetchVersion, perr := ap.PullAggregate(context.Background(), name, floor)
 	if perr != nil {
 		if errors.Is(perr, oci.ErrFetchNotFound) {
-			return nil, "", "", false, nil
+			return nil, "", "", "", false, nil
 		}
-		return nil, "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, perr)
+		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, perr)
 	}
 	// Pin the fetched entity's metadata.version (identity), not the OCI tag it
 	// was fetched under (fetchVersion, a location coordinate now discarded) — so
@@ -1044,9 +1061,9 @@ func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref
 	}
 	versionedKey := name + ":" + version
 	if werr := writeEntityToCacheSlot(workspaceRoot, cacheDir, versionedKey, version, result); werr != nil {
-		return nil, "", "", false, fmt.Errorf("catalog: tier-3 cache write Aggregate %s: %w", name, werr)
+		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 cache write Aggregate %s: %w", name, werr)
 	}
-	return result.Bytes, version, contentDigest(result.Bytes), true, nil
+	return result.Bytes, version, contentDigest(result.Bytes), result.Digest, true, nil
 }
 
 // writeEntityToCacheSlot stores the pulled bytes at the standard

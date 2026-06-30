@@ -839,6 +839,7 @@ func (p *pendingRef) toResolvedRef(uri string) ResolvedRef {
 		URI:             uri,
 		ResolvedVersion: p.resolution.ResolvedVersion,
 		Digest:          p.resolution.Digest,
+		ManifestDigest:  p.resolution.ManifestDigest,
 		ResolutionPath:  p.resolution.ResolutionPath,
 		ReferencedFrom:  refs,
 		KindHint:        p.kindHint,

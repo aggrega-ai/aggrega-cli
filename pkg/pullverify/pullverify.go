@@ -36,11 +36,15 @@ import (
 )
 
 // Entity is the minimal pin a verification needs: the canonical URI, the
-// content digest the signature commits to, and the registry host the
+// OCI manifest digest the signature commits to, and the registry host the
 // entity resolved from.
 type Entity struct {
-	URI    string
-	Digest string
+	URI string
+	// ManifestDigest is the OCI manifest digest the artifact's signature
+	// commits to — the cryptographic verify subject. It is the manifest
+	// coordinate, not the portable content digest the caller uses for the
+	// cache pin and integrity check.
+	ManifestDigest string
 	// Host is the registry host the entity resolved from, already
 	// normalised via registryhost.Of. Empty for a non-registry (local /
 	// catalog) entity, which is never verified.
@@ -170,7 +174,7 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 			lastErr = ferr
 			continue
 		}
-		res, verr := verifyBundle(bundleBytes, e.Digest, policy)
+		res, verr := verifyBundle(bundleBytes, e.ManifestDigest, policy)
 		if verr == nil {
 			res.URI = e.URI
 			return res, nil

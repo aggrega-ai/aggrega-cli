@@ -200,6 +200,12 @@ type ResolvedRef struct {
 	URI             string
 	ResolvedVersion string
 	Digest          string
+	// ManifestDigest is the OCI manifest digest the artifact's signature
+	// commits to — the verify subject at pull time. It differs from Digest,
+	// the portable content digest used for the cache pin and integrity check.
+	// Set only for a registry-resolved (Tier-3) ref; empty for a Tier-1 /
+	// Tier-2 / external ref, none of which carry a registry signature.
+	ManifestDigest  string
 	ResolutionPath  string
 	ReferencedFrom  []string
 	// KindHint is the catalog kind known from where the URI was collected —
@@ -285,6 +291,13 @@ type Lookup interface {
 type Resolution struct {
 	ResolvedVersion string
 	Digest          string
+	// ManifestDigest is the OCI manifest digest the artifact's signature
+	// commits to — the verify subject at pull time. It differs from Digest,
+	// the portable content digest used for the cache pin and integrity check.
+	// A registry (Tier-3) resolution captures it from the pull's manifest
+	// descriptor; lower tiers leave it empty (they carry no registry
+	// signature to verify).
+	ManifestDigest  string
 	ResolutionPath  string
 	NotFound        bool
 }

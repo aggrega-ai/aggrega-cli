@@ -55,8 +55,13 @@ type Entity struct {
 	URI             string             `yaml:"uri"`
 	ResolvedVersion string             `yaml:"resolved_version"`
 	Digest          string             `yaml:"digest"`
-	ReferencedFrom  []string           `yaml:"referenced_from"`
-	Signature       *VerifiedSignature `yaml:"signature,omitempty"`
+	// ManifestDigest is the OCI manifest digest the artifact's signature
+	// commits to — the verify subject. It differs from Digest, the portable
+	// content digest used for the cache pin and integrity check. Present only
+	// for a registry-resolved entity; empty (and omitted) otherwise.
+	ManifestDigest string             `yaml:"manifest_digest,omitempty"`
+	ReferencedFrom []string           `yaml:"referenced_from"`
+	Signature      *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
 // VerifiedSignature records that an entity's signature was verified at
@@ -169,6 +174,11 @@ type Plugin struct {
 	URI             string             `yaml:"uri"`
 	ResolvedVersion string             `yaml:"resolved_version"`
 	Digest          string             `yaml:"digest"`
-	ReferencedFrom  []string           `yaml:"referenced_from"`
-	Signature       *VerifiedSignature `yaml:"signature,omitempty"`
+	// ManifestDigest is the OCI manifest digest the .wasm artifact's signature
+	// commits to — the verify subject. It differs from Digest, the portable
+	// content digest used for the cache pin and integrity check. Present only
+	// for a registry-resolved artifact; empty (and omitted) otherwise.
+	ManifestDigest string             `yaml:"manifest_digest,omitempty"`
+	ReferencedFrom []string           `yaml:"referenced_from"`
+	Signature      *VerifiedSignature `yaml:"signature,omitempty"`
 }

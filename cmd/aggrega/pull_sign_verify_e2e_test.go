@@ -165,9 +165,9 @@ func TestPinnedRootAnchorSelectedByOrchestrator(t *testing.T) {
 		},
 	}
 	ent := pullverify.Entity{
-		URI:    "keyless.example.com/component/core/api-server",
-		Digest: dg,
-		Host:   "keyless.example.com",
+		URI:            "keyless.example.com/component/core/api-server",
+		ManifestDigest: dg,
+		Host:           "keyless.example.com",
 	}
 	_, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,

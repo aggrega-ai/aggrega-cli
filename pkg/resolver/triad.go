@@ -45,7 +45,11 @@ type ResolvedAggregate struct {
 	// ./file, or catalog resolution leaves them zero and FromRegistry false.
 	ResolvedVersion string
 	Digest          string
-	FromRegistry    bool
+	// ManifestDigest is the fetched aggregate's OCI manifest digest — the
+	// verify subject for its signature, distinct from the content Digest above.
+	// Populated only for a registry (Tier-3) resolution.
+	ManifestDigest string
+	FromRegistry   bool
 }
 
 // ResolvedManifest is the Manifest counterpart of [ResolvedAggregate]. A Manifest

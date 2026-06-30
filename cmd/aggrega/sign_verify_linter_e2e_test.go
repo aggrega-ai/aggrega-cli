@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -29,12 +30,13 @@ import (
 // and the artifact bytes. Unlike signedPluginStore (which uses a
 // stand-in Wasm header), this seeds the actual artifact so the same
 // bytes can be loaded and run after verification.
-func signedRealLinterStore(t *testing.T) (store *memory.Store, manifestDigest string, pubPEM []byte, artifact []byte) {
+func signedRealLinterStore(t *testing.T) (store *memory.Store, manifestDigest, contentDigest string, pubPEM []byte, artifact []byte) {
 	t.Helper()
 	ctx := context.Background()
 
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
 	artifact = readArtifactBytes(t, pluginPath)
+	contentDigest = digest.ContentDigest(artifact)
 
 	store = memory.New()
 	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact)
@@ -56,7 +58,7 @@ func signedRealLinterStore(t *testing.T) (store *memory.Store, manifestDigest st
 	if _, err := oci.AttachReferrer(ctx, store, "1.0.0", artifactType, bundle); err != nil {
 		t.Fatalf("AttachReferrer: %v", err)
 	}
-	return store, dg, signer.PublicKeyPEM(), artifact
+	return store, dg, contentDigest, signer.PublicKeyPEM(), artifact
 }
 
 // readArtifactBytes reads a built .wasm artifact from disk for the
@@ -89,16 +91,16 @@ func writeTempWasm(t *testing.T, artifact []byte) string {
 // The finding it returns is derived from the verified bytes — closing
 // the loop between supply-chain trust and execution.
 func TestSignVerifyRunRealLinter(t *testing.T) {
-	store, dg, pubPEM, artifact := signedRealLinterStore(t)
+	store, dg, contentDg, pubPEM, artifact := signedRealLinterStore(t)
 
 	const uri = "keyed.example.com/wasm/linter/publishing-linter"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{
-			{URI: uri, Digest: dg, ResolutionPath: "tier-3"},
+			{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"},
 		},
 	}
 	lf := &lockfile.Lockfile{
-		Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}},
+		Plugins: []lockfile.Plugin{{URI: uri, Digest: contentDg, ManifestDigest: dg}},
 	}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
@@ -154,14 +156,14 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 // registry pinning the wrong key halts the pull for the real artifact —
 // the same Loud Guardrail the entity path produces.
 func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
-	store, dg, _, _ := signedRealLinterStore(t)
-	_, _, otherPub, _ := signedRealLinterStore(t)
+	store, dg, contentDg, _, _ := signedRealLinterStore(t)
+	_, _, _, otherPub, _ := signedRealLinterStore(t)
 
 	const uri = "keyed.example.com/wasm/linter/publishing-linter"
 	cl := closure.Closure{
-		Plugins: []closure.ResolvedRef{{URI: uri, Digest: dg, ResolutionPath: "tier-3"}},
+		Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"}},
 	}
-	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: dg}}}
+	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: contentDg, ManifestDigest: dg}}}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(otherPub)},

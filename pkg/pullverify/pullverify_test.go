@@ -68,7 +68,7 @@ func TestVerifyKeyedRecordsFact(t *testing.T) {
 			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
 		},
 	}
-	ent := pullverify.Entity{URI: "keyed.example.com/component/core/api-server", Digest: dg, Host: "keyed.example.com"}
+	ent := pullverify.Entity{URI: "keyed.example.com/component/core/api-server", ManifestDigest: dg, Host: "keyed.example.com"}
 
 	results, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,
@@ -104,7 +104,7 @@ func TestVerifyKeyedRejectsWrongKey(t *testing.T) {
 			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(otherPub)},
 		},
 	}
-	ent := pullverify.Entity{URI: "keyed.example.com/x", Digest: dg, Host: "keyed.example.com"}
+	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com"}
 	_, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
@@ -130,7 +130,7 @@ func TestVerifyMissingSignatureHaltsWhenRequired(t *testing.T) {
 			{Host: "req.example.com", RequiresSignatures: true, PublicKey: "irrelevant"},
 		},
 	}
-	ent := pullverify.Entity{URI: "req.example.com/x", Digest: dg, Host: "req.example.com"}
+	ent := pullverify.Entity{URI: "req.example.com/x", ManifestDigest: dg, Host: "req.example.com"}
 	_, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
@@ -148,7 +148,7 @@ func TestVerifyMissingSignatureToleratedWhenUnknown(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
-	ent := pullverify.Entity{URI: "unknown.example.com/x", Digest: dg, Host: "unknown.example.com"}
+	ent := pullverify.Entity{URI: "unknown.example.com/x", ManifestDigest: dg, Host: "unknown.example.com"}
 	results, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
 		Config: workspaceconfig.Config{},
 		Target: targetForStore(store, "1.0.0"),
@@ -173,7 +173,7 @@ func TestVerifyAdvisoryDowngradesFailure(t *testing.T) {
 			{Host: "adv.example.com", RequiresSignatures: true, Advisory: true, PublicKey: string(otherPub)},
 		},
 	}
-	ent := pullverify.Entity{URI: "adv.example.com/x", Digest: dg, Host: "adv.example.com"}
+	ent := pullverify.Entity{URI: "adv.example.com/x", ManifestDigest: dg, Host: "adv.example.com"}
 	results, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
@@ -202,7 +202,7 @@ func TestVerifyGlobalSkipIsLoud(t *testing.T) {
 			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
 		},
 	}
-	ent := pullverify.Entity{URI: "keyed.example.com/x", Digest: dg, Host: "keyed.example.com"}
+	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com"}
 	results, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
@@ -230,7 +230,7 @@ func TestVerifyPerRegistrySkip(t *testing.T) {
 			{Host: "keyed.example.com", RequiresSignatures: true, SkipVerification: true, PublicKey: string(pubPEM)},
 		},
 	}
-	ent := pullverify.Entity{URI: "keyed.example.com/x", Digest: dg, Host: "keyed.example.com"}
+	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com"}
 	results, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),

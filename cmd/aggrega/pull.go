@@ -287,7 +287,7 @@ func pullRun(cfg pullConfig) error {
 	// passes a nil puller, so Tier-3 never networks and a registry top-level
 	// resolves from the pinned cache through the lazy lookup.
 	registryFetch := func(ref string) (resolver.ResolvedAggregate, bool, error) {
-		data, version, digest, found, ferr := catalog.PullAndCacheAggregate(workspaceRoot, cacheDir, puller, ref)
+		data, version, digest, manifestDigest, found, ferr := catalog.PullAndCacheAggregate(workspaceRoot, cacheDir, puller, ref)
 		if ferr != nil || !found {
 			return resolver.ResolvedAggregate{}, found, ferr
 		}
@@ -295,7 +295,7 @@ func pullRun(cfg pullConfig) error {
 		if perr != nil {
 			return resolver.ResolvedAggregate{}, false, perr
 		}
-		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: data, ResolvedVersion: version, Digest: digest, FromRegistry: true}, true, nil
+		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: data, ResolvedVersion: version, Digest: digest, ManifestDigest: manifestDigest, FromRegistry: true}, true, nil
 	}
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), registryFetch)
 	if err != nil {
@@ -327,7 +327,7 @@ func pullRun(cfg pullConfig) error {
 	if aggRes.FromRegistry {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, nil, manRes.Bytes)
 		registrySeeds = map[string]closure.Resolution{
-			rel.Spec.Aggregate: {ResolvedVersion: aggRes.ResolvedVersion, Digest: aggRes.Digest, ResolutionPath: "tier-3-pull"},
+			rel.Spec.Aggregate: {ResolvedVersion: aggRes.ResolvedVersion, Digest: aggRes.Digest, ManifestDigest: aggRes.ManifestDigest, ResolutionPath: "tier-3-pull"},
 		}
 	} else {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
@@ -610,6 +610,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             e.URI,
 			ResolvedVersion: e.ResolvedVersion,
 			Digest:          e.Digest,
+			ManifestDigest:  e.ManifestDigest,
 			ReferencedFrom:  append([]string(nil), e.ReferencedFrom...),
 		})
 	}
@@ -640,6 +641,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             w.URI,
 			ResolvedVersion: w.ResolvedVersion,
 			Digest:          w.Digest,
+			ManifestDigest:  w.ManifestDigest,
 			ReferencedFrom:  append([]string(nil), w.ReferencedFrom...),
 		})
 	}

@@ -67,7 +67,7 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			if !isRegistryHost(host) {
 				continue
 			}
-			verifiable = append(verifiable, pullverify.Entity{URI: e.URI, Digest: e.Digest, Host: host})
+			verifiable = append(verifiable, pullverify.Entity{URI: e.URI, ManifestDigest: e.ManifestDigest, Host: host})
 		}
 	}
 	collect(cl.Entities)
@@ -229,13 +229,14 @@ func signatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 }
 
 // remoteTargetFor resolves a real remote OCI repository for an entity's
-// registry, returning the entity's version tag as the subject reference to
-// discover signature referrers against. Authentication delegates to the
-// shared OCI credential mechanisms.
+// registry, returning the manifest digest as the subject reference to discover
+// signature referrers against — the manifest the referrer is attached to, which
+// the signature also commits to. Authentication delegates to the shared OCI
+// credential mechanisms.
 func remoteTargetFor(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
 	repoRef := e.URI
 	// Strip any version suffix from the URI to form the repository
-	// reference; the subject ref is the content digest the signature
+	// reference; the subject ref is the manifest digest the signature
 	// commits to.
 	if at := strings.LastIndex(repoRef, "@"); at >= 0 {
 		repoRef = repoRef[:at]
@@ -244,7 +245,7 @@ func remoteTargetFor(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return repo, e.Digest, nil
+	return repo, e.ManifestDigest, nil
 }
 
 // cacheBundleBlob writes bundle to a content-addressed blob named by its
