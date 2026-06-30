@@ -79,8 +79,11 @@ type VerifiedSignature struct {
 	// bundle blob stored in the closure. It both names the cache blob and
 	// is the integrity gate for an air-gapped re-verify.
 	BundleDigest string `yaml:"bundle_digest"`
-	// Identity is the verified certificate subject for a keyless
-	// signature (empty for keyed). Records which trusted identity matched.
+	// Identity is the verified signer of the signature: the certificate
+	// subject for a keyless signature, or a stable fingerprint of the
+	// pinned public key for a keyed signature. It records which signer
+	// matched, and is the value the same-signer check compares across a
+	// plugin's entity and its .wasm artifact.
 	Identity string `yaml:"identity,omitempty"`
 	// Issuer is the verified OIDC issuer for a keyless signature (empty
 	// for keyed).

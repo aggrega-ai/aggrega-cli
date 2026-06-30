@@ -90,6 +90,24 @@ func TestVerifyKeyedRecordsFact(t *testing.T) {
 	if r.URI != ent.URI {
 		t.Errorf("result URI = %q, want %q", r.URI, ent.URI)
 	}
+	// A keyed verified fact records a pinned-key fingerprint as its signer
+	// identity (a keyed bundle carries no certificate), which the same-signer
+	// check compares across a plugin's entity and .wasm. The fingerprint is
+	// stable across runs so two artifacts signed under the one pinned key
+	// compare equal.
+	if r.Identity == "" {
+		t.Error("keyed verified fact should record a pinned-key fingerprint as Identity")
+	}
+	stable, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if err != nil {
+		t.Fatalf("Verify (stable): %v", err)
+	}
+	if stable[0].Identity != r.Identity {
+		t.Errorf("keyed fingerprint not stable across runs: %q vs %q", stable[0].Identity, r.Identity)
+	}
 }
 
 // TestVerifyKeyedRejectsWrongKey proves a registry that pins the wrong key

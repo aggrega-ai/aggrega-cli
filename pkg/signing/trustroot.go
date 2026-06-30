@@ -42,11 +42,11 @@ func TrustedMaterialFromRootPath(path string) (root.TrustedMaterial, error) {
 // against the real Sigstore is provable only against live TUF/Fulcio/Rekor.
 // Offline callers pin a trust root via TrustedMaterialFromRootPath and use
 // VerifyKeylessBundle instead.
-func VerifyKeylessLive(bundleBytes []byte, identities []TrustedIdentity, artifactDigest string) error {
+func VerifyKeylessLive(bundleBytes []byte, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
 	opts := tuf.DefaultOptions()
 	live, err := root.NewLiveTrustedRoot(opts)
 	if err != nil {
-		return fmt.Errorf("%w: live TUF fetch: %v", ErrTrustRootLoad, err)
+		return KeylessIdentity{}, fmt.Errorf("%w: live TUF fetch: %v", ErrTrustRootLoad, err)
 	}
 	return VerifyKeylessBundle(bundleBytes, live, identities, artifactDigest)
 }

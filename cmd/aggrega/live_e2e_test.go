@@ -154,7 +154,11 @@ func TestLiveE2E_KeylessPublishVerifyRoundTrip(t *testing.T) {
 		t.Skip("live keyless verify requires AGGREGA_LIVE_E2E_IDENTITY and AGGREGA_LIVE_E2E_ISSUER to assert the signer identity")
 	}
 	ids := []signing.TrustedIdentity{{Identity: identity, Issuer: issuer}}
-	if err := signing.VerifyKeylessLive(pulled, ids, manifestDigest); err != nil {
+	matched, err := signing.VerifyKeylessLive(pulled, ids, manifestDigest)
+	if err != nil {
 		t.Fatalf("keyless verify against TUF-fetched root: %v", err)
+	}
+	if matched.Identity != identity || matched.Issuer != issuer {
+		t.Fatalf("matched identity = %q/%q; want the signer %q/%q", matched.Identity, matched.Issuer, identity, issuer)
 	}
 }

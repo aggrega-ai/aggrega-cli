@@ -191,13 +191,25 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 // verified fact (without URI) on success. Keyed mode is chosen when the
 // policy pins a public key; otherwise keyless against the trusted
 // identities and trust anchor.
+//
+// The recorded Identity/Issuer is the bundle's actual matched signer: for
+// keyless mode the certificate's verified identity reported by the verify
+// pass; for keyed mode the pinned-key fingerprint (a keyed bundle carries
+// no certificate, so the pinned key IS the signer). The recorded identity
+// is what the closure-aware same-signer check compares across a plugin's
+// entity and .wasm.
 func verifyBundle(bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
 	digest := blobDigest(bundleBytes)
 	if policy.PublicKey != "" {
 		if err := signing.VerifyKeyedBundle(bundleBytes, []byte(policy.PublicKey), artifactDigest); err != nil {
 			return nil, err
 		}
-		return &Result{Mode: "keyed", BundleDigest: digest, Bundle: bundleBytes}, nil
+		return &Result{
+			Mode:         "keyed",
+			Identity:     keyedSignerIdentity(policy.PublicKey),
+			BundleDigest: digest,
+			Bundle:       bundleBytes,
+		}, nil
 	}
 
 	ids := make([]signing.TrustedIdentity, 0, len(policy.TrustedIdentities))
@@ -213,35 +225,27 @@ func verifyBundle(bundleBytes []byte, artifactDigest string, policy workspacecon
 	if err != nil {
 		return nil, err
 	}
-	if err := signing.VerifyKeylessBundle(bundleBytes, anchor, ids, artifactDigest); err != nil {
+	matched, err := signing.VerifyKeylessBundle(bundleBytes, anchor, ids, artifactDigest)
+	if err != nil {
 		return nil, err
 	}
-	matchedID, matchedIssuer := matchedIdentity(ids)
 	return &Result{
 		Mode:         "keyless",
-		Identity:     matchedID,
-		Issuer:       matchedIssuer,
+		Identity:     matched.Identity,
+		Issuer:       matched.Issuer,
 		BundleDigest: digest,
 		Bundle:       bundleBytes,
 	}, nil
 }
 
-// matchedIdentity reports the identity/issuer recorded into the verified
-// fact. The verify library reports which identity matched only via the
-// VerificationResult; the OR-set is recorded as the first entry's
-// identity/issuer when a single identity is configured, and left to the
-// first entry otherwise. The recorded fact is provenance, not a
-// re-verification key — build re-verifies the cached bundle's digest, not
-// the recorded identity.
-func matchedIdentity(ids []signing.TrustedIdentity) (string, string) {
-	if len(ids) == 0 {
-		return "", ""
-	}
-	id := ids[0].Identity
-	if id == "" {
-		id = ids[0].IdentityRegexp
-	}
-	return id, ids[0].Issuer
+// keyedSignerIdentity is the same-signer identity for a keyed verification:
+// a keyed bundle carries no certificate, so the pinned public key itself is
+// the signer. A stable fingerprint of the pinned key (the sha256 of its PEM)
+// names that signer so two keyed bundles signed under the same pinned key
+// compare equal, and two under different keys compare unequal.
+func keyedSignerIdentity(publicKeyPEM string) string {
+	sum := sha256.Sum256([]byte(publicKeyPEM))
+	return fmt.Sprintf("keyed:sha256:%x", sum)
 }
 
 // keylessAnchor builds the keyless trust anchor for the policy: a pinned

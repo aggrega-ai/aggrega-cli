@@ -325,13 +325,15 @@ func TestPushPluginPartialPushSafety(t *testing.T) {
 	}
 }
 
-// TestPushPluginSignedAndVerifiable proves the entity is signed at publish
-// (the entity manifest digest is signed and attached as a referrer) and the
-// signature verifies against the published entity digest with the held key —
-// reusing the same verify path the catalog-kind signing uses.
+// TestPushPluginSignedAndVerifiable proves BOTH the entity and the .wasm
+// artifact are signed at publish — each manifest digest is signed and attached
+// as a referrer of its own artifact — and each verifies against its published
+// manifest digest under the SAME held key, reusing the same verify path the
+// catalog-kind signing uses. Two artifacts, two independent signature
+// referrers, one signer.
 func TestPushPluginSignedAndVerifiable(t *testing.T) {
 	ctx := context.Background()
-	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 
 	privPEM, _, err := signing.GenerateKeyedPEM()
 	if err != nil {
@@ -374,6 +376,29 @@ func TestPushPluginSignedAndVerifiable(t *testing.T) {
 	}
 	if err := signing.VerifyKeyedBundle(bundle, signer.PublicKeyPEM(), entityPull.Digest); err != nil {
 		t.Fatalf("entity signature should verify against the published entity digest; got %v", err)
+	}
+
+	// The .wasm artifact is signed independently: a signature referrer is
+	// attached to the .wasm (addressed by its content-digest tag) and verifies
+	// against the .wasm's published manifest digest under the same key.
+	wasmTag := oci.ContentDigestTag(contentDigest)
+	wasmPull, err := oci.Pull(ctx, store, wasmTag)
+	if err != nil {
+		t.Fatalf("pull .wasm: %v", err)
+	}
+	wasmRefs, err := oci.ListReferrers(ctx, store, wasmTag, signing.BundleMediaType)
+	if err != nil {
+		t.Fatalf("ListReferrers (.wasm): %v", err)
+	}
+	if len(wasmRefs) != 1 {
+		t.Fatalf("want exactly one signature referrer on the .wasm, got %d", len(wasmRefs))
+	}
+	wasmBundle, err := oci.FetchReferrerPayload(ctx, store, wasmRefs[0])
+	if err != nil {
+		t.Fatalf("FetchReferrerPayload (.wasm): %v", err)
+	}
+	if err := signing.VerifyKeyedBundle(wasmBundle, signer.PublicKeyPEM(), wasmPull.Digest); err != nil {
+		t.Fatalf(".wasm signature should verify against the published .wasm manifest digest; got %v", err)
 	}
 }
 

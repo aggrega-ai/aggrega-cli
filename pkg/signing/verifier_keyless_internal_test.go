@@ -51,14 +51,21 @@ func TestVerifyKeylessAcceptsMatchingIdentity(t *testing.T) {
 		{Identity: maintainerIdentity, Issuer: googleIssuer},
 		{Identity: ciIdentity, Issuer: actionsIssuer},
 	}
-	if err := verifyKeylessEntity(entity, vs, ids, keylessDigest); err != nil {
+	matched, err := verifyKeylessEntity(entity, vs, ids, keylessDigest)
+	if err != nil {
 		t.Fatalf("verifyKeylessEntity: want success, got %v", err)
+	}
+	if matched.Identity != maintainerIdentity || matched.Issuer != googleIssuer {
+		t.Fatalf("matched identity = %q/%q; want the signer %q/%q", matched.Identity, matched.Issuer, maintainerIdentity, googleIssuer)
 	}
 }
 
 // TestVerifyKeylessAcceptsSecondIdentityInOrSet proves the OR semantics:
 // a bundle signed under the CI identity verifies when the CI identity is
-// any member of the set, even if listed second.
+// any member of the set, even if listed second. The returned matched
+// identity is the ACTUAL signer (the second OR-set entry), proving the
+// match is read from the verified certificate rather than defaulting to the
+// first configured identity.
 func TestVerifyKeylessAcceptsSecondIdentityInOrSet(t *testing.T) {
 	t.Parallel()
 	vs, err := ca.NewVirtualSigstore()
@@ -73,8 +80,12 @@ func TestVerifyKeylessAcceptsSecondIdentityInOrSet(t *testing.T) {
 		{Identity: maintainerIdentity, Issuer: googleIssuer},
 		{Identity: ciIdentity, Issuer: actionsIssuer},
 	}
-	if err := verifyKeylessEntity(entity, vs, ids, keylessDigest); err != nil {
+	matched, err := verifyKeylessEntity(entity, vs, ids, keylessDigest)
+	if err != nil {
 		t.Fatalf("verifyKeylessEntity: want success, got %v", err)
+	}
+	if matched.Identity != ciIdentity || matched.Issuer != actionsIssuer {
+		t.Fatalf("matched identity = %q/%q; want the actual signer %q/%q (not the first OR-set entry)", matched.Identity, matched.Issuer, ciIdentity, actionsIssuer)
 	}
 }
 
@@ -92,7 +103,7 @@ func TestVerifyKeylessRejectsWrongIdentity(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
-	err = verifyKeylessEntity(entity, vs, ids, keylessDigest)
+	_, err = verifyKeylessEntity(entity, vs, ids, keylessDigest)
 	if !errors.Is(err, ErrUntrustedIdentity) {
 		t.Fatalf("want ErrUntrustedIdentity, got %v", err)
 	}
@@ -111,7 +122,7 @@ func TestVerifyKeylessRejectsWrongIssuer(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
-	err = verifyKeylessEntity(entity, vs, ids, keylessDigest)
+	_, err = verifyKeylessEntity(entity, vs, ids, keylessDigest)
 	if !errors.Is(err, ErrUntrustedIdentity) {
 		t.Fatalf("want ErrUntrustedIdentity, got %v", err)
 	}
@@ -132,7 +143,7 @@ func TestVerifyKeylessRejectsWrongArtifactDigest(t *testing.T) {
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
 	const otherDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	err = verifyKeylessEntity(entity, vs, ids, otherDigest)
+	_, err = verifyKeylessEntity(entity, vs, ids, otherDigest)
 	if !errors.Is(err, ErrSignatureVerificationFailed) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
@@ -156,7 +167,7 @@ func TestVerifyKeylessRejectsForeignTrustAnchor(t *testing.T) {
 		t.Fatalf("NewVirtualSigstore (foreign): %v", err)
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
-	err = verifyKeylessEntity(entity, foreign, ids, keylessDigest)
+	_, err = verifyKeylessEntity(entity, foreign, ids, keylessDigest)
 	if !errors.Is(err, ErrSignatureVerificationFailed) {
 		t.Fatalf("want ErrSignatureVerificationFailed (foreign anchor), got %v", err)
 	}
@@ -174,7 +185,7 @@ func TestVerifyKeylessRejectsEmptyIdentitySet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	if err := verifyKeylessEntity(entity, vs, nil, keylessDigest); !errors.Is(err, ErrNoTrustedIdentities) {
+	if _, err := verifyKeylessEntity(entity, vs, nil, keylessDigest); !errors.Is(err, ErrNoTrustedIdentities) {
 		t.Fatalf("want ErrNoTrustedIdentities, got %v", err)
 	}
 }

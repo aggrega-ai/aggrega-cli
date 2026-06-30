@@ -672,11 +672,12 @@ spec:
           infra:
             replicas: 1
 `)
-	// The fixture plugins are published unsigned to the unsigned in-process
-	// registry, so signature verification has nothing legitimate to check;
-	// disable it loudly so the pull exercises the plugin-pin path, not the
-	// signature path (which the dedicated pull-verify suites cover).
-	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\nskip_signature_verification: true")
+	// The fixture plugins are published unsigned to a registry with no
+	// signature requirement, so the real verify pass runs (it is NOT globally
+	// disabled) and finds nothing to require — the verify-if-present default —
+	// while this test exercises the plugin-pin path. The dedicated signed
+	// closure suites cover a registry that requires signatures end to end.
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
 	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
@@ -860,11 +861,12 @@ spec:
           infra:
             replicas: 1
 `)
-	// The fixture plugin is published unsigned to the unsigned in-process
-	// registry, so signature verification has nothing legitimate to check;
-	// disable it loudly so the pull exercises the plugin-pin path, not the
-	// signature path (which the dedicated pull-verify suites cover).
-	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\nskip_signature_verification: true")
+	// The fixture plugin is published unsigned to a registry with no signature
+	// requirement, so the real verify pass runs (it is NOT globally disabled)
+	// and finds nothing to require — the verify-if-present default — while this
+	// test exercises the plugin-pin path. The dedicated signed closure suites
+	// cover a registry that requires signatures end to end.
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	return ws
 }
 

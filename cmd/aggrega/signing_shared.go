@@ -246,46 +246,60 @@ func signDigest(ctx context.Context, signer signing.Signer, digest string) (bund
 	return signer.Sign(ctx, digest)
 }
 
-// signPushDigest is the shared push-time signing atom: it resolves a signer
-// (the injected cfg.Signer, or one constructed from the config-resolved keyed/
-// keyless inputs) and signs proposedDigest, returning the signature bundle and
-// its artifact type. It is called BEFORE any bytes reach the registry, so a
-// signer that cannot be constructed or a signing failure refuses the push with
-// nothing published. Both the catalog-kind push and the Plugin push call it
-// so the signer-construction precedence, the identity-token resolution, and the
-// keyless-subject diagnostic have one home. reference and tag name the artifact
-// in any rejection message.
-func signPushDigest(ctx context.Context, cfg pushConfig, registry, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
-	signer := cfg.Signer
-	if signer == nil {
-		rw, werr := workspaceOrResolve(cfg.ws)
-		if werr != nil {
-			return nil, "", fmt.Errorf("workspaceconfig: %w", werr)
-		}
-		resolved := rw.Config().ResolveSigning(registryhost.Of(registry))
-		keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
-		// Only the keyless branch resolves an identity token; the keyed path
-		// never reaches acquisition. Resolve (or interactively acquire) the
-		// token before constructing the signer so a missing token refuses
-		// BEFORE any bytes reach the registry.
-		var idToken string
-		if keyPath == "" {
-			idToken, err = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
-			if err != nil {
-				return nil, "", fmt.Errorf("aggrega push: %w: %w", err, signing.ErrUnsignedPushRefused)
-			}
-		}
-		signer, err = buildSigner(signerParams{
-			KeyPath:      keyPath,
-			IDToken:      idToken,
-			FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
-			RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
-			TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
-		})
-		if err != nil {
-			return nil, "", fmt.Errorf("aggrega push: construct signer: %w: %w", err, signing.ErrUnsignedPushRefused)
+// resolvePushSigner constructs the push-time signer ONCE: the injected
+// cfg.Signer when present, otherwise one built from the config-resolved
+// keyed/keyless inputs through the precedence chain. The single
+// construction is what guarantees that when one publish signs more than one
+// artifact (a Plugin's entity and its .wasm), both signatures come from the
+// SAME signer — a per-artifact construction would, for keyless, acquire a
+// fresh ephemeral identity per call and silently split the signer. It is
+// called BEFORE any bytes reach the registry, so a signer that cannot be
+// constructed refuses the push with nothing published. The
+// signer-construction precedence, the identity-token resolution, and the
+// missing-token refusal have one home here.
+func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) {
+	if cfg.Signer != nil {
+		return cfg.Signer, nil
+	}
+	rw, werr := workspaceOrResolve(cfg.ws)
+	if werr != nil {
+		return nil, fmt.Errorf("workspaceconfig: %w", werr)
+	}
+	resolved := rw.Config().ResolveSigning(registryhost.Of(registry))
+	keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
+	// Only the keyless branch resolves an identity token; the keyed path
+	// never reaches acquisition. Resolve (or interactively acquire) the
+	// token before constructing the signer so a missing token refuses
+	// BEFORE any bytes reach the registry.
+	var idToken string
+	if keyPath == "" {
+		var terr error
+		idToken, terr = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
+		if terr != nil {
+			return nil, fmt.Errorf("aggrega push: %w: %w", terr, signing.ErrUnsignedPushRefused)
 		}
 	}
+	signer, berr := buildSigner(signerParams{
+		KeyPath:      keyPath,
+		IDToken:      idToken,
+		FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
+		RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
+		TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
+	})
+	if berr != nil {
+		return nil, fmt.Errorf("aggrega push: construct signer: %w: %w", berr, signing.ErrUnsignedPushRefused)
+	}
+	return signer, nil
+}
+
+// signPushDigestWith signs proposedDigest with an already-resolved signer,
+// mapping a keyless-subject failure to a precise diagnostic and wrapping
+// every signing failure with ErrUnsignedPushRefused so the push is refused
+// with nothing published. It is the sign half of the push-time signing atom;
+// callers signing more than one artifact resolve the signer once via
+// resolvePushSigner and call this per digest so both signatures share the
+// signer. reference and tag name the artifact in any rejection message.
+func signPushDigestWith(ctx context.Context, signer signing.Signer, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
 	bundle, artifactType, err = signDigest(ctx, signer, proposedDigest)
 	if err != nil {
 		// A token without a usable signing subject is misdiagnosed by a generic
@@ -298,6 +312,23 @@ func signPushDigest(ctx context.Context, cfg pushConfig, registry, reference, ta
 		return nil, "", fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
 	}
 	return bundle, artifactType, nil
+}
+
+// signPushDigest is the shared push-time signing atom for a single artifact:
+// it resolves a signer (the injected cfg.Signer, or one constructed from the
+// config-resolved keyed/keyless inputs) and signs proposedDigest, returning
+// the signature bundle and its artifact type. It is called BEFORE any bytes
+// reach the registry, so a signer that cannot be constructed or a signing
+// failure refuses the push with nothing published. The catalog-kind push
+// calls it; the Plugin push resolves the signer once and signs two digests
+// (entity and .wasm) with it. reference and tag name the artifact in any
+// rejection message.
+func signPushDigest(ctx context.Context, cfg pushConfig, registry, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
+	signer, err := resolvePushSigner(cfg, registry)
+	if err != nil {
+		return nil, "", err
+	}
+	return signPushDigestWith(ctx, signer, reference, tag, proposedDigest)
 }
 
 // attachBundle is the shared attach atom: it attaches a signature bundle as an

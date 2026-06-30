@@ -97,6 +97,20 @@ func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error 
 	return nil
 }
 
+// KeylessIdentity is the certificate identity a keyless verification
+// actually matched: the signer's certificate subject (the OIDC identity
+// bound into the signing certificate) and the OIDC issuer that vouched for
+// it. It is the verified provenance of one bundle — the truth read from the
+// matched certificate, not the policy that admitted it — so two bundles can
+// be compared for "same signer".
+type KeylessIdentity struct {
+	// Identity is the certificate subject alternative name — the OIDC
+	// identity the signing certificate was issued for.
+	Identity string
+	// Issuer is the OIDC issuer recorded in the signing certificate.
+	Issuer string
+}
+
 // VerifyKeylessBundle verifies a Sigstore bundle against a trust anchor
 // (trustedMaterial) and an OR-set of acceptable signing identities. The
 // bundle's certificate chain must root in the trust anchor, the signature
@@ -110,15 +124,18 @@ func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error 
 // is an in-memory virtual Sigstore. The verification LOGIC is identical
 // across anchors — only the anchor differs.
 //
-// Returns nil on success; ErrNoTrustedIdentities when identities is empty;
-// a wrapped ErrUntrustedIdentity when the certificate matches no identity;
-// a wrapped ErrSignatureVerificationFailed for any other verification
-// failure (broken chain, missing tlog entry, artifact-digest mismatch,
-// tampered bundle).
-func VerifyKeylessBundle(bundleBytes []byte, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) error {
+// On success it returns the certificate identity that actually matched —
+// the verified signer's subject and issuer, read from the matched
+// certificate — so callers can record the provenance and compare two
+// bundles for a shared signer. The error is nil; ErrNoTrustedIdentities
+// when identities is empty; a wrapped ErrUntrustedIdentity when the
+// certificate matches no identity; a wrapped ErrSignatureVerificationFailed
+// for any other verification failure (broken chain, missing tlog entry,
+// artifact-digest mismatch, tampered bundle).
+func VerifyKeylessBundle(bundleBytes []byte, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
 	b, err := LoadBundle(bundleBytes)
 	if err != nil {
-		return err
+		return KeylessIdentity{}, err
 	}
 	return verifyKeylessEntity(b, trustedMaterial, identities, artifactDigest)
 }
@@ -130,16 +147,20 @@ func VerifyKeylessBundle(bundleBytes []byte, trustedMaterial root.TrustedMateria
 // verify.Verifier.Verify code path runs in both, so the keyless policy
 // (cert-identity OR-set, tlog threshold, artifact-digest binding) is
 // proven against a real trust anchor offline.
-func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) error {
+//
+// On success it returns the matched certificate's verified identity (the
+// signer subject and issuer), read from the verification result rather than
+// from the policy, so the returned identity is the bundle's actual signer.
+func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
 	if len(identities) == 0 {
-		return ErrNoTrustedIdentities
+		return KeylessIdentity{}, ErrNoTrustedIdentities
 	}
 
 	certIDs := make([]verify.CertificateIdentity, 0, len(identities))
 	for _, id := range identities {
 		ci, cerr := verify.NewShortCertificateIdentity(id.Issuer, "", id.Identity, id.IdentityRegexp)
 		if cerr != nil {
-			return fmt.Errorf("signing: build identity policy for %q/%q: %w", id.Identity, id.Issuer, cerr)
+			return KeylessIdentity{}, fmt.Errorf("signing: build identity policy for %q/%q: %w", id.Identity, id.Issuer, cerr)
 		}
 		certIDs = append(certIDs, ci)
 	}
@@ -149,7 +170,7 @@ func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.Truste
 		verify.WithObserverTimestamps(1),
 	)
 	if err != nil {
-		return fmt.Errorf("signing: build keyless verifier: %w", err)
+		return KeylessIdentity{}, fmt.Errorf("signing: build keyless verifier: %w", err)
 	}
 
 	policyOpts := make([]verify.PolicyOption, 0, len(certIDs))
@@ -160,16 +181,42 @@ func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.Truste
 		verify.WithArtifact(bytes.NewReader([]byte(artifactDigest))),
 		policyOpts...,
 	)
-	if _, err := sev.Verify(entity, policy); err != nil {
+	result, err := sev.Verify(entity, policy)
+	if err != nil {
 		// The library reports an identity mismatch distinctly from other
 		// failures; map it to the identity sentinel so callers can tell
 		// "wrong signer" from "broken signature".
 		if isIdentityMismatch(err) {
-			return fmt.Errorf("signing: %w: %v", ErrUntrustedIdentity, err)
+			return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrUntrustedIdentity, err)
 		}
-		return fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed, err)
+		return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed, err)
 	}
-	return nil
+	return matchedKeylessIdentity(result), nil
+}
+
+// matchedKeylessIdentity extracts the verified signer identity from a
+// verification result. The matched certificate's own subject and issuer
+// (result.Signature.Certificate) are the truth — they carry the actual
+// signer even when the policy matched by regexp — so they are preferred;
+// the matched policy identity (result.VerifiedIdentity) is the fallback when
+// no certificate summary is present.
+func matchedKeylessIdentity(result *verify.VerificationResult) KeylessIdentity {
+	if result == nil {
+		return KeylessIdentity{}
+	}
+	if sig := result.Signature; sig != nil && sig.Certificate != nil {
+		return KeylessIdentity{
+			Identity: sig.Certificate.SubjectAlternativeName,
+			Issuer:   sig.Certificate.Issuer,
+		}
+	}
+	if vi := result.VerifiedIdentity; vi != nil {
+		return KeylessIdentity{
+			Identity: vi.SubjectAlternativeName.SubjectAlternativeName,
+			Issuer:   vi.Issuer.Issuer,
+		}
+	}
+	return KeylessIdentity{}
 }
 
 // timeUnconstrainedVerifier wraps a signature.Verifier as a

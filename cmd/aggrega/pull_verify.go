@@ -23,6 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -110,7 +111,68 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		}
 		lf.Plugins[i].Signature = signatureFact(r)
 	}
+
+	// Same-signer enforcement: a plugin is one publication — its entity
+	// manifest and its .wasm artifact must be signed by the SAME identity. Both
+	// signatures verified individually above; here the verified facts are paired
+	// (the .wasm row references its entity) and their matched signers compared.
+	// A split signer halts the pull even though each signature is individually
+	// trusted.
+	if err := enforcePluginSameSigner(lf); err != nil {
+		return err
+	}
 	return nil
+}
+
+// enforcePluginSameSigner halts when a plugin's entity signature and its
+// .wasm-artifact signature were produced by different identities. It pairs the
+// .wasm (plugins) row with its Plugin entity (the first ReferencedFrom entry,
+// the entity that pins the .wasm) and compares the verified matched signer of
+// each — the certificate identity for keyless, the pinned-key fingerprint for
+// keyed. The comparison runs only when BOTH sides carry a verified signature:
+// if a registry does not require signatures and one side is unsigned, there is
+// no signer to mismatch; the policy gate (RequiresSignatures) is what demands a
+// signature be present in the first place.
+func enforcePluginSameSigner(lf *lockfile.Lockfile) error {
+	entitySigByURI := make(map[string]*lockfile.VerifiedSignature, len(lf.Entities))
+	for i := range lf.Entities {
+		if lf.Entities[i].Signature != nil {
+			entitySigByURI[lf.Entities[i].URI] = lf.Entities[i].Signature
+		}
+	}
+	for i := range lf.Plugins {
+		wasmSig := lf.Plugins[i].Signature
+		if wasmSig == nil || len(lf.Plugins[i].ReferencedFrom) == 0 {
+			continue
+		}
+		entityURI := lf.Plugins[i].ReferencedFrom[0]
+		entitySig, ok := entitySigByURI[entityURI]
+		if !ok {
+			continue
+		}
+		if !sameSigner(entitySig, wasmSig) {
+			return fmt.Errorf("plugin %q: entity signed by %s, .wasm artifact %q signed by %s: %w",
+				entityURI, signerLabel(entitySig), lf.Plugins[i].URI, signerLabel(wasmSig), signing.ErrPluginSignerMismatch)
+		}
+	}
+	return nil
+}
+
+// sameSigner reports whether two verified signatures were produced by the same
+// signer: the same mode and the same matched identity (the certificate subject
+// and issuer for keyless, the pinned-key fingerprint carried in Identity for
+// keyed).
+func sameSigner(a, b *lockfile.VerifiedSignature) bool {
+	return a.Mode == b.Mode && a.Identity == b.Identity && a.Issuer == b.Issuer
+}
+
+// signerLabel renders a verified signature's signer for a mismatch message: the
+// identity (and issuer, when present) of the matched signer.
+func signerLabel(s *lockfile.VerifiedSignature) string {
+	if s.Issuer != "" {
+		return fmt.Sprintf("%q (issuer %q)", s.Identity, s.Issuer)
+	}
+	return fmt.Sprintf("%q", s.Identity)
 }
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions
@@ -231,13 +293,17 @@ func signatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 // remoteTargetFor resolves a real remote OCI repository for an entity's
 // registry, returning the manifest digest as the subject reference to discover
 // signature referrers against — the manifest the referrer is attached to, which
-// the signature also commits to. Authentication delegates to the shared OCI
+// the signature also commits to. It serves both axes: a catalog-entity URI
+// (host/path, no scheme) and a content-pinned .wasm artifact URI
+// (oci://host/path@sha256:...). Authentication delegates to the shared OCI
 // credential mechanisms.
 func remoteTargetFor(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
-	repoRef := e.URI
-	// Strip any version suffix from the URI to form the repository
-	// reference; the subject ref is the manifest digest the signature
-	// commits to.
+	// A content-pinned .wasm artifact URI carries the oci:// scheme; the
+	// remote-repository parser wants a bare host/path reference, so strip it.
+	repoRef := strings.TrimPrefix(e.URI, "oci://")
+	// Strip any version or content-digest suffix from the URI to form the
+	// repository reference; the subject ref is the manifest digest the
+	// signature commits to.
 	if at := strings.LastIndex(repoRef, "@"); at >= 0 {
 		repoRef = repoRef[:at]
 	}
