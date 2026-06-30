@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -40,7 +41,7 @@ import (
 
 // offlineReferenceSHA is the catalog-only compose output built offline against
 // the standard catalog; the registry-tier build must reproduce it byte-for-byte.
-const offlineReferenceSHA = "752c3b69b779dfdbc6029ff77c00c481d0afea2798fb44d815e2537e54e90167"
+const offlineReferenceSHA = "b5da40a04c323c927e9c4ec3b81456668eea07472b4da54ea10d40ebdd0def09"
 
 func standardCatalogDir(t *testing.T) string {
 	t.Helper()
@@ -410,6 +411,10 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 // migrated-example set.
 func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	std := standardCatalogDir(t)
+	// Resolve the example dir from the original working directory BEFORE any chdir
+	// (the resolver walks "../.." from cwd); resolving it after the lint chdir into
+	// a temp dir would misresolve and skip the build half of the capstone.
+	exampleDir := catalogOnlyExampleDir(t)
 	// Lint enumerates + validates via its own eager whole-catalog load, wholly
 	// independent of any build closure. Run it from a bare working directory with
 	// no Release and no lockfile present: there is no closure for it to read, so a
@@ -421,7 +426,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	}
 
 	ws := t.TempDir()
-	copyTree(t, catalogOnlyExampleDir(t), ws)
+	copyTree(t, exampleDir, ws)
 	_ = os.Remove(filepath.Join(ws, "release.lock"))
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	_ = os.RemoveAll(filepath.Join(ws, "dist"))
@@ -436,38 +441,63 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	}
 }
 
-// publishWasmPlugin publishes a raw .wasm artifact to the in-process registry at
-// the plugin's canonical OCI reference (host/wasm/<socket>/<name>) under the given
-// version tag, returning the CONTENT digest the closure pins. A plugin is a raw Wasm
-// artifact, not a catalog YAML entity, so it is published directly through the OCI
-// client rather than the entity push path — the same reference SplitURIForOCI parses
-// back at the closure walker's Tier-3 dispatch. The bytes are a minimal Wasm header
-// stand-in; the pull pins the artifact by the content digest of the pulled bytes
-// (the closure standardises on content digests, not the manifest digest oci.Push
-// returns), without loading or executing it.
-func publishWasmPlugin(t *testing.T, host, socket, name, version string) string {
+// publishPluginEntity publishes a REAL kind:WasmPlugin entity to the in-process
+// registry through the production entity-publish path (pushRun with --plugin): the
+// .wasm fixture lands first (addressed by its content-digest tag), then the entity
+// lands at <host>/wasm/<socket>/<name>:<version> with spec.plugin stamped to the
+// .wasm content-digest pin. The entity's authored exports agree with the committed
+// frp-step-go fixture's describe() (export "step", operates=patch, scope=own), so
+// the publish-time cross-check passes. socketName is the socket-encoded
+// metadata.name (e.g. "pipeline/patch-server"). pluginPath is the pre-built fixture
+// (resolved before any chdir). Returns the .wasm content digest the closure pins.
+func publishPluginEntity(t *testing.T, host, socketName, version, pluginPath string) string {
 	t.Helper()
-	ref := host + "/wasm/" + socket + "/" + name
-	repo, err := oci.NewRemoteRepository(ref)
+	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
-		t.Fatalf("new plugin repo %s: %v", ref, err)
+		t.Fatalf("read plugin fixture %s: %v", pluginPath, err)
 	}
-	pluginBytes := []byte("\x00asm\x01\x00\x00\x00")
-	if _, err := oci.Push(context.Background(), repo, version, oci.MediaTypeComponent, pluginBytes); err != nil {
-		t.Fatalf("push plugin %s:%s: %v", ref, version, err)
+	contentDigest := digest.ContentDigest(wasmBytes)
+
+	entityDir := t.TempDir()
+	entityPath := filepath.Join(entityDir, "plugin.yaml")
+	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: `+socketName+`
+  version: "`+version+`"
+spec:
+  plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
+  pluginTypes:
+    - frp_step
+  abiVersion: v1alpha1
+  exports:
+    - name: step
+      operates: patch
+      scope: own
+`)
+	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+		t.Fatalf("publish plugin entity %s:%s: %v", socketName, version, err)
 	}
-	return digest.ContentDigest(pluginBytes)
+	return contentDigest
 }
 
-// TestIntegration_PipelinePluginPinning_RoundTrip proves a registry-resolved
-// Recipe / FeatureRecipe spec.pipeline[].plugin URI is pinned into the written
-// lockfile's wasm_plugins section with the right provenance — the same deterministic
-// pin workspace-level plugins get. A controlled fixture catalog declares a Component
-// with a pipeline-bearing Recipe and a Feature with a pipeline-bearing FeatureRecipe;
-// both pipeline plugins are published as registry artifacts. After a real pull the
-// written lockfile carries both plugin pins, each referenced_from its declaring
-// recipe / feature-recipe URI.
+// TestIntegration_PipelinePluginPinning_RoundTrip proves the full publish → pull →
+// build round-trip for a recipe/FR-referenced WasmPlugin entity. A controlled
+// fixture catalog declares a Component with a pipeline-bearing Recipe and a Feature
+// with a pipeline-bearing FeatureRecipe; both reference their pipeline plugin by the
+// BARE WasmPlugin entity identity (<socket>/<name>:<version>). Both plugins are
+// published as REAL kind:WasmPlugin entities (the .wasm fixture + the stamped
+// entity). After a real pull the written lockfile carries BOTH the plugin ENTITY
+// rows (in entities, referenced_from the recipe / feature-recipe URI) and BOTH the
+// .wasm ARTIFACT rows (in wasm_plugins, referenced_from the entity URI, digest =
+// the .wasm content digest) — the two-pass descent's entity-axis + artifact-axis
+// pins. A build then resolves each bare entity reference through the entity-front
+// and reads the cached .wasm, proving the round-trip end-to-end.
 func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
+	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root discovery
+	// walks up from cwd); a clean skip if the toolchain is absent.
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+
 	host := startRegistry(t, nil)
 
 	const (
@@ -475,20 +505,33 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 		frPluginName     = "patch-credential"
 		pluginSocket     = "pipeline"
 	)
-	recipePluginURI := host + "/wasm/" + pluginSocket + "/" + recipePluginName + ":1.0.0"
-	frPluginURI := host + "/wasm/" + pluginSocket + "/" + frPluginName + ":1.0.0"
+	// BARE WasmPlugin entity identities — the canonical reference shape. The pull
+	// binds <socket>/<name> to <registry>/wasm/<socket>/<name> itself; a
+	// registry-qualified reference would be refused with ErrQualifiedPluginReference.
+	recipePluginURI := pluginSocket + "/" + recipePluginName + ":1.0.0"
+	frPluginURI := pluginSocket + "/" + frPluginName + ":1.0.0"
 
 	// A controlled fixture catalog: a Component implemented by a pipeline-bearing
 	// Recipe, and a (secret) Feature implemented by a pipeline-bearing FeatureRecipe.
+	// The committed frp-step-go fixture self-describes as a helm/helm-chart
+	// compatible frp_step plugin that content-selects a Deployment, PATCHes an
+	// own-scope annotation, and EMITs an own-scope ConfigMap. So the fixture
+	// catalog renders under the helm provider: the Recipe produces a Deployment the
+	// recipe-plugin patches, and the resource-generating FeatureRecipe runs its own
+	// pipeline (the artifacts: entry makes it resource-generating, which is what
+	// triggers the FR pipeline to execute).
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "provider/compose/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "provider/helm/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Provider
 metadata:
-  name: compose
+  name: helm
   version: "1.0.0"
 spec:
   baseSchema: |
     type: object
+    properties:
+      image: { type: string }
+      replicas: { type: integer, default: 1 }
     additionalProperties: true
 `)
 	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
@@ -500,22 +543,26 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   schema:
-    values: {}
+    infra:
+      port: { type: integer, default: 8080 }
 `)
-	writeFixtureEntity(t, cat, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: svc
   version: "1.0.0"
 spec:
-  provider: compose
+  provider: helm
   implements: test/svc
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
+    replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
-      main:
-        image: busybox:1
+      server:
+        image: test-server:latest
+        ports:
+          web: {{ optional .infra `+"`port`"+` 8080 }}
   pipeline:
     - id: patch
       plugin: `+recipePluginURI+`
@@ -532,14 +579,22 @@ spec:
   schema:
     values: {}
 `)
-	writeFixtureEntity(t, cat, "featurerecipe/compose/cred/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "featurerecipe/helm/cred/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
   name: cred
   version: "1.0.0"
 spec:
-  provider: compose
+  provider: helm
   implements: test/cred
+  artifacts:
+    cred-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: cred-config
+      data:
+        source: frp
   pipeline:
     - id: patch
       plugin: `+frPluginURI+`
@@ -547,10 +602,16 @@ spec:
 `)
 	pushCatalog(t, host, cat)
 
-	// Publish both pipeline plugins as registry artifacts so they resolve above
-	// Tier-1 and participate in the lockfile pin.
-	recipePluginDigest := publishWasmPlugin(t, host, pluginSocket, recipePluginName, "1.0.0")
-	frPluginDigest := publishWasmPlugin(t, host, pluginSocket, frPluginName, "1.0.0")
+	// Publish both pipeline plugins as REAL WasmPlugin entities (the .wasm fixture +
+	// the stamped entity) so each resolves above Tier-1 and participates in the
+	// lockfile pin on both axes. Both reuse the same committed .wasm fixture; their
+	// distinct OCI locations give distinct artifact URIs (same content digest).
+	recipePluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+recipePluginName, "1.0.0", pluginPath)
+	frPluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+frPluginName, "1.0.0", pluginPath)
+	// The .wasm ARTIFACT URIs the entities' stamped spec.plugin names — what the
+	// wasm_plugins rows pin (the content-digest pin push stamps).
+	recipeArtifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + recipePluginName + "@" + recipePluginDigest
+	frArtifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + frPluginName + "@" + frPluginDigest
 
 	// A consumer workspace wiring the Component (with a secret attachment that pulls
 	// the Feature) through the Manifest mappings, resolved purely over the registry.
@@ -577,10 +638,10 @@ spec:
   mappings:
     components:
       type:
-        test/svc:1.0.0: compose/svc:1.0.0
+        test/svc:1.0.0: helm/svc:1.0.0
     features:
       type:
-        test/cred:1.0.0: compose/cred:1.0.0
+        test/cred:1.0.0: helm/cred:1.0.0
 `)
 	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Release
@@ -596,7 +657,8 @@ spec:
       directory: ./dist/main
       components:
         app:
-          infra: {}
+          infra:
+            replicas: 1
 `)
 	// The fixture plugins are published unsigned to the unsigned in-process
 	// registry, so signature verification has nothing legitimate to check;
@@ -614,21 +676,50 @@ spec:
 		t.Fatalf("load lock: %v", err)
 	}
 
+	entityByURI := map[string]lockfile.Entity{}
+	for _, e := range lf.Entities {
+		entityByURI[e.URI] = e
+	}
 	pluginByURI := map[string]lockfile.WasmPlugin{}
 	for _, p := range lf.WasmPlugins {
 		pluginByURI[p.URI] = p
 	}
 
-	cases := []struct {
+	// Entity-axis pins: each plugin ENTITY (bare identity) is in lf.Entities,
+	// referenced_from its declaring recipe / feature-recipe URI.
+	entityCases := []struct {
+		uri          string
+		wantRefedURI string
+		label        string
+	}{
+		{recipePluginURI, "helm/svc:1.0.0", "Recipe pipeline plugin ENTITY"},
+		{frPluginURI, "helm/cred:1.0.0", "FeatureRecipe pipeline plugin ENTITY"},
+	}
+	for _, tc := range entityCases {
+		got, ok := entityByURI[tc.uri]
+		if !ok {
+			t.Fatalf("%s %q absent from written lockfile entities (have %v)", tc.label, tc.uri, lf.Entities)
+		}
+		if got.ResolvedVersion != "1.0.0" {
+			t.Errorf("%s resolved_version = %q; want 1.0.0", tc.label, got.ResolvedVersion)
+		}
+		if !containsRef(got.ReferencedFrom, tc.wantRefedURI) {
+			t.Errorf("%s referenced_from = %v; want an entry naming %q", tc.label, got.ReferencedFrom, tc.wantRefedURI)
+		}
+	}
+
+	// Artifact-axis pins: each .wasm ARTIFACT is in lf.wasm_plugins, referenced_from
+	// its WasmPlugin entity URI, with the content digest of the .wasm fixture.
+	artifactCases := []struct {
 		uri          string
 		wantDigest   string
 		wantRefedURI string
 		label        string
 	}{
-		{recipePluginURI, recipePluginDigest, "compose/svc:1.0.0", "Recipe pipeline plugin"},
-		{frPluginURI, frPluginDigest, "compose/cred:1.0.0", "FeatureRecipe pipeline plugin"},
+		{recipeArtifactURI, recipePluginDigest, recipePluginURI, "Recipe pipeline plugin ARTIFACT"},
+		{frArtifactURI, frPluginDigest, frPluginURI, "FeatureRecipe pipeline plugin ARTIFACT"},
 	}
-	for _, tc := range cases {
+	for _, tc := range artifactCases {
 		got, ok := pluginByURI[tc.uri]
 		if !ok {
 			t.Fatalf("%s %q absent from written lockfile wasm_plugins (have %v)", tc.label, tc.uri, lf.WasmPlugins)
@@ -636,20 +727,31 @@ spec:
 		if got.Digest != tc.wantDigest {
 			t.Errorf("%s digest = %q; want %q", tc.label, got.Digest, tc.wantDigest)
 		}
-		if got.ResolvedVersion != "1.0.0" {
-			t.Errorf("%s resolved_version = %q; want 1.0.0", tc.label, got.ResolvedVersion)
+		// A content-pinned .wasm artifact is addressed by its content digest, so the
+		// resolved_version IS the digest (not a semver tag).
+		if got.ResolvedVersion != tc.wantDigest {
+			t.Errorf("%s resolved_version = %q; want the content digest %q", tc.label, got.ResolvedVersion, tc.wantDigest)
 		}
-		foundRef := false
-		for _, r := range got.ReferencedFrom {
-			if strings.Contains(r, tc.wantRefedURI) {
-				foundRef = true
-				break
-			}
-		}
-		if !foundRef {
+		if !containsRef(got.ReferencedFrom, tc.wantRefedURI) {
 			t.Errorf("%s referenced_from = %v; want an entry naming %q", tc.label, got.ReferencedFrom, tc.wantRefedURI)
 		}
 	}
+
+	// Build: each bare entity reference resolves through the entity-front and the
+	// build reads the cached .wasm. This is the publish → pull → BUILD proof.
+	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+		t.Fatalf("registry build (resolving the bare plugin entity refs from cache): %v", err)
+	}
+}
+
+// containsRef reports whether any referenced-from entry contains substr.
+func containsRef(refs []string, substr string) bool {
+	for _, r := range refs {
+		if strings.Contains(r, substr) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeFixtureEntity writes an entity YAML into a fixture catalog at the

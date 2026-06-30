@@ -31,7 +31,11 @@ func TestEntityReference_BindsLocationPerKind(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := entityReference(reg, c.kind, c.identity); got != c.want {
+			got, err := entityReference(reg, c.kind, c.identity)
+			if err != nil {
+				t.Fatalf("entityReference(%q, %q, %q) unexpected error: %v", reg, c.kind, c.identity, err)
+			}
+			if got != c.want {
 				t.Errorf("entityReference(%q, %q, %q) = %q; want %q", reg, c.kind, c.identity, got, c.want)
 			}
 		})

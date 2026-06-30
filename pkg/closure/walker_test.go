@@ -173,7 +173,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	cfg := workspaceconfig.Default()
 	// A workspace plugin socket references a WasmPlugin ENTITY URI; the entity
 	// rides the catalog-entity axis (resolved via ResolveCatalogEntity), and its
-	// .wasm artifact is pinned later at pull time by DescendRecipePlugins. So
+	// .wasm artifact is pinned later at pull time by the pipeline-plugin descent. So
 	// ComputeClosure records the entity in c.Entities, not c.WasmPlugins.
 	const policyPluginEntity = "core/policy-validator/aggrega-security-baseline:1.0.0"
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
@@ -227,7 +227,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	}
 
 	// ComputeClosure pins only the entities; the .wasm artifact axis is populated
-	// at pull time by DescendRecipePlugins, so c.WasmPlugins is empty here.
+	// at pull time by the pipeline-plugin descent, so c.WasmPlugins is empty here.
 	if len(c.WasmPlugins) != 0 {
 		t.Errorf("wasm plugins: got %d; want 0 (the workspace plugin rides the entity axis)", len(c.WasmPlugins))
 	}

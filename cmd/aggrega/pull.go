@@ -390,14 +390,23 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.DescendRecipeProviders(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
 		return fmt.Errorf("closure: provider descent: %w", err)
 	}
-	// Pull-side pipeline-plugin descent: read each in-closure Recipe / FeatureRecipe's
-	// spec.pipeline[].plugin URIs and pin a registry-resolved plugin into the closure,
-	// so a registry-published pipeline plugin participates in the deterministic lockfile
-	// pin like any other Wasm plugin. A Tier-1-local plugin is left out (resolved at
-	// build through its local path). Lock-time only — the build path reads plugin pins
-	// from the lockfile and never descends.
-	if err := closure.DescendRecipePlugins(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
-		return fmt.Errorf("closure: pipeline-plugin descent: %w", err)
+	// Pull-side pipeline-plugin descent, two-pass: Phase A reads each in-closure
+	// Recipe / FeatureRecipe's spec.pipeline[].plugin URIs and pins a registry-resolved
+	// plugin ENTITY into the closure (catalog-entity axis), so a registry-published
+	// pipeline plugin participates in the deterministic lockfile pin like any other
+	// catalog entity. The freshly-pinned plugin entities are then folded into the lazy
+	// index by re-applying the closure's pins, so Phase B's entity-body load resolves
+	// them; the Phase-B loader is RE-DERIVED after the re-fold (SetPins drops the cached
+	// recipe view). Phase B reads each entity's spec.plugin (.wasm reference) and pins
+	// the ARTIFACT (plugin axis). A Tier-1-local plugin is left out (resolved at build
+	// through its local path). Lock-time only — the build path reads plugin pins from
+	// the lockfile and never descends.
+	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
+		return fmt.Errorf("closure: pipeline-plugin entity descent: %w", err)
+	}
+	lazyView.SetPins(catalog.PinsFromClosure(cl))
+	if err := closure.DescendRecipePluginArtifacts(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
+		return fmt.Errorf("closure: pipeline-plugin artifact descent: %w", err)
 	}
 	// Refresh the pin set so it covers the descended sub-aggregates the source-
 	// descent flatten resolves through lazyView.SubAggregateLoader below, and the

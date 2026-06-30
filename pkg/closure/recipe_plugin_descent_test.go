@@ -90,6 +90,18 @@ func pluginDescentLookup() *fakeLookup {
 	return &fakeLookup{entities: ents, wasmPlugins: plugins}
 }
 
+// descendPlugins runs the two-pass pipeline-plugin descent (Phase A pins plugin
+// entities, Phase B pins their .wasm artifacts) against an already-computed closure.
+// The fake loader serves both phases from the same in-memory maps, so no index
+// re-fold sits between the phases here — that re-fold is pull.go's job over the
+// lazy index, exercised by the registry round-trip integration test.
+func descendPlugins(c *closure.Closure, loader closure.RecipeLoader, lookup closure.Lookup) error {
+	if err := closure.DescendRecipePluginEntities(c, loader, lookup); err != nil {
+		return err
+	}
+	return closure.DescendRecipePluginArtifacts(c, loader, lookup)
+}
+
 // runPluginDescent computes the base closure for the manifest-bearing Release, then
 // runs the pipeline-plugin descent against the supplied loader and lookup, returning
 // the augmented closure (or the error).
@@ -101,7 +113,7 @@ func runPluginDescent(t *testing.T, lookup *fakeLookup, loader closure.RecipeLoa
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
-	derr := closure.DescendRecipePlugins(&cl, loader, lookup)
+	derr := descendPlugins(&cl, loader, lookup)
 	return cl, derr
 }
 
@@ -307,7 +319,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
-	if err := closure.DescendRecipePlugins(&cl, loader, lookup); err != nil {
+	if err := descendPlugins(&cl, loader, lookup); err != nil {
 		t.Fatalf("plugin descent: %v", err)
 	}
 
@@ -375,7 +387,7 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 		t.Fatalf("ComputeClosure must not pin the artifact; that is the pull-time descent's job")
 	}
 
-	if err := closure.DescendRecipePlugins(&cl, loader, lookup); err != nil {
+	if err := descendPlugins(&cl, loader, lookup); err != nil {
 		t.Fatalf("plugin descent: %v", err)
 	}
 	gotArt, ok := wasmPluginByURI(cl, socketArtifact)

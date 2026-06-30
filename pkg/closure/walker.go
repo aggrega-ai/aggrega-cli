@@ -682,7 +682,7 @@ func (s *walkState) materialise() Closure {
 		}
 		c.Entities = append(c.Entities, p.toResolvedRef(uri))
 	}
-	// c.WasmPlugins is populated at pull time by DescendRecipePlugins, which
+	// c.WasmPlugins is populated at pull time by the pipeline-plugin descent, which
 	// descends every wasm_plugin-kinded entity (workspace-socket plugins recorded
 	// here on the entity axis, plus Recipe / FeatureRecipe pipeline-step plugins) to
 	// its spec.plugin .wasm artifact. ComputeClosure pins only the entities.

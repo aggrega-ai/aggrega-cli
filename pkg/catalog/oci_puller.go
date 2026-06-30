@@ -5,12 +5,23 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// ErrQualifiedPluginReference is returned when a WasmPlugin reference carries a
+// leading registry-host segment (or an artifact path) instead of the bare plugin
+// entity identity. A plugin entity is addressed by its bare identity
+// (<socket>/<name>:<version>); the pull binds that identity to its physical
+// location by prefixing the configured registry and the plugin path segment
+// itself. A reference that already includes a host or path segment would be
+// double-prefixed into an unfetchable location, so it is refused loudly here
+// rather than surfacing later as a cryptic tag error.
+var ErrQualifiedPluginReference = errors.New("wasm plugin reference must be the bare plugin entity identity (<socket>/<name>:<version>), not a registry-qualified or artifact path")
 
 // NewDefaultOCIPuller returns the production OCIPuller backed by
 // pkg/oci.NewRemoteRepository per Pull-call. Returns nil when the
@@ -124,7 +135,10 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 // PullLibrary; a non-empty floor is used directly as the tag. The selected
 // version is returned so the lockfile pins it.
 func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorVersion string) (*oci.PullResult, string, error) {
-	reference := entityReference(p.registry, kind, identity)
+	reference, berr := entityReference(p.registry, kind, identity)
+	if berr != nil {
+		return nil, "", berr
+	}
 	repo, err := oci.NewRemoteRepository(reference)
 	if err != nil {
 		return nil, "", err
@@ -160,7 +174,18 @@ func (p DefaultOCIPuller) RegistryHost() string {
 // == pull-location holds by construction. Recipe / FeatureRecipe identity is
 // provider/name; it is split on the first "/" to feed the provider-scoped
 // location branch. Other kinds pass the whole identity as the name.
-func entityReference(registry, kind, identity string) string {
+//
+// A WasmPlugin identity must be bare (<socket>/<name>): the binder prefixes the
+// registry and the wasm path segment itself, so an identity that already leads
+// with a registry-host-shaped segment (the part before the first "/" carrying a
+// "." or ":") would be double-prefixed into an unfetchable location. Such a
+// reference is refused with ErrQualifiedPluginReference rather than bound. The
+// guard is WasmPlugin-scoped; the Component / Feature / Recipe / Provider binders
+// are unchanged.
+func entityReference(registry, kind, identity string) (string, error) {
+	if kind == "WasmPlugin" && hasRegistryHostSegment(identity) {
+		return "", fmt.Errorf("%w: %q", ErrQualifiedPluginReference, identity)
+	}
 	provider, name := "", identity
 	switch kind {
 	case "Recipe", "FeatureRecipe":
@@ -168,7 +193,21 @@ func entityReference(registry, kind, identity string) string {
 			provider, name = identity[:i], identity[i+1:]
 		}
 	}
-	return registry + "/" + OCILocation(kind, provider, name)
+	return registry + "/" + OCILocation(kind, provider, name), nil
+}
+
+// hasRegistryHostSegment reports whether identity leads with a
+// registry-host-shaped segment — the substring before the first "/" containing a
+// "." (a DNS name) or a ":" (a host:port). A bare plugin identity's leading
+// segment is a socket name, which carries neither, so this distinguishes a
+// qualified reference from a bare one without false-positiving on the "/wasm/"
+// path segment a bound location contains.
+func hasRegistryHostSegment(identity string) bool {
+	head := identity
+	if i := strings.IndexByte(identity, '/'); i >= 0 {
+		head = identity[:i]
+	}
+	return strings.ContainsAny(head, ".:")
 }
 
 // libraryReference binds a host-less library identity to a physical OCI
