@@ -395,39 +395,6 @@ func splitBoundaryPath(bp string) []string {
 	return strings.Split(bp, "/")
 }
 
-// pluginCapabilityClaim maps the neutral capability claim the plugin
-// entity-front attached to a resolved plugin into the loader's claim shape, so
-// the load gate cross-checks the entity's authored claim against the plugin's
-// describe(). A nil neutral claim (a non-entity resolution) maps to nil, which
-// the gate reads as "no cross-check".
-func pluginCapabilityClaim(claim *pluginpath.PluginCapabilityClaim) *wasm.EntityCapabilityClaim {
-	if claim == nil {
-		return nil
-	}
-	exports := make([]wasm.EntityExportClaim, 0, len(claim.Exports))
-	for _, e := range claim.Exports {
-		exports = append(exports, wasm.EntityExportClaim{
-			Name:     e.Name,
-			Operates: e.Operates,
-			Scope:    e.Scope,
-		})
-	}
-	return &wasm.EntityCapabilityClaim{Exports: exports}
-}
-
-// pluginRuntimeLimits maps the neutral runtime limits the plugin entity-front
-// attached to a resolved plugin into the loader's spec fields, so the loader caps
-// the plugin's memory and per-call wall time. A nil neutral limits (a non-entity
-// resolution, or an entity with no runtime block) maps to the zero pair; the
-// loader's chokepoint reads a zero field as "apply the platform default cap", so
-// a load is never unbounded.
-func pluginRuntimeLimits(limits *pluginpath.PluginRuntimeLimits) (maxMemoryPages uint32, timeoutMs uint64) {
-	if limits == nil {
-		return 0, 0
-	}
-	return limits.MaxMemoryPages, limits.TimeoutMs
-}
-
 // newStepInvoker binds the pipeline's per-step guest dispatch over the shared
 // plugin-resolution cascade and the describe() gate: resolve the step's plugin
 // URI to its verified .wasm bytes, load them through LoadAndDescribe (which
@@ -440,15 +407,8 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		if err != nil {
 			return nil, err
 		}
-		maxPages, timeoutMs := pluginRuntimeLimits(resolved.Limits)
 		loader := &wasm.Loader{}
-		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
-			Name:           step.Plugin,
-			Bytes:          resolved.Bytes,
-			Capability:     pluginCapabilityClaim(resolved.Capability),
-			MaxMemoryPages: maxPages,
-			TimeoutMs:      timeoutMs,
-		})
+		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
 		if err != nil {
 			return nil, err
 		}
@@ -480,15 +440,8 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}
-		maxPages, timeoutMs := pluginRuntimeLimits(resolved.Limits)
 		loader := &wasm.Loader{}
-		plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
-			Name:           step.Plugin,
-			Bytes:          resolved.Bytes,
-			Capability:     pluginCapabilityClaim(resolved.Capability),
-			MaxMemoryPages: maxPages,
-			TimeoutMs:      timeoutMs,
-		})
+		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}

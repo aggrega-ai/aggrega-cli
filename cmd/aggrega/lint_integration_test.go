@@ -13,6 +13,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -224,7 +225,7 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 	if err != nil {
 		t.Fatalf("read plugin %s: %v", pluginPath, err)
 	}
-	findings, err := validator.DispatchPublishingLinter(pluginBytes, input)
+	findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, input)
 	if err != nil {
 		t.Fatalf("DispatchPublishingLinter(%s): %v", c.ruleID, err)
 	}
@@ -352,7 +353,7 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 		if ruleID == "category-matches-directory" {
 			input.SourcePath = entityPath
 		}
-		findings, err := validator.DispatchPublishingLinter(pluginBytes, input)
+		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, input)
 		if err != nil {
 			t.Fatalf("dispatch %s: %v", ruleID, err)
 		}

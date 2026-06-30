@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -220,7 +221,10 @@ spec:
 }
 
 // TestResolvePluginBytesOverride: the --plugin flag override reads the
-// artifact's bytes directly through the cascade's override path.
+// artifact's bytes directly through the cascade's override path, and carries no
+// entity claim and no runtime limits — so the load skips the cross-check and the
+// loader applies the platform default caps (the override-path no-regression
+// guard).
 func TestResolvePluginBytesOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "plugin.wasm")
@@ -231,12 +235,22 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	// The --plugin override is the artifact-direct escape hatch; it never consults
 	// the entity model, so a nil entity lookup is fine.
-	got, err := resolvePluginBytes(path, wsCfg, nil)
+	got, err := resolveLinterPlugin(path, wsCfg, nil)
 	if err != nil {
-		t.Fatalf("resolvePluginBytes: %v", err)
+		t.Fatalf("resolveLinterPlugin: %v", err)
 	}
-	if !bytes.Equal(got, content) {
-		t.Errorf("got %q; want %q", got, content)
+	if !bytes.Equal(got.Bytes, content) {
+		t.Errorf("got %q; want %q", got.Bytes, content)
+	}
+	if got.Capability != nil || got.Limits != nil {
+		t.Errorf("override path should carry no claim/limits; got capability=%v limits=%v", got.Capability, got.Limits)
+	}
+	spec := resolver.PluginSpec("publishing-linter", got)
+	if spec.Capability != nil {
+		t.Errorf("override-path spec should skip the cross-check (nil Capability); got %+v", spec.Capability)
+	}
+	if spec.MaxMemoryPages != 0 || spec.TimeoutMs != 0 {
+		t.Errorf("override-path spec should leave caps zero (loader applies default); got pages=%d ms=%d", spec.MaxMemoryPages, spec.TimeoutMs)
 	}
 }
 
@@ -254,7 +268,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 		wp.Spec.Plugin = "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 		return wp, true
 	}
-	_, err := resolvePluginBytes("", wsCfg, pluginByURI)
+	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
@@ -273,7 +287,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		return types.Plugin{}, false
 	}
-	_, err := resolvePluginBytes("", wsCfg, pluginByURI)
+	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
@@ -286,12 +300,49 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 // --plugin nor workspace config provides a URI.
 func TestResolvePluginBytesDiagnosticOnUnset(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	_, err := resolvePluginBytes("", wsCfg, nil)
+	_, err := resolveLinterPlugin("", wsCfg, nil)
 	if err == nil {
 		t.Fatal("expected error for unset plugin path; got nil")
 	}
 	if !strings.Contains(err.Error(), "no plugin path configured") {
 		t.Errorf("error should describe unset state; got: %v", err)
+	}
+}
+
+// TestResolveLinterPluginCarriesEntityRuntimeCap proves the entity-URI path
+// threads the Plugin entity's authored capability claim AND runtime caps onto
+// the load spec — not the zero/nil the override path carries. A configured
+// linter URI resolves through the entity-front to a local-tier .wasm; the entity
+// declares an exports claim and an explicit runtime block, and the resulting
+// PluginSpec must carry both rather than the platform default. Toolchain-free:
+// the .wasm bytes are never loaded — the test asserts the spec the loader would
+// consume, which is the load-bearing "the entity cap is applied" proof.
+func TestResolveLinterPluginCarriesEntityRuntimeCap(t *testing.T) {
+	dir := t.TempDir()
+	artifact := filepath.Join(dir, "linter.wasm")
+	if err := os.WriteFile(artifact, []byte("\x00asm-not-actually-loaded"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	wsCfg := workspaceconfig.Default()
+	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{{URI: "core/linter/x:1.0.0"}}
+	pluginByURI := func(uri string) (types.Plugin, bool) {
+		var wp types.Plugin
+		// An absolute filesystem path resolves through the cascade's local tier.
+		wp.Spec.Plugin = artifact
+		wp.Spec.Exports = []types.PluginExport{{Name: "lint_rules"}}
+		wp.Spec.Runtime = &types.PluginRuntime{MaxMemoryPages: 32, TimeoutMs: 250}
+		return wp, true
+	}
+	resolved, err := resolveLinterPlugin("", wsCfg, pluginByURI)
+	if err != nil {
+		t.Fatalf("resolveLinterPlugin: %v", err)
+	}
+	spec := resolver.PluginSpec("publishing-linter", resolved)
+	if spec.MaxMemoryPages != 32 || spec.TimeoutMs != 250 {
+		t.Fatalf("entity runtime caps not threaded; got pages=%d ms=%d (want 32 / 250)", spec.MaxMemoryPages, spec.TimeoutMs)
+	}
+	if spec.Capability == nil || len(spec.Capability.Exports) != 1 || spec.Capability.Exports[0].Name != "lint_rules" {
+		t.Fatalf("entity export claim not threaded; got %+v", spec.Capability)
 	}
 }
 

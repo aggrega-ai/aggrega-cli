@@ -557,10 +557,11 @@ func lintRun(cfg lintConfig) error {
 		lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 		pluginByURI = lazyView.PluginByURI
 	}
-	pluginBytes, err := resolvePluginBytes(cfg.PluginPath, wsCfg, pluginByURI)
+	resolvedPlugin, err := resolveLinterPlugin(cfg.PluginPath, wsCfg, pluginByURI)
 	if err != nil {
 		return err
 	}
+	pluginSpec := resolver.PluginSpec("publishing-linter", resolvedPlugin)
 
 	proposedBytes, err := os.ReadFile(cfg.EntityPath)
 	if err != nil {
@@ -595,7 +596,7 @@ func lintRun(cfg lintConfig) error {
 	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath, cfg.DiagOut)
 
 	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, cfg.PrePublish)
-	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginBytes, inputs)
+	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
 	}
@@ -662,15 +663,23 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 	return out
 }
 
-// resolvePluginBytes returns the resolved .wasm bytes of the publishing-linter
-// Wasm plugin. It is the linter's per-socket URI feeder. The --plugin flag is
-// the explicit escape-hatch override: a direct artifact path read verbatim
-// through the cascade's override, bypassing the entity model. The workspace
-// config's plugins.linter[0].uri is a Plugin entity URI, resolved through
-// the shared entity-front: entity URI → spec.plugin → the cascade
-// (embed → sidecar → local → cache), so the linter sees the same entity model
-// and the same tier model every plugin socket does, including the embedded
-// built-ins and the operator's sidecar directory.
+// resolveLinterPlugin resolves the publishing-linter Wasm plugin, returning the
+// resolved plugin (its .wasm bytes plus any entity capability claim and runtime
+// limits) so the caller maps it onto the load spec. It is the linter's
+// per-socket URI feeder. The --plugin flag is the explicit escape-hatch
+// override: a direct artifact path read verbatim through the cascade's override,
+// bypassing the entity model. The workspace config's plugins.linter[0].uri is a
+// Plugin entity URI, resolved through the shared entity-front: entity URI →
+// spec.plugin → the cascade (embed → sidecar → local → cache), so the linter
+// sees the same entity model and the same tier model every plugin socket does,
+// including the embedded built-ins and the operator's sidecar directory.
+//
+// Only the entity-URI path carries a capability claim and runtime limits: the
+// entity-front attaches them from the in-hand Plugin entity, so the linter load
+// gains the entity's describe()-vs-entity cross-check and its explicit caps. The
+// --plugin override path (artifact-direct) and the no-URI path carry a nil claim
+// and nil limits — the cross-check is skipped and the loader applies the
+// platform default caps.
 //
 // pluginByURI translates a Plugin entity URI to its spec.plugin artifact
 // reference, supplied by the caller from the catalog (nil in a catalog-less path,
@@ -682,20 +691,18 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // wires no puller — the linter resolves locally (embed / sidecar / local); an
 // OCI artifact reference with nothing cached halts with the cascade's
 // not-resolvable message.
-func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool)) ([]byte, error) {
+func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool)) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.Resolver{
 		SidecarDir:  wsCfg.PluginSidecarDir,
 		Override:    cliFlag,
 		OverrideLog: func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
 	}
 	// The --plugin override is the artifact-direct escape hatch: resolve it
-	// verbatim through the cascade override, never the entity model.
+	// verbatim through the cascade override, never the entity model. The cascade
+	// override path sets no Capability/Limits, so the load gets a nil claim and
+	// default caps — today's override behaviour.
 	if cliFlag != "" {
-		resolved, err := cascade.Resolve("")
-		if err != nil {
-			return nil, err
-		}
-		return resolved.Bytes, nil
+		return cascade.Resolve("")
 	}
 	uri := ""
 	if len(wsCfg.Plugins.Linter) > 0 {
@@ -706,7 +713,7 @@ func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config, pluginByUR
 		// canonical no-path diagnostic rather than the entity-not-found halt, which
 		// would mis-read an unconfigured socket as a bad entity reference.
 		_, err := cascade.Resolve("")
-		return nil, err
+		return pluginpath.ResolvedPlugin{}, err
 	}
 	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
 		if pluginByURI == nil {
@@ -718,11 +725,7 @@ func resolvePluginBytes(cliFlag string, wsCfg workspaceconfig.Config, pluginByUR
 		}
 		return entity.Spec.Plugin, resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
 	}, cascade.Resolve)
-	resolved, err := front(uri)
-	if err != nil {
-		return nil, err
-	}
-	return resolved.Bytes, nil
+	return front(uri)
 }
 
 // looksLikeOCIURI returns true when the URI looks like an OCI
