@@ -1,0 +1,20 @@
+WasmPlugin: core/helm-renderer:1.0.0
+Plugin: oci://hub.aggrega.ai/plugins/helm-renderer@sha256:abc123
+Plugin types: provider, frp_step
+ABI version: v1alpha1
+Compatible providers: helm, compose
+Exports:
+  render_node
+    operates: emit
+    scope: own
+    selector: workloads carrying a pod template
+  patch_labels
+    operates: patch
+    scope: host
+    selector: all rendered documents
+Runtime:
+  maxMemoryPages: 256
+  timeoutMs: 3000
+  declaredHostFunctions:
+    - log_message
+    - read_config
