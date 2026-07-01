@@ -20,6 +20,12 @@ import (
 // body's metadata.version may deliberately DIFFER from servedTag to exercise
 // the identity-not-tag pinning rule. It implements OCIPuller (Pull is unused —
 // aggregate resolution goes through PullAggregate) plus AggregatePuller.
+//
+// The fixtures using it run under an offline workspace: closure resolution is
+// exercised through this injected puller, while the pull-time signature-verify
+// pass (a separate live-registry referrer discovery this in-memory puller does
+// not back) is not attempted. Signed-entity verification through a real registry
+// is covered by the signing integration suites.
 type fakeAggregatePuller struct {
 	entries map[string]fakeAggEntry // bare name -> served artifact
 	calls   []string
@@ -34,13 +40,21 @@ func (p *fakeAggregatePuller) Pull(context.Context, string, string) (*oci.PullRe
 	return nil, oci.ErrFetchNotFound
 }
 
-func (p *fakeAggregatePuller) PullAggregate(_ context.Context, name, _ string) (*oci.PullResult, string, error) {
+func (p *fakeAggregatePuller) PullAggregate(ctx context.Context, name, _ string) (*oci.PullResult, string, error) {
 	p.calls = append(p.calls, name)
 	e, ok := p.entries[name]
 	if !ok {
 		return nil, "", oci.ErrFetchNotFound
 	}
-	return &oci.PullResult{MediaType: oci.MediaTypeAggregate, Bytes: e.body}, e.servedTag, nil
+	// Populate the OCI manifest digest exactly as the real pull does — the digest
+	// of the manifest wrapping the served body — so the sub-aggregate carries a
+	// non-empty manifest digest for signature-referrer resolution, mirroring
+	// production.
+	manifestDigest, err := oci.ManifestDigest(ctx, oci.MediaTypeAggregate, e.body)
+	if err != nil {
+		return nil, "", err
+	}
+	return &oci.PullResult{MediaType: oci.MediaTypeAggregate, Bytes: e.body, Digest: manifestDigest}, e.servedTag, nil
 }
 
 func registryAggregateBody(name, version string, subURIs ...string) []byte {
@@ -135,7 +149,7 @@ func TestRegistryTopLevelResolvesEndToEnd(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\noffline: true\n")
 	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -191,7 +205,7 @@ func TestRegistrySubResolvesEndToEnd(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\noffline: true\n")
 	// The top-level is a LOCAL ./file that imports `mysub` by bare identity.
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -262,7 +276,7 @@ func TestRegistryAggregateDriftTagVsVersion(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\noffline: true\n")
 	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:

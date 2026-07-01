@@ -59,7 +59,7 @@ import (
 // production passes remoteTargetFor (a real remote repository per registry).
 func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
 	verifiable := make([]pullverify.Entity, 0, len(cl.Entities)+len(cl.Plugins))
-	collect := func(refs []closure.ResolvedRef) {
+	collect := func(refs []closure.ResolvedRef) error {
 		for _, e := range refs {
 			// Verify only items freshly resolved from a registry (Tier-3).
 			// A Tier-1 catalog or Tier-2 cache hit was already verified on
@@ -84,6 +84,16 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			if !isRegistryHost(host) {
 				continue
 			}
+			// A registry-resolved item is verified against its OCI manifest digest,
+			// the subject referrer discovery attaches signatures to. A registry item
+			// that reached here with no manifest digest means the resolution tier
+			// failed to record one — referrer discovery would resolve an empty
+			// subject and fail cryptically. Halting loudly here (rather than skipping,
+			// which would leave the item unverified under a require-signatures policy)
+			// names the item and points at the missing digest.
+			if e.ManifestDigest == "" {
+				return fmt.Errorf("verify: registry entity %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
+			}
 			verifiable = append(verifiable, pullverify.Entity{
 				URI:            e.URI,
 				ManifestDigest: e.ManifestDigest,
@@ -91,9 +101,14 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 				Location:       location,
 			})
 		}
+		return nil
 	}
-	collect(cl.Entities)
-	collect(cl.Plugins)
+	if err := collect(cl.Entities); err != nil {
+		return err
+	}
+	if err := collect(cl.Plugins); err != nil {
+		return err
+	}
 	if len(verifiable) == 0 {
 		return nil
 	}
