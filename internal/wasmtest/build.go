@@ -119,7 +119,13 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 		t.Skipf("%v", skipErr)
 	}
 
-	if isFresh(artifactPath, sourceDir) {
+	// Freshness watches the example's own source AND the per-language
+	// PDK and ABI source trees the example builds against. A change to
+	// a dependency moves the artifact stale even though the example's
+	// own source is untouched, so a regenerated PDK or ABI forces a
+	// rebuild rather than reusing a now-incompatible prebuilt fixture.
+	pdkSrc, abiSrc := pdkDependencySources(umbrellaRoot, lang)
+	if isFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
 		fixtureBuildOnce.Store(artifactName, artifactPath)
 		return artifactPath
 	}
@@ -148,6 +154,23 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 
 	fixtureBuildOnce.Store(artifactName, artifactPath)
 	return artifactPath
+}
+
+// pdkDependencySources returns the PDK and ABI source directories a
+// PDK example builds against, for the given language. The source-holding
+// subdirectory differs per language: rust and typescript keep sources
+// under src/, go under pkg/. lang is one of the recognised PDK languages
+// (rust, go, typescript) as classified by parsePDKFixtureName.
+func pdkDependencySources(umbrellaRoot, lang string) (pdkSrc, abiSrc string) {
+	switch lang {
+	case "go":
+		pdkSrc = filepath.Join(umbrellaRoot, "aggrega-pdk", "go", "pkg")
+		abiSrc = filepath.Join(umbrellaRoot, "aggrega-abi", "go", "pkg")
+	case "rust", "typescript":
+		pdkSrc = filepath.Join(umbrellaRoot, "aggrega-pdk", lang, "src")
+		abiSrc = filepath.Join(umbrellaRoot, "aggrega-abi", lang, "src")
+	}
+	return pdkSrc, abiSrc
 }
 
 // buildPluginArtifact handles the production-plugin layout at
