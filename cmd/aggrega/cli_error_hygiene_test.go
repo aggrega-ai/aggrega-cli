@@ -69,6 +69,9 @@ var runtimeErrorCommands = []struct {
 	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	// sign fails parsing an invalid reference, locally, before any network call.
 	{"sign", []string{"sign", "not a valid ref!!!"}},
+	// deprecate reaches RunE with valid flags, then fails parsing an invalid
+	// reference locally, before any network call.
+	{"deprecate", []string{"deprecate", "not a valid ref!!!", "--severity", "warning", "--message", "gone"}},
 	// login fails in its own work before any stdin read or network call:
 	// --password-stdin requires --username.
 	{"login", []string{"login", "registry.invalid.example", "--password-stdin"}},

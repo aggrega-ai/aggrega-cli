@@ -37,7 +37,26 @@ func AttachReferrer(ctx context.Context, target oras.Target, subjectRef string, 
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: resolve subject %q: %w", subjectRef, err)
 	}
+	return AttachReferrerToDescriptor(ctx, target, subjectDesc, artifactType, payload)
+}
 
+// AttachReferrerToDescriptor attaches `payload` as an OCI referrer of the
+// subject identified by `subjectDesc`, the subject's already-resolved
+// manifest descriptor. It is the descriptor-taking core of AttachReferrer:
+// AttachReferrer resolves a reference string to a descriptor and delegates
+// here, so the referrer-packing logic has one home.
+//
+// The descriptor entry point serves the case where the subject is itself an
+// untagged referrer — a referrer of a referrer — whose manifest digest a
+// tag-based Resolve cannot recover (an in-memory store resolves only tagged
+// descriptors; a registry's Referrers API lists referrers rather than
+// resolving them by digest). The caller holds the subject's descriptor from
+// the AttachReferrer that produced it and passes it straight through, so a
+// signature can be attached to a deprecation marker or any other referrer.
+//
+// The subject artifact is NOT re-pushed, re-tagged, or mutated: the referrer
+// is a sibling manifest pointing back at the existing subject digest.
+func AttachReferrerToDescriptor(ctx context.Context, target oras.Target, subjectDesc ocispec.Descriptor, artifactType string, payload []byte) (ocispec.Descriptor, error) {
 	payloadDesc, err := oras.PushBytes(ctx, target, artifactType, payload)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push referrer payload: %w", err)
