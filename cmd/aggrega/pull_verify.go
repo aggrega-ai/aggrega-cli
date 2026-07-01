@@ -148,6 +148,16 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		lf.Plugins[i].Signature = signatureFact(r)
 	}
 
+	// Retroactive deprecation discovery: at the same registry-touching moment,
+	// discover a signed deprecation marker attached to each verifiable artifact,
+	// verify the marker's OWN signature against the original signer OR the
+	// registry's trusted deprecation identities, and record the verified marker
+	// into the lockfile. Build reads the recorded fact and never re-discovers
+	// (the ahead-of-time boundary).
+	if err := discoverClosureDeprecations(ctx, lf, verifiable, factByURI, wsCfg, targetFor, diagOut); err != nil {
+		return err
+	}
+
 	// Same-signer enforcement: a plugin is one publication — its entity
 	// manifest and its .wasm artifact must be signed by the SAME identity. Both
 	// signatures verified individually above; here the verified facts are paired

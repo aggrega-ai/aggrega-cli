@@ -116,6 +116,15 @@ type RegistryConfig struct {
 	// verifies when its certificate matches ANY one entry. Used by the
 	// keyless verification path.
 	TrustedIdentities []TrustedIdentity `yaml:"trusted_identities,omitempty"`
+	// TrustedDeprecationIdentities is the OR-set of keyless identities
+	// additionally accepted to sign a retroactive deprecation marker for an
+	// artifact pulled from this registry. A deprecation marker is honored when
+	// its signature matches the ORIGINAL artifact's signer (same-signer) OR any
+	// entry here — so a registry owner or a security team can retract an
+	// artifact the original publisher can no longer reach, without being
+	// trusted to sign the artifacts themselves. Used only by the deprecation
+	// discovery path; it never widens the trust set for artifact signatures.
+	TrustedDeprecationIdentities []TrustedIdentity `yaml:"trusted_deprecation_identities,omitempty"`
 	// PublicKey is a pinned cosign-compatible public-key PEM (inline) for
 	// keyed-mode registries. When set, signatures from this registry are
 	// verified offline against this key rather than against keyless
@@ -312,11 +321,16 @@ func (c Config) ResolvedArtifactCacheDir() string {
 
 // BuildConfig groups build-time strictness dials and authoring
 // hints. AuthoringRelease names a Release YAML the LSP treats as
-// the "current Release" for inline diagnostics; HaltOnDeprecated
-// and HaltOnDeprecatedSeverity (reserved for the upcoming
-// deprecation-policy rule) control how the build reacts to
-// deprecated-entity consumption. YAMLIndent sets the indentation
-// width of every rendered YAML artifact (default 2, range [2,9]).
+// the "current Release" for inline diagnostics. HaltOnDeprecated
+// and HaltOnDeprecatedSeverity control how the build reacts to
+// deprecated-entity consumption: HaltOnDeprecated halts on an
+// entity marked deprecated by its author (metadata.deprecated:
+// true); HaltOnDeprecatedSeverity is the threshold (in the ordered
+// set warning < error < retracted, default "error") at or above
+// which a retroactive deprecation marker recorded in the lockfile
+// halts the build rather than emitting an advisory. YAMLIndent sets
+// the indentation width of every rendered YAML artifact (default 2,
+// range [2,9]).
 type BuildConfig struct {
 	AuthoringRelease         string `yaml:"authoring_release"`
 	HaltOnDeprecated         bool   `yaml:"halt_on_deprecated"`

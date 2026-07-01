@@ -43,6 +43,38 @@ const (
 	SeverityRetracted Severity = "retracted"
 )
 
+// severityRank orders the three severities from least to most severe:
+// warning (0) < error (1) < retracted (2). An unknown severity ranks below
+// warning (-1) so it never satisfies a threshold. It is the single definition
+// of the severity ordering the build-time halt threshold compares against.
+func severityRank(s Severity) int {
+	switch s {
+	case SeverityWarning:
+		return 0
+	case SeverityError:
+		return 1
+	case SeverityRetracted:
+		return 2
+	default:
+		return -1
+	}
+}
+
+// MeetsThreshold reports whether severity is at least as severe as threshold in
+// the ordered set warning < error < retracted. It is the build-time gate's one
+// comparison: a recorded deprecation halts when its severity MeetsThreshold the
+// configured halt_on_deprecated_severity, and emits an advisory otherwise. An
+// unknown severity or an unknown threshold never meets: a malformed value can
+// neither trigger nor suppress a halt.
+func MeetsThreshold(severity, threshold Severity) bool {
+	sr := severityRank(severity)
+	tr := severityRank(threshold)
+	if sr < 0 || tr < 0 {
+		return false
+	}
+	return sr >= tr
+}
+
 // Marker is the payload of a deprecation referrer. It carries the severity of
 // the deprecation and a human-readable message explaining it or pointing at a
 // replacement. The JSON field order is fixed (severity, then message) so

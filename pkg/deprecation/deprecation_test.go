@@ -90,3 +90,35 @@ func TestUnmarshalRoundTrips(t *testing.T) {
 		t.Error("Unmarshal should reject an unknown severity")
 	}
 }
+
+// TestMeetsThreshold proves the severity ordering warning < error < retracted
+// governs the build-time halt gate: a severity meets a threshold iff it is at
+// least as severe, and any unknown severity or unknown threshold never meets.
+func TestMeetsThreshold(t *testing.T) {
+	cases := []struct {
+		severity  Severity
+		threshold Severity
+		want      bool
+	}{
+		// At-threshold and above meet.
+		{SeverityWarning, SeverityWarning, true},
+		{SeverityError, SeverityWarning, true},
+		{SeverityRetracted, SeverityWarning, true},
+		{SeverityError, SeverityError, true},
+		{SeverityRetracted, SeverityError, true},
+		{SeverityRetracted, SeverityRetracted, true},
+		// Below threshold does not meet.
+		{SeverityWarning, SeverityError, false},
+		{SeverityWarning, SeverityRetracted, false},
+		{SeverityError, SeverityRetracted, false},
+		// Unknown severity never triggers; unknown threshold never suppresses.
+		{"bogus", SeverityWarning, false},
+		{SeverityRetracted, "bogus", false},
+		{"bogus", "bogus", false},
+	}
+	for _, c := range cases {
+		if got := MeetsThreshold(c.severity, c.threshold); got != c.want {
+			t.Errorf("MeetsThreshold(%q, %q) = %v, want %v", c.severity, c.threshold, got, c.want)
+		}
+	}
+}

@@ -144,6 +144,7 @@ func canonicalise(lf *Lockfile) *Lockfile {
 			sig := *e.Signature
 			entryCopy.Signature = &sig
 		}
+		entryCopy.Deprecation = cloneDeprecation(e.Deprecation)
 		out.Entities[i] = entryCopy
 	}
 	sort.Slice(out.Entities, func(i, j int) bool {
@@ -198,6 +199,7 @@ func canonicalise(lf *Lockfile) *Lockfile {
 			sig := *p.Signature
 			entryCopy.Signature = &sig
 		}
+		entryCopy.Deprecation = cloneDeprecation(p.Deprecation)
 		out.Plugins[i] = entryCopy
 	}
 	sort.Slice(out.Plugins, func(i, j int) bool {
@@ -222,6 +224,22 @@ func canonicaliseReferencedBy(in []SourceArtifactReference) []SourceArtifactRefe
 		return a.Field < b.Field
 	})
 	return out
+}
+
+// cloneDeprecation deep-copies a DeprecationRecord pointer so a caller mutating
+// the canonicalised output cannot reach back into the input. The nested Signer
+// pointer is cloned too — a shallow struct copy would leave it shared. Returns
+// nil for a nil input (an entity with no recorded marker).
+func cloneDeprecation(in *DeprecationRecord) *DeprecationRecord {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Signer != nil {
+		signer := *in.Signer
+		out.Signer = &signer
+	}
+	return &out
 }
 
 func canonicaliseConsumers(in []LibraryConsumer) []LibraryConsumer {

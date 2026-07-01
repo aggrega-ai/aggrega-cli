@@ -61,7 +61,36 @@ type Entity struct {
 	// for a registry-resolved entity; empty (and omitted) otherwise.
 	ManifestDigest string             `yaml:"manifest_digest,omitempty"`
 	ReferencedFrom []string           `yaml:"referenced_from"`
-	Signature      *VerifiedSignature `yaml:"signature,omitempty"`
+	// Deprecation records a verified retroactive deprecation marker discovered
+	// at pull time. Present only when a signed, trusted marker was found on the
+	// artifact; empty (and omitted) otherwise. Build reads this recorded fact
+	// and never touches a registry (the ahead-of-time boundary).
+	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
+	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
+}
+
+// DeprecationRecord records that a retroactive deprecation marker was
+// discovered and its signature verified at pull time, and how. It is the
+// durable answer to "is this artifact deprecated, and who said so": the
+// marker's severity and message, plus the verified signer that authored the
+// marker. Build reads this fact from the lockfile — it never re-discovers or
+// re-verifies the marker (the ahead-of-time boundary: build is offline and
+// lockfile-only).
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type DeprecationRecord struct {
+	// Message is the human-readable deprecation message carried by the marker
+	// — typically a migration pointer.
+	Message string `yaml:"message"`
+	// Severity is the marker's severity: "warning", "error", or "retracted".
+	// It is the value the build-time threshold gate compares against
+	// halt_on_deprecated_severity.
+	Severity string `yaml:"severity"`
+	// Signer is the verified signer of the marker, recorded the same way an
+	// artifact signature's signer is: the certificate subject/issuer for
+	// keyless, or the pinned-key fingerprint for keyed.
+	Signer *VerifiedSignature `yaml:"signer,omitempty"`
 }
 
 // VerifiedSignature records that an entity's signature was verified at
@@ -183,5 +212,10 @@ type Plugin struct {
 	// for a registry-resolved artifact; empty (and omitted) otherwise.
 	ManifestDigest string             `yaml:"manifest_digest,omitempty"`
 	ReferencedFrom []string           `yaml:"referenced_from"`
-	Signature      *VerifiedSignature `yaml:"signature,omitempty"`
+	// Deprecation records a verified retroactive deprecation marker discovered
+	// at pull time. Present only when a signed, trusted marker was found on the
+	// .wasm artifact; empty (and omitted) otherwise. Build reads this recorded
+	// fact and never touches a registry (the ahead-of-time boundary).
+	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
+	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }

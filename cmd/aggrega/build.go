@@ -241,6 +241,15 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		fmt.Fprintf(diagOut, "  deprecation: %s\n", w)
 	}
 
+	// Deprecated-entity policy gate: evaluate each closure entity's deprecation
+	// status from the retroactive lockfile marker and the author-time
+	// metadata.deprecated flag under one build-time path, halting or advising per
+	// the workspace build policy. Reads only the lockfile and resolved entity
+	// metadata — no registry access (the ahead-of-time boundary).
+	if err := enforceClosureDeprecation(cl, lf, lazyView, wsCfg.Build, diagOut); err != nil {
+		return err
+	}
+
 	// Surface non-fatal schema-pillar-overlap advisories for the build's closure
 	// entities (registry-pinned included) — the warning-level sibling of the
 	// closure-scoped pillar validation above, over the same closure-entity set.

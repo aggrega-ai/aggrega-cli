@@ -571,6 +571,14 @@ func pullRun(cfg pullConfig) error {
 			cl.SourceArtifacts = sourceArtifacts
 
 			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg)
+			// Carry forward each unchanged pin's recorded deprecation fact from the
+			// prior lockfile before verification runs. A warm-cache (Tier-2) re-pull
+			// does not re-touch the registry, so it does not re-discover markers; the
+			// prior fact holds for a pin whose digest is unchanged. A Tier-3
+			// re-discovery below overwrites it with a fresh finding. Without this, a
+			// build's honoring auto-pull would silently drop a recorded deprecation
+			// and mask a deprecated dependency.
+			carryForwardDeprecation(lf, lockfilePath)
 			// Lock-time signature verification: verify each registry-resolved
 			// entity's signature against the registry's trust policy, record
 			// the verified fact, and cache the bundle for air-gapped re-verify.

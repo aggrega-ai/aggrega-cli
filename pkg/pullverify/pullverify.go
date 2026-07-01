@@ -183,7 +183,7 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 			lastErr = ferr
 			continue
 		}
-		res, verr := verifyBundle(bundleBytes, e.ManifestDigest, policy)
+		res, verr := VerifyBundle(bundleBytes, e.ManifestDigest, policy)
 		if verr == nil {
 			res.URI = e.URI
 			return res, nil
@@ -196,10 +196,12 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 	return nil, lastErr
 }
 
-// verifyBundle verifies one bundle against the policy and returns the
-// verified fact (without URI) on success. Keyed mode is chosen when the
-// policy pins a public key; otherwise keyless against the trusted
-// identities and trust anchor.
+// VerifyBundle verifies one signature bundle against the registry trust
+// policy and returns the verified fact (Result without URI) on success.
+// Keyed mode is chosen when the policy pins a public key; otherwise keyless
+// against the policy's trusted identities and trust anchor. artifactDigest is
+// the OCI manifest digest the signature commits to — the cryptographic
+// subject.
 //
 // The recorded Identity/Issuer is the bundle's actual matched signer: for
 // keyless mode the certificate's verified identity reported by the verify
@@ -207,7 +209,13 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 // no certificate, so the pinned key IS the signer). The recorded identity
 // is what the closure-aware same-signer check compares across a plugin's
 // entity and .wasm.
-func verifyBundle(bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
+//
+// It is the single bundle-verification primitive: the pull-time signature
+// pass verifies each entity's signature through it, and the retroactive
+// deprecation-marker pass verifies a marker's own signature through it too
+// (passing a policy whose trusted set is the deprecation-signer set), so both
+// surfaces share one crypto path and cannot drift.
+func VerifyBundle(bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
 	digest := blobDigest(bundleBytes)
 	if policy.PublicKey != "" {
 		if err := signing.VerifyKeyedBundle(bundleBytes, []byte(policy.PublicKey), artifactDigest); err != nil {
