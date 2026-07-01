@@ -316,53 +316,6 @@ func TestMergeOrAppendProvenanceMapping_EveryBranch(t *testing.T) {
 	}
 }
 
-// TestValidateValuesAgainstBaseSchema_AllBranches pins each early-out
-// + happy + failure path.
-func TestValidateValuesAgainstBaseSchema_AllBranches(t *testing.T) {
-	t.Parallel()
-	// Nil providerLookup.
-	if err := ValidateValuesAgainstBaseSchema("p", nil, nil, "c"); err != nil {
-		t.Errorf("nil lookup: %v", err)
-	}
-	// Provider not found.
-	lookup := func(name string) (types.Provider, bool) { return types.Provider{}, false }
-	if err := ValidateValuesAgainstBaseSchema("p", lookup, nil, "c"); err != nil {
-		t.Errorf("provider not found: %v", err)
-	}
-	// Provider found, empty baseSchema.
-	emptyProv := types.Provider{}
-	lookup = func(name string) (types.Provider, bool) { return emptyProv, true }
-	if err := ValidateValuesAgainstBaseSchema("p", lookup, map[string]any{}, "c"); err != nil {
-		t.Errorf("empty baseSchema: %v", err)
-	}
-	// Provider found, malformed baseSchema → wrapped error.
-	badProv := types.Provider{}
-	badProv.Spec.BaseSchema = "::: not yaml :::"
-	lookup = func(name string) (types.Provider, bool) { return badProv, true }
-	err := ValidateValuesAgainstBaseSchema("p", lookup, map[string]any{}, "c")
-	if err == nil {
-		t.Errorf("malformed baseSchema should error")
-	}
-	// Provider with simple baseSchema (compactform); passing values.
-	goodProv := types.Provider{}
-	goodProv.Spec.BaseSchema = `
-type: object
-properties:
-  port:
-    type: integer
-required:
-  - port
-`
-	lookup = func(name string) (types.Provider, bool) { return goodProv, true }
-	// Either pass or surface a wrapped error — both cover the
-	// validation dispatch path. The contract under test is that the
-	// function does not panic and returns through the
-	// jsonschema.New + v.Validate code path; we accept both happy and
-	// failure outcomes since the schema synthesis details vary.
-	_ = ValidateValuesAgainstBaseSchema("p", lookup, map[string]any{"port": 8080}, "c")
-	_ = ValidateValuesAgainstBaseSchema("p", lookup, map[string]any{"port": "not-a-number"}, "c")
-}
-
 // TestPhaseB1_NilState pins the nil-state defensive branch of phaseB1
 // — exercised via direct call with a minimal TemplateContext.
 func TestPhaseB1_NilState(t *testing.T) {

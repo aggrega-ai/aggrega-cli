@@ -6,7 +6,5 @@ metadata:
     description: Helm rendering engine.
 spec:
     plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
-    baseSchema: |
-        type: object
     workloadSchema: |
         type: object

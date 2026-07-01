@@ -65,12 +65,7 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, default: 1 }
-    additionalProperties: true
+  plugin: "builtin:helm"
 `)
 	componentBody := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -87,6 +82,7 @@ metadata:
   schema:
     infra:
       port: { type: integer, default: 8080 }
+      replicas: { type: integer, default: 1 }
 `
 	componentPath := filepath.Join(cat, "component/test/svc/1.0.0/component.yaml")
 	writeFixture(t, componentPath, componentBody)

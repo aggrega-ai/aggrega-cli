@@ -4,5 +4,4 @@ metadata:
   name: helm
   version: 1.0.0
 spec:
-  baseSchema: |
-    a: 1
+  plugin: "builtin:helm"

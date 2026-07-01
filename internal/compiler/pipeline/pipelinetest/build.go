@@ -145,7 +145,6 @@ func compile(in Input) (*pipeline.Result, error) {
 	aggBytes := aggRes.Bytes
 
 	buildLookup := cat.CatalogLookup()
-	buildLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
 		pipeline.Inputs{

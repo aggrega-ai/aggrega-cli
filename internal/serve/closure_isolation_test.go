@@ -80,11 +80,7 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    properties:
-      replicas: { type: integer, default: 1 }
-    additionalProperties: true
+  plugin: "builtin:helm"
 `)
 	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

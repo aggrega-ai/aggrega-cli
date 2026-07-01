@@ -78,13 +78,7 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, default: 1 }
-    required: [image]
-    additionalProperties: true
+  plugin: "builtin:helm"
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -197,9 +191,7 @@ metadata:
   name: helm
   version: 1.0.0
 spec:
-  baseSchema: |
-    type: object
-    additionalProperties: true
+  plugin: "builtin:helm"
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

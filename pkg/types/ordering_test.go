@@ -266,9 +266,8 @@ spec:
 
 func TestProvider_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
-	// Provider currently has no OrderedMap fields (see audit §pkg/types/provider.go).
-	// Placeholder round-trip: verify Provider unmarshals without error. Future
-	// fields (e.g., workloadSchema, baseSchema) will be exercised here.
+	// Provider currently has no OrderedMap fields.
+	// Placeholder round-trip: verify Provider unmarshals without error.
 	src := []byte(`
 apiVersion: aggrega.ai/v1alpha1
 kind: Provider
@@ -277,7 +276,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: plugins/helm-engine.wasm
-  baseSchema: |
+  workloadSchema: |
     values: { port: int }
 `)
 

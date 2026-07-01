@@ -88,9 +88,7 @@ metadata:
   name: compose
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    additionalProperties: true
+  plugin: "builtin:compose"
 `
 	baseRecipe = `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

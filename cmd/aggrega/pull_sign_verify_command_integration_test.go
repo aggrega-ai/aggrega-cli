@@ -82,12 +82,7 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, default: 1 }
-    additionalProperties: true
+  plugin: "builtin:helm"
 `)
 	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -100,6 +95,7 @@ spec:
   schema:
     infra:
       port: { type: integer, default: 8080 }
+      replicas: { type: integer, default: 1 }
 `)
 	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

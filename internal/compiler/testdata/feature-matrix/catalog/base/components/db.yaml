@@ -11,6 +11,7 @@ spec:
       database: { type: string, default: "app" }
     infra:
       port: { type: integer, default: 3306 }
+      replicas: { type: integer, default: 1 }
     provides:
       host: { type: string, required: true }
       port: { type: string, required: true }

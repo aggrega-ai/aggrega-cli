@@ -106,22 +106,22 @@ fn feature_major_extends_removed() {
 
 #[test]
 fn provider_patch_description_change() {
-    let prev = json!({"kind": "Provider", "metadata": {"description": "v1"}, "spec": {"baseSchema": "type: object"}});
-    let prop = json!({"kind": "Provider", "metadata": {"description": "v1 (clarified)"}, "spec": {"baseSchema": "type: object"}});
+    let prev = json!({"kind": "Provider", "metadata": {"description": "v1"}, "spec": {"workloadSchema": "type: object"}});
+    let prop = json!({"kind": "Provider", "metadata": {"description": "v1 (clarified)"}, "spec": {"workloadSchema": "type: object"}});
     assert_eq!(classify_once(&fixture("Provider", prev, prop)), "PATCH");
 }
 
 #[test]
 fn provider_minor_workloadschema_added() {
-    let prev = json!({"kind": "Provider", "spec": {"baseSchema": "type: object"}});
-    let prop = json!({"kind": "Provider", "spec": {"baseSchema": "type: object", "workloadSchema": "type: object"}});
+    let prev = json!({"kind": "Provider", "spec": {"plugin": "builtin:helm"}});
+    let prop = json!({"kind": "Provider", "spec": {"plugin": "builtin:helm", "workloadSchema": "type: object"}});
     assert_eq!(classify_once(&fixture("Provider", prev, prop)), "MINOR");
 }
 
 #[test]
-fn provider_major_baseschema_narrowed() {
-    let prev = json!({"kind": "Provider", "spec": {"baseSchema": {"a": 1, "b": 2}}});
-    let prop = json!({"kind": "Provider", "spec": {"baseSchema": {"a": 1}}});
+fn provider_major_workloadschema_narrowed() {
+    let prev = json!({"kind": "Provider", "spec": {"workloadSchema": {"a": 1, "b": 2}}});
+    let prop = json!({"kind": "Provider", "spec": {"workloadSchema": {"a": 1}}});
     assert_eq!(classify_once(&fixture("Provider", prev, prop)), "MAJOR");
 }
 

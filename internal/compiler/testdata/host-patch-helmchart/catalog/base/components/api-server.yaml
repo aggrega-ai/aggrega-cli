@@ -10,6 +10,7 @@ spec:
   schema:
     infra:
       port: { type: integer, default: 8080 }
+      replicas: { type: integer, default: 1 }
     provides:
       host: { type: string, required: true }
       service_port: { type: string, required: true }

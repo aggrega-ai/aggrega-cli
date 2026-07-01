@@ -328,25 +328,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 
-		// Sourceless baseSchema validation: if the Recipe has no source AND no
-		// workload AND a ProviderLookup is available, validate the
-		// valuesMapping output against the provider's baseSchema. The baseSchema
-		// check is the legacy validation against the values-dict-driven
-		// sourceless path; it doesn't apply to the workload-driven path
-		// (where the rendering input lives inside the parsed Workload, not in
-		// the values dict). Phase B.2 + ValidateWorkload + ValidateWorkloadSecrets
-		// cover the workload-mode validation surface.
 		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
-		if recipe != nil && input.ProviderLookup != nil && isSourceless(recipe) && !hasWorkload {
-			if err := ValidateValuesAgainstBaseSchema(
-				recipe.Spec.Provider,
-				input.ProviderLookup,
-				values,
-				fmt.Sprintf("node %q recipe %q", nodeID, recipe.Metadata.Name),
-			); err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q baseSchema", nodeID))
-			}
-		}
 
 		// Resolve engine for this node's provider via factory
 		providerName := ""
@@ -358,18 +340,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q engine factory", nodeID))
 		}
 
-		// Per-node engine render — sourced/sourceless rendering. Output
-		// files are tagged EmitOriginSource and accumulated on the state
-		// for B.5's collision detector.
-		//
-		// Skipped when the Recipe declares workload: but no
-		// source: (workload-only path). The Workload synthesizer at Phase
-		// B.4 is the source of truth for that path; engine.Render's
-		// sourceless mode would produce a duplicate Deployment that rule
-		// 7 (filename collision) correctly rejects. Pure sourceless (no
-		// source, no workload) and sourced (source declared) paths still
-		// run engine.Render normally; both coexist with workload synthesis
-		// when a Recipe declares both source and workload.
+		// Per-node engine render — the source-based render. Output files
+		// are tagged EmitOriginSource and accumulated on the state for
+		// B.5's collision detector. A node with no source: emits no
+		// engine.Render output: no compute is invented for it (Invariant 4).
+		// The Workload synthesizer at Phase B.4 is the source of truth for a
+		// workload-only Recipe, and coexists with a source-based render when
+		// a Recipe declares both source and workload.
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		if recipe != nil {
 			nodeCtx.RecipeName = recipe.Metadata.Name
@@ -466,8 +443,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 
-		// Phase B.4 — workload synthesizer dispatch. No-op for sourced/
-		// sourceless paths (state.ParsedWorkload is nil); dispatches to the
+		// Phase B.4 — workload synthesizer dispatch. No-op for a node with no
+		// parsed workload (state.ParsedWorkload is nil); dispatches to the
 		// engine's WorkloadSynthesizer otherwise (engines that don't
 		// implement the interface produce a CATALOG_ERROR).
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {

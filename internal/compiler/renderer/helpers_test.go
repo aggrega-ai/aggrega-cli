@@ -194,60 +194,6 @@ func TestUnwrapAlias_BothBranches(t *testing.T) {
 	}
 }
 
-// TestNormaliseInstance_EveryBranch pins the JSON round-trip helper:
-// nil input → empty map; populated input → recognisable map[string]any
-// shape.
-func TestNormaliseInstance_EveryBranch(t *testing.T) {
-	t.Parallel()
-	got, err := normaliseInstance(nil)
-	if err != nil {
-		t.Fatalf("nil: %v", err)
-	}
-	m, ok := got.(map[string]any)
-	if !ok || len(m) != 0 {
-		t.Errorf("nil → %v; want empty map", got)
-	}
-	got, err = normaliseInstance(map[string]any{
-		"a": 1,
-		"b": "two",
-		"c": []any{1, 2, 3},
-	})
-	if err != nil {
-		t.Fatalf("populated: %v", err)
-	}
-	m, ok = got.(map[string]any)
-	if !ok || m["b"] != "two" {
-		t.Errorf("populated unexpected: %v", got)
-	}
-}
-
-// TestIsSourceless_EveryBranch pins the boolean discriminator: nil
-// recipe → true; recipe with nil Source → true; recipe with empty
-// string Source → true; recipe with non-empty string Source → false.
-func TestIsSourceless_EveryBranchExtra(t *testing.T) {
-	t.Parallel()
-	// nil recipe
-	if !isSourceless(nil) {
-		t.Errorf("nil recipe → should be sourceless")
-	}
-	// nil Source field
-	if !isSourceless(&types.Recipe{}) {
-		t.Errorf("nil Source → should be sourceless")
-	}
-	// empty string Source
-	r := &types.Recipe{}
-	r.Spec.Source = ""
-	if !isSourceless(r) {
-		t.Errorf("empty-string Source → should be sourceless")
-	}
-	// non-empty string Source
-	r2 := &types.Recipe{}
-	r2.Spec.Source = "/path/to/chart"
-	if isSourceless(r2) {
-		t.Errorf("populated Source → should NOT be sourceless")
-	}
-}
-
 // TestIsEmptyForTemplate_EveryReflectKind pins each reflect.Kind dispatch
 // arm of the omitempty/omitzero predicate.
 func TestIsEmptyForTemplate_EveryReflectKind(t *testing.T) {

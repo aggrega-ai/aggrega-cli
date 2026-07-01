@@ -14,3 +14,4 @@ spec:
   schema:
     infra:
       port: { type: integer, default: 3000 }
+      replicas: { type: integer, default: 1 }

@@ -105,8 +105,8 @@ func TestProviderLookup(t *testing.T) {
 	if !ok {
 		t.Fatal("expected helm-chart provider")
 	}
-	if p.Spec.BaseSchema == "" {
-		t.Error("expected baseSchema to be populated")
+	if p.Spec.WorkloadSchema == "" {
+		t.Error("expected workloadSchema to be populated")
 	}
 
 	_, ok = c.ProviderLookup("nonexistent")

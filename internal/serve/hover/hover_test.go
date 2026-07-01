@@ -82,12 +82,11 @@ func TestHoverFeatureRecipeRendersSelfMetadataName(t *testing.T) {
 
 func TestHoverProviderRendersSelfMetadataName(t *testing.T) {
 	t.Parallel()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Provider\nmetadata:\n  name: helm-provider\n  version: 1.0.0\nspec:\n  plugin: oci://example.com/helm-plugin\n  baseSchema: '{}'\n"
+	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Provider\nmetadata:\n  name: helm-provider\n  version: 1.0.0\nspec:\n  plugin: oci://example.com/helm-plugin\n  workloadSchema: '{}'\n"
 	out := Provider(parseEntity(t, src))
 	assertContains(t, out, "**Provider** `helm-provider` `v1.0.0`")
 	assertContains(t, out, "**Plugin**: `oci://example.com/helm-plugin`")
-	assertContains(t, out, "**Base schema**: yes")
-	assertContains(t, out, "**Workload schema**: no")
+	assertContains(t, out, "**Workload schema**: yes")
 }
 
 func TestHoverSchemaLibraryRendersSelfMetadataName(t *testing.T) {

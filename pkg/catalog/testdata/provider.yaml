@@ -5,16 +5,6 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "builtin:helm-chart"
-  baseSchema: |
+  workloadSchema: |
     type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, minimum: 1, default: 1 }
-      ports:
-        type: array
-        items: { type: string }
-      environment:
-        type: object
-        additionalProperties: { type: string }
-    required: [image]
     additionalProperties: true

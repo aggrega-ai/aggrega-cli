@@ -296,29 +296,13 @@ func TestGuardSchemaConformance_RelativePathTypeSkips(t *testing.T) {
 	}
 }
 
-// --- Infra pillar (union of schema.infra and provider baseSchema) -----------
-
-// providerBaseWithWorkers is a Provider baseSchema (authored as a YAML
-// JSON-Schema) declaring a provider-layered key `workers` plus an output-only
-// `image` it marks required. The infra union must admit `workers`, must NOT
-// carry `required: [image]`, and must drop the baseSchema's open
-// additionalProperties.
-const providerBaseWithWorkers = `type: object
-properties:
-  image: { type: string }
-  workers: { type: integer, minimum: 1 }
-required: [image]
-additionalProperties: true
-`
+// --- Infra pillar (closed against schema.infra, symmetric with values) ------
 
 // infraCatalog returns a CatalogLookup whose Component "app/svc:1.0.0" declares
 //
 //	values: name (string, required)
 //	infra:  replicas (integer, minimum 1) · tier (string, default "prod", required)
-//
-// and a ProviderInfraSchema resolver returning providerBase (or no provider when
-// providerBase is empty).
-func infraCatalog(t *testing.T, providerBase string) CatalogLookup {
+func infraCatalog(t *testing.T) CatalogLookup {
 	t.Helper()
 	const schemaYAML = `values:
   name: { type: string, required: true }
@@ -326,14 +310,7 @@ infra:
   replicas: { type: integer, minimum: 1 }
   tier: { type: string, default: prod, required: true }
 `
-	cl := catalogFromComponentSchema(t, schemaYAML)
-	cl.ProviderInfraSchema = func(_, _ string) (string, bool) {
-		if providerBase == "" {
-			return "", false
-		}
-		return providerBase, true
-	}
-	return cl
+	return catalogFromComponentSchema(t, schemaYAML)
 }
 
 // infraBoundary builds a per-component BoundaryInfra map for instance "svc"
@@ -346,33 +323,43 @@ func infraBoundary(pairs ...any) map[string]*BoundaryInfra {
 	return map[string]*BoundaryInfra{"svc": {Infra: infra}}
 }
 
-// TestGuardInfraConformance_TypoCaught pins the core contract: a key in neither
-// schema.infra nor the provider baseSchema halts (the union is closed).
+// TestGuardInfraConformance_TypoCaught pins the core contract: a key absent from
+// schema.infra halts (the pillar is validated closed, symmetric with values).
 func TestGuardInfraConformance_TypoCaught(t *testing.T) {
 	t.Parallel()
-	cl := infraCatalog(t, providerBaseWithWorkers)
+	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2, "replcas", 3)
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
-// TestGuardInfraConformance_ProviderKeyAdmitted: a provider-layered key present
-// in the baseSchema but not in schema.infra is admitted.
-func TestGuardInfraConformance_ProviderKeyAdmitted(t *testing.T) {
+// TestGuardInfraConformance_UndeclaredKeyRejected: a key not present in the
+// Component's own schema.infra is rejected — the Component schema is the sole
+// authoring contract for the infra pillar.
+func TestGuardInfraConformance_UndeclaredKeyRejected(t *testing.T) {
 	t.Parallel()
-	cl := infraCatalog(t, providerBaseWithWorkers)
+	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2, "workers", 4, "tier", "gold")
+	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
+}
+
+// TestGuardInfraConformance_DeclaredKeyAdmitted: keys all present in schema.infra
+// validate cleanly.
+func TestGuardInfraConformance_DeclaredKeyAdmitted(t *testing.T) {
+	t.Parallel()
+	cl := infraCatalog(t)
+	bi := infraBoundary("replicas", 2, "tier", "gold")
 	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
-		t.Fatalf("provider-declared infra key must be admitted; got %v", errs)
+		t.Fatalf("schema.infra-declared keys must be admitted; got %v", errs)
 	}
 }
 
 // TestGuardInfraConformance_DeclaredKeyWrongType: a schema.infra-declared key
-// supplied with the wrong type halts at that key (declared-key constraints are
-// still enforced through the union).
+// supplied with the wrong type halts at that key.
 func TestGuardInfraConformance_DeclaredKeyWrongType(t *testing.T) {
 	t.Parallel()
-	cl := infraCatalog(t, providerBaseWithWorkers)
+	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", "two", "tier", "gold")
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra.replicas")
@@ -382,30 +369,17 @@ func TestGuardInfraConformance_DeclaredKeyWrongType(t *testing.T) {
 // key carrying a default is satisfied by the default (default-aware).
 func TestGuardInfraConformance_RequiredWithDefaultNotMissing(t *testing.T) {
 	t.Parallel()
-	cl := infraCatalog(t, providerBaseWithWorkers)
+	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2) // tier omitted; defaulted "prod"
 	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
 		t.Fatalf("required-with-default infra key must not be flagged missing; got %v", errs)
 	}
 }
 
-// TestGuardInfraConformance_ProviderRequiredNotCarried pins the load-bearing
-// construction choice: the provider baseSchema's own required (an output-only
-// key like image) is NOT imposed on operator infra.
-func TestGuardInfraConformance_ProviderRequiredNotCarried(t *testing.T) {
-	t.Parallel()
-	cl := infraCatalog(t, providerBaseWithWorkers)
-	bi := infraBoundary("replicas", 2, "tier", "gold") // image omitted
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
-		t.Fatalf("provider baseSchema required must not be carried into the infra union; got %v", errs)
-	}
-}
-
 // TestGuardInfraConformance_ComposedInfraSchemaValidates pins parity with the
 // values pillar: a schema.infra composed via a single-document #/$defs $ref is
-// RESOLVED to its properties and merged with the provider keys — not skipped.
-// The declared-via-$ref key and a provider key are admitted, and a constraint
-// behind the $ref is still enforced.
+// RESOLVED to its properties — not skipped. The declared-via-$ref key is
+// admitted and a constraint behind the $ref is still enforced.
 func TestGuardInfraConformance_ComposedInfraSchemaValidates(t *testing.T) {
 	t.Parallel()
 	const composedSchema = `$defs:
@@ -417,66 +391,38 @@ infra:
   $ref: "#/$defs/SizingParams"
 `
 	cl := catalogFromComponentSchema(t, composedSchema)
-	cl.ProviderInfraSchema = func(_, _ string) (string, bool) { return providerBaseWithWorkers, true }
 
 	// The composed infra $ref is resolved (not skipped): the declared-via-$ref
-	// key (replicas) and the provider key (workers) are both admitted.
+	// key (replicas) is admitted.
 	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl,
-		infraBoundary("replicas", 2, "workers", 4), nil); len(errs) != 0 {
-		t.Fatalf("composed infra $ref must resolve and admit declared + provider keys; got %v", errs)
+		infraBoundary("replicas", 2), nil); len(errs) != 0 {
+		t.Fatalf("composed infra $ref must resolve and admit the declared key; got %v", errs)
 	}
 	// The constraint behind the $ref is enforced: replicas below the minimum halts.
+	// The finding is reported at the pillar root (matching the values-pillar $ref
+	// parity), since the violation surfaces through the $ref indirection.
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl,
 		infraBoundary("replicas", 0), nil)
-	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra.replicas")
+	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
 // TestGuardInfraConformance_SkipsWithoutBoundaryInfra: a component with no
 // resolved boundary infra is not infra-validated.
 func TestGuardInfraConformance_SkipsWithoutBoundaryInfra(t *testing.T) {
 	t.Parallel()
-	cl := infraCatalog(t, providerBaseWithWorkers)
+	cl := infraCatalog(t)
 	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil); len(errs) != 0 {
 		t.Fatalf("no boundary infra → infra validation skipped; got %v", errs)
 	}
 }
 
-// TestGuardInfraConformance_SkipsWhenProviderUnresolvable: with no resolvable
-// provider the union cannot be formed, so infra is skipped gracefully rather
-// than closed against schema.infra alone (which would false-flag a legitimate
-// provider-layered key). Here even an apparent typo is left unvalidated.
-func TestGuardInfraConformance_SkipsWhenProviderUnresolvable(t *testing.T) {
-	t.Parallel()
-	cl := infraCatalog(t, "") // ProviderInfraSchema returns ("", false) → unresolvable
-	bi := infraBoundary("replicas", 2, "replcas", 3)
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
-		t.Fatalf("unresolvable provider → infra validation skipped; got %v", errs)
-	}
-}
-
-// TestGuardInfraConformance_ResolvedProviderNoKeysClosesInfraOnly: a provider
-// that resolves but declares no infra keys (open baseSchema) still validates —
-// the union degenerates to the Component schema.infra, closed — so a typo of a
-// declared key halts and a key the schema.infra does not declare is rejected.
-func TestGuardInfraConformance_ResolvedProviderNoKeysClosesInfraOnly(t *testing.T) {
-	t.Parallel()
-	const openBaseSchema = "type: object\nadditionalProperties: true\n"
-	cl := infraCatalog(t, openBaseSchema) // resolves, but no properties
-	bi := infraBoundary("replicas", 2, "replcas", 3)
-	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
-	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
-}
-
 // TestGuardInfraConformance_NoInfraPillarSkips: a Component that declares no
-// schema.infra pillar is not infra-validated even when a provider resolves and
-// boundary infra is set — the component opted into no infra contract.
+// schema.infra pillar is not infra-validated even when boundary infra is set —
+// the component opted into no infra contract.
 func TestGuardInfraConformance_NoInfraPillarSkips(t *testing.T) {
 	t.Parallel()
-	// schemaComponentCatalog declares only a values pillar (no infra); attach a
-	// resolvable provider so the skip is attributable solely to the absent
-	// schema.infra pillar.
+	// schemaComponentCatalog declares only a values pillar (no infra).
 	cl := schemaComponentCatalog(t)
-	cl.ProviderInfraSchema = func(_, _ string) (string, bool) { return providerBaseWithWorkers, true }
 	bi := infraBoundary("anything", "goes")
 	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
 		t.Fatalf("component without schema.infra must not be infra-validated; got %v", errs)

@@ -12,7 +12,6 @@ import "fmt"
 //   - <Description>
 //   - ---
 //   - **Plugin**: `<plugin URI>` — when spec.plugin is set
-//   - **Base schema**: yes/no
 //   - **Workload schema**: yes/no
 //   - **Deprecated**: yes — when set
 func Provider(e Entity) string {
@@ -20,7 +19,6 @@ func Provider(e Entity) string {
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
 	plugin := scalarValueAtPath(e.Doc, "spec", "plugin")
-	baseSchema := scalarValueAtPath(e.Doc, "spec", "baseSchema")
 	workloadSchema := scalarValueAtPath(e.Doc, "spec", "workloadSchema")
 	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
@@ -28,7 +26,6 @@ func Provider(e Entity) string {
 	if plugin != "" {
 		body = append(body, fmt.Sprintf("**Plugin**: `%s`", plugin))
 	}
-	body = append(body, fmt.Sprintf("**Base schema**: %s", yesNo(baseSchema != "")))
 	body = append(body, fmt.Sprintf("**Workload schema**: %s", yesNo(workloadSchema != "")))
 	if dep := Deprecated(deprecated); dep != "" {
 		body = append(body, dep)

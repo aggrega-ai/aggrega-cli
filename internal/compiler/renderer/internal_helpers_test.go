@@ -6,7 +6,6 @@ package renderer
 import (
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -33,27 +32,5 @@ func TestNodeKindName_EveryDocumentedKind(t *testing.T) {
 	// Unknown kind (zero value or out-of-range) falls through.
 	if got := nodeKindName(yaml.Kind(99)); got == "" {
 		t.Errorf("unknown kind: expected non-empty diagnostic; got empty")
-	}
-}
-
-// TestIsSourceless_EveryBranch pins the generative-vs-sourced
-// discriminator: nil recipe → sourceless; nil source → sourceless;
-// empty-string source → sourceless; non-empty string source → sourced.
-func TestIsSourceless_EveryBranch(t *testing.T) {
-	t.Parallel()
-	if !isSourceless(nil) {
-		t.Errorf("nil recipe: expected sourceless")
-	}
-	nilSource := &types.Recipe{}
-	if !isSourceless(nilSource) {
-		t.Errorf("nil source: expected sourceless")
-	}
-	emptyString := &types.Recipe{Spec: types.RecipeSpec{Source: ""}}
-	if !isSourceless(emptyString) {
-		t.Errorf("empty-string source: expected sourceless")
-	}
-	withSource := &types.Recipe{Spec: types.RecipeSpec{Source: "./chart"}}
-	if isSourceless(withSource) {
-		t.Errorf("string source: expected sourced (not sourceless)")
 	}
 }

@@ -9,6 +9,8 @@ spec:
   schema:
     values:
       database_name: { type: string, default: "app" }
+    infra:
+      replicas: { type: integer, default: 1 }
     provides:
       host: { type: string, required: true }
       service_port: { type: string, required: true }

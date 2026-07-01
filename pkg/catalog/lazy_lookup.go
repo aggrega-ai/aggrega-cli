@@ -1221,17 +1221,6 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 	return l.recipeCatalog().AssertManifestImplementsConsistency(manifest, manifestPath)
 }
 
-// ProviderInfraSchemaResolver exposes the per-component provider infra-schema
-// resolver over the lazily-enumerated recipe + provider set. A locally-authored
-// provider resolves from the Tier-1 walk; a registry-resolved provider — one a
-// Recipe declares and the closure pins above Tier-1 — resolves from the pinned
-// Tier-2 cache fold. Either way the baseSchema is read from the same provider map.
-func (l *LazyLookup) ProviderInfraSchemaResolver(manifest *types.Manifest) func(string, string) (string, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.recipeCatalog().ProviderInfraSchemaResolver(manifest)
-}
-
 // VerifyRecipeResolution exposes the build-side resolution-completeness halt (the
 // joined form of ResolutionFindings) over the lazily-enumerated recipe set, so the
 // build's pre-render gate reads the closure's complete recipe enumeration.

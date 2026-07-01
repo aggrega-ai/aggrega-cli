@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Cache-fixture entities for the lazy-enumeration tests. The library-referencing
@@ -118,9 +117,6 @@ metadata:
   name: compose
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    additionalProperties: true
   workloadSchema: |
     type: object
     additionalProperties: true
@@ -246,53 +242,12 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	// Provider inclusion: a cache-pinned Provider folds into the enumerated set — a
 	// registry-resolved provider (a Recipe's declared provider, pinned above Tier-1)
 	// participates in the closure, so its pinned cache slot resolves into l.providers
-	// for ProviderLookup / ProviderInfraSchemaResolver.
+	// for ProviderLookup.
 	if _, ok := subject.providers["compose"]; !ok {
 		t.Errorf("subject did not fold the cache-pinned Provider compose into the enumerated set")
 	}
 	if _, ok := subject.recipeCatalog().ProviderLookup("compose"); !ok {
 		t.Errorf("ProviderLookup did not resolve the cache-pinned Provider compose")
-	}
-}
-
-// TestLazyLookup_PinnedProvider_InfraSchemaResolves proves the build-path consumer:
-// a registry-resolved (cache-pinned, Tier-1-absent) Provider is re-resolved through
-// ProviderInfraSchemaResolver — the manifest→recipe→provider→baseSchema chain the
-// resolver's infra-conformance gate calls — returning the cache-pinned provider's
-// baseSchema. This is the capability the provider-entity closure pin enables end to
-// end (item 3); it changes nothing in ProviderLookup itself (single-source: the
-// pinned fold feeds l.providers, the existing resolver reads it).
-func TestLazyLookup_PinnedProvider_InfraSchemaResolves(t *testing.T) {
-	ws := t.TempDir()
-	const cacheDir = ".aggrega/cache"
-
-	recipeBlob := recipeBundle(t, bridgeRecipeYAML)
-	const (
-		compSlot   = "core/datastore/mariadb:1.0.0"
-		recipeSlot = "compose/mariadb:1.0.0"
-		provSlot   = "compose:1.0.0"
-	)
-	pins := map[string]Pin{
-		compSlot:   writePinnedSlot(t, ws, cacheDir, compSlot, oci.MediaTypeComponent, []byte(bridgeComponentYAML)),
-		recipeSlot: writePinnedSlot(t, ws, cacheDir, recipeSlot, oci.MediaTypeRecipe, recipeBlob),
-		provSlot:   writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML)),
-	}
-
-	// A manifest mapping the component type to the recipe, so the resolver chains
-	// instance → recipe (implements core/datastore/mariadb) → provider (compose).
-	mtC := &types.MappingTier{}
-	mtC.Type.Set("core/datastore/mariadb", "compose/mariadb")
-	manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: mtC}}}
-
-	subject := NewLazyLookup(ws, cacheDir, nil, nil)
-	subject.SetPins(pins)
-	resolver := subject.ProviderInfraSchemaResolver(manifest)
-	baseSchema, ok := resolver("db", "core/datastore/mariadb")
-	if !ok {
-		t.Fatalf("ProviderInfraSchemaResolver did not resolve the cache-pinned Provider compose")
-	}
-	if baseSchema == "" {
-		t.Errorf("resolved Provider baseSchema is empty; want the pinned provider's baseSchema")
 	}
 }
 

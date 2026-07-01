@@ -13,14 +13,14 @@ import (
 
 // renderProviderFile renders a Provider authored as a standalone file. The
 // plugin URI is shown first and prominently; recipe-hosting compatibility is
-// derived from the presence of workloadSchema (synthesized mode) and baseSchema
-// (sourceless mode); well-known annotations render per entry, or
-// `(none declared)` when the contract list is empty. The eval provider receives
-// no special-casing — it inspects as a regular Provider.
+// derived from the presence of workloadSchema (synthesized mode); well-known
+// annotations render per entry, or `(none declared)` when the contract list is
+// empty. The eval provider receives no special-casing — it inspects as a
+// regular Provider.
 //
 //   - levelList: identifier plus the provider engine name.
 //   - levelDefault: plugin, recipe-hosting line, well-known annotations.
-//   - levelDetail: adds the full baseSchema / workloadSchema bodies.
+//   - levelDetail: adds the full workloadSchema body.
 func renderProviderFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
@@ -61,10 +61,6 @@ func renderProviderFile(_ *workspaceconfig.ResolvedWorkspace, path string, data 
 	}
 
 	if opts.level == levelDetail {
-		if prov.Spec.BaseSchema != "" {
-			fmt.Fprintln(opts.out, "baseSchema:")
-			renderTemplateBodyIndented(opts, prov.Spec.BaseSchema)
-		}
 		if prov.Spec.WorkloadSchema != "" {
 			fmt.Fprintln(opts.out, "workloadSchema:")
 			renderTemplateBodyIndented(opts, prov.Spec.WorkloadSchema)
@@ -75,20 +71,11 @@ func renderProviderFile(_ *workspaceconfig.ResolvedWorkspace, path string, data 
 
 // recipeHostingLine derives the recipe-hosting compatibility line from the
 // provider's schema declarations: synthesized mode iff workloadSchema is
-// present, sourceless mode iff baseSchema is present. The actual synthesis
-// capability is the bound engine's, not this field's — the line reports the
-// documented contract.
+// present. The actual synthesis capability is the bound engine's, not this
+// field's — the line reports the documented contract.
 func recipeHostingLine(spec types.ProviderSpec) string {
-	synth := spec.WorkloadSchema != ""
-	sourceless := spec.BaseSchema != ""
-	switch {
-	case synth && sourceless:
-		return "synthesized + sourceless"
-	case synth:
+	if spec.WorkloadSchema != "" {
 		return "synthesized"
-	case sourceless:
-		return "sourceless"
-	default:
-		return "sourced-only"
 	}
+	return "sourced-only"
 }

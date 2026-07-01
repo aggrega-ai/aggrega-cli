@@ -14,23 +14,21 @@ import (
 )
 
 // ValidateProviderSchemas enforces the load-time structural contract on a
-// Provider's baseSchema and workloadSchema fields. Both are typed as Go
-// strings carrying JSON Schema 2020-12; the
-// validator parses each non-empty body via pkg/compactform.Compile and
-// surfaces any compile error wrapped in a CATALOG_ERROR-categorised
-// CompilerError citing the source file. Empty fields pass without
-// inspection — both fields are optional (helm-chart, terraform, and
-// cloudformation Providers omit workloadSchema; a Provider that defines
-// no base parameters omits baseSchema).
+// Provider's workloadSchema field. It is typed as a Go string carrying JSON
+// Schema 2020-12; the validator parses a non-empty body via
+// pkg/compactform.Compile and surfaces any compile error wrapped in a
+// CATALOG_ERROR-categorised CompilerError citing the source file. An empty
+// field passes without inspection — workloadSchema is optional (helm-chart,
+// terraform, and cloudformation Providers omit it).
 //
 // The function is invoked from pkg/catalog/catalog.go's Pass 2 alongside
-// ValidateSchemaPillars. Errors collect across providers (and across
-// per-provider fields) into the aggregate CatalogError that LoadAll
-// returns when any Pass-2 finding fires, matching the collect-and-emit-
-// all policy chosen for the Feature/Component validator pass.
+// ValidateSchemaPillars. Errors collect across providers into the aggregate
+// CatalogError that LoadAll returns when any Pass-2 finding fires, matching
+// the collect-and-emit-all policy chosen for the Feature/Component validator
+// pass.
 //
 // The validator's coverage is intentionally narrower than the per-pillar
-// Feature/Component check: Provider schemas are flat JSON Schema bodies
+// Feature/Component check: the Provider schema is a flat JSON Schema body
 // (not pillar-wrapped), so the shape check + pillar-key check from
 // ValidateSchemaPillars do not apply here. The compactform.Compile
 // gate alone catches malformed YAML, unknown compact-form keywords,
@@ -47,9 +45,6 @@ func ValidateProviderSchemas(
 		return nil
 	}
 	var errs []error
-	if e := validateProviderSchemaField("baseSchema", providerName, filePath, spec.BaseSchema); e != nil {
-		errs = append(errs, e)
-	}
 	if e := validateProviderSchemaField("workloadSchema", providerName, filePath, spec.WorkloadSchema); e != nil {
 		errs = append(errs, e)
 	}

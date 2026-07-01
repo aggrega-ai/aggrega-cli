@@ -129,7 +129,6 @@ const FEATURE_FIELD_PATHS: &[&str] = &[
 ];
 const PROVIDER_FIELD_PATHS: &[&str] = &[
     "spec.plugin",
-    "spec.baseSchema",
     "spec.workloadSchema",
 ];
 

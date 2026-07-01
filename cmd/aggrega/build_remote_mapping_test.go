@@ -127,13 +127,7 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, default: 1 }
-    required: [image]
-    additionalProperties: true
+  plugin: "builtin:helm"
 `)
 	// A minimal local Helm chart whose deployment template echoes .Values.image —
 	// the valuesMapping output overlays the chart values, so the imported mapping

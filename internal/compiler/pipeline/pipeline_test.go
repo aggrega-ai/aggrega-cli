@@ -24,12 +24,9 @@ import (
 )
 
 // wiredLookup builds the catalog lookup the production build path passes into
-// RunPipeline — including the Manifest-aware provider infra-schema resolver the
-// infra-pillar conformance gate needs to admit provider-layered infra keys.
-func wiredLookup(cat *catalog.Catalog, manifest *types.Manifest) resolver.CatalogLookup {
-	lookup := cat.CatalogLookup()
-	lookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
-	return lookup
+// RunPipeline.
+func wiredLookup(cat *catalog.Catalog, _ *types.Manifest) resolver.CatalogLookup {
+	return cat.CatalogLookup()
 }
 
 const (

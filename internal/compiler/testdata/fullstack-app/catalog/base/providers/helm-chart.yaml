@@ -4,22 +4,4 @@ metadata:
   name: helm-chart
   version: "1.0.0"
 spec:
-  # baseSchema validates the valuesMapping output for sourceless (generative) mode.
-  # The helm-chart provider emits an umbrella chart with per-component sub-charts
-  # whose templates consume this dict shape. Authored as JSON Schema 2020-12.
-  baseSchema: |
-    type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, default: 1 }
-      ports:
-        type: array
-        items: { type: string }
-      environment:
-        type: object
-        additionalProperties:
-          oneOf:
-            - { type: string }
-            - { type: integer }
-    required: [image]
-    additionalProperties: true
+  plugin: "builtin:helm-chart"

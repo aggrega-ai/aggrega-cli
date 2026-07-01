@@ -4,19 +4,4 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    properties:
-      image: { type: string }
-      replicas: { type: integer, default: 1 }
-      ports:
-        type: array
-        items: { type: string }
-      environment:
-        type: object
-        additionalProperties:
-          oneOf:
-            - { type: string }
-            - { type: integer }
-    required: [image]
-    additionalProperties: true
+  plugin: "builtin:helm"

@@ -360,7 +360,6 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 		return fmt.Errorf("read aggregate %q: %w", aggPath, err)
 	}
 	catalogLookup := cat.CatalogLookup()
-	catalogLookup.ProviderInfraSchema = cat.ProviderInfraSchemaResolver(manifest)
 
 	// Resolve through the same shared funnel build/lint/pull use
 	// (pipeline.ResolveAndFlatten → resolver.ResolveAndUse), so inspect's resolve

@@ -1,8 +1,6 @@
 Provider: helm:1.0.0
 Plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
-Recipe-hosting: synthesized + sourceless
+Recipe-hosting: synthesized
 Well-known annotations: (none declared)
-baseSchema:
-    type: object
 workloadSchema:
     type: object

@@ -14,11 +14,10 @@ import (
 
 // RendererInput holds all data needed for Step 5 rendering.
 type RendererInput struct {
-	Graph          *types.IRGraph
-	FeatureOrder   ir.FeatureOrder
-	ResolveResult  *resolver.ResolveResult
-	CatalogLookup  resolver.CatalogLookup
-	ProviderLookup ProviderLookup // Optional: enables baseSchema validation in sourceless mode
+	Graph         *types.IRGraph
+	FeatureOrder  ir.FeatureOrder
+	ResolveResult *resolver.ResolveResult
+	CatalogLookup resolver.CatalogLookup
 
 	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
 	// lockfile-pinned libraries bridged in at load), keyed by bare name. It is

@@ -140,12 +140,12 @@ spec:
 	}
 }
 
-// TestProviderSchemaValidation_BadProvider pins validateSchemaPillarsPass
-// arms that fire when a Provider's baseSchema is malformed. Re-uses Load
-// against testdata-shaped temp dir.
-func TestProviderSchemaValidation_MalformedBaseSchema(t *testing.T) {
+// TestProviderSchemaValidation_MalformedWorkloadSchema pins
+// validateSchemaPillarsPass arms that fire when a Provider's workloadSchema is
+// malformed. Re-uses Load against testdata-shaped temp dir.
+func TestProviderSchemaValidation_MalformedWorkloadSchema(t *testing.T) {
 	t.Parallel()
-	// Build minimal catalog with a malformed Provider baseSchema.
+	// Build minimal catalog with a malformed Provider workloadSchema.
 	c := makeEmptyCatalog()
 	src := `apiVersion: aggrega.ai/v1alpha1
 kind: Provider
@@ -153,7 +153,7 @@ metadata:
   name: helm
   version: 1.0.0
 spec:
-  baseSchema: |
+  workloadSchema: |
     ::: not yaml :::
 `
 	err := c.indexFile([]byte(src), "p")

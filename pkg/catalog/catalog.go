@@ -531,12 +531,11 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // map-iteration order would flap across runs and make CI logs unstable
 // against the deterministic-output invariant.
 //
-// The Provider block validates the flat baseSchema / workloadSchema
-// JSON Schema bodies (different contract from the pillar-wrapped
-// Component / Feature schemas — no SchemaLibrary $ref expansion is
-// expected at the Provider field surface today). Wired so today's
-// catalogs reach the same load-time guardrail the Component / Feature
-// surface enjoys.
+// The Provider block validates the flat workloadSchema JSON Schema body
+// (different contract from the pillar-wrapped Component / Feature schemas —
+// no SchemaLibrary $ref expansion is expected at the Provider field surface
+// today). Wired so today's catalogs reach the same load-time guardrail the
+// Component / Feature surface enjoys.
 func (c *Catalog) validateSchemaPillarsPass() error {
 	var validationErrors []error
 
@@ -1082,53 +1081,16 @@ func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, 
 // dispatch keys ("helm", "helm-chart", "compose", and future kinds; an
 // unregistered provider name produces a fatal halt at dispatch time).
 //
-// The method's signature `(string) → (types.Provider, bool)` matches the
-// renderer's renderer.ProviderLookup function type exactly, so callers pass
-// the method as a method value (`cat.ProviderLookup`) directly into
-// renderer.RenderInput without an explicit adapter. The tuple-return shape
-// (zero value + false on miss, not a sentinel error) lets callers branch
-// cheaply when the provider is optional — the renderer treats an absent
-// Provider as "no baseSchema validation available for sourceless mode" and
-// continues, where a sentinel error would force the caller to either
-// distinguish miss-vs-other-error or swallow both cases.
+// The tuple-return shape (zero value + false on miss, not a sentinel error)
+// lets callers branch cheaply when the provider is optional, where a sentinel
+// error would force the caller to either distinguish miss-vs-other-error or
+// swallow both cases.
 func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
 	key, ok, _ := c.resolveProviderKey(name)
 	if !ok {
 		return types.Provider{}, false
 	}
 	return c.Providers[key], true
-}
-
-// ProviderInfraSchemaResolver returns a closure mapping a component instance
-// (by instance name and component type) to the baseSchema of the Provider that
-// the recipe implementing that component targets. The resolver-side infra
-// conformance gate uses it to admit provider-layered infra keys (e.g. replicas)
-// alongside a Component's own schema.infra keys.
-//
-// Resolution chains the Manifest-aware recipe lookup (so a name-tier mapping
-// picks the same recipe the build renders through) to the recipe's declared
-// provider to that provider's baseSchema. Returns ("", false) when no recipe or
-// provider resolves, or the provider declares no baseSchema — the caller treats
-// each as "no provider keys to admit". The closure populates
-// resolver.CatalogLookup.ProviderInfraSchema; manifest may be nil, collapsing
-// recipe resolution to the implements-only cascade.
-func (c *Catalog) ProviderInfraSchemaResolver(manifest *types.Manifest) func(string, string) (string, bool) {
-	recipeLookup := c.RecipeLookupWithManifest(manifest)
-	return func(instanceName, componentType string) (string, bool) {
-		recipe, ok := recipeLookup.Recipe(instanceName, componentType)
-		if !ok || recipe == nil {
-			return "", false
-		}
-		provider, ok := c.ProviderLookup(recipe.Spec.Provider)
-		if !ok {
-			return "", false
-		}
-		// Provider resolved → report found=true even when it declares no
-		// baseSchema. The infra gate distinguishes "provider unresolvable"
-		// (skip — the union cannot be formed) from "provider resolved with no
-		// infra keys" (validate infra closed against schema.infra alone).
-		return provider.Spec.BaseSchema, true
-	}
 }
 
 // DeprecationWarnings returns non-fatal notices about deprecated catalog

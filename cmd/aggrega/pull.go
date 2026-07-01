@@ -466,7 +466,6 @@ func pullRun(cfg pullConfig) error {
 	// re-parses internally.
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
-	pullLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
 	// ResolveAndFlatten scopes the resolved view + parameter map to this
 	// callback; resolver.ResolveAndUse purges the parameters after it returns,
 	// so the entire source-descent runs while parameters are live and cannot

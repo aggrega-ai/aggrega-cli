@@ -263,7 +263,6 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	progress.phase(phaseRender)
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
 	buildLookup := lazyView.AsCatalogLookup()
-	buildLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
 	result, err := pipeline.RunPipeline(
 		context.Background(),
 		pipeline.Inputs{

@@ -96,9 +96,6 @@ metadata:
   name: helm
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
-    additionalProperties: true
   workloadSchema: |
     type: object
     additionalProperties: true

@@ -4,8 +4,6 @@ metadata:
   name: helm
   version: 1.0.0
 spec:
-  baseSchema: |
+  workloadSchema: |
     a: 1
     b: 2
-  workloadSchema: |
-    type: object

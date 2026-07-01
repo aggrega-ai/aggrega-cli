@@ -44,15 +44,6 @@ type CatalogLookup struct {
 	// falls the caller back to its authored schema. May itself be nil in
 	// catalog-less / not-yet-resolved paths.
 	EffectiveSchema func(typeURI string) (compactform.Schema, bool)
-	// ProviderInfraSchema returns the rendering Provider's baseSchema (a JSON
-	// Schema describing the provider's recognised infra/values keys) for the
-	// recipe implementing a component instance, keyed by instance name and
-	// component type. It is the source of the provider-layered infra keys (e.g.
-	// replicas) the infra-pillar conformance gate admits alongside the
-	// Component's own schema.infra keys. Returns ("", false) when no recipe or
-	// provider resolves, or the provider declares no baseSchema. May be nil; the
-	// infra gate then admits only the Component schema.infra keys.
-	ProviderInfraSchema func(instanceName, componentType string) (string, bool)
 }
 
 // RunGuards executes the catalog-aware semantic checks of Step 1 against the

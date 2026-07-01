@@ -75,8 +75,6 @@ metadata:
   description: Helm rendering engine.
 spec:
   plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
-  baseSchema: |
-    type: object
   workloadSchema: |
     type: object
 `
@@ -127,20 +125,15 @@ func TestInspectProvider_PopulatedWKA_Golden(t *testing.T) {
 func TestInspectProvider_RecipeHostingLine(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name           string
-		base, workload string
-		want           string
+		name     string
+		workload string
+		want     string
 	}{
-		{"both", "type: object", "type: object", "synthesized + sourceless"},
-		{"synth", "", "type: object", "synthesized"},
-		{"sourceless", "type: object", "", "sourceless"},
-		{"neither", "", "", "sourced-only"},
+		{"synth", "type: object", "synthesized"},
+		{"neither", "", "sourced-only"},
 	}
 	for _, c := range cases {
 		body := "apiVersion: aggrega.ai/v1alpha1\nkind: Provider\nmetadata:\n  name: p\n  version: \"1.0.0\"\nspec:\n  plugin: x\n"
-		if c.base != "" {
-			body += "  baseSchema: |\n    " + c.base + "\n"
-		}
 		if c.workload != "" {
 			body += "  workloadSchema: |\n    " + c.workload + "\n"
 		}

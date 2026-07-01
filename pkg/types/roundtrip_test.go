@@ -248,7 +248,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: aggrega/helm:1.0.0
-  baseSchema: |
+  workloadSchema: |
     values: {}
 `)
 

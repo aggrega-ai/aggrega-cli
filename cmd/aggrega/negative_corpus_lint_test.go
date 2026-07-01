@@ -86,8 +86,7 @@ metadata:
   name: compose
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
+  plugin: "builtin:compose"
 `,
 	"SchemaLibrary": `apiVersion: aggrega.ai/v1alpha1
 kind: SchemaLibrary
@@ -214,8 +213,6 @@ metadata:
   name: compose
   version: "1.0.0"
 spec:
-  baseSchema: |
-    type: object
   rendererPlugin: oops
 `, envelope.ErrEntityEnvelope},
 		// SchemaLibrary missing required (schemas).

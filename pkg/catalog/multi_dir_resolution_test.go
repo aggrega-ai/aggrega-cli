@@ -77,7 +77,7 @@ metadata:
   description: ` + d + `
 spec:
   plugin: "builtin:helm-chart"
-  baseSchema: |
+  workloadSchema: |
     type: object
     additionalProperties: true
 `

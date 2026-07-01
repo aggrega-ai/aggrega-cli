@@ -11,3 +11,4 @@ spec:
   schema:
     infra:
       port: { type: integer, default: 8080 }
+      replicas: { type: integer, default: 1 }

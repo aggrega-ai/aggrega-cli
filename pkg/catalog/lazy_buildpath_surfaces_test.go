@@ -36,7 +36,7 @@ func TestLazyLookup_BuildPathSurfaces_FromPinnedEnumeration(t *testing.T) {
 	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
 
 	// The Provider is Tier-1-local (the closure never pins a Provider): write it to
-	// a catalog dir, not the cache. ProviderInfraSchema must resolve it from Tier-1.
+	// a catalog dir, not the cache.
 	catalogDir := filepath.Join(ws, "catalog")
 	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -78,13 +78,7 @@ func TestLazyLookup_BuildPathSurfaces_FromPinnedEnumeration(t *testing.T) {
 		t.Errorf("consistency must fail when the mapped type does not match the recipe's implements")
 	}
 
-	// 3. ProviderInfraSchemaResolver resolves the Tier-1 provider's baseSchema via
-	//    the pinned recipe → provider name → Tier-1 provider.
-	if _, ok := lazy.ProviderInfraSchemaResolver(consistent)("", "core/datastore/mariadb"); !ok {
-		t.Errorf("ProviderInfraSchema must resolve the Tier-1 provider's baseSchema")
-	}
-
-	// 4. VerifyRecipeResolution wires to the enumeration's completeness producer —
+	// 3. VerifyRecipeResolution wires to the enumeration's completeness producer —
 	//    an empty graph has no instances, so it is a clean nil.
 	if err := lazy.VerifyRecipeResolution(consistent, &types.IRGraph{}); err != nil {
 		t.Errorf("VerifyRecipeResolution over an empty graph must be nil; got %v", err)

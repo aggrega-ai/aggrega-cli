@@ -291,7 +291,6 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 	// EffectiveSchema (extends parent+child) flows in through the lookup, so an
 	// inherited-pillar value is validated against the inherited constraint.
 	conformanceLookup := lazyView.AsCatalogLookup()
-	conformanceLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
 	verr := pipeline.ResolveAndValidate(context.Background(), pipeline.Inputs{
 		Release:           rel,
 		Manifest:          manifest,
