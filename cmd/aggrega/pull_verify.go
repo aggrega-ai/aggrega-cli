@@ -42,10 +42,15 @@ import (
 // plugins are combined into one verification run so the per-registry policy
 // resolution is provably identical for both.
 //
-// A registry-resolved item is one whose URI carries a registry host. A
-// host-less (local / catalog) item is skipped: it never carries a registry
-// signature. A fatal verification failure (a required signature that is
-// missing, untrusted, or invalid for a non-advisory registry) returns a
+// A registry-resolved item is one freshly fetched from a registry (Tier-3).
+// A catalog entity carries a host-less bare identity — its registry host and
+// path are bound at pull time from the workspace registry and the entity kind,
+// recovered here from the same binding the puller used — while a content-pinned
+// .wasm plugin already carries its host in the URI. Both are verified against
+// the resolved registry's trust policy. A Tier-1 / Tier-2 / local / external
+// item is skipped: it was already verified when first fetched, or never carries
+// a registry signature. A fatal verification failure (a required signature that
+// is missing, untrusted, or invalid for a non-advisory registry) returns a
 // non-nil error and halts the pull.
 //
 // Verification warning notices are written to diagOut (os.Stderr in production).
@@ -64,11 +69,27 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			if !isRegistryResolved(e.ResolutionPath) {
 				continue
 			}
+			// A catalog entity's URI is a host-less bare identity; the registry
+			// host and path are bound at pull time from the workspace registry
+			// and the entity kind, not carried in the URI. Recover that binding
+			// from the SAME primitive the puller used so the verify target is the
+			// location the entity was fetched from. A host-carrying artifact (a
+			// content-pinned .wasm plugin) does not bind — its URI already carries
+			// the reference — so fall back to the URI-derived host for it.
+			location, bound := catalog.BindEntityLocation(wsCfg.DefaultRegistry, e.KindHint, e.URI)
 			host := registryhost.Of(e.URI)
+			if bound {
+				host = registryhost.Of(location)
+			}
 			if !isRegistryHost(host) {
 				continue
 			}
-			verifiable = append(verifiable, pullverify.Entity{URI: e.URI, ManifestDigest: e.ManifestDigest, Host: host})
+			verifiable = append(verifiable, pullverify.Entity{
+				URI:            e.URI,
+				ManifestDigest: e.ManifestDigest,
+				Host:           host,
+				Location:       location,
+			})
 		}
 	}
 	collect(cl.Entities)
@@ -298,14 +319,21 @@ func signatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 // (oci://host/path@sha256:...). Authentication delegates to the shared OCI
 // credential mechanisms.
 func remoteTargetFor(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
-	// A content-pinned .wasm artifact URI carries the oci:// scheme; the
-	// remote-repository parser wants a bare host/path reference, so strip it.
-	repoRef := strings.TrimPrefix(e.URI, "oci://")
-	// Strip any version or content-digest suffix from the URI to form the
-	// repository reference; the subject ref is the manifest digest the
-	// signature commits to.
-	if at := strings.LastIndex(repoRef, "@"); at >= 0 {
-		repoRef = repoRef[:at]
+	// A catalog entity's URI is a host-less bare identity, so its repository
+	// reference is the location bound at pull time (host + path), carried on the
+	// entity. A host-carrying artifact (a content-pinned .wasm plugin) leaves
+	// Location empty and supplies its reference through the URI.
+	repoRef := e.Location
+	if repoRef == "" {
+		// A content-pinned .wasm artifact URI carries the oci:// scheme; the
+		// remote-repository parser wants a bare host/path reference, so strip it.
+		repoRef = strings.TrimPrefix(e.URI, "oci://")
+		// Strip any version or content-digest suffix from the URI to form the
+		// repository reference; the subject ref is the manifest digest the
+		// signature commits to.
+		if at := strings.LastIndex(repoRef, "@"); at >= 0 {
+			repoRef = repoRef[:at]
+		}
 	}
 	repo, err := oci.NewRemoteRepository(repoRef)
 	if err != nil {

@@ -49,6 +49,15 @@ type Entity struct {
 	// normalised via registryhost.Of. Empty for a non-registry (local /
 	// catalog) entity, which is never verified.
 	Host string
+	// Location is the full OCI repository reference (host + path) the entity
+	// resolved from, when the reference cannot be recovered from URI alone. A
+	// catalog entity's URI is a host-less bare identity — the registry host and
+	// path are bound at pull time from the workspace registry and the entity
+	// kind — so its referrer-discovery target is resolved from Location, not
+	// URI. Empty for a host-carrying artifact (a content-pinned .wasm plugin),
+	// whose URI already carries the reference; the target factory then falls
+	// back to the URI.
+	Location string
 }
 
 // Result is the verified-signature fact for one entity, plus the cached

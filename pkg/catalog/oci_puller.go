@@ -168,6 +168,56 @@ func (p DefaultOCIPuller) RegistryHost() string {
 	return p.registry
 }
 
+// BindEntityLocation reports the physical OCI repository reference a bare
+// catalog identity resolves from — `<registry>/<OCILocation(kind, provider,
+// name)>` — for a Tier-3 registry pull. It is the pull-side location binding
+// exposed for consumers that hold only the closure's bare identity plus its
+// collection-site kind hint and must recover the host+path the entity was
+// fetched from (the referrer-discovery subject at signature-verify time).
+//
+// It is the same binding EntityPuller.PullEntity performs, routed through the
+// same entityReference primitive, so verify-location == pull-location ==
+// push-location holds by construction rather than by a parallel re-derivation.
+// The uri carries the closure identity (optionally version-pinned); the version
+// suffix is stripped before binding since the location is version-independent.
+//
+// kindHint is the closure collection-site kind ("component" / "feature" /
+// "recipe" / "feature_recipe" / "provider" / "aggregate"); it is mapped to the
+// catalog kind the location rule expects. Returns ok=false when registry is
+// empty, when the hint does not map to a catalog kind, or when the binding is
+// refused (a registry-qualified identity) — the same conditions under which the
+// puller itself cannot bind a bare identity and falls to the legacy
+// located-reference path, so the caller skips rather than fabricating a location.
+func BindEntityLocation(registry, kindHint, uri string) (location string, ok bool) {
+	if registry == "" {
+		return "", false
+	}
+	kind := entityKindForHint(kindHint)
+	if kind == "" {
+		return "", false
+	}
+	identity, _, _ := splitVersionedURI(uri)
+	ref, err := entityReference(registry, kind, identity)
+	if err != nil {
+		return "", false
+	}
+	return ref, true
+}
+
+// entityKindForHint maps a closure KindHint to the catalog kind the OCI location
+// rule expects for a registry-resolved entity, covering both the core-catalog
+// tier (ociKindForHint) and the sub-aggregate tier, whose bare-name pull binds
+// through the same location rule under the "Aggregate" kind. It is the
+// location-binding counterpart of the pull-tier dispatch, so an entity that
+// resolves from a registry maps to a location for verify exactly as it did for
+// the pull.
+func entityKindForHint(hint string) string {
+	if hint == "aggregate" {
+		return "Aggregate"
+	}
+	return ociKindForHint(hint)
+}
+
 // entityReference binds a bare catalog identity to its physical OCI reference,
 // `<registry>/<OCILocation(kind, provider, name)>` — the pull-side mirror of
 // push's buildPushReference, reusing the same OCILocation rule so push-location

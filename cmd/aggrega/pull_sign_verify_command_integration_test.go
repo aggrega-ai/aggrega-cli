@@ -66,11 +66,14 @@ spec:
 // the named plugin by its bare identity) and a consumer workspace wired to build
 // that Component over the registry at host. The workspace trust policy REQUIRES
 // signatures and pins pinnedPubPEM as the keyed public key. It returns the
-// workspace path (not yet chdir'd into). Because the fixture catalog entities
-// resolve under their host-less catalog identities, only the host-carrying .wasm
-// plugin artifact is subject to the signature-requiring policy — the axis a real
-// pull's verify pass reaches.
-func writePipelinePluginConsumerWorkspace(t *testing.T, host, pluginURI string, pinnedPubPEM []byte) string {
+// workspace path (not yet chdir'd into).
+//
+// catalogSigner controls how the fixture catalog entities are published: a
+// non-nil signer publishes them SIGNED (the whole Tier-3-resolved closure, not
+// just the host-carrying .wasm plugin, is subject to the signature-requiring
+// policy), a nil signer publishes them unsigned. The .wasm plugin is published
+// separately by the caller; this helper covers the catalog axis alongside it.
+func writePipelinePluginConsumerWorkspace(t *testing.T, host, pluginURI string, pinnedPubPEM []byte, catalogSigner signing.Signer) string {
 	t.Helper()
 	cat := t.TempDir()
 	writeFixtureEntity(t, cat, "provider/helm/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
@@ -120,7 +123,17 @@ spec:
       plugin: `+pluginURI+`
       function: step
 `)
-	pushCatalog(t, host, cat)
+	if catalogSigner != nil {
+		for _, rel := range []string{
+			"provider/helm/1.0.0/provider.yaml",
+			"component/test/svc/1.0.0/component.yaml",
+			"recipe/helm/svc/1.0.0/recipe.yaml",
+		} {
+			pushCatalogEntitySigned(t, host, filepath.Join(cat, rel), catalogSigner)
+		}
+	} else {
+		pushCatalog(t, host, cat)
+	}
 
 	ws := t.TempDir()
 	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -197,10 +210,11 @@ func signedPluginWorkspaceConfigBody(host string, pinnedPubPEM []byte) string {
 // the exact code path production runs: no hand-built closure, no hand-set
 // digest, no skip flag.
 //
-// The .wasm artifact URI is the axis a real pull's verify pass reaches, because
-// the closure records catalog entities under their host-less catalog identities
-// while a plugin artifact is pinned by its content-addressed oci:// URI that
-// carries the registry host.
+// This test focuses on the .wasm plugin axis (pinned by a content-addressed
+// oci:// URI that carries the registry host); the catalog-entity axis (host-less
+// bare identities bound to the registry at pull time) is exercised by the sibling
+// catalog-entity capstone. Both axes are under the require-signatures policy, so
+// the fixture catalog entities are published signed by the same publisher.
 //
 // The negative arm shares the identical production spine and changes only the
 // pinned key, so the rejection is attributable to the trust policy and nothing
@@ -230,7 +244,9 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		host := startRegistry(t, nil)
 		wasmContentDg := publishSignedPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath, signer)
 		artifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + pluginName + "@" + wasmContentDg
-		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM)
+		// The whole Tier-3-resolved closure is under the require-signatures policy,
+		// so the catalog entities are signed by the same publisher too.
+		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)
 		t.Chdir(ws)
 
 		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
@@ -274,7 +290,9 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		if gerr != nil {
 			t.Fatalf("GenerateKeyedPEM (wrong): %v", gerr)
 		}
-		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, wrongPubPEM)
+		// The catalog entities are signed by the publisher; only the pinned key
+		// differs, so the halt is attributable to the trust-policy mismatch alone.
+		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, wrongPubPEM, signer)
 		t.Chdir(ws)
 
 		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
@@ -289,7 +307,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		// the missing signature on the host-carrying .wasm artifact is a Loud
 		// Guardrail.
 		publishPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath)
-		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM)
+		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, nil)
 		t.Chdir(ws)
 
 		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
