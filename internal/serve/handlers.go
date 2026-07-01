@@ -124,14 +124,15 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 		return err
 	}
 
-	// Post-response flush of pre-populated diagnostics. The
-	// at-startup drift check populates s.diagnostics before
-	// dispatchLoop runs; the LSP-canonical pattern is to push those
-	// diagnostics AFTER the initialize response so the client's
-	// handshake completes before unsolicited notifications start
-	// arriving. diagnosticsFiles returns the keys sorted for
-	// deterministic ordering across daemon runs (Go map iteration is
-	// randomized).
+	// Post-response flush of any diagnostics already populated. The
+	// LSP-canonical pattern is to push diagnostics AFTER the initialize
+	// response so the client's handshake completes before unsolicited
+	// notifications start arriving. This handler does not trigger the
+	// active-Release cascade (initialize needs no Release context), so at
+	// handshake time the map is normally empty; the loop is a no-op
+	// then and flushes only what a prior request already produced.
+	// diagnosticsFiles returns the keys sorted for deterministic
+	// ordering across daemon runs (Go map iteration is randomized).
 	for _, file := range s.diagnosticsFiles() {
 		if err := s.publishDiagnostics(ctx, file); err != nil {
 			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
@@ -229,6 +230,16 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 // parse below is a minor fraction of that — the heavy uncancellable cost is
 // the resolve sub-steps, not the parse.
 func (s *Server) handleValidate(ctx context.Context, params validateParams) (validateResult, *jsonRPCError) {
+	// Every Release-context read below (the active-Release nil check, the
+	// cascade-attempt diagnostics, runTier4Validation's activeReleasePath
+	// reads, and classifyByFilename via envelopeDiagnosticsForBuffer)
+	// depends on the disambiguation cascade having run. Trigger it here,
+	// on first use, so those reads never see a zero-value Release the
+	// cascade would have populated. aggrega/initialize deliberately does
+	// not reach this path, so the handshake answers before the cascade's
+	// workspace walk runs.
+	s.ensureCascade()
+
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
 		diag := yamlErrorToDiagnostic(err)

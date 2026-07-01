@@ -48,6 +48,10 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 	// then have a live parent.
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
 	srv.cancelTracker = newCancelRegistry()
+	// These tests inject the active-Release fields directly; suppress the
+	// lazy cascade so it does not overwrite that injected state with a
+	// walk of the empty test workspace.
+	srv.markCascadeDone()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }
@@ -149,6 +153,68 @@ func runOneRequest(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffe
 	default:
 	}
 	return decodeOneResponse(t, out)
+}
+
+// newLazyCascadeServer builds a Server for the lazy-cascade contract
+// tests. Unlike newTestServer it does NOT suppress the cascade guard, so
+// the first Release-context request runs the real cascade against
+// workspaceRoot — the production behavior under test here.
+func newLazyCascadeServer(t *testing.T, workspaceRoot string, in io.Reader, out io.Writer) *Server {
+	t.Helper()
+	srv := &Server{
+		workspaceRoot: workspaceRoot,
+		wsConfig:      workspaceconfig.Default(),
+		lazyCatalog:   catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
+		parseCache:    newCache(0, 0),
+		diagnostics:   map[string][]Diagnostic{},
+		in:            bufio.NewReader(in),
+		out:           out,
+		stderr:        io.Discard,
+	}
+	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
+	srv.cancelTracker = newCancelRegistry()
+	t.Cleanup(srv.serverCancel)
+	return srv
+}
+
+// TestInitializeDoesNotTriggerCascadeButValidateDoes pins the lazy-cascade
+// contract: aggrega/initialize answers WITHOUT running the active-Release
+// disambiguation cascade (so a large workspace cannot delay the
+// handshake), while the first request that needs Release context
+// (aggrega/validate) triggers it on demand. The workspace holds exactly
+// one Release, which the cascade resolves at Step 2 — so a fired cascade
+// is observable as a non-nil activeRelease.
+func TestInitializeDoesNotTriggerCascadeButValidateDoes(t *testing.T) {
+	ws := t.TempDir()
+	writeRelease(t, ws, "release.yaml", "release/only")
+
+	srv := newLazyCascadeServer(t, ws, nil, nil)
+
+	// initialize must not run the cascade.
+	var in1, out1 bytes.Buffer
+	in1.Write(framedRequest(1, "aggrega/initialize", initializeParams{}))
+	resp := runOneRequest(t, srv, &in1, &out1)
+	if resp.Error != nil {
+		t.Fatalf("initialize returned error: %+v", resp.Error)
+	}
+	if srv.activeRelease != nil {
+		t.Fatalf("initialize triggered the cascade; activeRelease should still be nil")
+	}
+
+	// validate must trigger the cascade lazily, resolving the single Release.
+	file := filepath.Join(ws, "x.yaml")
+	var in2, out2 bytes.Buffer
+	in2.Write(framedRequest(2, "aggrega/validate", validateParams{File: file, Content: "kind: Foo\n"}))
+	runOneRequest(t, srv, &in2, &out2)
+	if srv.activeRelease == nil {
+		t.Fatalf("validate did not trigger the cascade; activeRelease is still nil")
+	}
+	if srv.activeReleasePath == "" {
+		t.Errorf("cascade fired but activeReleasePath is empty")
+	}
+	if srv.cascadeAttempt.ResolvedStep != 2 {
+		t.Errorf("cascade ResolvedStep = %d; want 2 (single-Release heuristic)", srv.cascadeAttempt.ResolvedStep)
+	}
 }
 
 func TestServeAggregaValidateParseOnlyReturnsDiagnostics(t *testing.T) {

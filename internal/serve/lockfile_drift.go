@@ -22,10 +22,12 @@ import (
 //     startup (catalog dirs unavailable, or the hermetic lookup cannot
 //     resolve an entity) stderr-log-and-skip; the next handleIrGraph retries.
 //
-// On success populates s.lockfile and writes any drift findings
-// into s.diagnostics[lockfilePath]. The wire-level
-// aggrega/publishDiagnostics notification fires later, from
-// dispatchInitialize's post-response flush, in LSP-canonical order.
+// On success populates s.lockfile and writes any drift findings into
+// s.diagnostics[lockfilePath]. This runs from ensureCascade on first
+// use, not at construction; it updates the diagnostics cache without
+// firing the wire-level aggrega/publishDiagnostics notification (that is
+// left to the per-handleIrGraph drift check, which publishes as part of
+// serving the IR graph).
 func (s *Server) loadAndCheckLockfileAtStartup() {
 	if s.activeRelease == nil || s.activeReleasePath == "" {
 		return
@@ -91,9 +93,8 @@ func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath string,
 // verifyDriftAndUpdateCache runs the lockfile verify against the
 // supplied closure and updates s.diagnostics[lockfilePath]
 // without firing the wire-level publishDiagnostics notification.
-// Used by the at-startup path, where the notification is deferred
-// to dispatchInitialize's post-response flush per the
-// LSP-canonical ordering. Per-handleIrGraph callers use
+// Used by the first-use startup check, which updates the diagnostics
+// cache silently; the per-handleIrGraph callers use
 // verifyDriftAndPublish, which wraps this and fires the
 // notification afterwards.
 // Returns the freshly-loaded lockfile (nil on load failure). Drift is

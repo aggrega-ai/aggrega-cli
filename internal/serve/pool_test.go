@@ -26,7 +26,7 @@ import (
 func newPoolTestServer(in io.Reader, out io.Writer, poolSize int, hook func()) *Server {
 	cfg := workspaceconfig.Default()
 	cfg.Concurrency.PoolSize = poolSize
-	return &Server{
+	srv := &Server{
 		workspaceRoot:      "/tmp/test-workspace",
 		wsConfig:           cfg,
 		lazyCatalog:        catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
@@ -37,6 +37,11 @@ func newPoolTestServer(in io.Reader, out io.Writer, poolSize int, hook func()) *
 		stderr:             io.Discard,
 		testInDispatchHook: hook,
 	}
+	// Pool-driven tests inject the active-Release fields directly (e.g. the
+	// pin-isolation harness sets activeReleasePath); suppress the lazy
+	// cascade so it does not overwrite that injected state.
+	srv.markCascadeDone()
+	return srv
 }
 
 // readResponses reads exactly n Content-Length-framed responses from r.

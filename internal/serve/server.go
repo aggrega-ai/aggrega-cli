@@ -127,17 +127,25 @@ type Diagnostic struct {
 //     untracks its id under the lock, so concurrent track / untrack
 //     across the pool need no external lock.
 //
+// The active-Release fields (activeRelease, activeReleasePath,
+// cascadeAttempt, lockfile) are resolved lazily by ensureCascade on the
+// first request that needs Release context, guarded by cascadeOnce. The
+// once's happens-before guarantee makes the single write inside the
+// guarded function visible to every worker that later calls ensureCascade
+// before reading, so concurrent workers under the pool observe a fully
+// populated snapshot without a per-field lock. The aggrega/initialize
+// handler does not need Release context and does not trigger the cascade,
+// so the handshake answers before any workspace walk runs.
+//
 // The remaining fields (workspaceRoot, configSource, compilerVersion,
-// workspaceMarker, wsConfig, lazyCatalog pointer, activeRelease,
-// activeReleasePath, cascadeAttempt, lockfile, serverCtx/serverCancel,
-// cancelTracker pointer) are written once at construction or at startup
-// before the worker pool starts, then only read during handler
-// execution, so they are immutable snapshots needing no lock (the
-// registry the cancelTracker pointer names carries its own lock for its
-// mutable map). The reader goroutine reads stdin and writes channels; it
-// never touches Server mutable state. The id-order stdout serializer is
-// the sole owner of the output writer, so no worker touches s.out
-// directly.
+// workspaceMarker, wsConfig, lazyCatalog pointer, serverCtx/serverCancel,
+// cancelTracker pointer) are written once at construction before the
+// worker pool starts, then only read during handler execution, so they
+// are immutable snapshots needing no lock (the registry the cancelTracker
+// pointer names carries its own lock for its mutable map). The reader
+// goroutine reads stdin and writes channels; it never touches Server
+// mutable state. The id-order stdout serializer is the sole owner of the
+// output writer, so no worker touches s.out directly.
 type Server struct {
 	workspaceRoot string
 	configSource  string
@@ -205,27 +213,37 @@ type Server struct {
 	// it — the consistency the worker pool depends on.
 	lazyCatalog *catalog.LazyLookup
 
+	// cascadeOnce guards the lazy resolution of the active-Release
+	// fields below. The first request that needs Release context calls
+	// ensureCascade, which runs the disambiguation cascade and the
+	// at-startup lockfile + drift check exactly once; every later
+	// request finds the work already done. Resolution is deferred off
+	// the daemon's construction path so aggrega/initialize answers
+	// before any workspace-wide filesystem walk runs.
+	cascadeOnce sync.Once
+
 	// activeRelease is the workspace's session-scoped active Release,
-	// resolved by the four-step disambiguation cascade at Run
-	// startup. nil when the cascade exhausted into Step 4 fallback
-	// (no authoring_release config, not exactly one Release file,
-	// no .aggrega/active-release marker). Operations needing Release
-	// context consult cascadeAttempt + cascadeDiagnosticMessage to
-	// construct error-envelope text when activeRelease is nil.
+	// resolved by the four-step disambiguation cascade on the first
+	// request that needs Release context (see ensureCascade). nil when
+	// the cascade exhausted into Step 4 fallback (no authoring_release
+	// config, not exactly one Release file, no .aggrega/active-release
+	// marker). Operations needing Release context consult cascadeAttempt
+	// + cascadeDiagnosticMessage to construct error-envelope text when
+	// activeRelease is nil.
 	//
-	// Subprocess-test coverage of the cascade-via-Run wiring is
+	// Subprocess-test coverage of the cascade-via-daemon wiring is
 	// deferred: no operation currently reads activeRelease and
 	// surfaces it through a wire response, so an external observer
 	// cannot assert "the cascade populated this field correctly".
 	// The cascade's correctness is pinned by direct unit tests on
-	// runManifestCascade in manifest_cascade_test.go; the Run-time
-	// invocation itself is covered only by compile + vet plus the
-	// implicit panic-free-startup behavior the existing subprocess
-	// tests exercise. When a future operation reads activeRelease
-	// and surfaces it (Tier-4 validate's execution path, or a
-	// dedicated query like aggrega/activeRelease), add a subprocess
-	// test that constructs a workspace matching each cascade step's
-	// win condition and asserts the operation's response carries the
+	// runManifestCascade in manifest_cascade_test.go; the lazy
+	// invocation itself is covered by compile + vet plus the
+	// implicit panic-free behavior the existing subprocess tests
+	// exercise. When a future operation reads activeRelease and
+	// surfaces it (Tier-4 validate's execution path, or a dedicated
+	// query like aggrega/activeRelease), add a subprocess test that
+	// constructs a workspace matching each cascade step's win
+	// condition and asserts the operation's response carries the
 	// expected Release. The pickup point is here when a consumer
 	// lands.
 	activeRelease *types.Release
@@ -239,8 +257,8 @@ type Server struct {
 
 	// cascadeAttempt records what the disambiguation cascade tried
 	// and which step (if any) selected activeRelease. Populated
-	// alongside activeRelease at Run startup; immutable for the
-	// daemon's session lifetime.
+	// alongside activeRelease on first use by ensureCascade; immutable
+	// for the rest of the daemon's session lifetime.
 	cascadeAttempt cascadeAttempt
 
 	// lockfile is nil in this scaffold; populated per active Release
@@ -416,34 +434,68 @@ func Run(cfg RunConfig) error {
 		wsCfg.Workspace.CatalogDirs,
 		puller,
 	)
-	activeRelease, activeReleasePath, attempt := runManifestCascade(root, wsCfg, stderr)
 	srv := &Server{
-		workspaceRoot:     root,
-		configSource:      source.String(),
-		compilerVersion:   cfg.CompilerVersion,
-		workspaceMarker:   marker,
-		wsConfig:          wsCfg,
-		lazyCatalog:       lazyCatalog,
-		activeRelease:     activeRelease,
-		activeReleasePath: activeReleasePath,
-		cascadeAttempt:    attempt,
-		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
-		diagnostics:       map[string][]Diagnostic{},
-		in:                bufio.NewReader(cfg.Stdin),
-		out:               cfg.Stdout,
-		stderr:            stderr,
+		workspaceRoot:   root,
+		configSource:    source.String(),
+		compilerVersion: cfg.CompilerVersion,
+		workspaceMarker: marker,
+		wsConfig:        wsCfg,
+		lazyCatalog:     lazyCatalog,
+		parseCache:      newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
+		diagnostics:     map[string][]Diagnostic{},
+		in:              bufio.NewReader(cfg.Stdin),
+		out:             cfg.Stdout,
+		stderr:          stderr,
 	}
 	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 
-	// At-startup lockfile load + drift check. Best-effort: silent
-	// no-op when there is no active Release; stderr-log-and-skip on
-	// lockfile load failure or closure-compute failure. The per-
-	// handleIrGraph check is the reliable path.
-	srv.loadAndCheckLockfileAtStartup()
-
+	// The active-Release cascade and the at-startup lockfile + drift
+	// check are NOT run here: they walk the whole workspace tree, and
+	// running them before the dispatch loop would delay the answer to
+	// aggrega/initialize until the walk finished. They run lazily via
+	// ensureCascade on the first request that needs Release context.
 	drainTimeout := cfg.DrainTimeout
 	if drainTimeout == 0 {
 		drainTimeout = defaultDrainTimeout
 	}
 	return srv.dispatchLoop(drainTimeout)
+}
+
+// markCascadeDone marks the cascade guard as already fired without
+// running the cascade, so a subsequent ensureCascade is a no-op. It is
+// the seam the in-memory test harness uses: those tests build a Server
+// as a struct literal (bypassing Run) and inject the active-Release
+// fields directly, so the lazy cascade must not run and overwrite the
+// injected state with a walk of the empty test workspace.
+func (s *Server) markCascadeDone() {
+	s.cascadeOnce.Do(func() {})
+}
+
+// ensureCascade resolves the active-Release fields (activeRelease,
+// activeReleasePath, cascadeAttempt) and runs the at-startup lockfile +
+// drift check, exactly once for the daemon's session. Every handler that
+// reads one of those fields calls this first, so no handler observes a
+// zero-value Release the cascade would have populated.
+//
+// The work is deferred here rather than run at construction because it
+// walks the whole workspace tree: on a large tree the walk takes long
+// enough that running it before the dispatch loop would delay the answer
+// to aggrega/initialize. The initialize handler does not need Release
+// context and does not call this, so the handshake stays fast regardless
+// of tree size.
+//
+// The once's happens-before guarantee publishes the single write to the
+// active-Release fields to every worker that later calls ensureCascade
+// before reading, so the fields need no per-field lock under the worker
+// pool.
+func (s *Server) ensureCascade() {
+	s.cascadeOnce.Do(func() {
+		s.activeRelease, s.activeReleasePath, s.cascadeAttempt = runManifestCascade(s.workspaceRoot, s.wsConfig, s.stderr)
+
+		// At-startup lockfile load + drift check. Best-effort: silent
+		// no-op when there is no active Release; stderr-log-and-skip on
+		// lockfile load failure or closure-compute failure. The per-
+		// handleIrGraph check is the reliable path.
+		s.loadAndCheckLockfileAtStartup()
+	})
 }
