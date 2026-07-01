@@ -23,8 +23,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/linter/baseline@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-  pluginTypes:
-    - linter
+  pluginType: linter
   abiVersion: v1alpha1
 `
 

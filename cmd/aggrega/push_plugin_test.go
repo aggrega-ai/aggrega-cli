@@ -44,8 +44,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   compatibleProviders:
     - helm
@@ -167,8 +166,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step
@@ -214,8 +212,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step
@@ -260,8 +257,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch@`+contentDigest+`"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step

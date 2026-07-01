@@ -8,12 +8,12 @@
 
 package types
 
-// Plugin A content-addressed Wasm plugin: an OCI-hosted WebAssembly artifact pinned by sha256 digest, declaring the socket type(s) it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The entity is the authoring and metadata surface for a plugin; the closure pins the artifact by digest and the per-registry trust policy verifies its signature at pull. The compiler is blind to the plugin's behavior — it routes the pinned reference; the WebAssembly runtime executes the bytes.
+// Plugin A content-addressed Wasm plugin: an OCI-hosted WebAssembly artifact pinned by sha256 digest, declaring the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The entity is the authoring and metadata surface for a plugin; the closure pins the artifact by digest and the per-registry trust policy verifies its signature at pull. The compiler is blind to the plugin's behavior — it routes the pinned reference; the WebAssembly runtime executes the bytes.
 type Plugin struct {
 	APIVersion string         `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string         `json:"kind" yaml:"kind"`
 	Metadata   PluginMetadata `json:"metadata" yaml:"metadata"`
-	// Spec The plugin's content-addressed OCI reference, the socket type(s) it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
+	// Spec The plugin's content-addressed OCI reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
 	Spec PluginSpec `json:"spec" yaml:"spec"`
 }
 
@@ -37,12 +37,12 @@ type PluginMetadata struct {
 	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// PluginSpec The plugin's content-addressed OCI reference, the socket type(s) it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
+// PluginSpec The plugin's content-addressed OCI reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
 type PluginSpec struct {
 	// Plugin The canonical content-addressed reference to the Wasm artifact, in the form `oci://<repository>@sha256:<digest>`. The reference is the plugin's identity; the digest is what the closure pins and the build verifies. A tag-form reference (`oci://<repository>:<tag>`) authored elsewhere resolves to its sha256 digest at pull and pins to this canonical form — the entity's `plugin` field carries the resolved, digest-pinned reference.
 	Plugin string `json:"plugin" yaml:"plugin"`
-	// PluginTypes The socket type(s) this plugin implements. A plugin may implement more than one socket; entries are an ordered list and preserve author order. The value set matches the plugin-type taxonomy the runtime recognises: `provider` (renders IR nodes into provider-native artifacts), `linter` (inspects authored content and raises diagnostics), `frp_step` (a feature-recipe-pipeline step that transforms IR within a pipeline).
-	PluginTypes []string `json:"pluginTypes" yaml:"pluginTypes"`
+	// PluginType The socket type this plugin implements. A plugin implements exactly one socket type, drawn from the plugin-type taxonomy the runtime recognises: `provider` (renders IR nodes into provider-native artifacts), `linter` (inspects authored content and raises diagnostics), `frp_step` (a feature-recipe-pipeline step that transforms IR within a pipeline).
+	PluginType string `json:"pluginType" yaml:"pluginType"`
 	// AbiVersion The host/guest ABI version the plugin targets. `v1alpha1` is the only accepted value in this iteration; a future ABI revision adds an accepted value.
 	AbiVersion string `json:"abiVersion" yaml:"abiVersion"`
 	// CompatibleProviders The provider engines this plugin is tested-compatible with (provider names such as `helm` or `compose`). A plugin is generic across artifacts that share a provider's output shape, not across all providers; this list is an explicit, tested-compatibility claim. Entries preserve author order. The runtime consults the list when a pipeline step touches a scope: the provider rendering that scope's documents must appear here, or the build halts. An empty or absent list declares no compatibility claim, so it matches no provider and the runtime halts any pipeline step that uses the plugin.

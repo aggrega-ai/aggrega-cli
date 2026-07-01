@@ -96,7 +96,7 @@ var kindSources = map[string]kindSource{
 // nodes alike) and emits one bare untyped string const per value, named
 // Pascal(field)+Pascal(value). `fields` scopes the emission to the enums this
 // file owns rather than every enum in the schema — the schema also carries
-// enums (pluginTypes, abiVersion) whose Go identity lives in hand-written
+// enums (pluginType, abiVersion) whose Go identity lives in hand-written
 // homes; listing only the owned fields keeps a single home per enum.
 type enumSource struct {
 	schema     string

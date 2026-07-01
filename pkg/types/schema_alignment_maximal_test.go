@@ -163,7 +163,7 @@ func maximalPlugin() types.Plugin {
 		},
 		Spec: types.PluginSpec{
 			Plugin:              "oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			PluginTypes:         []string{"linter"},
+			PluginType:          "linter",
 			AbiVersion:          "v1alpha1",
 			CompatibleProviders: []string{"helm", "compose"},
 			Signature: &types.PluginSignature{

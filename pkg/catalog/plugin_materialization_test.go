@@ -13,7 +13,7 @@ import (
 
 // validPlugin is a minimal schema-conforming Plugin entity: the four
 // top-level required fields plus the three required spec fields (plugin,
-// pluginTypes, abiVersion). The plugin reference is the canonical
+// pluginType, abiVersion). The plugin reference is the canonical
 // content-addressed oci://<repo>@sha256:<64-hex> form the schema mandates.
 const validPlugin = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
@@ -22,8 +22,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: "oci://registry.example.com/wasm/linter/naming@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-  pluginTypes:
-    - linter
+  pluginType: linter
   abiVersion: v1alpha1
 `
 
@@ -50,7 +49,7 @@ func TestPluginMaterialization(t *testing.T) {
 	if !ok {
 		t.Fatalf("eager PluginByURI(bare): not found")
 	}
-	if eagerBare.Spec.Plugin == "" || len(eagerBare.Spec.PluginTypes) != 1 || eagerBare.Spec.PluginTypes[0] != "linter" {
+	if eagerBare.Spec.Plugin == "" || eagerBare.Spec.PluginType != "linter" {
 		t.Fatalf("eager PluginByURI(bare): entity body not materialized as authored: %+v", eagerBare.Spec)
 	}
 
@@ -101,8 +100,7 @@ metadata:
   name: core/linter/broken
   version: 1.0.0
 spec:
-  pluginTypes:
-    - linter
+  pluginType: linter
   abiVersion: v0
 `
 

@@ -22,8 +22,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch@sha256:0000"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   runtime:
     maxMemoryPages: 16
@@ -68,8 +67,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch@sha256:0000"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
 `
 	var out bytes.Buffer
@@ -102,8 +100,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch@sha256:0000"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   runtime:
     hostFunctions:

@@ -5,8 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   compatibleProviders:
     - helm

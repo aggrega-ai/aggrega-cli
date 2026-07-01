@@ -428,8 +428,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: oci://hub.aggrega.ai/plugins/capped-renderer@sha256:0000000000000000000000000000000000000000000000000000000000000000
-  pluginTypes:
-    - provider
+  pluginType: provider
   abiVersion: v1alpha1
   runtime:
     maxMemoryPages: 256

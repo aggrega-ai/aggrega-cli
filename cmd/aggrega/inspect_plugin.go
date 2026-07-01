@@ -47,7 +47,7 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 
 // renderPluginFile renders a Plugin authored as a standalone file. The
 // plugin's declared capability surface is shown first: the content-addressed
-// .wasm artifact reference, the socket type(s) it implements, the ABI version
+// .wasm artifact reference, the socket type it implements, the ABI version
 // it targets, and the provider engines it claims compatibility with. The
 // exports table names each entry point and its authored capability claim
 // (operates / scope / selector); the runtime block reports the execution
@@ -55,8 +55,8 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 // unset rather than printing a fixed number, so the displayed surface never
 // drifts from the loader's actual cap.
 //
-//   - levelList: identifier plus the plugin types and export count.
-//   - levelDefault: plugin, plugin types, ABI version, compatible providers,
+//   - levelList: identifier plus the plugin type and export count.
+//   - levelDefault: plugin, plugin type, ABI version, compatible providers,
 //     the exports table, and the runtime block.
 //   - levelDetail: adds the signature pointer and the runtime config keys.
 func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
@@ -71,8 +71,8 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 
 	if opts.level == levelList {
 		fmt.Fprintln(opts.out, opts.colorize.uri(identifier))
-		fmt.Fprintf(opts.out, "types: %s, exports: %d\n",
-			joinedOrNone(wp.Spec.PluginTypes), len(wp.Spec.Exports))
+		fmt.Fprintf(opts.out, "type: %s, exports: %d\n",
+			typeOrNone(wp.Spec.PluginType), len(wp.Spec.Exports))
 		return nil
 	}
 
@@ -83,7 +83,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 		plugin = "(none declared)"
 	}
 	fmt.Fprintf(opts.out, "Plugin: %s\n", plugin)
-	fmt.Fprintf(opts.out, "Plugin types: %s\n", joinedOrNone(wp.Spec.PluginTypes))
+	fmt.Fprintf(opts.out, "Plugin type: %s\n", typeOrNone(wp.Spec.PluginType))
 
 	abiVersion := wp.Spec.AbiVersion
 	if abiVersion == "" {
@@ -190,6 +190,14 @@ func joinedOrNone(xs []string) string {
 		return "(none declared)"
 	}
 	return strings.Join(xs, ", ")
+}
+
+// typeOrNone reports a scalar value, or `(none declared)` when it is empty.
+func typeOrNone(s string) string {
+	if s == "" {
+		return "(none declared)"
+	}
+	return s
 }
 
 // limitOrDefault formats a runtime limit: the authored value when set, or

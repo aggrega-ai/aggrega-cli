@@ -20,7 +20,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter, frp_step]
+  pluginType: linter
   abiVersion: v1alpha1
   signature:
     type: sigstore-cosign
@@ -94,7 +94,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [provider]
+  pluginType: provider
   abiVersion: v1alpha1
 `
 	var wp types.Plugin
@@ -125,7 +125,7 @@ func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
 `,
 		"bad oci@sha256 form": `apiVersion: aggrega.ai/v1alpha1
@@ -133,7 +133,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://hub.aggrega.ai/wasm/linter/p:1.0.0
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
 `,
 		"unknown pluginType": `apiVersion: aggrega.ai/v1alpha1
@@ -141,7 +141,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [importer]
+  pluginType: importer
   abiVersion: v1alpha1
 `,
 		"unknown abiVersion": `apiVersion: aggrega.ai/v1alpha1
@@ -149,7 +149,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v2
 `,
 		"unknown spec sibling": `apiVersion: aggrega.ai/v1alpha1
@@ -157,7 +157,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
   allowedHosts: [example.com]
 `,
@@ -184,7 +184,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter, frp_step]
+  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -218,7 +218,7 @@ metadata:
   version: 1.0.0
 spec:
   plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter, frp_step]
+  pluginType: linter
   abiVersion: v1alpha1
 `
 	if _, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(withoutExports), "no-exports.yaml"); err != nil {
@@ -270,7 +270,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -281,7 +281,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -292,7 +292,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - operates: patch
@@ -302,7 +302,7 @@ kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
   plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  pluginTypes: [linter]
+  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming

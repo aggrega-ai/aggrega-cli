@@ -49,9 +49,7 @@ metadata:
   description: Renders IR nodes into Helm chart artifacts.
 spec:
   plugin: oci://hub.aggrega.ai/plugins/helm-renderer@sha256:abc123
-  pluginTypes:
-    - provider
-    - frp_step
+  pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:
     - helm
@@ -118,8 +116,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: oci://hub.aggrega.ai/plugins/linter@sha256:def456
-  pluginTypes:
-    - linter
+  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -156,8 +153,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: oci://hub.aggrega.ai/plugins/step@sha256:0a0a0a
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   runtime:
     timeoutMs: 7000

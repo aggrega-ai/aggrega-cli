@@ -1,6 +1,6 @@
 Plugin: core/helm-renderer:1.0.0
 Plugin: oci://hub.aggrega.ai/plugins/helm-renderer@sha256:abc123
-Plugin types: provider, frp_step
+Plugin type: provider
 ABI version: v1alpha1
 Compatible providers: helm, compose
 Exports:

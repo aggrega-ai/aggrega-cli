@@ -5,8 +5,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/own-patch-compose@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   compatibleProviders:
     - compose

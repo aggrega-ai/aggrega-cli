@@ -41,8 +41,7 @@ metadata:
   version: "`+version+`"
 spec:
   plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
-  pluginTypes:
-    - frp_step
+  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step
