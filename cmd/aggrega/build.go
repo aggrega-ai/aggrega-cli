@@ -30,6 +30,8 @@ var (
 	catalogDirs  []string
 	traceEnabled bool
 	buildDetail  bool
+	buildQuiet   bool
+	buildDebug   bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -42,6 +44,8 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	c.Flags().BoolVar(&buildDetail, "detail", false, "When build performs the implicit auto-pull (no lockfile present, auto_pull enabled), print per resolved entity what that pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no pull this build)")
+	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the per-phase build-progress line on stderr. Does not affect stdout")
+	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/closure counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -65,23 +69,39 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return dispatchBuild(rw, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
+		buildDiagOptions{quiet: buildQuiet, debug: buildDebug}, os.Stderr, os.Stdout)
 }
 
-// dispatchBuild composes the filesystem-touching pre-pipeline steps
-// (catalog load, lockfile verify-or-auto-pull, extends resolution,
-// deprecation surface, raw Aggregate read, workspace config load) around
-// pipeline.RunPipeline, then writes the rendered Artifacts to dist/
-// and (when --trace is on) the Trace map to .trace/. The in-memory
-// pipeline orchestration lives in internal/compiler/pipeline; tests
-// call dispatchBuild directly (passing a nil workspace, which resolves from
-// the working directory) to avoid racing on flag-bound globals under t.Parallel.
+// dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs
+// with no phase-progress surface and no verbose debug layer. Tests call it
+// directly (passing a nil workspace, which resolves from the working directory)
+// to avoid racing on flag-bound globals under t.Parallel; the CLI entry point
+// calls dispatchBuildWithDiag to thread the operator's --quiet / --debug
+// choices. Both share the single implementation below.
+func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
+	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, diagOut, out)
+}
+
+// dispatchBuildWithDiag composes the filesystem-touching pre-pipeline steps
+// (catalog load, lockfile verify-or-auto-pull, extends resolution, deprecation
+// surface, raw Aggregate read, workspace config load) around
+// pipeline.RunPipeline, then writes the rendered Artifacts to dist/ and (when
+// --trace is on) the Trace map to .trace/. The in-memory pipeline orchestration
+// lives in internal/compiler/pipeline.
 //
 // Per-step diagnostics are written to diagOut (os.Stderr in production); the
 // final success summary is written to out (os.Stdout in production). Tests pass
 // buffers (or os.Stderr/os.Stdout) to capture or route the output without
 // mutating a process global.
-func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
+//
+// diag carries the operator's stderr-diagnostics choices. The per-phase progress
+// surface and the verbose debug layer both write to diagOut only; stdout carries
+// only the final success summary, so the compiler's byte-deterministic rendered
+// output is invariant with respect to the diagnostic shape.
+func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, diagOut, out io.Writer) error {
+	progress := newProgressReporter(diagOut, diag)
+	defer progress.finish()
 	// wsRoot is the resolved workspace root; the catalog renders source-file
 	// accessors relative to it so the IR's per-node SourceFile records stay
 	// byte-identical across developer machines whose workspaces live at
@@ -109,9 +129,14 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// catalog-wide validation is `aggrega lint`'s job. Pass 1 does not expand
 	// cross-document $ref pillars, so a reference to a not-yet-resolved remote
 	// library does not fail here.
+	progress.phase(phaseLoadCatalog)
 	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
+	}
+	progress.note("catalog search dirs: %d", len(dirs))
+	if len(skipped) > 0 {
+		progress.note("catalog files skipped at load: %d", len(skipped))
 	}
 
 	// When more than one catalog directory is searched, report which entities a
@@ -126,6 +151,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// lockfile; a freshly auto-pulled one matches the closure by construction. The
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
+	progress.phase(phaseLockfile)
 	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, buildDetail, diagOut)
 	if err != nil {
 		return err
@@ -164,6 +190,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// entity skipped at tolerant load surfaces as an unresolvable URI;
 	// withSkipContext replays WHY it was skipped so the failure is never a bare
 	// "not found".
+	progress.phase(phaseClosure)
 	rc, err := releaseClosure(releasePath, lazyView, lf, wsCfg, wsRoot, cacheDir,
 		func(manifest *types.Manifest, manifestPath string) error {
 			return lazyView.AssertManifestImplementsConsistency(manifest, manifestPath)
@@ -176,12 +203,15 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	aggRes := rc.Aggregate
 	aggBytes := aggRes.Bytes
 	cl := rc.Closure
+	progress.note("closure entities: %d", len(cl.Entities))
+	progress.note("schema libraries: %d, mapping libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries))
 
 	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
 	// the closure's libraries (resolved through the lazy lookup). An in-closure
 	// entity that is schema-invalid — or whose $ref names a library skipped (broken)
 	// or missing — fails loudly here (the hard in-closure library reject); an
 	// out-of-closure break is never validated.
+	progress.phase(phaseValidate)
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
 		return withSkipContext(err, skipped)
 	}
@@ -198,6 +228,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// Resolve extends inheritance for the closure's Components and Features so the
 	// pipeline sees fully-merged entities. Closure-scoped: an out-of-closure broken
 	// extends never fails the build; an in-closure broken parent does.
+	progress.phase(phaseInheritance)
 	if extErrs := lazyView.ResolveClosureExtends(cl); len(extErrs) > 0 {
 		for _, e := range extErrs {
 			fmt.Fprintf(diagOut, "  extends: %s\n", e)
@@ -220,6 +251,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 	// Provider dispatch is the shared enginefactory.Dispatch — the single
 	// source of truth both the CLI build and the build-faithful test harness
 	// use, so a test renders through exactly the engines a real build does.
+	progress.phase(phaseRender)
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
 	buildLookup := lazyView.AsCatalogLookup()
 	buildLookup.ProviderInfraSchema = lazyView.ProviderInfraSchemaResolver(manifest)
@@ -275,6 +307,10 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 		}
 	}
 
+	// Clear the in-place progress line (and, in debug mode, print the timing
+	// total) before the stdout summary so the progress surface never lingers
+	// beside the final output. The deferred finish is idempotent.
+	progress.finish()
 	fmt.Fprintf(out, "Build complete: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
 }
