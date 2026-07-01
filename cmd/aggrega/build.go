@@ -275,6 +275,11 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		pipeline.Options{
 			IncludeTrace:             traceEnabled,
 			RecipeResolutionVerifier: lazyView.VerifyRecipeResolution,
+			// Per-node render progress. The callback writes only to the progress
+			// reporter's diagnostic sink (stderr); stdout carries only the final
+			// summary, so rendered output stays byte-deterministic. A no-op
+			// reporter (quiet, no debug) ignores the calls.
+			NodeProgress: progress.renderNode,
 		},
 	)
 	if err != nil {

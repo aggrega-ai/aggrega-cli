@@ -122,6 +122,148 @@ func TestProgress_DebugWinsOverQuiet(t *testing.T) {
 	}
 }
 
+// TestProgress_RenderNode_TTY_Counter pins the terminal render-progress shape:
+// each completed node redraws the render line in place with an X/Y counter, and
+// finish clears it so nothing lingers.
+func TestProgress_RenderNode_TTY_Counter(t *testing.T) {
+	orig := fileTerminal
+	t.Cleanup(func() { fileTerminal = orig })
+	fileTerminal = func(io.Writer) bool { return true }
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{})
+	p.phase(phaseRender)
+	total := 3
+	for i := 1; i <= total; i++ {
+		p.renderNode(i, total, "node-"+string(rune('a'+i-1)))
+	}
+	p.finish()
+
+	got := buf.String()
+	if !strings.Contains(got, "\r") {
+		t.Errorf("TTY render progress must redraw in place; got %q", got)
+	}
+	for _, want := range []string{"rendering 1/3", "rendering 2/3", "rendering 3/3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected in-place counter %q; got %q", want, got)
+		}
+	}
+	if !strings.HasSuffix(got, "\r"+ansiClearLine) {
+		t.Errorf("finish must clear the in-place counter line; got %q", got)
+	}
+}
+
+// TestProgress_RenderNode_NonTTY_Throttled pins the piped shape: a large graph
+// emits periodic lines (roughly one per tenth of the total) plus a guaranteed
+// final count — never one line per node — and no carriage returns.
+func TestProgress_RenderNode_NonTTY_Throttled(t *testing.T) {
+	orig := fileTerminal
+	t.Cleanup(func() { fileTerminal = orig })
+	fileTerminal = func(io.Writer) bool { return false }
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{})
+	total := 50
+	for i := 1; i <= total; i++ {
+		p.renderNode(i, total, "node")
+	}
+	p.finish()
+
+	got := buf.String()
+	if strings.ContainsRune(got, '\r') {
+		t.Errorf("non-TTY render progress must not contain carriage returns; got %q", got)
+	}
+	lines := 0
+	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
+		if strings.Contains(ln, "rendering ") {
+			lines++
+		}
+	}
+	// Throttled to ~one line per tenth (5 for 50 nodes) — far fewer than 50, and
+	// more than one so progress is visible.
+	if lines < 2 || lines > 12 {
+		t.Errorf("expected a throttled handful of interim lines, got %d; output %q", lines, got)
+	}
+	if !strings.Contains(got, "rendering 50/50...") {
+		t.Errorf("expected a guaranteed final count line; got %q", got)
+	}
+}
+
+// TestProgress_RenderNode_SmallGraph_FinalCount confirms a graph smaller than
+// the throttle stride still logs its final count on a plain sink.
+func TestProgress_RenderNode_SmallGraph_FinalCount(t *testing.T) {
+	orig := fileTerminal
+	t.Cleanup(func() { fileTerminal = orig })
+	fileTerminal = func(io.Writer) bool { return false }
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{})
+	total := 3
+	for i := 1; i <= total; i++ {
+		p.renderNode(i, total, "node")
+	}
+	p.finish()
+
+	if !strings.Contains(buf.String(), "rendering 3/3...") {
+		t.Errorf("small graph must still log its final count; got %q", buf.String())
+	}
+}
+
+// TestProgress_RenderNode_Quiet_Silent confirms --quiet suppresses the per-node
+// render surface entirely.
+func TestProgress_RenderNode_Quiet_Silent(t *testing.T) {
+	orig := fileTerminal
+	t.Cleanup(func() { fileTerminal = orig })
+	fileTerminal = func(io.Writer) bool { return true }
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{quiet: true})
+	for i := 1; i <= 5; i++ {
+		p.renderNode(i, 5, "node")
+	}
+	p.finish()
+
+	if buf.Len() != 0 {
+		t.Errorf("--quiet must produce no render progress; got %q", buf.String())
+	}
+}
+
+// TestProgress_RenderNode_Debug_NamesNode confirms the debug layer emits a
+// throttled per-node line that names the node just finished.
+func TestProgress_RenderNode_Debug_NamesNode(t *testing.T) {
+	orig := fileTerminal
+	t.Cleanup(func() { fileTerminal = orig })
+	fileTerminal = func(io.Writer) bool { return true }
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{debug: true})
+	p.renderNode(1, 1, "svc-web")
+
+	got := buf.String()
+	if strings.ContainsRune(got, '\r') {
+		t.Errorf("debug render progress must not redraw in place; got %q", got)
+	}
+	if !strings.Contains(got, "[debug]") || !strings.Contains(got, "rendering 1/1") || !strings.Contains(got, "svc-web") {
+		t.Errorf("debug render progress must name the node with a count; got %q", got)
+	}
+}
+
+// TestProgress_RenderNode_ZeroTotal_NoOp confirms a zero total (no nodes) draws
+// no render counter at all.
+func TestProgress_RenderNode_ZeroTotal_NoOp(t *testing.T) {
+	orig := fileTerminal
+	t.Cleanup(func() { fileTerminal = orig })
+	fileTerminal = func(io.Writer) bool { return false }
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{})
+	p.renderNode(0, 0, "")
+
+	if buf.Len() != 0 {
+		t.Errorf("zero total must produce no render counter; got %q", buf.String())
+	}
+}
+
 // TestProgress_DebugOnly_NonTTY confirms the debug layer emits identically when
 // the sink is not a terminal — debug is sink-shape-independent.
 func TestProgress_DebugOnly_NonTTY(t *testing.T) {

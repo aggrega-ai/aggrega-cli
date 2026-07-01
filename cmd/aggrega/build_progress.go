@@ -80,6 +80,14 @@ type progressReporter struct {
 	// before the stdout summary (so the in-place line clears first) and again via
 	// defer on any early return.
 	finished bool
+
+	// renderTotal is the node count the render phase walks, captured before the
+	// per-node loop. renderNext is the next non-TTY throttle threshold: plain
+	// sinks log a line only when the completed count crosses it, so a large graph
+	// does not emit one line per node. Zero renderTotal disables the counter and
+	// the render phase shows its plain static label.
+	renderTotal int
+	renderNext  int
 }
 
 // newProgressReporter resolves the reporter shape from the diagnostic options
@@ -155,6 +163,67 @@ func (p *progressReporter) note(format string, args ...any) {
 		return
 	}
 	fmt.Fprintf(p.out, "  [debug]   %s\n", fmt.Sprintf(format, args...))
+}
+
+// renderThrottleFraction bounds how often a non-TTY (piped/redirected) or debug
+// sink logs a render-progress line: at most once per this fraction of the total
+// node count, so a large graph emits a handful of periodic lines rather than one
+// per node. A TTY sink is unaffected — it redraws a single in-place line every
+// node.
+const renderThrottleFraction = 10
+
+// renderThrottleStep is the non-TTY logging stride for a total node count: one
+// tenth of the total, floored at one so a small graph still logs at least one
+// interim line before the guaranteed final count.
+func renderThrottleStep(total int) int {
+	step := total / renderThrottleFraction
+	if step < 1 {
+		step = 1
+	}
+	return step
+}
+
+// renderNode advances the render phase's per-node progress, called once per node
+// as the render loop completes it. done is the 1-based count of nodes rendered
+// so far, total is the graph's node count, and nodeID names the node just
+// finished. The total is captured on the first call (the render loop knows it
+// only once the IR graph exists), so no separate start call is needed.
+//
+// On a TTY it redraws the render line in place with an X/Y counter every node.
+// On a plain sink it logs a line only when the count crosses the throttle
+// threshold, and always for the final node, so redirected output stays a handful
+// of lines rather than one per node. In debug mode it logs a throttled per-node
+// line naming the node alongside the verbose layer. A no-op reporter, or a
+// zero/negative total, returns immediately.
+func (p *progressReporter) renderNode(done, total int, nodeID string) {
+	if p == nil || p.quiet || total <= 0 {
+		return
+	}
+	if p.renderTotal == 0 {
+		p.renderTotal = total
+		p.renderNext = renderThrottleStep(total)
+	}
+	label := buildPhases[phaseRender].label
+	if p.tty {
+		frame := spinnerFrames[done%len(spinnerFrames)]
+		fmt.Fprintf(p.out, "\r%c %s %d/%d%s", frame, label, done, p.renderTotal, ansiClearLine)
+		p.dirty = true
+		return
+	}
+	// Non-TTY (plain logger, includes debug): throttle to periodic lines plus a
+	// guaranteed final count, so a large graph does not spam one line per node.
+	final := done >= p.renderTotal
+	if done < p.renderNext && !final {
+		return
+	}
+	for p.renderNext <= done {
+		p.renderNext += renderThrottleStep(p.renderTotal)
+	}
+	if p.debug {
+		fmt.Fprintf(p.out, "  [debug]   %s %d/%d (%s)\n", label, done, p.renderTotal, nodeID)
+		return
+	}
+	fmt.Fprintf(p.out, "%s %d/%d...\n", label, done, p.renderTotal)
 }
 
 // finish clears any in-place line and, in debug mode, closes the final phase

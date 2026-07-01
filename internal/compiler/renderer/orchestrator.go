@@ -719,6 +719,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			"emitted_files_count": len(state.EmittedFiles),
 		}
 		_ = traceWriter.Write(trace.PassLabels, nodeID, node.BoundaryPath, "", labelsSummary)
+
+		// Per-node progress hook (nil = no-op). Fires once as this node's render
+		// completes, with the 1-based completed count and the total node count.
+		// A diagnostic observation only; it must not touch the file map, so
+		// rendered output is invariant with respect to whether it is set.
+		if input.NodeProgress != nil {
+			input.NodeProgress(nodeOrder+1, len(nodeIDs), nodeID)
+		}
 	}
 
 	// Boundary-scope FR output routing. After the per-node loop, any

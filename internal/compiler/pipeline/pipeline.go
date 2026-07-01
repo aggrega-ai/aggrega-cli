@@ -126,6 +126,16 @@ type Options struct {
 	// inspection rather than render — the check is skipped. Catalog supplies
 	// VerifyRecipeResolution, whose signature this matches.
 	RecipeResolutionVerifier func(*types.Manifest, *types.IRGraph) error
+
+	// NodeProgress, when set, is invoked once per node during Step 5 render as
+	// each node completes: done is the 1-based count of nodes rendered so far,
+	// total is the node count of the graph, and nodeID names the node just
+	// finished. It is a diagnostic hook for a progress surface; the callback must
+	// write only to a diagnostic sink (never stdout) so rendered output stays
+	// byte-deterministic. Left nil — the common case, and every non-CLI caller —
+	// the render loop skips the call. Mirrors IncludeTrace: an opt-in per-node
+	// observation point that is a no-op when unset.
+	NodeProgress func(done, total int, nodeID string)
 }
 
 // Result carries the pipeline's outputs. Artifacts is the rendered file
@@ -605,6 +615,10 @@ func RunPipeline(
 			// caller-supplied override (e.g. a fixture pointing a plugin URI at a
 			// built artifact) wins when present.
 			PluginPathLookup: inputs.PluginPathLookup,
+			// Per-node progress hook (nil = no-op). Forwarded verbatim; the
+			// renderer invokes it once per node as the loop completes. It writes
+			// only to a diagnostic sink, so rendered output is unaffected.
+			NodeProgress: opts.NodeProgress,
 		}
 		if rendererInput.PluginPathLookup == nil {
 			rendererInput.PluginPathLookup = buildEntityPluginLookup(inputs, catalogLookup)

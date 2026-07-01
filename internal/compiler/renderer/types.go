@@ -63,6 +63,15 @@ type RendererInput struct {
 	// validate-only warning — the non-regression path for callers that do not
 	// wire plugin loading.
 	PluginPathLookup pluginpath.Lookup
+
+	// NodeProgress, when non-nil, is invoked once per node as the per-node render
+	// loop completes each node: done is the 1-based count of nodes rendered so
+	// far, total is the graph's node count, and nodeID names the node just
+	// finished. It is a diagnostic observation point for a progress surface and
+	// must not write to stdout — the rendered file map stays byte-deterministic
+	// regardless of whether the hook is set. nil (the common case) skips the
+	// call. Mirrors the Trace writer: an opt-in per-node hook, no-op when unset.
+	NodeProgress func(done, total int, nodeID string)
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).
