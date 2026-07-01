@@ -13,10 +13,10 @@
 //     artifact name follows `<socket>-<lang>.wasm` (e.g.,
 //     `mutator-rust.wasm`). The fixture's `build.sh` produces the
 //     artifact under `aggrega-cli/internal/wasm/testdata/`.
-//   - Production plugins at `aggrega-cli/wasm-plugins/<name>/`. The
+//   - Production plugins at `aggrega-cli/plugins/<name>/`. The
 //     artifact name is `<name>.wasm` (no language suffix). The
 //     plugin's own Cargo project produces the artifact under
-//     `aggrega-cli/wasm-plugins/<name>/target/wasm32-unknown-unknown/release/<name_with_underscores>.wasm`.
+//     `aggrega-cli/plugins/<name>/target/wasm32-unknown-unknown/release/<name_with_underscores>.wasm`.
 //
 // EnsureFixtureBuilt detects the layout from the artifact-name shape
 // and dispatches accordingly. The cache + freshness semantics are
@@ -54,7 +54,7 @@ var fixtureBuildOnce sync.Map
 //   - "<socket>-<lang>.wasm" → PDK example layout at
 //     aggrega-pdk/<lang>/examples/<socket>/. Built via build.sh.
 //   - "<name>.wasm" (single component) → production plugin layout at
-//     aggrega-cli/wasm-plugins/<name>/. Built via cargo.
+//     aggrega-cli/plugins/<name>/. Built via cargo.
 //
 // The cache lets multiple integration tests share a single build per
 // fixture per test process, and turns the absent-toolchain case into
@@ -174,14 +174,14 @@ func pdkDependencySources(umbrellaRoot, lang string) (pdkSrc, abiSrc string) {
 }
 
 // buildPluginArtifact handles the production-plugin layout at
-// aggrega-cli/wasm-plugins/<name>/. Missing Cargo.toml is a hard
+// aggrega-cli/plugins/<name>/. Missing Cargo.toml is a hard
 // fail (the plugin source is supposed to exist); missing
 // wasm32-unknown-unknown target is a skip with a clear remediation;
 // other cargo failures are FAIL with the cargo error output. Cargo's
 // release-build artifact name uses underscores rather than dashes
 // (e.g., publishing-linter → publishing_linter.wasm).
 func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) string {
-	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "wasm-plugins", name)
+	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
@@ -247,7 +247,7 @@ func cargoBuildWasm(t *testing.T, pluginDir, manifestPath, artifactName string) 
 // Cargo.toml or post-build artifact is a hard fail; an absent wasm32
 // target/toolchain is a clean skip; a compile error is a FAIL.
 //
-// name is the plugin directory name under aggrega-cli/wasm-plugins/
+// name is the plugin directory name under aggrega-cli/plugins/
 // (e.g. "publishing-linter").
 func ForcePluginBuild(t *testing.T, name string) string {
 	t.Helper()
@@ -257,7 +257,7 @@ func ForcePluginBuild(t *testing.T, name string) string {
 		t.Skipf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
 	}
 
-	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "wasm-plugins", name)
+	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
@@ -283,7 +283,7 @@ func ForcePluginBuild(t *testing.T, name string) string {
 // the host target is present, so any failure is a genuine test failure,
 // not a toolchain skip.
 //
-// name is the plugin directory name under aggrega-cli/wasm-plugins/.
+// name is the plugin directory name under aggrega-cli/plugins/.
 func ForcePluginTest(t *testing.T, name string) {
 	t.Helper()
 
@@ -292,7 +292,7 @@ func ForcePluginTest(t *testing.T, name string) {
 		t.Skipf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
 	}
 
-	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "wasm-plugins", name)
+	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
@@ -340,7 +340,7 @@ func parsePDKFixtureName(name string) (socket, lang string, ok bool) {
 }
 
 // parsePluginArtifactName matches "<name>.wasm" where <name> is the
-// plugin's directory name under aggrega-cli/wasm-plugins/. The name
+// plugin's directory name under aggrega-cli/plugins/. The name
 // may contain dashes (e.g., "publishing-linter"); the .wasm suffix
 // is stripped and the remainder is returned verbatim.
 func parsePluginArtifactName(name string) (pluginName string, ok bool) {

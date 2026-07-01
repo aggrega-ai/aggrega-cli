@@ -13,7 +13,7 @@ import (
 // wasmtest.EnsureFixtureBuilt helper. The shared package generalises
 // the build-on-demand logic across two source layouts: PDK fixtures
 // at aggrega-pdk/<lang>/examples/<socket>/ AND production plugins at
-// aggrega-cli/wasm-plugins/<name>/. The integration tests in this
+// aggrega-cli/plugins/<name>/. The integration tests in this
 // package consume only the PDK-fixture layout.
 //
 // The wrapper preserves the original signature so the existing

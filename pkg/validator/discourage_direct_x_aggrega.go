@@ -28,7 +28,7 @@ import (
 //
 // The check is observation-only at build time: it does not return
 // an error and does not block load. The publishing-linter Wasm
-// peer at `aggrega-cli/wasm-plugins/publishing-linter/src/rules/
+// peer at `aggrega-cli/plugins/publishing-linter/src/rules/
 // x_aggrega_discouragement.rs` raises the same semantics to error
 // severity at `aggrega lint --pre-publish` time. One logical rule,
 // two implementations; equivalence pinned by the Go-side test at

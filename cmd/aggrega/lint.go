@@ -516,7 +516,7 @@ type lintEntityHeader struct {
 //
 // LOCKSTEP: the slice MUST match the plugin's lib.rs dispatcher
 // arms. Adding a rule requires updating both this
-// slice AND aggrega-cli/wasm-plugins/publishing-linter/src/lib.rs.
+// slice AND aggrega-cli/plugins/publishing-linter/src/lib.rs.
 func defaultRuleIDs(prePublish bool) []string {
 	rules := []string{
 		"annotation-prefix",

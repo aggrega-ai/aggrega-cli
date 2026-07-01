@@ -35,7 +35,7 @@ func linterSpec(b []byte) wasm.PluginSpec {
 func loadFixture(t *testing.T, kind, classification, file string) json.RawMessage {
 	t.Helper()
 	root := umbrellaRoot(t)
-	path := filepath.Join(root, "aggrega-cli", "wasm-plugins", "publishing-linter",
+	path := filepath.Join(root, "aggrega-cli", "plugins", "publishing-linter",
 		"tests", "fixtures", strings.ToLower(kind), classification, file)
 	data, err := os.ReadFile(path)
 	if err != nil {
