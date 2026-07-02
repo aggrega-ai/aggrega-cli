@@ -21,6 +21,12 @@ type PluginSpec struct {
 	// catalog URI leaf (for example "publishing-linter").
 	Name string
 
+	// PluginType is the plugin's kind — provider, linter, or frp_step. The
+	// Loader uses it only to compose a human-readable program-name label for
+	// the guest's WASI argv (see programName); it is a diagnostic label, not a
+	// dispatch key.
+	PluginType PluginType
+
 	// Path is the filesystem path to the .wasm artifact bytes. Upstream
 	// resolution (catalog URI to local path) happens elsewhere; the
 	// Loader treats Path as an opaque resolved location. Ignored when
@@ -63,4 +69,21 @@ type PluginSpec struct {
 	// plugin would break AOT purity (no runtime network access at build
 	// time) and is rejected categorically.
 	AllowedHosts []string
+}
+
+// programName is the human-readable program-name label the Loader supplies as
+// the guest's WASI argv[0]. It exists to satisfy transitive dependencies (such
+// as klog) whose package init reads os.Args[0] and panics on an empty argv; it
+// is NOT a machine-parseable identity, so callers must not split or parse it.
+// It composes "<type>-<name>" when both are set, falls back to the name alone,
+// and never returns an empty string.
+func (s PluginSpec) programName() string {
+	switch {
+	case s.PluginType != "" && s.Name != "":
+		return string(s.PluginType) + "-" + s.Name
+	case s.Name != "":
+		return s.Name
+	default:
+		return "aggrega-plugin"
+	}
 }

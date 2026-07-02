@@ -240,6 +240,53 @@ var irGuestVocabulary = map[string]string{
 // through verbatim.
 var policyGuestVocabulary = map[string]string{}
 
+// providerGuestVocabulary maps the provider render schema's host type spellings
+// to the neutral, cycle-free guest vocabulary: an opaque cross-package host type
+// (the render-time context, the per-render boundary context, the shared
+// diagnostic) becomes json.RawMessage (verbatim passthrough preserves its
+// bytes), and every order-preserving host container becomes a plain map (the
+// guest reads a map; key order on the wire is the emitting host's concern). The
+// ordered structured content of an output file is the same order-preserving-any
+// container as a node's values, so both surface to the guest as
+// map[string]json.RawMessage — the guest reads and echoes the content by key,
+// and the host runs the single serializer that turns it into bytes.
+var providerGuestVocabulary = map[string]string{
+	"renderctx.RenderContext":          "json.RawMessage",
+	"renderctx.BoundaryContext":        "json.RawMessage",
+	"renderctx.Diagnostic":             "json.RawMessage",
+	"OrderedMap[any]":                  "map[string]json.RawMessage",
+	"OrderedMap[[]string]":             "map[string][]string",
+	"OrderedMap[types.IRFeatureEntry]": "map[string]json.RawMessage",
+	"OrderedMap[types.Component]":      "map[string]json.RawMessage",
+	"OrderedMap[types.Feature]":        "map[string]json.RawMessage",
+	"OrderedMap[types.Recipe]":         "map[string]json.RawMessage",
+	"OrderedMap[types.FeatureRecipe]":  "map[string]json.RawMessage",
+	"OrderedMap[types.Provider]":       "map[string]json.RawMessage",
+	"OrderedMap[types.MappingLibrary]": "map[string]json.RawMessage",
+}
+
+// providerHostVocabulary maps the provider render schema's container annotations
+// to the host realization: the order-preserving types.OrderedMap (qualified,
+// since the host codec lands in package renderer) so the host wire is
+// byte-deterministic across runs of identical input (the determinism contract).
+// The ordered structured content of an output file is the recursively
+// order-preserving types.OrderedMap[any], so the guest's key order is carried to
+// the host serializer intact rather than collapsed by an unordered map. The
+// cross-package opaque host types (the render context, the boundary context, the
+// shared diagnostic) carry their real host spelling verbatim (no entry needed);
+// the host marshals them through their own order-preserving codecs.
+var providerHostVocabulary = map[string]string{
+	"OrderedMap[any]":                  "types.OrderedMap[any]",
+	"OrderedMap[[]string]":             "types.OrderedMap[[]string]",
+	"OrderedMap[types.IRFeatureEntry]": "types.OrderedMap[types.IRFeatureEntry]",
+	"OrderedMap[types.Component]":      "types.OrderedMap[types.Component]",
+	"OrderedMap[types.Feature]":        "types.OrderedMap[types.Feature]",
+	"OrderedMap[types.Recipe]":         "types.OrderedMap[types.Recipe]",
+	"OrderedMap[types.FeatureRecipe]":  "types.OrderedMap[types.FeatureRecipe]",
+	"OrderedMap[types.Provider]":       "types.OrderedMap[types.Provider]",
+	"OrderedMap[types.MappingLibrary]": "types.OrderedMap[types.MappingLibrary]",
+}
+
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
@@ -367,6 +414,47 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"IRGraph"},
 	},
+
+	// Provider render socket — guest codecs into aggrega-abi (Go/Rust/TS) and the
+	// host codec into aggrega-cli's renderer package. The guest realizes the
+	// order-preserving containers as plain maps and the opaque cross-package host
+	// types (render context, boundary context, diagnostic) as json.RawMessage; the
+	// host realizes the containers as types.OrderedMap and the opaque host types at
+	// their real spelling. The abi Go codec references the helpers FRP owns in
+	// package abi (helpers: false); the renderer host codec is alone in its package
+	// and owns its helpers (helpers: true).
+	//
+	// The output basenames carry the `providerrender_` stem rather than
+	// `provider_`: the `provider_gen.go` basename is already the Provider entity's
+	// single-type target in pkg/types, and the generator dispatches by basename, so
+	// a shared basename would resolve to the entity kind, not this codec target.
+	"providerrender_gen.go": {
+		schema:     schemas.WasmProviderV1alpha1,
+		schemaFile: "wasm-provider-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: providerGuestVocabulary,
+	},
+	"providerrender_gen.rs": {
+		schema:     schemas.WasmProviderV1alpha1,
+		schemaFile: "wasm-provider-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: providerGuestVocabulary,
+		lang:       "rust",
+	},
+	"providerrender_gen.ts": {
+		schema:     schemas.WasmProviderV1alpha1,
+		schemaFile: "wasm-provider-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: providerGuestVocabulary,
+		lang:       "ts",
+	},
+	"providerrender_host_gen.go": {
+		schema:     schemas.WasmProviderV1alpha1,
+		schemaFile: "wasm-provider-v1alpha1.schema.json",
+		pkg:        "renderer",
+		vocabulary: providerHostVocabulary,
+		helpers:    true, // the host provider render codec is alone in package renderer
+	},
 }
 
 // knownImports maps a package selector that may appear in an x-aggrega-go-type
@@ -374,8 +462,9 @@ var codecTargets = map[string]codecTarget{
 // type (e.g. a future time.Duration inside a generic) is a one-line add here,
 // not a vocabulary-improvisation halt.
 var knownImports = map[string]string{
-	"yaml":  "go.yaml.in/yaml/v3",
-	"types": "github.com/aggrega-ai/aggrega-cli/pkg/types",
+	"yaml":      "go.yaml.in/yaml/v3",
+	"types":     "github.com/aggrega-ai/aggrega-cli/pkg/types",
+	"renderctx": "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx",
 }
 
 // schemaNode is a decoded JSON Schema object node preserving the declared

@@ -6,24 +6,9 @@ package wasm
 import (
 	"bytes"
 	"errors"
-	"sort"
 	"strings"
 	"testing"
 )
-
-// TestValidateWasiImportsAcceptsAllowlistedNames builds a Wasm
-// binary fragment importing every name in wasiImportAllowlist and
-// asserts the firewall accepts the module. The fragment is
-// deliberately minimal — header + import section + nothing else —
-// because the firewall walks only the import section.
-func TestValidateWasiImportsAcceptsAllowlistedNames(t *testing.T) {
-	t.Parallel()
-	names := sortedKeys(wasiImportAllowlist)
-	wasmBytes := buildWasmModuleWithImports(t, importsForNames(wasiSnapshotPreview1Namespace, names))
-	if err := validateWasiImports("allowlist-probe", wasmBytes); err != nil {
-		t.Errorf("validateWasiImports rejected an allowlist-only module: %v", err)
-	}
-}
 
 // stdGoWasip1Imports is the WASI preview-1 import set a standard-Go
 // GOOS=wasip1 reactor emits. The firewall MUST accept every one of
@@ -38,125 +23,118 @@ var stdGoWasip1Imports = []string{
 	"poll_oneoff", "proc_exit", "random_get", "sched_yield",
 }
 
-// TestValidateWasiImportsAcceptsStdGoWasip1Set asserts the firewall
+// TestValidateImportModulesAcceptsStdGoWasip1Set asserts the firewall
 // accepts the exact import set a standard-Go GOOS=wasip1 reactor
 // emits — the load-bearing property that lets the Go PDK ship as a
-// std-Go wasip1 plugin. A regression that drops any of these names
-// from the allowlist fails here loudly.
-func TestValidateWasiImportsAcceptsStdGoWasip1Set(t *testing.T) {
+// std-Go wasip1 plugin. Every name here declares the
+// wasi_snapshot_preview1 module, which is an allowed import module.
+func TestValidateImportModulesAcceptsStdGoWasip1Set(t *testing.T) {
 	t.Parallel()
 	wasmBytes := buildWasmModuleWithImports(t, importsForNames(wasiSnapshotPreview1Namespace, stdGoWasip1Imports))
-	if err := validateWasiImports("stdgo-wasip1-probe", wasmBytes); err != nil {
-		t.Errorf("validateWasiImports rejected the std-Go GOOS=wasip1 import set: %v", err)
-	}
-	// Every name in the std-Go set must be on the allowlist explicitly.
-	for _, name := range stdGoWasip1Imports {
-		if !wasiImportAllowlist[name] {
-			t.Errorf("std-Go wasip1 import %q missing from wasiImportAllowlist", name)
-		}
+	if err := validateImportModules("stdgo-wasip1-probe", wasmBytes); err != nil {
+		t.Errorf("validateImportModules rejected the std-Go GOOS=wasip1 import set: %v", err)
 	}
 }
 
-// TestValidateWasiImportsRejectsCapabilityGrantingNames runs a
-// table-driven check over every entry in wasiCapabilityDenylist: each
-// name MUST produce an ErrWasmManifestRejected error whose message
-// embeds both the import name and the capability label.
-func TestValidateWasiImportsRejectsCapabilityGrantingNames(t *testing.T) {
+// TestValidateImportModulesAcceptsAnyWasiFunctionName pins the core
+// property of the capability firewall: WASI function names are no
+// longer censored. A guest importing filesystem-, directory-, and
+// socket-granting WASI functions under wasi_snapshot_preview1 now
+// loads, because naming a WASI import is not exercising a capability —
+// the loader denies the capability itself at instantiation (no
+// preopened filesystem, no sockets). A statically-linked language
+// runtime pulls these in transitively without ever calling them.
+func TestValidateImportModulesAcceptsAnyWasiFunctionName(t *testing.T) {
 	t.Parallel()
-	for name, capability := range wasiCapabilityDenylist {
-		name, capability := name, capability
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			wasmBytes := buildWasmModuleWithImports(t, importsForNames(
-				wasiSnapshotPreview1Namespace, []string{name}))
-			err := validateWasiImports("capability-probe", wasmBytes)
-			if err == nil {
-				t.Fatalf("expected rejection of wasi_snapshot_preview1.%s; got nil", name)
-			}
-			if !errors.Is(err, ErrWasmManifestRejected) {
-				t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
-			}
-			msg := err.Error()
-			if !strings.Contains(msg, name) {
-				t.Errorf("error message missing import name %q: %v", name, err)
-			}
-			if !strings.Contains(msg, capability) {
-				t.Errorf("error message missing capability label %q: %v", capability, err)
-			}
-		})
+	formerlyDenied := []string{
+		"path_open", "fd_readdir", "sock_accept", "sock_shutdown",
+		"fd_filestat_set_size",
 	}
-}
-
-// TestValidateWasiImportsRejectsFilesystemAndSocketImports pins the
-// specific capability-granting imports that MUST stay rejected even
-// though the allowlist expanded for the std-Go reactor set: directory
-// traversal (fd_readdir), file paths (path_open), and sockets
-// (sock_*). These are the capabilities the firewall exists to deny.
-func TestValidateWasiImportsRejectsFilesystemAndSocketImports(t *testing.T) {
-	t.Parallel()
-	for _, name := range []string{"fd_readdir", "path_open", "sock_open", "sock_connect"} {
+	for _, name := range formerlyDenied {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			wasmBytes := buildWasmModuleWithImports(t, importsForNames(
 				wasiSnapshotPreview1Namespace, []string{name}))
-			err := validateWasiImports("denied-probe", wasmBytes)
-			if err == nil {
-				t.Fatalf("expected rejection of wasi_snapshot_preview1.%s; got nil", name)
-			}
-			if !errors.Is(err, ErrWasmManifestRejected) {
-				t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
-			}
-			if wasiImportAllowlist[name] {
-				t.Errorf("capability-granting import %q must not be on the allowlist", name)
+			if err := validateImportModules("wasi-name-probe", wasmBytes); err != nil {
+				t.Errorf("validateImportModules rejected wasi_snapshot_preview1.%s; any WASI function name under an allowed module must pass: %v", name, err)
 			}
 		})
 	}
 }
 
-// TestValidateWasiImportsRejectsUnknownNames covers the default-deny
-// path: an import under wasi_snapshot_preview1 that is on neither the
-// allowlist nor the denylist must be rejected.
-func TestValidateWasiImportsRejectsUnknownNames(t *testing.T) {
+// TestValidateImportModulesAcceptsExtismNamespaces confirms imports
+// under the two Extism module namespaces — extism:host/env (the
+// runtime ABI) and extism:host/user (Aggrega's curated host functions)
+// — load cleanly. Both are allowed import modules.
+func TestValidateImportModulesAcceptsExtismNamespaces(t *testing.T) {
 	t.Parallel()
-	wasmBytes := buildWasmModuleWithImports(t, importsForNames(
-		wasiSnapshotPreview1Namespace, []string{"does_not_exist"}))
-	err := validateWasiImports("unknown-probe", wasmBytes)
+	wasmBytes := buildWasmModuleWithImports(t, []functionImport{
+		{Module: extismHostEnvNamespace, Name: "input_length"},
+		{Module: extismHostEnvNamespace, Name: "alloc"},
+		{Module: extismHostUserNamespace, Name: "aggrega_log"},
+		{Module: extismHostUserNamespace, Name: "aggrega_emit_warning"},
+	})
+	if err := validateImportModules("extism-ns-probe", wasmBytes); err != nil {
+		t.Errorf("validateImportModules rejected the Extism namespaces: %v", err)
+	}
+}
+
+// TestValidateImportModulesRejectsUnknownModule is the core firewall
+// test: an import declaring a module namespace outside the allowed set
+// is rejected with an error wrapping ErrWasmManifestRejected whose
+// message names the offending module. This is what the import-module
+// firewall exists to catch — a guest naming a surface the host does
+// not provide.
+func TestValidateImportModulesRejectsUnknownModule(t *testing.T) {
+	t.Parallel()
+	const badModule = "evil:host/net"
+	wasmBytes := buildWasmModuleWithImports(t, []functionImport{
+		{Module: badModule, Name: "connect"},
+	})
+	err := validateImportModules("unknown-module-probe", wasmBytes)
 	if err == nil {
-		t.Fatalf("expected rejection of unknown WASI import; got nil")
+		t.Fatalf("expected rejection of an import under module %q; got nil", badModule)
 	}
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
 	}
-	if !strings.Contains(err.Error(), "does_not_exist") {
-		t.Errorf("error message missing the unknown import name: %v", err)
+	if !strings.Contains(err.Error(), badModule) {
+		t.Errorf("error message missing the offending module %q: %v", badModule, err)
 	}
 }
 
-// TestValidateWasiImportsIgnoresOtherNamespaces confirms the firewall
-// pass is scoped to wasi_snapshot_preview1: imports under
-// extism:host/env and extism:host/user pass through this pass without
-// rejection (the host-function allowlist in manifest_translate.go
-// owns those surfaces).
-func TestValidateWasiImportsIgnoresOtherNamespaces(t *testing.T) {
+// TestValidateImportModulesRejectsUnknownModuleAmongAllowed confirms
+// the firewall inspects every import, not just the first: a disallowed
+// module mixed in with allowed ones is still caught.
+func TestValidateImportModulesRejectsUnknownModuleAmongAllowed(t *testing.T) {
 	t.Parallel()
+	const badModule = "evil:host/fs"
 	wasmBytes := buildWasmModuleWithImports(t, []functionImport{
-		{Module: "extism:host/env", Name: "alloc"},
-		{Module: "extism:host/user", Name: "aggrega_log"},
+		{Module: wasiSnapshotPreview1Namespace, Name: "fd_write"},
+		{Module: extismHostUserNamespace, Name: "aggrega_log"},
+		{Module: badModule, Name: "open"},
 	})
-	if err := validateWasiImports("other-ns-probe", wasmBytes); err != nil {
-		t.Errorf("firewall must not touch non-WASI namespaces: %v", err)
+	err := validateImportModules("mixed-module-probe", wasmBytes)
+	if err == nil {
+		t.Fatalf("expected rejection of an import under module %q; got nil", badModule)
+	}
+	if !errors.Is(err, ErrWasmManifestRejected) {
+		t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
+	}
+	if !strings.Contains(err.Error(), badModule) {
+		t.Errorf("error message missing the offending module %q: %v", badModule, err)
 	}
 }
 
-// TestValidateWasiImportsAcceptsEmptyImportSection confirms a Wasm
+// TestValidateImportModulesAcceptsEmptyImportSection confirms a Wasm
 // module with no import section validates cleanly. Plugins that
 // import nothing are structurally valid.
-func TestValidateWasiImportsAcceptsEmptyImportSection(t *testing.T) {
+func TestValidateImportModulesAcceptsEmptyImportSection(t *testing.T) {
 	t.Parallel()
 	wasmBytes := buildWasmModuleWithImports(t, nil)
-	if err := validateWasiImports("empty-probe", wasmBytes); err != nil {
-		t.Errorf("validateWasiImports rejected an import-section-free module: %v", err)
+	if err := validateImportModules("empty-probe", wasmBytes); err != nil {
+		t.Errorf("validateImportModules rejected an import-section-free module: %v", err)
 	}
 }
 
@@ -207,31 +185,7 @@ func TestCallWithPanicRecoveryWrapsGuestPanic(t *testing.T) {
 	}
 }
 
-// TestWasiImportAllowlistAndDenylistDisjoint confirms no import name
-// appears on both maps — the firewall classification would be
-// ambiguous otherwise. poll_oneoff moved from the denylist to the
-// allowlist; this guards against a future re-introduction collision.
-func TestWasiImportAllowlistAndDenylistDisjoint(t *testing.T) {
-	t.Parallel()
-	for name := range wasiImportAllowlist {
-		if _, denied := wasiCapabilityDenylist[name]; denied {
-			t.Errorf("name %q appears on both allowlist and denylist", name)
-		}
-	}
-}
-
 // --- helpers ---------------------------------------------------------
-
-// sortedKeys returns the keys of m sorted alphabetically. Used for
-// deterministic test iteration over allowlist/denylist maps.
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // importsForNames builds a functionImport slice for the given names
 // under the given namespace. Convenience for the table-driven tests.

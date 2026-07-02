@@ -69,23 +69,28 @@ func TestRegenClean_Enums(t *testing.T) {
 // umbrella root, then into aggrega-abi); the gate reads it with os.ReadFile,
 // not a Go import, so the cross-module read needs no go.work membership.
 var codecTargetPaths = map[string][]string{
-	"frp_gen.go":     {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
-	"mutator_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
-	"mutator_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
-	"mutator_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
-	"linter_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
-	"linter_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
-	"linter_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
-	"ir_gen.go":      {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
-	"ir_gen.rs":      {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
-	"ir_gen.ts":      {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
-	"policy_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
-	"policy_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
-	"policy_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"frp_gen.go":      {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"mutator_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"mutator_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"mutator_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"linter_gen.go":   {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"linter_gen.rs":   {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"linter_gen.ts":   {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"ir_gen.go":       {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"ir_gen.rs":       {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"ir_gen.ts":       {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"policy_gen.go":   {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"policy_gen.rs":   {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"policy_gen.ts":   {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"providerrender_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"providerrender_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"providerrender_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.
 	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
 	// The host linter codec is committed inside aggrega-cli's validator package.
 	"linter_host_gen.go": {"..", "..", "..", "pkg", "validator"},
+	// The host provider render codec is committed inside aggrega-cli's renderer package.
+	"providerrender_host_gen.go": {"..", "..", "compiler", "renderer"},
 }
 
 // TestRegenClean_Codec is the regen-drift gate for the multi-type codec

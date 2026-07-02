@@ -32,11 +32,10 @@ func orderedMap[V any](t *testing.T, pairs ...any) types.OrderedMap[V] {
 	return *m
 }
 
-// sampleRenderNodeInput builds a render_node input populated from the
-// worked Pattern B envelope: a node with author-ordered values, a
-// feature attachment reusing types.IRFeatureEntry, outbound uses edges,
-// and a full render context with the three annotation buckets and a
-// catalog projection.
+// sampleRenderNodeInput builds a render_node input populated with a node
+// carrying author-ordered values, a feature attachment reusing
+// types.IRFeatureEntry, outbound uses edges, and a full render context with
+// the three annotation buckets and a catalog projection.
 func sampleRenderNodeInput(t *testing.T) renderer.RenderNodeInput {
 	t.Helper()
 
@@ -83,18 +82,23 @@ func sampleRenderNodeInput(t *testing.T) renderer.RenderNodeInput {
 				"core/web-service", types.Component{},
 			),
 		},
+		SourceProjection: &renderer.SourceProjection{
+			Files: []renderer.SourceFile{
+				{Path: "Chart.yaml", Content: []byte("apiVersion: v2\nname: payments\nversion: 1.4.2\n")},
+				{Path: "templates/deployment.yaml", Content: []byte("kind: Deployment\n")},
+			},
+		},
 	}
 }
 
-// sampleRenderNodeOutput builds a render_node output populated from the
-// worked R4d wrapper: provider-native content, a metadata sidecar with a
-// filename hint and post-processing transforms, and a diagnostic.
-func sampleRenderNodeOutput() renderer.RenderNodeOutput {
+// sampleRenderNodeOutput builds a render_node output in the reshaped form:
+// each output file's serialized bytes (the host writes them verbatim) plus a
+// diagnostic.
+func sampleRenderNodeOutput(t *testing.T) renderer.RenderNodeOutput {
+	t.Helper()
 	return renderer.RenderNodeOutput{
-		Content: map[string]any{"kind": "Deployment"},
-		Metadata: renderer.RenderMetadata{
-			OutputFilenameHint: "release.yaml",
-			PostProcessing:     []string{"sort_keys", "remove_nil_fields"},
+		Files: []renderer.RenderedFile{
+			{Path: "templates/deployment.yaml", Content: []byte("kind: Deployment\nmetadata:\n  name: payments-api\n  namespace: payments\n")},
 		},
 		Diagnostics: []renderer.Diagnostic{
 			{
@@ -138,22 +142,28 @@ func TestRenderNodeInput_RoundTrip(t *testing.T) {
 }
 
 // TestRenderNodeOutput_RoundTrip asserts a render_node output (and, via
-// the alias, an assemble_boundary output) survives a marshal round-trip
-// equal to the original Go value.
+// the alias, an assemble_boundary output) survives a marshal -> unmarshal ->
+// marshal cycle byte-identically. The reshaped output carries each file's
+// serialized bytes, so a byte-identical round-trip proves the bytes survive the
+// boundary (base64 on the wire).
 func TestRenderNodeOutput_RoundTrip(t *testing.T) {
 	t.Parallel()
-	fixture := sampleRenderNodeOutput()
+	fixture := sampleRenderNodeOutput(t)
 
-	raw, err := json.Marshal(fixture)
+	first, err := json.Marshal(fixture)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	var round renderer.RenderNodeOutput
-	if err := json.Unmarshal(raw, &round); err != nil {
+	if err := json.Unmarshal(first, &round); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !reflect.DeepEqual(fixture, round) {
-		t.Errorf("round-trip inequality:\n  before: %+v\n  after:  %+v", fixture, round)
+	second, err := json.Marshal(round)
+	if err != nil {
+		t.Fatalf("marshal round: %v", err)
+	}
+	if string(first) != string(second) {
+		t.Errorf("round-trip not byte-identical:\n  first:  %s\n  second: %s", first, second)
 	}
 }
 
@@ -165,7 +175,7 @@ func TestAssembleBoundaryInput_RoundTrip(t *testing.T) {
 	fixture := renderer.AssembleBoundaryInput{
 		Boundary: in.Context.Boundary,
 		RenderedNodes: []renderer.RenderedNode{
-			{ID: "payments-api", Type: "core/web-service", Rendered: sampleRenderNodeOutput()},
+			{ID: "payments-api", Type: "core/web-service", Rendered: sampleRenderNodeOutput(t)},
 		},
 		Context: in.Context,
 	}
@@ -276,7 +286,7 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 // assignment below at compile time.
 func TestAssembleBoundaryOutput_AliasIdentity(t *testing.T) {
 	t.Parallel()
-	var out renderer.AssembleBoundaryOutput = sampleRenderNodeOutput()
+	var out renderer.AssembleBoundaryOutput = sampleRenderNodeOutput(t)
 	var _ renderer.RenderNodeOutput = out
 
 	if reflect.TypeOf(renderer.AssembleBoundaryOutput{}) != reflect.TypeOf(renderer.RenderNodeOutput{}) {
@@ -303,5 +313,20 @@ func TestIRNodeProjection_ReusesIRFeatureEntry(t *testing.T) {
 	// The field type must be exactly OrderedMap over types.IRFeatureEntry.
 	if featuresField.Type != reflect.TypeOf(types.OrderedMap[types.IRFeatureEntry]{}) {
 		t.Errorf("Features field type drifted from OrderedMap[types.IRFeatureEntry]: %v", featuresField.Type)
+	}
+}
+
+// TestRenderedFile_ContentIsBytes guards the reshape's load-bearing choice:
+// RenderedFile.Content is the file's raw serialized bytes ([]byte), which the
+// host writes verbatim — not structured content the host re-serializes. A future
+// change back to a structured container breaks this guard.
+func TestRenderedFile_ContentIsBytes(t *testing.T) {
+	t.Parallel()
+	contentField, ok := reflect.TypeOf(renderer.RenderedFile{}).FieldByName("Content")
+	if !ok {
+		t.Fatal("RenderedFile has no Content field")
+	}
+	if contentField.Type != reflect.TypeOf([]byte(nil)) {
+		t.Errorf("Content field type drifted from []byte: %v", contentField.Type)
 	}
 }

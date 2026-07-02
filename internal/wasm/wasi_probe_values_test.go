@@ -14,22 +14,25 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-// TestWasiProbeDeterministicValues proves the byte-level deterministic
-// contract the loader's WASI configuration promises, against the real
-// wasi-probe fixture. The Extism Plugin wrapper exposes only the Extism
-// kernel's memory, not a non-PDK guest's main-module memory, so the
-// fixture's observation buffer cannot be read through the production
-// loader path (TestPluginRoundTrip_WasiProbeRust covers load + run +
-// no-trap there). This test instantiates the same fixture directly on a
-// wazero runtime using the EXACT production ModuleConfig
+// TestWasiProbeDeterministicValues proves the byte-level WASI contract
+// the loader's WASI configuration promises, against the real wasi-probe
+// fixture. The Extism Plugin wrapper exposes only the Extism kernel's
+// memory, not a non-PDK guest's main-module memory, so the fixture's
+// observation buffer cannot be read through the production loader path
+// (TestPluginRoundTrip_WasiProbeRust covers load + run + no-trap
+// there). This test instantiates the same fixture directly on a wazero
+// runtime using the EXACT production ModuleConfig
 // (deterministicModuleConfig) so the assertion is over the real
 // configuration, not a re-declared copy.
 //
 // The fixture writes a 40-byte observation buffer and exercises three
-// WASI imports against it:
+// WASI imports against it. Wall time and fd_write are deterministic
+// surfaces; random_get is deliberately real host entropy, so a
+// nondeterministic guest surfaces as differing output rather than
+// being masked by a pinned seed:
 //
 //	bytes  0.. 8  clock_time_get result (u64 LE) — frozen wall time → 0
-//	bytes  8..24  random_get buffer (16 bytes)    — zero entropy → all 0
+//	bytes  8..24  random_get buffer (16 bytes)    — real entropy → not all zero
 //	bytes 24..28  fd_write written count (u32 LE) — requested 13 bytes
 //	bytes 28..32  fd_write errno (u32 LE)         — success → 0
 func TestWasiProbeDeterministicValues(t *testing.T) {
@@ -45,7 +48,7 @@ func TestWasiProbeDeterministicValues(t *testing.T) {
 	defer runtime.Close(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, runtime)
 
-	mod, err := runtime.InstantiateWithConfig(ctx, wasmBytes, deterministicModuleConfig())
+	mod, err := runtime.InstantiateWithConfig(ctx, wasmBytes, deterministicModuleConfig("aggrega-plugin"))
 	if err != nil {
 		t.Fatalf("instantiate wasi-probe under deterministic config: %v", err)
 	}
@@ -70,11 +73,20 @@ func TestWasiProbeDeterministicValues(t *testing.T) {
 		t.Errorf("clock_time_get observed %d; want 0 (frozen walltime)", got)
 	}
 
-	// random_get → zero entropy: all 16 bytes zero.
-	for i, b := range buf[8:24] {
+	// random_get → real host entropy: deliberately NOT pinned, so a
+	// nondeterministic guest surfaces as differing output rather than
+	// being masked by a pinned seed. Assert the 16 bytes are not the
+	// all-zero pattern a pinned zero source would produce (all 16
+	// bytes zero under real entropy has probability 2^-128).
+	allZero := true
+	for _, b := range buf[8:24] {
 		if b != 0 {
-			t.Errorf("random_get byte %d = %#x; want 0 (zero entropy source)", i, b)
+			allZero = false
+			break
 		}
+	}
+	if allZero {
+		t.Error("random_get returned all-zero bytes; want real host entropy (the entropy source is not pinned)")
 	}
 
 	// fd_write → discards but reports the requested byte count

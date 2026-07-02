@@ -13,20 +13,18 @@ import "errors"
 //   - non-empty AllowedHosts (outbound network access)
 //   - non-empty AllowedPaths (filesystem access)
 //   - declared host functions outside the curated allowlist
-//   - wasi_snapshot_preview1 imports outside the curated import
-//     allowlist (e.g. path_open, sock_*, fd_readdir — these grant
-//     filesystem or network capabilities)
+//   - imports declaring a module namespace outside the allowed set
+//     (wasi_snapshot_preview1, extism:host/env, extism:host/user)
 //
 // WASI stdio passthrough and wall-time access remain denied by
 // construction: the Loader enables WASI but hands the Extism runtime a
-// deterministic, capability-denied ModuleConfig (frozen observable
-// wall time, real monotonic time, zero entropy, discarded stdio, no
-// filesystem / args / environment). The benign runtime-init WASI
-// imports the firewall allows (clocks, entropy, stdio, environment and
-// argument discovery, scheduler yield, proc_exit, and fd metadata) are
-// served by the Extism-bundled wazero WASI runtime under that
-// ModuleConfig; see wasi_imports.go for the allowlist and loader.go
-// for the deterministic configuration.
+// capability-denied ModuleConfig (frozen observable wall time, real
+// monotonic time, real entropy, discarded stdio, no filesystem or
+// environment, a single synthetic program name as argv). The guest
+// bootstraps against real WASI behaviour with zero ambient authority,
+// so any I/O call fails at the call boundary; see wasi_imports.go for
+// the import-module firewall and loader.go for the sandbox
+// configuration.
 //
 // Errors wrapping this sentinel name the violated capability and the
 // plugin identifier so callers see exactly which surface caused the

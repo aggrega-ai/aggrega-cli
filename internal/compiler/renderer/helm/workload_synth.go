@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+//go:build !wasip1
+
 // Workload → K8s manifest synthesizer for the helm provider. Implements the
 // renderer.WorkloadSynthesizer interface (declared in renderer/synthesis.go,
 // dispatched from Phase B.4).

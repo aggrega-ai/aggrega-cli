@@ -14,22 +14,31 @@
 // configuration that would let guest code reach beyond its in-memory
 // inputs at run time: outbound network access via AllowedHosts,
 // filesystem access via AllowedPaths, or host functions outside the
-// curated allowlist (see hostfuncs.go). The static import firewall
+// curated allowlist (see hostfuncs.go). The import-module firewall
 // (see wasi_imports.go) walks the plugin's Wasm import section and
-// rejects any WASI import outside a curated allowlist of benign
-// runtime-init imports — filesystem traversal, network sockets, and
-// directory access are all default-denied.
+// rejects any import whose declaring module is outside a curated set of
+// namespaces (the WASI preview-1 runtime, the Extism runtime ABI, and
+// Aggrega's curated host functions). It does not censor individual WASI
+// function names: a statically-linked language runtime imports
+// filesystem and socket functions its live code paths never call, and
+// naming an import is not exercising a capability.
 //
-// WASI itself is enabled, but configured deterministically and
-// capability-denied: the loader hands the Extism runtime a wazero
-// ModuleConfig with frozen observable wall time, real monotonic time
-// (the guest language runtime needs an advancing monotonic clock to
-// bootstrap), a zero entropy source, discarded stdio, and no
-// filesystem, argument, or environment passthrough. The guest's
-// language runtime bootstraps against real WASI behaviour, yet every
-// value it can observe is a deterministic function of the build input.
-// This preserves Aggrega's determinism and ahead-of-time guarantees
-// regardless of which plugin runs.
+// WASI itself is enabled, but configured as a capability-denied
+// sandbox: the loader hands the Extism runtime a wazero ModuleConfig
+// with frozen observable wall time (pinned to a build-invariant
+// instant), real monotonic time (the guest language runtime needs an
+// advancing monotonic clock to bootstrap), real host entropy, discarded
+// stdio, no filesystem or environment passthrough, and a single
+// synthetic program name as argv. The guest bootstraps against real
+// WASI behaviour with zero ambient authority — no preopened filesystem,
+// no sockets, an empty environment — so any I/O call fails at the call
+// boundary. Wall time is frozen so a guest reading the clock cannot leak
+// build time into its output; entropy and monotonic time are
+// deliberately NOT pinned, so a guest that encodes nondeterminism into
+// its output produces visibly differing bytes across runs rather than
+// a stably-masked result. This preserves Aggrega's
+// determinism and ahead-of-time guarantees regardless of which plugin
+// runs.
 //
 // Plugin.Call wraps the Extism call boundary with a deferred recover()
 // that converts a Go-side panic into an ErrWasmGuestPanic-wrapped
@@ -42,6 +51,7 @@ package wasm
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
@@ -134,9 +144,10 @@ func (p *Plugin) appendWarning(formatted string) {
 //  1. Translate the spec into an Extism manifest and run the
 //     AOT-purity firewall against the manifest fields.
 //  2. Read the plugin Wasm bytes from spec.Path once into memory.
-//  3. Walk the bytes' import section and apply the static import
-//     firewall: allowlisted WASI imports pass; capability-granting
-//     names are rejected with ErrWasmManifestRejected.
+//  3. Walk the bytes' import section and apply the import-module
+//     firewall: imports under a curated set of module namespaces pass;
+//     an import under any other module is rejected with
+//     ErrWasmManifestRejected.
 //  4. Derive the host functions the guest actually imports from the
 //     same byte slice and verify the derived set is a subset of the
 //     curated allowlist. The .wasm import section is ground truth; no
@@ -178,7 +189,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 		}
 	}
 
-	if err := validateWasiImports(spec.Name, wasmBytes); err != nil {
+	if err := validateImportModules(spec.Name, wasmBytes); err != nil {
 		return nil, err
 	}
 
@@ -213,7 +224,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 
 	config := extism.PluginConfig{
 		EnableWasi:   true,
-		ModuleConfig: deterministicModuleConfig(),
+		ModuleConfig: deterministicModuleConfig(spec.programName()),
 	}
 
 	extismPlugin, err := extism.NewPlugin(ctx, manifest, config, functions)
@@ -225,24 +236,11 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	return p, nil
 }
 
-// zeroEntropyReader is an io.Reader that fills every read with zero
-// bytes. It backs the guest's WASI random_get so a plugin observes a
-// deterministic entropy source — never real host randomness, which
-// would break the Deterministic Output invariant.
-type zeroEntropyReader struct{}
-
-func (zeroEntropyReader) Read(p []byte) (int, error) {
-	for i := range p {
-		p[i] = 0
-	}
-	return len(p), nil
-}
-
 // deterministicModuleConfig returns the wazero ModuleConfig the loader
 // hands the Extism runtime when instantiating a guest. The config
 // enables real WASI behaviour (the guest language runtime bootstraps
-// against it) while denying every capability that would let the guest
-// observe host state varying across builds:
+// against it) while granting zero ambient authority, so any I/O call
+// the guest attempts fails at the call boundary:
 //
 //   - WithWalltime fixed at the Unix epoch (0s, 0ns): the guest's
 //     observable wall clock is a build-invariant constant, so a guest
@@ -257,24 +255,39 @@ func (zeroEntropyReader) Read(p []byte) (int, error) {
 //     wall-clock instant, so a guest that does not deliberately encode
 //     elapsed time into its output stays deterministic; encoding
 //     elapsed monotonic time into output is an authoring-level
-//     determinism violation a guest must avoid, caught by the
-//     determinism guards rather than prevented by construction.
-//   - WithRandSource(zeroEntropyReader): the guest's entropy source
-//     yields zero bytes, never real host randomness.
+//     determinism violation that surfaces as differing output rather
+//     than being prevented by construction.
+//   - WithRandSource(rand.Reader): REAL host entropy. Pinning entropy
+//     to a fixed source would stabilise the guest language runtime's
+//     internal hash seed and map-iteration order, which would MASK
+//     guest nondeterminism instead of letting it surface as differing
+//     output. Real entropy paired with the frozen wall clock is the
+//     correct sandbox: capability-denied yet nondeterminism-revealing.
+//     A guest whose output depends on entropy is an authoring-level
+//     determinism violation this configuration deliberately surfaces
+//     rather than hides.
 //   - WithStdout/WithStderr(io.Discard): the guest's stdio is
 //     discarded; nothing the guest writes reaches the host's streams.
-//   - No FSConfig, no args, no environment: wazero's defaults deny the
-//     filesystem and present empty args and environment, so the guest
-//     reads nothing from the host process. The static import firewall
-//     additionally rejects the filesystem-traversal and socket WASI
-//     imports a guest would need to reach beyond this sandbox.
-func deterministicModuleConfig() wazero.ModuleConfig {
+//   - No FSConfig, no environment: wazero's defaults deny the filesystem
+//     and present an empty environment, so the guest reads nothing from
+//     the host process. With no preopened directories and no sockets,
+//     any filesystem or network WASI call a guest makes fails at the
+//     call boundary — capability denial, not import censorship, is what
+//     guarantees no I/O.
+//   - WithArgs(programName): a single constant, capability-free program
+//     name as the guest's argv. A transitive dependency's package init may
+//     read os.Args[0] and panic on an empty argv; supplying a constant
+//     avoids that panic. WASI argv is data, not a host-function import,
+//     so the firewall is untouched and the value is a build-invariant
+//     constant.
+func deterministicModuleConfig(programName string) wazero.ModuleConfig {
 	return wazero.NewModuleConfig().
 		WithWalltime(func() (sec int64, nsec int32) { return 0, 0 }, sys.ClockResolution(1)).
 		WithSysNanotime().
-		WithRandSource(zeroEntropyReader{}).
+		WithRandSource(rand.Reader).
 		WithStdout(io.Discard).
-		WithStderr(io.Discard)
+		WithStderr(io.Discard).
+		WithArgs(programName)
 }
 
 // Name returns the plugin's diagnostic identifier (the Name field of
