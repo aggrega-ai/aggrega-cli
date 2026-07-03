@@ -251,18 +251,20 @@ var policyGuestVocabulary = map[string]string{}
 // map[string]json.RawMessage — the guest reads and echoes the content by key,
 // and the host runs the single serializer that turns it into bytes.
 var providerGuestVocabulary = map[string]string{
-	"renderctx.RenderContext":          "json.RawMessage",
-	"renderctx.BoundaryContext":        "json.RawMessage",
-	"renderctx.Diagnostic":             "json.RawMessage",
-	"OrderedMap[any]":                  "map[string]json.RawMessage",
-	"OrderedMap[[]string]":             "map[string][]string",
-	"OrderedMap[types.IRFeatureEntry]": "map[string]json.RawMessage",
-	"OrderedMap[types.Component]":      "map[string]json.RawMessage",
-	"OrderedMap[types.Feature]":        "map[string]json.RawMessage",
-	"OrderedMap[types.Recipe]":         "map[string]json.RawMessage",
-	"OrderedMap[types.FeatureRecipe]":  "map[string]json.RawMessage",
-	"OrderedMap[types.Provider]":       "map[string]json.RawMessage",
-	"OrderedMap[types.MappingLibrary]": "map[string]json.RawMessage",
+	"renderctx.RenderContext":             "json.RawMessage",
+	"renderctx.BoundaryContext":           "json.RawMessage",
+	"renderctx.Diagnostic":                "json.RawMessage",
+	"OrderedMap[any]":                     "map[string]json.RawMessage",
+	"OrderedMap[[]string]":                "map[string][]string",
+	"OrderedMap[types.IRFeatureEntry]":    "map[string]json.RawMessage",
+	"OrderedMap[types.Component]":         "map[string]json.RawMessage",
+	"OrderedMap[types.Feature]":           "map[string]json.RawMessage",
+	"OrderedMap[types.Recipe]":            "map[string]json.RawMessage",
+	"OrderedMap[types.FeatureRecipe]":     "map[string]json.RawMessage",
+	"OrderedMap[types.Provider]":          "map[string]json.RawMessage",
+	"OrderedMap[types.MappingLibrary]":    "map[string]json.RawMessage",
+	"types.Workload":                      "json.RawMessage",
+	"map[string]types.OrderedMap[string]": "map[string]map[string]string",
 }
 
 // providerHostVocabulary maps the provider render schema's container annotations

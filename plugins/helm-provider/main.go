@@ -39,7 +39,7 @@ import (
 // provider plugin declaring the render_node export and compatibility with
 // the helm provider engine. The host reads this once at load and validates
 // it before invoking render_node.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -55,7 +55,17 @@ func renderNode() int32 {
 		return 1
 	}
 
-	out, err := renderSourcedFromInput(in)
+	var out renderer.RenderNodeOutput
+	var err error
+	switch {
+	case in.WorkloadProjection != nil:
+		out, err = renderSynthFromInput(in)
+	case in.SourceProjection != nil:
+		out, err = renderSourcedFromInput(in)
+	default:
+		pdk.SetError(errors.New("helm-provider: render_node input carries neither a workload projection nor a source projection"))
+		return 1
+	}
 	if err != nil {
 		pdk.SetError(errors.New(errorChainMessage(err)))
 		return 1
@@ -130,6 +140,37 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {
 		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+	}
+	return out, nil
+}
+
+// renderSynthFromInput synthesizes provider-native manifests from the wire
+// input's workload projection, running the same filesystem-free synthesis core
+// the in-tree engine runs, and returns each synthesized manifest's serialized
+// bytes as a RenderedFile. The workload and its per-slot secret provides arrive
+// in the workload projection; the node's identity and merged annotations arrive
+// in the node projection and render context. The core's emission order is
+// deterministic and load-bearing, so the files are collected in order and never
+// re-sorted.
+func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+	if in.WorkloadProjection == nil {
+		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no workload projection")
+	}
+
+	nodeCtx := renderer.NodeRenderContext{
+		NodeID:      in.Node.ID,
+		Annotations: mergeAnnotations(in.Context.Annotations),
+		YAMLIndent:  0,
+	}
+
+	emitted, err := helm.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.Secrets, nodeCtx)
+	if err != nil {
+		return renderer.RenderNodeOutput{}, err
+	}
+
+	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(emitted))}
+	for _, f := range emitted {
+		out.Files = append(out.Files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
 	}
 	return out, nil
 }

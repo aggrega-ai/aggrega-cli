@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 )
@@ -28,6 +29,8 @@ type RenderNodeInput struct {
 	CatalogProjection *CatalogProjection `json:"catalog_projection,omitempty" yaml:"catalog_projection,omitempty"`
 	// SourceProjection The pre-packaged source content the host read at compile time from the local source and hands the guest, so the guest reconstructs the source in memory and touches no filesystem. Present for sourced providers; absent otherwise.
 	SourceProjection *SourceProjection `json:"source_projection,omitempty" yaml:"source_projection,omitempty"`
+	// WorkloadProjection The pre-evaluated workload the host hands the guest to synthesize provider-native manifests from; present when the bound Recipe declares a workload rather than a chart source, absent otherwise.
+	WorkloadProjection *WorkloadProjection `json:"workload_projection,omitempty" yaml:"workload_projection,omitempty"`
 }
 
 // IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node: its id, type, resolved recipe, values, feature attachments, and outbound uses edges, narrower than the complete node surface which also carries provenance and source-file metadata the guest does not need to render. Values, features, and uses preserve author order so the wire payload is byte-identical across runs of identical input.
@@ -90,6 +93,14 @@ type SourceFile struct {
 type SourceProjection struct {
 	// Files The source files, keyed by source-root-relative path, in the host's deterministic walk order.
 	Files []SourceFile `json:"files" yaml:"files"`
+}
+
+// WorkloadProjection The pre-evaluated workload content the host hands a Provider guest so the guest synthesizes provider-native manifests from it in memory, present when the bound Recipe declares a workload rather than a chart source. Determinism is the guest's responsibility: identical input must produce identical bytes.
+type WorkloadProjection struct {
+	// Workload The host-evaluated, post-validation Workload the guest synthesizes; opaque at this schema layer so the socket schema does not rebind the Workload entity contract.
+	Workload types.Workload `json:"workload" yaml:"workload"`
+	// Secrets The per-slot secret provides the synthesis consumes, keyed by secret slot; each slot's provides carries the generated Secret's identity a workload secret reference resolves to.
+	Secrets map[string]types.OrderedMap[string] `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 }
 
 // AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one boundary into a single assembled artifact (an umbrella chart, a merged compose file). It carries the boundary metadata, the per-node render outputs that fed the boundary, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
@@ -161,6 +172,18 @@ func (t RenderNodeInput) MarshalJSON() ([]byte, error) {
 			buf.Write(enc)
 		}
 	}
+	if t.WorkloadProjection != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"workload_projection\":")
+		if enc, err := t.WorkloadProjection.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -212,6 +235,16 @@ func (t *RenderNodeInput) UnmarshalJSON(data []byte) error {
 					return err
 				}
 				t.SourceProjection = v
+			}
+		case "workload_projection":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				v := new(WorkloadProjection)
+				if err := v.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+				t.WorkloadProjection = v
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -766,6 +799,108 @@ func (t *SourceProjection) UnmarshalJSON(data []byte) error {
 				t.Files = append(t.Files, elem)
 			}
 			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes WorkloadProjection in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t WorkloadProjection) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"workload\":")
+	if enc, err := json.Marshal(t.Workload); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if len(t.Secrets) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"secrets\":")
+		{
+			keys := make([]string, 0, len(t.Secrets))
+			for k := range t.Secrets {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.Secrets[k]
+				if enc, err := json.Marshal(mv); err != nil {
+					return nil, err
+				} else {
+					buf.Write(enc)
+				}
+			}
+			buf.WriteByte('}')
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes WorkloadProjection with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "workload":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else if err := json.Unmarshal(raw, &t.Workload); err != nil {
+				return err
+			}
+		case "secrets":
+			t.Secrets = make(map[string]types.OrderedMap[string])
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv types.OrderedMap[string]
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else if err := json.Unmarshal(raw, &mv); err != nil {
+					return err
+				}
+				t.Secrets[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
 				return err
 			}
 		default:
