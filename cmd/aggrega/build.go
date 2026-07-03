@@ -14,8 +14,10 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -25,13 +27,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// The external-input store is what the build injects as the wasm
+// loader's fetch seam; the assertion keeps the two packages' contracts
+// aligned at compile time.
+var _ wasm.FetchService = (*externalinputs.Service)(nil)
+
 var (
-	releasePath  string
-	catalogDirs  []string
-	traceEnabled bool
-	buildDetail  bool
-	buildQuiet   bool
-	buildDebug   bool
+	releasePath     string
+	catalogDirs     []string
+	traceEnabled    bool
+	buildDetail     bool
+	buildQuiet      bool
+	buildDebug      bool
+	noAcquireInputs bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -46,6 +54,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().BoolVar(&buildDetail, "detail", false, "When build performs the implicit auto-pull (no lockfile present, auto_pull enabled), print per resolved entity what that pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no pull this build)")
 	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the per-phase build-progress line on stderr. Does not affect stdout")
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/closure counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
+	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input closure: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -70,7 +79,26 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
-		buildDiagOptions{quiet: buildQuiet, debug: buildDebug}, os.Stderr, os.Stdout)
+		buildDiagOptions{quiet: buildQuiet, debug: buildDebug},
+		buildRunOptions{noAcquireInputs: noAcquireInputs}, os.Stderr, os.Stdout)
+}
+
+// buildRunOptions carries the build-dispatch knobs that are not stderr
+// diagnostics. The zero value is the plain `aggrega build` shape:
+// acquisition on, rendered output to dist/, no acquisition report.
+type buildRunOptions struct {
+	// noAcquireInputs freezes the external-input closure: a render that
+	// requests an unpinned external URL halts with a diagnostic instead
+	// of fetching and pinning it.
+	noAcquireInputs bool
+	// outDir overrides the rendered-artifact output directory; empty
+	// renders to dist/. The acquire command points it at a discard
+	// directory so an acquisition pass never touches dist/.
+	outDir string
+	// onAcquired, when non-nil, runs after a successful build with the
+	// external-input records this run newly pinned (empty when the run
+	// pinned nothing). The acquire command reports through it.
+	onAcquired func([]lockfile.ExternalInput)
 }
 
 // dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs
@@ -80,7 +108,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 // calls dispatchBuildWithDiag to thread the operator's --quiet / --debug
 // choices. Both share the single implementation below.
 func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
-	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, diagOut, out)
+	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildRunOptions{}, diagOut, out)
 }
 
 // dispatchBuildWithDiag composes the filesystem-touching pre-pipeline steps
@@ -99,7 +127,11 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // surface and the verbose debug layer both write to diagOut only; stdout carries
 // only the final success summary, so the compiler's byte-deterministic rendered
 // output is invariant with respect to the diagnostic shape.
-func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, diagOut, out io.Writer) error {
+//
+// run carries the non-diagnostic dispatch knobs: the external-input acquisition
+// switch, the output-directory override, and the acquired-pin callback the
+// acquire command reports through. The zero value is the plain build shape.
+func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildRunOptions, diagOut, out io.Writer) error {
 	progress := newProgressReporter(diagOut, diag)
 	defer progress.finish()
 	// wsRoot is the resolved workspace root; the catalog renders source-file
@@ -160,6 +192,15 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	if err != nil {
 		return fmt.Errorf("load lockfile: %w", err)
 	}
+
+	// External-input gate for render-time guest fetches: the service serves
+	// every aggrega_fetch_external_input call under the pin discipline —
+	// pinned URLs from the content-addressed store, unpinned URLs fetched
+	// and pinned when acquisition is on (the default), refused loudly when
+	// the closure is frozen (--no-acquire-inputs). Seeded with the
+	// lockfile's pinned view; newly-acquired pins merge back after a
+	// successful build below.
+	extInputs := newExternalInputsService(cacheDir, lf, run.noAcquireInputs)
 
 	// The build's determinism-wired lazy lookup: EVERY dispatchBuild catalog
 	// consumer — guards, triad aggregate resolution, manifest-implements gate,
@@ -263,8 +304,12 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	progress.phase(phaseRender)
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
 	buildLookup := lazyView.AsCatalogLookup()
+	// The pipeline context carries the external-input service to the
+	// renderer's plugin-load sites, where each loader picks it up as its
+	// fetch seam.
+	buildCtx := wasm.ContextWithExternalInputs(context.Background(), extInputs)
 	result, err := pipeline.RunPipeline(
-		context.Background(),
+		buildCtx,
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
@@ -297,7 +342,10 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// Write output. Clean dist/boundaries/ first so stale files from a prior
 	// build of a different variant don't leak into this one (GitOps consumers
 	// must see exactly what the compiler just produced).
-	outDir := filepath.Join("dist")
+	outDir := run.outDir
+	if outDir == "" {
+		outDir = filepath.Join("dist")
+	}
 	if err := os.RemoveAll(filepath.Join(outDir, "boundaries")); err != nil {
 		return fmt.Errorf("clean %s/boundaries: %w", outDir, err)
 	}
@@ -320,12 +368,37 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		}
 	}
 
+	// Persist newly-pinned external inputs into the lockfile after the
+	// build succeeded. The service's full record view is the canonical
+	// URL-deduplicated merge of the lockfile's pinned view with this run's
+	// acquisitions; the canonical writer keeps the file byte-deterministic.
+	// A run that pinned nothing leaves the lockfile untouched.
+	acquired := extInputs.AcquiredRecords()
+	if len(acquired) > 0 {
+		lf.ExternalInputs = extInputs.Records()
+		if err := lockfile.WriteLockfilePreservingTimestamp(lockfile.PathFor(releasePath), lf); err != nil {
+			return fmt.Errorf("write lockfile external inputs: %w", err)
+		}
+	}
+	if run.onAcquired != nil {
+		run.onAcquired(acquired)
+	}
+
 	// Clear the in-place progress line (and, in debug mode, print the timing
 	// total) before the stdout summary so the progress surface never lingers
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
 	fmt.Fprintf(out, "Build complete: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
+}
+
+// newExternalInputsService constructs the per-build external-input gate over
+// the workspace artifact cache's inputs store, seeded with the lockfile's
+// pinned view. Acquisition is on unless the operator froze the closure
+// (--no-acquire-inputs); the nil client selects the store's default HTTP
+// client.
+func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool) *externalinputs.Service {
+	return externalinputs.NewService(filepath.Join(cacheDir, "inputs"), !noAcquire, nil, lf.ExternalInputs)
 }
 
 // acquireLockfile ensures the per-Release lockfile exists before the build wires

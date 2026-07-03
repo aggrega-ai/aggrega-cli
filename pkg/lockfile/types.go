@@ -37,6 +37,7 @@ package lockfile
 // canonical key emission.
 type Lockfile struct {
 	Entities         []Entity         `yaml:"entities"`
+	ExternalInputs   []ExternalInput  `yaml:"external_inputs"`
 	GeneratedAt      string           `yaml:"generated_at"`
 	MappingLibraries []MappingLibrary `yaml:"mapping_libraries"`
 	Plugins          []Plugin         `yaml:"plugins"`
@@ -120,6 +121,30 @@ type VerifiedSignature struct {
 	// Mode is "keyless" or "keyed" — the verification mode that admitted
 	// the signature.
 	Mode string `yaml:"mode"`
+}
+
+// ExternalInput pins one remote input a render consumed: the URL requested
+// at the render site, the SHA-256 pin that names its bytes in the
+// content-addressed input store, the payload size, and the provenance of the
+// consumers that required it. Acquisition writes these records; build reads
+// them and serves the pinned bytes from the store without touching the
+// network. For an https input the pin is the digest of the payload bytes;
+// for an oci input it is the manifest digest the reference resolved to.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type ExternalInput struct {
+	// RequiredBy records the render sites that requested this input.
+	// WriteLockfile sorts and deduplicates the list.
+	RequiredBy []string `yaml:"required_by"`
+	// Sha256 is the lowercase hex SHA-256 pin. It names the store blob
+	// (`sha256/<digest>`) and gates every refill of it.
+	Sha256 string `yaml:"sha256"`
+	// Size is the pinned payload's size in bytes.
+	Size int64 `yaml:"size"`
+	// URL is the input URL as authored at the render site — the lookup key
+	// matching a render-time request to its pin.
+	URL string `yaml:"url"`
 }
 
 // SchemaLibrary carries a SchemaLibrary pin plus a Consumers list

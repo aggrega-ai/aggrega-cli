@@ -407,7 +407,10 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		if err != nil {
 			return nil, err
 		}
-		loader := &wasm.Loader{}
+		// The external-input service rides the pipeline context (the only
+		// plumbing shared with the command layer); absent, the nil field
+		// yields in-band not-available envelopes for guest fetches.
+		loader := &wasm.Loader{ExternalInputs: wasm.ExternalInputsFromContext(ctx)}
 		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
 		if err != nil {
 			return nil, err
@@ -440,7 +443,9 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}
-		loader := &wasm.Loader{}
+		// Same context-carried service as newStepInvoker: describe() runs
+		// guest code too, so its loader carries the same fetch surface.
+		loader := &wasm.Loader{ExternalInputs: wasm.ExternalInputsFromContext(ctx)}
 		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
 		if err != nil {
 			return wasm.PluginDescriptor{}, err

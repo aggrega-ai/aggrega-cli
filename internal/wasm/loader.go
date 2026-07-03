@@ -62,6 +62,20 @@ import (
 	"github.com/tetratelabs/wazero/sys"
 )
 
+// FetchService supplies external-input bytes to guests that import the
+// aggrega_fetch_external_input host function. Fetch returns the bytes
+// for url, recording requiredBy (the requesting plugin's name) as
+// provenance; a fetch the service refuses — a disallowed scheme, an
+// unpinned URL in a frozen closure — returns an error whose message
+// names the URL and the remedy.
+//
+// The interface is declared here, on the consuming side, so this
+// package depends on no concrete acquisition implementation; the
+// compiler's external-input store satisfies it.
+type FetchService interface {
+	Fetch(ctx context.Context, url string, requiredBy string) ([]byte, error)
+}
+
 // Loader is the package's entry point for constructing a Plugin from a
 // PluginSpec. A zero-value Loader is ready to use; callers SHOULD reuse
 // a single Loader across the life of the compiler process so that any
@@ -69,11 +83,36 @@ import (
 // runtime caches, observability adapters, and so on) amortise across
 // plugin instances.
 type Loader struct {
-	// Reserved for future runtime-configuration knobs the loader
-	// itself owns (a shared Wazero compilation cache, for example).
-	// Today the struct is empty; declared as a struct rather than a
-	// free function so future knobs can land without changing every
-	// call site.
+	// ExternalInputs, when non-nil, serves the
+	// aggrega_fetch_external_input host function for every Plugin this
+	// Loader constructs. Nil — the zero-value Loader — keeps every load
+	// working: a guest fetch then receives an in-band error envelope
+	// stating that external inputs are not available in this context.
+	ExternalInputs FetchService
+}
+
+// externalInputsContextKey keys the external-input service on a
+// context for construction sites that receive their per-build services
+// only through the context they are called with.
+type externalInputsContextKey struct{}
+
+// ContextWithExternalInputs returns a context carrying svc for
+// downstream Loader construction sites. It exists for call paths — the
+// render pipeline's per-step plugin dispatch — whose only shared
+// plumbing between the command layer and the Loader construction site
+// is the context; callers that construct a Loader directly set its
+// ExternalInputs field instead.
+func ContextWithExternalInputs(ctx context.Context, svc FetchService) context.Context {
+	return context.WithValue(ctx, externalInputsContextKey{}, svc)
+}
+
+// ExternalInputsFromContext returns the external-input service carried
+// by ctx, or nil when none is attached — the nil is safe to assign to
+// Loader.ExternalInputs (guest fetches then receive the in-band
+// not-available envelope).
+func ExternalInputsFromContext(ctx context.Context) FetchService {
+	svc, _ := ctx.Value(externalInputsContextKey{}).(FetchService)
+	return svc
 }
 
 // Plugin wraps an Extism plugin handle with Aggrega-specific lifecycle
@@ -92,6 +131,10 @@ type Plugin struct {
 	plugin     *extism.Plugin
 	warningsMu sync.Mutex
 	warnings   []string
+	// externalInputs serves the aggrega_fetch_external_input host
+	// function; copied from the constructing Loader's ExternalInputs
+	// field. Nil yields in-band not-available error envelopes.
+	externalInputs FetchService
 }
 
 // Warnings returns a defensive copy of the warnings accumulated by
@@ -153,9 +196,9 @@ func (p *Plugin) appendWarning(formatted string) {
 //     curated allowlist. The .wasm import section is ground truth; no
 //     authored list participates.
 //  5. Register the derived host functions (aggrega_log,
-//     aggrega_emit_warning, and future per-socket host functions);
-//     the derived set, not an authored list, is what the plugin's
-//     bound surface is built from.
+//     aggrega_emit_warning, aggrega_fetch_external_input, and future
+//     per-socket host functions); the derived set, not an authored
+//     list, is what the plugin's bound surface is built from.
 //  6. Construct the underlying extism.Plugin from the same in-memory
 //     byte slice (via extism.WasmData), with EnableWasi: true and the
 //     deterministic, capability-denied ModuleConfig from
@@ -218,7 +261,9 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	// the per-plugin host-function closures can capture *Plugin and
 	// thread guest-emitted warnings into the warnings slice. The
 	// Extism plugin handle is attached to p after NewPlugin returns.
-	p := &Plugin{name: spec.Name}
+	// The loader's external-input service rides along so the
+	// aggrega_fetch_external_input closure can serve guest fetches.
+	p := &Plugin{name: spec.Name, externalInputs: l.ExternalInputs}
 
 	functions := p.hostFunctionsForDeclared(hostFunctions)
 

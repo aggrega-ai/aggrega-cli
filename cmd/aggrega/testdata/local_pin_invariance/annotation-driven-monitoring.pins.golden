@@ -39,6 +39,7 @@ entities:
       digest: sha256:8f87fdd09c83932eac1457d9ac0fbc139bf7df184c0b446e2242c0d417e10b74
       referenced_from:
         - manifest.spec.mappings.components.type.app/service:1.0.0
+external_inputs: []
 generated_at: ""
 mapping_libraries: []
 plugins: []

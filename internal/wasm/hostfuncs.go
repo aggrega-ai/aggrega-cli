@@ -5,6 +5,8 @@ package wasm
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -24,12 +26,16 @@ import (
 // warnings into Plugin.warnings.
 //
 // The baseline set is the two diagnostic emitters every Aggrega
-// plugin is expected to need: a logging surface and a structured-
-// warning emitter. Per-socket extension hooks for additional host
-// functions land as the corresponding plugin sockets ship.
+// plugin is expected to need — a logging surface and a structured-
+// warning emitter — plus the external-input fetch channel. The fetch
+// channel is host-mediated, not guest network access: the guest names
+// a URL and the host serves bytes through the content-addressed
+// external-input store's pin discipline, so the AOT-purity firewall
+// (no AllowedHosts, no sockets) is unchanged.
 var hostFunctionAllowlist = map[string]bool{
-	"aggrega_log":          true,
-	"aggrega_emit_warning": true,
+	"aggrega_log":                  true,
+	"aggrega_emit_warning":         true,
+	"aggrega_fetch_external_input": true,
 }
 
 // allowlistedHostFunctionNames returns the curated names as a slice,
@@ -66,6 +72,8 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 			out = append(out, p.hostFunctionAggregaLog())
 		case "aggrega_emit_warning":
 			out = append(out, p.hostFunctionAggregaEmitWarning())
+		case "aggrega_fetch_external_input":
+			out = append(out, p.hostFunctionAggregaFetchExternalInput())
 		default:
 			// Invariant violation: validateHostFunctionsSubset
 			// admitted a name the builder switch doesn't handle.
@@ -188,6 +196,121 @@ func (p *Plugin) handleAggregaEmitWarning(reader pluginMemoryReader, stack []uin
 	}
 	formatted := fmt.Sprintf("plugin %s: %s [code=%s, path=%s]", p.name, message, code, path)
 	p.appendWarning(formatted)
+}
+
+// pluginMemoryWriter is the write-side sibling of pluginMemoryReader:
+// the minimal interface a host function body uses to write a result
+// payload into plugin memory and obtain the offset the guest reads it
+// back from. The Extism SDK's *CurrentPlugin satisfies this interface
+// structurally; tests substitute a fake writer to exercise the body
+// logic without fabricating a *CurrentPlugin.
+type pluginMemoryWriter interface {
+	WriteBytes(b []byte) (uint64, error)
+}
+
+// fetchEnvelope is the single JSON payload aggrega_fetch_external_input
+// writes back into plugin memory. Exactly one field is populated per
+// envelope: Content carries the fetched bytes in standard base64
+// encoding on success; Error carries a failure message naming the URL
+// and the remedy. Content is a pointer so a zero-length payload still
+// emits the content key and stays distinguishable from a failure.
+type fetchEnvelope struct {
+	Content *string `json:"content,omitempty"`
+	Error   string  `json:"error,omitempty"`
+}
+
+// hostFunctionAggregaFetchExternalInput returns the host-side closure
+// binding aggrega_fetch_external_input(url_ptr i64) -> envelope_ptr
+// i64. The guest passes a pointer to a UTF-8 URL string in plugin
+// memory; the host resolves the URL through the plugin's external-
+// input service and writes one fetchEnvelope JSON document back into
+// plugin memory, returning its offset.
+//
+// Failure is deliberately in-band — an error envelope, never a trap or
+// panic: an unpinned URL in a frozen closure must surface as a
+// deterministic render failure with a clear message, and the guest
+// must be able to carry that message into its own diagnostics. Every
+// failure envelope's message is also recorded on the plugin's warning
+// channel so the host caller can surface the precise reason after the
+// call returns.
+//
+// Body extracted into handleAggregaFetchExternalInput so the test
+// suite can exercise the read-fetch-write path against fake memory
+// interfaces without fabricating an *extism.CurrentPlugin.
+func (p *Plugin) hostFunctionAggregaFetchExternalInput() extism.HostFunction {
+	return extism.NewHostFunctionWithStack(
+		"aggrega_fetch_external_input",
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			p.handleAggregaFetchExternalInput(ctx, cp, cp, stack)
+		},
+		[]extism.ValueType{extism.ValueTypeI64},
+		[]extism.ValueType{extism.ValueTypeI64},
+	)
+}
+
+// handleAggregaFetchExternalInput is the testable inner logic of the
+// aggrega_fetch_external_input host function body. Reads the URL from
+// plugin memory at stack[0] via the reader interface, fetches its
+// bytes through the plugin's external-input service with the plugin's
+// name as the requiring-site provenance, and writes the result
+// envelope into plugin memory via the writer interface, leaving the
+// envelope's offset in stack[0].
+//
+// Every failure — a memory read failure, no external-input service
+// configured for this plugin, or a fetch error — produces an error
+// envelope rather than a trap, and records the same message on the
+// plugin's warning channel. The no-service case covers every loader
+// whose ExternalInputs field is nil (the zero-value Loader): the guest
+// receives a clear "not available in this context" message instead of
+// a panic.
+func (p *Plugin) handleAggregaFetchExternalInput(ctx context.Context, reader pluginMemoryReader, writer pluginMemoryWriter, stack []uint64) {
+	rawURL, err := reader.ReadString(stack[0])
+	if err != nil {
+		log.Printf("plugin %q: aggrega_fetch_external_input: memory read failed: %v", p.name, err)
+		stack[0] = p.writeFetchFailure(writer,
+			fmt.Sprintf("aggrega_fetch_external_input: reading the URL from plugin memory failed: %v", err))
+		return
+	}
+	if p.externalInputs == nil {
+		stack[0] = p.writeFetchFailure(writer,
+			fmt.Sprintf("external inputs are not available in this context: cannot fetch %q", rawURL))
+		return
+	}
+	payload, err := p.externalInputs.Fetch(ctx, rawURL, p.name)
+	if err != nil {
+		stack[0] = p.writeFetchFailure(writer, err.Error())
+		return
+	}
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	stack[0] = p.writeFetchEnvelope(writer, fetchEnvelope{Content: &encoded})
+}
+
+// writeFetchFailure records message on the plugin's warning channel and
+// writes an error envelope carrying it, returning the envelope's
+// offset. The warning mirrors the envelope so the host caller sees the
+// same diagnostic the guest received.
+func (p *Plugin) writeFetchFailure(writer pluginMemoryWriter, message string) uint64 {
+	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
+	return p.writeFetchEnvelope(writer, fetchEnvelope{Error: message})
+}
+
+// writeFetchEnvelope marshals env and writes it into plugin memory,
+// returning the offset the guest reads it from. On a marshal or memory
+// write failure it logs a host-side diagnostic and returns offset 0 —
+// the one case where no envelope can be delivered; the guest-side PDK
+// wrapper treats a zero offset as "host returned no envelope".
+func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env fetchEnvelope) uint64 {
+	b, err := json.Marshal(env)
+	if err != nil {
+		log.Printf("plugin %q: aggrega_fetch_external_input: envelope marshal failed: %v", p.name, err)
+		return 0
+	}
+	offset, err := writer.WriteBytes(b)
+	if err != nil {
+		log.Printf("plugin %q: aggrega_fetch_external_input: memory write failed: %v", p.name, err)
+		return 0
+	}
+	return offset
 }
 
 // levelLabel maps a wire-side log level integer to a descriptive

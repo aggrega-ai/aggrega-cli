@@ -62,6 +62,9 @@ var runtimeErrorCommands = []struct {
 	args []string
 }{
 	{"build", []string{"build", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
+	// acquire runs the build dispatch, so the same non-existent-path
+	// invocation reaches its RunE and fails locally.
+	{"acquire", []string{"acquire", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{"pull", []string{"pull", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{"inspect", []string{"inspect", "/nonexistent-aggrega-xyz/release.yaml"}},
 	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},

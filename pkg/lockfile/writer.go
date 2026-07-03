@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 
 	"go.yaml.in/yaml/v3"
@@ -18,9 +19,12 @@ import (
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, Plugins by URI;
-//     SourceArtifacts by the composite (Kind, URL, PinnedVersion).
+//     SourceArtifacts by the composite (Kind, URL, PinnedVersion);
+//     ExternalInputs by URL.
 //   - Inside each Entity / Plugin: ReferencedFrom sorted
 //     lexicographically.
+//   - Inside each ExternalInput: RequiredBy sorted lexicographically
+//     and deduplicated.
 //   - Inside each SchemaLibrary / MappingLibrary: Consumers sorted by
 //     ConsumerURI; within each LibraryConsumer, Fragments sorted
 //     lexicographically.
@@ -119,9 +123,9 @@ func generatedAtValue(b []byte) string {
 // (ReferencedFrom, Consumers, Fragments) is also reallocated via
 // sortedCopy or canonicaliseConsumers.
 //
-// Maintenance hazard: any new field added to Entity / SchemaLibrary
-// / MappingLibrary / Plugin / LibraryConsumer that holds a slice
-// MUST be reallocated here. The outer struct-copy via `entryCopy := m`
+// Maintenance hazard: any new field added to Entity / ExternalInput /
+// SchemaLibrary / MappingLibrary / Plugin / LibraryConsumer that holds
+// a slice MUST be reallocated here. The outer struct-copy via `entryCopy := m`
 // clones scalar fields but shares slice headers, so without explicit
 // reallocation a subsequent sort would mutate the caller's slice. The
 // existing sortedCopy helper covers []string; new shapes need
@@ -149,6 +153,16 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	}
 	sort.Slice(out.Entities, func(i, j int) bool {
 		return out.Entities[i].URI < out.Entities[j].URI
+	})
+
+	out.ExternalInputs = make([]ExternalInput, len(lf.ExternalInputs))
+	for i, x := range lf.ExternalInputs {
+		entryCopy := x
+		entryCopy.RequiredBy = sortedUniqueCopy(x.RequiredBy)
+		out.ExternalInputs[i] = entryCopy
+	}
+	sort.Slice(out.ExternalInputs, func(i, j int) bool {
+		return out.ExternalInputs[i].URL < out.ExternalInputs[j].URL
 	})
 
 	out.SchemaLibraries = make([]SchemaLibrary, len(lf.SchemaLibraries))
@@ -254,6 +268,16 @@ func canonicaliseConsumers(in []LibraryConsumer) []LibraryConsumer {
 		return out[i].ConsumerURI < out[j].ConsumerURI
 	})
 	return out
+}
+
+// sortedUniqueCopy returns a fresh, lexicographically-sorted []string
+// with duplicates removed. Like sortedCopy it always allocates a new
+// backing array so callers receive a slice free of aliasing; unlike
+// sortedCopy it deduplicates, because ExternalInput provenance
+// accumulates the same requiring site across repeated fetches and the
+// canonical form records each site once.
+func sortedUniqueCopy(in []string) []string {
+	return slices.Compact(sortedCopy(in))
 }
 
 // sortedCopy returns a fresh, lexicographically-sorted []string.

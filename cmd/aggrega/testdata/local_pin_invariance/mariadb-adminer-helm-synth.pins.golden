@@ -69,6 +69,7 @@ entities:
       digest: sha256:f3bdeea33845b13fb45358b0fe8222e0f78c25623cbdac18d7e4078851c280ff
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
+external_inputs: []
 generated_at: ""
 mapping_libraries: []
 plugins: []

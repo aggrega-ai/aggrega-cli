@@ -67,6 +67,7 @@ func newRootCmd() *cobra.Command {
 		"absolute path to use as the workspace root (skips discovery)")
 	root.AddCommand(
 		newBuildCmd(),
+		newAcquireCmd(),
 		newPullCmd(),
 		newInspectCmd(),
 		newServeCmd(),
