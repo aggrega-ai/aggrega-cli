@@ -1,44 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Sourced-mode rendering for the compose provider. A Recipe with
-// `source: <path>` plus `valuesMapping:` produces:
-//
-//  1. The base compose file at <path> is loaded as YAML.
-//  2. The valuesMapping output (the values dict already evaluated by Phase
-//     B.1) is treated as a compose-overlay document.
-//  3. The two are deep-merged per docker-compose's native overlay semantics:
-//     scalars: overlay wins, maps merge, lists are REPLACED (not appended) —
-//     this matches `docker compose -f base.yaml -f overlay.yaml config`
-//     behaviour.
-//
-// The merged compose document is emitted as one Intermediate=true
-// EmittedFile (`<nodeID>.compose-fragment.yaml`) so it joins the Release-
-// level merge alongside synthesised-mode fragments. The base compose file
-// path is interpreted relative to the working directory of the compile
-// invocation; chart-relative path resolution is the catalog loader's job
-// today and is unchanged.
+//go:build !wasip1
+
+// Host-side sourced-mode rendering for the compose provider: it resolves and
+// reads the base compose file from the local filesystem, then hands the bytes to
+// the filesystem-free renderSourcedCore (sourced_core.go) so the host and the
+// provider Wasm guest share one byte-identical render path. The base compose
+// file path is interpreted relative to the working directory of the compile
+// invocation; chart-relative path resolution is the catalog loader's job today
+// and is unchanged.
 
 package compose
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// renderSourced loads the base compose file at chartPath, deep-merges the
-// values dict on top, and emits an Intermediate=true compose-fragment for
-// the Release-level merger to consume.
+// renderSourced resolves and reads the base compose file at chartPath, then
+// delegates to the filesystem-free renderSourcedCore, which deep-merges the
+// values dict on top and emits an Intermediate=true compose-fragment for the
+// Release-level merger to consume.
 //
 // chartPath may be either a YAML file path (the legacy Tier-1 shape) or
 // a directory path (the post-orchestrator-extraction shape, where the
@@ -57,65 +45,7 @@ func renderSourced(chartPath string, values map[string]any, nodeCtx renderer.Nod
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: resolvedPath}, fmt.Sprintf("compose: node %q: read source %q", nodeCtx.NodeID, resolvedPath))
 	}
 
-	// A Compose file is a single YAML document. Decode the first document, then
-	// require the stream to be exhausted: a single file carrying `---`-separated
-	// documents passes the source resolver's file-count guard, but
-	// yaml.Unmarshal would silently keep only the first and drop the rest — a
-	// silent misrender. Halt loudly instead (Loud Guardrails — the compiler does
-	// not assume well-formed input).
-	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	var base map[string]any
-	if err := dec.Decode(&base); err != nil {
-		if errors.Is(err, io.EOF) {
-			base = map[string]any{} // empty source
-		} else {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, chartPath))
-		}
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: chartPath},
-			fmt.Sprintf("compose: node %q: source %q contains multiple YAML documents; a compose file must be a single document", nodeCtx.NodeID, chartPath),
-			nil, nil)
-	}
-	if base == nil {
-		base = map[string]any{}
-	}
-
-	merged := deepMergeOverlay(base, values)
-	// compose-bridge: when the fragment carries the bridge marker, generate the
-	// gateway's nginx stream config and install it as a command:, then strip the
-	// marker. No-op for every non-bridge sourced render.
-	if err := injectBridgeGateway(merged); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: bridge gateway", nodeCtx.NodeID))
-	}
-	origins := buildSingleOriginMap(merged, nodeCtx)
-	injectAggregaLabelsIntoServices(merged, origins)
-
-	body, err := renderer.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
-	}
-
-	// Output path mirrors synthesised-mode: <nodeID>.compose-fragment.yaml.
-	// Both flow into the same Release-level merger via Intermediate=true.
-	// We return as a renderer.Engine entry point (map[string][]byte), but
-	// the orchestrator's per-node Phase B sub-passes wrap the file into an
-	// EmittedFile and tag origin/intermediate. Sourced-mode origin is
-	// EmitOriginSource per the existing convention.
-	//
-	// However: the orchestrator's current Render() dispatch tags every
-	// output as EmitOriginSource AND Intermediate=false. To make sourced-
-	// mode compose flow through the Release-level merger, the file MUST
-	// carry Intermediate=true. The orchestrator does not currently
-	// inspect Render's output names for this signal. The clean path: the
-	// orchestrator's per-engine dispatch checks "if engine is a
-	// ReleaseComposer, mark its Render output as Intermediate=true."
-	//
-	// That orchestrator-side change is implemented at the Render dispatch
-	// site. For now this file emits the body under the standard fragment
-	// name; the orchestrator picks up the file and tags it.
-	return map[string][]byte{nodeCtx.NodeID + ".compose-fragment.yaml": body}, nil
+	return renderSourcedCore(raw, chartPath, values, nodeCtx)
 }
 
 // resolveComposeSourcePath returns the path of the YAML file that
@@ -163,64 +93,5 @@ func resolveComposeSourcePath(chartPath string) (string, error) {
 		return yamlEntries[0], nil
 	default:
 		return "", fmt.Errorf("directory contains %d .yaml/.yml entries; expected exactly one", len(yamlEntries))
-	}
-}
-
-// deepMergeOverlay merges overlay onto base using docker-compose overlay
-// semantics:
-//
-//   - When both base[k] and overlay[k] are maps, recurse.
-//   - When overlay[k] is a non-map value (scalar, list, nil), it replaces
-//     base[k] entirely.
-//   - When base lacks k, overlay[k] is added.
-//   - When overlay lacks k, base[k] is preserved.
-//
-// Returns the merged map. Inputs may be nil; nil base treated as empty.
-func deepMergeOverlay(base, overlay map[string]any) map[string]any {
-	if base == nil {
-		base = map[string]any{}
-	}
-	out := make(map[string]any, len(base)+len(overlay))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, ov := range overlay {
-		bv, hasBase := out[k]
-		if !hasBase {
-			out[k] = ov
-			continue
-		}
-		bm, baseIsMap := asStringMap(bv)
-		om, overlayIsMap := asStringMap(ov)
-		if baseIsMap && overlayIsMap {
-			out[k] = deepMergeOverlay(bm, om)
-			continue
-		}
-		// All other cases: overlay replaces base (lists, scalars, mixed).
-		out[k] = ov
-	}
-	return out
-}
-
-// asStringMap normalises a YAML-decoded interface to map[string]any.
-// yaml.v3 decodes maps as either map[string]any (when keys are
-// always strings) or map[any]any (when keys are mixed). The
-// merger needs string-keyed maps; this helper coerces the latter.
-func asStringMap(v any) (map[string]any, bool) {
-	switch m := v.(type) {
-	case map[string]any:
-		return m, true
-	case map[any]any:
-		out := make(map[string]any, len(m))
-		for k, val := range m {
-			ks, ok := k.(string)
-			if !ok {
-				return nil, false
-			}
-			out[ks] = val
-		}
-		return out, true
-	default:
-		return nil, false
 	}
 }

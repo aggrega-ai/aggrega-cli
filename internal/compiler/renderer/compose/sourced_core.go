@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+// Filesystem-free sourced-mode rendering core for the compose provider. A Recipe
+// with `source: <path>` plus `valuesMapping:` produces:
+//
+//  1. The base compose file is parsed as a single YAML document.
+//  2. The valuesMapping output (the values dict already evaluated by Phase
+//     B.1) is treated as a compose-overlay document.
+//  3. The two are deep-merged per docker-compose's native overlay semantics:
+//     scalars: overlay wins, maps merge, lists are REPLACED (not appended) —
+//     this matches `docker compose -f base.yaml -f overlay.yaml config`
+//     behaviour.
+//
+// The merged compose document is emitted as one Intermediate=true
+// EmittedFile (`<nodeID>.compose-fragment.yaml`) so it joins the Release-
+// level merge alongside synthesised-mode fragments.
+//
+// renderSourcedCore is the byte-identical-critical part of sourced-mode
+// rendering: it receives the base compose bytes in memory and never reads from
+// disk, so both the in-tree host engine (which reads the file from a path) and
+// the provider Wasm guest (which reconstructs the source from the payload's
+// source projection) share this one render path. This file carries no build
+// tag: it compiles for the host and for the wasip1 guest alike, so it imports no
+// host-only capability (no filesystem, no network).
+
+package compose
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+
+	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+)
+
+// renderSourcedCore parses the base compose bytes, deep-merges the values dict
+// on top, injects the compose-bridge gateway (no-op for non-bridge renders) and
+// the aggrega.ai/* provenance labels, and emits an Intermediate=true
+// compose-fragment for the Release-level merger to consume. sourcePath is the
+// operator-facing source identifier threaded through only for diagnostics so the
+// parse-error messages match the source the host read.
+func renderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+	// A Compose file is a single YAML document. Decode the first document, then
+	// require the stream to be exhausted: a single file carrying `---`-separated
+	// documents passes the source resolver's file-count guard, but
+	// yaml.Unmarshal would silently keep only the first and drop the rest — a
+	// silent misrender. Halt loudly instead (Loud Guardrails — the compiler does
+	// not assume well-formed input).
+	dec := yaml.NewDecoder(bytes.NewReader(baseComposeBytes))
+	var base map[string]any
+	if err := dec.Decode(&base); err != nil {
+		if errors.Is(err, io.EOF) {
+			base = map[string]any{} // empty source
+		} else {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath}, fmt.Sprintf("compose: node %q: parse source %q", nodeCtx.NodeID, sourcePath))
+		}
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath},
+			fmt.Sprintf("compose: node %q: source %q contains multiple YAML documents; a compose file must be a single document", nodeCtx.NodeID, sourcePath),
+			nil, nil)
+	}
+	if base == nil {
+		base = map[string]any{}
+	}
+
+	merged := deepMergeOverlay(base, values)
+	// compose-bridge: when the fragment carries the bridge marker, generate the
+	// gateway's nginx stream config and install it as a command:, then strip the
+	// marker. No-op for every non-bridge sourced render.
+	if err := injectBridgeGateway(merged); err != nil {
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: bridge gateway", nodeCtx.NodeID))
+	}
+	origins := buildSingleOriginMap(merged, nodeCtx)
+	injectAggregaLabelsIntoServices(merged, origins)
+
+	body, err := renderer.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
+	if err != nil {
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
+	}
+
+	// Output path mirrors synthesised-mode: <nodeID>.compose-fragment.yaml.
+	// Both flow into the same Release-level merger via Intermediate=true. The
+	// orchestrator's per-node Phase B sub-passes wrap the file into an
+	// EmittedFile and tag origin/intermediate; sourced-mode origin is
+	// EmitOriginSource per the existing convention.
+	return map[string][]byte{nodeCtx.NodeID + ".compose-fragment.yaml": body}, nil
+}
+
+// deepMergeOverlay merges overlay onto base using docker-compose overlay
+// semantics:
+//
+//   - When both base[k] and overlay[k] are maps, recurse.
+//   - When overlay[k] is a non-map value (scalar, list, nil), it replaces
+//     base[k] entirely.
+//   - When base lacks k, overlay[k] is added.
+//   - When overlay lacks k, base[k] is preserved.
+//
+// Returns the merged map. Inputs may be nil; nil base treated as empty.
+func deepMergeOverlay(base, overlay map[string]any) map[string]any {
+	if base == nil {
+		base = map[string]any{}
+	}
+	out := make(map[string]any, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, ov := range overlay {
+		bv, hasBase := out[k]
+		if !hasBase {
+			out[k] = ov
+			continue
+		}
+		bm, baseIsMap := asStringMap(bv)
+		om, overlayIsMap := asStringMap(ov)
+		if baseIsMap && overlayIsMap {
+			out[k] = deepMergeOverlay(bm, om)
+			continue
+		}
+		// All other cases: overlay replaces base (lists, scalars, mixed).
+		out[k] = ov
+	}
+	return out
+}
+
+// asStringMap normalises a YAML-decoded interface to map[string]any.
+// yaml.v3 decodes maps as either map[string]any (when keys are
+// always strings) or map[any]any (when keys are mixed). The
+// merger needs string-keyed maps; this helper coerces the latter.
+func asStringMap(v any) (map[string]any, bool) {
+	switch m := v.(type) {
+	case map[string]any:
+		return m, true
+	case map[any]any:
+		out := make(map[string]any, len(m))
+		for k, val := range m {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, false
+			}
+			out[ks] = val
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}

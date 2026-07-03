@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+//go:build !wasip1
+
+// Host adapter for the compose provider's boundary→consumer env channel
+// (renderer.BoundaryConsumerEnvOverrider). The bridge's cross-network derivation
+// is pure and tag-free (bridge_ports.go, bridge_gateway.go); this file carries
+// the ComposeEngine method that exposes it to the host pipeline.
+
 package compose
 
 import (
@@ -8,19 +15,6 @@ import (
 	"strconv"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-)
-
-const (
-	// bridgeGatewayService is the compose service name the bridge fragment
-	// renders; consumers reach the bridge at "aggrega-gw:<assigned-port>".
-	bridgeGatewayService = "aggrega-gw"
-	// defaultBridgePortBase is the collision-fallback base when the bridge
-	// attachment declares no portBase.
-	defaultBridgePortBase = 10000
-	// defaultUpstreamHostField is the provides field the bridge treats as the
-	// upstream host; the consumer's env var injected `from:` this field is the
-	// one rewritten to the gateway. Configurable via the providesField knob.
-	defaultUpstreamHostField = "host"
 )
 
 // BoundaryConsumerEnvOverrides is the ComposeEngine's implementation of the

@@ -24,6 +24,19 @@ const (
 	bridgeConfigTarget = "/etc/nginx/nginx.conf"
 )
 
+const (
+	// bridgeGatewayService is the compose service name the bridge fragment
+	// renders; consumers reach the bridge at "aggrega-gw:<assigned-port>".
+	bridgeGatewayService = "aggrega-gw"
+	// defaultBridgePortBase is the collision-fallback base when the bridge
+	// attachment declares no portBase.
+	defaultBridgePortBase = 10000
+	// defaultUpstreamHostField is the provides field the bridge treats as the
+	// upstream host; the consumer's env var injected `from:` this field is the
+	// one rewritten to the gateway. Configurable via the providesField knob.
+	defaultUpstreamHostField = "host"
+)
+
 // injectBridgeGateway consumes the bridge marker on a rendered compose fragment,
 // generates the nginx stream config for the bridged (cross-network) edges, and
 // delivers it as a mounted compose config: a top-level `configs:` entry with
