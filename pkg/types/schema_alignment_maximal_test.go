@@ -180,6 +180,12 @@ func maximalPlugin() types.Plugin {
 				{Name: "lint_naming", Operates: "patch", Scope: "own", Selector: "workloads carrying a pod template"},
 				{Name: "step", Operates: "emit", Scope: "host"},
 			},
+			Provider: &types.PluginProvider{
+				WorkloadSchema: "type: object",
+				WellKnownAnnotations: []types.WellKnownAnnotation{
+					{Key: "aggrega.ai/namespace", Purpose: "target namespace", DefaultBehavior: "default namespace"},
+				},
+			},
 		},
 	}
 }

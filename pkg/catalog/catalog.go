@@ -53,15 +53,17 @@ type Catalog struct {
 	MappingLibraries map[string]types.MappingLibrary // keyed by metadata.name (PascalCase library identifier)
 	Plugins          map[string]types.Plugin         // keyed by identity (metadata.name:version)
 
-	// componentSources / featureSources / providerSources track the file path
-	// each entity was loaded from. Populated by Pass 1 (indexFile) and
-	// consumed by Pass 2 (the schema validation pass at the end of LoadAll)
-	// so the validator's error messages name the offending file. Unexported
-	// because the bookkeeping is internal to LoadAll; downstream callers
-	// identify entities by metadata.name, not by source path.
+	// componentSources / featureSources / providerSources / pluginSources
+	// track the file path each entity was loaded from. Populated by Pass 1
+	// (indexFile) and consumed by Pass 2 (the schema validation pass at the
+	// end of LoadAll) so the validator's error messages name the offending
+	// file. Unexported because the bookkeeping is internal to LoadAll;
+	// downstream callers identify entities by metadata.name, not by source
+	// path.
 	componentSources map[string]string
 	featureSources   map[string]string
 	providerSources  map[string]string
+	pluginSources    map[string]string
 
 	// aggregateSources records the absolute filesystem path each Aggregate
 	// entity was loaded from. Populated by Pass 1 (indexFile) and exposed
@@ -366,6 +368,7 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 		componentSources: make(map[string]string),
 		featureSources:   make(map[string]string),
 		providerSources:  make(map[string]string),
+		pluginSources:    make(map[string]string),
 		aggregateSources: make(map[string]string),
 		entityBytes:      make(map[string][]byte),
 		pathByIdentity:   make(map[string]string),
@@ -465,12 +468,14 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 		bk := entityBytesKey("MappingLibrary", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
-	// Plugin carries no per-kind source side-table (no pluginSources):
-	// nothing reads a Plugin's source file path. The bytes side-table keys on
-	// metadata.name (the closure walker hashes them for the lockfile pin) while
-	// the typed map keys on identity (name:version) — same split the Recipe /
-	// Library kinds use, which likewise merge without a *Sources table.
+	// Plugin's bytes side-table keys on metadata.name (the closure walker
+	// hashes them for the lockfile pin) while the typed map and the source
+	// side-table key on identity (name:version) — same split the Recipe /
+	// Library kinds use for their typed maps. The source side-table feeds the
+	// Pass-2 spec.provider.workloadSchema compile gate so its error messages
+	// name the offending file.
 	mergeKind(acc, "Plugin", acc.Plugins, perDir.Plugins, perDir, perDirRoot, winnerDir, func(k string) {
+		acc.pluginSources[k] = perDir.pluginSources[k]
 		bk := entityBytesKey("Plugin", perDir.Plugins[k].Metadata.Name)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
@@ -597,6 +602,22 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		for _, err := range validator.ValidateProviderSchemas(
 			name,
 			c.providerSources[name],
+			&p.Spec,
+		) {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+
+	pluginKeys := make([]string, 0, len(c.Plugins))
+	for key := range c.Plugins {
+		pluginKeys = append(pluginKeys, key)
+	}
+	sort.Strings(pluginKeys)
+	for _, key := range pluginKeys {
+		p := c.Plugins[key]
+		for _, err := range validator.ValidatePluginProviderSchemas(
+			key,
+			c.pluginSources[key],
 			&p.Spec,
 		) {
 			validationErrors = append(validationErrors, err)
@@ -847,6 +868,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 			return err
 		}
 		c.Plugins[wkey] = e
+		c.pluginSources[wkey] = path
 		c.entityBytes[entityBytesKey("Plugin", e.Metadata.Name)] = data
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)

@@ -53,4 +53,6 @@ type PluginSpec struct {
 	Runtime *PluginRuntime `json:"runtime,omitempty" yaml:"runtime,omitempty"`
 	// Exports The exports this plugin offers, each with its declared capability. An export is one named entry point the host dispatches to (for example `render_node`, `lint_naming`, `step`); the per-export capability block is the authored claim of what that export does, which the host cross-checks against the plugin's self-report at publish and at load. Entries preserve author order. Absent declares no authored export surface.
 	Exports []PluginExport `json:"exports,omitempty" yaml:"exports,omitempty"`
+	// Provider The provider-socket metadata for a `pluginType: provider` plugin: how its rendering engine translates the aggrega.ai/v1alpha1 Workload kind and which platform-native annotations the engine reads. Present only on provider-rendering plugins; absent on `linter` and `frp_step` plugins, and on provider plugins whose engine renders only sourced or artifact content (no Workload synthesis).
+	Provider *PluginProvider `json:"provider,omitempty" yaml:"provider,omitempty"`
 }

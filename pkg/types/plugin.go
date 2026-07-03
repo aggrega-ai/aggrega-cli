@@ -10,10 +10,11 @@ package types
 // PluginMetadata, PluginSpec) are generated into
 // plugin_gen.go from the published plugin-v1alpha1 schema; their
 // godoc is the schema's descriptions. This hand-written companion holds
-// the two optional nested blocks the generator names but does not
-// descend into (PluginSignature, PluginRuntime), plus any future
-// Plugin methods or marshalers. The shared Maintainer type the
-// generated metadata references lives in common.go.
+// the optional nested blocks the generator names but does not
+// descend into (PluginSignature, PluginRuntime, PluginProvider), plus
+// any future Plugin methods or marshalers. The shared Maintainer and
+// WellKnownAnnotation types the generated fields reference live in
+// common.go.
 //
 // The runtime block stays field-aligned with the loader's plugin input
 // (max-memory pages, per-call timeout, the machine-derived host-function
@@ -25,10 +26,36 @@ package types
 // name and resolved artifact path) are resolution internals supplied by
 // upstream layers, not entity authoring fields.
 //
-// PluginSignature and PluginRuntime are referenced by pointer
-// (named via x-aggrega-go-type on the schema's object nodes) so an entity
-// that omits them round-trips without emitting an empty block — a
+// PluginSignature, PluginRuntime, and PluginProvider are referenced by
+// pointer (named via x-aggrega-go-type on the schema's object nodes) so an
+// entity that omits them round-trips without emitting an empty block — a
 // value-typed nested struct would re-marshal as `{}`.
+
+// PluginProvider is the optional provider-socket metadata block on a
+// pluginType: provider Plugin. It documents how the plugin's rendering
+// engine translates the Workload kind into provider-native manifests and
+// which platform-native annotations the engine reads. It carries no
+// meaning on a linter or frp_step plugin. The block is hand-written
+// because the generator names it via x-aggrega-go-type on the schema's
+// object node and does not descend into it.
+type PluginProvider struct {
+	// WorkloadSchema is JSON Schema 2020-12 documenting how this provider
+	// translates the aggrega.ai/v1alpha1 Workload kind into provider-native
+	// manifests. A non-empty body indicates the engine supports Workload
+	// synthesis; an empty or absent field carries no synthesis claim.
+	// Whether a workload: Recipe is supported is determined by the bound
+	// engine's synthesis capability, not by this field's presence. The body
+	// is compiled to JSON Schema 2020-12 at load as a structural guardrail;
+	// it becomes executable input to Wasm translators in a future iteration.
+	WorkloadSchema string `json:"workloadSchema,omitempty" yaml:"workloadSchema,omitempty"`
+	// WellKnownAnnotations documents the platform-native annotation keys
+	// (the aggrega.ai/ namespace) this provider's engine reads, each with
+	// the behavior applied when the annotation is absent. It is descriptive
+	// contract metadata for catalog readers and the inspect surface; the
+	// compiler does not consume it to gate or branch a build. Entries
+	// preserve author order.
+	WellKnownAnnotations []WellKnownAnnotation `json:"wellKnownAnnotations,omitempty" yaml:"wellKnownAnnotations,omitempty"`
+}
 
 // PluginExport is one export the plugin offers, with its declared
 // capability. An export is a named entry point the host dispatches to (for
