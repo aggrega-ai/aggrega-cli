@@ -9,7 +9,6 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -24,14 +23,21 @@ import (
 // one source of truth, no drift between the routing precondition and the call.
 const RenderNodeExport = "render_node"
 
-// Engine renders one node through the helm provider Wasm guest, implementing the
-// host renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves
-// the guest's bytes via lookup, loads them through the injected shared loader
-// once per call, and reports the input-kind capabilities it was constructed
-// with.
+// Engine renders one node through a provider Wasm guest, implementing the host
+// renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves the
+// guest's bytes via lookup, loads them through the injected shared loader once
+// per call, and reports the input-kind capabilities of the Go engine it wraps.
+// The adapter is provider-agnostic: it drives whichever guest the wrapped Go
+// engine advertises, and projects a sourced node's source through the wrapped
+// engine's own SourceProjector rather than any hardcoded provider package.
 type Engine struct {
 	lookup    pluginpath.Lookup
 	pluginURI string
+	// goEngine is the in-tree Go engine this adapter fronts. Its Capabilities
+	// gate the input kinds (so the render-time gate stays Go-decided), and its
+	// SourceProjector projects a sourced node's source onto the render wire —
+	// the seam that keeps the adapter free of any provider package import.
+	goEngine renderer.Engine
 	caps      renderer.ProviderCapabilities
 	// loader is the shared per-build loader every Render / SynthesizeWorkload
 	// call loads through. It carries the build's external-input service and,
@@ -47,13 +53,16 @@ var (
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
-// its bytes via lookup, loading through the shared loader, and reporting caps as
-// its input-kind capabilities. The loader is shared across the build so its
-// compilation cache (when present) warms once; a nil loader is an
+// its bytes via lookup and loading through the shared loader. It wraps goEngine
+// — the in-tree Go engine for the same provider — deriving its input-kind
+// capabilities from goEngine.Capabilities() so the render-time gate stays
+// Go-decided, and holding goEngine so a sourced Render projects the source
+// through goEngine's SourceProjector. The loader is shared across the build so
+// its compilation cache (when present) warms once; a nil loader is an
 // injection-site bug — every call would nil-panic — rather than a supported
 // zero value.
-func New(lookup pluginpath.Lookup, pluginURI string, caps renderer.ProviderCapabilities, loader *wasm.Loader) *Engine {
-	return &Engine{lookup: lookup, pluginURI: pluginURI, caps: caps, loader: loader}
+func New(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.Engine, loader *wasm.Loader) *Engine {
+	return &Engine{lookup: lookup, pluginURI: pluginURI, goEngine: goEngine, caps: goEngine.Capabilities(), loader: loader}
 }
 
 // Capabilities reports the input-kind capabilities configured at construction.
@@ -75,7 +84,14 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 			nodeCtx.NodeID, nodeCtx.Source)
 	}
 
-	proj, err := helm.ProjectChartSource(src)
+	projector, ok := e.goEngine.(renderer.SourceProjector)
+	if !ok {
+		return nil, fmt.Errorf(
+			"wasmengine: node %q: internal error — provider engine %T was routed to a Wasm guest for sourced render but does not implement renderer.SourceProjector",
+			nodeCtx.NodeID, e.goEngine)
+	}
+
+	proj, err := projector.ProjectSource(src)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +138,7 @@ func (e *Engine) SynthesizeWorkload(
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
 			Workload: *w,
-			Secrets:  helm.SecretProvidesFromContext(tmplCtx),
+			Secrets:  renderer.SecretProvidesFromContext(tmplCtx),
 		},
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input)

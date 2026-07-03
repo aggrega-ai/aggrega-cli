@@ -34,6 +34,7 @@ var (
 	_ renderer.Engine              = (*ComposeEngine)(nil)
 	_ renderer.WorkloadSynthesizer = (*ComposeEngine)(nil)
 	_ renderer.BoundaryAssembler   = (*ComposeEngine)(nil)
+	_ renderer.SourceProjector     = (*ComposeEngine)(nil)
 )
 
 // Capabilities reports compose's input-kind support: sourced (a compose file)

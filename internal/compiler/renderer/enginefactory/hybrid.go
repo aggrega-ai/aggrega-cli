@@ -89,9 +89,11 @@ func routeEngine(
 		return goEngine
 	}
 	// Pass the Provider's Plugin-entity URI as the adapter's lookup key: the
-	// entity-fronted pluginLookup resolves entity → artifact → cascade. Source
-	// capabilities from the Go engine so the input-kind gate stays Go-decided.
-	return wasmengine.New(pluginLookup, prov.Spec.Plugin, goEngine.Capabilities(), sharedLoader)
+	// entity-fronted pluginLookup resolves entity → artifact → cascade. Wrap the
+	// Go engine so the adapter derives input-kind capabilities from it (the gate
+	// stays Go-decided) and projects a sourced node's source through its own
+	// SourceProjector.
+	return wasmengine.New(pluginLookup, prov.Spec.Plugin, goEngine, sharedLoader)
 }
 
 // advertisesRenderNode reports whether the Plugin entity declares the export the

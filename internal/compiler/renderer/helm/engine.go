@@ -29,6 +29,7 @@ type HelmEngine struct{}
 var (
 	_ renderer.Engine              = (*HelmEngine)(nil)
 	_ renderer.WorkloadSynthesizer = (*HelmEngine)(nil)
+	_ renderer.SourceProjector     = (*HelmEngine)(nil)
 )
 
 // Capabilities reports helm's input-kind support: sourced (chart source),

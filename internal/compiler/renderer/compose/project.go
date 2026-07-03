@@ -20,7 +20,7 @@ import (
 // filesystem. It resolves the base compose file the same way the host sourced
 // path does (resolveComposeSourcePath), reads it, and returns a one-file
 // SourceProjection keyed by the file's base name. This is what the host does at
-// compile time; the render core (renderSourcedCore) then renders identically
+// compile time; the render core (RenderSourcedCore) then renders identically
 // whether the source was read from a path (host) or from these bytes (guest).
 func ProjectComposeSource(composePath string) (*renderer.SourceProjection, error) {
 	resolvedPath, err := resolveComposeSourcePath(composePath)
@@ -37,4 +37,11 @@ func ProjectComposeSource(composePath string) (*renderer.SourceProjection, error
 			{Path: filepath.Base(resolvedPath), Content: data},
 		},
 	}, nil
+}
+
+// ProjectSource implements renderer.SourceProjector by delegating to
+// ProjectComposeSource, which remains the single-source projection impl the
+// in-tree sourced path and the provider Wasm guest both build on.
+func (e *ComposeEngine) ProjectSource(path string) (*renderer.SourceProjection, error) {
+	return ProjectComposeSource(path)
 }

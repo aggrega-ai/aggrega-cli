@@ -5,7 +5,7 @@
 
 // Host-side sourced-mode rendering for the compose provider: it resolves and
 // reads the base compose file from the local filesystem, then hands the bytes to
-// the filesystem-free renderSourcedCore (sourced_core.go) so the host and the
+// the filesystem-free RenderSourcedCore (sourced_core.go) so the host and the
 // provider Wasm guest share one byte-identical render path. The base compose
 // file path is interpreted relative to the working directory of the compile
 // invocation; chart-relative path resolution is the catalog loader's job today
@@ -24,7 +24,7 @@ import (
 )
 
 // renderSourced resolves and reads the base compose file at chartPath, then
-// delegates to the filesystem-free renderSourcedCore, which deep-merges the
+// delegates to the filesystem-free RenderSourcedCore, which deep-merges the
 // values dict on top and emits an Intermediate=true compose-fragment for the
 // Release-level merger to consume.
 //
@@ -45,7 +45,7 @@ func renderSourced(chartPath string, values map[string]any, nodeCtx renderer.Nod
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: resolvedPath}, fmt.Sprintf("compose: node %q: read source %q", nodeCtx.NodeID, resolvedPath))
 	}
 
-	return renderSourcedCore(raw, chartPath, values, nodeCtx)
+	return RenderSourcedCore(raw, chartPath, values, nodeCtx)
 }
 
 // resolveComposeSourcePath returns the path of the YAML file that

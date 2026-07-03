@@ -71,7 +71,7 @@ func TestWasmEngineAdapterRenderByteIdentity(t *testing.T) {
 	// The candidate is driven strictly through the renderer.Engine interface
 	// value — never a concrete method — so the A/B exercises exactly the seam the
 	// engine dispatch selects.
-	var eng renderer.Engine = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", (&helm.HelmEngine{}).Capabilities(), &wasm.Loader{})
+	var eng renderer.Engine = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", &helm.HelmEngine{}, &wasm.Loader{})
 
 	cases := []struct {
 		name        string
@@ -136,7 +136,7 @@ func TestWasmEngineAdapterSynthByteIdentity(t *testing.T) {
 		t.Fatalf("read guest wasm: %v", err)
 	}
 
-	var synth renderer.WorkloadSynthesizer = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", (&helm.HelmEngine{}).Capabilities(), &wasm.Loader{})
+	var synth renderer.WorkloadSynthesizer = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", &helm.HelmEngine{}, &wasm.Loader{})
 
 	cases := []struct {
 		name   string

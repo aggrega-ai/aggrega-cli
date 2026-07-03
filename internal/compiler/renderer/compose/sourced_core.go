@@ -16,7 +16,7 @@
 // EmittedFile (`<nodeID>.compose-fragment.yaml`) so it joins the Release-
 // level merge alongside synthesised-mode fragments.
 //
-// renderSourcedCore is the byte-identical-critical part of sourced-mode
+// RenderSourcedCore is the byte-identical-critical part of sourced-mode
 // rendering: it receives the base compose bytes in memory and never reads from
 // disk, so both the in-tree host engine (which reads the file from a path) and
 // the provider Wasm guest (which reconstructs the source from the payload's
@@ -38,13 +38,17 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// renderSourcedCore parses the base compose bytes, deep-merges the values dict
+// RenderSourcedCore parses the base compose bytes, deep-merges the values dict
 // on top, injects the compose-bridge gateway (no-op for non-bridge renders) and
 // the aggrega.ai/* provenance labels, and emits an Intermediate=true
 // compose-fragment for the Release-level merger to consume. sourcePath is the
 // operator-facing source identifier threaded through only for diagnostics so the
 // parse-error messages match the source the host read.
-func renderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+//
+// Exported so the provider Wasm guest (package main, which cannot reach an
+// unexported compose function) renders through the same single-source core the
+// in-tree sourced path calls, keeping the two surfaces byte-identical.
+func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
 	// A Compose file is a single YAML document. Decode the first document, then
 	// require the stream to be exhausted: a single file carrying `---`-separated
 	// documents passes the source resolver's file-count guard, but
