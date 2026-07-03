@@ -138,32 +138,32 @@ func keys(m map[string][]byte) []string {
 	return out
 }
 
-// TestCopySourcedChart_StatError pins the stat-fail path.
-func TestCopySourcedChart_StatError(t *testing.T) {
+// TestProjectSourcedChart_StatError pins the stat-fail path.
+func TestProjectSourcedChart_StatError(t *testing.T) {
 	t.Parallel()
-	_, err := copySourcedChart("/nonexistent/path/nope")
+	_, err := ProjectSourcedChart("/nonexistent/path/nope")
 	if err == nil {
 		t.Errorf("missing path should error")
 	}
 }
 
-// TestCopySourcedChart_NotADirectory pins the not-a-directory rejection.
-func TestCopySourcedChart_NotADirectory(t *testing.T) {
+// TestProjectSourcedChart_NotADirectory pins the not-a-directory rejection.
+func TestProjectSourcedChart_NotADirectory(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "notadir")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, err := copySourcedChart(file)
+	_, err := ProjectSourcedChart(file)
 	if err == nil {
 		t.Errorf("file path should reject")
 	}
 }
 
-// TestCopySourcedChart_MissingChartYAML pins the missing-Chart.yaml
+// TestProjectSourcedChart_MissingChartYAML pins the missing-Chart.yaml
 // rejection.
-func TestCopySourcedChart_MissingChartYAML(t *testing.T) {
+func TestProjectSourcedChart_MissingChartYAML(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Populate with a non-Chart.yaml file so the walk runs but the
@@ -171,15 +171,16 @@ func TestCopySourcedChart_MissingChartYAML(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp, "templates.yaml"), []byte("k: v\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, err := copySourcedChart(tmp)
+	_, err := ProjectSourcedChart(tmp)
 	if err == nil {
 		t.Errorf("directory without Chart.yaml should reject")
 	}
 }
 
-// TestCopySourcedChart_NestedFiles pins the recursive walk: nested
-// files are captured with forward-slash relative paths.
-func TestCopySourcedChart_NestedFiles(t *testing.T) {
+// TestProjectSourcedChart_NestedFiles pins the recursive walk: nested files are
+// captured with forward-slash relative paths and rebuilt into the file map by the
+// render core.
+func TestProjectSourcedChart_NestedFiles(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmp, "Chart.yaml"), []byte("apiVersion: v2\nname: n\nversion: 0.1.0\n"), 0o644); err != nil {
@@ -192,10 +193,11 @@ func TestCopySourcedChart_NestedFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(subdir, "nested.yaml"), []byte("nested: true\n"), 0o644); err != nil {
 		t.Fatalf("write nested: %v", err)
 	}
-	files, err := copySourcedChart(tmp)
+	proj, err := ProjectSourcedChart(tmp)
 	if err != nil {
-		t.Fatalf("copy: %v", err)
+		t.Fatalf("project: %v", err)
 	}
+	files := renderSourcedChartCore(proj)
 	if _, has := files["templates/deep/nested.yaml"]; !has {
 		t.Errorf("nested file missing; got keys=%v", keys(files))
 	}

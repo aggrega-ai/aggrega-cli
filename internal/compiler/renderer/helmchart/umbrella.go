@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+//go:build !wasip1
+
 package helmchart
 
 import (
 	"context"
 	"fmt"
-	"sort"
+	"os"
+	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -31,114 +34,43 @@ func (e *HelmEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryI
 	return files, true, nil
 }
 
-// umbrellaChartDependency mirrors a Helm umbrella Chart.yaml dependency entry.
-type umbrellaChartDependency struct {
-	Name       string `yaml:"name"`
-	Version    string `yaml:"version"`
-	Alias      string `yaml:"alias,omitempty"`
-	Repository string `yaml:"repository"`
-}
-
-// umbrellaChart is the minimal umbrella Chart.yaml shape.
-type umbrellaChart struct {
-	APIVersion   string                    `yaml:"apiVersion"`
-	Name         string                    `yaml:"name"`
-	Version      string                    `yaml:"version"`
-	Description  string                    `yaml:"description,omitempty"`
-	Dependencies []umbrellaChartDependency `yaml:"dependencies,omitempty"`
-}
-
 // BuildUmbrella produces the umbrella Chart.yaml + values.yaml for a
 // dispatch path. Returns a map of relative paths (e.g. "Chart.yaml",
 // "values.yaml") → contents. The caller prefixes these with the dispatch
 // path when placing them.
 //
+// It is the host adapter over assembleUmbrellaCore: for each sourced sub-chart it
+// reads the vendored chart's pristine Chart.yaml from disk into a filesystem-free
+// CoreSubChart, then delegates the assembly to the core. The core reads no disk,
+// so the umbrella output is identical whether the sub-charts' Chart.yaml bytes
+// come from the local source (host) or from a provider Wasm guest's payload.
+//
 // chartNameOverride is the cascaded `aggrega.ai/chart-name` annotation
 // value when present (set by the orchestrator from the resolver's
-// per-boundary annotation cascade). When non-empty, BuildUmbrella uses
-// it verbatim as the chart's name — the cascade-driven matching is the
-// merged-path scenario's name source. When empty, BuildUmbrella falls
-// back to the path-derived name (today's behavior).
+// per-boundary annotation cascade). When non-empty, the chart's name is
+// that value verbatim — the cascade-driven matching is the merged-path
+// scenario's name source. When empty, the name is derived from the
+// dispatch path (today's behavior).
 func BuildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string, indent int) (map[string][]byte, error) {
-	if boundaryName == "" {
-		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
-	}
-
-	// Sorted iteration for determinism
-	sort.Slice(subCharts, func(i, j int) bool {
-		return subCharts[i].InstanceID < subCharts[j].InstanceID
-	})
-
-	var name string
-	if chartNameOverride != "" {
-		name = sanitizeChartName(chartNameOverride)
-	} else {
-		name = sanitizeChartName(boundaryName)
-		if aggregateName != "" {
-			name = sanitizeChartName(aggregateName) + "-" + name
-		}
-	}
-
-	deps := make([]umbrellaChartDependency, 0, len(subCharts))
-	values := make(map[string]any, len(subCharts))
+	subs := make([]CoreSubChart, 0, len(subCharts))
 	for _, sc := range subCharts {
-		alias := sanitizeChartName(sc.InstanceID)
-		// Sourced sub-charts: dep `name` AND `version` come from the vendored
-		// chart's own Chart.yaml — the chart physically copied into
-		// charts/<alias>/. The dependency must mirror it in both: Helm matches a
-		// dependency to charts/<alias>/ by name and version, so a version drawn
-		// from the spec/component version (rather than the vendored chart) leaves
-		// the alias unbound and the umbrella's per-instance values never reach the
-		// sub-chart. `alias` = instance_id so Helm scopes umbrella values under
-		// that key and multiple instances of the same source chart don't collide.
-		// Generative sub-charts: name == alias == instance_id, version from the
-		// spec (or the default).
-		depName := alias
-		version := sc.Version
-		if version == "" {
-			version = defaultChartVersion
+		core := CoreSubChart{
+			InstanceID: sc.InstanceID,
+			Version:    sc.Version,
+			Values:     sc.Values,
 		}
+		// Sourced sub-chart: read the vendored chart's pristine Chart.yaml so the
+		// core can mirror the dependency's name AND version. Generative sub-charts
+		// (no source) carry no ChartYAML and take the generative fallback in the
+		// core.
 		if s, ok := sc.Source.(string); ok && s != "" {
-			name, ver, err := readChartMeta(s)
+			data, err := os.ReadFile(filepath.Join(s, "Chart.yaml"))
 			if err != nil {
-				return nil, err
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s}, fmt.Sprintf("helmchart sourced: read Chart.yaml in %q", s))
 			}
-			depName = name
-			version = ver
+			core.ChartYAML = data
 		}
-		deps = append(deps, umbrellaChartDependency{
-			Name:       depName,
-			Version:    version,
-			Alias:      alias,
-			Repository: "file://charts/" + alias,
-		})
-		if sc.Values != nil {
-			values[alias] = sc.Values
-		} else {
-			values[alias] = map[string]any{}
-		}
+		subs = append(subs, core)
 	}
-
-	umbrella := umbrellaChart{
-		APIVersion:   helmChartAPIVersion,
-		Name:         name,
-		Version:      defaultChartVersion,
-		Description:  fmt.Sprintf("Aggrega umbrella chart for boundary %q", boundaryName),
-		Dependencies: deps,
-	}
-
-	chartYAML, err := renderer.MarshalYAMLIndent(&umbrella, indent)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal Chart.yaml")
-	}
-
-	valuesYAML, err := renderer.MarshalYAMLIndent(values, indent)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal values.yaml")
-	}
-
-	return map[string][]byte{
-		"Chart.yaml":  chartYAML,
-		"values.yaml": valuesYAML,
-	}, nil
+	return assembleUmbrellaCore(boundaryName, aggregateName, subs, chartNameOverride, indent)
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+//go:build !wasip1
+
 package helmchart
 
 import (
@@ -28,6 +30,7 @@ var (
 	_ renderer.ArtifactsPathProvider    = (*HelmEngine)(nil)
 	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
 	_ renderer.CodecProvider            = (*HelmEngine)(nil)
+	_ renderer.SourceProjector          = (*HelmEngine)(nil)
 )
 
 // Codec satisfies renderer.CodecProvider: the helm-chart provider overrides the
@@ -102,5 +105,9 @@ func (e *HelmEngine) Render(_ context.Context, _ map[string]any, nodeCtx rendere
 				nodeCtx.NodeID),
 			nil, nil)
 	}
-	return copySourcedChart(s)
+	proj, err := ProjectSourcedChart(s)
+	if err != nil {
+		return nil, err
+	}
+	return renderSourcedChartCore(proj), nil
 }

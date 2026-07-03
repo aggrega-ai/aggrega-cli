@@ -57,8 +57,8 @@ func TestHelmChartArtifactsImport_EndToEnd(t *testing.T) {
 
 	root := t.TempDir()
 
-	// Minimal sub-chart skeleton: Chart.yaml + a dummy template so
-	// copySourcedChart returns a non-empty file map and the brief's
+	// Minimal sub-chart skeleton: Chart.yaml + a dummy template so the
+	// sourced-chart walk returns a non-empty file map and the brief's
 	// "alongside Aggrega's generated templates" framing is exercised.
 	chartDir := filepath.Join(root, "api-chart")
 	if err := os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755); err != nil {
