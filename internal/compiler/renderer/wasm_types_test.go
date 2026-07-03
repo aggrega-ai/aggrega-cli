@@ -141,11 +141,10 @@ func TestRenderNodeInput_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestRenderNodeOutput_RoundTrip asserts a render_node output (and, via
-// the alias, an assemble_boundary output) survives a marshal -> unmarshal ->
-// marshal cycle byte-identically. The reshaped output carries each file's
-// serialized bytes, so a byte-identical round-trip proves the bytes survive the
-// boundary (base64 on the wire).
+// TestRenderNodeOutput_RoundTrip asserts a render_node output survives a
+// marshal -> unmarshal -> marshal cycle byte-identically. The reshaped output
+// carries each file's serialized bytes, so a byte-identical round-trip proves the
+// bytes survive the boundary (base64 on the wire).
 func TestRenderNodeOutput_RoundTrip(t *testing.T) {
 	t.Parallel()
 	fixture := sampleRenderNodeOutput(t)
@@ -280,17 +279,46 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	}
 }
 
-// TestAssembleBoundaryOutput_AliasIdentity guards the single-source
-// posture: AssembleBoundaryOutput is the alias of RenderNodeOutput, not
-// a separate declaration. A future fork into a distinct type breaks the
-// assignment below at compile time.
-func TestAssembleBoundaryOutput_AliasIdentity(t *testing.T) {
+// TestAssembleBoundaryOutput_ForkedShape guards the assemble output's forked
+// shape: AssembleBoundaryOutput is a distinct type from RenderNodeOutput,
+// carrying the assembled files and diagnostics plus a nest-per-node signal the
+// render output does not. It round-trips byte-identically, and its nest-per-node
+// flag survives the boundary. A regression that re-aliases it to RenderNodeOutput
+// (dropping the signal) breaks the distinctness assertion.
+func TestAssembleBoundaryOutput_ForkedShape(t *testing.T) {
 	t.Parallel()
-	var out renderer.AssembleBoundaryOutput = sampleRenderNodeOutput(t)
-	var _ renderer.RenderNodeOutput = out
 
-	if reflect.TypeOf(renderer.AssembleBoundaryOutput{}) != reflect.TypeOf(renderer.RenderNodeOutput{}) {
-		t.Fatal("AssembleBoundaryOutput is no longer an alias of RenderNodeOutput")
+	if reflect.TypeOf(renderer.AssembleBoundaryOutput{}) == reflect.TypeOf(renderer.RenderNodeOutput{}) {
+		t.Fatal("AssembleBoundaryOutput must be a distinct type from RenderNodeOutput (it carries the nest-per-node signal)")
+	}
+	if _, ok := reflect.TypeOf(renderer.AssembleBoundaryOutput{}).FieldByName("NestPerNode"); !ok {
+		t.Fatal("AssembleBoundaryOutput must carry a NestPerNode field")
+	}
+
+	render := sampleRenderNodeOutput(t)
+	fixture := renderer.AssembleBoundaryOutput{
+		Files:       render.Files,
+		Diagnostics: render.Diagnostics,
+		NestPerNode: true,
+	}
+
+	first, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round renderer.AssembleBoundaryOutput
+	if err := json.Unmarshal(first, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	second, err := json.Marshal(round)
+	if err != nil {
+		t.Fatalf("marshal round: %v", err)
+	}
+	if string(first) != string(second) {
+		t.Errorf("round-trip not byte-identical:\n  first:  %s\n  second: %s", first, second)
+	}
+	if !round.NestPerNode {
+		t.Error("NestPerNode did not survive the round-trip")
 	}
 }
 

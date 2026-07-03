@@ -5,9 +5,10 @@
 
 // Command compose-provider is the compose Provider Wasm guest. It implements the
 // sourced-render and workload-synthesis paths of the compose engine behind the
-// provider render ABI's render_node export, reusing the same filesystem-free
-// render cores the in-tree compose engine runs so the two produce byte-identical
-// output for identical input.
+// provider render ABI's render_node export, and the per-dispatch-group merge
+// behind its assemble_boundary export, reusing the same filesystem-free render
+// and assemble cores the in-tree compose engine runs so the two produce
+// byte-identical output for identical input.
 //
 // The guest decodes a RenderNodeInput and routes on which projection it carries:
 // a workload projection is synthesized into a compose service fragment; a source
@@ -38,11 +39,11 @@ import (
 )
 
 // pluginDescriptor is the static describe() self-report: a v1alpha1
-// provider plugin declaring the render_node export and compatibility with
-// the compose provider engine. The host reads this once at load and validates
-// it before invoking render_node. Compose fetches nothing, so no host functions
-// are declared.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// provider plugin declaring the render_node and assemble_boundary exports and
+// compatibility with the compose provider engine. The host reads this once at
+// load and validates it before invoking either export. Compose fetches nothing,
+// so no host functions are declared.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -81,6 +82,69 @@ func renderNode() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+//go:wasmexport assemble_boundary
+func assembleBoundary() int32 {
+	var in renderer.AssembleBoundaryInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	out, err := assembleBoundaryFromInput(in)
+	if err != nil {
+		pdk.SetError(errors.New(errorChainMessage(err)))
+		return 1
+	}
+
+	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// assembleBoundaryFromInput reconstructs the compose assemble core's inputs from
+// the wire AssembleBoundaryInput and runs the same filesystem-free merge core the
+// in-tree compose engine runs, returning the assembled docker-compose.yaml's bytes
+// as a RenderedFile. Each rendered node contributes its render_node fragment files
+// (keyed by node id) and its merged annotations (read for the per-node network
+// discriminator); the graph's uses edges feed depends_on inference; the boundary
+// path is the network-name fallback for a node with no namespace annotation; the
+// render context carries the indentation width. Compose emits a flat assembled
+// file, so NestPerNode is false.
+func assembleBoundaryFromInput(in renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
+	intermediatesByNode := make(map[string][]renderer.EmittedFile, len(in.RenderedNodes))
+	nodeAnnotations := make(map[string]map[string]string, len(in.RenderedNodes))
+	for i := range in.RenderedNodes {
+		rn := in.RenderedNodes[i]
+		files := make([]renderer.EmittedFile, 0, len(rn.Rendered.Files))
+		for _, f := range rn.Rendered.Files {
+			files = append(files, renderer.EmittedFile{Name: f.Path, Body: f.Content})
+		}
+		intermediatesByNode[rn.ID] = files
+		nodeAnnotations[rn.ID] = orderedStringMapToPlain(&rn.Annotations)
+	}
+
+	edges := make([]renderer.IREdgeInfo, 0, len(in.Edges))
+	for _, e := range in.Edges {
+		edges = append(edges, renderer.IREdgeInfo{Source: e.Source, Target: e.Target})
+	}
+
+	files, err := compose.AssembleBoundaryCore(intermediatesByNode, nodeAnnotations, edges, in.BoundaryPath, in.Context.YAMLIndent)
+	if err != nil {
+		return renderer.AssembleBoundaryOutput{}, err
+	}
+
+	out := renderer.AssembleBoundaryOutput{Files: make([]renderer.RenderedFile, 0, len(files))}
+	for _, path := range sortedKeys(files) {
+		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: files[path]})
+	}
+	out.NestPerNode = false
+	return out, nil
 }
 
 // errorChainMessage serializes err's full wrap chain into one message. The
@@ -226,6 +290,20 @@ func plainValue(v any) any {
 	default:
 		return v
 	}
+}
+
+// orderedStringMapToPlain flattens a node's ordered annotation map into the plain
+// map[string]string the assemble core reads. The core reads annotations by key
+// (the per-node network discriminator), so the author order the wire preserves is
+// not load-bearing here.
+func orderedStringMapToPlain(m *types.OrderedMap[string]) map[string]string {
+	out := make(map[string]string, m.Len())
+	for _, k := range m.Keys() {
+		if v, ok := m.Get(k); ok {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // mergeAnnotations flattens the three render-context annotation buckets into the

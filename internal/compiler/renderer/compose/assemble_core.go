@@ -6,7 +6,7 @@
 // SynthesizeWorkloadCore and by sourced-mode rendering), deep-merges into a
 // single docker-compose.yaml at the dispatch path.
 //
-// assembleBoundaryCore takes exactly the inputs the merge consumes — the per-node
+// AssembleBoundaryCore takes exactly the inputs the merge consumes — the per-node
 // fragments, the per-node annotations, the IR edges, the boundary-path fallback,
 // and the yaml indent — so both the in-tree host engine (through the
 // AssembleBoundary adapter, which projects the host BoundaryInfo) and the
@@ -21,7 +21,7 @@
 //     or the sanitised boundary path when no namespace annotation is present.
 //     Every service joins its author-boundary's network.
 //   - Service collisions. If two different nodes contribute services of
-//     the same name, assembleBoundaryCore returns TRANSLATION_ERROR naming
+//     the same name, AssembleBoundaryCore returns TRANSLATION_ERROR naming
 //     every contributing (boundary, nodeID, serviceName) tuple.
 //   - Top-level volumes. Per-node volume entries union across the dispatch
 //     group; name collisions silently merge (named volumes are content-
@@ -52,7 +52,7 @@ import (
 )
 
 // AssembledOutputFile is the assembled compose file path emitted by
-// assembleBoundaryCore at the dispatch path.
+// AssembleBoundaryCore at the dispatch path.
 const AssembledOutputFile = "docker-compose.yaml"
 
 // serviceContrib records one (boundary, nodeID) tuple that contributed a
@@ -63,14 +63,14 @@ type serviceContrib struct {
 	nodeID   string
 }
 
-// assembleBoundaryCore reads per-node fragments and emits a single
+// AssembleBoundaryCore reads per-node fragments and emits a single
 // docker-compose.yaml at the dispatch path. intermediatesByNode is keyed by
 // nodeID; nodeAnnotations gives each node's merged annotation map (read for the
 // `aggrega.ai/namespace` network discriminator); edges is the IR's directed
 // `uses` edges for depends_on inference; boundaryPath is the network-name
 // fallback used when a node carries no namespace annotation; yamlIndent is the
 // indentation width for the assembled artifact.
-func assembleBoundaryCore(
+func AssembleBoundaryCore(
 	intermediatesByNode map[string][]renderer.EmittedFile,
 	nodeAnnotations map[string]map[string]string,
 	edges []renderer.IREdgeInfo,

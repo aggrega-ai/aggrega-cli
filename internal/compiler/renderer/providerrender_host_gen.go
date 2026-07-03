@@ -125,23 +125,46 @@ type WorkloadProjection struct {
 	Secrets map[string]types.OrderedMap[string] `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 }
 
-// AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one boundary into a single assembled artifact (an umbrella chart, a merged compose file). It carries the boundary metadata, the per-node render outputs that fed the boundary, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
+// AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one dispatch group into a single assembled artifact (an umbrella chart, a merged compose file). It carries the per-node render outputs and their merged annotations, the dispatch-group output path the assembled artifact lands at, the graph's uses edges for per-service dependency inference, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
 type AssembleBoundaryInput struct {
-	// Boundary The per-render boundary metadata the guest assembles into. Opaque at this schema layer; the guest reads the boundary-context shape through the render-context wire contract.
-	Boundary renderctx.BoundaryContext `json:"boundary" yaml:"boundary"`
-	// RenderedNodes The per-node render outputs that fed this boundary, in node order.
+	// Boundary Optional per-render boundary metadata a guest may consult. A dispatch group can merge contributors from multiple boundaries, so there is no single boundary; the field is carry-only-consumed and absent when the host merges across boundaries. Opaque at this schema layer; the guest reads the boundary-context shape through the render-context wire contract.
+	Boundary renderctx.BoundaryContext `json:"boundary,omitempty" yaml:"boundary,omitempty"`
+	// RenderedNodes The per-node render outputs that fed this dispatch group, in node order.
 	RenderedNodes []RenderedNode `json:"rendered_nodes" yaml:"rendered_nodes"`
 	// Context The render-time context the host hands the guest, the same opaque render-context passthrough the render_node export receives.
 	Context renderctx.RenderContext `json:"context" yaml:"context"`
+	// BoundaryPath The evaluated dispatch-group output path the assembled artifact lands at; a boundary assembler uses it as the boundary-level fallback identity (e.g. the compose network name for a node carrying no namespace annotation).
+	BoundaryPath string `json:"boundary_path" yaml:"boundary_path"`
+	// Edges The graph's directed uses edges, so a boundary assembler can infer per-service ordering/dependencies across the dispatch group's contributors (e.g. compose depends_on).
+	Edges []RenderEdge `json:"edges,omitempty" yaml:"edges,omitempty"`
 }
 
-// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, and the render output the render_node export produced for it.
+// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, and the render output the render_node export produced for it.
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id"`
 	// Type The node's component-type label.
 	Type     string           `json:"type" yaml:"type"`
 	Rendered RenderNodeOutput `json:"rendered" yaml:"rendered"`
+	// Annotations The node's merged annotations, so a boundary assembler can attribute per-node placement (e.g. the compose network derived from the aggrega.ai/namespace annotation).
+	Annotations types.OrderedMap[string] `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+}
+
+type RenderEdge struct {
+	// Source The consuming node's id — the source end of a directed uses edge.
+	Source string `json:"source" yaml:"source"`
+	// Target The consumed node's id — the target end a directed uses edge points at.
+	Target string `json:"target" yaml:"target"`
+}
+
+// AssembleBoundaryOutput The payload a Provider guest returns from its assemble_boundary export: the serialized bytes of each assembled file, any diagnostics the guest raised while assembling, and whether the orchestrator nests each contributor's per-node files under a per-node sub-directory. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
+type AssembleBoundaryOutput struct {
+	// Files The assembled output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
+	Files []RenderedFile `json:"files" yaml:"files"`
+	// Diagnostics Diagnostics the guest raised while assembling. Each element carries the shared Wasm-plugin diagnostic shape; the element shape is opaque at this schema layer so a guest emits the shared diagnostic without the provider socket schema rebinding it.
+	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	// NestPerNode Whether the orchestrator nests each contributor's per-node files under charts/<nodeID>/ rather than emitting them flat; the assembler signals this per provider (compose emits flat, so false; an umbrella-chart assembler nests, so true).
+	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty"`
 }
 
 // MarshalJSON encodes RenderNodeInput in field-declaration order, omitting
@@ -1147,6 +1170,32 @@ func (t AssembleBoundaryInput) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"boundary_path\":")
+	writeJSONString(&buf, t.BoundaryPath)
+	if len(t.Edges) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"edges\":")
+		buf.WriteByte('[')
+		for i := range t.Edges {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Edges[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1196,6 +1245,31 @@ func (t *AssembleBoundaryInput) UnmarshalJSON(data []byte) error {
 			} else if err := json.Unmarshal(raw, &t.Context); err != nil {
 				return err
 			}
+		case "boundary_path":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.BoundaryPath = s
+			}
+		case "edges":
+			t.Edges = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem RenderEdge
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Edges = append(t.Edges, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1232,6 +1306,16 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"rendered\":")
 	if enc, err := t.Rendered.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"annotations\":")
+	if enc, err := json.Marshal(t.Annotations); err != nil {
 		return nil, err
 	} else {
 		buf.Write(enc)
@@ -1273,6 +1357,200 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 				if err := t.Rendered.UnmarshalJSON(raw); err != nil {
 					return err
 				}
+			}
+		case "annotations":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else if err := json.Unmarshal(raw, &t.Annotations); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes RenderEdge in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t RenderEdge) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"source\":")
+	writeJSONString(&buf, t.Source)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"target\":")
+	writeJSONString(&buf, t.Target)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes RenderEdge with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *RenderEdge) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "source":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Source = s
+			}
+		case "target":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Target = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes AssembleBoundaryOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t AssembleBoundaryOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"files\":")
+	buf.WriteByte('[')
+	for i := range t.Files {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		ev := t.Files[i]
+		if enc, err := ev.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	buf.WriteByte(']')
+	if len(t.Diagnostics) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"diagnostics\":")
+		buf.WriteByte('[')
+		for i := range t.Diagnostics {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Diagnostics[i]
+			if enc, err := json.Marshal(ev); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	if t.NestPerNode != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"nest_per_node\":")
+		if t.NestPerNode {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes AssembleBoundaryOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "files":
+			t.Files = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem RenderedFile
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Files = append(t.Files, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "diagnostics":
+			t.Diagnostics = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem renderctx.Diagnostic
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else if err := json.Unmarshal(raw, &elem); err != nil {
+					return err
+				}
+				t.Diagnostics = append(t.Diagnostics, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "nest_per_node":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.NestPerNode = v
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

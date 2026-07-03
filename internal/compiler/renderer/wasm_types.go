@@ -9,12 +9,11 @@ import (
 
 // The Provider render socket wire structs — RenderNodeInput, IRNodeProjection,
 // CatalogProjection, SourceProjection, SourceFile, RenderNodeOutput,
-// RenderedFile, AssembleBoundaryInput, and RenderedNode — are generated from the
-// canonical provider render schema into providerrender_host_gen.go. This file
-// carries the hand-written companions the generator does not emit: the type
-// aliases that keep the shared cross-boundary types single-sourced in the
-// renderctx leaf package, and the AssembleBoundaryOutput alias that keeps the
-// two output surfaces a single type.
+// RenderedFile, AssembleBoundaryInput, RenderedNode, RenderEdge, and
+// AssembleBoundaryOutput — are generated from the canonical provider render
+// schema into providerrender_host_gen.go. This file carries the hand-written
+// companions the generator does not emit: the type aliases that keep the shared
+// cross-boundary types single-sourced in the renderctx leaf package.
 //
 // Render-time AOT-purity contract: a Provider guest renders deterministically
 // from the RenderNodeInput payload and the read-only host functions alone. It
@@ -47,13 +46,6 @@ type RenderAnnotations = renderctx.RenderAnnotations
 // BoundaryContext is the per-render boundary metadata a guest receives.
 // It is a type alias for [renderctx.BoundaryContext].
 type BoundaryContext = renderctx.BoundaryContext
-
-// AssembleBoundaryOutput is the JSON payload a Provider guest returns from
-// assemble_boundary. It is the same shape as [RenderNodeOutput] — the serialized
-// bytes of each assembled file plus diagnostics — and is declared as a type
-// alias so the two output surfaces stay a single type. A future change that
-// forks this into a separate declaration breaks the alias intentionally.
-type AssembleBoundaryOutput = RenderNodeOutput
 
 // Diagnostic is the shared diagnostic a Wasm guest raises across the
 // plugin ABI surfaces. It is a type alias for [renderctx.Diagnostic]: the

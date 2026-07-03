@@ -256,6 +256,7 @@ var providerGuestVocabulary = map[string]string{
 	"renderctx.Diagnostic":                "json.RawMessage",
 	"OrderedMap[any]":                     "map[string]json.RawMessage",
 	"OrderedMap[[]string]":                "map[string][]string",
+	"types.OrderedMap[string]":            "map[string]string",
 	"OrderedMap[types.IRFeatureEntry]":    "map[string]json.RawMessage",
 	"OrderedMap[types.Component]":         "map[string]json.RawMessage",
 	"OrderedMap[types.Feature]":           "map[string]json.RawMessage",

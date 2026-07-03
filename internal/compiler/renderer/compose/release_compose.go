@@ -5,7 +5,7 @@
 
 // Host adapter for the compose provider's per-(path, provider) merge.
 // Implements renderer.BoundaryAssembler (dispatched once per contributor group).
-// The merge itself lives in the tag-free assembleBoundaryCore (assemble_core.go),
+// The merge itself lives in the tag-free AssembleBoundaryCore (assemble_core.go),
 // which both this host adapter and the provider Wasm guest call so the two
 // assembly surfaces stay byte-for-byte identical. This adapter's only job is to
 // project the host BoundaryInfo onto the core's consumed-inputs signature.
@@ -23,7 +23,7 @@ import (
 // docker-compose.yaml at the dispatch path. nestPerNode is always false
 // for compose — the assembled file is flat at the dispatch root.
 func (e *ComposeEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
-	files, err := assembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		return nil, false, err
 	}
