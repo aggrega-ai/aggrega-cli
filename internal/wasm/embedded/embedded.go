@@ -6,48 +6,57 @@
 // resolves with no filesystem, cache, or network access — the first tier the
 // plugin-resolution cascade consults.
 //
-// The embedded set is empty today: no core provider is yet compiled to Wasm,
-// so there is nothing to embed. The plumbing is real regardless — the embed
-// directory is wired, the registry is populated from it at init, and the
-// cascade checks this tier first — so a future embedded core provider is a
-// drop-in: place its .wasm under plugins/ and register its canonical URI in
-// register, with no change to the resolution cascade.
+// The helm provider rendering plugin is embedded here. Its artifact is
+// committed gzip-compressed under plugins/ (the uncompressed Wasm is large) and
+// decompressed once at init into the registry, keyed by the artifact's
+// canonical content-addressed URI. Adding another embedded plugin is a drop-in:
+// place its gzip-compressed .wasm under plugins/ and register its canonical URI
+// in register.
 package embedded
 
 import (
+	"bytes"
+	"compress/gzip"
 	"embed"
+	"io"
 	"sort"
 )
 
 // pluginFS holds the embedded plugin artifacts. The `all:` prefix matches
 // every file under plugins/ including the dot-prefixed .gitkeep placeholder
-// that keeps the otherwise-empty directory present in the tree (a bare
-// `//go:embed plugins` rejects a directory with no non-dot files). An embedded
-// .wasm added under plugins/ is picked up here automatically; register binds it
-// to a URI.
+// that keeps the directory present in the tree even when no artifact is checked
+// out (a bare `//go:embed plugins` rejects a directory with no non-dot files).
+// An embedded artifact added under plugins/ is picked up here automatically;
+// register binds it to a URI.
 //
 //go:embed all:plugins
 var pluginFS embed.FS
 
-// registry maps a canonical plugin URI to the embedded artifact's bytes. It is
-// the lookup the cascade's embed tier consults. Empty today; a future embedded
-// provider adds its entry in register.
+// helmProviderURI is the canonical content-addressed URI the helm provider
+// rendering plugin's decompressed bytes register under. It is the artifact
+// reference a Plugin entity's spec.plugin names; the sha256 digest pins the
+// exact bytes committed (compressed) under plugins/, so a resolution of this
+// URI through the embed tier verifies byte-for-byte against a lockfile pin.
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:18738bdabcf57eb4f6b947358b75dc83a9be3b622873530492a8040767059110"
+
+// registry maps a canonical plugin URI to the embedded artifact's decompressed
+// bytes. It is the lookup the cascade's embed tier consults, populated from
+// pluginFS at init by register.
 var registry = map[string][]byte{}
 
 // register binds embedded plugin URIs to their bytes read from pluginFS. It is
-// the single place a future embedded core provider is wired: read its .wasm
-// from pluginFS and assign it under its canonical URI. The body is empty today
-// (no core provider is Wasm yet); the function exists so the wiring site is
-// named and the embed tier is exercised end-to-end the moment an entry lands.
+// the single place an embedded plugin is wired: read its artifact from pluginFS
+// and assign it under its canonical URI. The committed artifacts are
+// gzip-compressed, so register decompresses each once here.
 //
-// A read failure for a registered artifact is a build-of-the-binary defect (the
-// file is embedded at compile time), so register panics rather than returning
-// an error — there is no recoverable runtime branch for a missing embedded
-// file. With no entries the function never reads, so it never panics today.
+// A read or decompression failure for a registered artifact is a
+// build-of-the-binary defect (the file is embedded at compile time), so
+// register panics rather than returning an error — there is no recoverable
+// runtime branch for a missing or corrupt embedded file.
 func register() map[string][]byte {
-	r := map[string][]byte{}
-	// Future: r[canonicalURI] = mustRead("plugins/<name>.wasm")
-	return r
+	return map[string][]byte{
+		helmProviderURI: mustDecompress("plugins/helm-provider.wasm.gz"),
+	}
 }
 
 func init() {
@@ -69,9 +78,9 @@ func Lookup(uri string) ([]byte, bool) {
 
 // SeedForTest registers uri→bytes in the embedded set and returns a function
 // that removes it, restoring the prior state. It exists so a test in another
-// package can prove the embed tier is consulted first even though no production
-// plugin is embedded yet (the registry is empty today). It is test-only: the
-// production wiring populates the registry through register at init, never
+// package can register an isolated URI→bytes pair — for example a tampered-bytes
+// variant that must not disturb the production embedded set. It is test-only:
+// the production wiring populates the registry through register at init, never
 // through this seam.
 func SeedForTest(uri string, b []byte) (restore func()) {
 	prev, had := registry[uri]
@@ -87,7 +96,7 @@ func SeedForTest(uri string, b []byte) (restore func()) {
 
 // URIs returns the registered embedded plugin URIs in sorted order. Sorted so
 // any diagnostic that enumerates the embedded set is deterministic
-// (Deterministic Output invariant). Empty today.
+// (Deterministic Output invariant).
 func URIs() []string {
 	uris := make([]string, 0, len(registry))
 	for u := range registry {
@@ -97,13 +106,31 @@ func URIs() []string {
 	return uris
 }
 
-// mustRead reads an embedded artifact or panics. Reserved for register's use
-// when a future embedded plugin lands; a failure means the embed directive and
-// the registered path disagree, which is a compile-of-the-binary defect.
+// mustRead reads an embedded artifact or panics. A failure means the embed
+// directive and the registered path disagree, which is a compile-of-the-binary
+// defect with no recoverable runtime branch.
 func mustRead(name string) []byte {
 	b, err := pluginFS.ReadFile(name)
 	if err != nil {
 		panic("wasm/embedded: read embedded plugin " + name + ": " + err.Error())
+	}
+	return b
+}
+
+// mustDecompress reads a gzip-compressed embedded artifact and returns its
+// decompressed bytes, panicking on any read or decompression failure. A failure
+// means the embed directive and the registered path disagree, or the committed
+// artifact is not valid gzip — both are compile-of-the-binary defects with no
+// recoverable runtime branch, mirroring mustRead's contract.
+func mustDecompress(name string) []byte {
+	gz, err := gzip.NewReader(bytes.NewReader(mustRead(name)))
+	if err != nil {
+		panic("wasm/embedded: open gzip for embedded plugin " + name + ": " + err.Error())
+	}
+	defer func() { _ = gz.Close() }()
+	b, err := io.ReadAll(gz)
+	if err != nil {
+		panic("wasm/embedded: decompress embedded plugin " + name + ": " + err.Error())
 	}
 	return b
 }

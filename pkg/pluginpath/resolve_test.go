@@ -84,18 +84,18 @@ func TestEmbedCheckedFirst(t *testing.T) {
 	}
 }
 
-// TestEmbedEmptySetFallThrough: with the production-shape empty embed set, a URI
-// not embedded falls through to the local tier — proving the empty scaffold does
-// not short-circuit resolution.
-func TestEmbedEmptySetFallThrough(t *testing.T) {
-	if len(embedded.URIs()) != 0 {
-		t.Fatalf("embed set expected empty by default; got %v", embedded.URIs())
-	}
+// TestNonEmbeddedURIFallsThroughToLocal: a reference not present in the embed
+// set falls through to the local tier — proving the embed tier short-circuits
+// only the URIs it actually holds, not every resolution.
+func TestNonEmbeddedURIFallsThroughToLocal(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "local.wasm")
 	content := []byte("local-content")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
+	}
+	if _, ok := embedded.Lookup(path); ok {
+		t.Fatalf("test precondition: %q must not be in the embed set", path)
 	}
 	got, err := Resolver{}.Resolve(path)
 	if err != nil {

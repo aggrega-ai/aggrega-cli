@@ -1393,7 +1393,8 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			}
 			return compactform.Schema{}, false
 		},
-		Plugin: c.PluginByURI,
+		Plugin:   c.PluginByURI,
+		Provider: c.ProviderLookup,
 	}
 }
 
