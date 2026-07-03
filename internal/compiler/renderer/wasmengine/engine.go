@@ -16,20 +16,29 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// renderNodeExport is the guest export this adapter drives for both sourced
+// RenderNodeExport is the guest export this adapter drives for both sourced
 // render and workload synthesis; the helm provider guest routes on which
-// projection the RenderNodeInput carries (source vs workload).
-const renderNodeExport = "render_node"
+// projection the RenderNodeInput carries (source vs workload). It is exported so
+// the dispatch that routes a provider to this adapter can require the catalog
+// Plugin entity to advertise the same export the adapter will drive — one name,
+// one source of truth, no drift between the routing precondition and the call.
+const RenderNodeExport = "render_node"
 
 // Engine renders one node through the helm provider Wasm guest, implementing the
 // host renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves
-// the guest's bytes via lookup, loads them through the production describe-gated
-// loader once per call, and reports the input-kind capabilities it was
-// constructed with.
+// the guest's bytes via lookup, loads them through the injected shared loader
+// once per call, and reports the input-kind capabilities it was constructed
+// with.
 type Engine struct {
 	lookup    pluginpath.Lookup
 	pluginURI string
 	caps      renderer.ProviderCapabilities
+	// loader is the shared per-build loader every Render / SynthesizeWorkload
+	// call loads through. It carries the build's external-input service and,
+	// when constructed via wasm.NewCachingLoader, a shared compilation cache so
+	// the guest compiles once per build rather than once per node. Each call
+	// still loads a fresh, isolated plugin instance through it.
+	loader *wasm.Loader
 }
 
 var (
@@ -38,9 +47,13 @@ var (
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
-// its bytes via lookup and reporting caps as its input-kind capabilities.
-func New(lookup pluginpath.Lookup, pluginURI string, caps renderer.ProviderCapabilities) *Engine {
-	return &Engine{lookup: lookup, pluginURI: pluginURI, caps: caps}
+// its bytes via lookup, loading through the shared loader, and reporting caps as
+// its input-kind capabilities. The loader is shared across the build so its
+// compilation cache (when present) warms once; a nil loader is an
+// injection-site bug — every call would nil-panic — rather than a supported
+// zero value.
+func New(lookup pluginpath.Lookup, pluginURI string, caps renderer.ProviderCapabilities, loader *wasm.Loader) *Engine {
+	return &Engine{lookup: lookup, pluginURI: pluginURI, caps: caps, loader: loader}
 }
 
 // Capabilities reports the input-kind capabilities configured at construction.
@@ -72,7 +85,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		Context:          e.renderContext(nodeCtx),
 		SourceProjection: proj,
 	}
-	out, err := e.invoke(ctx, renderNodeExport, input)
+	out, err := e.invoke(ctx, RenderNodeExport, input)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +125,7 @@ func (e *Engine) SynthesizeWorkload(
 			Secrets:  helm.SecretProvidesFromContext(tmplCtx),
 		},
 	}
-	out, err := e.invoke(ctx, renderNodeExport, input)
+	out, err := e.invoke(ctx, RenderNodeExport, input)
 	if err != nil {
 		return nil, err
 	}
@@ -124,19 +137,20 @@ func (e *Engine) SynthesizeWorkload(
 	return emitted, nil
 }
 
-// invoke loads the guest through the production describe-gated loader, calls the
-// named export, and decodes the RenderNodeOutput. The loader carries the
-// context's external-input service so a guest fetch resolves through the pinned
-// channel (nil when none is attached — the guest then receives the in-band
-// not-available envelope). The plugin is closed before invoke returns.
+// invoke loads the guest through the shared describe-gated loader, calls the
+// named export, and decodes the RenderNodeOutput. The shared loader carries the
+// build's external-input service and its compilation cache, so a guest fetch
+// resolves through the pinned channel (nil when none is attached — the guest
+// then receives the in-band not-available envelope) and the guest's machine
+// code compiles once per build. Each call still loads and closes its own plugin
+// instance, so nodes stay isolated. The plugin is closed before invoke returns.
 func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
 	resolved, err := e.lookup(e.pluginURI)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
 	}
 
-	loader := &wasm.Loader{ExternalInputs: wasm.ExternalInputsFromContext(ctx)}
-	plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, desc, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}

@@ -89,6 +89,38 @@ type Loader struct {
 	// working: a guest fetch then receives an in-band error envelope
 	// stating that external inputs are not available in this context.
 	ExternalInputs FetchService
+
+	// Cache, when non-nil, memoizes compiled guest machine code across
+	// every Plugin this Loader constructs, so the expensive compilation of
+	// a large guest amortizes over a build's many per-node loads. Nil — the
+	// zero-value Loader — leaves the runtime at its default configuration,
+	// compiling each load independently, exactly as before. The cache
+	// memoizes only compiled code, a pure function of the guest bytes, so it
+	// cannot alter output and each load still yields a fresh, isolated
+	// Plugin instance. Constructed via NewCachingLoader, which pairs it with
+	// a close function.
+	Cache wazero.CompilationCache
+}
+
+// NewCachingLoader returns a Loader whose constructed Plugins share a single
+// wazero CompilationCache, plus a close function that releases it. The shared
+// cache amortizes the compilation of a large guest across a build's many
+// per-node loads: the first load compiles the guest, and later loads of the
+// same bytes reuse the cached machine code rather than recompiling. Each load
+// still runs the full load-describe-invoke-close cycle against a fresh,
+// isolated Plugin instance — the cache changes only compilation cost, never
+// isolation or output, since compiled code is a pure function of the identical
+// guest bytes.
+//
+// fetch serves the aggrega_fetch_external_input host function for every Plugin
+// the Loader constructs (nil is safe — a guest fetch then receives the in-band
+// not-available envelope). The caller MUST invoke the returned close function
+// when the Loader is no longer needed, typically deferred at the construction
+// site; it releases the cache's resources.
+func NewCachingLoader(fetch FetchService) (*Loader, func() error) {
+	cache := wazero.NewCompilationCache()
+	l := &Loader{ExternalInputs: fetch, Cache: cache}
+	return l, func() error { return cache.Close(context.Background()) }
 }
 
 // externalInputsContextKey keys the external-input service on a
@@ -270,6 +302,14 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	config := extism.PluginConfig{
 		EnableWasi:   true,
 		ModuleConfig: deterministicModuleConfig(spec.programName()),
+	}
+	// A shared compilation cache memoizes the guest's compiled machine code so
+	// repeated loads of the same bytes skip recompilation. It carries no
+	// runtime authority and no observable behaviour of its own — it changes
+	// only compilation cost — so it leaves the deterministic ModuleConfig and
+	// the AOT-purity firewall untouched.
+	if l.Cache != nil {
+		config.RuntimeConfig = wazero.NewRuntimeConfig().WithCompilationCache(l.Cache)
 	}
 
 	extismPlugin, err := extism.NewPlugin(ctx, manifest, config, functions)

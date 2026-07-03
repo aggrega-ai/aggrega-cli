@@ -1,0 +1,4 @@
+apiVersion: v2
+name: websvc
+version: 0.1.0
+description: hybrid-cutover sourced chart for core/websvc.

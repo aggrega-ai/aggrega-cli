@@ -1,0 +1,4 @@
+image: websvc:latest
+replicas: 1
+ports: []
+environment: {}

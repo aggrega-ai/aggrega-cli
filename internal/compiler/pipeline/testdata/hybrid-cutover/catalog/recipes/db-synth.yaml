@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-synth
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/datastore
+  provides:
+    host: "{{ .context.instance_id }}-default"
+    port: "{{ optional .infra `port` 5432 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      db:
+        image: postgres:16
+        ports:
+          tcp: {{ optional .infra `port` 5432 }}
+    services:
+      default:
+        type: ClusterIP
+        ports:
+          tcp: {{ optional .infra `port` 5432 }}

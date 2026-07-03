@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -29,7 +30,7 @@ func cannedLookup(b []byte) pluginpath.Lookup {
 	return func(string) (pluginpath.ResolvedPlugin, error) {
 		return pluginpath.ResolvedPlugin{
 			Bytes:  b,
-			Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096},
+			Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096, TimeoutMs: 300000},
 		}, nil
 	}
 }
@@ -70,7 +71,7 @@ func TestWasmEngineAdapterRenderByteIdentity(t *testing.T) {
 	// The candidate is driven strictly through the renderer.Engine interface
 	// value — never a concrete method — so the A/B exercises exactly the seam the
 	// engine dispatch selects.
-	var eng renderer.Engine = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", (&helm.HelmEngine{}).Capabilities())
+	var eng renderer.Engine = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", (&helm.HelmEngine{}).Capabilities(), &wasm.Loader{})
 
 	cases := []struct {
 		name        string
@@ -135,7 +136,7 @@ func TestWasmEngineAdapterSynthByteIdentity(t *testing.T) {
 		t.Fatalf("read guest wasm: %v", err)
 	}
 
-	var synth renderer.WorkloadSynthesizer = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", (&helm.HelmEngine{}).Capabilities())
+	var synth renderer.WorkloadSynthesizer = wasmengine.New(cannedLookup(wasmBytes), "test://helm-renderer", (&helm.HelmEngine{}).Capabilities(), &wasm.Loader{})
 
 	cases := []struct {
 		name   string

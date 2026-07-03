@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: hybrid-cutover-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/websvc: web-sourced:1.0.0
+        core/datastore: db-synth:1.0.0

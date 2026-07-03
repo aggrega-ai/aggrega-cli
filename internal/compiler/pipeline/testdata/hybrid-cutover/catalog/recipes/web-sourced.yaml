@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web-sourced
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/websvc
+  source: ./charts/websvc
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  valuesMapping: |
+    {
+      "image": "websvc:1.2.3",
+      "replicas": {{ optional .infra `replicas` 1 }},
+      "ports": ["{{ optional .infra `port` 8080 }}:{{ optional .infra `port` 8080 }}"],
+      "environment": {
+        "PORT": "{{ optional .infra `port` 8080 }}"
+      }
+    }

@@ -13,14 +13,17 @@
 //
 // The adapter loads and closes a fresh guest plugin per Render or
 // SynthesizeWorkload call: it resolves the plugin's bytes through the injected
-// lookup, hands them to a loader carrying the context's external-input service,
-// runs the load-and-describe gate (so the guest's self-reported ABI and exports
-// are validated before dispatch), invokes render_node, and closes the plugin
-// before returning. There is no cross-call plugin caching; each call is a
-// self-contained load-describe-invoke-close cycle.
+// lookup, hands them to the shared per-build loader, runs the load-and-describe
+// gate (so the guest's self-reported ABI and exports are validated before
+// dispatch), invokes render_node, and closes the plugin before returning. Each
+// call is a self-contained load-describe-invoke-close cycle against its own
+// plugin instance, so nodes stay isolated. The loader is shared across the
+// build and carries a compilation cache, so the guest's machine code compiles
+// once for the whole build rather than once per node — a cost amortization
+// only; it changes neither isolation nor output.
 //
 // The adapter is host-only Go — it imports the host-only helm package to project
 // a chart source and to reuse the host's per-slot secret projection — and carries
-// no wasip1 build tag. It is the seam a later change selects as a provider engine;
-// wiring it into the production engine dispatch is out of this package's scope.
+// no wasip1 build tag. It is the provider engine the hybrid dispatch selects for
+// a provider whose catalog Provider resolves to a Wasm rendering plugin.
 package wasmengine

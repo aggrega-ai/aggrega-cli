@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: hybrid-cutover
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/websvc
+    db:
+      type: core/datastore

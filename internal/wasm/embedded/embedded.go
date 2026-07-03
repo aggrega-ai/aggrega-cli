@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
+//go:build !wasip1
+
 // Package embedded is the compile-time home for Wasm plugins shipped inside
 // the CLI binary. A plugin embedded here is version-locked to the binary and
 // resolves with no filesystem, cache, or network access — the first tier the
@@ -37,7 +39,7 @@ var pluginFS embed.FS
 // reference a Plugin entity's spec.plugin names; the sha256 digest pins the
 // exact bytes committed (compressed) under plugins/, so a resolution of this
 // URI through the embed tier verifies byte-for-byte against a lockfile pin.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:18738bdabcf57eb4f6b947358b75dc83a9be3b622873530492a8040767059110"
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:b493d69687cc3132593eb63b26ca3af88b3b0be30a576896d84216c5c7ff01e9"
 
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from

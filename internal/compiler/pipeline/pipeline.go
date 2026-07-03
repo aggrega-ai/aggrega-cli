@@ -23,8 +23,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -633,7 +635,24 @@ func RunPipeline(
 			rendererInput.CacheDir = inputs.WorkspaceConfig.ResolvedArtifactCacheDir()
 		}
 
-		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, engineFactory)
+		// Route provider rendering through the hybrid dispatch: a provider whose
+		// catalog Provider binds to a render_node-advertising Wasm plugin renders
+		// through the wasmengine adapter; every other provider falls back to the
+		// caller-supplied Go factory unchanged. The shared caching loader warms
+		// the guest's compilation once for the whole build (fresh instance per
+		// node), and its close releases the compilation cache as this
+		// continuation unwinds. The wrap is uniform across every caller of
+		// RunPipeline, so build, serve, and the test harness all route through it
+		// with no per-caller change.
+		sharedLoader, closeLoader := wasm.NewCachingLoader(wasm.ExternalInputsFromContext(ctx))
+		defer func() {
+			if cerr := closeLoader(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "  plugin: close compilation cache: %s\n", cerr)
+			}
+		}()
+		hybrid := enginefactory.NewHybrid(engineFactory, catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+
+		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, hybrid)
 		if rerr != nil {
 			return fmt.Errorf("Step 5 (render): %w", rerr)
 		}

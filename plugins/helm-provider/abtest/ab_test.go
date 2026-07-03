@@ -269,6 +269,12 @@ func loadGuest(t *testing.T, ctx context.Context, wasmPath string, inputs wasm.F
 		// tight platform default cap; raise this plugin's own cap the same way
 		// its catalog entity's runtime block does. Bounded, never unbounded.
 		MaxMemoryPages: 4096,
+		// The guest's runtime initialization is seconds-scale and slower where
+		// the host runs the Wasm engine without native code generation, so raise
+		// the per-call cap above the tight platform default the same way the
+		// catalog entity's runtime block does — a legitimate render never
+		// false-times-out. A byte-identity comparison is unaffected by the cap.
+		TimeoutMs: 300000,
 	})
 	if err != nil {
 		t.Fatalf("production loader rejected the guest (firewall): %v", err)
