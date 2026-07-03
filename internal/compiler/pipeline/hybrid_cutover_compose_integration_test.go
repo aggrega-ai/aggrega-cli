@@ -26,14 +26,14 @@ import (
 // through the real pipeline.RunPipeline:
 //
 //   - the Wasm build passes the full catalog lookup, so the in-pipeline hybrid
-//     resolves the Provider→Plugin→exports chain and routes the compose nodes
-//     through the wasmengine assembler adapter (per-node render AND per-group
-//     assembly in Wasm);
-//   - the Go build passes the same lookup with only the Provider accessor nil'd,
-//     so the hybrid falls back to the built-in Go compose engine.
+//     resolves the provider name → provider-Plugin (via compatibleProviders) →
+//     exports chain and routes the compose nodes through the wasmengine assembler
+//     adapter (per-node render AND per-group assembly in Wasm);
+//   - the Go build passes the same lookup with only the ProviderPlugin accessor
+//     nil'd, so the hybrid falls back to the built-in Go compose engine.
 //
-// The Provider accessor has no other consumer in the pipeline, so nil'ing it
-// changes only the routing decision — every other render input is identical.
+// The ProviderPlugin accessor has no other consumer in the pipeline, so nil'ing
+// it changes only the routing decision — every other render input is identical.
 // The two builds must therefore produce byte-identical artifacts, proving the
 // Wasm render+assemble path reproduces the Go engine across the production spine
 // for a SOURCED compose node (a local compose file), two SYNTHESIZED compose
@@ -63,9 +63,9 @@ func TestHybridCutoverComposeProductionPathByteIdentity(t *testing.T) {
 	// Wasm build: full lookup → hybrid resolves → wasmengine assembler adapter.
 	wasmArtifacts := runBuild(parts.buildLookup)
 
-	// Go build: identical inputs, Provider accessor nil'd → hybrid falls back.
+	// Go build: identical inputs, ProviderPlugin accessor nil'd → hybrid falls back.
 	goLookup := parts.buildLookup
-	goLookup.Provider = nil
+	goLookup.ProviderPlugin = nil
 	goArtifacts := runBuild(goLookup)
 
 	assertByteIdentical(t, goArtifacts, wasmArtifacts)
@@ -110,12 +110,12 @@ func TestHybridCutoverComposeProductionPathByteIdentity(t *testing.T) {
 }
 
 // TestHybridCutoverComposeRouting proves the routing decision the byte-identity
-// build relies on: with the hub Provider wired to a Plugin advertising BOTH
-// render_node and assemble_boundary, the hybrid returns the ASSEMBLER Wasm
-// adapter for the compose provider (not the render-only adapter, and not the Go
-// engine); with the Provider accessor removed, it returns the Go engine.
-// Asserting both directions makes the byte-identity airtight — the two builds
-// took different engine paths yet produced identical bytes.
+// build relies on: with the hub provider-Plugin advertising BOTH render_node and
+// assemble_boundary, the hybrid returns the ASSEMBLER Wasm adapter for the
+// compose provider (not the render-only adapter, and not the Go engine); with the
+// ProviderPlugin accessor removed, it returns the Go engine. Asserting both
+// directions makes the byte-identity airtight — the two builds took different
+// engine paths yet produced identical bytes.
 func TestHybridCutoverComposeRouting(t *testing.T) {
 	parts := loadCutoverParts(t, "testdata/hybrid-cutover-compose")
 
@@ -134,7 +134,7 @@ func TestHybridCutoverComposeRouting(t *testing.T) {
 	sharedLoader, closeLoader := wasm.NewCachingLoader(nil)
 	defer func() { _ = closeLoader() }()
 
-	// Hub Provider wired, Plugin advertises assemble_boundary → assembler adapter.
+	// Hub provider-Plugin wired, advertises assemble_boundary → assembler adapter.
 	hybrid := enginefactory.NewHybrid(enginefactory.Dispatch, parts.buildLookup, pluginLookup, sharedLoader)
 	eng, err := hybrid("compose")
 	if err != nil {
@@ -153,9 +153,9 @@ func TestHybridCutoverComposeRouting(t *testing.T) {
 		t.Fatalf("plain Dispatch compose is %T, want *compose.ComposeEngine", goEng)
 	}
 
-	// Provider accessor removed → hybrid falls back to the Go engine.
+	// ProviderPlugin accessor removed → hybrid falls back to the Go engine.
 	goLookup := parts.buildLookup
-	goLookup.Provider = nil
+	goLookup.ProviderPlugin = nil
 	fallbackHybrid := enginefactory.NewHybrid(enginefactory.Dispatch, goLookup, pluginLookup, sharedLoader)
 	fbEng, err := fallbackHybrid("compose")
 	if err != nil {

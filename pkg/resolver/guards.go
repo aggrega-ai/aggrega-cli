@@ -38,6 +38,12 @@ type CatalogLookup struct {
 	// (a Plugin-entity URI) → the Plugin front → the artifact cascade. May be
 	// nil in catalog-less paths; a consumer that needs it then resolves nothing.
 	Provider func(name string) (types.Provider, bool)
+	// ProviderPlugin resolves a provider NAME to the provider-rendering Plugin
+	// entity serving it, plus a found flag. A pluginType: provider Plugin serves
+	// the provider names in its compatibleProviders; this accessor finds the unique
+	// such Plugin (version-selected when several versions of one plugin match).
+	// May be nil in catalog-less paths; a consumer that needs it then resolves nothing.
+	ProviderPlugin func(name string) (types.Plugin, bool)
 	// SchemaLibraries is the catalog's resolved SchemaLibrary set keyed by
 	// library metadata.name, used to resolve cross-library schema `$ref`s when
 	// compiling a Component's schema (whole-pillar and base+flavor composition).

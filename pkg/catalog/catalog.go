@@ -624,6 +624,50 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		}
 	}
 
+	// Provider-plugin conflict guardrail: a provider name must be served by at
+	// most one provider-rendering Plugin. Two distinct pluginType: provider
+	// Plugins both listing the same provider in compatibleProviders make render
+	// dispatch ambiguous, so it halts loudly at load rather than resolving to an
+	// arbitrary engine. Only provider plugins count — a linter or frp_step
+	// plugin's compatibleProviders carries a different meaning. Iterating the
+	// sorted pluginKeys and sorting the offending names keeps the diagnostic
+	// byte-identical across runs.
+	claimants := map[string]map[string]struct{}{}
+	for _, key := range pluginKeys {
+		p := c.Plugins[key]
+		if p.Spec.PluginType != "provider" {
+			continue
+		}
+		for _, provName := range p.Spec.CompatibleProviders {
+			if claimants[provName] == nil {
+				claimants[provName] = map[string]struct{}{}
+			}
+			claimants[provName][p.Metadata.Name] = struct{}{}
+		}
+	}
+	conflicted := make([]string, 0, len(claimants))
+	for provName, names := range claimants {
+		if len(names) > 1 {
+			conflicted = append(conflicted, provName)
+		}
+	}
+	sort.Strings(conflicted)
+	for _, provName := range conflicted {
+		names := make([]string, 0, len(claimants[provName]))
+		for n := range claimants[provName] {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		validationErrors = append(validationErrors, cerrors.New(
+			cerrors.CatalogError,
+			cerrors.SourceLocation{},
+			fmt.Sprintf("provider %q is claimed by more than one provider plugin (%s); exactly one Plugin may serve a provider",
+				provName, strings.Join(names, ", ")),
+			nil,
+			nil,
+		))
+	}
+
 	if len(validationErrors) == 0 {
 		return nil
 	}
@@ -1415,8 +1459,9 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			}
 			return compactform.Schema{}, false
 		},
-		Plugin:   c.PluginByURI,
-		Provider: c.ProviderLookup,
+		Plugin:         c.PluginByURI,
+		Provider:       c.ProviderLookup,
+		ProviderPlugin: c.ProviderPluginByName,
 	}
 }
 

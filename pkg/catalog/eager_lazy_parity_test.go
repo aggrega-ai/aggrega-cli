@@ -99,6 +99,20 @@ spec:
         type: boolean
         default: true
 `)
+	writeFixture(t, dir, "plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm-renderer
+  version: 1.0.0
+spec:
+  plugin: "oci://hub.aggrega.ai/plugins/helm-renderer@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  pluginType: provider
+  abiVersion: v1alpha1
+  compatibleProviders:
+    - helm
+  exports:
+    - name: render_node
+`)
 
 	cat, err := LoadAll("", dir)
 	if err != nil {
@@ -131,6 +145,28 @@ spec:
 	lf, lok := primed.Feature("core/observability")
 	if eok != lok || !reflect.DeepEqual(ef, lf) {
 		t.Errorf("Feature core/observability diverges (eager ok=%v, lazy ok=%v)", eok, lok)
+	}
+
+	// Plugin (currently unguarded) and ProviderPlugin parity — both backings must
+	// resolve the same Plugin entity for a URI and the same provider→Plugin binding
+	// for a provider name, or the daemon's render dispatch silently diverges from
+	// the CLI's.
+	ep, eok := eager.Plugin("helm-renderer:1.0.0")
+	lp, lok := primed.Plugin("helm-renderer:1.0.0")
+	if eok != lok || !reflect.DeepEqual(ep, lp) {
+		t.Errorf("Plugin helm-renderer:1.0.0 diverges (eager ok=%v, lazy ok=%v)", eok, lok)
+	}
+	if !eok {
+		t.Fatal("fixture invalid: eager view is missing the helm-renderer Plugin (Plugin/ProviderPlugin parity is vacuous otherwise)")
+	}
+
+	epp, eok := eager.ProviderPlugin("helm")
+	lpp, lok := primed.ProviderPlugin("helm")
+	if eok != lok || !reflect.DeepEqual(epp, lpp) {
+		t.Errorf("ProviderPlugin helm diverges (eager ok=%v, lazy ok=%v)", eok, lok)
+	}
+	if !eok || epp.Metadata.Name != "helm-renderer" {
+		t.Errorf("ProviderPlugin(\"helm\"): got (%q, %v); want (helm-renderer, true)", epp.Metadata.Name, eok)
 	}
 
 	if !reflect.DeepEqual(eager.SchemaLibraries, primed.SchemaLibraries) {

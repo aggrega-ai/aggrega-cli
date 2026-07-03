@@ -13,10 +13,10 @@ import (
 )
 
 // NewHybrid wraps a fallback EngineFactory with catalog-driven Wasm routing: a
-// provider whose catalog Provider resolves, through its named Plugin entity, to
-// a Wasm rendering plugin advertising a render_node export renders through the
-// wasmengine adapter; every other provider renders through the fallback engine
-// exactly as before.
+// provider whose name resolves to a provider-rendering Plugin — the Plugin that
+// lists the provider in its compatibleProviders — advertising a render_node
+// export renders through the wasmengine adapter; every other provider renders
+// through the fallback engine exactly as before.
 //
 // The Wasm route has two tiers, selected by the Plugin entity's advertised
 // exports. A Plugin advertising only render_node routes to the render-only
@@ -33,16 +33,16 @@ import (
 // input-kind capabilities, so the render-time input-kind gate stays Go-decided.
 // The Wasm engine loads through sharedLoader (one compilation cache warmed once
 // per build) and resolves its bytes through pluginLookup (the entity-fronted
-// artifact cascade), keyed by the Provider's Plugin-entity URI.
+// artifact cascade), keyed by the resolved Plugin's entity identity.
 //
 // The routing decision falls back to the fallback engine on EVERY miss in the
 // resolve chain — a nil catalog accessor (catalog-less paths leave the
-// CatalogLookup fields nil), an unresolved Provider or Plugin, a Provider with
-// no Plugin binding, or a Plugin that does not advertise the render_node export.
-// This is the no-regression mechanism: a catalog that does not wire a provider
-// to a render_node-advertising Wasm plugin renders through the same Go engine it
-// always has, so wrapping the dispatch changes nothing until a Provider is
-// explicitly bound to such a plugin.
+// CatalogLookup fields nil), a provider name no provider-Plugin serves, or a
+// Plugin that does not advertise the render_node export. This is the
+// no-regression mechanism: a catalog that does not serve a provider through a
+// render_node-advertising Wasm plugin renders through the same Go engine it
+// always has, so wrapping the dispatch changes nothing until a provider-Plugin
+// declaring that provider in its compatibleProviders is present.
 func NewHybrid(
 	fallback renderer.EngineFactory,
 	catalogLookup resolver.CatalogLookup,
@@ -73,9 +73,10 @@ func NewHybrid(
 }
 
 // routeEngine decides whether providerName renders through the Wasm adapter or
-// the fallback Go engine, resolving the Provider → Plugin → render_node chain
-// against the catalog. Any break in the chain returns goEngine, so the fallback
-// is the safe default whenever the Wasm path is not fully wired.
+// the fallback Go engine, resolving the provider name → provider-Plugin (via the
+// Plugin's compatibleProviders) → render_node chain against the catalog. Any
+// break in the chain returns goEngine, so the fallback is the safe default
+// whenever the Wasm path is not fully wired.
 func routeEngine(
 	providerName string,
 	goEngine renderer.Engine,
@@ -83,20 +84,17 @@ func routeEngine(
 	pluginLookup pluginpath.Lookup,
 	sharedLoader *wasm.Loader,
 ) renderer.Engine {
-	if catalogLookup.Provider == nil {
+	if catalogLookup.ProviderPlugin == nil {
 		return goEngine
 	}
-	prov, ok := catalogLookup.Provider(providerName)
-	if !ok || prov.Spec.Plugin == "" {
-		return goEngine
-	}
-	if catalogLookup.Plugin == nil {
-		return goEngine
-	}
-	plugin, ok := catalogLookup.Plugin(prov.Spec.Plugin)
+	plugin, ok := catalogLookup.ProviderPlugin(providerName)
 	if !ok || !advertisesRenderNode(plugin) {
 		return goEngine
 	}
+	// The adapter's lookup key is the resolved Plugin's entity identity
+	// (metadata.name:version); the entity-fronted pluginLookup resolves that
+	// entity → artifact → cascade.
+	pluginKey := plugin.Metadata.Name + ":" + plugin.Metadata.Version
 	// Two-tier adapter selection. Every routed provider renders per-node through
 	// the render adapter; a provider whose Plugin ALSO advertises the
 	// assemble_boundary export renders AND assembles through the assembler adapter
@@ -104,15 +102,13 @@ func routeEngine(
 	// Plugin advertises only render_node — a flat-output provider like helm —
 	// stays on the render-only adapter, unchanged.
 	//
-	// Pass the Provider's Plugin-entity URI as the adapter's lookup key: the
-	// entity-fronted pluginLookup resolves entity → artifact → cascade. Wrap the
-	// Go engine so the adapter derives input-kind capabilities from it (the gate
-	// stays Go-decided) and projects a sourced node's source through its own
-	// SourceProjector.
+	// Wrap the Go engine so the adapter derives input-kind capabilities from it
+	// (the gate stays Go-decided) and projects a sourced node's source through its
+	// own SourceProjector.
 	if advertisesAssembleBoundary(plugin) {
-		return wasmengine.NewAssembler(pluginLookup, prov.Spec.Plugin, goEngine, sharedLoader)
+		return wasmengine.NewAssembler(pluginLookup, pluginKey, goEngine, sharedLoader)
 	}
-	return wasmengine.New(pluginLookup, prov.Spec.Plugin, goEngine, sharedLoader)
+	return wasmengine.New(pluginLookup, pluginKey, goEngine, sharedLoader)
 }
 
 // advertisesRenderNode reports whether the Plugin entity declares the export the

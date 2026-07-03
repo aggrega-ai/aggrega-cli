@@ -167,6 +167,11 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// set, so a provider front resolves provider name → spec.plugin
 		// (Plugin-entity URI) from the lazy backing too.
 		Provider: l.ProviderByName,
+		// ProviderPlugin resolves a provider name to the provider-rendering Plugin
+		// serving it (via compatibleProviders) over the lazily-walked set, so
+		// render dispatch resolves the same provider→Plugin binding from the lazy
+		// backing as the eager one.
+		ProviderPlugin: l.ProviderPluginByName,
 	}
 }
 
@@ -1269,6 +1274,17 @@ func (l *LazyLookup) ProviderByName(name string) (types.Provider, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.recipeCatalog().ProviderLookup(name)
+}
+
+// ProviderPluginByName resolves a provider name to the provider-rendering Plugin
+// entity serving it (via its compatibleProviders) over the lazily-enumerated
+// (Tier-1 + pinned Tier-2) Plugin set. It delegates to the same *Catalog matcher
+// the eager backing uses (via the recipeCatalog() shell), so the two backings
+// resolve identically — no per-backing matcher.
+func (l *LazyLookup) ProviderPluginByName(name string) (types.Plugin, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().ProviderPluginByName(name)
 }
 
 // ClosureRecipeLoader exposes the source-descent recipe loader over the lazily-

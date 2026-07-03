@@ -98,13 +98,13 @@ func loadCutoverParts(t *testing.T, baseDir string) cutoverParts {
 // tier — twice through the real pipeline.RunPipeline:
 //
 //   - the Wasm build passes the full catalog lookup, so the in-pipeline hybrid
-//     resolves the Provider→Plugin→render_node chain and routes the helm nodes
-//     through the wasmengine adapter;
-//   - the Go build passes the same lookup with only the Provider accessor nil'd,
-//     so the hybrid falls back to the built-in Go helm engine.
+//     resolves the provider name → provider-Plugin (via compatibleProviders) →
+//     render_node chain and routes the helm nodes through the wasmengine adapter;
+//   - the Go build passes the same lookup with only the ProviderPlugin accessor
+//     nil'd, so the hybrid falls back to the built-in Go helm engine.
 //
-// The Provider accessor has no other consumer in the pipeline, so nil'ing it
-// changes only the routing decision — every other render input is identical.
+// The ProviderPlugin accessor has no other consumer in the pipeline, so nil'ing
+// it changes only the routing decision — every other render input is identical.
 // The two builds must therefore produce byte-identical artifacts, proving the
 // Wasm render path reproduces the Go engine across the production spine for both
 // a SOURCED helm node (a local chart) and a SYNTHESIZED helm node (a workload
@@ -132,9 +132,9 @@ func TestHybridCutoverProductionPathByteIdentity(t *testing.T) {
 	// Wasm build: full lookup → hybrid resolves → wasmengine adapter.
 	wasmArtifacts := runBuild(parts.buildLookup)
 
-	// Go build: identical inputs, Provider accessor nil'd → hybrid falls back.
+	// Go build: identical inputs, ProviderPlugin accessor nil'd → hybrid falls back.
 	goLookup := parts.buildLookup
-	goLookup.Provider = nil
+	goLookup.ProviderPlugin = nil
 	goArtifacts := runBuild(goLookup)
 
 	assertByteIdentical(t, goArtifacts, wasmArtifacts)
@@ -152,10 +152,10 @@ func TestHybridCutoverProductionPathByteIdentity(t *testing.T) {
 }
 
 // TestHybridCutoverRouting proves the routing decision the byte-identity build
-// relies on: with the hub Provider wired, the hybrid returns the Wasm adapter
-// for the helm provider; with the Provider accessor removed, it returns the Go
-// engine. Asserting both directions makes the byte-identity airtight — the two
-// builds took different engine paths yet produced identical bytes.
+// relies on: with the hub provider-Plugin wired, the hybrid returns the Wasm
+// adapter for the helm provider; with the ProviderPlugin accessor removed, it
+// returns the Go engine. Asserting both directions makes the byte-identity
+// airtight — the two builds took different engine paths yet produced identical bytes.
 func TestHybridCutoverRouting(t *testing.T) {
 	parts := loadCutoverParts(t, "testdata/hybrid-cutover")
 
@@ -174,7 +174,7 @@ func TestHybridCutoverRouting(t *testing.T) {
 	sharedLoader, closeLoader := wasm.NewCachingLoader(nil)
 	defer func() { _ = closeLoader() }()
 
-	// Hub Provider wired → Wasm adapter.
+	// Hub provider-Plugin wired → Wasm adapter.
 	hybrid := enginefactory.NewHybrid(enginefactory.Dispatch, parts.buildLookup, pluginLookup, sharedLoader)
 	eng, err := hybrid("helm")
 	if err != nil {
@@ -193,9 +193,9 @@ func TestHybridCutoverRouting(t *testing.T) {
 		t.Fatalf("plain Dispatch helm is %T, want *helm.HelmEngine", goEng)
 	}
 
-	// Provider accessor removed → hybrid falls back to the Go engine.
+	// ProviderPlugin accessor removed → hybrid falls back to the Go engine.
 	goLookup := parts.buildLookup
-	goLookup.Provider = nil
+	goLookup.ProviderPlugin = nil
 	fallbackHybrid := enginefactory.NewHybrid(enginefactory.Dispatch, goLookup, pluginLookup, sharedLoader)
 	fbEng, err := fallbackHybrid("helm")
 	if err != nil {
