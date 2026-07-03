@@ -38,10 +38,16 @@ import (
 //     verbatim (no host serializer): the decoded RenderNodeOutput files are
 //     collected path-to-bytes and compared byte-for-byte to the in-tree engine.
 //
+// The node projection carries the full provenance the render path stamps onto
+// every manifest — boundary path, deployment wave, Recipe identity, component-id
+// override, and build identity — fed identically to both sides, so the rendered
+// manifests carry real provenance labels and annotations.
+//
 // The oracle is the in-tree HelmEngine.Render (map[string][]byte). The candidate
 // is the helm-provider guest driven through render_node via the production
-// loader. A byte-identical match proves the SourceProjection + shared render core
-// + bytes-verbatim path reproduces the in-tree engine exactly.
+// loader. A byte-identical match — with provenance labels and annotations
+// present — proves the SourceProjection + shared render core + provenance
+// carriage + bytes-verbatim path reproduces the in-tree engine exactly.
 func TestHelmProviderABByteIdentity(t *testing.T) {
 	ctx := context.Background()
 	wasmPath := buildPluginWasm(t)
@@ -59,24 +65,29 @@ func TestHelmProviderABByteIdentity(t *testing.T) {
 	valuesOrdered := valuesFromJSON(t, `{"image":"api:2.0.0","replicas":5}`)
 	values := orderedToPlain(&valuesOrdered)
 
-	// ORACLE — the in-tree Go helm engine, with empty provenance so the
-	// comparison isolates the render path rather than the (deliberately
-	// out-of-ABI) provenance labels the guest does not receive.
-	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, renderer.NodeRenderContext{NodeID: nodeID, Source: hostChartDir})
+	// ORACLE — the in-tree Go helm engine, fed real provenance so the A/B
+	// exercises the provenance labels and annotations the render path stamps
+	// onto every manifest, not just the bare render.
+	oracleCtx := renderer.NodeRenderContext{NodeID: nodeID, Source: hostChartDir}
+	stampOracleProvenance(&oracleCtx)
+	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, oracleCtx)
 	if err != nil {
 		t.Fatalf("oracle Render: %v", err)
 	}
 
 	// CANDIDATE — the Wasm guest through the production loader. The chart
 	// arrives in the payload's SourceProjection (projected host-side at compile
-	// time), NOT via a filesystem mount. The guest reads NodeID and values from
-	// the node projection and the chart's files from the source projection.
+	// time), NOT via a filesystem mount. The guest reads NodeID, values, and the
+	// same provenance from the node projection and rebuilds an identical render
+	// context; the chart's files arrive in the source projection.
 	proj, err := helm.ProjectChartSource(hostChartDir)
 	if err != nil {
 		t.Fatalf("ProjectChartSource: %v", err)
 	}
+	node := renderer.IRNodeProjection{ID: nodeID, Values: valuesOrdered}
+	stampCandidateProvenance(&node)
 	input := renderer.RenderNodeInput{
-		Node:             renderer.IRNodeProjection{ID: nodeID, Values: valuesOrdered},
+		Node:             node,
 		Context:          renderctx.RenderContext{},
 		SourceProjection: proj,
 	}
@@ -101,6 +112,64 @@ func TestHelmProviderABByteIdentity(t *testing.T) {
 	}
 
 	assertByteIdentical(t, oracle, candidate)
+}
+
+// abProv is the single source of the concrete provenance every A/B feeds
+// identically to both sides — the oracle as NodeRenderContext fields, the
+// candidate as IRNodeProjection fields — so the guest rebuilds a byte-identical
+// render context. A non-zero SyncWave and every identity field set exercise the
+// provenance label and annotation stamping the shared render path performs, so a
+// byte-identical match proves the guest carries provenance across the ABI
+// exactly as the in-tree engine stamps it.
+var abProv = struct {
+	BoundaryPath     string
+	SyncWave         int
+	RecipeName       string
+	RecipeVersion    string
+	LabelComponentID string
+	CompilerVersion  string
+	AggregateName    string
+	Environment      string
+}{
+	BoundaryPath:     "aws-prod/payments",
+	SyncWave:         3,
+	RecipeName:       "core/web-service/helm",
+	RecipeVersion:    "1.4.2",
+	LabelComponentID: "payments-api",
+	CompilerVersion:  "1.0.0",
+	AggregateName:    "payments",
+	Environment:      "prod",
+}
+
+// stampOracleProvenance sets the shared provenance on an oracle
+// NodeRenderContext, leaving the caller's NodeID/Source/values in place.
+func stampOracleProvenance(nodeCtx *renderer.NodeRenderContext) {
+	nodeCtx.BoundaryPath = abProv.BoundaryPath
+	nodeCtx.SyncWave = abProv.SyncWave
+	nodeCtx.RecipeName = abProv.RecipeName
+	nodeCtx.RecipeVersion = abProv.RecipeVersion
+	nodeCtx.LabelComponentID = abProv.LabelComponentID
+	nodeCtx.Provenance = renderer.ProvenanceContext{
+		CompilerVersion: abProv.CompilerVersion,
+		AggregateName:   abProv.AggregateName,
+		Environment:     abProv.Environment,
+	}
+}
+
+// stampCandidateProvenance sets the shared provenance on a candidate
+// IRNodeProjection, mirroring stampOracleProvenance so both sides of the A/B
+// carry identical provenance and the guest rebuilds the same render context.
+func stampCandidateProvenance(node *renderer.IRNodeProjection) {
+	node.BoundaryPath = abProv.BoundaryPath
+	node.SyncWave = abProv.SyncWave
+	node.RecipeName = abProv.RecipeName
+	node.RecipeVersion = abProv.RecipeVersion
+	node.LabelComponentID = abProv.LabelComponentID
+	node.Provenance = renderer.NodeProvenance{
+		CompilerVersion: abProv.CompilerVersion,
+		AggregateName:   abProv.AggregateName,
+		Environment:     abProv.Environment,
+	}
 }
 
 func assertByteIdentical(t *testing.T, oracle, candidate map[string][]byte) {

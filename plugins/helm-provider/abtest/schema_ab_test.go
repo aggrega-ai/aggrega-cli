@@ -24,10 +24,11 @@ import (
 )
 
 // buildRenderInput projects the chart at chartDir and marshals a render_node
-// payload carrying nodeID and the given values, returning the payload
-// alongside the equivalent plain values map for the oracle render. The
-// values decode through the same ordered-map JSON decode the guest performs
-// off the wire, so both sides of the A/B receive the same value shape.
+// payload carrying nodeID, the given values, and the shared A/B provenance,
+// returning the payload alongside the equivalent plain values map for the
+// oracle render. The values decode through the same ordered-map JSON decode the
+// guest performs off the wire, so both sides of the A/B receive the same value
+// shape; the caller stamps the same provenance on its oracle NodeRenderContext.
 func buildRenderInput(t *testing.T, chartDir, nodeID, valuesJSON string) (payload []byte, plainValues map[string]any) {
 	t.Helper()
 	valuesOrdered := valuesFromJSON(t, valuesJSON)
@@ -35,8 +36,10 @@ func buildRenderInput(t *testing.T, chartDir, nodeID, valuesJSON string) (payloa
 	if err != nil {
 		t.Fatalf("ProjectChartSource: %v", err)
 	}
+	node := renderer.IRNodeProjection{ID: nodeID, Values: valuesOrdered}
+	stampCandidateProvenance(&node)
 	input := renderer.RenderNodeInput{
-		Node:             renderer.IRNodeProjection{ID: nodeID, Values: valuesOrdered},
+		Node:             node,
 		Context:          renderctx.RenderContext{},
 		SourceProjection: proj,
 	}
@@ -79,7 +82,9 @@ func TestHelmProviderABByteIdentitySchemaChart(t *testing.T) {
 
 	payload, values := buildRenderInput(t, chartDir, nodeID, `{"replicas":4,"message":"schema-ab"}`)
 
-	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, renderer.NodeRenderContext{NodeID: nodeID, Source: chartDir})
+	oracleCtx := renderer.NodeRenderContext{NodeID: nodeID, Source: chartDir}
+	stampOracleProvenance(&oracleCtx)
+	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, oracleCtx)
 	if err != nil {
 		t.Fatalf("oracle Render: %v", err)
 	}
@@ -172,7 +177,9 @@ func TestHelmProviderRemoteRefSchemaExternalInputs(t *testing.T) {
 	}
 
 	// Oracle — the in-tree engine with the SDK's live reference resolution.
-	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, renderer.NodeRenderContext{NodeID: nodeID, Source: chartDir})
+	oracleCtx := renderer.NodeRenderContext{NodeID: nodeID, Source: chartDir}
+	stampOracleProvenance(&oracleCtx)
+	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, oracleCtx)
 	if err != nil {
 		t.Fatalf("oracle Render: %v", err)
 	}

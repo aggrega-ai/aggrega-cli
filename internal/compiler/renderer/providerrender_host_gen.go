@@ -33,7 +33,7 @@ type RenderNodeInput struct {
 	WorkloadProjection *WorkloadProjection `json:"workload_projection,omitempty" yaml:"workload_projection,omitempty"`
 }
 
-// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node: its id, type, resolved recipe, values, feature attachments, and outbound uses edges, narrower than the complete node surface which also carries provenance and source-file metadata the guest does not need to render. Values, features, and uses preserve author order so the wire payload is byte-identical across runs of identical input.
+// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, outbound uses edges, boundary path, deployment wave, Recipe identity, component-id override, and build provenance. Source-file content is not carried here; it travels separately in the source projection. Values, features, and uses preserve author order so the wire payload is byte-identical across runs of identical input.
 type IRNodeProjection struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id"`
@@ -47,6 +47,28 @@ type IRNodeProjection struct {
 	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty" yaml:"features,omitempty"`
 	// Uses The node's outbound uses edges keyed by socket alias, each carrying the ordered target node ids bound to that socket. Preserves author order so the payload is byte-identical across runs of identical input.
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty" yaml:"uses,omitempty"`
+	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
+	BoundaryPath string `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty"`
+	// SyncWave The node's deployment wave, stamped as the aggrega.ai/sync-wave and argocd.argoproj.io/sync-wave annotations when non-zero. This is the per-node render-input carrier of the wave, distinct from the boundary context's sync wave that feeds the assemble export.
+	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty"`
+	// RecipeName The bound Recipe's name, paired with recipe_version to form the aggrega.ai/recipe-uri annotation; when either half is empty the annotation is not stamped.
+	RecipeName string `json:"recipe_name,omitempty" yaml:"recipe_name,omitempty"`
+	// RecipeVersion The bound Recipe's version, paired with recipe_name to form the aggrega.ai/recipe-uri annotation; when either half is empty the annotation is not stamped.
+	RecipeVersion string `json:"recipe_version,omitempty" yaml:"recipe_version,omitempty"`
+	// LabelComponentID The Kubernetes-safe component identity. When non-empty it overrides the node id as the app.kubernetes.io/name and aggrega.ai/component-id label value, for resources whose node id carries marker syntax that needs sanitization; empty means the node id is already label-valid and is used directly.
+	LabelComponentID string `json:"label_component_id,omitempty" yaml:"label_component_id,omitempty"`
+	// Provenance The build-identity provenance the guest stamps onto every emitted manifest as aggrega.ai labels.
+	Provenance NodeProvenance `json:"provenance" yaml:"provenance"`
+}
+
+// NodeProvenance The build-identity provenance for one node — the compiler, aggregate, and environment identity the guest stamps onto every emitted manifest as aggrega.ai labels. Each field elides when empty, so a partial identity stamps only the labels it carries.
+type NodeProvenance struct {
+	// CompilerVersion The compiler version, stamped as the aggrega.ai/compiler-version label when non-empty.
+	CompilerVersion string `json:"compiler_version,omitempty" yaml:"compiler_version,omitempty"`
+	// AggregateName The aggregate name, stamped as the aggrega.ai/aggregate-name label when non-empty.
+	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty"`
+	// Environment The environment name, stamped as the aggrega.ai/environment label when non-empty.
+	Environment string `json:"environment,omitempty" yaml:"environment,omitempty"`
 }
 
 // CatalogProjection The pre-packaged catalog content a Provider guest renders against when the host supplies catalog entries in the payload rather than behind host functions. It is a closure walk outward from the IR node: only the catalog entries transitively referenced by the node being rendered are included, not the whole catalog. Each map is keyed by catalog URI and preserves key order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads each entry through the catalog entity's own wire contract.
@@ -312,6 +334,56 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if t.BoundaryPath != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"boundary_path\":")
+		writeJSONString(&buf, t.BoundaryPath)
+	}
+	if t.SyncWave != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sync_wave\":")
+		buf.WriteString(strconv.FormatInt(int64(t.SyncWave), 10))
+	}
+	if t.RecipeName != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"recipe_name\":")
+		writeJSONString(&buf, t.RecipeName)
+	}
+	if t.RecipeVersion != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"recipe_version\":")
+		writeJSONString(&buf, t.RecipeVersion)
+	}
+	if t.LabelComponentID != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"label_component_id\":")
+		writeJSONString(&buf, t.LabelComponentID)
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"provenance\":")
+	if enc, err := t.Provenance.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -365,6 +437,122 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 				return err
 			} else if err := json.Unmarshal(raw, &t.Uses); err != nil {
 				return err
+			}
+		case "boundary_path":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.BoundaryPath = s
+			}
+		case "sync_wave":
+			if n, err := readInt(dec); err != nil {
+				return err
+			} else {
+				t.SyncWave = int(n)
+			}
+		case "recipe_name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.RecipeName = s
+			}
+		case "recipe_version":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.RecipeVersion = s
+			}
+		case "label_component_id":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.LabelComponentID = s
+			}
+		case "provenance":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				if err := t.Provenance.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes NodeProvenance in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t NodeProvenance) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if t.CompilerVersion != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"compiler_version\":")
+		writeJSONString(&buf, t.CompilerVersion)
+	}
+	if t.AggregateName != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"aggregate_name\":")
+		writeJSONString(&buf, t.AggregateName)
+	}
+	if t.Environment != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"environment\":")
+		writeJSONString(&buf, t.Environment)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes NodeProvenance with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *NodeProvenance) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "compiler_version":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.CompilerVersion = s
+			}
+		case "aggregate_name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.AggregateName = s
+			}
+		case "environment":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Environment = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

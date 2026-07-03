@@ -96,12 +96,38 @@ func errorChainMessage(err error) string {
 	return msg
 }
 
+// nodeCtxFromInput builds the full render context for a node from the wire
+// input: the node's identity and the provenance the render core stamps onto
+// every emitted manifest (boundary path, deployment wave, Recipe identity,
+// component-id override, and build identity) from the node projection, and the
+// merged annotations from the render context. Carrying the full provenance here
+// is what makes the guest's rendered manifests carry the same aggrega.ai labels
+// and annotations the in-tree engine emits, so the two produce byte-identical
+// output for identical input.
+func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
+	return renderer.NodeRenderContext{
+		NodeID:           in.Node.ID,
+		Annotations:      mergeAnnotations(in.Context.Annotations),
+		BoundaryPath:     in.Node.BoundaryPath,
+		SyncWave:         in.Node.SyncWave,
+		RecipeName:       in.Node.RecipeName,
+		RecipeVersion:    in.Node.RecipeVersion,
+		LabelComponentID: in.Node.LabelComponentID,
+		Provenance: renderer.ProvenanceContext{
+			CompilerVersion: in.Node.Provenance.CompilerVersion,
+			AggregateName:   in.Node.Provenance.AggregateName,
+			Environment:     in.Node.Provenance.Environment,
+		},
+		YAMLIndent: 0,
+	}
+}
+
 // renderSourcedFromInput reconstructs the Helm chart in memory from the wire
 // input's source projection, runs the same filesystem-free render core the
 // in-tree engine runs, and returns each rendered manifest's serialized bytes as
 // a RenderedFile. The chart's files arrive in the source projection (the host
-// read them at compile time); the node's values, identity, and merged
-// annotations arrive in the node projection and render context.
+// read them at compile time); the node's values, identity, provenance, and
+// merged annotations arrive in the node projection and render context.
 //
 // Values-schema validation runs hermetically: the chart's values.schema.json
 // (and dependency charts' schemas) are validated by the render core's
@@ -125,11 +151,7 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 	}
 
 	values := orderedMapToPlain(&in.Node.Values)
-	nodeCtx := renderer.NodeRenderContext{
-		NodeID:      in.Node.ID,
-		Annotations: mergeAnnotations(in.Context.Annotations),
-		YAMLIndent:  0,
-	}
+	nodeCtx := nodeCtxFromInput(in)
 
 	rendered, err := helm.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
 		helm.NewHermeticValuesValidator(aggrega.FetchExternalInput))
@@ -148,20 +170,16 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 // input's workload projection, running the same filesystem-free synthesis core
 // the in-tree engine runs, and returns each synthesized manifest's serialized
 // bytes as a RenderedFile. The workload and its per-slot secret provides arrive
-// in the workload projection; the node's identity and merged annotations arrive
-// in the node projection and render context. The core's emission order is
-// deterministic and load-bearing, so the files are collected in order and never
-// re-sorted.
+// in the workload projection; the node's identity, provenance, and merged
+// annotations arrive in the node projection and render context. The core's
+// emission order is deterministic and load-bearing, so the files are collected
+// in order and never re-sorted.
 func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
 	if in.WorkloadProjection == nil {
 		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no workload projection")
 	}
 
-	nodeCtx := renderer.NodeRenderContext{
-		NodeID:      in.Node.ID,
-		Annotations: mergeAnnotations(in.Context.Annotations),
-		YAMLIndent:  0,
-	}
+	nodeCtx := nodeCtxFromInput(in)
 
 	emitted, err := helm.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.Secrets, nodeCtx)
 	if err != nil {

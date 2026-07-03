@@ -31,9 +31,11 @@ import (
 //     order, byte-for-byte to the in-tree engine's EmittedFiles.
 //
 // The oracle is the in-tree HelmEngine.SynthesizeWorkload, fed the NATURAL
-// in-memory Workload (never JSON-round-tripped), with empty provenance and
-// YAMLIndent 0. The candidate is the guest driven through render_node via the
-// production loader, receiving the same Workload marshalled onto the wire.
+// in-memory Workload (never JSON-round-tripped), real provenance, and YAMLIndent
+// 0. The candidate is the guest driven through render_node via the production
+// loader, receiving the same Workload marshalled onto the wire and the same
+// provenance on the node projection, so the synthesized manifests carry real
+// provenance labels and annotations on both sides.
 //
 // Fixtures deliberately carry no numeric values inside the opaque
 // any / map[string]any / []any pass-through fields (Scheduling.Affinity,
@@ -59,19 +61,25 @@ func TestHelmProviderSynthABByteIdentity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w, secretProvides, tmplCtx := tc.build()
 
-			// ORACLE — the in-tree engine, fed the natural Workload with empty
-			// provenance so the comparison isolates the synthesis path rather
-			// than the (deliberately out-of-ABI) provenance labels.
-			oracle, err := (&helm.HelmEngine{}).SynthesizeWorkload(ctx, tmplCtx, w, renderer.NodeRenderContext{NodeID: tc.nodeID})
+			// ORACLE — the in-tree engine, fed the natural Workload and real
+			// provenance so the A/B exercises the provenance labels and
+			// annotations the synthesis path stamps onto every manifest.
+			oracleCtx := renderer.NodeRenderContext{NodeID: tc.nodeID}
+			stampOracleProvenance(&oracleCtx)
+			oracle, err := (&helm.HelmEngine{}).SynthesizeWorkload(ctx, tmplCtx, w, oracleCtx)
 			if err != nil {
 				t.Fatalf("oracle SynthesizeWorkload: %v", err)
 			}
 
 			// CANDIDATE — the Wasm guest through the production loader. The
 			// workload and its per-slot secret provides arrive in the payload's
-			// WorkloadProjection; the guest synthesizes in memory.
+			// WorkloadProjection; the node projection carries the same provenance,
+			// so the guest rebuilds an identical render context and synthesizes in
+			// memory.
+			node := renderer.IRNodeProjection{ID: tc.nodeID}
+			stampCandidateProvenance(&node)
 			input := renderer.RenderNodeInput{
-				Node:               renderer.IRNodeProjection{ID: tc.nodeID},
+				Node:               node,
 				Context:            renderctx.RenderContext{},
 				WorkloadProjection: &renderer.WorkloadProjection{Workload: *w, Secrets: secretProvides},
 			}
