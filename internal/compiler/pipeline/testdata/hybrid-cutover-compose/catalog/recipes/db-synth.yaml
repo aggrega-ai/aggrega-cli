@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-synth
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/db
+  provides:
+    host: "{{ .context.instance_id }}.db"
+    service_port: "{{ optional .infra `port` 5432 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: postgres:16
+        ports:
+          db: {{ optional .infra `port` 5432 }}
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: {{ optional .infra `port` 5432 }}

@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-synth
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/api
+  provides:
+    host: "{{ .context.instance_id }}.api"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: api:2.0
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}

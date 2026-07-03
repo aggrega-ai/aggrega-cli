@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: compose
+  version: "1.0.0"
+spec:
+  # Bind the compose provider to its Wasm rendering engine so the hybrid dispatch
+  # routes this provider through the wasmengine adapter. plugin names the Plugin
+  # entity below as a bare catalog identity.
+  plugin: compose-renderer:1.0.0
+  workloadSchema: |
+    type: object
+    additionalProperties: true

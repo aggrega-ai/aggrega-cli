@@ -107,6 +107,26 @@ type BoundaryAssembler interface {
 	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string][]byte, nestPerNode bool, err error)
 }
 
+// RenderIsIntermediate reports whether an engine's per-node render/synthesis
+// output is intermediate input to a per-(path, provider) BoundaryAssembler
+// rather than a file written directly at the dispatch path. It is true for a
+// BoundaryAssembler that consumes per-node output as fragments (compose merges
+// them into one docker-compose.yaml) and false both for a flat-output engine
+// (helm) and for a BoundaryAssembler that places per-node content at
+// engine-controlled positions via the umbrella nestPerNode contract (helm-chart,
+// signalled by ExternalArtifactsHandler).
+//
+// This is the single source of the intermediate-marking rule. The orchestrator's
+// per-node render and synthesis passes classify their emitted files through it,
+// and the wasmengine adapter classifies its synthesis output through it against
+// the wrapped Go engine — so a provider routed to Wasm marks its fragments
+// identically to the in-tree engine it stands in for.
+func RenderIsIntermediate(engine Engine) bool {
+	_, isAssembler := engine.(BoundaryAssembler)
+	_, isExternal := engine.(ExternalArtifactsHandler)
+	return isAssembler && !isExternal
+}
+
 // BoundaryInfo carries everything the BoundaryAssembler needs.
 //
 // BoundaryPath is the dispatch path the assembler writes into.

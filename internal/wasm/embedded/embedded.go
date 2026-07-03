@@ -8,12 +8,12 @@
 // resolves with no filesystem, cache, or network access — the first tier the
 // plugin-resolution cascade consults.
 //
-// The helm provider rendering plugin is embedded here. Its artifact is
-// committed gzip-compressed under plugins/ (the uncompressed Wasm is large) and
-// decompressed once at init into the registry, keyed by the artifact's
-// canonical content-addressed URI. Adding another embedded plugin is a drop-in:
-// place its gzip-compressed .wasm under plugins/ and register its canonical URI
-// in register.
+// The helm and compose provider rendering plugins are embedded here. Each
+// artifact is committed gzip-compressed under plugins/ (the uncompressed Wasm is
+// large) and decompressed once at init into the registry, keyed by the
+// artifact's canonical content-addressed URI. Adding another embedded plugin is
+// a drop-in: place its gzip-compressed .wasm under plugins/ and register its
+// canonical URI in register.
 package embedded
 
 import (
@@ -41,6 +41,13 @@ var pluginFS embed.FS
 // URI through the embed tier verifies byte-for-byte against a lockfile pin.
 const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:b493d69687cc3132593eb63b26ca3af88b3b0be30a576896d84216c5c7ff01e9"
 
+// composeProviderURI is the canonical content-addressed URI the compose provider
+// rendering plugin's decompressed bytes register under. Like helmProviderURI, the
+// sha256 digest pins the exact bytes committed (compressed) under plugins/, so a
+// resolution of this URI through the embed tier verifies byte-for-byte against a
+// lockfile pin.
+const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:aa18d8c49ef99b3cccfda7a30d097fcc5bb75f18b2255e94fd1fdd996f0e9cea"
+
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from
 // pluginFS at init by register.
@@ -57,7 +64,8 @@ var registry = map[string][]byte{}
 // runtime branch for a missing or corrupt embedded file.
 func register() map[string][]byte {
 	return map[string][]byte{
-		helmProviderURI: mustDecompress("plugins/helm-provider.wasm.gz"),
+		helmProviderURI:    mustDecompress("plugins/helm-provider.wasm.gz"),
+		composeProviderURI: mustDecompress("plugins/compose-provider.wasm.gz"),
 	}
 }
 

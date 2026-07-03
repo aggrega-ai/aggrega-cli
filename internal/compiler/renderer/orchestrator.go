@@ -403,9 +403,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// files under the per-node prefix rather than routing them to
 		// AssembleBoundary's IntermediatesByNode. Engines that are not
 		// BoundaryAssemblers also keep Intermediate=false.
-		_, isAssembler := engine.(BoundaryAssembler)
-		_, isExternal := engine.(ExternalArtifactsHandler)
-		renderIsIntermediate := isAssembler && !isExternal
+		renderIsIntermediate := RenderIsIntermediate(engine)
 		sourceNames := make([]string, 0, len(files))
 		for p := range files {
 			sourceNames = append(sourceNames, p)

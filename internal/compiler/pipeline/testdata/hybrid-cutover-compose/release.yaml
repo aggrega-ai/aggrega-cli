@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: hybrid-cutover-compose-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        web:
+          annotations:
+            aggrega.ai/namespace: "web-zone"
+          infra:
+            port: 8081
+        api:
+          annotations:
+            aggrega.ai/namespace: "api-zone"
+          infra:
+            port: 8082
+        db:
+          annotations:
+            aggrega.ai/namespace: "db-zone"
+          infra:
+            port: 5433

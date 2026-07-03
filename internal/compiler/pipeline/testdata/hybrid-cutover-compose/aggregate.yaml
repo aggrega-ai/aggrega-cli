@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: hybrid-cutover-compose
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/web
+      uses:
+        backends:
+          - api
+    api:
+      type: core/api
+      uses:
+        stores:
+          - db
+    db:
+      type: core/db

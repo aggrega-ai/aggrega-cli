@@ -708,9 +708,7 @@ func renderFeatureRecipeFiles(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
 		}
-		_, isAssembler := frEngine.(BoundaryAssembler)
-		_, isExternal := frEngine.(ExternalArtifactsHandler)
-		renderIsIntermediate := isAssembler && !isExternal
+		renderIsIntermediate := RenderIsIntermediate(frEngine)
 		names := make([]string, 0, len(files))
 		for p := range files {
 			names = append(names, p)

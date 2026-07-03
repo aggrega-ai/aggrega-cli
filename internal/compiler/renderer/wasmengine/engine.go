@@ -123,6 +123,14 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 // provides are projected from the template context through the same host
 // projection the in-tree engine uses, so both surfaces resolve a workload secret
 // reference to the same generated Secret identity.
+//
+// Each emitted file carries the same Intermediate marking the wrapped Go engine
+// would set on its own synthesis output, classified through the wrapped engine
+// (renderer.RenderIsIntermediate): a BoundaryAssembler provider (compose) marks
+// its fragments intermediate so the orchestrator routes them to AssembleBoundary
+// rather than writing them at the dispatch path, while a flat-output provider
+// (helm) marks them false. Reproducing the flag here keeps a provider routed to
+// Wasm byte-for-byte equivalent to the in-tree engine it stands in for.
 func (e *Engine) SynthesizeWorkload(
 	ctx context.Context,
 	tmplCtx *types.TemplateContext,
@@ -146,9 +154,10 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, err
 	}
 
+	intermediate := renderer.RenderIsIntermediate(e.goEngine)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
 	for _, f := range out.Files {
-		emitted = append(emitted, renderer.EmittedFile{Name: f.Path, Body: f.Content})
+		emitted = append(emitted, renderer.EmittedFile{Name: f.Path, Body: f.Content, Intermediate: intermediate})
 	}
 	return emitted, nil
 }

@@ -38,13 +38,16 @@ type cutoverParts struct {
 	cat          *catalog.Catalog
 }
 
-// loadCutoverParts loads the hybrid-cutover fixture and assembles the build
-// inputs exactly as the CLI build does (the triad derivation the pipelinetest
-// harness performs), so the two builds below run the real production spine.
-func loadCutoverParts(t *testing.T) cutoverParts {
+// loadCutoverParts loads a hybrid-cutover fixture under baseDir and assembles the
+// build inputs exactly as the CLI build does (the triad derivation the
+// pipelinetest harness performs), so the two builds below run the real production
+// spine. baseDir is parametrized so the helm and compose cutover A/Bs share one
+// loader — the fixtures differ only in their catalog content, never in how the
+// build inputs are derived.
+func loadCutoverParts(t *testing.T, baseDir string) cutoverParts {
 	t.Helper()
-	const releasePath = "testdata/hybrid-cutover/release.yaml"
-	catalogPath := "testdata/hybrid-cutover/catalog"
+	releasePath := filepath.Join(baseDir, "release.yaml")
+	catalogPath := filepath.Join(baseDir, "catalog")
 
 	cat, err := catalog.LoadAll("", catalogPath)
 	if err != nil {
@@ -113,7 +116,7 @@ func loadCutoverParts(t *testing.T) cutoverParts {
 // hybrid returns *helm.HelmEngine.
 func TestHybridCutoverProductionPathByteIdentity(t *testing.T) {
 	ctx := context.Background()
-	parts := loadCutoverParts(t)
+	parts := loadCutoverParts(t, "testdata/hybrid-cutover")
 
 	runBuild := func(lookup resolver.CatalogLookup) map[string][]byte {
 		res, err := pipeline.RunPipeline(
@@ -154,7 +157,7 @@ func TestHybridCutoverProductionPathByteIdentity(t *testing.T) {
 // engine. Asserting both directions makes the byte-identity airtight — the two
 // builds took different engine paths yet produced identical bytes.
 func TestHybridCutoverRouting(t *testing.T) {
-	parts := loadCutoverParts(t)
+	parts := loadCutoverParts(t, "testdata/hybrid-cutover")
 
 	// Entity-fronted plugin lookup: entity URI → spec.plugin → cascade (embed
 	// tier serves the embedded guest). The routing decision does not invoke it,

@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web-sourced
+  version: "1.0.0"
+spec:
+  provider: compose
+  implements: core/web
+  source: ./sources/web.yaml
+  provides:
+    host: "{{ .context.instance_id }}.web"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  valuesMapping: |
+    {
+      "services": {
+        "web": {
+          "environment": {
+            "PORT": "{{ optional .infra `port` 8080 }}"
+          }
+        }
+      }
+    }

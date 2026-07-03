@@ -18,6 +18,15 @@ import (
 // wasmengine adapter; every other provider renders through the fallback engine
 // exactly as before.
 //
+// The Wasm route has two tiers, selected by the Plugin entity's advertised
+// exports. A Plugin advertising only render_node routes to the render-only
+// adapter (per-node render, host-side Go assembly for a flat-output provider). A
+// Plugin advertising render_node AND assemble_boundary routes to the assembler
+// adapter, which renders per-node AND merges the dispatch group's fragments
+// through the guest — so a full provider's per-group assembly (an umbrella chart,
+// a merged compose file) runs in Wasm too. The assembler adapter embeds the
+// render adapter, so the render behavior is identical across the two tiers.
+//
 // The fallback is authoritative for which providers exist and for engine
 // capabilities: a provider the fallback rejects (unknown name) surfaces that
 // error unchanged, and a routed Wasm engine reports the fallback engine's own
@@ -88,11 +97,21 @@ func routeEngine(
 	if !ok || !advertisesRenderNode(plugin) {
 		return goEngine
 	}
+	// Two-tier adapter selection. Every routed provider renders per-node through
+	// the render adapter; a provider whose Plugin ALSO advertises the
+	// assemble_boundary export renders AND assembles through the assembler adapter
+	// (which embeds the render Engine, so it is a superset). A provider whose
+	// Plugin advertises only render_node — a flat-output provider like helm —
+	// stays on the render-only adapter, unchanged.
+	//
 	// Pass the Provider's Plugin-entity URI as the adapter's lookup key: the
 	// entity-fronted pluginLookup resolves entity → artifact → cascade. Wrap the
 	// Go engine so the adapter derives input-kind capabilities from it (the gate
 	// stays Go-decided) and projects a sourced node's source through its own
 	// SourceProjector.
+	if advertisesAssembleBoundary(plugin) {
+		return wasmengine.NewAssembler(pluginLookup, prov.Spec.Plugin, goEngine, sharedLoader)
+	}
 	return wasmengine.New(pluginLookup, prov.Spec.Plugin, goEngine, sharedLoader)
 }
 
@@ -100,8 +119,22 @@ func routeEngine(
 // wasmengine adapter drives. The name is sourced from the adapter itself, so the
 // routing precondition and the export the adapter calls are one string.
 func advertisesRenderNode(plugin types.Plugin) bool {
+	return advertisesExport(plugin, wasmengine.RenderNodeExport)
+}
+
+// advertisesAssembleBoundary reports whether the Plugin entity declares the
+// export the wasmengine assembler adapter drives. The name is sourced from the
+// adapter itself, so the routing precondition and the export the adapter calls
+// are one string — mirroring advertisesRenderNode.
+func advertisesAssembleBoundary(plugin types.Plugin) bool {
+	return advertisesExport(plugin, wasmengine.AssembleBoundaryExport)
+}
+
+// advertisesExport reports whether the Plugin entity declares an export of the
+// given name.
+func advertisesExport(plugin types.Plugin, name string) bool {
 	for _, exp := range plugin.Spec.Exports {
-		if exp.Name == wasmengine.RenderNodeExport {
+		if exp.Name == name {
 			return true
 		}
 	}
