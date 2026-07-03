@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/Masterminds/sprig/v3 v3.3.0
+	github.com/aggrega-ai/aggrega-pdk-go v0.0.0
 	github.com/aggrega-ai/aggrega-schemas v0.5.0
 	github.com/extism/go-pdk v1.1.3
 	github.com/go-git/go-git/v5 v5.19.1
@@ -26,6 +27,7 @@ require (
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
+	github.com/aggrega-ai/aggrega-abi-go v0.0.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
@@ -159,7 +161,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
@@ -195,3 +197,11 @@ require (
 // require the real v0.3.0 tag with NO replace; run `go mod tidy` after the tag so
 // go.sum carries the published checksum.
 replace github.com/aggrega-ai/aggrega-schemas => ../aggrega-schemas
+
+// The Go PDK and the portable ABI codec are sibling submodules in the
+// umbrella; their module paths are their publication identity while the local
+// checkouts serve the build. The helm provider guest consumes the PDK's
+// host-function bindings (the pinned external-input fetch channel).
+replace github.com/aggrega-ai/aggrega-pdk-go => ../aggrega-pdk/go
+
+replace github.com/aggrega-ai/aggrega-abi-go => ../aggrega-abi/go

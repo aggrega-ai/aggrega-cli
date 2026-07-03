@@ -24,11 +24,13 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"helm.sh/helm/v3/pkg/chart/loader"
 )
@@ -55,7 +57,7 @@ func renderNode() int32 {
 
 	out, err := renderSourcedFromInput(in)
 	if err != nil {
-		pdk.SetError(err)
+		pdk.SetError(errors.New(errorChainMessage(err)))
 		return 1
 	}
 
@@ -68,12 +70,36 @@ func renderNode() int32 {
 	return 0
 }
 
+// errorChainMessage serializes err's full wrap chain into one message. The
+// host-side rich error formatter is not available across the plugin ABI, and
+// some wrapper types (the compiler's categorised errors) keep their cause out
+// of Error(), surfacing it only through Unwrap; appending each unwrapped
+// cause not already present keeps the root diagnostic — a violated values
+// constraint, an unresolvable schema URL — in the message the host receives.
+func errorChainMessage(err error) string {
+	msg := err.Error()
+	for e := errors.Unwrap(err); e != nil; e = errors.Unwrap(e) {
+		if s := e.Error(); !strings.Contains(msg, s) {
+			msg += ": " + s
+		}
+	}
+	return msg
+}
+
 // renderSourcedFromInput reconstructs the Helm chart in memory from the wire
 // input's source projection, runs the same filesystem-free render core the
 // in-tree engine runs, and returns each rendered manifest's serialized bytes as
 // a RenderedFile. The chart's files arrive in the source projection (the host
 // read them at compile time); the node's values, identity, and merged
 // annotations arrive in the node projection and render context.
+//
+// Values-schema validation runs hermetically: the chart's values.schema.json
+// (and dependency charts' schemas) are validated by the render core's
+// hermetic validator, whose chart-local references resolve from the projected
+// chart files and whose remote http/https references resolve through the
+// host's pinned external-input channel. The SDK's own live-fetching validator
+// never runs in the guest. Validation only gates — it never alters values —
+// so rendered bytes stay byte-identical with the in-tree engine.
 func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
 	if in.SourceProjection == nil {
 		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source projection")
@@ -95,7 +121,8 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 		YAMLIndent:  0,
 	}
 
-	rendered, err := helm.RenderLoadedChart(context.Background(), ch, values, nodeCtx)
+	rendered, err := helm.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
+		helm.NewHermeticValuesValidator(aggrega.FetchExternalInput))
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}

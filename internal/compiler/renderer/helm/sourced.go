@@ -84,5 +84,7 @@ func renderSourced(
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartRoot}, fmt.Sprintf("helm: node %q: load chart %q", nodeCtx.NodeID, chartRoot))
 	}
 
-	return RenderLoadedChart(ctx, ch, values, nodeCtx)
+	// nil validator: the host engine keeps the SDK's own values-schema
+	// validation, including its live resolution of remote schema references.
+	return RenderLoadedChart(ctx, ch, values, nodeCtx, nil)
 }

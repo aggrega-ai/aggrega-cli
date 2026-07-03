@@ -130,16 +130,18 @@ func keySet(m map[string][]byte) []string {
 	return out
 }
 
-// invokeGuest loads the guest through the production wasm loader (AOT-purity
+// loadGuest loads the guest through the production wasm loader (AOT-purity
 // import firewall ON, deterministic capability-denied ModuleConfig, synthetic
-// argv from the loader) and calls render_node. It does NOT mount any host
-// directory: the chart travels in the payload. If the guest imported a
-// filesystem WASI capability, Loader.Load would reject it at the firewall and
-// this call would fail with the offending import named — that rejection is a
-// real failure of the proof, never something to route around with a mount.
-func invokeGuest(t *testing.T, ctx context.Context, wasmPath string, payload []byte) []byte {
+// argv from the loader), carrying inputs as the external-input service — nil
+// means no service, so any guest fetch receives the in-band not-available
+// envelope. It does NOT mount any host directory: the chart travels in the
+// payload. If the guest imported a filesystem WASI capability, Loader.Load
+// would reject it at the firewall and this call would fail with the offending
+// import named — that rejection is a real failure of the proof, never
+// something to route around with a mount.
+func loadGuest(t *testing.T, ctx context.Context, wasmPath string, inputs wasm.FetchService) *wasm.Plugin {
 	t.Helper()
-	loader := &wasm.Loader{}
+	loader := &wasm.Loader{ExternalInputs: inputs}
 	plugin, err := loader.Load(ctx, wasm.PluginSpec{
 		Name:       "helm",
 		PluginType: wasm.PluginTypeProvider,
@@ -152,8 +154,15 @@ func invokeGuest(t *testing.T, ctx context.Context, wasmPath string, payload []b
 	if err != nil {
 		t.Fatalf("production loader rejected the guest (firewall): %v", err)
 	}
-	defer plugin.Close(ctx)
+	t.Cleanup(func() { _ = plugin.Close(ctx) })
+	return plugin
+}
 
+// invokeGuest loads the guest with no external-input service and calls
+// render_node, failing the test on any call error.
+func invokeGuest(t *testing.T, ctx context.Context, wasmPath string, payload []byte) []byte {
+	t.Helper()
+	plugin := loadGuest(t, ctx, wasmPath, nil)
 	out, err := plugin.Call(ctx, "render_node", payload)
 	if err != nil {
 		t.Fatalf("guest render_node call: %v", err)

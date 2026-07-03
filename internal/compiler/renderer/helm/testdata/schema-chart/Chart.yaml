@@ -1,0 +1,4 @@
+apiVersion: v2
+name: schema
+version: 0.1.0
+description: Schema-bearing chart fixture for helm values-schema validation tests.
