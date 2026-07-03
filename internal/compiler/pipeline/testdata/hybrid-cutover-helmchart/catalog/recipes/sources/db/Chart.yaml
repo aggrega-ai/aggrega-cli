@@ -1,0 +1,4 @@
+apiVersion: v2
+name: db-app
+version: 16.0.0
+description: cutover fixture sourced chart for core/db.

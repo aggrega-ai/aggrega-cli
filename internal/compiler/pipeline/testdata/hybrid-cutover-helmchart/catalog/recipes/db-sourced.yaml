@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-sourced
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/db
+  source: ./sources/db
+  provides:
+    host: "{{ .context.instance_id }}.db"
+    service_port: "{{ optional .infra `port` 5432 }}"
+  valuesMapping: |
+    {
+      "image": "postgres:16",
+      "port": {{ optional .infra `port` 5432 }}
+    }

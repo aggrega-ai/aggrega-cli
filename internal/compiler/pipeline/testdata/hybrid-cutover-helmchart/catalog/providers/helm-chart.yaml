@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm-chart
+  version: "1.0.0"
+spec:
+  # Bind the helm-chart provider to its Wasm rendering engine so the hybrid
+  # dispatch routes this provider through the wasmengine assembler adapter.
+  # plugin names the Plugin entity below as a bare catalog identity.
+  plugin: helm-chart-renderer:1.0.0
+  # workloadSchema: intentionally ABSENT. The helm-chart provider produces an
+  # umbrella chart from sourced sub-charts; it does not synthesise from a
+  # Workload.

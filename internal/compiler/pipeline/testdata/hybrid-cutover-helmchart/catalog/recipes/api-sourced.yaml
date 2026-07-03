@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-sourced
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/api
+  source: ./sources/api
+  provides:
+    host: "{{ .context.instance_id }}.api"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  valuesMapping: |
+    {
+      "image": "api:2.0",
+      "port": {{ optional .infra `port` 8080 }}
+    }

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: web-sourced
+  version: "1.0.0"
+spec:
+  provider: helm-chart
+  implements: core/web
+  source: ./sources/web
+  provides:
+    host: "{{ .context.instance_id }}.web"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  valuesMapping: |
+    {
+      "image": "web:1.2.3",
+      "port": {{ optional .infra `port` 8080 }}
+    }

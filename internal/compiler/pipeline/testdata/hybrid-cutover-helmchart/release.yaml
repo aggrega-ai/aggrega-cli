@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: hybrid-cutover-helmchart-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        web:
+          infra:
+            port: 8081
+        api:
+          infra:
+            port: 8082
+        db:
+          infra:
+            port: 5433

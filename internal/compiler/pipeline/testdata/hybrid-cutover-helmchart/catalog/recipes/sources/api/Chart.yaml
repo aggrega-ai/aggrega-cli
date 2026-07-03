@@ -1,0 +1,4 @@
+apiVersion: v2
+name: api-app
+version: 2.0.0
+description: cutover fixture sourced chart for core/api.

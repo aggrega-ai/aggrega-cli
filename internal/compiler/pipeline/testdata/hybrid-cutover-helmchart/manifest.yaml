@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: hybrid-cutover-helmchart-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/web: web-sourced:1.0.0
+        core/api: api-sourced:1.0.0
+        core/db: db-sourced:1.0.0
