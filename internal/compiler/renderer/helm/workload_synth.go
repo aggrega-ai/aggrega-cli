@@ -37,17 +37,21 @@ func (e *HelmEngine) SynthesizeWorkload(
 	if w == nil {
 		return nil, nil
 	}
-	return SynthesizeWorkloadCore(w, secretProvidesFromContext(tmplCtx), nodeCtx)
+	return SynthesizeWorkloadCore(w, SecretProvidesFromContext(tmplCtx), nodeCtx)
 }
 
-// secretProvidesFromContext projects each secret slot's resolved provides into
+// SecretProvidesFromContext projects each secret slot's resolved provides into
 // a slot→provides lookup the synthesizer reads to resolve a workload secret
 // reference to the generated Secret's identity. A workload secrets entry's
 // `from` is the slot; the generated Secret's identity (name, key) comes from the
 // slot's provides — resolved by the orchestrator before Phase B and exposed on
 // the template context. The orchestrator populates the per-slot provides before
 // Phase B; a nil context yields an empty lookup.
-func secretProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
+//
+// Exported so a host-side renderer engine that projects a workload onto the
+// provider render wire builds the per-slot secret map from the same source of
+// truth this in-tree synthesizer reads, rather than re-deriving it.
+func SecretProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
 	out := map[string]types.OrderedMap[string]{}
 	if tmplCtx == nil {
 		return out
