@@ -48,6 +48,13 @@ const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:64292
 // lockfile pin.
 const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:e666128813bd1a71d3920a356f0688dd5eb38831f5ebde766d4055506ff8abb4"
 
+// helmChartProviderURI is the canonical content-addressed URI the helm-chart
+// provider rendering plugin's decompressed bytes register under. Like the other
+// provider URIs, the sha256 digest pins the exact bytes committed (compressed)
+// under plugins/, so a resolution of this URI through the embed tier verifies
+// byte-for-byte against a lockfile pin.
+const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:d5818048458e180de742867fcb2a1007c09fc1ff1f09d4ee263d34dafef89add"
+
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from
 // pluginFS at init by register.
@@ -64,8 +71,9 @@ var registry = map[string][]byte{}
 // runtime branch for a missing or corrupt embedded file.
 func register() map[string][]byte {
 	return map[string][]byte{
-		helmProviderURI:    mustDecompress("plugins/helm-provider.wasm.gz"),
-		composeProviderURI: mustDecompress("plugins/compose-provider.wasm.gz"),
+		helmProviderURI:      mustDecompress("plugins/helm-provider.wasm.gz"),
+		composeProviderURI:   mustDecompress("plugins/compose-provider.wasm.gz"),
+		helmChartProviderURI: mustDecompress("plugins/helmchart-provider.wasm.gz"),
 	}
 }
 
