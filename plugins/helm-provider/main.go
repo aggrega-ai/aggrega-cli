@@ -99,11 +99,13 @@ func errorChainMessage(err error) string {
 // nodeCtxFromInput builds the full render context for a node from the wire
 // input: the node's identity and the provenance the render core stamps onto
 // every emitted manifest (boundary path, deployment wave, Recipe identity,
-// component-id override, and build identity) from the node projection, and the
-// merged annotations from the render context. Carrying the full provenance here
-// is what makes the guest's rendered manifests carry the same aggrega.ai labels
-// and annotations the in-tree engine emits, so the two produce byte-identical
-// output for identical input.
+// component-id override, and build identity) from the node projection, the
+// merged annotations from the render context, and the render-wide YAML
+// indentation width the guest serializes output at (carried on the render
+// context; the render core clamps its zero value to the default width).
+// Carrying the full provenance here is what makes the guest's rendered
+// manifests carry the same aggrega.ai labels and annotations the in-tree engine
+// emits, so the two produce byte-identical output for identical input.
 func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 	return renderer.NodeRenderContext{
 		NodeID:           in.Node.ID,
@@ -118,7 +120,7 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 			AggregateName:   in.Node.Provenance.AggregateName,
 			Environment:     in.Node.Provenance.Environment,
 		},
-		YAMLIndent: 0,
+		YAMLIndent: in.Context.YAMLIndent,
 	}
 }
 

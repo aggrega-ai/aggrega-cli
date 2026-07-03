@@ -31,11 +31,13 @@ import (
 //     order, byte-for-byte to the in-tree engine's EmittedFiles.
 //
 // The oracle is the in-tree HelmEngine.SynthesizeWorkload, fed the NATURAL
-// in-memory Workload (never JSON-round-tripped), real provenance, and YAMLIndent
-// 0. The candidate is the guest driven through render_node via the production
-// loader, receiving the same Workload marshalled onto the wire and the same
-// provenance on the node projection, so the synthesized manifests carry real
-// provenance labels and annotations on both sides.
+// in-memory Workload (never JSON-round-tripped), real provenance, and the
+// case's indentation width. The candidate is the guest driven through
+// render_node via the production loader, receiving the same Workload marshalled
+// onto the wire, the same provenance on the node projection, and the same
+// indent on the render context, so the synthesized manifests carry real
+// provenance labels and annotations on both sides and serialize at the same
+// width.
 //
 // Fixtures deliberately carry no numeric values inside the opaque
 // any / map[string]any / []any pass-through fields (Scheduling.Affinity,
@@ -57,47 +59,93 @@ func TestHelmProviderSynthABByteIdentity(t *testing.T) {
 		{"statefulset-headless", "postgres", buildStatefulSetCase},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			w, secretProvides, tmplCtx := tc.build()
-
-			// ORACLE — the in-tree engine, fed the natural Workload and real
-			// provenance so the A/B exercises the provenance labels and
-			// annotations the synthesis path stamps onto every manifest.
-			oracleCtx := renderer.NodeRenderContext{NodeID: tc.nodeID}
-			stampOracleProvenance(&oracleCtx)
-			oracle, err := (&helm.HelmEngine{}).SynthesizeWorkload(ctx, tmplCtx, w, oracleCtx)
-			if err != nil {
-				t.Fatalf("oracle SynthesizeWorkload: %v", err)
-			}
-
-			// CANDIDATE — the Wasm guest through the production loader. The
-			// workload and its per-slot secret provides arrive in the payload's
-			// WorkloadProjection; the node projection carries the same provenance,
-			// so the guest rebuilds an identical render context and synthesizes in
-			// memory.
-			node := renderer.IRNodeProjection{ID: tc.nodeID}
-			stampCandidateProvenance(&node)
-			input := renderer.RenderNodeInput{
-				Node:               node,
-				Context:            renderctx.RenderContext{},
-				WorkloadProjection: &renderer.WorkloadProjection{Workload: *w, Secrets: secretProvides},
-			}
-			payload, err := input.MarshalJSON()
-			if err != nil {
-				t.Fatalf("marshal input: %v", err)
-			}
-
-			rawOut := invokeGuest(t, ctx, wasmPath, payload)
-
-			var out renderer.RenderNodeOutput
-			if err := out.UnmarshalJSON(rawOut); err != nil {
-				t.Fatalf("decode RenderNodeOutput: %v (raw: %s)", err, rawOut)
-			}
-
-			assertSynthByteIdentical(t, oracle, out.Files)
-		})
+	// The indentation width flows identically to both sides — the oracle's
+	// NodeRenderContext.YAMLIndent and the wire's RenderContext.YAMLIndent —
+	// down into the synth marshal (marshalDeterministic), so the guest
+	// serializes at the indent carried on the render wire rather than a
+	// hardcoded width. The default case (indent 0 → both clamp to 2) covers the
+	// absent-indent path; the non-default case (indent 4) marshals the nested
+	// spec blocks visibly wider, so a byte-identical match there proves the
+	// carriage, and the cross-indent guard below proves the indent is observable.
+	indents := []struct {
+		name   string
+		indent int
+	}{
+		{"default-indent", 0},
+		{"indent-4", 4},
 	}
+
+	captured := make(map[string][]renderer.EmittedFile)
+	for _, ind := range indents {
+		for _, tc := range cases {
+			t.Run(ind.name+"/"+tc.name, func(t *testing.T) {
+				w, secretProvides, tmplCtx := tc.build()
+
+				// ORACLE — the in-tree engine, fed the natural Workload, real
+				// provenance so the A/B exercises the provenance labels and
+				// annotations the synthesis path stamps onto every manifest, and
+				// the case's indent so the marshal serializes at that width.
+				oracleCtx := renderer.NodeRenderContext{NodeID: tc.nodeID, YAMLIndent: ind.indent}
+				stampOracleProvenance(&oracleCtx)
+				oracle, err := (&helm.HelmEngine{}).SynthesizeWorkload(ctx, tmplCtx, w, oracleCtx)
+				if err != nil {
+					t.Fatalf("oracle SynthesizeWorkload: %v", err)
+				}
+
+				// CANDIDATE — the Wasm guest through the production loader. The
+				// workload and its per-slot secret provides arrive in the
+				// payload's WorkloadProjection; the node projection carries the
+				// same provenance and the render context the same indent, so the
+				// guest rebuilds an identical render context and synthesizes in
+				// memory.
+				node := renderer.IRNodeProjection{ID: tc.nodeID}
+				stampCandidateProvenance(&node)
+				input := renderer.RenderNodeInput{
+					Node:               node,
+					Context:            renderctx.RenderContext{YAMLIndent: ind.indent},
+					WorkloadProjection: &renderer.WorkloadProjection{Workload: *w, Secrets: secretProvides},
+				}
+				payload, err := input.MarshalJSON()
+				if err != nil {
+					t.Fatalf("marshal input: %v", err)
+				}
+
+				rawOut := invokeGuest(t, ctx, wasmPath, payload)
+
+				var out renderer.RenderNodeOutput
+				if err := out.UnmarshalJSON(rawOut); err != nil {
+					t.Fatalf("decode RenderNodeOutput: %v (raw: %s)", err, rawOut)
+				}
+
+				assertSynthByteIdentical(t, oracle, out.Files)
+				captured[ind.name+"/"+tc.name] = oracle
+			})
+		}
+	}
+
+	// The indent must be observable, or a byte-identical match at every case
+	// proves nothing about the carriage. The deployment case marshals nested
+	// spec blocks, so indent 4 must differ from the default width.
+	const probe = "deployment-with-secrets-and-service"
+	if def, ok := captured["default-indent/"+probe]; ok {
+		if wide, ok := captured["indent-4/"+probe]; ok && emittedFilesEqual(def, wide) {
+			t.Fatal("indent 4 produced byte-identical output to the default indent; the indent carriage is not observable, so the A/B is a no-op")
+		}
+	}
+}
+
+// emittedFilesEqual reports whether two emitted-file lists line up
+// index-for-index with equal name and byte-identical body.
+func emittedFilesEqual(a, b []renderer.EmittedFile) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || string(a[i].Body) != string(b[i].Body) {
+			return false
+		}
+	}
+	return true
 }
 
 // assertSynthByteIdentical compares the oracle's EmittedFiles to the guest's

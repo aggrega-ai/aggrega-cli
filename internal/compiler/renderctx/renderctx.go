@@ -7,24 +7,28 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 // RenderContext is the render-time context a Provider guest receives:
 // the fulfilled parameters, the three annotation buckets
-// ([RenderAnnotations]), and the [BoundaryContext] the node renders
-// within.
+// ([RenderAnnotations]), the [BoundaryContext] the node renders within,
+// and the render-wide indentation width the guest applies when
+// serializing its output.
 //
 // RenderContext is the guest-facing wire projection of render-time
 // context and is deliberately distinct from the package's host-internal
 // NodeRenderContext: NodeRenderContext carries Go-side fields — resolved
-// source paths, provenance, indentation width — that exist to drive
-// in-process rendering and are not part of the guest ABI. The two types
-// serve different boundaries (one is the host's internal render
-// argument, the other the cross-boundary wire shape) and are not
-// interchangeable; do not unify them.
+// source paths, provenance — that exist to drive in-process rendering
+// and are not part of the guest ABI. The two types serve different
+// boundaries (one is the host's internal render argument, the other the
+// cross-boundary wire shape) and are not interchangeable; do not unify
+// them.
 //
 // Parameters preserves author order via types.OrderedMap so the wire
-// payload stays deterministic.
+// payload stays deterministic. YAMLIndent is the render-wide indentation
+// width the guest serializes output at; the zero value means "absent" and
+// the guest falls back to its clamp default.
 type RenderContext struct {
 	Parameters  types.OrderedMap[any] `json:"parameters,omitempty,omitzero"`
 	Annotations RenderAnnotations     `json:"annotations"`
 	Boundary    BoundaryContext       `json:"boundary"`
+	YAMLIndent  int                   `json:"yaml_indent,omitempty"`
 }
 
 // RenderAnnotations carries the three annotation buckets a guest reads —

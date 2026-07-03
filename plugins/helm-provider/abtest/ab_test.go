@@ -65,53 +65,88 @@ func TestHelmProviderABByteIdentity(t *testing.T) {
 	valuesOrdered := valuesFromJSON(t, `{"image":"api:2.0.0","replicas":5}`)
 	values := orderedToPlain(&valuesOrdered)
 
-	// ORACLE — the in-tree Go helm engine, fed real provenance so the A/B
-	// exercises the provenance labels and annotations the render path stamps
-	// onto every manifest, not just the bare render.
-	oracleCtx := renderer.NodeRenderContext{NodeID: nodeID, Source: hostChartDir}
-	stampOracleProvenance(&oracleCtx)
-	oracle, err := (&helm.HelmEngine{}).Render(ctx, values, oracleCtx)
-	if err != nil {
-		t.Fatalf("oracle Render: %v", err)
+	// The indentation width flows identically to both sides — the oracle's
+	// NodeRenderContext.YAMLIndent and the wire's RenderContext.YAMLIndent — so
+	// the guest applies the indent carried on the render wire rather than a
+	// hardcoded width. The default case (indent 0 → both clamp to 2) covers the
+	// absent-indent path; the non-default case (indent 4) re-marshals the
+	// injected label/annotation blocks visibly wider, so a byte-identical match
+	// there proves the carriage, and the cross-case guard below proves the
+	// indent is observable (indent 4 differs from the default) rather than a
+	// no-op.
+	cases := []struct {
+		name   string
+		indent int
+	}{
+		{"default-indent", 0},
+		{"indent-4", 4},
 	}
 
-	// CANDIDATE — the Wasm guest through the production loader. The chart
-	// arrives in the payload's SourceProjection (projected host-side at compile
-	// time), NOT via a filesystem mount. The guest reads NodeID, values, and the
-	// same provenance from the node projection and rebuilds an identical render
-	// context; the chart's files arrive in the source projection.
-	proj, err := helm.ProjectChartSource(hostChartDir)
-	if err != nil {
-		t.Fatalf("ProjectChartSource: %v", err)
-	}
-	node := renderer.IRNodeProjection{ID: nodeID, Values: valuesOrdered}
-	stampCandidateProvenance(&node)
-	input := renderer.RenderNodeInput{
-		Node:             node,
-		Context:          renderctx.RenderContext{},
-		SourceProjection: proj,
-	}
-	payload, err := input.MarshalJSON()
-	if err != nil {
-		t.Fatalf("marshal input: %v", err)
+	captured := make(map[string]map[string][]byte, len(cases))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// ORACLE — the in-tree Go helm engine, fed real provenance so the
+			// A/B exercises the provenance labels and annotations the render
+			// path stamps onto every manifest, and the case's indent so the
+			// output serializes at that width.
+			oracleCtx := renderer.NodeRenderContext{NodeID: nodeID, Source: hostChartDir, YAMLIndent: tc.indent}
+			stampOracleProvenance(&oracleCtx)
+			oracle, err := (&helm.HelmEngine{}).Render(ctx, values, oracleCtx)
+			if err != nil {
+				t.Fatalf("oracle Render: %v", err)
+			}
+
+			// CANDIDATE — the Wasm guest through the production loader. The chart
+			// arrives in the payload's SourceProjection (projected host-side at
+			// compile time), NOT via a filesystem mount. The guest reads NodeID,
+			// values, the same provenance, and the same indent from the render
+			// context, and rebuilds an identical render context; the chart's
+			// files arrive in the source projection.
+			proj, err := helm.ProjectChartSource(hostChartDir)
+			if err != nil {
+				t.Fatalf("ProjectChartSource: %v", err)
+			}
+			node := renderer.IRNodeProjection{ID: nodeID, Values: valuesOrdered}
+			stampCandidateProvenance(&node)
+			input := renderer.RenderNodeInput{
+				Node:             node,
+				Context:          renderctx.RenderContext{YAMLIndent: tc.indent},
+				SourceProjection: proj,
+			}
+			payload, err := input.MarshalJSON()
+			if err != nil {
+				t.Fatalf("marshal input: %v", err)
+			}
+
+			rawOut := invokeGuest(t, ctx, wasmPath, payload)
+
+			var out renderer.RenderNodeOutput
+			if err := out.UnmarshalJSON(rawOut); err != nil {
+				t.Fatalf("decode RenderNodeOutput: %v (raw: %s)", err, rawOut)
+			}
+
+			// The host runs no serializer: it writes each file's bytes verbatim,
+			// so collecting is a path-to-bytes map (the production host
+			// collector's behaviour), with a dup-path guard the guest is trusted
+			// not to trip here.
+			candidate := make(map[string][]byte, len(out.Files))
+			for _, f := range out.Files {
+				candidate[f.Path] = f.Content
+			}
+
+			assertByteIdentical(t, oracle, candidate)
+			captured[tc.name] = candidate
+		})
 	}
 
-	rawOut := invokeGuest(t, ctx, wasmPath, payload)
-
-	var out renderer.RenderNodeOutput
-	if err := out.UnmarshalJSON(rawOut); err != nil {
-		t.Fatalf("decode RenderNodeOutput: %v (raw: %s)", err, rawOut)
+	// The indent must be observable, or a byte-identical match at every case
+	// proves nothing about the carriage. Indent 4 re-marshals the injected
+	// blocks wider than the default, so its bytes must differ.
+	if def, ok := captured["default-indent"]; ok {
+		if wide, ok := captured["indent-4"]; ok && byteMapsEqual(def, wide) {
+			t.Fatal("indent 4 produced byte-identical output to the default indent; the indent carriage is not observable, so the A/B is a no-op")
+		}
 	}
-
-	// The host runs no serializer: it writes each file's bytes verbatim, so
-	// collecting is a path-to-bytes map (the production host collector's
-	// behaviour), with a dup-path guard the guest is trusted not to trip here.
-	candidate := make(map[string][]byte, len(out.Files))
-	for _, f := range out.Files {
-		candidate[f.Path] = f.Content
-	}
-
-	assertByteIdentical(t, oracle, candidate)
 }
 
 // abProv is the single source of the concrete provenance every A/B feeds
@@ -184,6 +219,21 @@ func assertByteIdentical(t *testing.T, oracle, candidate map[string][]byte) {
 			t.Logf("BYTE-IDENTICAL %q (%d bytes)", k, len(want))
 		}
 	}
+}
+
+// byteMapsEqual reports whether two path-to-bytes maps carry the same key set
+// and byte-identical content for every key.
+func byteMapsEqual(a, b map[string][]byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, va := range a {
+		vb, ok := b[k]
+		if !ok || string(va) != string(vb) {
+			return false
+		}
+	}
+	return true
 }
 
 func keySet(m map[string][]byte) []string {
