@@ -39,7 +39,7 @@ var pluginFS embed.FS
 // reference a Plugin entity's spec.plugin names; the sha256 digest pins the
 // exact bytes committed (compressed) under plugins/, so a resolution of this
 // URI through the embed tier verifies byte-for-byte against a lockfile pin.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:b493d69687cc3132593eb63b26ca3af88b3b0be30a576896d84216c5c7ff01e9"
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:642928733b166393716f82b60dcd1b5d0ef967e5e23b7d079e81e8bf363c56fd"
 
 // composeProviderURI is the canonical content-addressed URI the compose provider
 // rendering plugin's decompressed bytes register under. Like helmProviderURI, the

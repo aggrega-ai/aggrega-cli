@@ -152,7 +152,7 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 		return renderer.RenderNodeOutput{}, err
 	}
 
-	values := orderedMapToPlain(&in.Node.Values)
+	values := renderer.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
 	rendered, err := helm.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
@@ -193,40 +193,6 @@ func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutpu
 		out.Files = append(out.Files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
 	}
 	return out, nil
-}
-
-// orderedMapToPlain flattens the node's ordered values into the plain
-// map[string]any the helm engine's coalesce step consumes. Nested ordered
-// maps decode into *OrderedMap[any]; they are flattened recursively so the
-// Helm template engine sees plain Go maps rather than the wire container.
-// The values feed the template engine by key, so the author-order the wire
-// payload preserves is not load-bearing here.
-func orderedMapToPlain(m *types.OrderedMap[any]) map[string]any {
-	out := make(map[string]any, m.Len())
-	for _, k := range m.Keys() {
-		v, _ := m.Get(k)
-		out[k] = plainValue(v)
-	}
-	return out
-}
-
-// plainValue recursively converts a decoded wire value into plain Go
-// containers: nested ordered maps become map[string]any and slices are
-// walked element-wise. Scalars pass through unchanged.
-func plainValue(v any) any {
-	switch t := v.(type) {
-	case *types.OrderedMap[any]:
-		return orderedMapToPlain(t)
-	case types.OrderedMap[any]:
-		return orderedMapToPlain(&t)
-	case []any:
-		for i := range t {
-			t[i] = plainValue(t[i])
-		}
-		return t
-	default:
-		return v
-	}
 }
 
 // mergeAnnotations flattens the three render-context annotation buckets
