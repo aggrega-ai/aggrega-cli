@@ -34,14 +34,11 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
-	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	pdk "github.com/extism/go-pdk"
 )
 
@@ -131,7 +128,7 @@ func assembleBoundaryFromInput(in renderer.AssembleBoundaryInput) (renderer.Asse
 		subs = append(subs, helmchart.CoreSubChart{
 			InstanceID: sc.InstanceID,
 			Version:    sc.Version,
-			Values:     orderedMapToPlain(&sc.Values),
+			Values:     renderer.OrderedMapToPlain(&sc.Values),
 			ChartYAML:  sc.ChartYaml,
 		})
 	}
@@ -163,56 +160,6 @@ func errorChainMessage(err error) string {
 		}
 	}
 	return msg
-}
-
-// orderedMapToPlain flattens a sub-chart's ordered values into the plain
-// map[string]any the umbrella assemble core consumes. Nested ordered maps decode
-// into *OrderedMap[any]; they are flattened recursively so the core sees plain Go
-// maps rather than the wire container. The core scopes the values under the
-// sub-chart's alias by key, so the author order the wire preserves is not
-// load-bearing here.
-func orderedMapToPlain(m *types.OrderedMap[any]) map[string]any {
-	out := make(map[string]any, m.Len())
-	for _, k := range m.Keys() {
-		v, _ := m.Get(k)
-		out[k] = plainValue(v)
-	}
-	return out
-}
-
-// plainValue recursively converts a decoded wire value into plain Go containers:
-// nested ordered maps become map[string]any and slices are walked element-wise.
-// A json.Number is renormalized to the Go numeric type a YAML scalar parse would
-// yield; other scalars pass through unchanged.
-func plainValue(v any) any {
-	switch t := v.(type) {
-	case *types.OrderedMap[any]:
-		return orderedMapToPlain(t)
-	case types.OrderedMap[any]:
-		return orderedMapToPlain(&t)
-	case []any:
-		for i := range t {
-			t[i] = plainValue(t[i])
-		}
-		return t
-	case json.Number:
-		// The wire codec decodes JSON numerics to json.Number (high-precision
-		// integer preservation via UseNumber). go-yaml serializes a json.Number —
-		// a string-kind type — as a quoted scalar, which would diverge from the
-		// in-tree engine, whose values carry the Go numeric types a YAML scalar
-		// parse yields. Renormalize to those same types so the assembled
-		// values.yaml is byte-identical: an integral value to int64, a fractional
-		// value to float64, and anything neither leaves the number untouched.
-		if i, err := strconv.ParseInt(string(t), 10, 64); err == nil {
-			return i
-		}
-		if f, err := strconv.ParseFloat(string(t), 64); err == nil {
-			return f
-		}
-		return t
-	default:
-		return v
-	}
 }
 
 // sortedKeys returns the map's keys in lexical order so file emission is

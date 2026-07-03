@@ -46,7 +46,7 @@ const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:b493d
 // sha256 digest pins the exact bytes committed (compressed) under plugins/, so a
 // resolution of this URI through the embed tier verifies byte-for-byte against a
 // lockfile pin.
-const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:aa18d8c49ef99b3cccfda7a30d097fcc5bb75f18b2255e94fd1fdd996f0e9cea"
+const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:e666128813bd1a71d3920a356f0688dd5eb38831f5ebde766d4055506ff8abb4"
 
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from

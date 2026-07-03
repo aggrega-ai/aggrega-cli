@@ -180,7 +180,7 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 	}
 	base := in.SourceProjection.Files[0]
 
-	values := orderedMapToPlain(&in.Node.Values)
+	values := renderer.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
 	rendered, err := compose.RenderSourcedCore(base.Content, base.Path, values, nodeCtx)
@@ -224,12 +224,12 @@ func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutpu
 	return out, nil
 }
 
-// The guest glue below (nodeCtxFromInput, orderedMapToPlain, plainValue,
+// The guest glue below (nodeCtxFromInput, orderedStringMapToPlain,
 // mergeAnnotations, sortedKeys) is byte-identical-critical: it reconstructs the
-// render context the render cores stamp from off the wire. It duplicates the
-// helm guest's equivalent helpers verbatim; each guest's own A/B proves its
-// copy. A shared tag-free guest-glue helper package is a future consolidation —
-// deferred for now because extracting it would force a rebuild of every guest.
+// render context the render cores stamp from off the wire. The value-flattening
+// that renormalizes wire numerics is single-sourced in the renderer package
+// (renderer.OrderedMapToPlain / renderer.PlainValue), which compiles for both
+// the host and the wasip1 guest.
 
 // nodeCtxFromInput builds the full render context for a node from the wire
 // input: the node's identity and the provenance the render core stamps onto
@@ -256,39 +256,6 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 			Environment:     in.Node.Provenance.Environment,
 		},
 		YAMLIndent: in.Context.YAMLIndent,
-	}
-}
-
-// orderedMapToPlain flattens the node's ordered values into the plain
-// map[string]any the compose deep-merge consumes. Nested ordered maps decode
-// into *OrderedMap[any]; they are flattened recursively so the merge sees plain
-// Go maps rather than the wire container. The values feed the overlay merge by
-// key, so the author-order the wire payload preserves is not load-bearing here.
-func orderedMapToPlain(m *types.OrderedMap[any]) map[string]any {
-	out := make(map[string]any, m.Len())
-	for _, k := range m.Keys() {
-		v, _ := m.Get(k)
-		out[k] = plainValue(v)
-	}
-	return out
-}
-
-// plainValue recursively converts a decoded wire value into plain Go
-// containers: nested ordered maps become map[string]any and slices are
-// walked element-wise. Scalars pass through unchanged.
-func plainValue(v any) any {
-	switch t := v.(type) {
-	case *types.OrderedMap[any]:
-		return orderedMapToPlain(t)
-	case types.OrderedMap[any]:
-		return orderedMapToPlain(&t)
-	case []any:
-		for i := range t {
-			t[i] = plainValue(t[i])
-		}
-		return t
-	default:
-		return v
 	}
 }
 
