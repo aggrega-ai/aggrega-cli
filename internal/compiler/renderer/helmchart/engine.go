@@ -109,5 +109,5 @@ func (e *HelmEngine) Render(_ context.Context, _ map[string]any, nodeCtx rendere
 	if err != nil {
 		return nil, err
 	}
-	return renderSourcedChartCore(proj), nil
+	return RenderSourcedChartCore(proj), nil
 }

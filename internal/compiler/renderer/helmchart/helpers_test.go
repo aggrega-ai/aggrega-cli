@@ -197,7 +197,7 @@ func TestProjectSourcedChart_NestedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project: %v", err)
 	}
-	files := renderSourcedChartCore(proj)
+	files := RenderSourcedChartCore(proj)
 	if _, has := files["templates/deep/nested.yaml"]; !has {
 		t.Errorf("nested file missing; got keys=%v", keys(files))
 	}

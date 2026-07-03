@@ -22,7 +22,7 @@ import (
 // slash-separated path (e.g. "Chart.yaml", "templates/deployment.yaml"). A source
 // that fails to stat, is not a directory, or carries no Chart.yaml halts loudly.
 // This is what the host does at compile time; the render core
-// (renderSourcedChartCore) then rebuilds the sub-chart's file map identically
+// (RenderSourcedChartCore) then rebuilds the sub-chart's file map identically
 // whether the chart was projected from a path (host) or from these bytes (guest).
 func ProjectSourcedChart(chartPath string) (*renderer.SourceProjection, error) {
 	info, err := os.Stat(chartPath)
