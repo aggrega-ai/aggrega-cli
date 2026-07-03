@@ -50,6 +50,7 @@ type Engine struct {
 var (
 	_ renderer.Engine              = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer = (*Engine)(nil)
+	_ renderer.Unwrapper           = (*Engine)(nil)
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
@@ -68,6 +69,16 @@ func New(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.Engine, l
 // Capabilities reports the input-kind capabilities configured at construction.
 func (e *Engine) Capabilities() renderer.ProviderCapabilities {
 	return e.caps
+}
+
+// Unwrap exposes the wrapped in-tree engine so host-side capability checks the
+// wrapper does not itself implement — codec selection, artifacts handling, and
+// intermediate classification — resolve against it. The wrapper drives the guest
+// for render and synthesis; the host still asserts those host-side capabilities
+// against the engine the wrapper stands in for. AssemblerEngine embeds *Engine
+// and inherits this method, returning the same wrapped engine.
+func (e *Engine) Unwrap() renderer.Engine {
+	return e.goEngine
 }
 
 // Render projects the sourced node into a render_node payload and returns the

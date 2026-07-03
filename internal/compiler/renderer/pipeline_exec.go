@@ -182,7 +182,7 @@ func runNodePipeline(
 func selectCodec(engineFactory EngineFactory, providerName string, yamlIndent int) frp.Codec {
 	if providerName != "" && engineFactory != nil {
 		if engine, err := engineFactory(providerName); err == nil {
-			if cp, ok := engine.(CodecProvider); ok {
+			if cp, ok := hostEngine(engine).(CodecProvider); ok {
 				return cp.Codec(yamlIndent)
 			}
 		}

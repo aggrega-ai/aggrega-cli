@@ -122,9 +122,37 @@ type BoundaryAssembler interface {
 // the wrapped Go engine — so a provider routed to Wasm marks its fragments
 // identically to the in-tree engine it stands in for.
 func RenderIsIntermediate(engine Engine) bool {
-	_, isAssembler := engine.(BoundaryAssembler)
-	_, isExternal := engine.(ExternalArtifactsHandler)
+	_, isAssembler := hostEngine(engine).(BoundaryAssembler)
+	_, isExternal := hostEngine(engine).(ExternalArtifactsHandler)
 	return isAssembler && !isExternal
+}
+
+// Unwrapper is implemented by an engine that wraps another engine — a
+// Wasm-provider wrapper wraps the in-tree Go engine it stands in for. Host-side
+// capability and classification checks unwrap to the wrapped engine before
+// asserting: those checks govern host orchestration (codec selection, artifacts
+// handling, intermediate classification) that stays host-side even when a node's
+// render and assembly route through a Wasm guest, so they must see the
+// capabilities of the engine the wrapper stands in for rather than the wrapper's
+// own, narrower method set.
+type Unwrapper interface {
+	Unwrap() Engine
+}
+
+// hostEngine returns the engine a host-side capability or classification check
+// must assert against: the wrapped engine when engine implements Unwrapper (a
+// Wasm-provider wrapper), else engine unchanged. It is the single home for that
+// unwrap — every host-side capability assert routes through it — so a provider
+// routed to a Wasm guest exposes the same host-side capabilities as the in-tree
+// engine it wraps rather than silently losing them at the wrapper boundary.
+// Functional dispatch the wrapper itself implements (workload synthesis,
+// boundary assembly) is asserted on the wrapper directly and does not route
+// through here.
+func hostEngine(engine Engine) Engine {
+	if u, ok := engine.(Unwrapper); ok {
+		return u.Unwrap()
+	}
+	return engine
 }
 
 // BoundaryInfo carries everything the BoundaryAssembler needs.

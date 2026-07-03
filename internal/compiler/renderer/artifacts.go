@@ -128,7 +128,7 @@ func evaluateArtifacts(
 		return nil, nil
 	}
 
-	if _, external := engine.(ExternalArtifactsHandler); external {
+	if _, external := hostEngine(engine).(ExternalArtifactsHandler); external {
 		// External-handler engines (helm-chart and similar): each
 		// artifact entry must be a file-import (mode 2). Inline
 		// content is forbidden because the engine consumes pre-
@@ -136,11 +136,11 @@ func evaluateArtifacts(
 		// inline-template-string pattern doesn't survive the chart's
 		// own template engine.
 		leftDelim, rightDelim := "{{", "}}"
-		if d, ok := engine.(ArtifactsTemplateDelims); ok {
+		if d, ok := hostEngine(engine).(ArtifactsTemplateDelims); ok {
 			leftDelim, rightDelim = d.ArtifactDelimiters()
 		}
 		pathFn := func(_ NodeRenderContext, basename string) string { return basename }
-		if p, ok := engine.(ArtifactsPathProvider); ok {
+		if p, ok := hostEngine(engine).(ArtifactsPathProvider); ok {
 			pathFn = p.PathForArtifact
 		}
 		var out []EmittedFile
@@ -178,7 +178,7 @@ func evaluateArtifacts(
 	// Intermediate-tagged emitted files are consumed by the orchestrator's
 	// per-(path, provider) grouping in RenderAll — the `if f.Intermediate`
 	// branch routes solely on the flag.
-	_, isAssembler := engine.(BoundaryAssembler)
+	_, isAssembler := hostEngine(engine).(BoundaryAssembler)
 
 	var out []EmittedFile
 
