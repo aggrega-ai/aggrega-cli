@@ -58,6 +58,14 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.
 // per-render boundary is carry-only and not synthesized here. A duplicate output
 // path from the guest is a loud error rather than a silent last-writer-wins
 // overwrite.
+//
+// When the wrapped Go engine projects sub-charts (an umbrella assembler), the
+// adapter populates the wire's sub-chart carriers and umbrella scalars from the
+// engine's host-side projection — including the pristine bytes of each vendored
+// Chart.yaml the engine reads at compile time — so the guest assembles the
+// umbrella from pure data alone. Each sub-chart's values are inserted in sorted
+// key order for the determinism contract. A provider that does not project
+// sub-charts contributes none of these carriers.
 func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
 	nodeIDs := make([]string, 0, len(info.IntermediatesByNode))
 	for id := range info.IntermediatesByNode {
@@ -90,6 +98,31 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 		Context:       renderer.RenderContext{YAMLIndent: info.YAMLIndent},
 		BoundaryPath:  info.BoundaryPath,
 		Edges:         edges,
+	}
+
+	// Populate the umbrella scalars only when the wrapped engine projects
+	// sub-charts (an umbrella assembler). Asking the raw wrapped Go engine "do you
+	// project sub-charts?" — not "are you helm-chart?" — keeps the adapter
+	// provider-agnostic and keeps a flat-assembling provider's wire free of these
+	// carriers. The host performs the pristine Chart.yaml read here so the guest
+	// assembles from pure data alone; the adapter never touches the filesystem.
+	if scp, ok := e.goEngine.(renderer.SubChartProjector); ok {
+		projs, err := scp.ProjectSubCharts(info.SubCharts)
+		if err != nil {
+			return nil, false, err
+		}
+		subCharts := make([]renderer.SubChart, 0, len(projs))
+		for _, p := range projs {
+			subCharts = append(subCharts, renderer.SubChart{
+				InstanceID: p.InstanceID,
+				Version:    p.Version,
+				Values:     valuesToOrdered(p.Values),
+				ChartYaml:  p.ChartYAML,
+			})
+		}
+		input.SubCharts = subCharts
+		input.ChartName = info.ChartName
+		input.AggregateName = info.AggregateName
 	}
 
 	out, err := e.invokeAssemble(ctx, AssembleBoundaryExport, input)

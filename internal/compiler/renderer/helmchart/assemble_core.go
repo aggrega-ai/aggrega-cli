@@ -46,10 +46,12 @@ type CoreSubChart struct {
 	ChartYAML  []byte
 }
 
-// readChartMetaBytes parses a chart's Chart.yaml bytes and returns its `name` and
+// ReadChartMetaBytes parses a chart's Chart.yaml bytes and returns its `name` and
 // `version` fields. label identifies the sub-chart in error strings; it carries
 // no filesystem path so the guardrails read identically on the host and in a
-// provider Wasm guest, whose payload has no host paths.
+// provider Wasm guest, whose payload has no host paths. It is exported so a
+// provider Wasm guest, which lives in a separate package, can drive the same
+// decode-and-guardrail logic the in-tree engine runs.
 //
 // A chart's Chart.yaml is a single YAML document. This decodes the first document,
 // then requires the stream to be exhausted: a single yaml.Unmarshal would silently
@@ -58,7 +60,7 @@ type CoreSubChart struct {
 // Decode) leaves the header zero-valued and falls through to the empty-name halt.
 // An empty name or version halts loudly so a future drift cannot silently drop the
 // dependency's alias binding.
-func readChartMetaBytes(data []byte, label string) (name, version string, err error) {
+func ReadChartMetaBytes(data []byte, label string) (name, version string, err error) {
 	var header struct {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version"`
@@ -80,12 +82,13 @@ func readChartMetaBytes(data []byte, label string) (name, version string, err er
 	return header.Name, header.Version, nil
 }
 
-// assembleUmbrellaCore produces the umbrella Chart.yaml + values.yaml for a
+// AssembleUmbrellaCore produces the umbrella Chart.yaml + values.yaml for a
 // dispatch path from the filesystem-free sub-chart views. It is the umbrella
 // assembly core — it reads no disk and formats no host path — so both the in-tree
 // host engine (through the BuildUmbrella adapter, which reads each sourced
 // sub-chart's Chart.yaml) and a provider Wasm guest call this one
-// byte-identical-critical function.
+// byte-identical-critical function. It is exported so a provider Wasm guest, which
+// lives in a separate package, can drive the same core the in-tree engine runs.
 //
 // chartNameOverride is the cascaded `aggrega.ai/chart-name` value when present;
 // when non-empty it is the chart's name verbatim (the merged-path scenario's name
@@ -100,7 +103,7 @@ func readChartMetaBytes(data []byte, label string) (name, version string, err er
 // Version (or the default). The alias is always the sanitised instance_id so Helm
 // scopes umbrella values under that key and multiple instances of the same source
 // chart do not collide.
-func assembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChart, chartNameOverride string, indent int) (map[string][]byte, error) {
+func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChart, chartNameOverride string, indent int) (map[string][]byte, error) {
 	if boundaryName == "" {
 		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
 	}
@@ -130,7 +133,7 @@ func assembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 			version = defaultChartVersion
 		}
 		if len(sc.ChartYAML) > 0 {
-			metaName, metaVersion, err := readChartMetaBytes(sc.ChartYAML, sc.InstanceID)
+			metaName, metaVersion, err := ReadChartMetaBytes(sc.ChartYAML, sc.InstanceID)
 			if err != nil {
 				return nil, err
 			}

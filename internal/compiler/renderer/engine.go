@@ -218,6 +218,38 @@ type SubChartInfo struct {
 	Source     any            // forwarded recipe.spec.source; nil for generative sub-charts
 }
 
+// SubChartProjection is the filesystem-free view of one sub-chart an
+// umbrella-assembling engine hands to a Wasm guest. It carries the sub-chart's
+// instance identity, the version the umbrella pins, the per-instance values the
+// umbrella scopes under the sub-chart's alias, and — for a sub-chart vendored
+// from a chart source — the pristine bytes of that chart's Chart.yaml, read from
+// the local filesystem at compile time. A generative sub-chart carries no
+// ChartYAML. A guest assembles the umbrella from these views alone and touches no
+// filesystem.
+type SubChartProjection struct {
+	InstanceID string
+	Version    string
+	Values     map[string]any
+	ChartYAML  []byte
+}
+
+// SubChartProjector is the optional interface an umbrella-assembling engine
+// implements to project each sub-chart's identity, per-instance values, and the
+// pristine bytes of its vendored Chart.yaml — read from the local filesystem at
+// compile time — into filesystem-free SubChartProjections, so a Wasm guest
+// assembles the umbrella from pure data and touches no filesystem.
+//
+// The wasmengine adapter type-asserts the wrapped Go engine to this interface
+// before populating the assemble wire's sub-chart carriers: an engine that does
+// not implement it contributes no sub-chart projection, so the adapter stays
+// provider-agnostic (it asks "do you project sub-charts?", not "are you
+// helm-chart?") and a flat-assembling provider's wire carries no umbrella
+// scalars. The host performs the pristine read; the adapter never touches the
+// filesystem itself.
+type SubChartProjector interface {
+	ProjectSubCharts(subCharts []SubChartInfo) ([]SubChartProjection, error)
+}
+
 // NodeRenderContext provides identity metadata for manifest generation.
 type NodeRenderContext struct {
 	NodeID          string

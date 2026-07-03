@@ -137,6 +137,12 @@ type AssembleBoundaryInput struct {
 	BoundaryPath string `json:"boundary_path" yaml:"boundary_path"`
 	// Edges The graph's directed uses edges, so a boundary assembler can infer per-service ordering/dependencies across the dispatch group's contributors (e.g. compose depends_on).
 	Edges []RenderEdge `json:"edges,omitempty" yaml:"edges,omitempty"`
+	// SubCharts The per-sub-chart payload an umbrella-chart assembler consumes to emit one dependency and one values scope per contributor. Each entry carries the sub-chart's identity, per-instance values, and, for a sub-chart vendored from a chart source, the pristine bytes of that chart's Chart.yaml file. Present for umbrella-chart assembly; a flat-merging assembler omits it.
+	SubCharts []SubChart `json:"sub_charts,omitempty" yaml:"sub_charts,omitempty"`
+	// ChartName The chart name an umbrella-chart assembler uses for the assembled chart when a name is supplied for the dispatch group; empty when the assembler derives the name from the dispatch-group output path.
+	ChartName string `json:"chart_name,omitempty" yaml:"chart_name,omitempty"`
+	// AggregateName The top-level aggregate name an umbrella-chart assembler folds into the assembled chart's derived name; empty when no aggregate identity contributes to the name.
+	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty"`
 }
 
 // RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, and the render output the render_node export produced for it.
@@ -155,6 +161,18 @@ type RenderEdge struct {
 	Source string `json:"source" yaml:"source"`
 	// Target The consumed node's id — the target end a directed uses edge points at.
 	Target string `json:"target" yaml:"target"`
+}
+
+// SubChart One sub-chart contributing to an umbrella chart: its instance identity, the version the umbrella pins, the per-instance values the umbrella scopes under the sub-chart's alias, and, for a sub-chart vendored from a chart source, the pristine bytes of that chart's Chart.yaml file. An umbrella-chart assembler builds the umbrella's dependencies and values file from these pure-data views alone and touches no filesystem.
+type SubChart struct {
+	// InstanceID The sub-chart's instance identity within the dispatch group; the umbrella scopes the sub-chart's dependency alias and its values under it, so multiple instances of one source chart stay distinct.
+	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	// Version The version the umbrella pins for the sub-chart. A sub-chart vendored from a chart source instead draws its dependency name and version from that chart's Chart.yaml file so the dependency binds; this value applies to a generative sub-chart that carries no vendored chart.
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+	// Values The per-instance values the umbrella scopes under the sub-chart's alias in the umbrella values.yaml, an author-ordered key set. Preserves author order so the payload is byte-identical across runs of identical input.
+	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty"`
+	// ChartYaml The pristine bytes of the vendored chart's Chart.yaml, read from the local source at compile time, from which the umbrella draws the sub-chart dependency's name and version. Empty for a generative sub-chart that carries no vendored chart (base64 on the JSON wire).
+	ChartYaml []byte `json:"chart_yaml,omitempty" yaml:"chart_yaml,omitempty"`
 }
 
 // AssembleBoundaryOutput The payload a Provider guest returns from its assemble_boundary export: the serialized bytes of each assembled file, any diagnostics the guest raised while assembling, and whether the orchestrator nests each contributor's per-node files under a per-node sub-directory. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
@@ -1196,6 +1214,42 @@ func (t AssembleBoundaryInput) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte(']')
 	}
+	if len(t.SubCharts) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sub_charts\":")
+		buf.WriteByte('[')
+		for i := range t.SubCharts {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.SubCharts[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	if t.ChartName != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"chart_name\":")
+		writeJSONString(&buf, t.ChartName)
+	}
+	if t.AggregateName != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"aggregate_name\":")
+		writeJSONString(&buf, t.AggregateName)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1269,6 +1323,37 @@ func (t *AssembleBoundaryInput) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
+			}
+		case "sub_charts":
+			t.SubCharts = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem SubChart
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.SubCharts = append(t.SubCharts, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "chart_name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ChartName = s
+			}
+		case "aggregate_name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.AggregateName = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -1423,6 +1508,98 @@ func (t *RenderEdge) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Target = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes SubChart in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SubChart) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"instance_id\":")
+	writeJSONString(&buf, t.InstanceID)
+	if t.Version != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"version\":")
+		writeJSONString(&buf, t.Version)
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"values\":")
+	if enc, err := json.Marshal(t.Values); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if len(t.ChartYaml) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"chart_yaml\":")
+		writeJSONBytes(&buf, t.ChartYaml)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SubChart with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SubChart) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "instance_id":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.InstanceID = s
+			}
+		case "version":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Version = s
+			}
+		case "values":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else if err := json.Unmarshal(raw, &t.Values); err != nil {
+				return err
+			}
+		case "chart_yaml":
+			if v, err := readBytes(dec); err != nil {
+				return err
+			} else {
+				t.ChartYaml = v
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

@@ -31,6 +31,7 @@ var (
 	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
 	_ renderer.CodecProvider            = (*HelmEngine)(nil)
 	_ renderer.SourceProjector          = (*HelmEngine)(nil)
+	_ renderer.SubChartProjector        = (*HelmEngine)(nil)
 )
 
 // Codec satisfies renderer.CodecProvider: the helm-chart provider overrides the

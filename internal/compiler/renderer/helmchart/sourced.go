@@ -22,11 +22,11 @@ import (
 // cannot silently drop the alias.
 //
 // It reads the pristine Chart.yaml from disk and hands the bytes to
-// readChartMetaBytes for the single-sourced decode-and-guardrail logic.
+// ReadChartMetaBytes for the single-sourced decode-and-guardrail logic.
 func readChartMeta(chartPath string) (name, version string, err error) {
 	data, err := os.ReadFile(filepath.Join(chartPath, "Chart.yaml"))
 	if err != nil {
 		return "", "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: chartPath}, fmt.Sprintf("helmchart sourced: read Chart.yaml in %q", chartPath))
 	}
-	return readChartMetaBytes(data, chartPath)
+	return ReadChartMetaBytes(data, chartPath)
 }
