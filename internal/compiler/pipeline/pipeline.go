@@ -665,7 +665,7 @@ func RunPipeline(
 		// continuation unwinds. The wrap is uniform across every caller of
 		// RunPipeline, so build, serve, and the test harness all route through it
 		// with no per-caller change.
-		sharedLoader, closeLoader := wasm.NewCachingLoader(wasm.ExternalInputsFromContext(ctx))
+		sharedLoader, closeLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
 		defer func() {
 			if cerr := closeLoader(); cerr != nil {
 				fmt.Fprintf(os.Stderr, "  plugin: close compilation cache: %s\n", cerr)

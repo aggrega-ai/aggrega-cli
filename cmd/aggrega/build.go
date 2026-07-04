@@ -33,13 +33,14 @@ import (
 var _ wasm.FetchService = (*externalinputs.Service)(nil)
 
 var (
-	releasePath     string
-	catalogDirs     []string
-	traceEnabled    bool
-	buildDetail     bool
-	buildQuiet      bool
-	buildDebug      bool
-	noAcquireInputs bool
+	releasePath        string
+	catalogDirs        []string
+	traceEnabled       bool
+	buildDetail        bool
+	buildQuiet         bool
+	buildDebug         bool
+	noAcquireInputs    bool
+	disablePluginCache bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -55,6 +56,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the per-phase build-progress line on stderr. Does not affect stdout")
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/closure counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input closure: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
+	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -80,7 +82,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug},
-		buildRunOptions{noAcquireInputs: noAcquireInputs}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -91,6 +93,11 @@ type buildRunOptions struct {
 	// requests an unpinned external URL halts with a diagnostic instead
 	// of fetching and pinning it.
 	noAcquireInputs bool
+	// disablePluginCache skips the persistent on-disk plugin compile cache
+	// for this build, compiling guests fresh in an in-memory cache that is
+	// discarded when the build ends. It changes only compilation cost, not
+	// rendered output.
+	disablePluginCache bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -308,6 +315,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// renderer's plugin-load sites, where each loader picks it up as its
 	// fetch seam.
 	buildCtx := wasm.ContextWithExternalInputs(context.Background(), extInputs)
+	buildCtx = wasm.ContextWithDisablePluginCache(buildCtx, run.disablePluginCache)
 	result, err := pipeline.RunPipeline(
 		buildCtx,
 		pipeline.Inputs{

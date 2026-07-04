@@ -113,7 +113,7 @@ type Loader struct {
 // isolation or output, since compiled code is a pure function of the identical
 // guest bytes.
 //
-// The cache is disk-backed under the user cache directory
+// By default the cache is disk-backed under the user cache directory
 // (see wasmCompileCacheDir), so compiled guest machine code survives across
 // separate CLI invocations: the guest is compiled once per machine and reused
 // on every later build of any project, rather than recompiled from scratch
@@ -131,17 +131,49 @@ type Loader struct {
 // when the Loader is no longer needed, typically deferred at the construction
 // site; it releases the cache's resources.
 func NewCachingLoader(fetch FetchService) (*Loader, func() error) {
-	var cache wazero.CompilationCache
-	if dir, ok := wasmCompileCacheDir(); ok {
-		if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
-			cache = disk
-		}
-	}
-	if cache == nil {
-		cache = wazero.NewCompilationCache()
-	}
+	return newCachingLoader(fetch, false)
+}
+
+// NewCachingLoaderFromContext is NewCachingLoader with the persistent-cache
+// dial read from ctx: when the context carries a disable-persistent-cache
+// signal (see ContextWithDisablePluginCache), the Loader skips the on-disk
+// compile cache and uses an in-memory-only cache that lives for this build
+// alone, compiling every guest fresh. With no such signal it behaves exactly
+// like NewCachingLoader — disk-backed with an in-memory fallback. The returned
+// close function must be invoked when the Loader is no longer needed.
+func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) (*Loader, func() error) {
+	return newCachingLoader(fetch, DisablePluginCacheFromContext(ctx))
+}
+
+// newCachingLoader assembles a caching Loader over the cache selected by
+// newCompilationCache and pairs it with a close function. It is the single
+// construction body behind both NewCachingLoader and
+// NewCachingLoaderFromContext; the disk-vs-memory decision lives entirely in
+// newCompilationCache, so the two exported constructors differ only in how they
+// source the disablePersistentCache flag.
+func newCachingLoader(fetch FetchService, disablePersistentCache bool) (*Loader, func() error) {
+	cache := newCompilationCache(disablePersistentCache)
 	l := &Loader{ExternalInputs: fetch, Cache: cache}
 	return l, func() error { return cache.Close(context.Background()) }
+}
+
+// newCompilationCache selects the wazero compilation cache for a caching
+// Loader. It is the sole decision site for disk-vs-memory: with
+// disablePersistent false (the default) it prefers the persistent on-disk store
+// under wasmCompileCacheDir and falls back to an in-memory cache when no cache
+// directory resolves or the disk store cannot be created; with disablePersistent
+// true it skips the on-disk store unconditionally and returns an in-memory-only
+// cache. The in-memory cache lives only for the life of the returned handle, so
+// nothing is written to disk on that path.
+func newCompilationCache(disablePersistent bool) wazero.CompilationCache {
+	if !disablePersistent {
+		if dir, ok := wasmCompileCacheDir(); ok {
+			if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
+				return disk
+			}
+		}
+	}
+	return wazero.NewCompilationCache()
 }
 
 // wasmCompileCacheDir returns the directory for the persistent wazero
@@ -183,6 +215,30 @@ func ContextWithExternalInputs(ctx context.Context, svc FetchService) context.Co
 func ExternalInputsFromContext(ctx context.Context) FetchService {
 	svc, _ := ctx.Value(externalInputsContextKey{}).(FetchService)
 	return svc
+}
+
+// disablePluginCacheContextKey keys the disable-persistent-cache dial on a
+// context for the Loader construction site, which receives its per-build
+// choices only through the context it is called with.
+type disablePluginCacheContextKey struct{}
+
+// ContextWithDisablePluginCache returns a context that, when disable is true,
+// signals downstream caching-Loader construction to skip the persistent on-disk
+// compile cache and use an in-memory-only cache for this build. Passing false
+// leaves the default disk-backed behaviour in place. It mirrors
+// ContextWithExternalInputs for call paths — the render pipeline's per-step
+// plugin dispatch — whose only shared plumbing to the Loader is the context.
+func ContextWithDisablePluginCache(ctx context.Context, disable bool) context.Context {
+	return context.WithValue(ctx, disablePluginCacheContextKey{}, disable)
+}
+
+// DisablePluginCacheFromContext reports whether ctx signals that the persistent
+// on-disk compile cache should be skipped in favour of an in-memory-only cache.
+// The zero value — no signal attached — is false, preserving the default
+// disk-backed behaviour.
+func DisablePluginCacheFromContext(ctx context.Context) bool {
+	disable, _ := ctx.Value(disablePluginCacheContextKey{}).(bool)
+	return disable
 }
 
 // Plugin wraps an Extism plugin handle with Aggrega-specific lifecycle
