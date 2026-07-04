@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//go:build !wasip1
+//go:build !wasip1 && !light
 
 // Package embedded is the compile-time home for Wasm plugins shipped inside
 // the CLI binary. A plugin embedded here is version-locked to the binary and
