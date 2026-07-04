@@ -34,6 +34,8 @@ var (
 	pullVerify            bool
 	pullIncludePrerelease bool
 	pullDetail            bool
+	pullQuiet             bool
+	pullProgress          bool
 )
 
 func newPullCmd() *cobra.Command {
@@ -67,6 +69,7 @@ current registry state, floating each dependency to the highest available versio
 				IncludePrerelease: pullIncludePrerelease,
 				Detail:            pullDetail,
 				ws:                rw,
+				diag:              buildDiagOptions{quiet: pullQuiet, progress: pullProgress},
 			})
 		},
 	}
@@ -76,6 +79,8 @@ current registry state, floating each dependency to the highest available versio
 	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
 	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
 	c.Flags().BoolVar(&pullDetail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
+	c.Flags().BoolVar(&pullQuiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
+	c.Flags().BoolVar(&pullProgress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -122,6 +127,40 @@ type pullConfig struct {
 	// a recording/stub implementation to assert the source identity computed from
 	// the materialized pillars without a real artifact fetch. Nil uses the shim.
 	sourceResolver closure.SourceResolver
+
+	// diag carries the pull-progress surface choices (quiet / progress). The pull
+	// command's RunE populates it from the flags; build's auto-pull leaves it
+	// quiet so only the build's own surface shows during an implicit pull.
+	diag buildDiagOptions
+}
+
+// Pull phase indices into the pull progress spine's labels.
+const (
+	pullPhaseLoadCatalog = iota
+	pullPhaseDependencies
+	pullPhaseClosure
+	pullPhaseLibraries
+	pullPhaseValidate
+	pullPhaseSources
+	pullPhaseLockfile
+)
+
+// pullProgressSpine returns the ordered pull phase spine. Pull has no render
+// phase (renderIdx -1), so it carries no per-node counter and no plugin-compile
+// step — just the phases the closure walk and lockfile write cross.
+func pullProgressSpine() progressSpine {
+	return progressSpine{
+		labels: []string{
+			pullPhaseLoadCatalog:  "loading catalog",
+			pullPhaseDependencies: "resolving dependencies",
+			pullPhaseClosure:      "computing closure",
+			pullPhaseLibraries:    "resolving libraries",
+			pullPhaseValidate:     "validating",
+			pullPhaseSources:      "resolving sources",
+			pullPhaseLockfile:     "writing lockfile",
+		},
+		renderIdx: -1,
+	}
 }
 
 // pullRun executes the pull workflow against the supplied
@@ -221,6 +260,14 @@ func pullRun(cfg pullConfig) error {
 	if out == nil {
 		out = os.Stdout
 	}
+	// Verify is a quick read-only check with an early return, so it carries no
+	// progress surface; the default and --regenerate paths walk the full spine.
+	diag := cfg.diag
+	if cfg.Verify {
+		diag.quiet = true
+	}
+	progress := newProgressReporter(cfg.DiagOut, diag, pullProgressSpine())
+	defer progress.finish()
 	releaseDir := filepath.Dir(cfg.ReleasePath)
 
 	rw, err := workspaceOrResolve(cfg.ws)
@@ -265,6 +312,7 @@ func pullRun(cfg pullConfig) error {
 	// because the library is not yet fetched — the closure walk + library discovery
 	// below acquire it; closure-scoped Pass-2 (through the pinned lazy lookup) is
 	// the validation gate, scoped to what the Release reaches.
+	progress.phase(pullPhaseLoadCatalog)
 	cat, skipped, err := catalog.LoadPassOneTolerant("", cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
@@ -276,6 +324,7 @@ func pullRun(cfg pullConfig) error {
 		return err
 	}
 
+	progress.phase(pullPhaseDependencies)
 	workspaceRoot := rw.Root()
 	puller := cfg.puller
 	if puller == nil {
@@ -350,6 +399,7 @@ func pullRun(cfg pullConfig) error {
 		}
 	}
 	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, reuse)
+	progress.phase(pullPhaseClosure)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
@@ -367,6 +417,7 @@ func pullRun(cfg pullConfig) error {
 	// entity walk does not descend Component/Feature schema bodies), reading the
 	// resolved closure through lazyView — the same producer build runs, so a pull
 	// and a build of the same Release compute the identical library closure.
+	progress.phase(pullPhaseLibraries)
 	if err := discoverClosureLibraries(&cl, lazyView, lookup); err != nil {
 		return fmt.Errorf("closure: schema-library discovery: %w", err)
 	}
@@ -444,6 +495,7 @@ func pullRun(cfg pullConfig) error {
 	// build applies, so a pull and a build of the same Release agree on what is
 	// valid. An in-closure schema-invalid entity, or a $ref to a skipped/missing
 	// library, fails loudly here; an out-of-closure break is never validated.
+	progress.phase(pullPhaseValidate)
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
 		return withSkipContext(err, skipped)
 	}
@@ -455,6 +507,7 @@ func pullRun(cfg pullConfig) error {
 	// uses the same Manifest mapping the closure walker recorded (lock-time
 	// cannot drift from build-time). aggBytes feeds the resolver, which
 	// re-parses internally.
+	progress.phase(pullPhaseSources)
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
 	// ResolveAndFlatten scopes the resolved view + parameter map to this
@@ -580,10 +633,14 @@ func pullRun(cfg pullConfig) error {
 					return fmt.Errorf("verify signatures: %w", err)
 				}
 			}
+			progress.phase(pullPhaseLockfile)
 			if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
 				return fmt.Errorf("write lockfile: %w", err)
 			}
 
+			// Clear the in-place surface before the stdout summary so the
+			// progress lines never linger beside the final output.
+			progress.finish()
 			fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d)\n",
 				lockfilePath, len(cl.Entities), len(cl.SourceArtifacts))
 			return nil

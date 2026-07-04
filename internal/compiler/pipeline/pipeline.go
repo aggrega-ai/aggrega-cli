@@ -138,6 +138,15 @@ type Options struct {
 	// the render loop skips the call. Mirrors IncludeTrace: an opt-in per-node
 	// observation point that is a no-op when unset.
 	NodeProgress func(done, total int, nodeID string)
+
+	// PluginLoadObserver, when set, is invoked with a plugin's name each time the
+	// render step's shared loader constructs a guest — the point at which a
+	// cold-cache guest is compiled. It is a diagnostic hook for a progress
+	// surface; like NodeProgress the callback must write only to a diagnostic sink
+	// (never stdout) so rendered output stays byte-deterministic. Left nil — the
+	// common case, and every non-CLI caller — the loader skips the call. It
+	// carries no authority over the load and cannot alter output.
+	PluginLoadObserver func(pluginName string)
 }
 
 // Result carries the pipeline's outputs. Artifacts is the rendered file
@@ -666,6 +675,7 @@ func RunPipeline(
 		// RunPipeline, so build, serve, and the test harness all route through it
 		// with no per-caller change.
 		sharedLoader, closeLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
+		sharedLoader.OnLoad = opts.PluginLoadObserver
 		defer func() {
 			if cerr := closeLoader(); cerr != nil {
 				fmt.Fprintf(os.Stderr, "  plugin: close compilation cache: %s\n", cerr)

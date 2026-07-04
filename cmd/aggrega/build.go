@@ -38,6 +38,7 @@ var (
 	traceEnabled       bool
 	buildDetail        bool
 	buildQuiet         bool
+	buildProgress      bool
 	buildDebug         bool
 	noAcquireInputs    bool
 	disablePluginCache bool
@@ -53,7 +54,8 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	c.Flags().BoolVar(&buildDetail, "detail", false, "When build performs the implicit auto-pull (no lockfile present, auto_pull enabled), print per resolved entity what that pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no pull this build)")
-	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the per-phase build-progress line on stderr. Does not affect stdout")
+	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
+	c.Flags().BoolVar(&buildProgress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/closure counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input closure: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
 	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
@@ -81,7 +83,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
-		buildDiagOptions{quiet: buildQuiet, debug: buildDebug},
+		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress},
 		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache}, os.Stderr, os.Stdout)
 }
 
@@ -139,7 +141,13 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // switch, the output-directory override, and the acquired-pin callback the
 // acquire command reports through. The zero value is the plain build shape.
 func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildRunOptions, diagOut, out io.Writer) error {
-	progress := newProgressReporter(diagOut, diag)
+	// Cold/warm plugin-compile-cache detection, up front: a cold cache means a
+	// guest this build loads will be compiled, so the checklist may show a
+	// "compiling plugins" step; a warm cache omits it. --disable-plugin-cache
+	// forces cold. Detected before the pipeline runs (and before any pre-warm
+	// would populate the cache) so the phase profile is fixed for the whole run.
+	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(context.Background(), run.disablePluginCache))
+	progress := newProgressReporter(diagOut, diag, buildProgressSpine(coldCache))
 	defer progress.finish()
 	// wsRoot is the resolved workspace root; the catalog renders source-file
 	// accessors relative to it so the IR's per-node SourceFile records stay
@@ -341,6 +349,11 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			// summary, so rendered output stays byte-deterministic. A no-op
 			// reporter (quiet, no debug) ignores the calls.
 			NodeProgress: progress.renderNode,
+			// Guest-compilation observation for the cold-profile "compiling
+			// plugins" checklist step. Fires as each render guest is constructed;
+			// writes only to the progress reporter's diagnostic sink, so stdout
+			// stays byte-deterministic.
+			PluginLoadObserver: func(string) { progress.pluginCompiling() },
 		},
 	)
 	if err != nil {
@@ -472,7 +485,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// The build's own resolution runs through the nil-puller pinned lazy lookup,
 	// untouched — so build output is unchanged by this fill.
 	if wsCfg.AutoPull {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail, ws: rw, DiagOut: diagOut}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail, ws: rw, DiagOut: diagOut, diag: buildDiagOptions{quiet: true}}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
 		return false, nil

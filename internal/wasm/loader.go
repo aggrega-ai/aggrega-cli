@@ -101,6 +101,14 @@ type Loader struct {
 	// Plugin instance. Constructed via NewCachingLoader, which pairs it with
 	// a close function.
 	Cache wazero.CompilationCache
+
+	// OnLoad, when non-nil, is invoked with the plugin's name each time this
+	// Loader successfully constructs a Plugin. It is a diagnostic observation
+	// hook only: it carries no authority over the load and cannot alter rendered
+	// output — it exists to let a progress surface report plugin-compilation
+	// activity as guests are constructed. Nil — the zero-value Loader — skips the
+	// call.
+	OnLoad func(pluginName string)
 }
 
 // NewCachingLoader returns a Loader whose constructed Plugins share a single
@@ -191,6 +199,34 @@ func wasmCompileCacheDir() (string, bool) {
 		return "", false
 	}
 	return filepath.Join(base, "aggrega", "wasm-compile"), true
+}
+
+// PluginCompileCacheCold reports whether the plugin compile cache is cold for a
+// build using ctx — that is, whether a guest this build loads will be compiled
+// rather than served from an already-populated cache. It is true when the
+// persistent on-disk cache is disabled for this build (see
+// ContextWithDisablePluginCache — the in-memory cache then starts empty), when no
+// persistent cache directory can be resolved (an in-memory cache is used), or
+// when the persistent cache directory does not yet exist or holds no entries.
+//
+// The check is a coarse, up-front heuristic. It reads only the presence of cache
+// entries, not which specific guests are cached, so a populated directory reports
+// warm even if it lacks the exact guest this build needs. That imprecision is
+// acceptable for a progress surface: it selects a cold or warm phase profile
+// before rendering starts, and the surface tolerates residual weighting error.
+func PluginCompileCacheCold(ctx context.Context) bool {
+	if DisablePluginCacheFromContext(ctx) {
+		return true
+	}
+	dir, ok := wasmCompileCacheDir()
+	if !ok {
+		return true
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		return true
+	}
+	return false
 }
 
 // externalInputsContextKey keys the external-input service on a
@@ -412,6 +448,9 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	}
 
 	p.plugin = extismPlugin
+	if l.OnLoad != nil {
+		l.OnLoad(spec.Name)
+	}
 	return p, nil
 }
 
