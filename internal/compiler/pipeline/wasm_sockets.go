@@ -36,6 +36,13 @@ func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pl
 // validation at load, and a Close that fires as the call unwinds so a socket
 // leaks no Wazero instance. The describe() gate refuses a plugin that lacks the
 // export or declares a descriptor the host rejects.
+//
+// When the caller declares an expected plugin type on spec.PluginType, the
+// loaded descriptor's self-reported plugin_type must match it; a mismatch — a
+// mutator plugin attached at the policy socket, or the reverse — fails loudly
+// with a legible message rather than through the cryptic missing-export error
+// the wrong export name would otherwise raise. A caller that leaves
+// spec.PluginType empty declares no expectation and skips the check.
 func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte) ([]byte, error) {
 	loader := &wasm.Loader{}
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
@@ -43,6 +50,9 @@ func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, export string
 		return nil, fmt.Errorf("load: %w", err)
 	}
 	defer plugin.Close(ctx)
+	if spec.PluginType != "" && desc.PluginType != spec.PluginType {
+		return nil, fmt.Errorf("plugin declares plugin_type %q but is attached at the %q socket", desc.PluginType, spec.PluginType)
+	}
 	out, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
 	if err != nil {
 		return nil, fmt.Errorf("call %q: %w", export, err)

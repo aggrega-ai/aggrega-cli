@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -171,6 +172,37 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	const wantMsg = "fixture rule B: deliberate fail for end-to-end coverage"
 	if !strings.Contains(err.Error(), wantMsg) {
 		t.Errorf("policy halt error does not carry the plugin message %q:\n%v", wantMsg, err)
+	}
+	// The rejected verdict surfaces at the CLI boundary as a categorised
+	// CompilerError carrying POLICY_ERROR — a governance verdict, distinct
+	// from the DeveloperError a selector/appliesTo violation would carry.
+	var ce *cerrors.CompilerError
+	if !errors.As(err, &ce) {
+		t.Fatalf("policy halt does not surface a *CompilerError: %v", err)
+	}
+	if ce.Category != cerrors.PolicyError {
+		t.Errorf("policy halt category = %q, want %q", ce.Category, cerrors.PolicyError)
+	}
+}
+
+// TestPolicySocketWrongPluginTypeE2E proves attaching a mutator plugin at the
+// policy socket fails loudly with a plugin_type-mismatch message rather than
+// through the cryptic missing-export error the wrong export name would raise.
+func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
+	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://mutator-at-policy"}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://mutator-at-policy": "mutator-proof-go.wasm"})
+
+	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
+		productionEngineFactory, pipeline.Options{})
+	if err == nil {
+		t.Fatalf("RunPipeline with a mutator plugin at the policy socket: expected a halt, got nil")
+	}
+	for _, want := range []string{"plugin_type", "mutator", "policy-validator"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("wrong-socket halt error missing %q:\n%v", want, err)
+		}
 	}
 }
 

@@ -6,15 +6,18 @@ package errors
 import "fmt"
 
 // Category names which authoring artifact is at fault for a given
-// CompilerError. The five values partition the compiler's error surface
-// by who edits the offending file: developer (Aggregate), operator
+// CompilerError. The six values partition the compiler's error surface
+// by who must act to resolve the failure: developer (Aggregate), operator
 // (Release), catalog author (Recipe / Component / Feature / FeatureRecipe
-// / Manifest), provider engine (translation cannot express
-// the requested output), or the remote registry / network layer (a
-// fetch of a pinned artifact failed at lock or build time).
+// / Manifest), provider engine (translation cannot express the requested
+// output), the remote registry / network layer (a fetch of a pinned
+// artifact failed at lock or build time), or an operator-attached
+// policy-validator plugin (a governance verdict rejected the build — the
+// fix is to satisfy the enforced policy or reconsider its attachment,
+// not to edit an authoring file).
 type Category string
 
-// The five error categories.
+// The six error categories.
 const (
 	DeveloperError   Category = "DEVELOPER_ERROR"
 	OpsError         Category = "OPS_ERROR"
@@ -28,6 +31,16 @@ const (
 	// registry; the remediation is operational (auth setup, network
 	// connectivity, lockfile regeneration) rather than authoring.
 	FetchError Category = "FETCH_ERROR"
+	// PolicyError surfaces a governance verdict from an operator-attached
+	// policy-validator plugin: the plugin evaluated the assembled IR graph
+	// and rejected the build against a rule it enforces. Distinct from
+	// DeveloperError and CatalogError because the rejection is neither a
+	// developer authoring mistake on the Aggregate nor a catalog/ops
+	// authoring fault — it is a policy the deployment must satisfy. The
+	// remediation is to bring the input into compliance with the enforced
+	// policy or to reconsider the policy attachment, not to correct an
+	// authoring error in the Aggregate.
+	PolicyError Category = "POLICY_ERROR"
 )
 
 // SourceLocation points at a position in the authoring artifact at fault.

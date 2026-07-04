@@ -4,6 +4,7 @@
 package analyzer_test
 
 import (
+	stderrors "errors"
 	"strings"
 	"testing"
 
@@ -81,5 +82,53 @@ func TestAnalysisError_ToCompilerError_RoutesToDeveloper(t *testing.T) {
 	}
 	if !strings.Contains(ce.Message, "selector violation") {
 		t.Errorf("Message missing original violation text: %q", ce.Message)
+	}
+}
+
+// TestAnalysisError_ToCompilerError_AppliesToRoutesToDeveloper verifies an
+// appliesTo-shaped violation (Socket empty, no policy Kind) still routes to
+// DeveloperError — the Feature attachment is developer-authored on the
+// Aggregate.
+func TestAnalysisError_ToCompilerError_AppliesToRoutesToDeveloper(t *testing.T) {
+	t.Parallel()
+	e := &analyzer.AnalysisError{
+		Source:  "frontend",
+		Target:  "dns-resolver",
+		Socket:  "",
+		Message: "Feature constraint not met",
+	}
+	ce := e.ToCompilerError()
+	if ce == nil {
+		t.Fatal("ToCompilerError returned nil")
+	}
+	if ce.Category != cerrors.DeveloperError {
+		t.Errorf("Category = %v, want %v", ce.Category, cerrors.DeveloperError)
+	}
+}
+
+// TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError verifies a
+// policy-verdict violation (Kind AnalysisErrorPolicy) routes to PolicyError —
+// a governance rejection from an operator-attached policy-validator plugin, not
+// a developer authoring mistake — while keeping its plugin-supplied message and
+// its ErrPolicyViolation sentinel recoverable via errors.Is.
+func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
+	t.Parallel()
+	e := &analyzer.AnalysisError{
+		Kind:     analyzer.AnalysisErrorPolicy,
+		Message:  "policy plugin \"house-rules\" rejected the build: image must be digest-pinned",
+		Sentinel: analyzer.ErrPolicyViolation,
+	}
+	ce := e.ToCompilerError()
+	if ce == nil {
+		t.Fatal("ToCompilerError returned nil")
+	}
+	if ce.Category != cerrors.PolicyError {
+		t.Errorf("Category = %v, want %v", ce.Category, cerrors.PolicyError)
+	}
+	if !strings.Contains(ce.Message, "image must be digest-pinned") {
+		t.Errorf("Message missing plugin-supplied verdict text: %q", ce.Message)
+	}
+	if !stderrors.Is(ce, analyzer.ErrPolicyViolation) {
+		t.Errorf("errors.Is should traverse to ErrPolicyViolation through the envelope chain")
 	}
 }

@@ -52,7 +52,7 @@ func TestCompilerError_Unwrap_PreservesChain(t *testing.T) {
 
 func TestCompilerError_CategoryPartitions(t *testing.T) {
 	t.Parallel()
-	// Validates that the five-Category enum is distinct and stable. If a
+	// Validates that the six-Category enum is distinct and stable. If a
 	// future change collapses or renames a category, this test surfaces
 	// the rename before it propagates through the audit-slice surface.
 	all := []cerrors.Category{
@@ -61,6 +61,7 @@ func TestCompilerError_CategoryPartitions(t *testing.T) {
 		cerrors.CatalogError,
 		cerrors.TranslationError,
 		cerrors.FetchError,
+		cerrors.PolicyError,
 	}
 	seen := map[cerrors.Category]bool{}
 	for _, c := range all {
@@ -78,6 +79,13 @@ func TestFetchErrorCategoryValue(t *testing.T) {
 	t.Parallel()
 	if string(cerrors.FetchError) != "FETCH_ERROR" {
 		t.Errorf("FetchError = %q; want \"FETCH_ERROR\"", string(cerrors.FetchError))
+	}
+}
+
+func TestPolicyErrorCategoryValue(t *testing.T) {
+	t.Parallel()
+	if string(cerrors.PolicyError) != "POLICY_ERROR" {
+		t.Errorf("PolicyError = %q; want \"POLICY_ERROR\"", string(cerrors.PolicyError))
 	}
 }
 

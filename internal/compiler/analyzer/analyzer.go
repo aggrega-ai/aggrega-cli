@@ -173,26 +173,37 @@ func (e AnalysisError) Error() string {
 	return fmt.Sprintf("%s attaches Feature %s: %s", e.Source, e.Target, e.Message)
 }
 
-// ToCompilerError converts the analyzer violation into a *cerrors.CompilerError
-// carrying CategoryDeveloperError. Selector and appliesTo violations are
-// authoring-time problems on the developer's Aggregate (the developer
-// authored the uses-edge or Feature attachment that fails the selector or
-// appliesTo constraint); both classes route to DeveloperError.
+// ToCompilerError converts the analyzer violation into a *cerrors.CompilerError,
+// choosing the category from the violation's Kind. Selector and appliesTo
+// violations (the edge-shaped kinds) are authoring-time problems on the
+// developer's Aggregate — the developer authored the uses-edge or Feature
+// attachment that fails the selector or appliesTo constraint — so they route
+// to cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
+// governance rejection from an operator-attached policy-validator plugin, not a
+// developer authoring mistake, so it routes to cerrors.PolicyError; the
+// remediation is to satisfy the enforced policy or reconsider its attachment,
+// not to edit the Aggregate.
 //
 // Source location maps the violating-node ID into SourceLocation.File. The
 // node ID is the most-specific authoring-locator available at the analyzer
 // stage — finer-grained source positions (file/line/column) require the
 // resolver to thread file-path metadata onto IRNode, which is a separate
-// future improvement.
+// future improvement. A policy verdict carries no edge fields, so its Source
+// is empty and the pointer is message-only.
 //
 // The CompilerError wraps e.Sentinel as its inner error, so a violation
 // class is detectable with errors.Is at the pipeline boundary (the build
 // error joins these CompilerErrors and errors.Is traverses the chain).
-// Selector and appliesTo violations carry ErrSelectorViolation. When
-// Sentinel is nil the inner chain is empty, matching the prior behavior.
+// Selector and appliesTo violations carry ErrSelectorViolation; policy
+// verdicts carry ErrPolicyViolation. When Sentinel is nil the inner chain is
+// empty, matching the prior behavior.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
+	category := cerrors.DeveloperError
+	if e.Kind == AnalysisErrorPolicy {
+		category = cerrors.PolicyError
+	}
 	return cerrors.New(
-		cerrors.DeveloperError,
+		category,
 		cerrors.SourceLocation{File: e.Source},
 		e.Error(),
 		nil,
