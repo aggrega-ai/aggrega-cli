@@ -602,6 +602,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if dispatch[key].assembler == nil {
 			if a, ok := engine.(BoundaryAssembler); ok {
 				dispatch[key].assembler = a
+			} else if _, hostAssembles := hostEngine(engine).(BoundaryAssembler); hostAssembles && key.Path != "" {
+				// Loud Guardrail (No Ghost Infrastructure): the provider's
+				// in-tree engine assembles this dispatch group into a single
+				// artifact, but the engine actually dispatched for the provider
+				// cannot — a rendering plugin advertising per-node rendering
+				// without the matching boundary-assembly export. Boundary
+				// assembly is functional dispatch asserted on the dispatched
+				// engine itself, not a host-side capability that unwraps, so a
+				// render-only wrapper genuinely cannot assemble. Left unchecked,
+				// assembly is silently skipped and the group emits unmerged
+				// per-node fragments. Halt instead.
+				inner := fmt.Errorf("%w: provider %q renders per node but its rendering plugin does not provide boundary assembly (assemble_boundary); dispatch path %q would emit unassembled fragments",
+					ErrBoundaryAssemblerMissing, key.Provider, key.Path)
+				return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())
 			}
 		}
 

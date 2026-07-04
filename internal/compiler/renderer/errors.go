@@ -185,4 +185,19 @@ var (
 	// from describe() before any guest runs) and matches provider names exactly.
 	// Category: CATALOG_ERROR.
 	ErrPluginProviderIncompatible = errors.New("pipeline plugin is not compatible with the rendering provider")
+
+	// ErrBoundaryAssemblerMissing fires when a provider whose in-tree engine
+	// assembles a dispatch group into a single artifact (a merged
+	// docker-compose.yaml, an umbrella chart) is served by a rendering plugin
+	// that advertises per-node rendering but not the matching boundary-assembly
+	// export. The dispatched engine can render each node but cannot merge them,
+	// so assembly would be silently skipped and the build would emit unmerged
+	// per-node fragments. Per the No Ghost Infrastructure / Loud Guardrails
+	// invariant the build halts here instead, naming the provider, the dispatch
+	// path, and the missing assemble_boundary export, rather than producing an
+	// unassembled result the operator only discovers at debug time. The remedy
+	// is to serve the provider through a plugin that advertises both render_node
+	// and assemble_boundary, or to render the provider through its in-tree
+	// engine. Category: TRANSLATION_ERROR.
+	ErrBoundaryAssemblerMissing = errors.New("provider expected to assemble its dispatch group provides no boundary assembler")
 )
