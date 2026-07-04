@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -94,5 +95,47 @@ func TestEntityReference_PluginGuard(t *testing.T) {
 				t.Fatalf("entityReference(%q) error = %v; want errors.Is(ErrQualifiedPluginReference)", tc.identity, err)
 			}
 		})
+	}
+}
+
+// TestEntityReference_RecipeScopeGuard pins the recipe reference guard: a
+// provider-scoped identity binds to <registry>/recipe/<provider>/<name>, while an
+// unscoped identity (no "/") or one with an empty leading provider ("/name") is
+// refused with ErrUnscopedRecipeReference rather than bound to a double-slash
+// location that cannot resolve. The guard covers both Recipe and FeatureRecipe.
+func TestEntityReference_RecipeScopeGuard(t *testing.T) {
+	t.Parallel()
+	const registry = "hub.aggrega.ai"
+
+	for _, kind := range []string{"Recipe", "FeatureRecipe"} {
+		kind := kind
+		t.Run(kind+" provider-scoped binds", func(t *testing.T) {
+			got, err := entityReference(registry, kind, "helm/adminer")
+			if err != nil {
+				t.Fatalf("provider-scoped %s should bind cleanly; got error %v", kind, err)
+			}
+			want := registry + "/" + OCILocation(kind, "helm", "adminer")
+			if got != want {
+				t.Errorf("entityReference = %q; want %q", got, want)
+			}
+			if strings.Contains(strings.TrimPrefix(got, registry+"/"), "//") {
+				t.Errorf("bound location must not contain a double slash: %q", got)
+			}
+		})
+
+		for _, tc := range []struct {
+			name     string
+			identity string
+		}{
+			{"unscoped no slash", "adminer-helm"},
+			{"empty leading provider", "/adminer-helm"},
+		} {
+			t.Run(kind+" "+tc.name, func(t *testing.T) {
+				_, err := entityReference(registry, kind, tc.identity)
+				if !errors.Is(err, ErrUnscopedRecipeReference) {
+					t.Fatalf("entityReference(%s, %q) error = %v; want errors.Is(ErrUnscopedRecipeReference)", kind, tc.identity, err)
+				}
+			})
+		}
 	}
 }

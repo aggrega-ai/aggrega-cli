@@ -24,6 +24,8 @@ func OCILocation(kind, provider, name string) string {
 	seg := KindPathSegment(kind)
 	switch kind {
 	case "Recipe", "FeatureRecipe":
+		// provider is a required non-empty scope for recipe locations; the caller
+		// (entityReference) rejects an empty provider before reaching here.
 		return seg + "/" + strings.ToLower(provider) + "/" + strings.ToLower(name)
 	default:
 		return seg + "/" + strings.ToLower(name)

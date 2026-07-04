@@ -482,22 +482,52 @@ func mergeKind[T any](
 ) {
 	for _, key := range sortedMapKeys(src) {
 		fk := kind + ":" + key
-		if _, exists := dst[key]; exists {
-			acc.Shadows = append(acc.Shadows, ShadowedEntity{
-				Kind:         kind,
-				Identity:     key,
-				WinnerDir:    winnerDir[fk],
-				WinnerPath:   acc.pathByIdentity[fk],
-				ShadowedDir:  perDirRoot,
-				ShadowedPath: perDir.pathByIdentity[fk],
+		foldFirstWin(dst, key, src[key],
+			func() {
+				acc.pathByIdentity[fk] = perDir.pathByIdentity[fk]
+				winnerDir[fk] = perDirRoot
+				copyAux(key)
+			},
+			func() {
+				acc.Shadows = append(acc.Shadows, ShadowedEntity{
+					Kind:         kind,
+					Identity:     key,
+					WinnerDir:    winnerDir[fk],
+					WinnerPath:   acc.pathByIdentity[fk],
+					ShadowedDir:  perDirRoot,
+					ShadowedPath: perDir.pathByIdentity[fk],
+				})
 			})
-			continue
-		}
-		dst[key] = src[key]
-		acc.pathByIdentity[fk] = perDir.pathByIdentity[fk]
-		winnerDir[fk] = perDirRoot
-		copyAux(key)
 	}
+}
+
+// foldFirstWin is the single source of the "which occurrence of a duplicated
+// identity resolves" decision across every catalog loading strategy. The FIRST
+// occurrence of an identity claims it; a later occurrence is a shadow. The eager
+// whole-catalog merge (mergeKind), the lazy recipe-shell enumeration
+// (foldRecipeShellEntity), and the lazy Component/Feature index walk
+// (walkAndIndex) all fold through this primitive, so the three strategies cannot
+// drift on which duplicate wins. Strategies vary only in the value type V and the
+// onWin / onShadow callbacks, never in the decision.
+//
+// claimed is the identity→value map being populated. When identity is already
+// present, onShadow (if non-nil) runs and the function returns false without
+// mutating claimed. When identity is new, value is stored, onWin (if non-nil)
+// runs, and the function returns true. It decides cross-occurrence precedence
+// only; a strategy's within-directory duplicate rule is a distinct concern the
+// caller keeps.
+func foldFirstWin[V any](claimed map[string]V, identity string, value V, onWin, onShadow func()) bool {
+	if _, exists := claimed[identity]; exists {
+		if onShadow != nil {
+			onShadow()
+		}
+		return false
+	}
+	claimed[identity] = value
+	if onWin != nil {
+		onWin()
+	}
+	return true
 }
 
 // newSkippedEntity builds a SkippedEntity, recovering kind + name from a

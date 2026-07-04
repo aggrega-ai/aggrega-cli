@@ -23,6 +23,15 @@ import (
 // rather than surfacing later as a cryptic tag error.
 var ErrQualifiedPluginReference = errors.New("wasm plugin reference must be the bare plugin entity identity (<socket>/<name>:<version>), not a registry-qualified or artifact path")
 
+// ErrUnscopedRecipeReference is returned when a Recipe / FeatureRecipe reference
+// carries no provider scope — either no "/" at all or an empty leading provider
+// ("/name"). Recipe identity is provider/name, and the OCI location encodes the
+// provider segment because two providers may ship a recipe of the same name; an
+// empty provider would bind to a location with an empty provider segment (a
+// double slash) that cannot resolve. The reference is refused loudly here rather
+// than surfacing later as a cryptic fetch failure.
+var ErrUnscopedRecipeReference = errors.New("recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location")
+
 // NewDefaultOCIPuller returns the production OCIPuller backed by
 // pkg/oci.NewRemoteRepository per Pull-call. Returns nil when the
 // workspace is configured offline so closure-walker and lazy-lookup
@@ -230,8 +239,13 @@ func entityKindForHint(hint string) string {
 // with a registry-host-shaped segment (the part before the first "/" carrying a
 // "." or ":") would be double-prefixed into an unfetchable location. Such a
 // reference is refused with ErrQualifiedPluginReference rather than bound. The
-// guard is Plugin-scoped; the Component / Feature / Recipe binders
-// are unchanged.
+// guard is Plugin-scoped; the Component / Feature binders are unchanged.
+//
+// A Recipe / FeatureRecipe identity must be provider-scoped (provider/name): an
+// unscoped identity (no "/") or one with an empty leading provider ("/name")
+// would bind to a location with an empty provider segment (a double slash) that
+// cannot resolve, so it is refused with ErrUnscopedRecipeReference before the
+// location is formed.
 func entityReference(registry, kind, identity string) (string, error) {
 	if kind == "Plugin" && hasRegistryHostSegment(identity) {
 		return "", fmt.Errorf("%w: %q", ErrQualifiedPluginReference, identity)
@@ -239,9 +253,12 @@ func entityReference(registry, kind, identity string) (string, error) {
 	provider, name := "", identity
 	switch kind {
 	case "Recipe", "FeatureRecipe":
-		if i := strings.IndexByte(identity, '/'); i >= 0 {
-			provider, name = identity[:i], identity[i+1:]
+		i := strings.IndexByte(identity, '/')
+		if i <= 0 {
+			// i < 0: no "/" (unscoped). i == 0: empty leading provider ("/name").
+			return "", fmt.Errorf("%w: %q", ErrUnscopedRecipeReference, identity)
 		}
+		provider, name = identity[:i], identity[i+1:]
 	}
 	return registry + "/" + OCILocation(kind, provider, name), nil
 }

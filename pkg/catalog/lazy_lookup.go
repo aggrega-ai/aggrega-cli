@@ -808,6 +808,14 @@ func (l *LazyLookup) buildFeatureIndex() {
 // matches the target kind into the supplied index. Files whose kind
 // does not match are skipped without indexing.
 //
+// Precedence across catalog directories is FIRST-WIN: catalogDirs is
+// caller-ordered, so the earliest directory declaring a bare
+// metadata.name claims it and a later directory re-declaring the same
+// name is a shadow, reported and skipped. This is the same
+// cross-occurrence decision the eager whole-catalog merge and the lazy
+// recipe-shell enumeration make, folded through the shared foldFirstWin
+// primitive so the strategies cannot drift on which duplicate resolves.
+//
 // Walk errors and per-file parse failures are silently ignored —
 // the lazy lookup's contract is "find what you can"; broken files
 // surface at full-unmarshal time when a specific URI is requested,
@@ -839,7 +847,9 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 			if hdr.Metadata.Name == "" {
 				return nil
 			}
-			index[hdr.Metadata.Name] = path
+			foldFirstWin(index, hdr.Metadata.Name, path, nil, func() {
+				l.recordShadowedComponent(targetKind, hdr.Metadata.Name, path)
+			})
 			return nil
 		})
 	}
@@ -978,12 +988,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			return
 		}
 		key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-		if _, dup := l.recipes[key]; dup {
-			l.recordRecipeSkip(src, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
-			return
-		}
-		l.recipes[key] = e
-		l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
+		foldFirstWin(l.recipes, key, e,
+			func() { l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes },
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
+			})
 	case "FeatureRecipe":
 		e, perr := parseFeatureRecipeEntity(parseData, src)
 		if perr != nil {
@@ -991,37 +1000,36 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			return
 		}
 		key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
-		if _, dup := l.featureRecipes[key]; dup {
-			l.recordRecipeSkip(src, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
-			return
-		}
-		l.featureRecipes[key] = e
-		l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
+		foldFirstWin(l.featureRecipes, key, e,
+			func() { l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes },
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate feature recipe identity %q; this file is shadowed", key))
+			})
 	case "Aggregate":
 		e, perr := parseAggregateEntity(parseData, src)
 		if perr != nil {
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		if _, dup := l.aggregates[e.Metadata.Name]; dup {
-			l.recordRecipeSkip(src, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
-			return
-		}
-		l.aggregates[e.Metadata.Name] = e
-		l.aggregateSources[e.Metadata.Name] = src
-		l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = rawBytes
+		foldFirstWin(l.aggregates, e.Metadata.Name, e,
+			func() {
+				l.aggregateSources[e.Metadata.Name] = src
+				l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = rawBytes
+			},
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name))
+			})
 	case "MappingLibrary":
 		e, perr := parseMappingLibraryEntity(parseData, src)
 		if perr != nil {
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		if _, dup := l.mappingLibraries[e.Metadata.Name]; dup {
-			l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
-			return
-		}
-		l.mappingLibraries[e.Metadata.Name] = e
-		l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
+		foldFirstWin(l.mappingLibraries, e.Metadata.Name, e,
+			func() { l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
+			})
 	case "Plugin":
 		if _, eerr := envelope.ValidateBytes(envelope.KindPlugin, parseData, src); eerr != nil {
 			l.recordRecipeSkip(src, eerr)
@@ -1033,12 +1041,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			return
 		}
 		key := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
-		if _, dup := l.plugins[key]; dup {
-			l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))
-			return
-		}
-		l.plugins[key] = e
-		l.entityBytes[entityBytesKey("Plugin", e.Metadata.Name)] = rawBytes
+		foldFirstWin(l.plugins, key, e,
+			func() { l.entityBytes[entityBytesKey("Plugin", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))
+			})
 	}
 }
 
@@ -1111,6 +1118,15 @@ func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src str
 func (l *LazyLookup) recordRecipeSkip(path string, err error) {
 	fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", path, err.Error())
 	l.recipeSkips[path] = err
+}
+
+// recordShadowedComponent emits the one-line first-win notice when a later
+// catalog directory re-declares a Component/Feature identity an earlier
+// directory already claimed. First-win precedence keeps the earlier occurrence;
+// the shadowed path is reported so the override is never silent. Stderr-only,
+// mirroring the recipe-shell skip diagnostic's form.
+func (l *LazyLookup) recordShadowedComponent(kind, name, path string) {
+	fmt.Fprintf(os.Stderr, "  catalog: %s %q at %s is shadowed (first-win precedence)\n", kind, name, path)
 }
 
 // recipeCatalog returns the cached *Catalog shell over the tolerantly-enumerated
