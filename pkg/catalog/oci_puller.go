@@ -182,7 +182,7 @@ func (p DefaultOCIPuller) RegistryHost() string {
 // suffix is stripped before binding since the location is version-independent.
 //
 // kindHint is the closure collection-site kind ("component" / "feature" /
-// "recipe" / "feature_recipe" / "provider" / "aggregate"); it is mapped to the
+// "recipe" / "feature_recipe" / "plugin" / "aggregate"); it is mapped to the
 // catalog kind the location rule expects. Returns ok=false when registry is
 // empty, when the hint does not map to a catalog kind, or when the binding is
 // refused (a registry-qualified identity) — the same conditions under which the
@@ -230,7 +230,7 @@ func entityKindForHint(hint string) string {
 // with a registry-host-shaped segment (the part before the first "/" carrying a
 // "." or ":") would be double-prefixed into an unfetchable location. Such a
 // reference is refused with ErrQualifiedPluginReference rather than bound. The
-// guard is Plugin-scoped; the Component / Feature / Recipe / Provider binders
+// guard is Plugin-scoped; the Component / Feature / Recipe binders
 // are unchanged.
 func entityReference(registry, kind, identity string) (string, error) {
 	if kind == "Plugin" && hasRegistryHostSegment(identity) {

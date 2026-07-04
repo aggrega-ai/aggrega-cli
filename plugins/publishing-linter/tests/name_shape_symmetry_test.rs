@@ -6,7 +6,7 @@
 //! source-of-truth in `aggrega-cli/pkg/catalog/name_shape.go`.
 //!
 //! The test reads the Go file (umbrella-relative; available in
-//! umbrella checkouts), greps the eight `const X = ...` lines that
+//! umbrella checkouts), greps the seven `const X = ...` lines that
 //! carry the per-kind regex strings, and compares the extracted
 //! patterns to the Rust-side constants. Drift between the two
 //! surfaces surfaces here at unit-test time.
@@ -28,7 +28,7 @@ use std::path::PathBuf;
 
 use publishing_linter::rules::name_shape::{
     AGGREGATE_NAME_SHAPE, COMPONENT_NAME_SHAPE, FEATURE_NAME_SHAPE, FEATURE_RECIPE_NAME_SHAPE,
-    MAPPING_LIBRARY_NAME_SHAPE, PROVIDER_NAME_SHAPE, RECIPE_NAME_SHAPE, SCHEMA_LIBRARY_NAME_SHAPE,
+    MAPPING_LIBRARY_NAME_SHAPE, RECIPE_NAME_SHAPE, SCHEMA_LIBRARY_NAME_SHAPE,
 };
 
 fn go_source_path() -> Option<PathBuf> {
@@ -85,7 +85,6 @@ fn name_shape_constants_match_go_source_of_truth() {
         ("FeatureNameShape", FEATURE_NAME_SHAPE),
         ("RecipeNameShape", RECIPE_NAME_SHAPE),
         ("FeatureRecipeNameShape", FEATURE_RECIPE_NAME_SHAPE),
-        ("ProviderNameShape", PROVIDER_NAME_SHAPE),
         ("AggregateNameShape", AGGREGATE_NAME_SHAPE),
         ("SchemaLibraryNameShape", SCHEMA_LIBRARY_NAME_SHAPE),
         ("MappingLibraryNameShape", MAPPING_LIBRARY_NAME_SHAPE),

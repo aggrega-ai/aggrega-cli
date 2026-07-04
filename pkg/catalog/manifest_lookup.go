@@ -346,7 +346,7 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 
 // PluginByURI returns the Plugin entity whose identity matches uri, plus
 // a found flag. A Plugin is a by-name entity (keyed metadata.name:version,
-// like Provider / Component), not a provider-qualified one, so resolution goes
+// like Component), not a provider-qualified one, so resolution goes
 // through the shared three-form version select (exact / caret / unversioned ->
 // highest-satisfying) rather than the provider-scan ladder RecipeByURI uses. The
 // returned entity carries spec.plugin (the OCI artifact reference); resolving that

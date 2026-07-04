@@ -98,7 +98,7 @@ type Catalog struct {
 	// entityBytes records the raw YAML bytes each entity was loaded
 	// from, keyed by "<kind>:<identifier>" where identifier matches
 	// the typed-map key (metadata.name for Component/Feature/
-	// Provider/Aggregate/SchemaLibrary/MappingLibrary, spec.implements
+	// Aggregate/SchemaLibrary/MappingLibrary, spec.implements
 	// for Recipe/FeatureRecipe). ClosureLookup hashes these bytes to
 	// produce the content-digest the lockfile pins for Tier-1 hits.
 	// Populated lazily during indexFile; unset for entity kinds the
@@ -513,20 +513,21 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 }
 
 // validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component,
-// Feature, and Provider in sorted-name order, runs the corresponding
+// Feature, and Plugin in sorted order, runs the corresponding
 // load-time validator against each entity's schema-bearing fields with
 // the now-fully-populated SchemaLibraries map for cross-document $ref
 // expansion (Component / Feature only), collects every failure, and
 // returns a single aggregated CatalogError when at least one entity
-// failed. Sorted-name iteration is required for diagnostic stability:
+// failed. Sorted iteration is required for diagnostic stability:
 // map-iteration order would flap across runs and make CI logs unstable
 // against the deterministic-output invariant.
 //
-// The Provider block validates the flat workloadSchema JSON Schema body
+// A Plugin's provider block validates the flat workloadSchema JSON Schema body
 // (different contract from the pillar-wrapped Component / Feature schemas —
-// no SchemaLibrary $ref expansion is expected at the Provider field surface
-// today). Wired so today's catalogs reach the same load-time guardrail the
-// Component / Feature surface enjoys.
+// no SchemaLibrary $ref expansion is expected at the Plugin provider field
+// surface today). Wired so today's catalogs reach the same load-time guardrail
+// the Component / Feature surface enjoys. A final guardrail rejects a provider
+// name claimed by more than one provider-rendering Plugin.
 func (c *Catalog) validateSchemaPillarsPass() error {
 	var validationErrors []error
 

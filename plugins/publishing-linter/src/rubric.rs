@@ -27,7 +27,7 @@
 //!
 //! Per-kind dispatch:
 //!
-//! - Component / Feature / Provider: JSON-Schema-aware diff via
+//! - Component / Feature: JSON-Schema-aware diff via
 //!   shared walker over the documented field allowlists per kind.
 //! - SchemaLibrary: per-entry diff under spec.schemas + spec.templates.
 //! - MappingLibrary: entry-key-level diff (opaque template strings).
@@ -75,7 +75,6 @@ fn classify_one(input: &LinterInput) -> (String, String) {
     match input.entity_kind.as_str() {
         "Component" => classify_with_allowlists(previous, proposed, COMPONENT_DOCS_PATHS, COMPONENT_FIELD_PATHS, "Component"),
         "Feature" => classify_with_allowlists(previous, proposed, FEATURE_DOCS_PATHS, FEATURE_FIELD_PATHS, "Feature"),
-        "Provider" => classify_with_allowlists(previous, proposed, PROVIDER_DOCS_PATHS, PROVIDER_FIELD_PATHS, "Provider"),
         "SchemaLibrary" => classify_schema_library(previous, proposed),
         "MappingLibrary" => classify_mapping_library(previous, proposed),
         "Recipe" => classify_recipe_like(previous, proposed, "Recipe"),
@@ -102,10 +101,6 @@ const FEATURE_DOCS_PATHS: &[&str] = &[
     "spec.description",
     "spec.schema.description",
 ];
-const PROVIDER_DOCS_PATHS: &[&str] = &[
-    "metadata.description",
-    "spec.description",
-];
 
 // ----- Field paths the rubric considers for additive/subtractive
 // detection (the "diff scope" per consolidation §2). -----
@@ -126,10 +121,6 @@ const FEATURE_FIELD_PATHS: &[&str] = &[
     "spec.appliesToValues",
     "spec.interoperability",
     "spec.extends",
-];
-const PROVIDER_FIELD_PATHS: &[&str] = &[
-    "spec.plugin",
-    "spec.workloadSchema",
 ];
 
 fn classify_with_allowlists(

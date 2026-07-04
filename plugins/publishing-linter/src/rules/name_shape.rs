@@ -89,7 +89,6 @@ pub const COMPONENT_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*/[a-z][
 pub const FEATURE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$";
 pub const RECIPE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
 pub const FEATURE_RECIPE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
-pub const PROVIDER_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
 pub const AGGREGATE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$";
 pub const SCHEMA_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 pub const MAPPING_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
@@ -100,7 +99,6 @@ fn per_kind_pattern(kind: &str) -> Option<&'static str> {
         "Feature" => Some(FEATURE_NAME_SHAPE),
         "Recipe" => Some(RECIPE_NAME_SHAPE),
         "FeatureRecipe" => Some(FEATURE_RECIPE_NAME_SHAPE),
-        "Provider" => Some(PROVIDER_NAME_SHAPE),
         "Aggregate" => Some(AGGREGATE_NAME_SHAPE),
         "SchemaLibrary" => Some(SCHEMA_LIBRARY_NAME_SHAPE),
         "MappingLibrary" => Some(MAPPING_LIBRARY_NAME_SHAPE),

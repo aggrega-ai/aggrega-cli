@@ -12,7 +12,7 @@ import (
 )
 
 // ErrUnsatisfiableEntityVersion is a recoverable sentinel: a catalog reference
-// names a base entity (Component / Feature / Provider / Aggregate) that exists in
+// names a base entity (Component / Feature / Aggregate) that exists in
 // the catalog, but no available version satisfies the reference's version
 // constraint — an exact version that is absent, or a caret range that matches
 // nothing. It is distinct from a plain miss (the base name itself is absent),

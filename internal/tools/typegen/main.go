@@ -424,10 +424,9 @@ var codecTargets = map[string]codecTarget{
 	// package abi (helpers: false); the renderer host codec is alone in its package
 	// and owns its helpers (helpers: true).
 	//
-	// The output basenames carry the `providerrender_` stem rather than
-	// `provider_`: the `provider_gen.go` basename is already the Provider entity's
-	// single-type target in pkg/types, and the generator dispatches by basename, so
-	// a shared basename would resolve to the entity kind, not this codec target.
+	// The output basenames carry the `providerrender_` stem to name this render
+	// socket's codec target distinctly; the generator dispatches by basename, so a
+	// descriptive stem keeps this codec target unambiguous against other basenames.
 	"providerrender_gen.go": {
 		schema:     schemas.WasmProviderV1alpha1,
 		schemaFile: "wasm-provider-v1alpha1.schema.json",

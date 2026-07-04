@@ -78,7 +78,7 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup)
 
 	for _, entityURI := range entityURIs {
 		// Resolve and pin the Plugin ENTITY onto the catalog-entity axis —
-		// exactly as the provider axis pins a Provider. A recipe-referenced entity
+		// exactly as the provider axis pins a Plugin. A recipe-referenced entity
 		// is pinned here with the referencing recipe URIs; a workspace-socket entity
 		// was already pinned by ComputeClosure and keeps its socket referenced-from.
 		recipeFromSet := recipeRefs[entityURI]

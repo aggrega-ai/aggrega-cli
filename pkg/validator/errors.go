@@ -53,7 +53,7 @@ func (e *ValidationError) Unwrap() error {
 // ToCompilerError converts the structured ValidationError into a
 // *cerrors.CompilerError. The Category is classified by the Entity prefix
 // per cerrors.ClassifyEntityCategory: "Component" / "Recipe" / "Feature" /
-// "FeatureRecipe" / "Provider" / "Manifest" → CatalogError; "Aggregate" →
+// "FeatureRecipe" / "Manifest" → CatalogError; "Aggregate" →
 // DeveloperError; "Release" → OpsError; unknown → DeveloperError
 // (conservative).
 //

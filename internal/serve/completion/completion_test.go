@@ -17,19 +17,19 @@ import (
 func TestCompletionKindReturnsAllEntityKinds(t *testing.T) {
 	t.Parallel()
 	items := Kind()
-	if len(items) != 10 {
-		t.Fatalf("Kind() returned %d items; want 10 entity kinds", len(items))
+	if len(items) != 9 {
+		t.Fatalf("Kind() returned %d items; want 9 entity kinds", len(items))
 	}
 	// First item should be the authoring-progression's natural starting point: Aggregate.
 	if items[0].Label != "Aggregate" {
 		t.Errorf("first item = %q; want Aggregate (Operator-layer authoring entry point)", items[0].Label)
 	}
-	// All 10 kinds should be present.
+	// All 9 kinds should be present.
 	got := map[string]bool{}
 	for _, item := range items {
 		got[item.Label] = true
 	}
-	for _, want := range []string{"Aggregate", "Manifest", "Release", "Component", "Feature", "Recipe", "FeatureRecipe", "Provider", "SchemaLibrary", "MappingLibrary"} {
+	for _, want := range []string{"Aggregate", "Manifest", "Release", "Component", "Feature", "Recipe", "FeatureRecipe", "SchemaLibrary", "MappingLibrary"} {
 		if !got[want] {
 			t.Errorf("kind %q missing from Kind() output", want)
 		}
@@ -510,10 +510,10 @@ func TestClassifyForCompletionReturnsUnknownForUnrecognized(t *testing.T) {
 
 // --- Closed-set table verification ---
 
-func TestEntityKindsTableContainsExpectedTen(t *testing.T) {
+func TestEntityKindsTableContainsExpectedNine(t *testing.T) {
 	t.Parallel()
-	if len(EntityKinds) != 10 {
-		t.Errorf("EntityKinds has %d entries; want 10", len(EntityKinds))
+	if len(EntityKinds) != 9 {
+		t.Errorf("EntityKinds has %d entries; want 9", len(EntityKinds))
 	}
 }
 

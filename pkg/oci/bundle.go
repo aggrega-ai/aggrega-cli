@@ -20,7 +20,7 @@ import (
 
 // IsTarGzBundle reports whether b begins with the gzip magic — i.e. it is a
 // Recipe / FeatureRecipe tar.gz bundle (Bundle's tar.gz arm) rather than a
-// plain-YAML entity (Component / Feature / Provider / Aggregate).
+// plain-YAML entity (Component / Feature / Aggregate).
 func IsTarGzBundle(b []byte) bool {
 	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
 }
@@ -64,7 +64,7 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // Per-kind dispatch (matching the kind strings pkg/catalog/catalog.go
 // switches on):
 //
-//   - Component / Feature / Provider / Aggregate / SchemaLibrary /
+//   - Component / Feature / Aggregate / SchemaLibrary /
 //     MappingLibrary / Plugin → bare YAML, no archive; bytes are
 //     the file contents unchanged.
 //   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
@@ -100,7 +100,7 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 	}
 
 	switch kind {
-	case "Component", "Feature", "Provider", "Aggregate", "SchemaLibrary", "MappingLibrary", "Plugin":
+	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "Plugin":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)

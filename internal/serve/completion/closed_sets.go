@@ -15,7 +15,6 @@ var EntityKinds = []string{
 	"Feature",
 	"Recipe",
 	"FeatureRecipe",
-	"Provider",
 	"SchemaLibrary",
 	"MappingLibrary",
 }

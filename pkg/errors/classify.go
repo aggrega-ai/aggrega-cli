@@ -20,8 +20,8 @@ import "strings"
 //   - "Release" → OpsError. The Release is the operator's authoring
 //     surface; field violations on it are ops-domain.
 //
-//   - "Recipe", "Component", "Feature", "FeatureRecipe", "Provider",
-//     "Manifest" → CatalogError. All six entity kinds are catalog
+//   - "Recipe", "Component", "Feature", "FeatureRecipe",
+//     "Manifest" → CatalogError. All five entity kinds are catalog
 //     content; violations are catalog-author-domain.
 //
 //   - Unknown prefix → DeveloperError. Conservative: flag at the
@@ -38,7 +38,7 @@ func ClassifyEntityCategory(entity string) Category {
 		return DeveloperError
 	case "Release":
 		return OpsError
-	case "Recipe", "Component", "Feature", "FeatureRecipe", "Provider", "Manifest":
+	case "Recipe", "Component", "Feature", "FeatureRecipe", "Manifest":
 		return CatalogError
 	}
 	return DeveloperError

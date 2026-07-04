@@ -9,7 +9,7 @@ import "fmt"
 // CompilerError. The five values partition the compiler's error surface
 // by who edits the offending file: developer (Aggregate), operator
 // (Release), catalog author (Recipe / Component / Feature / FeatureRecipe
-// / Provider / Manifest), provider engine (translation cannot express
+// / Manifest), provider engine (translation cannot express
 // the requested output), or the remote registry / network layer (a
 // fetch of a pinned artifact failed at lock or build time).
 type Category string

@@ -16,7 +16,7 @@ import (
 
 // emitYAMLRoundTrip writes the entity as authored — a verbatim YAML node
 // round-trip of the loaded bytes. The as-authored kinds (Component, Feature,
-// Recipe, FeatureRecipe, Provider, MappingLibrary, SchemaLibrary) share this
+// Recipe, FeatureRecipe, Plugin, MappingLibrary, SchemaLibrary) share this
 // --output yaml path: the file IS the inspection subject, so re-emitting the
 // parsed node preserves authoring bytes rather than normalizing through a typed
 // re-marshal (which would reorder keys and drop comments).

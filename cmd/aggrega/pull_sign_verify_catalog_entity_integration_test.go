@@ -130,8 +130,8 @@ spec:
 
 // TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed is the catalog-entity
 // publish→pull→verify capstone driven through the PRODUCTION pull command. It
-// closes the authenticity gap where a signed catalog entity (Component / Recipe /
-// Provider), recorded in the closure under its host-less bare identity, was never
+// closes the authenticity gap where a signed catalog entity (Component / Recipe),
+// recorded in the closure under its host-less bare identity, was never
 // signature-verified on pull even under a require-signatures policy: the pre-fix
 // verify pass gated on the bare identity's leading path segment ("test") looking
 // like a registry host, which it never does, so every catalog entity was silently

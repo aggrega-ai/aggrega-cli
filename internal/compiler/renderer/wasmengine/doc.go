@@ -22,8 +22,10 @@
 // once for the whole build rather than once per node — a cost amortization
 // only; it changes neither isolation nor output.
 //
-// The adapter is host-only Go — it imports the host-only helm package to project
-// a chart source and to reuse the host's per-slot secret projection — and carries
-// no wasip1 build tag. It is the provider engine the hybrid dispatch selects for
-// a provider whose catalog Provider resolves to a Wasm rendering plugin.
+// The adapter is host-only Go and carries no wasip1 build tag. It stays free of
+// any provider package import: it fronts an in-tree Go engine through the
+// renderer.Engine interface, whose SourceProjector projects a sourced node's
+// chart source onto the render wire and whose per-slot secret projection it
+// reuses. It is the provider engine the hybrid dispatch selects for a provider
+// that resolves to a Wasm rendering Plugin.
 package wasmengine

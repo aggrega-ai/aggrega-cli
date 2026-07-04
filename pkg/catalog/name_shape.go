@@ -98,10 +98,6 @@ const RecipeNameShape = `^[a-z][a-z0-9-]*$`
 // "dotenv-secret", "compose-bridge-fr".
 const FeatureRecipeNameShape = `^[a-z][a-z0-9-]*$`
 
-// ProviderNameShape matches a single kebab-case leaf. Example matches:
-// "helm", "helm-chart", "terraform", "compose", "cloudformation".
-const ProviderNameShape = `^[a-z][a-z0-9-]*$`
-
 // AggregateNameShape matches two kebab-case segments separated by "/".
 // Starting pattern; the hub catalog carries no Aggregate fixtures
 // today (Aggregates are developer-authored, not catalog-distributed).
@@ -130,9 +126,6 @@ var RecipeNameShapeRe = regexp.MustCompile(RecipeNameShape)
 
 // FeatureRecipeNameShapeRe is the compiled form of FeatureRecipeNameShape.
 var FeatureRecipeNameShapeRe = regexp.MustCompile(FeatureRecipeNameShape)
-
-// ProviderNameShapeRe is the compiled form of ProviderNameShape.
-var ProviderNameShapeRe = regexp.MustCompile(ProviderNameShape)
 
 // AggregateNameShapeRe is the compiled form of AggregateNameShape.
 var AggregateNameShapeRe = regexp.MustCompile(AggregateNameShape)

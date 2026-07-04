@@ -170,30 +170,6 @@ func TestFeatureRecipeNameShape_MatchesSingleKebabSegment(t *testing.T) {
 	}
 }
 
-func TestProviderNameShape_MatchesSingleKebabSegment(t *testing.T) {
-	cases := []struct {
-		input string
-		want  bool
-	}{
-		// Hub catalog fixtures
-		{"helm", true},
-		{"helm-chart", true},
-		{"terraform", true},
-		{"compose", true},
-		{"cloudformation", true},
-		// Multi-segment forms
-		{"aggrega/helm", false},
-		// Wrong character class
-		{"Helm", false},
-		{"helm_chart", false},
-	}
-	for _, tc := range cases {
-		if got := ProviderNameShapeRe.MatchString(tc.input); got != tc.want {
-			t.Errorf("ProviderNameShapeRe.MatchString(%q) = %v, want %v", tc.input, got, tc.want)
-		}
-	}
-}
-
 func TestAggregateNameShape_MatchesTwoKebabSegments(t *testing.T) {
 	// No hub fixtures available; pattern matches the entity-reference
 	// shape pending verification against the first published Aggregate.
@@ -289,7 +265,6 @@ func TestExportedStringConstants_GoRuntimeParity(t *testing.T) {
 		{"FeatureNameShape", FeatureNameShape, FeatureNameShapeRe},
 		{"RecipeNameShape", RecipeNameShape, RecipeNameShapeRe},
 		{"FeatureRecipeNameShape", FeatureRecipeNameShape, FeatureRecipeNameShapeRe},
-		{"ProviderNameShape", ProviderNameShape, ProviderNameShapeRe},
 		{"AggregateNameShape", AggregateNameShape, AggregateNameShapeRe},
 		{"SchemaLibraryNameShape", SchemaLibraryNameShape, SchemaLibraryNameShapeRe},
 		{"MappingLibraryNameShape", MappingLibraryNameShape, MappingLibraryNameShapeRe},

@@ -81,16 +81,6 @@ fn name_shape_featurerecipe_rejects_non_matching() {
 }
 
 #[test]
-fn name_shape_provider_single_segment_kebab_passes() {
-    passes("Provider", "helm");
-}
-
-#[test]
-fn name_shape_provider_rejects_non_matching() {
-    rejects("Provider", "Helm");
-}
-
-#[test]
 fn name_shape_aggregate_two_segment_kebab_passes() {
     passes("Aggregate", "platform/payments-service");
 }

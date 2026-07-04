@@ -92,7 +92,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 // its OWN pin-DEPENDENT caches, seeded with pins, so a concurrent request
 // resolving with different pins never perturbs this one. Pins and every cache
 // whose contents depend on them (the hot Component/Feature caches, the
-// enumerated Recipe/FeatureRecipe/Aggregate/Provider/MappingLibrary/
+// enumerated Recipe/FeatureRecipe/Aggregate/Plugin/MappingLibrary/
 // SchemaLibrary shell, the effective-schema and narrowing accumulators, the
 // recipe-catalog shell, the retained entity bytes) are private to the returned
 // view. The pin-INDEPENDENT, session-stable state — workspaceRoot, cacheDir,
@@ -439,7 +439,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.pins = pins
-	// The enumerated kinds (Recipe / FeatureRecipe / Aggregate / Provider /
+	// The enumerated kinds (Recipe / FeatureRecipe / Aggregate / Plugin /
 	// MappingLibrary / SchemaLibrary) fold a PIN-DEPENDENT Tier-2 set, and the
 	// enumeration is built-once (idempotent). When the pin set changes — pull's
 	// second SetPins after library discovery, or serve's per-request pins — drop the
@@ -1525,7 +1525,7 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 // `*Catalog.ClosureLookupWithExternals`. No catalog is loaded up front:
 // Component/Feature resolve per-URI through the Tier-1 (filesystem index) →
 // Tier-2 (verified cache) → Tier-3 (the SUPPLIED puller) cascade, and
-// Recipe/FeatureRecipe/Aggregate/Provider/SchemaLibrary/MappingLibrary resolve
+// Recipe/FeatureRecipe/Aggregate/Plugin/SchemaLibrary/MappingLibrary resolve
 // through the tolerantly-enumerated recipe shell (also with Tier-2/3). A broken
 // out-of-closure entity is never enumerated-fatal; the digests returned hash the
 // SAME authored bytes a build/pull hashed (retained in entityBytes), so a serve
@@ -1550,7 +1550,7 @@ func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir str
 // with the recipe-shell-backed catalogLookup (base) for every other kind. The
 // shell's Components/Features maps are empty (those kinds stay on-demand), so
 // Component/Feature are tried here FIRST; everything else falls through to base,
-// which serves Recipe/FR/Aggregate/Provider at Tier-1 and all kinds at Tier-2/3.
+// which serves Recipe/FR/Aggregate/Plugin at Tier-1 and all kinds at Tier-2/3.
 type lazyClosureLookup struct {
 	l      *LazyLookup
 	puller OCIPuller

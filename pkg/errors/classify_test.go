@@ -24,7 +24,7 @@ func TestClassifyEntityCategory_ReleaseIsOps(t *testing.T) {
 	}
 }
 
-// TestClassifyEntityCategory_CatalogEntities verifies all six catalog
+// TestClassifyEntityCategory_CatalogEntities verifies all five catalog
 // entity kinds route to CatalogError. Table-driven across the kinds.
 func TestClassifyEntityCategory_CatalogEntities(t *testing.T) {
 	cases := []string{
@@ -32,7 +32,6 @@ func TestClassifyEntityCategory_CatalogEntities(t *testing.T) {
 		"Component core/api-server",
 		"Feature core/dns-resolver",
 		"FeatureRecipe core/dns-resolver-recipe",
-		"Provider helm",
 		"Manifest prod-manifest",
 	}
 	for _, entity := range cases {

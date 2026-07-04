@@ -172,7 +172,7 @@ type AggregatePuller interface {
 // registry host. A puller that does not implement it (the hermetic-build nil
 // puller, or a Pull-only test puller) leaves the bare-identity entity tier on the
 // legacy already-located reference path. kind is the catalog kind
-// ("Component"/"Feature"/"Recipe"/"FeatureRecipe"/"Provider"); version is the tag.
+// ("Component"/"Feature"/"Recipe"/"FeatureRecipe"); version is the tag.
 type EntityPuller interface {
 	PullEntity(ctx context.Context, identity, kind, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
 }
@@ -424,8 +424,6 @@ func ociKindForHint(hint string) string {
 		return "Recipe"
 	case "feature_recipe":
 		return "FeatureRecipe"
-	case "provider":
-		return "Provider"
 	case "plugin":
 		return "Plugin"
 	default:
@@ -1172,7 +1170,7 @@ func EntityNameFromURI(uri string) string {
 
 // lookupNameFromURI returns the URI with any trailing ":<version>"
 // segment stripped. The catalog indexes Component / Feature /
-// Provider / Aggregate / SchemaLibrary / MappingLibrary entries by
+// Aggregate / SchemaLibrary / MappingLibrary entries by
 // the verbatim metadata.name string (which may itself contain "/"
 // separators — e.g., "core/server", "hub.aggrega.ai/component/core/api-server").
 // Stripping path segments here would lose load-bearing prefix

@@ -93,7 +93,6 @@ func TestOCIKindForHint_MapsPlugin(t *testing.T) {
 		{"feature", "Feature"},
 		{"recipe", "Recipe"},
 		{"feature_recipe", "FeatureRecipe"},
-		{"provider", "Provider"},
 		{"plugin", "Plugin"},
 		{"", ""},
 		{"unknown", ""},

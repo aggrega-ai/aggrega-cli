@@ -25,7 +25,7 @@ import (
 // registry location. The empty struct returns "" + nil (callers treat as
 // "no valuesMapping").
 //
-// entityKind is one of "Recipe" / "FeatureRecipe" / "Provider"; used in
+// entityKind is one of "Recipe" / "FeatureRecipe"; used in
 // error wrapping for diagnostic clarity. entityName is the metadata.name
 // of the loaded entity.
 func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind string, mappingLibs map[string]types.MappingLibrary) (string, error) {
