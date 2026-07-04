@@ -169,9 +169,8 @@ func policyVerdictErrors(pluginURI string, po analyzer.PolicyValidatorOutput) []
 }
 
 // mutatorCompilationContext builds the release-level context the mutator reads
-// when deciding which rules apply. The release name and environment come from
-// the Release metadata; the release destination has no single Release-level
-// source (destinations are declared per boundary), so it is left empty.
+// when deciding which rules apply. Both fields — the release name and the
+// environment — come from the Release metadata.
 func mutatorCompilationContext(rel *types.Release) topology.CompilationContext {
 	if rel == nil {
 		return topology.CompilationContext{}

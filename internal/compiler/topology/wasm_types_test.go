@@ -84,9 +84,8 @@ func TestMutatorInput_RoundTripJSONSchema(t *testing.T) {
 
 	fixture := topology.MutatorInput{
 		CompilationContext: topology.CompilationContext{
-			ReleaseDestination: "aws-prod/eks-main",
-			ReleaseName:        "payments",
-			Environment:        "prod",
+			ReleaseName: "payments",
+			Environment: "prod",
 		},
 		Graph: topology.MutatorGraph{
 			Nodes: *nodes,

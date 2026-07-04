@@ -32,8 +32,6 @@ type MutatorOutput struct {
 
 // CompilationContext Release-level metadata the mutator reads when deciding which compliance, FinOps, or governance rules apply to the build.
 type CompilationContext struct {
-	// ReleaseDestination The boundary path or destination identifier the Release targets.
-	ReleaseDestination string `json:"release_destination" yaml:"release_destination"`
 	// ReleaseName The Release's metadata.name.
 	ReleaseName string `json:"release_name" yaml:"release_name"`
 	// Environment The environment label the Release runs under (e.g., dev, staging, prod).
@@ -205,12 +203,6 @@ func (t CompilationContext) MarshalJSON() ([]byte, error) {
 		buf.WriteByte(',')
 	}
 	first = false
-	buf.WriteString("\"release_destination\":")
-	writeJSONString(&buf, t.ReleaseDestination)
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
 	buf.WriteString("\"release_name\":")
 	writeJSONString(&buf, t.ReleaseName)
 	if !first {
@@ -237,12 +229,6 @@ func (t *CompilationContext) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		switch key {
-		case "release_destination":
-			if s, err := readString(dec); err != nil {
-				return err
-			} else {
-				t.ReleaseDestination = s
-			}
 		case "release_name":
 			if s, err := readString(dec); err != nil {
 				return err

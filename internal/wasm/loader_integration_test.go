@@ -41,9 +41,8 @@ func mutatorFixtureInput(t *testing.T) []byte {
 	t.Helper()
 	input := map[string]any{
 		"compilation_context": map[string]any{
-			"release_destination": "aws-prod/eks-main",
-			"release_name":        "payments",
-			"environment":         "prod",
+			"release_name": "payments",
+			"environment":  "prod",
 		},
 		"graph": map[string]any{
 			"nodes": map[string]any{
