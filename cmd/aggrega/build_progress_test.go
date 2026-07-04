@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ttyReporter builds a checklist reporter over a forced-terminal sink.
@@ -258,6 +259,94 @@ func TestProgress_RenderNode_ForcedStatic_Throttled(t *testing.T) {
 	}
 	if !strings.Contains(got, "rendering 50/50...") {
 		t.Errorf("expected a guaranteed final count line; got %q", got)
+	}
+}
+
+// TestProgress_TTY_SpinnerTicker_Animates proves the active-phase spinner is
+// time-driven, not event-driven: after a single phase() draw, with no further
+// phase-transition calls, the background ticker must redraw the checklist several
+// more times and advance the spinner frame. The tick interval is shortened so the
+// animation is observable without a long wait. finish() stops the ticker and
+// waits for its goroutine to exit, so reading the buffer afterward is race-free.
+func TestProgress_TTY_SpinnerTicker_Animates(t *testing.T) {
+	withTTY(t, true)
+
+	orig := spinnerTickInterval
+	spinnerTickInterval = 2 * time.Millisecond
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{}, buildProgressSpine(false))
+	// One phase() draws the initial block and lazily starts the ticker; the active
+	// row is the "loading catalog" spinner.
+	p.phase(phaseLoadCatalog)
+
+	// No further phase() calls: let the ticker alone drive redraws for a window
+	// spanning many intervals.
+	time.Sleep(80 * time.Millisecond)
+	p.finish()
+
+	got := buf.String()
+
+	// Each full redraw re-emits every row, so the count of the active label is the
+	// count of draws. The event-driven baseline is 2 (the phase() draw plus the
+	// finish() draw); anything well above that proves the ticker drove redraws.
+	if draws := strings.Count(got, "loading catalog"); draws < 4 {
+		t.Errorf("spinner ticker did not drive periodic redraws: only %d draws (event-driven baseline is 2); got %q", draws, got)
+	}
+
+	// The active-phase spinner frame must advance over time: more than one distinct
+	// frame character appears on the active "loading catalog" row across redraws.
+	seen := 0
+	for _, f := range spinnerFrames {
+		if strings.Contains(got, markActive(f)+"loading catalog") {
+			seen++
+		}
+	}
+	if seen < 2 {
+		t.Errorf("spinner frame did not advance over time: saw %d distinct active frames, want >= 2; got %q", seen, got)
+	}
+}
+
+// TestProgress_NonChecklist_NoTicker confirms the animation ticker is scoped to
+// checklist (interactive TTY) mode only: forced-static, silent, and debug modes
+// never start it, so their output is unchanged by the passage of time.
+func TestProgress_NonChecklist_NoTicker(t *testing.T) {
+	orig := spinnerTickInterval
+	spinnerTickInterval = 2 * time.Millisecond
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	cases := []struct {
+		name string
+		tty  bool
+		diag buildDiagOptions
+	}{
+		{name: "forced-static", tty: false, diag: buildDiagOptions{progress: true}},
+		{name: "silent", tty: false, diag: buildDiagOptions{}},
+		{name: "debug", tty: true, diag: buildDiagOptions{debug: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withTTY(t, tc.tty)
+
+			var buf bytes.Buffer
+			p := newProgressReporter(&buf, tc.diag, buildProgressSpine(false))
+			p.phase(phaseLoadCatalog)
+			p.phase(phaseClosure)
+			time.Sleep(40 * time.Millisecond)
+			if p.tickerStarted {
+				t.Errorf("%s must not start the animation ticker", tc.name)
+			}
+			before := buf.String()
+			time.Sleep(40 * time.Millisecond)
+			p.finish()
+			// Output must not have grown during the idle window (finish appends only
+			// in debug mode's run-total, which is deterministic in shape).
+			after := buf.String()
+			if tc.name != "debug" && before != after {
+				t.Errorf("%s output changed over time without events: before=%q after=%q", tc.name, before, after)
+			}
+		})
 	}
 }
 

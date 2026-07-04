@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
@@ -141,6 +142,10 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // switch, the output-directory override, and the acquired-pin callback the
 // acquire command reports through. The zero value is the plain build shape.
 func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildRunOptions, diagOut, out io.Writer) error {
+	// Wall-clock start of the whole build run, sourced independently of the
+	// progress reporter (whose clock is unset in silent mode and only spans the
+	// progress phases) so the summary's "Build time" spans the entire dispatch.
+	buildStart := time.Now()
 	// Cold/warm plugin-compile-cache detection, up front: a cold cache means a
 	// guest this build loads will be compiled, so the checklist may show a
 	// "compiling plugins" step; a warm cache omits it. --disable-plugin-cache
@@ -409,8 +414,20 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// total) before the stdout summary so the progress surface never lingers
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
-	fmt.Fprintf(out, "Build complete: %d files written to %s/\n", len(result.Artifacts), outDir)
+	fmt.Fprintf(out, "Build time: %s\n", formatBuildDuration(time.Since(buildStart)))
+	fmt.Fprintf(out, "Build completed: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
+}
+
+// formatBuildDuration renders an elapsed build wall-clock for the summary: whole
+// milliseconds below one second ("87 ms") and seconds to one decimal at or above
+// one second ("1.4 s"). The value is intentionally nondeterministic; it lands on
+// stdout as human feedback and is not part of the rendered artifacts.
+func formatBuildDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%d ms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1f s", d.Seconds())
 }
 
 // newExternalInputsService constructs the per-build external-input gate over

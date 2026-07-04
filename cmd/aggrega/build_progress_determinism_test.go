@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,12 @@ import (
 // silent (--quiet), verbose (--debug), and the cold profile (--disable-plugin-
 // cache). If any mode perturbs stdout or the artifacts by one byte, this test
 // fails.
+//
+// The summary's "Build time" line is intentionally wall-clock nondeterministic;
+// it is masked to a fixed token before the cross-mode stdout comparison so the
+// comparison still proves stdout is byte-identical across modes modulo that one
+// legitimately-variable timing value. The dist/ tree comparison is left
+// unmasked — it is the true output-determinism proof and must stay byte-exact.
 func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -68,7 +75,7 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 			t.Fatalf("%s: build failed: %v (stderr=%q)", m.name, err, stderr.String())
 		}
 
-		gotStdout := stdout.String()
+		gotStdout := maskBuildTime(stdout.String())
 		gotDist := hashDistTree(t, outDir)
 
 		if i == 0 {
@@ -89,6 +96,20 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 			t.Errorf("%s: dist tree sha differs from auto-pipe: want %s got %s", m.name, wantDist, gotDist)
 		}
 	}
+}
+
+// maskBuildTime replaces the value on the summary's "Build time:" line with a
+// fixed token so a cross-mode stdout comparison is not defeated by the line's
+// intended wall-clock variability, while every other stdout byte stays compared
+// verbatim.
+func maskBuildTime(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if strings.HasPrefix(ln, "Build time: ") {
+			lines[i] = "Build time: <masked>"
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // hashDistTree returns a sha256 over the sorted (relpath, content) pairs of every

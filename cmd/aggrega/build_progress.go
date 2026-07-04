@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -112,9 +113,23 @@ const compilePhaseLabel = "compiling plugins"
 // the render step; a warm build omits it. The render phase carries an X/Y node
 // counter.
 type progressReporter struct {
+	// mu guards every state mutation and every write to out, so the background
+	// spinner ticker (checklist mode only) and the main build thread never race
+	// on reporter state or interleave writes on the diagnostic sink.
+	mu sync.Mutex
+
 	out   io.Writer
 	mode  progressMode
 	spine progressSpine
+
+	// Spinner ticker lifecycle, live only in checklist mode. The ticker starts
+	// lazily on the first draw and drives periodic redraws so the active phase's
+	// spinner animates even when no phase-transition event occurs. tickerDone
+	// stops the goroutine; tickerWG lets finish wait for it to exit before the
+	// final draw so the ticker never redraws after finish.
+	tickerStarted bool
+	tickerDone    chan struct{}
+	tickerWG      sync.WaitGroup
 
 	// started is the whole-run wall clock, set at the first phase and used for
 	// the debug total. phaseStart marks the current phase for per-phase timing.
@@ -204,6 +219,12 @@ const (
 
 var spinnerFrames = []rune{'|', '/', '-', '\\'}
 
+// spinnerTickInterval is the redraw cadence of the checklist spinner ticker:
+// often enough to read as smooth animation, seldom enough to stay off the busy
+// path. It is a package var rather than a const so tests can shorten it to make
+// the time-driven animation observable without a long wait.
+var spinnerTickInterval = 100 * time.Millisecond
+
 // markDone, markActive, and markPending are the checklist row prefixes.
 const (
 	markDone    = "[✓] " // [✓]
@@ -218,7 +239,12 @@ func markActive(frame rune) string { return fmt.Sprintf("[%c] ", frame) }
 // immediately. Indices at or past the render phase are driven by renderNode and
 // pluginCompiling instead, not by phase.
 func (p *progressReporter) phase(i int) {
-	if p == nil || p.mode == progressSilent {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent {
 		return
 	}
 	now := time.Now()
@@ -256,7 +282,12 @@ func (p *progressReporter) phase(i int) {
 // once node rendering has started, it is a no-op. It is invoked from the shared
 // loader's load observer, which fires as each guest is constructed.
 func (p *progressReporter) pluginCompiling() {
-	if p == nil || p.mode == progressSilent || p.spine.renderIdx < 0 {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent || p.spine.renderIdx < 0 {
 		return
 	}
 	if !p.spine.coldProfile || p.compileDone || p.renderDone > 0 {
@@ -290,7 +321,12 @@ func (p *progressReporter) pluginCompiling() {
 // render phase active. A silent reporter, or a zero/negative total, returns
 // immediately.
 func (p *progressReporter) renderNode(done, total int, nodeID string) {
-	if p == nil || p.mode == progressSilent || total <= 0 || p.spine.renderIdx < 0 {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent || total <= 0 || p.spine.renderIdx < 0 {
 		return
 	}
 	first := p.renderTotal == 0
@@ -338,7 +374,12 @@ func (p *progressReporter) beginRenderStage() {
 // tier observation that is cheap at the boundary. It is a no-op unless the
 // verbose debug layer is active.
 func (p *progressReporter) note(format string, args ...any) {
-	if p == nil || p.mode != progressDebug {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode != progressDebug {
 		return
 	}
 	fmt.Fprintf(p.out, "  [debug]   %s\n", fmt.Sprintf(format, args...))
@@ -364,6 +405,7 @@ func renderThrottleStep(total int) int {
 // draw renders the full checklist block in place, moving the cursor up over the
 // previously drawn block first so the surface redraws rather than scrolls.
 func (p *progressReporter) draw() {
+	p.ensureTicker()
 	rows := p.rows()
 	if p.linesDrawn > 0 {
 		fmt.Fprintf(p.out, "\x1b[%dA", p.linesDrawn)
@@ -374,6 +416,39 @@ func (p *progressReporter) draw() {
 	}
 	p.linesDrawn = len(rows)
 	p.spin++
+}
+
+// ensureTicker starts the background spinner ticker the first time a checklist
+// block is drawn. The ticker redraws the current block on a fixed cadence so the
+// active phase's spinner animates between phase-transition events; it advances
+// only the spinner frame, never the phase or render state. It is a no-op outside
+// checklist mode and after it has already started. Called only from draw, which
+// holds the lock, so the started flag is safe to check and set here.
+func (p *progressReporter) ensureTicker() {
+	if p.mode != progressChecklist || p.tickerStarted {
+		return
+	}
+	p.tickerStarted = true
+	p.tickerDone = make(chan struct{})
+	interval := spinnerTickInterval
+	p.tickerWG.Add(1)
+	go func() {
+		defer p.tickerWG.Done()
+		tk := time.NewTicker(interval)
+		defer tk.Stop()
+		for {
+			select {
+			case <-p.tickerDone:
+				return
+			case <-tk.C:
+				p.mu.Lock()
+				if !p.finished && p.linesDrawn > 0 {
+					p.draw()
+				}
+				p.mu.Unlock()
+			}
+		}
+	}()
 }
 
 // rows builds the checklist lines for the current state: the pre-render phases,
@@ -493,10 +568,29 @@ func (p *progressReporter) debugRenderNode(done int, nodeID string) {
 // or errors, so the progress surface never lingers as an in-flight spinner beside
 // later output.
 func (p *progressReporter) finish() {
-	if p == nil || p.mode == progressSilent || p.finished {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.mode == progressSilent || p.finished {
+		p.mu.Unlock()
 		return
 	}
 	p.finished = true
+	done := p.tickerDone
+	p.mu.Unlock()
+
+	// Stop the spinner ticker and wait for its goroutine to exit before the final
+	// draw, so it can never redraw after finish. The signal-and-wait happens with
+	// the lock released: a tick blocked on the lock drains, observes finished, and
+	// exits without drawing, and finish cannot deadlock against it.
+	if done != nil {
+		close(done)
+		p.tickerWG.Wait()
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	now := time.Now()
 	if p.mode == progressDebug {
 		if !p.phaseStart.IsZero() && p.active >= 0 && p.active < len(p.spine.labels) {
