@@ -262,7 +262,6 @@ var providerGuestVocabulary = map[string]string{
 	"OrderedMap[types.Feature]":           "map[string]json.RawMessage",
 	"OrderedMap[types.Recipe]":            "map[string]json.RawMessage",
 	"OrderedMap[types.FeatureRecipe]":     "map[string]json.RawMessage",
-	"OrderedMap[types.Provider]":          "map[string]json.RawMessage",
 	"OrderedMap[types.MappingLibrary]":    "map[string]json.RawMessage",
 	"types.Workload":                      "json.RawMessage",
 	"map[string]types.OrderedMap[string]": "map[string]map[string]string",
@@ -286,7 +285,6 @@ var providerHostVocabulary = map[string]string{
 	"OrderedMap[types.Feature]":        "types.OrderedMap[types.Feature]",
 	"OrderedMap[types.Recipe]":         "types.OrderedMap[types.Recipe]",
 	"OrderedMap[types.FeatureRecipe]":  "types.OrderedMap[types.FeatureRecipe]",
-	"OrderedMap[types.Provider]":       "types.OrderedMap[types.Provider]",
 	"OrderedMap[types.MappingLibrary]": "types.OrderedMap[types.MappingLibrary]",
 }
 

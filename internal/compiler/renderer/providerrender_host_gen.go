@@ -81,8 +81,6 @@ type CatalogProjection struct {
 	Recipes types.OrderedMap[types.Recipe] `json:"recipes,omitempty" yaml:"recipes,omitempty"`
 	// FeatureRecipes The FeatureRecipe entries the node transitively references, keyed by catalog URI.
 	FeatureRecipes types.OrderedMap[types.FeatureRecipe] `json:"feature_recipes,omitempty" yaml:"feature_recipes,omitempty"`
-	// Providers The Provider entries the node transitively references, keyed by catalog URI.
-	Providers types.OrderedMap[types.Provider] `json:"providers,omitempty" yaml:"providers,omitempty"`
 	// MappingLibraries The MappingLibrary entries the node transitively references, keyed by catalog URI.
 	MappingLibraries types.OrderedMap[types.MappingLibrary] `json:"mapping_libraries,omitempty" yaml:"mapping_libraries,omitempty"`
 }
@@ -657,16 +655,6 @@ func (t CatalogProjection) MarshalJSON() ([]byte, error) {
 		buf.WriteByte(',')
 	}
 	first = false
-	buf.WriteString("\"providers\":")
-	if enc, err := json.Marshal(t.Providers); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
 	buf.WriteString("\"mapping_libraries\":")
 	if enc, err := json.Marshal(t.MappingLibraries); err != nil {
 		return nil, err
@@ -713,12 +701,6 @@ func (t *CatalogProjection) UnmarshalJSON(data []byte) error {
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else if err := json.Unmarshal(raw, &t.FeatureRecipes); err != nil {
-				return err
-			}
-		case "providers":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else if err := json.Unmarshal(raw, &t.Providers); err != nil {
 				return err
 			}
 		case "mapping_libraries":
