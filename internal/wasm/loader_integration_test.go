@@ -79,8 +79,8 @@ func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
 	if len(out.Patches) != 1 {
 		t.Fatalf("expected exactly one patch for the one-node input; got %d", len(out.Patches))
 	}
-	if !strings.Contains(string(out.Patches[0]), "fixture.aggrega-pdk/touched") {
-		t.Errorf("patch does not contain expected fixture label key; got %s", string(out.Patches[0]))
+	if !strings.Contains(string(out.Patches[0]), "fixture.aggrega-pdk~1touched") {
+		t.Errorf("patch does not contain expected RFC-6901-escaped fixture label key; got %s", string(out.Patches[0]))
 	}
 	if !strings.Contains(string(out.Patches[0]), langSuffix) {
 		t.Errorf("patch does not identify the %s fixture; got %s", langSuffix, string(out.Patches[0]))
