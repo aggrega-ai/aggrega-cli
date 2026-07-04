@@ -319,6 +319,10 @@ func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
 		}
 		goOp := goPatchArr[0]
 		for _, lang := range crossLanguageFixtureLangs[1:] {
+			if i >= len(decodedByLang[lang].Patches) {
+				t.Fatalf("%s produced %d patch group(s) but go produced %d; cannot compare patch[%d] — the %s socket returned an empty or short patch set (a wrong-export dispatch yields zero results)",
+					lang, len(decodedByLang[lang].Patches), len(decodedByLang["go"].Patches), i, lang)
+			}
 			langPatchArr := decodedByLang[lang].Patches[i]
 			if len(langPatchArr) != 1 {
 				t.Errorf("%s patch[%d] expected length 1, got %d", lang, i, len(langPatchArr))

@@ -139,10 +139,20 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 	cmd.Dir = sourceDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		skipErr := fmt.Errorf("fixture build failed for %s: %v\noutput:\n%s\nrun scripts/setup-workspace.sh to install the required toolchain",
+		// A non-zero exit splits two ways. If a required build tool is
+		// absent from PATH, skip with a loud, greppable marker so an
+		// arc-end gate can distinguish a toolchain skip from a real
+		// pass. If the toolchain is present and the build still failed,
+		// that is a genuine failure the gate must surface — fail loudly,
+		// never skip, so a red build cannot read as green.
+		if pdkToolchainAbsent(string(output)) {
+			skipErr := fmt.Errorf("TOOLCHAIN-ABSENT: fixture build for %s skipped — a required build tool is not on PATH; run scripts/setup-workspace.sh to install the toolchain\noutput:\n%s",
+				artifactName, string(output))
+			fixtureBuildOnce.Store(artifactName, skipErr)
+			t.Skipf("%v", skipErr)
+		}
+		t.Fatalf("fixture build failed for %s (toolchain present, build broke): %v\noutput:\n%s",
 			artifactName, err, string(output))
-		fixtureBuildOnce.Store(artifactName, skipErr)
-		t.Skipf("%v", skipErr)
 	}
 
 	if _, err := os.Stat(artifactPath); err != nil {
@@ -154,6 +164,27 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 
 	fixtureBuildOnce.Store(artifactName, artifactPath)
 	return artifactPath
+}
+
+// pdkToolchainAbsent reports whether a failed PDK fixture build failed
+// because a required build tool is absent from PATH rather than because
+// the plugin source does not build. Detection reads the build.sh output
+// rather than probing PATH from the test process: the fixture build.sh
+// scripts augment PATH with user-local toolchain directories before
+// running, so a direct PATH probe here would report tools absent that
+// the build would actually find. The scripts fail fast with a
+// recognizable diagnostic when a tool is missing — the TypeScript
+// build.sh prints "not on PATH", a shell that cannot locate go or cargo
+// prints "command not found", and an absent cross-compile target prints
+// "not installed". Any other non-zero exit is a genuine build failure
+// the gate must surface loudly.
+func pdkToolchainAbsent(output string) bool {
+	for _, sig := range []string{"not on PATH", "command not found", "not installed"} {
+		if strings.Contains(output, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 // pdkDependencySources returns the PDK and ABI source directories a
