@@ -165,7 +165,7 @@ type AggregatePuller interface {
 }
 
 // EntityPuller is the optional puller capability for fetching a core catalog
-// entity (Component / Feature / Recipe / FeatureRecipe / Provider) by its bare
+// entity (Component / Feature / Recipe / FeatureRecipe) by its bare
 // identity — the entity counterpart of LibraryPuller / AggregatePuller. It binds
 // the identity to its registry location (`<registry>/<OCILocation(kind, …)>`),
 // so a provider-scoped recipe identity is not misparsed with its provider as the

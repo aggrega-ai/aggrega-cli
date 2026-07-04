@@ -7,7 +7,7 @@
 //
 // The walker is purely structural: it enumerates reference sites
 // across the catalog-entity axis (Components, Features, Recipes,
-// FeatureRecipes, Aggregates, Providers), the library closures
+// FeatureRecipes, Aggregates), the library closures
 // (SchemaLibrary $ref: and MappingLibrary $import: sites with
 // minimum version selection over conflicting requirements), and
 // the Wasm plugin axis (embedded Recipe / FeatureRecipe pipeline
@@ -262,7 +262,7 @@ type LibraryConsumer struct {
 // five resolution surfaces.
 type Lookup interface {
 	// ResolveCatalogEntity resolves a core catalog entity (Component / Feature /
-	// Recipe / FeatureRecipe / Provider). kindHint is the KindHint recorded at
+	// Recipe / FeatureRecipe). kindHint is the KindHint recorded at
 	// the collection site (empty when none was known); a registry-backed Tier-3
 	// pull uses it to bind the bare identity to its OCI location, since a bare
 	// identity carries no kind segment.

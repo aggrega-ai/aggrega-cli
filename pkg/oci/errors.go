@@ -51,7 +51,7 @@ var ErrUnknownEntityKind = errors.New("oci: unknown entity kind for mediatype di
 // per-version-subdirectory validator when a publishable entity's
 // filesystem path version segment (the parent directory of the entity
 // file) doesn't match the entity's metadata.version field. It applies
-// to every publishable kind — Component, Feature, Provider, Aggregate,
+// to every publishable kind — Component, Feature, Plugin, Aggregate,
 // Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary. Call sites wrap
 // this sentinel with both values for the operator's diagnostic.
 var ErrEntityVersionPathMismatch = errors.New("oci: entity per-version subdirectory mismatch")

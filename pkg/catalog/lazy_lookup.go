@@ -907,10 +907,10 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 }
 
 // buildRecipeIndex walks the catalog directories once and TOLERANTLY enumerates
-// every recipe-shell kind (Recipe, FeatureRecipe, Aggregate, Provider,
+// every recipe-shell kind (Recipe, FeatureRecipe, Aggregate,
 // MappingLibrary, Plugin) into the hot maps, keyed exactly as the eager
 // catalog keys them (recipes/FRs by provider/name:version, Plugins by
-// name:version, aggregates/providers/libraries by metadata.name). A file that
+// name:version, aggregates/libraries by metadata.name). A file that
 // won't parse — or whose recipe/FR identity
 // collides with one already indexed — is skipped with a one-line stderr warning
 // and a recorded reason; it never aborts the walk. This is the robustness crux:

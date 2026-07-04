@@ -13,7 +13,7 @@
 // the operator must edit to fix the error:
 //   - DeveloperError: the Aggregate is at fault.
 //   - OpsError: the Release is at fault.
-//   - CatalogError: a Recipe, Component, Feature, FeatureRecipe, Provider,
+//   - CatalogError: a Recipe, Component, Feature, FeatureRecipe, Plugin,
 //     or Manifest is at fault.
 //   - TranslationError: the provider engine cannot express the requested
 //     synthesised output (no authoring fix; the developer or operator

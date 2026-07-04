@@ -736,7 +736,7 @@ type entityHeader struct {
 // indexFile is the single point of dispatch over the catalog-resident
 // entity kinds — the SSOT for "what counts as a catalog entity" in this
 // package. The switch arms enumerate every catalog entity kind
-// (Component, Feature, Recipe, FeatureRecipe, Aggregate, Provider,
+// (Component, Feature, Recipe, FeatureRecipe, Aggregate,
 // SchemaLibrary, MappingLibrary, Plugin), leaving out Manifest and
 // Release (which are deployment-side and are silently skipped — see
 // LoadAll's error model). Adding a new catalog-resident kind requires

@@ -558,7 +558,7 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 // classifyEntityKind reads a catalog URI and returns "recipe" or
 // "feature_recipe" if the URI's path segment names a Recipe or
 // FeatureRecipe. Returns ("", false) for other catalog entities
-// (Components, Features, Aggregates, Providers); DescendRecipeSources
+// (Components, Features, Aggregates); DescendRecipeSources
 // silently skips those.
 func classifyEntityKind(uri string) (string, bool) {
 	switch {

@@ -9,7 +9,7 @@
 // developer payloads land in map[string]any.
 //
 // The 8-Entity Taxonomy authored against this package: Aggregate,
-// Component, Feature, Recipe, FeatureRecipe, Provider, Manifest, Release.
+// Component, Feature, Recipe, FeatureRecipe, Plugin, Manifest, Release.
 // The IR graph (IRGraph plus per-graph types in ir.go) and the
 // TemplateContext consumed by template rendering are also declared here.
 //

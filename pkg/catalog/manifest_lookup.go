@@ -37,7 +37,7 @@ var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinc
 // the same identity WITHIN A SINGLE catalog directory — an authoring collision,
 // surfaced loudly (strict load) or recorded as a skip (tolerant load). It is the
 // homogenized rule across every indexed kind (Component, Feature, Recipe,
-// FeatureRecipe, Provider, SchemaLibrary, MappingLibrary, Aggregate): within one
+// FeatureRecipe, Plugin, SchemaLibrary, MappingLibrary, Aggregate): within one
 // directory a duplicate identity halts; ACROSS directories the same identity is
 // a first-win shadow (the earlier-listed directory wins), never an error.
 var ErrDuplicateEntityIdentity = errors.New("duplicate entity identity within a single catalog directory")
@@ -87,7 +87,7 @@ func recipeIdentityKey(provider, name, version string) string {
 }
 
 // entityIndexKey is the catalog index key for a by-name entity (Component,
-// Feature, Provider, Aggregate): the bare metadata.name when version-less,
+// Feature, Aggregate): the bare metadata.name when version-less,
 // "name:version" when versioned — the recipe identity key minus the provider
 // segment. Keying by name:version lets multiple versions of one entity coexist
 // in the index instead of silently overwriting by bare name (the semver-incorrect

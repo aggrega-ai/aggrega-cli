@@ -48,7 +48,7 @@ type Lockfile struct {
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
-// FeatureRecipe, Provider, or Aggregate. URI is the canonical
+// FeatureRecipe, Plugin, or Aggregate. URI is the canonical
 // identifier; ResolvedVersion and Digest are the content-addressing
 // pair that anchor deterministic builds. ReferencedFrom records the
 // authoring-site origins that pulled the URI into closure.

@@ -124,7 +124,7 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 }
 
 // PullEntity pulls a core catalog entity (Component / Feature / Recipe /
-// FeatureRecipe / Provider) by its bare identity, binding it to a physical
+// FeatureRecipe) by its bare identity, binding it to a physical
 // location through the configured default registry — the pull-side mirror of
 // push's name→location. The bare identity carries no registry or kind segment,
 // so a provider-scoped recipe identity (provider/name) would otherwise be
