@@ -76,14 +76,6 @@ spec:
 func writePipelinePluginConsumerWorkspace(t *testing.T, host, pluginURI string, pinnedPubPEM []byte, catalogSigner signing.Signer) string {
 	t.Helper()
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "provider/helm/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -121,7 +113,6 @@ spec:
 `)
 	if catalogSigner != nil {
 		for _, rel := range []string{
-			"provider/helm/1.0.0/provider.yaml",
 			"component/test/svc/1.0.0/component.yaml",
 			"recipe/helm/svc/1.0.0/recipe.yaml",
 		} {

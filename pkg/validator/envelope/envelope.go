@@ -45,7 +45,6 @@ const (
 	KindFeature        Kind = "Feature"
 	KindRecipe         Kind = "Recipe"
 	KindFeatureRecipe  Kind = "FeatureRecipe"
-	KindProvider       Kind = "Provider"
 	KindPlugin         Kind = "Plugin"
 	KindSchemaLibrary  Kind = "SchemaLibrary"
 	KindMappingLibrary Kind = "MappingLibrary"
@@ -71,7 +70,6 @@ var schemaSource = map[Kind]string{
 	KindFeature:        schemas.FeatureV1alpha1,
 	KindRecipe:         schemas.RecipeV1alpha1,
 	KindFeatureRecipe:  schemas.FeatureRecipeV1alpha1,
-	KindProvider:       schemas.ProviderV1alpha1,
 	KindPlugin:         schemas.PluginV1alpha1,
 	KindSchemaLibrary:  schemas.SchemaLibraryV1alpha1,
 	KindMappingLibrary: schemas.MappingLibraryV1alpha1,

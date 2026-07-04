@@ -67,87 +67,6 @@ func runKindGoldens(t *testing.T, kind, body string) {
 	compareGoldenKind(t, kind, "yaml.golden", buf.Bytes())
 }
 
-const providerFixture = `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-  description: Helm rendering engine.
-spec:
-  plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
-  workloadSchema: |
-    type: object
-`
-
-// providerWKAFixture declares a populated wellKnownAnnotations block. No real
-// catalog Provider populates the field yet, so this fixture proves the
-// Provider renderer renders the populated path — correctness is the spec, not
-// whether a catalog consumer exercises it today.
-const providerWKAFixture = `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
-  workloadSchema: |
-    type: object
-  wellKnownAnnotations:
-    - key: aggrega.ai/replicas
-      purpose: Desired replica count.
-      defaultBehavior: One replica.
-    - key: aggrega.ai/ingress-host
-      purpose: External hostname.
-`
-
-func TestInspectProvider_Goldens(t *testing.T) {
-	t.Parallel()
-	runKindGoldens(t, "provider", providerFixture)
-}
-
-func TestInspectProvider_PopulatedWKA_Golden(t *testing.T) {
-	t.Parallel()
-	path := writeKindFixture(t, "provider_wka", providerWKAFixture)
-	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
-		t.Fatalf("inspect provider wka: %v", err)
-	}
-	out := buf.String()
-	if strings.Contains(out, "(none declared)") {
-		t.Errorf("populated wellKnownAnnotations should not show the (none declared) fallback; got:\n%s", out)
-	}
-	if !strings.Contains(out, "aggrega.ai/replicas") || !strings.Contains(out, "Desired replica count.") {
-		t.Errorf("populated wellKnownAnnotations entries should render key + purpose; got:\n%s", out)
-	}
-	compareGoldenKind(t, "provider_wka", "default.text.golden", []byte(out))
-}
-
-func TestInspectProvider_RecipeHostingLine(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name     string
-		workload string
-		want     string
-	}{
-		{"synth", "type: object", "synthesized"},
-		{"neither", "", "sourced-only"},
-	}
-	for _, c := range cases {
-		body := "apiVersion: aggrega.ai/v1alpha1\nkind: Provider\nmetadata:\n  name: p\n  version: \"1.0.0\"\nspec:\n  plugin: x\n"
-		if c.workload != "" {
-			body += "  workloadSchema: |\n    " + c.workload + "\n"
-		}
-		path := writeKindFixture(t, "provider_"+c.name, body)
-		var buf bytes.Buffer
-		if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
-			t.Fatalf("inspect %s: %v", c.name, err)
-		}
-		if !strings.Contains(buf.String(), "Recipe-hosting: "+c.want) {
-			t.Errorf("%s: want Recipe-hosting %q; got:\n%s", c.name, c.want, buf.String())
-		}
-	}
-}
-
 const featureFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Feature
 metadata:
@@ -408,17 +327,17 @@ func TestInspectComponent_Detail_Golden(t *testing.T) {
 }
 
 // TestInspectKind_ColorOnHeader proves the colorizer threads through a per-kind
-// renderer end-to-end on a representative kind (Provider).
+// renderer end-to-end on a representative kind (Feature).
 func TestInspectKind_ColorOnHeader(t *testing.T) {
 	t.Parallel()
-	path := writeKindFixture(t, "provider_color", providerFixture)
+	path := writeKindFixture(t, "feature_color", featureFixture)
 	var buf bytes.Buffer
 	opts := inspectOptions{out: &buf, colorize: newColorizer(colorAlways, &buf, false)}
 	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
 		t.Fatalf("inspect --color=always: %v", err)
 	}
 	if !hasANSI(buf.String()) {
-		t.Errorf("--color=always should wrap the Provider header in ANSI; got:\n%s", buf.String())
+		t.Errorf("--color=always should wrap the Feature header in ANSI; got:\n%s", buf.String())
 	}
 }
 
@@ -551,7 +470,6 @@ func TestInspectDispatch_RegisteredKinds(t *testing.T) {
 		"Feature":        featureFixture,
 		"Recipe":         recipeSynthesizedFixture,
 		"FeatureRecipe":  featureRecipeFixture,
-		"Provider":       providerFixture,
 		"Plugin":         pluginFixture,
 		"MappingLibrary": mappingLibraryFixture,
 		"SchemaLibrary":  schemaLibraryFixture,

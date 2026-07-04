@@ -12,12 +12,12 @@
 //
 // The Catalog struct exposes two surfaces over the same loaded data:
 //
-//   - Public maps (Components, Features, Recipes, FeatureRecipes, Aggregates,
-//     Providers) — direct read access for callers that want to iterate or
+//   - Public maps (Components, Features, Recipes, FeatureRecipes, Aggregates)
+//     — direct read access for callers that want to iterate or
 //     inspect (e.g. cmd/aggrega/inspect.go, the build command's deprecation
 //     warning loop).
 //   - Lookup-callback returners (CatalogLookup, RecipeLookup,
-//     SubAggregateLoader, ProviderLookup) — adapter shapes the resolver,
+//     SubAggregateLoader) — adapter shapes the resolver,
 //     renderer, and topology packages each define on their own side. The
 //     catalog returns instances that conform to the consumer-defined
 //     callback interface, which lets each consumer evolve its data needs

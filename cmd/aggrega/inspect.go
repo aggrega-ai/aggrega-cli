@@ -209,7 +209,6 @@ var kindRenderers = map[string]kindRenderer{
 	"Feature":        renderFeatureFile,
 	"Recipe":         renderRecipeFile,
 	"FeatureRecipe":  renderFeatureRecipeFile,
-	"Provider":       renderProviderFile,
 	"Plugin":         renderPluginFile,
 	"MappingLibrary": renderMappingLibraryFile,
 	"SchemaLibrary":  renderSchemaLibraryFile,

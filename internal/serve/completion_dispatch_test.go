@@ -258,23 +258,6 @@ func TestCompletionDispatchSchemaValueOfNonTypeKeyReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestCompletionDispatchProviderCursor(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "provider.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Provider\nmetadata:\n  name: helm-provider\n  version: 1.0.0\nspec:\n  plugin: oci://example.com/helm\n")
-	recipeContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: my-recipe\n  version: 1.0.0\nspec:\n  implements: core/x\n  provider: placeholder\n"
-	recipePath := writeCompletionFixture(t, dir, "recipe.yaml", recipeContent)
-	srv := newTestServer(t, dir, nil, nil)
-	srv.stderr = drainStderr()
-	validateFile(t, srv, recipePath, recipeContent)
-
-	// Cursor on spec.provider placeholder: line 7, char 15.
-	result := completionRequest(t, srv, recipePath, 7, 15)
-	if !hasLabel(result.Items, "helm-provider") {
-		t.Errorf("provider completion missing 'helm-provider'; got: %v", labelsList(result.Items))
-	}
-}
-
 func TestCompletionDispatchReleaseAggregatePathCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

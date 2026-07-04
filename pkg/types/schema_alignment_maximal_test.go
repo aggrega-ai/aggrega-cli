@@ -129,21 +129,6 @@ func maximalFeatureRecipe() types.FeatureRecipe {
 	}
 }
 
-func maximalProvider() types.Provider {
-	return types.Provider{
-		APIVersion: "aggrega.ai/v1alpha1",
-		Kind:       "Provider",
-		Metadata:   types.ProviderMetadata{Name: "compose", Version: "1.0.0"},
-		Spec: types.ProviderSpec{
-			Plugin:         "hub.aggrega.ai/providers/compose-renderer:1.0.0",
-			WorkloadSchema: "type: object",
-			WellKnownAnnotations: []types.WellKnownAnnotation{
-				{Key: "aggrega.ai/namespace", Purpose: "target namespace", DefaultBehavior: "default namespace"},
-			},
-		},
-	}
-}
-
 func maximalPlugin() types.Plugin {
 	cfg := om[string]("LOG_LEVEL", "info")
 	return types.Plugin{

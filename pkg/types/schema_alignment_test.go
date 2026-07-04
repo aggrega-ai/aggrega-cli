@@ -194,13 +194,6 @@ func alignmentCases() []alignmentCase {
 			maximal:    maximalFeatureRecipe(),
 		},
 		{
-			kind:       envelope.KindProvider,
-			schema:     schemas.ProviderV1alpha1,
-			roots:      []reflect.Type{reflect.TypeOf(types.Provider{})},
-			exceptions: map[string]string{},
-			maximal:    maximalProvider(),
-		},
-		{
 			kind:       envelope.KindPlugin,
 			schema:     schemas.PluginV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Plugin{})},

@@ -33,7 +33,7 @@ func pushCatalogEntitySigned(t *testing.T, host, entityPath string, signer signi
 }
 
 // writeCatalogEntityConsumerWorkspace writes a controlled fixture catalog (a
-// Provider, a Component addressed by its bare identity, and a Recipe that
+// Component addressed by its bare identity, and a Recipe that
 // implements it) and pushes each entity to the registry at host through the
 // supplied push helper, then writes a consumer workspace wired to build the
 // Component over that registry. The consumer workspace carries NO local catalog
@@ -47,15 +47,6 @@ func writeCatalogEntityConsumerWorkspace(t *testing.T, host string, pinnedPubPEM
 	t.Helper()
 	cat := t.TempDir()
 
-	providerPath := filepath.Join(cat, "provider/helm/1.0.0/provider.yaml")
-	writeFixture(t, providerPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	componentPath := filepath.Join(cat, "component/test/svc/1.0.0/component.yaml")
 	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -89,8 +80,7 @@ spec:
         ports:
           web: {{ optional .infra `+"`port`"+` 8080 }}
 `)
-	// Push order mirrors a dependency-safe publish: provider, component, recipe.
-	push(t, host, providerPath)
+	// Push order mirrors a dependency-safe publish: component, recipe.
 	push(t, host, componentPath)
 	push(t, host, recipePath)
 

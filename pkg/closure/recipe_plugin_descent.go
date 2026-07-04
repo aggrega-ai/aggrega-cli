@@ -17,6 +17,13 @@ import (
 // field; the lockfile writer copies only the wire-shape fields.
 const pluginKindHint = "plugin"
 
+// tier1CatalogPath is the ResolutionPath a Lookup reports for an entity resolved
+// from a local catalog directory (Tier-1). A pull-side descent pins an entity
+// only when it resolves above Tier-1 (the registry-backed cache / pull tiers);
+// a Tier-1-local entity stays catalog-resident and resolves at build through the
+// local catalog walk, never the lockfile pin.
+const tier1CatalogPath = "tier-1-catalog"
+
 // DescendRecipePluginEntities is Phase A of the two-pass pipeline-plugin descent:
 // it discovers every Plugin ENTITY a closure's Recipes / FeatureRecipes
 // reference through their spec.pipeline[].plugin URIs (plus any workspace-socket
@@ -34,12 +41,12 @@ const pluginKindHint = "plugin"
 // entity's own pin and misses it.
 //
 // Both phases are pull-side augmentations, run after ComputeClosure (and the
-// sub-aggregate / library / provider discovery passes) at lock time — never
+// sub-aggregate / library discovery passes) at lock time — never
 // inside ComputeClosure, which also runs on the hermetic build and serve paths
-// where no registry pull may occur. The shape mirrors DescendRecipeProviders: a
-// separate pass over the resolved closure driven by an injected loader, producing
-// the same Entities entry representation the other axes emit rather than a
-// parallel pin.
+// where no registry pull may occur. The shape mirrors DescendSubAggregates and
+// DescendRecipeSources: a separate pass over the resolved closure driven by an
+// injected loader, producing the same Entities entry representation the other
+// axes emit rather than a parallel pin.
 //
 // Registry-only pinning: an entity is emitted into the closure ONLY when it
 // resolves above Tier-1 (the registry-backed cache / pull tiers). A Tier-1-local

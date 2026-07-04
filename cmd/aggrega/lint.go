@@ -415,9 +415,6 @@ func verifyNoOCILocationCollision(cat *catalog.Catalog) error {
 	for _, e := range cat.Features {
 		add("Feature", "", e.Metadata.Name)
 	}
-	for _, e := range cat.Providers {
-		add("Provider", "", e.Metadata.Name)
-	}
 	for _, e := range cat.Aggregates {
 		add("Aggregate", "", e.Metadata.Name)
 	}

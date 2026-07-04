@@ -81,11 +81,11 @@ func startRegistry(t *testing.T, handlerWrap func(http.Handler) http.Handler) st
 	return strings.TrimPrefix(srv.URL, "http://")
 }
 
-// publishableKinds is the eight kinds aggrega push publishes; mirrors
+// publishableKinds is the seven kinds aggrega push publishes; mirrors
 // push-all.sh's is_publishable filter.
 var publishableKinds = map[string]bool{
 	"Component": true, "Feature": true, "Recipe": true, "FeatureRecipe": true,
-	"Provider": true, "SchemaLibrary": true, "MappingLibrary": true, "Aggregate": true,
+	"SchemaLibrary": true, "MappingLibrary": true, "Aggregate": true,
 }
 
 // pushCatalog walks catalogDir and pushes every publishable entity to host via
@@ -195,7 +195,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	host := startRegistry(t, nil)
 	counts := pushCatalog(t, host, standardCatalogDir(t))
 	// Every publishable kind present in the standard catalog pushed clean.
-	for _, k := range []string{"Component", "Feature", "Recipe", "FeatureRecipe", "Provider", "SchemaLibrary"} {
+	for _, k := range []string{"Component", "Feature", "Recipe", "FeatureRecipe", "SchemaLibrary"} {
 		if counts[k] == 0 {
 			t.Errorf("no %s pushed (coverage gap)", k)
 		}
@@ -532,14 +532,6 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 	// pipeline (the artifacts: entry makes it resource-generating, which is what
 	// triggers the FR pipeline to execute).
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "provider/helm/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -768,14 +760,6 @@ spec:
 func writePipelinePluginFixtureCatalog(t *testing.T, host, pluginURI string) string {
 	t.Helper()
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "provider/helm/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -1108,18 +1092,17 @@ spec:
 	}
 }
 
-// TestIntegration_KindCoverage_ProviderAndAggregate round-trips the two kinds the
-// catalog-only build does not exercise — a Provider and a (published) Aggregate —
-// directly through the real OCI client, asserting each pulls non-empty from the
-// registry. Together with the positive build (Component/Recipe/FeatureRecipe/
-// Feature/libraries) this covers every publishable kind fetched-from-registry.
-func TestIntegration_KindCoverage_ProviderAndAggregate(t *testing.T) {
+// TestIntegration_KindCoverage_Aggregate round-trips the published-Aggregate kind
+// the catalog-only build does not exercise, directly through the real OCI client,
+// asserting it pulls non-empty from the registry. Together with the positive build
+// (Component/Recipe/FeatureRecipe/Feature/libraries) this covers every publishable
+// kind fetched-from-registry.
+func TestIntegration_KindCoverage_Aggregate(t *testing.T) {
 	host := startRegistry(t, nil)
 	pushCatalog(t, host, standardCatalogDir(t))
 	pushCatalog(t, host, authoredFixtureCatalog(t))
 
 	for _, ent := range []struct{ kind, ref string }{
-		{"Provider", host + "/provider/compose"},
 		{"Aggregate", host + "/aggregate/test/app-agg"},
 	} {
 		repo, err := oci.NewRemoteRepository(ent.ref)

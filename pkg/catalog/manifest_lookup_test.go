@@ -31,7 +31,6 @@ func fakeCatalog(recipes ...types.Recipe) *Catalog {
 		Recipes:        map[string]types.Recipe{},
 		FeatureRecipes: map[string]types.FeatureRecipe{},
 		Aggregates:     map[string]types.Aggregate{},
-		Providers:      map[string]types.Provider{},
 	}
 	for _, r := range recipes {
 		c.Recipes[recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version)] = r

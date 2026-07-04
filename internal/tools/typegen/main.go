@@ -73,7 +73,6 @@ type kindSource struct {
 }
 
 var kindSources = map[string]kindSource{
-	"provider_gen.go":       {"Provider", schemas.ProviderV1alpha1},
 	"feature_gen.go":        {"Feature", schemas.FeatureV1alpha1},
 	"manifest_gen.go":       {"Manifest", schemas.ManifestV1alpha1},
 	"recipe_gen.go":         {"Recipe", schemas.RecipeV1alpha1},

@@ -154,8 +154,6 @@ func (s *Server) renderByKind(kind string, e hover.Entity) string {
 		return hover.Recipe(e)
 	case "FeatureRecipe":
 		return hover.FeatureRecipe(e)
-	case "Provider":
-		return hover.Provider(e)
 	case "SchemaLibrary":
 		return hover.SchemaLibrary(e)
 	case "MappingLibrary":

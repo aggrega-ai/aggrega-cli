@@ -31,20 +31,13 @@ const (
 	helmProviderMemPag = 4096
 )
 
-// helmChainCatalog builds an eager Catalog carrying the helm Provider and the
-// helm-renderer Plugin entity with the same field values the shipped hub YAML
-// declares, so its CatalogLookup drives the real R7 resolution chain against the
-// artifact embedded in the binary.
+// helmChainCatalog builds an eager Catalog carrying the helm-renderer
+// provider-rendering Plugin entity with the same field values the shipped hub YAML
+// declares, so its CatalogLookup drives the real resolution chain against the
+// artifact embedded in the binary. The Plugin serves the "helm" provider name
+// through its compatibleProviders list.
 func helmChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
-		Providers: map[string]types.Provider{
-			"helm": {
-				APIVersion: "aggrega.ai/v1alpha1",
-				Kind:       "Provider",
-				Metadata:   types.ProviderMetadata{Name: "helm", Version: "1.0.0"},
-				Spec:       types.ProviderSpec{Plugin: helmPluginEntity},
-			},
-		},
 		Plugins: map[string]types.Plugin{
 			"helm-renderer:1.0.0": {
 				APIVersion: "aggrega.ai/v1alpha1",
@@ -78,36 +71,39 @@ func entityFront(lookup resolver.CatalogLookup, cascade pluginpath.Lookup) plugi
 }
 
 // TestHelmProviderEmbeddedResolutionChain proves the full provider→plugin→artifact
-// resolution chain end-to-end through the real embed tier: the provider-name
-// accessor added to resolver.CatalogLookup, the Plugin accessor, the
-// entity-fronted cascade, the pinned-digest integrity check (both arms), and the
-// entity's runtime limits flowing to the loader spec. It does not re-prove render
-// byte-identity — that is the A/B harness's job; this capstone is resolution +
-// digest + limits.
+// resolution chain end-to-end through the real embed tier: the ProviderPlugin
+// accessor on resolver.CatalogLookup (provider name → provider-rendering Plugin
+// via compatibleProviders), the Plugin accessor, the entity-fronted cascade, the
+// pinned-digest integrity check (both arms), and the entity's runtime limits
+// flowing to the loader spec. It does not re-prove render byte-identity — that is
+// the A/B harness's job; this capstone is resolution + digest + limits.
 func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 	cat := helmChainCatalog()
 	lookup := cat.CatalogLookup()
 
-	// Level 1: provider name → Provider entity, via the NEW accessor wired into
-	// the eager CatalogLookup constructor.
-	if lookup.Provider == nil {
-		t.Fatal("CatalogLookup.Provider accessor is nil; the eager constructor did not wire it")
+	// Level 1: provider name → provider-rendering Plugin entity, via the
+	// ProviderPlugin accessor wired into the eager CatalogLookup constructor.
+	// Render dispatch resolves a provider name to the Plugin serving it through
+	// the Plugin's compatibleProviders list.
+	if lookup.ProviderPlugin == nil {
+		t.Fatal("CatalogLookup.ProviderPlugin accessor is nil; the eager constructor did not wire it")
 	}
-	prov, ok := lookup.Provider("helm")
+	pplug, ok := lookup.ProviderPlugin("helm")
 	if !ok {
-		t.Fatal("Provider(\"helm\") not found")
+		t.Fatal("ProviderPlugin(\"helm\") not found")
 	}
-	if prov.Spec.Plugin != helmPluginEntity {
-		t.Fatalf("provider spec.plugin = %q, want %q", prov.Spec.Plugin, helmPluginEntity)
+	if pplug.Spec.Plugin != helmArtifactURI {
+		t.Fatalf("provider-plugin spec.plugin = %q, want %q", pplug.Spec.Plugin, helmArtifactURI)
 	}
 
-	// Level 2: Plugin-entity URI → Plugin entity → artifact URI.
+	// Level 2: Plugin-entity URI → Plugin entity → artifact URI. The entity-fronted
+	// cascade below resolves the Plugin by this URI.
 	if lookup.Plugin == nil {
 		t.Fatal("CatalogLookup.Plugin accessor is nil")
 	}
-	plugin, ok := lookup.Plugin(prov.Spec.Plugin)
+	plugin, ok := lookup.Plugin(helmPluginEntity)
 	if !ok {
-		t.Fatalf("Plugin(%q) not found", prov.Spec.Plugin)
+		t.Fatalf("Plugin(%q) not found", helmPluginEntity)
 	}
 	if plugin.Spec.Plugin != helmArtifactURI {
 		t.Fatalf("plugin spec.plugin = %q, want %q", plugin.Spec.Plugin, helmArtifactURI)
@@ -117,7 +113,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: helmArtifactDigest}}
 		front := entityFront(lookup, res.Resolve)
 
-		resolved, err := front(prov.Spec.Plugin)
+		resolved, err := front(helmPluginEntity)
 		if err != nil {
 			t.Fatalf("clean resolve halted: %v", err)
 		}
@@ -147,7 +143,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: wrongPin}}
 		front := entityFront(lookup, res.Resolve)
 
-		_, err := front(prov.Spec.Plugin)
+		_, err := front(helmPluginEntity)
 		if err == nil {
 			t.Fatal("resolve with a wrong pin succeeded; expected an integrity halt")
 		}
@@ -166,7 +162,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 		}
 		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: helmArtifactDigest}}
 		front := entityFront(lookup, res.Resolve)
-		resolved, err := front(prov.Spec.Plugin)
+		resolved, err := front(helmPluginEntity)
 		if err != nil {
 			t.Fatalf("resolve for smoke load: %v", err)
 		}

@@ -125,7 +125,7 @@ func TestBundleDeterminism(t *testing.T) {
 }
 
 // TestBundleBareKindsPerVersionSubdir covers the bare-YAML publishable kinds
-// (Component / Feature / Provider / Aggregate), which the per-version-subdir
+// (Component / Feature / Aggregate), which the per-version-subdir
 // check did NOT cover before this change. Each must bundle in-layout (the entity
 // file's parent dir equals metadata.version) and fail off-layout with
 // ErrEntityVersionPathMismatch.
@@ -137,7 +137,6 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 	}{
 		{"Component", "component.yaml", oci.MediaTypeComponent},
 		{"Feature", "feature.yaml", oci.MediaTypeFeature},
-		{"Provider", "provider.yaml", oci.MediaTypeProvider},
 		{"Aggregate", "aggregate.yaml", oci.MediaTypeAggregate},
 	}
 	body := func(kind string) []byte {

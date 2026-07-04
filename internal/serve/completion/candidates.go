@@ -93,16 +93,6 @@ func Implements(uris []string, prefix string) []CompletionItem {
 	return filterByPrefix(items, prefix)
 }
 
-// Provider returns the candidate list for a spec.provider: cursor
-// (Recipe / FeatureRecipe). uris is the pre-enumerated list of
-// Provider URIs from the workspace.
-func Provider(uris []string, prefix string) []CompletionItem {
-	items := alphabeticalItems(uris, KindReference, func(label string) string {
-		return "Provider URI"
-	})
-	return filterByPrefix(items, prefix)
-}
-
 // SchemaTypeValue returns the candidate list for cursors on the
 // VALUE side of a `type:` keyword inside spec.schema. Offers the JSON
 // Schema 2020-12 primitive type names — object, string, integer,

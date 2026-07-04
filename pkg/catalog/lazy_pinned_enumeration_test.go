@@ -111,16 +111,6 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.image }}'
 `
-	pinnedProviderYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: compose
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
-`
 )
 
 // pinCacheCountingPuller is an OCIPuller that records every Pull. The determinism
@@ -176,7 +166,6 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		aggSlot     = "example/app:1.0.0"
 		schemaSlot  = "DbSizing:1.0.0"
 		mappingSlot = "BaseMappings:1.0.0"
-		provSlot    = "compose:1.0.0" // a registry-resolved provider is folded by the pinned pass
 	)
 
 	pins := map[string]Pin{}
@@ -189,7 +178,6 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
 	pins["DbSizing"] = writePinnedSlot(t, ws, cacheDir, schemaSlot, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML))
 	pins[mappingSlot] = writePinnedSlot(t, ws, cacheDir, mappingSlot, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
-	pins[provSlot] = writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML))
 
 	// --- Subject: determinism-wired lazy lookup (nil puller + pins, no catalog dirs) ---
 	subject := NewLazyLookup(ws, cacheDir, nil, nil)
@@ -217,7 +205,6 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		entityBytesKey("Aggregate", "example/app"):                                              []byte(pinnedAggregateYAML),
 		entityBytesKey("SchemaLibrary", "DbSizing"):                                             []byte(dbSizingLibYAML),
 		entityBytesKey("MappingLibrary", "BaseMappings"):                                        []byte(pinnedMappingLibYAML),
-		entityBytesKey("Provider", "compose"):                                                   []byte(pinnedProviderYAML),
 	}
 	for k, want := range wantBytes {
 		got, ok := subject.entityBytes[k]
@@ -237,44 +224,6 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	}
 	if _, ok := subject.schemaLibraries["DbSizing"]; !ok {
 		t.Errorf("bare-URI-pinned SchemaLibrary DbSizing not folded into the enumerated set")
-	}
-
-	// Provider inclusion: a cache-pinned Provider folds into the enumerated set — a
-	// registry-resolved provider (a Recipe's declared provider, pinned above Tier-1)
-	// participates in the closure, so its pinned cache slot resolves into l.providers
-	// for ProviderLookup.
-	if _, ok := subject.providers["compose"]; !ok {
-		t.Errorf("subject did not fold the cache-pinned Provider compose into the enumerated set")
-	}
-	if _, ok := subject.recipeCatalog().ProviderLookup("compose"); !ok {
-		t.Errorf("ProviderLookup did not resolve the cache-pinned Provider compose")
-	}
-}
-
-// TestLazyLookup_PinnedProvider_FoldDeterministic proves the provider fold is
-// byte-identical across two independent enumerations of the same pinned closure
-// (Invariant 8) — the provider's retained bytes match the directly-constructed
-// fixture both times.
-func TestLazyLookup_PinnedProvider_FoldDeterministic(t *testing.T) {
-	ws := t.TempDir()
-	const cacheDir = ".aggrega/cache"
-	const provSlot = "compose:1.0.0"
-
-	fold := func() []byte {
-		subject := NewLazyLookup(ws, cacheDir, nil, nil)
-		subject.SetPins(map[string]Pin{
-			provSlot: writePinnedSlot(t, ws, cacheDir, provSlot, oci.MediaTypeProvider, []byte(pinnedProviderYAML)),
-		})
-		subject.buildRecipeIndex()
-		return subject.entityBytes[entityBytesKey("Provider", "compose")]
-	}
-	first := fold()
-	second := fold()
-	if !bytes.Equal(first, second) {
-		t.Fatalf("provider fold is non-deterministic across pulls")
-	}
-	if !bytes.Equal(first, []byte(pinnedProviderYAML)) {
-		t.Fatalf("provider fold bytes are not the pinned fixture bytes")
 	}
 }
 

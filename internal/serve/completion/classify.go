@@ -33,10 +33,6 @@ const (
 	// label-name (e.g., component.aggrega.ai/category → categories).
 	ContextKindLabelValue
 
-	// ContextKindProvider — cursor on "spec.provider:" value (Recipe
-	// or FeatureRecipe). Candidates: Provider URIs (workspace-walked).
-	ContextKindProvider
-
 	// ContextKindSchemaKeyword — cursor on the KEY side inside the
 	// spec.schema subtree (or on a value position that doesn't carry
 	// a more-specific candidate set). Candidates: vanilla JSON Schema
@@ -98,11 +94,6 @@ func ClassifyForCompletion(path []string, side yamlpos.ContextSide) ContextKind 
 	// pattern).
 	for len(rest) >= 2 && rest[0] == "subsystems" {
 		rest = rest[2:]
-	}
-
-	// spec.provider — cursor on the Recipe / FeatureRecipe provider name.
-	if len(rest) == 1 && rest[0] == "provider" {
-		return ContextKindProvider
 	}
 
 	// spec.schema.* — sub-branches by cursor side + trailing path

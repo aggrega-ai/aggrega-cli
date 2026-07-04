@@ -68,26 +68,12 @@ spec:
   implements: "core/dup-feature"
 `
 	},
-	"Provider": func(d string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: dup-provider
-  version: "1.0.0"
-  description: ` + d + `
-spec:
-  plugin: "builtin:helm-chart"
-  workloadSchema: |
-    type: object
-    additionalProperties: true
-`
-	},
 }
 
 // TestIndexFile_WithinDirDuplicateHaltsStrict proves the homogenized rule: two
 // files in ONE directory claiming the same identity halt the STRICT load with
 // ErrDuplicateEntityIdentity — for every indexed kind, including the kinds that
-// previously silently last-wins-overwrote (Component, Feature, Provider).
+// previously silently last-wins-overwrote (Component, Feature).
 func TestIndexFile_WithinDirDuplicateHaltsStrict(t *testing.T) {
 	t.Parallel()
 	for kind, body := range dupKindBodies {

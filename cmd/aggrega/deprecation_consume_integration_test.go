@@ -48,7 +48,7 @@ func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSig
 	return b.String()
 }
 
-// writeDeprecationConsumerCatalog publishes a Provider + Component + Recipe
+// writeDeprecationConsumerCatalog publishes a Component + Recipe
 // SIGNED by signer to the registry at host, then writes a consumer workspace
 // wired to build the Component over that registry, with the given config body.
 // It chdir's into the workspace and returns the Component's bare closure URI —
@@ -58,15 +58,6 @@ func writeDeprecationConsumerCatalog(t *testing.T, host string, signer signing.S
 	t.Helper()
 	cat := t.TempDir()
 
-	providerPath := filepath.Join(cat, "provider/helm/1.0.0/provider.yaml")
-	writeFixture(t, providerPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	componentBody := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -105,7 +96,6 @@ spec:
         ports:
           web: {{ optional .infra `+"`port`"+` 8080 }}
 `)
-	pushCatalogEntitySigned(t, host, providerPath, signer)
 	pushCatalogEntitySigned(t, host, componentPath, signer)
 	pushCatalogEntitySigned(t, host, recipePath, signer)
 

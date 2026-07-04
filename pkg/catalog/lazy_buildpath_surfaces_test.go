@@ -35,14 +35,11 @@ func TestLazyLookup_BuildPathSurfaces_FromPinnedEnumeration(t *testing.T) {
 	// with a separate ResolvedVersion and a versioned slot — the real lockfile form.
 	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
 
-	// The Provider is Tier-1-local (the closure never pins a Provider): write it to
-	// a catalog dir, not the cache.
+	// An empty local catalog dir (Tier-1) — the build-path surfaces below resolve
+	// from the pinned Tier-2 cache.
 	catalogDir := filepath.Join(ws, "catalog")
 	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(catalogDir, "provider.yaml"), []byte(pinnedProviderYAML), 0o644); err != nil {
-		t.Fatalf("write provider: %v", err)
 	}
 
 	puller := &pinCacheCountingPuller{}

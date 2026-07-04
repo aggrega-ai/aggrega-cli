@@ -80,7 +80,6 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		recipes:          map[string]types.Recipe{},
 		featureRecipes:   map[string]types.FeatureRecipe{},
 		aggregates:       map[string]types.Aggregate{},
-		providers:        map[string]types.Provider{},
 		mappingLibraries: map[string]types.MappingLibrary{},
 		plugins:          map[string]types.Plugin{},
 		aggregateSources: map[string]string{},
@@ -163,10 +162,6 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// set, so the build-load pipeline socket fronts the artifact cascade with
 		// the entity → spec.plugin two-step from the lazy backing too.
 		Plugin: l.PluginByURI,
-		// Provider serves the Provider entity by name over the lazily-walked
-		// set, so a provider front resolves provider name → spec.plugin
-		// (Plugin-entity URI) from the lazy backing too.
-		Provider: l.ProviderByName,
 		// ProviderPlugin resolves a provider name to the provider-rendering Plugin
 		// serving it (via compatibleProviders) over the lazily-walked set, so
 		// render dispatch resolves the same provider→Plugin binding from the lazy
@@ -234,7 +229,6 @@ func (l *LazyLookup) Reset() {
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
-	l.providers = map[string]types.Provider{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
@@ -395,11 +389,10 @@ type LazyLookup struct {
 	recipes          map[string]types.Recipe
 	featureRecipes   map[string]types.FeatureRecipe
 	aggregates       map[string]types.Aggregate
-	providers        map[string]types.Provider
 	mappingLibraries map[string]types.MappingLibrary
 	plugins          map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
 	aggregateSources map[string]string
-	recipeSkips      map[string]error // skipped recipe/FR/aggregate/provider/maplib/plugin file path -> reason
+	recipeSkips      map[string]error // skipped recipe/FR/aggregate/maplib/plugin file path -> reason
 	recipeIndexBuilt bool
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
@@ -464,7 +457,6 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
-	l.providers = map[string]types.Provider{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
@@ -960,21 +952,17 @@ func (l *LazyLookup) buildRecipeIndex() {
 	}
 	// Tier-2: fold every lockfile-pinned cache slot of the recipe-shell kinds,
 	// under the SAME verify-on-read / pin discipline resolveComponent uses. A
-	// registry build's recipes / FeatureRecipes / aggregates / providers / mapping
+	// registry build's recipes / FeatureRecipes / aggregates / mapping
 	// libraries live in the pinned cache, not the catalog dirs — this is what makes
 	// the lazy backing see them. Runs AFTER the Tier-1 walk so a locally-authored
-	// entity wins on a name/identity collision. A registry-resolved Provider
-	// participates in the closure under the provider-entity pin path (a Recipe's
-	// declared provider, resolved above Tier-1, is walked and pinned), so its pinned
-	// cache slot folds here into l.providers; a locally-authored provider still
-	// resolves through the Tier-1 walk above.
+	// entity wins on a name/identity collision.
 	l.foldPinnedCacheEntities(map[string]bool{
-		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "Provider": true, "Plugin": true,
+		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "Plugin": true,
 	})
 }
 
 // foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
-// FeatureRecipe, Aggregate, Provider, MappingLibrary, or Plugin) and folds it into the hot
+// FeatureRecipe, Aggregate, MappingLibrary, or Plugin) and folds it into the hot
 // maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
 // collision (a later duplicate is skipped and recorded). parseData is the YAML to
 // parse; rawBytes is retained as entityBytes for digest fidelity — identical to
@@ -1022,22 +1010,6 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		l.aggregates[e.Metadata.Name] = e
 		l.aggregateSources[e.Metadata.Name] = src
 		l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = rawBytes
-	case "Provider":
-		if _, eerr := envelope.ValidateBytes(envelope.KindProvider, parseData, src); eerr != nil {
-			l.recordRecipeSkip(src, eerr)
-			return
-		}
-		var e types.Provider
-		if uerr := yaml.Unmarshal(parseData, &e); uerr != nil {
-			l.recordRecipeSkip(src, uerr)
-			return
-		}
-		if _, dup := l.providers[e.Metadata.Name]; dup {
-			l.recordRecipeSkip(src, fmt.Errorf("duplicate provider name %q; this file is shadowed", e.Metadata.Name))
-			return
-		}
-		l.providers[e.Metadata.Name] = e
-		l.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = rawBytes
 	case "MappingLibrary":
 		e, perr := parseMappingLibraryEntity(parseData, src)
 		if perr != nil {
@@ -1156,7 +1128,6 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		Recipes:          l.recipes,
 		FeatureRecipes:   l.featureRecipes,
 		Aggregates:       l.aggregates,
-		Providers:        l.providers,
 		SchemaLibraries:  l.schemaLibraries,
 		MappingLibraries: l.mappingLibraries,
 		Plugins:          l.plugins,
@@ -1262,18 +1233,6 @@ func (l *LazyLookup) PluginByURI(uri string) (types.Plugin, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.recipeCatalog().PluginByURI(uri)
-}
-
-// ProviderByName resolves a Provider entity by its metadata.name over the
-// lazily-enumerated (Tier-1 + pinned Tier-2) set. It delegates to the same
-// *Catalog matcher the eager backing uses (via the recipeCatalog() shell), so
-// the two backings resolve identically — no per-backing matcher. A Provider is
-// keyed by name (not entity URI), matching provider dispatch's name-based
-// resolution.
-func (l *LazyLookup) ProviderByName(name string) (types.Provider, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.recipeCatalog().ProviderLookup(name)
 }
 
 // ProviderPluginByName resolves a provider name to the provider-rendering Plugin

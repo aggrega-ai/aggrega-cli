@@ -28,32 +28,26 @@ import (
 // scans, the inspect command's catalog dump, tests asserting entity counts)
 // can read them without going through a callback. The two surfaces are not
 // redundant: the callback returners (CatalogLookup, RecipeLookup,
-// SubAggregateLoader, plus the ProviderLookup method used as a method
-// value) conform to interfaces each consumer package defines on its own
-// side. Adapting at the catalog boundary keeps consumer interfaces free of
+// SubAggregateLoader) conform to interfaces each consumer package defines on
+// its own side. Adapting at the catalog boundary keeps consumer interfaces free of
 // pkg/catalog import dependencies and lets each consumer evolve its data
 // needs without forcing the map layout to change.
 //
 // Recipes and FeatureRecipes index by spec.implements so the renderer's
 // per-component lookup ("which Recipe implements core/api-server?") is a
 // single map fetch. Components, Features, and Aggregates index by
-// metadata.name because that is the URI the resolver receives. Providers
-// index by metadata.name where the name string IS the dispatch key the
-// renderer engineFactory uses ("helm", "helm-chart", "compose", and
-// future kinds; an unregistered provider name produces a fatal halt at
-// dispatch time).
+// metadata.name because that is the URI the resolver receives.
 type Catalog struct {
 	Components       map[string]types.Component
 	Features         map[string]types.Feature
 	Recipes          map[string]types.Recipe         // keyed by identity (provider/name:version)
 	FeatureRecipes   map[string]types.FeatureRecipe  // keyed by identity (provider/name:version)
 	Aggregates       map[string]types.Aggregate      // keyed by metadata.name
-	Providers        map[string]types.Provider       // keyed by metadata.name (e.g. "helm", "helm-chart")
 	SchemaLibraries  map[string]types.SchemaLibrary  // keyed by metadata.name (PascalCase library identifier)
 	MappingLibraries map[string]types.MappingLibrary // keyed by metadata.name (PascalCase library identifier)
 	Plugins          map[string]types.Plugin         // keyed by identity (metadata.name:version)
 
-	// componentSources / featureSources / providerSources / pluginSources
+	// componentSources / featureSources / pluginSources
 	// track the file path each entity was loaded from. Populated by Pass 1
 	// (indexFile) and consumed by Pass 2 (the schema validation pass at the
 	// end of LoadAll) so the validator's error messages name the offending
@@ -62,7 +56,6 @@ type Catalog struct {
 	// path.
 	componentSources map[string]string
 	featureSources   map[string]string
-	providerSources  map[string]string
 	pluginSources    map[string]string
 
 	// aggregateSources records the absolute filesystem path each Aggregate
@@ -361,13 +354,11 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 		Recipes:          make(map[string]types.Recipe),
 		FeatureRecipes:   make(map[string]types.FeatureRecipe),
 		Aggregates:       make(map[string]types.Aggregate),
-		Providers:        make(map[string]types.Provider),
 		SchemaLibraries:  make(map[string]types.SchemaLibrary),
 		MappingLibraries: make(map[string]types.MappingLibrary),
 		Plugins:          make(map[string]types.Plugin),
 		componentSources: make(map[string]string),
 		featureSources:   make(map[string]string),
-		providerSources:  make(map[string]string),
 		pluginSources:    make(map[string]string),
 		aggregateSources: make(map[string]string),
 		entityBytes:      make(map[string][]byte),
@@ -453,11 +444,6 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	mergeKind(acc, "Aggregate", acc.Aggregates, perDir.Aggregates, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.aggregateSources[k] = perDir.aggregateSources[k]
 		bk := entityBytesKey("Aggregate", perDir.Aggregates[k].Metadata.Name)
-		acc.entityBytes[bk] = perDir.entityBytes[bk]
-	})
-	mergeKind(acc, "Provider", acc.Providers, perDir.Providers, perDir, perDirRoot, winnerDir, func(k string) {
-		acc.providerSources[k] = perDir.providerSources[k]
-		bk := entityBytesKey("Provider", perDir.Providers[k].Metadata.Name)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 	mergeKind(acc, "SchemaLibrary", acc.SchemaLibraries, perDir.SchemaLibraries, perDir, perDirRoot, winnerDir, func(k string) {
@@ -590,22 +576,6 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			c.featureSources[name],
 			feat.Spec.Schema,
 		)...)
-	}
-
-	providerNames := make([]string, 0, len(c.Providers))
-	for name := range c.Providers {
-		providerNames = append(providerNames, name)
-	}
-	sort.Strings(providerNames)
-	for _, name := range providerNames {
-		p := c.Providers[name]
-		for _, err := range validator.ValidateProviderSchemas(
-			name,
-			c.providerSources[name],
-			&p.Spec,
-		) {
-			validationErrors = append(validationErrors, err)
-		}
 	}
 
 	pluginKeys := make([]string, 0, len(c.Plugins))
@@ -848,21 +818,6 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.Aggregates[akey] = e
 		c.aggregateSources[akey] = path
 		c.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = data
-	case "Provider":
-		if _, eerr := envelope.ValidateBytes(envelope.KindProvider, data, path); eerr != nil {
-			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-		}
-		var e types.Provider
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Provider")
-		}
-		pkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
-		if err := c.claimIdentity("Provider:"+pkey, fmt.Sprintf("Provider identity %q", pkey), path); err != nil {
-			return err
-		}
-		c.Providers[pkey] = e
-		c.providerSources[pkey] = path
-		c.entityBytes[entityBytesKey("Provider", e.Metadata.Name)] = data
 	case "SchemaLibrary":
 		// Parse + the forbidden-keyword ($dynamicAnchor / $dynamicRef) and
 		// template-body scans run through the shared per-entity resolve
@@ -1142,23 +1097,6 @@ func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, 
 	return e, nil
 }
 
-// ProviderLookup returns the loaded Provider whose metadata.name matches
-// name, plus a found flag. Names track the renderer's engineFactory
-// dispatch keys ("helm", "helm-chart", "compose", and future kinds; an
-// unregistered provider name produces a fatal halt at dispatch time).
-//
-// The tuple-return shape (zero value + false on miss, not a sentinel error)
-// lets callers branch cheaply when the provider is optional, where a sentinel
-// error would force the caller to either distinguish miss-vs-other-error or
-// swallow both cases.
-func (c *Catalog) ProviderLookup(name string) (types.Provider, bool) {
-	key, ok, _ := c.resolveProviderKey(name)
-	if !ok {
-		return types.Provider{}, false
-	}
-	return c.Providers[key], true
-}
-
 // DeprecationWarnings returns non-fatal notices about deprecated catalog
 // shapes — formatted as a string slice the caller is free to print, log,
 // or escalate to errors as fits its UX. The build command currently prints
@@ -1394,7 +1332,7 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 // ErrUnsatisfiableEntityVersion when the base name exists but no version satisfies
 // a version-pinned reference. A bare typeURI resolves to the highest available
 // version. The eager catalog indexes by name:version, so this is the single point
-// that picks among coexisting versions; resolveFeatureKey / resolveProviderKey /
+// that picks among coexisting versions; resolveFeatureKey /
 // resolveAggregateKey mirror it for the other by-name kinds.
 func (c *Catalog) resolveComponentKey(typeURI string) (string, bool, error) {
 	return selectEntityVersion(c.Components, typeURI, func(v types.Component) (string, string) {
@@ -1404,12 +1342,6 @@ func (c *Catalog) resolveComponentKey(typeURI string) (string, bool, error) {
 
 func (c *Catalog) resolveFeatureKey(typeURI string) (string, bool, error) {
 	return selectEntityVersion(c.Features, typeURI, func(v types.Feature) (string, string) {
-		return v.Metadata.Name, v.Metadata.Version
-	})
-}
-
-func (c *Catalog) resolveProviderKey(name string) (string, bool, error) {
-	return selectEntityVersion(c.Providers, name, func(v types.Provider) (string, string) {
 		return v.Metadata.Name, v.Metadata.Version
 	})
 }
@@ -1460,7 +1392,6 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			return compactform.Schema{}, false
 		},
 		Plugin:         c.PluginByURI,
-		Provider:       c.ProviderLookup,
 		ProviderPlugin: c.ProviderPluginByName,
 	}
 }
@@ -1524,7 +1455,7 @@ func (c *Catalog) AggregateLookup() resolver.AggregateLookup {
 // source path, rendered in the same coordinate system as AggregateSourceFile.
 //
 // The signature returns `(*types.Aggregate, string, error)` rather than the
-// `(value, bool)` shape used by CatalogLookup / RecipeLookup / ProviderLookup
+// `(value, bool)` shape used by CatalogLookup / RecipeLookup
 // because the topology package treats a sub-aggregate miss as a fatal
 // graph-construction failure (the parent Aggregate references a
 // sub-aggregate that does not exist; the build cannot continue). The

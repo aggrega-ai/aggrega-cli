@@ -15,7 +15,7 @@ import (
 )
 
 // writeSubAggregateConsumerWorkspace publishes a signed sub-aggregate (and the
-// signed Provider / Component / Recipe it needs) to the registry at host, then
+// signed Component / Recipe it needs) to the registry at host, then
 // writes a consumer workspace whose LOCAL parent aggregate imports that
 // sub-aggregate by bare identity. The sub-aggregate is absent from the workspace
 // catalog, so it resolves purely through the AggregatePuller tier — the registry
@@ -28,15 +28,6 @@ func writeSubAggregateConsumerWorkspace(t *testing.T, host string, pinnedPubPEM 
 	t.Helper()
 	cat := t.TempDir()
 
-	providerPath := filepath.Join(cat, "provider/helm/1.0.0/provider.yaml")
-	writeFixture(t, providerPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	componentPath := filepath.Join(cat, "component/test/svc/1.0.0/component.yaml")
 	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -85,9 +76,8 @@ spec:
       type: test/svc
 `)
 
-	// Push order mirrors a dependency-safe publish: provider, component, recipe,
+	// Push order mirrors a dependency-safe publish: component, recipe,
 	// then the sub-aggregate that references the component.
-	push(t, host, providerPath)
 	push(t, host, componentPath)
 	push(t, host, recipePath)
 	push(t, host, subAggPath)

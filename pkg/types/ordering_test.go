@@ -264,31 +264,6 @@ spec:
 	}
 }
 
-func TestProvider_AuthorOrderPreserved(t *testing.T) {
-	t.Parallel()
-	// Provider currently has no OrderedMap fields.
-	// Placeholder round-trip: verify Provider unmarshals without error.
-	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: plugins/helm-engine.wasm
-  workloadSchema: |
-    values: { port: int }
-`)
-
-	var p Provider
-	if err := yaml.Unmarshal(src, &p); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	if p.Metadata.Name != "helm" {
-		t.Errorf("Metadata.Name = %q, want helm", p.Metadata.Name)
-	}
-}
-
 func TestWorkload_RoundTripPlaceholder(t *testing.T) {
 	t.Parallel()
 	// Workload struct body lands in synthesis-foundations. This test verifies

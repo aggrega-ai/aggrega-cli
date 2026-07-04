@@ -381,15 +381,6 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("closure: sub-aggregate descent: %w", err)
 	}
-	// Pull-side provider-entity descent: read each in-closure Recipe / FeatureRecipe's
-	// declared provider and pin a registry-resolved provider into the closure, so a
-	// registry-published provider participates in the deterministic lockfile pin like
-	// any other catalog entity. A Tier-1-local provider is left catalog-resident
-	// (resolved at build through the local walk). Lock-time only — the build path
-	// reads provider pins from the lockfile and never descends.
-	if err := closure.DescendRecipeProviders(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
-		return fmt.Errorf("closure: provider descent: %w", err)
-	}
 	// Pull-side pipeline-plugin descent, two-pass: Phase A reads each in-closure
 	// Recipe / FeatureRecipe's spec.pipeline[].plugin URIs and pins a registry-resolved
 	// plugin ENTITY into the closure (catalog-entity axis), so a registry-published

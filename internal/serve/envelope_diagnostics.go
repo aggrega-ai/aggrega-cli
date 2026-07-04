@@ -30,7 +30,6 @@ var entityKindByName = map[string]envelope.Kind{
 	"Feature":        envelope.KindFeature,
 	"Recipe":         envelope.KindRecipe,
 	"FeatureRecipe":  envelope.KindFeatureRecipe,
-	"Provider":       envelope.KindProvider,
 	"SchemaLibrary":  envelope.KindSchemaLibrary,
 	"MappingLibrary": envelope.KindMappingLibrary,
 	"Aggregate":      envelope.KindAggregate,

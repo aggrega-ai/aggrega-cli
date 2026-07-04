@@ -47,7 +47,6 @@ func TestMediaTypeForKindDispatchesAllKinds(t *testing.T) {
 		{"Feature", oci.MediaTypeFeature},
 		{"Recipe", oci.MediaTypeRecipe},
 		{"FeatureRecipe", oci.MediaTypeFeatureRecipe},
-		{"Provider", oci.MediaTypeProvider},
 		{"SchemaLibrary", oci.MediaTypeSchemaLibrary},
 		{"MappingLibrary", oci.MediaTypeMappingLibrary},
 	}

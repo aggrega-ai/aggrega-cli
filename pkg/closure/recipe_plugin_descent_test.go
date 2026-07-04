@@ -14,6 +14,51 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
+// recipeURI / registryProvider name the Recipe and its declared provider used by
+// the closure fixtures below: the manifest maps a component to recipeURI, and the
+// recipe fixtures declare provider: registryProvider.
+const (
+	recipeURI        = "hub.aggrega.ai/recipe/example/svc:1.0.0"
+	registryProvider = "compose"
+)
+
+// providerDescentRelease names a manifest so the computed closure carries a Recipe
+// entity (via the components-mapping value) whose spec the descent reads.
+const providerDescentRelease = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: prod
+  version: 1.0.0
+spec:
+  aggregate: hub.aggrega.ai/aggregate/example/app:1.0.0
+  manifest: hub.aggrega.ai/manifest/example/app:1.0.0
+`
+
+const providerDescentManifest = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: app
+  version: 1.0.0
+spec:
+  mappings:
+    components:
+      type:
+        hub.aggrega.ai/component/core/svc:1.0.0: hub.aggrega.ai/recipe/example/svc:1.0.0
+`
+
+// entityByURI returns the closure entity with the given URI, plus a found flag.
+func entityByURI(cl closure.Closure, uri string) (closure.ResolvedRef, bool) {
+	for _, e := range cl.Entities {
+		if e.URI == uri {
+			return e, true
+		}
+	}
+	return closure.ResolvedRef{}, false
+}
+
 const (
 	// registryPluginEntity is the Plugin ENTITY URI a recipe pipeline step
 	// references; registryPluginArtifact is the .wasm artifact the entity's

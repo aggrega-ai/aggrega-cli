@@ -31,7 +31,6 @@ const (
 	MediaTypeFeature        = "application/vnd.aggrega.feature.v1alpha1+yaml"
 	MediaTypeRecipe         = "application/vnd.aggrega.recipe.v1alpha1+tar+gz"
 	MediaTypeFeatureRecipe  = "application/vnd.aggrega.featurerecipe.v1alpha1+tar+gz"
-	MediaTypeProvider       = "application/vnd.aggrega.provider.v1alpha1+yaml"
 	MediaTypeSchemaLibrary  = "application/vnd.aggrega.schemalibrary.v1+json"
 	MediaTypeMappingLibrary = "application/vnd.aggrega.mappinglibrary.v1+json"
 	MediaTypeAggregate      = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
@@ -54,7 +53,6 @@ var kindMediaTypes = map[string]string{
 	"Feature":        MediaTypeFeature,
 	"Recipe":         MediaTypeRecipe,
 	"FeatureRecipe":  MediaTypeFeatureRecipe,
-	"Provider":       MediaTypeProvider,
 	"SchemaLibrary":  MediaTypeSchemaLibrary,
 	"MappingLibrary": MediaTypeMappingLibrary,
 	"Aggregate":      MediaTypeAggregate,
@@ -64,7 +62,7 @@ var kindMediaTypes = map[string]string{
 // MediaTypeForKind returns the canonical OCI mediatype for the given
 // entity kind. The kind parameter matches the convention used in
 // pkg/catalog/catalog.go: plain string values "Component", "Feature",
-// "Recipe", "FeatureRecipe", "Provider", "SchemaLibrary",
+// "Recipe", "FeatureRecipe", "SchemaLibrary",
 // "MappingLibrary", "Aggregate". Returns ErrUnknownEntityKind for
 // unrecognised values (a programming error, not a user-input error).
 func MediaTypeForKind(kind string) (string, error) {

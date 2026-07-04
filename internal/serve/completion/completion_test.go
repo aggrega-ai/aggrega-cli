@@ -100,15 +100,6 @@ func TestCompletionImplementsEnumeratesGivenKindURIs(t *testing.T) {
 	}
 }
 
-func TestCompletionProviderEnumeratesProviderURIs(t *testing.T) {
-	t.Parallel()
-	uris := []string{"helm-provider", "compose-provider"}
-	items := Provider(uris, "")
-	if len(items) != 2 {
-		t.Fatalf("Provider returned %d items; want 2", len(items))
-	}
-}
-
 func TestCompletionLabelCategoryReturnsEmptyAtThisWI(t *testing.T) {
 	t.Parallel()
 	items := LabelValue("component.aggrega.ai/category")
@@ -304,11 +295,11 @@ func TestClassifyForCompletionRejectsLabelKey(t *testing.T) {
 	}
 }
 
-func TestClassifyForCompletionRecognizesProvider(t *testing.T) {
+func TestClassifyForCompletionProviderValueIsUnknown(t *testing.T) {
 	t.Parallel()
 	got := ClassifyForCompletion([]string{"spec", "provider"}, yamlpos.ContextSideValue)
-	if got != ContextKindProvider {
-		t.Errorf("ClassifyForCompletion([spec, provider]) = %d; want ContextKindProvider", got)
+	if got != ContextKindUnknown {
+		t.Errorf("ClassifyForCompletion([spec, provider]) = %d; want Unknown (provider names are free-form strings, not a completion context)", got)
 	}
 }
 

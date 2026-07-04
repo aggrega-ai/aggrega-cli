@@ -5,7 +5,6 @@ package catalog
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -67,19 +66,6 @@ spec: [not, a, mapping]
 	}
 }
 
-// TestIndexFile_ProviderUnmarshalError pins the Provider-kind error.
-func TestIndexFile_ProviderUnmarshalError(t *testing.T) {
-	t.Parallel()
-	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-spec: [not, a, mapping]
-`
-	if err := c.indexFile([]byte(src), "p"); err == nil {
-		t.Errorf("malformed Provider should error")
-	}
-}
-
 // TestIndexFile_SchemaLibraryUnmarshalError pins the SchemaLibrary
 // unmarshal error.
 func TestIndexFile_SchemaLibraryUnmarshalError(t *testing.T) {
@@ -136,32 +122,6 @@ spec:
 		}
 		if s, _ := r.Spec.Source.(string); s != "/absolute/path" {
 			t.Errorf("absolute source rewritten unexpectedly: %q", s)
-		}
-	}
-}
-
-// TestProviderSchemaValidation_MalformedWorkloadSchema pins
-// validateSchemaPillarsPass arms that fire when a Provider's workloadSchema is
-// malformed. Re-uses Load against testdata-shaped temp dir.
-func TestProviderSchemaValidation_MalformedWorkloadSchema(t *testing.T) {
-	t.Parallel()
-	// Build minimal catalog with a malformed Provider workloadSchema.
-	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec:
-  workloadSchema: |
-    ::: not yaml :::
-`
-	err := c.indexFile([]byte(src), "p")
-	if err != nil {
-		// Provider unmarshal may fail at any depth — both outcomes confirm
-		// the path is reached.
-		if !strings.Contains(err.Error(), "Provider") {
-			t.Logf("unexpected error path: %v", err)
 		}
 	}
 }

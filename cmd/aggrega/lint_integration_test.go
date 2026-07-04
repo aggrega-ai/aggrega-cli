@@ -77,13 +77,13 @@ func mutateProposedVersion(t *testing.T, yamlBytes []byte, newVersion string) st
 
 // TestSchemaEvolutionMatrixAllKinds drives the lint command in
 // --pre-publish mode against a MAJOR-required fixture for each
-// of the 6 entity kinds beyond Component. For each kind, the
+// of the 5 entity kinds beyond Component. For each kind, the
 // proposed version is mutated to PATCH (1.0.1) → expect HALT,
 // MINOR (1.1.0) → expect HALT, MAJOR (2.0.0) → expect PASS.
 // Component's full 9-cell matrix is exercised separately by
 // TestLintPrePublishMatrixComponent at lint_test.go.
 //
-// 18 sub-tests (6 kinds × 3 cells). Plugin loaded once via
+// 15 sub-tests (5 kinds × 3 cells). Plugin loaded once via
 // EnsureFixtureBuilt; per-cell cost is just the dispatch call.
 func TestSchemaEvolutionMatrixAllKinds(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
@@ -95,7 +95,6 @@ func TestSchemaEvolutionMatrixAllKinds(t *testing.T) {
 		{"feature", "Feature"},
 		{"recipe", "Recipe"},
 		{"featurerecipe", "FeatureRecipe"},
-		{"provider", "Provider"},
 		{"schemalibrary", "SchemaLibrary"},
 		{"mappinglibrary", "MappingLibrary"},
 	}

@@ -13,47 +13,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// ValidateProviderSchemas enforces the load-time structural contract on a
-// Provider's workloadSchema field. It is typed as a Go string carrying JSON
-// Schema 2020-12; the validator parses a non-empty body via
-// pkg/compactform.Compile and surfaces any compile error wrapped in a
-// CATALOG_ERROR-categorised CompilerError citing the source file. An empty
-// field passes without inspection — workloadSchema is optional (helm-chart,
-// terraform, and cloudformation Providers omit it).
-//
-// The function is invoked from pkg/catalog/catalog.go's Pass 2 alongside
-// ValidateSchemaPillars. Errors collect across providers into the aggregate
-// CatalogError that LoadAll returns when any Pass-2 finding fires, matching
-// the collect-and-emit-all policy chosen for the Feature/Component validator
-// pass.
-//
-// The validator's coverage is intentionally narrower than the per-pillar
-// Feature/Component check: the Provider schema is a flat JSON Schema body
-// (not pillar-wrapped), so the shape check + pillar-key check from
-// ValidateSchemaPillars do not apply here. The compactform.Compile
-// gate alone catches malformed YAML, unknown compact-form keywords,
-// and structural shape failures — sufficient at load time to keep
-// non-JSON-Schema-2020-12 bodies out of catalogs.
-//
-// The wiring exists so today's catalogs reach the same load-time
-// guardrail Components and Features enjoy.
-func ValidateProviderSchemas(
-	providerName, filePath string,
-	spec *types.ProviderSpec,
-) []error {
-	if spec == nil {
-		return nil
-	}
-	var errs []error
-	if e := validateProviderSchemaField("Provider", "workloadSchema", providerName, filePath, spec.WorkloadSchema); e != nil {
-		errs = append(errs, e)
-	}
-	return errs
-}
-
-// ValidatePluginProviderSchemas enforces the same load-time structural
-// contract on a Plugin's spec.provider.workloadSchema field as
-// ValidateProviderSchemas enforces on a Provider's workloadSchema. When a
+// ValidatePluginProviderSchemas enforces the load-time structural
+// contract on a Plugin's spec.provider.workloadSchema field. When a
 // provider-rendering Plugin declares a spec.provider block with a non-empty
 // workloadSchema, the field is a Go string carrying JSON Schema 2020-12;
 // the validator compiles a non-empty body via pkg/compactform and surfaces
@@ -65,9 +26,8 @@ func ValidateProviderSchemas(
 // The function is invoked from pkg/catalog/catalog.go's Pass 2 once per
 // loaded Plugin. Errors collect across plugins into the aggregate
 // CatalogError that LoadAll returns, matching the collect-and-emit-all
-// policy the Provider and Feature/Component validator passes use. The
-// compile gate is shared with the Provider path (validateProviderSchemaField)
-// so a single body-compilation contract governs both surfaces.
+// policy the Feature/Component validator pass uses. The body-compilation
+// contract lives in validateProviderSchemaField.
 func ValidatePluginProviderSchemas(
 	pluginName, filePath string,
 	spec *types.PluginSpec,
@@ -82,8 +42,9 @@ func ValidatePluginProviderSchemas(
 	return errs
 }
 
-// validateProviderSchemaField is the shared per-field validator for
-// workloadSchema-shaped fields on both the Provider and Plugin surfaces.
+// validateProviderSchemaField is the per-field validator for
+// workloadSchema-shaped fields carrying JSON Schema 2020-12 (the Plugin's
+// spec.provider.workloadSchema).
 // Empty (or whitespace-only) bodies pass without inspection. Non-empty
 // bodies parse as YAML and pass through pkg/compactform; any error from
 // either stage wraps into a CatalogError citing the entity kind, the

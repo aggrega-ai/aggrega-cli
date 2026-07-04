@@ -29,15 +29,6 @@ type CatalogLookup struct {
 	// entity URI → spec.plugin → cascade. May be nil in catalog-less paths; a
 	// socket that needs it then resolves nothing and halts as not-an-entity.
 	Plugin func(uri string) (types.Plugin, bool)
-	// Provider returns the catalog Provider entity for a provider NAME, plus a
-	// found flag. Unlike Component/Feature/Plugin — keyed by entity URI — a
-	// Provider is keyed by name, since a Recipe names its provider by name and
-	// provider dispatch resolves it by name. The entity carries spec.plugin —
-	// the Plugin-entity URI naming the Wasm rendering engine — so a provider
-	// front resolves in two levels: provider name → this Provider → spec.plugin
-	// (a Plugin-entity URI) → the Plugin front → the artifact cascade. May be
-	// nil in catalog-less paths; a consumer that needs it then resolves nothing.
-	Provider func(name string) (types.Provider, bool)
 	// ProviderPlugin resolves a provider NAME to the provider-rendering Plugin
 	// entity serving it, plus a found flag. A pluginType: provider Plugin serves
 	// the provider names in its compatibleProviders; this accessor finds the unique

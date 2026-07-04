@@ -158,9 +158,6 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 		}
 		labelName := ctx.Path[2]
 		return completion.LabelValue(labelName)
-	case completion.ContextKindProvider:
-		uris := s.enumerateWorkspaceURIs("Provider")
-		return completion.Provider(uris, prefix)
 	case completion.ContextKindSchemaKeyword:
 		return completion.SchemaKeyword()
 	case completion.ContextKindSchemaTypeValue:

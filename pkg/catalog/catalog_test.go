@@ -5,9 +5,9 @@
 // commits to:
 //
 //   - End-to-end load against testdata fixtures (one of each catalog-resident
-//     kind: Component, Feature, Recipe, FeatureRecipe, Aggregate, Provider)
+//     kind: Component, Feature, Recipe, FeatureRecipe, Aggregate)
 //     plus per-callback-returner round-trips through CatalogLookup,
-//     RecipeLookup, SubAggregateLoader, and ProviderLookup. Each round-trip
+//     RecipeLookup, and SubAggregateLoader. Each round-trip
 //     pins the lookup contract (hit returns the entity; miss returns the
 //     bool false / error path the renderer or topology package expects).
 //
@@ -83,35 +83,6 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	}
 	if _, ok, _ := c.resolveAggregateKey("db-module"); !ok {
 		t.Error("missing db-module aggregate")
-	}
-
-	if len(c.Providers) != 1 {
-		t.Errorf("expected 1 provider, got %d", len(c.Providers))
-	}
-	if _, ok, _ := c.resolveProviderKey("helm-chart"); !ok {
-		t.Error("missing helm-chart provider")
-	}
-}
-
-func TestProviderLookup(t *testing.T) {
-	t.Parallel()
-
-	c, err := LoadAll("", "testdata")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	p, ok := c.ProviderLookup("helm-chart")
-	if !ok {
-		t.Fatal("expected helm-chart provider")
-	}
-	if p.Spec.WorkloadSchema == "" {
-		t.Error("expected workloadSchema to be populated")
-	}
-
-	_, ok = c.ProviderLookup("nonexistent")
-	if ok {
-		t.Error("expected not found")
 	}
 }
 

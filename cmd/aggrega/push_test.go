@@ -74,19 +74,6 @@ spec:
       type: object
 `,
 		},
-		{
-			name:      "Provider",
-			kind:      "Provider",
-			mediaType: oci.MediaTypeProvider,
-			body: `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec:
-  plugin: "builtin:helm"
-`,
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -637,12 +637,8 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
 		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
 	}
-	if key, ok, _ := l.catalog.resolveProviderKey(uri); ok {
-		p := l.catalog.Providers[key]
-		return l.tier1Resolution("Provider", p.Metadata.Name, p.Metadata.Version, version), true
-	}
-	// A Plugin is a by-name entity (keyed metadata.name:version, like
-	// Provider). A workspace plugin socket or a recipe pipeline step references a
+	// A Plugin is a by-name entity (keyed metadata.name:version). A workspace
+	// plugin socket or a recipe pipeline step references a
 	// Plugin ENTITY URI, which the closure walk resolves here; a local
 	// (Tier-1) entity must resolve at Tier-1 like every other local entity rather
 	// than falling through to a fatal Tier-3 NotFound.

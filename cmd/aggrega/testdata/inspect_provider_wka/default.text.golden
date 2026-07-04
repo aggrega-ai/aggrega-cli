@@ -1,9 +1,0 @@
-Provider: helm:1.0.0
-Plugin: hub.aggrega.ai/providers/helm-renderer:1.0.0
-Recipe-hosting: synthesized
-Well-known annotations:
-  aggrega.ai/replicas
-    purpose: Desired replica count.
-    default: One replica.
-  aggrega.ai/ingress-host
-    purpose: External hostname.

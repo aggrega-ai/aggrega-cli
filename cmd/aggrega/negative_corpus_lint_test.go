@@ -80,14 +80,6 @@ spec:
     env:
       X: "y"
 `,
-	"Provider": `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: compose
-  version: "1.0.0"
-spec:
-  plugin: "builtin:compose"
-`,
 	"SchemaLibrary": `apiVersion: aggrega.ai/v1alpha1
 kind: SchemaLibrary
 metadata:
@@ -205,15 +197,6 @@ spec:
     containers:
       main:
         image: x:1
-`, envelope.ErrEntityEnvelope},
-		// Provider unknown key.
-		{"provider-unknown-key", "Provider", `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: compose
-  version: "1.0.0"
-spec:
-  rendererPlugin: oops
 `, envelope.ErrEntityEnvelope},
 		// SchemaLibrary missing required (schemas).
 		{"schemalibrary-missing-schemas", "SchemaLibrary", `apiVersion: aggrega.ai/v1alpha1

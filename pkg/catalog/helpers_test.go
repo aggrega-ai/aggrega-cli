@@ -353,12 +353,10 @@ func TestIndexFile_NonEntityYAML(t *testing.T) {
 		Recipes:          map[string]types.Recipe{},
 		FeatureRecipes:   map[string]types.FeatureRecipe{},
 		Aggregates:       map[string]types.Aggregate{},
-		Providers:        map[string]types.Provider{},
 		SchemaLibraries:  map[string]types.SchemaLibrary{},
 		MappingLibraries: map[string]types.MappingLibrary{},
 		componentSources: map[string]string{},
 		featureSources:   map[string]string{},
-		providerSources:  map[string]string{},
 		aggregateSources: map[string]string{},
 	}
 	// Non-entity YAML.
@@ -397,12 +395,10 @@ func makeEmptyCatalog() *Catalog {
 		Recipes:          map[string]types.Recipe{},
 		FeatureRecipes:   map[string]types.FeatureRecipe{},
 		Aggregates:       map[string]types.Aggregate{},
-		Providers:        map[string]types.Provider{},
 		SchemaLibraries:  map[string]types.SchemaLibrary{},
 		MappingLibraries: map[string]types.MappingLibrary{},
 		componentSources: map[string]string{},
 		featureSources:   map[string]string{},
-		providerSources:  map[string]string{},
 		aggregateSources: map[string]string{},
 		entityBytes:      map[string][]byte{},
 	}
@@ -499,15 +495,3 @@ spec:
 	}
 }
 
-// TestProviderLookup_MissAndHit pins the contract.
-func TestProviderLookup_MissAndHit(t *testing.T) {
-	t.Parallel()
-	c := &Catalog{Providers: map[string]types.Provider{}}
-	if _, ok := c.ProviderLookup("absent"); ok {
-		t.Errorf("absent → false")
-	}
-	c.Providers["helm"] = types.Provider{Metadata: types.ProviderMetadata{Name: "helm"}}
-	if _, ok := c.ProviderLookup("helm"); !ok {
-		t.Errorf("present → true")
-	}
-}
