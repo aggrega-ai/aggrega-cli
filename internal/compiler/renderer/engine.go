@@ -131,10 +131,10 @@ func RenderIsIntermediate(engine Engine) bool {
 // Wasm-provider wrapper wraps the in-tree Go engine it stands in for. Host-side
 // capability and classification checks unwrap to the wrapped engine before
 // asserting: those checks govern host orchestration (codec selection, artifacts
-// handling, intermediate classification) that stays host-side even when a node's
-// render and assembly route through a Wasm guest, so they must see the
-// capabilities of the engine the wrapper stands in for rather than the wrapper's
-// own, narrower method set.
+// handling, intermediate classification, the boundary->consumer env-override
+// channel) that stays host-side even when a node's render and assembly route
+// through a Wasm guest, so they must see the capabilities of the engine the
+// wrapper stands in for rather than the wrapper's own, narrower method set.
 type Unwrapper interface {
 	Unwrap() Engine
 }

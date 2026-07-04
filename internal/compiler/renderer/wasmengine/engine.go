@@ -72,11 +72,12 @@ func (e *Engine) Capabilities() renderer.ProviderCapabilities {
 }
 
 // Unwrap exposes the wrapped in-tree engine so host-side capability checks the
-// wrapper does not itself implement — codec selection, artifacts handling, and
-// intermediate classification — resolve against it. The wrapper drives the guest
-// for render and synthesis; the host still asserts those host-side capabilities
-// against the engine the wrapper stands in for. AssemblerEngine embeds *Engine
-// and inherits this method, returning the same wrapped engine.
+// wrapper does not itself implement — codec selection, artifacts handling,
+// intermediate classification, and the boundary->consumer env-override channel —
+// resolve against it. The wrapper drives the guest for render and synthesis; the
+// host still asserts those host-side capabilities against the engine the wrapper
+// stands in for. AssemblerEngine embeds *Engine and inherits this method,
+// returning the same wrapped engine.
 func (e *Engine) Unwrap() renderer.Engine {
 	return e.goEngine
 }

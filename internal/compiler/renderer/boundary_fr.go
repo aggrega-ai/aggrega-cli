@@ -466,12 +466,15 @@ func PrepopulateBoundaryScopeProvides(
 			// boundary context. The channel is provider-agnostic — it stores
 			// whatever opaque string values the engine returns; it does not
 			// interpret them. Production lives in the provider engine, not here.
+			// This is a host-side capability, so the assertion routes through
+			// the unwrap seam: a provider routed to a Wasm guest exposes the
+			// wrapped in-tree engine's channel, not the narrower wrapper's.
 			if engineFactory != nil {
 				eng, engErr := engineFactory(fr.Spec.Provider)
 				if engErr != nil {
 					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", instName))
 				}
-				if overrider, ok := eng.(BoundaryConsumerEnvOverrider); ok {
+				if overrider, ok := hostEngine(eng).(BoundaryConsumerEnvOverrider); ok {
 					overrides, ovErr := overrider.BoundaryConsumerEnvOverrides(frCtx)
 					if ovErr != nil {
 						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
