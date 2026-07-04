@@ -55,6 +55,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 
 	extism "github.com/extism/go-sdk"
@@ -112,15 +113,52 @@ type Loader struct {
 // isolation or output, since compiled code is a pure function of the identical
 // guest bytes.
 //
+// The cache is disk-backed under the user cache directory
+// (see wasmCompileCacheDir), so compiled guest machine code survives across
+// separate CLI invocations: the guest is compiled once per machine and reused
+// on every later build of any project, rather than recompiled from scratch
+// each run. The store holds only compiled code keyed by the guest bytes and a
+// wazero version/arch marker, so it can neither alter rendered output nor cross
+// the render-hermeticity firewall — it is a local compiled-artifact cache, not
+// an external runtime input. When a disk-backed cache cannot be created (no
+// resolvable user cache directory, or the directory cannot be provisioned), the
+// loader falls back to an in-memory cache so a build never fails for want of a
+// cache location.
+//
 // fetch serves the aggrega_fetch_external_input host function for every Plugin
 // the Loader constructs (nil is safe — a guest fetch then receives the in-band
 // not-available envelope). The caller MUST invoke the returned close function
 // when the Loader is no longer needed, typically deferred at the construction
 // site; it releases the cache's resources.
 func NewCachingLoader(fetch FetchService) (*Loader, func() error) {
-	cache := wazero.NewCompilationCache()
+	var cache wazero.CompilationCache
+	if dir, ok := wasmCompileCacheDir(); ok {
+		if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
+			cache = disk
+		}
+	}
+	if cache == nil {
+		cache = wazero.NewCompilationCache()
+	}
 	l := &Loader{ExternalInputs: fetch, Cache: cache}
 	return l, func() error { return cache.Close(context.Background()) }
+}
+
+// wasmCompileCacheDir returns the directory for the persistent wazero
+// compilation cache and whether one could be resolved. The provider guests are
+// identical bytes across every project, so the cache is rooted at the
+// user-level cache directory rather than a per-project one: the first build on
+// a machine pays the guest's compilation cost, and every later build of any
+// project reuses it. wazero namespaces its entries by a version+arch+os marker
+// beneath this directory, so an incompatible cache is ignored, not misread. A
+// false return (no resolvable user cache directory) signals the caller to fall
+// back to an in-memory cache rather than fail the build.
+func wasmCompileCacheDir() (string, bool) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(base, "aggrega", "wasm-compile"), true
 }
 
 // externalInputsContextKey keys the external-input service on a
