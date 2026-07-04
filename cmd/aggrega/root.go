@@ -32,6 +32,8 @@ func init() {
 	browser.Stdout = io.Discard
 }
 
+//go:generate make -C ../.. docs
+
 var rootCmd = newRootCmd()
 
 // newRootCmd builds the aggrega command tree. Each invocation returns a
