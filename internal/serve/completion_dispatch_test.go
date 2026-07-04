@@ -62,7 +62,7 @@ func TestCompletionDispatchKindCursor(t *testing.T) {
 	for _, it := range result.Items {
 		labels[it.Label] = true
 	}
-	for _, want := range []string{"Component", "Feature", "Recipe", "Aggregate", "Manifest", "Release"} {
+	for _, want := range []string{"Component", "Feature", "Recipe", "Aggregate", "Manifest", "Release", "Plugin", "FeatureRecipe", "SchemaLibrary", "MappingLibrary"} {
 		if !labels[want] {
 			t.Errorf("kind candidate %q missing from output", want)
 		}
