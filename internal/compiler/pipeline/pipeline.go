@@ -221,6 +221,15 @@ func runStepsOneToFour(
 			Topology:      topoResult,
 		}
 
+		// Step 2b: mutator socket. Config-driven off WorkspaceConfig.Plugins.Mutator
+		// — a no-op when unconfigured, so an unattached build is byte-identical to a
+		// build without the socket. When configured, each plugin auto-tags node
+		// labels via JSON Patch (the narrow mutation exception); the tags flow into
+		// the IR because Step 3 reads its labels from this same topoResult.
+		if err := runMutatorSocket(ctx, inputs, catalogLookup, topoResult); err != nil {
+			return err
+		}
+
 		// Step 3: IR.
 		graph, featureOrder, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
 			Topology:        topoResult,
@@ -248,6 +257,18 @@ func runStepsOneToFour(
 			return err
 		}
 		out.Analysis = analysis
+
+		// Step 4b: policy-validator socket. Config-driven off
+		// WorkspaceConfig.Plugins.Policy — a no-op when unconfigured. When
+		// configured, each plugin evaluates the full IR graph and its failed
+		// verdicts append to analysis.Errors, so a policy rejection halts the build
+		// through the same gate selector/appliesTo violations use (RunPipeline joins
+		// Errors; the Tier-4 path surfaces them as diagnostics). Policy never
+		// mutates the graph.
+		if err := runPolicySocket(ctx, inputs, catalogLookup, analysis); err != nil {
+			return err
+		}
+
 		for _, w := range analysis.Warnings {
 			fmt.Fprintf(os.Stderr, "  %s\n", w)
 		}

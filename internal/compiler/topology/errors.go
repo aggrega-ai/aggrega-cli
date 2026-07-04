@@ -81,4 +81,16 @@ var (
 	// (Invariant 4) backstopping the NormalizedAggregate newtype rather than
 	// silently flattening a half-normalized graph.
 	ErrUnnormalizedAggregate = errors.New("aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)")
+
+	// ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
+	// the host refuses to apply to the labels-only graph projection: a patch
+	// that fails to decode, a patch whose operation does not apply cleanly, or
+	// a patch that reaches outside the node-label surface (adding or removing a
+	// node, touching a node field other than its labels, or setting a non-string
+	// label value). The mutator's sanctioned surface is node labels only — the
+	// narrow auto-tagging exception — so any change beyond that is a Loud
+	// Guardrail (Invariant 4): the build halts rather than silently absorbing a
+	// mutation the plugin was not authorized to make. The wrapped error names
+	// the offending patch and the specific confinement rule it broke.
+	ErrMutatorPatchRejected = errors.New("mutator patch rejected")
 )

@@ -17,15 +17,16 @@ import (
 // carry the artifacts produced by Step 4's two label-matching classes
 // and its precalculated_paths / policy-input assembly:
 //
-//   - Errors — every selector and appliesTo violation discovered, one
+//   - Errors — every selector and appliesTo violation discovered, plus
+//     any failed policy-socket verdict appended by the pipeline, one
 //     [AnalysisError] per violation. Build flow gates on
 //     len(Errors) > 0; see the package doc Pipeline Integration
 //     subsection for the gating semantics.
 //   - Paths — the cycle-safe DFS enumeration of acyclic paths through
 //     the IR graph; see [calculatePaths] for the contract.
 //   - PolicyInput — the policy-validator.wasm payload (always
-//     non-nil); see [PolicyValidatorInput] for the ABI shape and
-//     not-yet-executed status.
+//     non-nil); see [PolicyValidatorInput] for the ABI shape. The
+//     pipeline marshals it to a configured policy plugin at Step 4.
 type AnalysisResult struct {
 	Errors      []AnalysisError
 	Warnings    []string
@@ -33,10 +34,33 @@ type AnalysisResult struct {
 	PolicyInput *PolicyValidatorInput
 }
 
+// AnalysisErrorKind classifies an [AnalysisError] so [AnalysisError.Error]
+// composes the right message and consumers can branch beyond the
+// Socket-presence heuristic. The zero value is the edge-shaped class
+// (selector or appliesTo, distinguished by Socket presence) and preserves
+// the original two-class behavior; [AnalysisErrorPolicy] marks a
+// policy-socket verdict.
+type AnalysisErrorKind string
+
+const (
+	// AnalysisErrorEdge is the zero-value, edge-shaped class: a selector or
+	// appliesTo violation whose message [AnalysisError.Error] composes from
+	// the Source/Target/Socket fields.
+	AnalysisErrorEdge AnalysisErrorKind = ""
+
+	// AnalysisErrorPolicy marks a Step-4 policy-validator verdict whose
+	// Message is already a complete, plugin-supplied diagnostic.
+	// [AnalysisError.Error] returns that Message verbatim rather than
+	// composing it from the edge fields, which a policy verdict does not
+	// carry.
+	AnalysisErrorPolicy AnalysisErrorKind = "policy"
+)
+
 // AnalysisError is one violation discovered during Step 4. The struct
 // is shaped for edge-style violations (the selector check) and reused
-// for per-Feature-attachment violations (the appliesTo check); the
-// fields carry slightly different semantics across the two classes:
+// for per-Feature-attachment violations (the appliesTo check) and for
+// policy-socket verdicts; the fields carry slightly different semantics
+// across the classes:
 //
 //   - Selector violations (from validateSelectors): Source is the
 //     source nodeID of the violating edge, Target is the target
@@ -48,11 +72,20 @@ type AnalysisResult struct {
 //     instance name, Socket is empty, Selector is [formatAppliesTo]'s
 //     summary of the constraint set, Message is a human-readable
 //     diagnostic.
+//   - Policy verdicts (Kind [AnalysisErrorPolicy]): Message is the
+//     complete diagnostic the policy-validator plugin supplied (a rule
+//     failure), and the edge fields (Source/Target/Socket/Selector) are
+//     empty.
 //
-// Callers that branch on violation class can distinguish them by
-// inspecting Socket: a non-empty Socket signals a selector violation;
-// an empty Socket signals an appliesTo violation.
+// Callers that branch on the edge classes distinguish them by inspecting
+// Socket: a non-empty Socket signals a selector violation; an empty
+// Socket signals an appliesTo violation. A policy verdict carries the
+// explicit Kind [AnalysisErrorPolicy].
 type AnalysisError struct {
+	// Kind classifies the violation. The zero value ([AnalysisErrorEdge])
+	// is an edge-shaped selector/appliesTo violation; [AnalysisErrorPolicy]
+	// marks a policy-socket verdict whose Message is already complete.
+	Kind     AnalysisErrorKind
 	Source   string
 	Target   string
 	Socket   string
@@ -122,14 +155,18 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 	return fmt.Sprintf(".spec.components.%s.features.%s", lastSegment(nodeID), instance)
 }
 
-// Error formats the violation as a single human-readable string. Selector
-// violations (Socket non-empty) read as
-// "<source> -> <target> (<socket>): <message>"; appliesTo violations
-// (Socket empty) read as "<source> attaches Feature <target>: <message>"
-// since the appliesTo check's Source-and-Target reuse semantics carry
-// different meaning. The two shapes are distinguished by Socket presence
-// per the package's documented convention.
+// Error formats the violation as a single human-readable string. A policy
+// verdict (Kind [AnalysisErrorPolicy]) returns its Message verbatim — the
+// plugin already supplied a complete diagnostic. Selector violations (Socket
+// non-empty) read as "<source> -> <target> (<socket>): <message>"; appliesTo
+// violations (Socket empty) read as
+// "<source> attaches Feature <target>: <message>" since the appliesTo check's
+// Source-and-Target reuse semantics carry different meaning. The edge shapes
+// are distinguished by Socket presence per the package's documented convention.
 func (e AnalysisError) Error() string {
+	if e.Kind == AnalysisErrorPolicy {
+		return e.Message
+	}
 	if e.Socket != "" {
 		return fmt.Sprintf("%s -> %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
 	}

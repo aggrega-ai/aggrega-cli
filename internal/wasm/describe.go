@@ -20,7 +20,7 @@ import (
 // invoking it.
 //
 // describe() is cross-plugin-type: one shape covers provider, linter,
-// and feature-recipe-pipeline plugins. It is consumed by the host
+// feature-recipe-pipeline, mutator, and policy-validator plugins. It is consumed by the host
 // loader for dispatch decisions, not emitted into rendered output, so
 // its slices carry author/declared order without an OrderedMap; a
 // future consumer that marshals a descriptor into a deterministic
@@ -52,10 +52,10 @@ type PluginDescriptor struct {
 	// load rather than mis-invoked at dispatch.
 	ABIVersion string `json:"abi_version"`
 
-	// PluginType is the plugin's kind — provider, linter, or
-	// feature-recipe-pipeline step. It selects the minimum-export rule
-	// the host validates and, with the export name, the default
-	// input pattern.
+	// PluginType is the plugin's kind — provider, linter,
+	// feature-recipe-pipeline step, mutator, or policy-validator. It
+	// selects the minimum-export rule the host validates and, with the
+	// export name, the default input pattern.
 	PluginType PluginType `json:"plugin_type"`
 
 	// CompatibleProviders is the enumerated list of provider engines this
@@ -162,6 +162,16 @@ const (
 	// transforms the IR within a feature recipe's pipeline. Its minimum
 	// export is step.
 	PluginTypeFRPStep PluginType = "frp_step"
+
+	// PluginTypeMutator is a mutator plugin: it auto-tags topology-graph
+	// node labels at Step 2, returning JSON Patch documents the host applies
+	// to a labels-only projection of the graph. Its minimum export is mutate.
+	PluginTypeMutator PluginType = "mutator"
+
+	// PluginTypePolicyValidator is a policy-validator plugin: it evaluates the
+	// full IR graph at Step 4 and returns one pass/fail verdict per rule; a
+	// failed rule halts the build. Its minimum export is validate.
+	PluginTypePolicyValidator PluginType = "policy-validator"
 )
 
 // InputPattern selects how the host delivers an export's input payload.
@@ -203,6 +213,16 @@ const lintExportPrefix = "lint_"
 // frpStepExportName is the required export name for a
 // feature-recipe-pipeline step plugin.
 const frpStepExportName = "step"
+
+// MutateExport and ValidateExport are the default entry-function names for
+// the mutator and policy-validator sockets. They are the single source for
+// both the minimum-export rule this gate enforces and the default a socket
+// applies when a plugin attachment leaves its entry function unset, so the
+// two sides read one name rather than each re-spelling the literal.
+const (
+	MutateExport   = "mutate"
+	ValidateExport = "validate"
+)
 
 // providerRenderExportName is the required export name for a provider
 // plugin.
@@ -248,7 +268,8 @@ const (
 //   - plugin_type is a recognized [PluginType].
 //   - the per-type minimum export is present: a provider declares
 //     render_node; a linter declares at least one lint_* export; a
-//     feature-recipe-pipeline step declares step.
+//     feature-recipe-pipeline step declares step; a mutator declares
+//     mutate; a policy-validator declares validate.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set
@@ -273,7 +294,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch d.PluginType {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicyValidator:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
@@ -338,6 +359,16 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 		if !d.hasExport(frpStepExportName) {
 			return fmt.Errorf("feature-recipe-pipeline plugin %q declares no %q export: %w",
 				pluginIdentity, frpStepExportName, ErrWasmManifestRejected)
+		}
+	case PluginTypeMutator:
+		if !d.hasExport(MutateExport) {
+			return fmt.Errorf("mutator plugin %q declares no %q export: %w",
+				pluginIdentity, MutateExport, ErrWasmManifestRejected)
+		}
+	case PluginTypePolicyValidator:
+		if !d.hasExport(ValidateExport) {
+			return fmt.Errorf("policy-validator plugin %q declares no %q export: %w",
+				pluginIdentity, ValidateExport, ErrWasmManifestRejected)
 		}
 	}
 	return nil

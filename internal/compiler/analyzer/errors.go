@@ -31,6 +31,18 @@ var (
 	// never a judgement of the secret's meaning.
 	ErrSecretSlotSelectorNotSecretKind = errors.New("secret slot selector does not constrain to secret-kind Features")
 
+	// ErrPolicyViolation is the ABI-stable sentinel for a Step-4
+	// policy-validator socket verdict that fails: a plugin result whose
+	// pass flag is false. Each failed rule is recorded as an
+	// [AnalysisError] entry (Kind [AnalysisErrorPolicy]) on
+	// [AnalysisResult].Errors with this sentinel in its Sentinel field;
+	// [AnalysisError.ToCompilerError] wraps it as the CompilerError's
+	// inner error, so the joined build error is errors.Is-recoverable at
+	// the pipeline boundary. Policy never mutates — a failed rule halts
+	// the build (the Invariant-4 "reject, never silently mutate" Loud
+	// Guardrail); the message the plugin supplied is surfaced verbatim.
+	ErrPolicyViolation = errors.New("policy violation")
+
 	// ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
 	// lookups that fail during analyzer-phase evaluation. Today catalog
 	// misses inside validateSelectors and validateAppliesTo trigger a

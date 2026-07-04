@@ -16,11 +16,9 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 // wasm-policy-validator-v1alpha1.schema.json); the generated guest codec in
 // aggrega-abi mirrors it.
 //
-// **Status: contract definition only — not yet executed.** The Wasm runtime
-// that would consume this payload is not wired into the pipeline;
-// assemblePolicyInput populates the structure on every build for the sake of
-// stable ABI surface. The shape becomes load-bearing once the runtime path
-// lands.
+// assemblePolicyInput populates the structure on every build; the Step-4
+// policy-validator socket marshals it to a configured policy plugin and reads
+// the plugin's verdicts back.
 type PolicyValidatorInput struct {
 	Graph              types.IRGraph       `json:"graph"`
 	PrecalculatedPaths []PrecalculatedPath `json:"precalculated_paths"`
@@ -30,8 +28,8 @@ type PolicyValidatorInput struct {
 // policy-validator.wasm guest emits. Results carries one [PolicyResult]
 // per evaluated rule; an empty Results slice signals "no policy rules
 // ran" (distinct from "all rules passed", which is a slice of Pass=true
-// results). Has no Go-side parser today — the Wasm runtime path that
-// would invoke the guest is not wired into the pipeline.
+// results). The Step-4 socket unmarshals this shape from the policy plugin
+// and turns each failed result into a build-halting diagnostic.
 type PolicyValidatorOutput struct {
 	Results []PolicyResult `json:"results"`
 }

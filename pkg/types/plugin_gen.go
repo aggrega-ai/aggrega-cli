@@ -41,7 +41,7 @@ type PluginMetadata struct {
 type PluginSpec struct {
 	// Plugin The canonical content-addressed reference to the Wasm artifact, in the form `oci://<repository>@sha256:<digest>`. The reference is the plugin's identity; the digest is what the closure pins and the build verifies. A tag-form reference (`oci://<repository>:<tag>`) authored elsewhere resolves to its sha256 digest at pull and pins to this canonical form — the entity's `plugin` field carries the resolved, digest-pinned reference.
 	Plugin string `json:"plugin" yaml:"plugin"`
-	// PluginType The socket type this plugin implements. A plugin implements exactly one socket type, drawn from the plugin-type taxonomy the runtime recognises: `provider` (renders IR nodes into provider-native artifacts), `linter` (inspects authored content and raises diagnostics), `frp_step` (a feature-recipe-pipeline step that transforms IR within a pipeline).
+	// PluginType The socket type this plugin implements. A plugin implements exactly one socket type, drawn from the plugin-type taxonomy the runtime recognises: `provider` (renders IR nodes into provider-native artifacts), `linter` (inspects authored content and raises diagnostics), `frp_step` (a feature-recipe-pipeline step that transforms IR within a pipeline), `mutator` (auto-tags topology-graph node labels at Step 2 via JSON Patch), `policy-validator` (evaluates the full IR graph at Step 4 and halts the build on a failed rule).
 	PluginType string `json:"pluginType" yaml:"pluginType"`
 	// AbiVersion The host/guest ABI version the plugin targets. `v1alpha1` is the only accepted value in this iteration; a future ABI revision adds an accepted value.
 	AbiVersion string `json:"abiVersion" yaml:"abiVersion"`
@@ -53,6 +53,6 @@ type PluginSpec struct {
 	Runtime *PluginRuntime `json:"runtime,omitempty" yaml:"runtime,omitempty"`
 	// Exports The exports this plugin offers, each with its declared capability. An export is one named entry point the host dispatches to (for example `render_node`, `lint_naming`, `step`); the per-export capability block is the authored claim of what that export does, which the host cross-checks against the plugin's self-report at publish and at load. Entries preserve author order. Absent declares no authored export surface.
 	Exports []PluginExport `json:"exports,omitempty" yaml:"exports,omitempty"`
-	// Provider The provider-socket metadata for a `pluginType: provider` plugin: how its rendering engine translates the aggrega.ai/v1alpha1 Workload kind and which platform-native annotations the engine reads. Present only on provider-rendering plugins; absent on `linter` and `frp_step` plugins, and on provider plugins whose engine renders only sourced or artifact content (no Workload synthesis).
+	// Provider The provider-socket metadata for a `pluginType: provider` plugin: how its rendering engine translates the aggrega.ai/v1alpha1 Workload kind and which platform-native annotations the engine reads. Present only on provider-rendering plugins; absent on `linter`, `frp_step`, `mutator`, and `policy-validator` plugins, and on provider plugins whose engine renders only sourced or artifact content (no Workload synthesis).
 	Provider *PluginProvider `json:"provider,omitempty" yaml:"provider,omitempty"`
 }

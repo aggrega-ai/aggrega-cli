@@ -89,12 +89,14 @@
 // path that produced it, and the existing entry's source aggregate so
 // the diagnostic points the author at the precise authoring position.
 //
-// Mutator-plugin contract status. The MutatorInput / MutatorOutput /
-// CompilationContext / MutatorGraph / MutatorNode types in wasm_types.go
-// are contract definitions only — the Wasm plugin that consumes them
-// has no production caller yet (zero importers outside this package).
-// The types ship as deliberately stable surface for downstream
-// Wasm-runtime work to bind against once the mutator socket lands.
+// Mutator-plugin contract. The MutatorInput / MutatorOutput /
+// CompilationContext / MutatorGraph / MutatorNode types in
+// wasm_types_gen.go are the ABI shape of the Step-2 mutator socket.
+// AssembleMutatorInput (mutator.go) builds the labels-only payload the
+// pipeline marshals to a configured mutator plugin, and ApplyMutatorPatches
+// applies the plugin's returned JSON Patches to the node-label surface —
+// the narrow auto-tagging exception — halting on any patch that reaches
+// outside node labels.
 //
 // Downstream consumers. The IR builder (`internal/compiler/ir`) is the
 // production reader of TopologyResult — see its package doc.go for the

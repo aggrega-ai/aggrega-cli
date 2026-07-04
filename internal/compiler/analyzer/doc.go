@@ -37,11 +37,12 @@
 //
 // The build flow gates on len(AnalysisResult.Errors): a non-empty
 // slice halts before Step 5, with one stderr line per violation.
-// AnalysisResult.Paths and AnalysisResult.PolicyInput are computed on
-// every build but are not consumed by Step 5 today; the policy-
-// validator Wasm runtime that would read them is not yet wired into
-// the pipeline. Both surfaces ship as stable shape that becomes
-// load-bearing once the Wasm runtime path lands.
+// AnalysisResult.PolicyInput is computed on every build and, when a
+// workspace configures a policy plugin, the pipeline marshals it to that
+// plugin at Step 4 and appends each failed verdict to
+// AnalysisResult.Errors, so a policy rejection halts the build through the
+// same gate. AnalysisResult.Paths ride the PolicyInput to the plugin as
+// precalculated reachability; they are otherwise not consumed by Step 5.
 //
 // # Determinism
 //
