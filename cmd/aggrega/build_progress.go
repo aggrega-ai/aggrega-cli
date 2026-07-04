@@ -6,8 +6,13 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/term"
 )
 
 // buildDiagOptions carries a command's stderr-diagnostics choices. Every field
@@ -136,6 +141,15 @@ type progressReporter struct {
 	started    time.Time
 	phaseStart time.Time
 
+	// Per-phase timing for the checklist elapsed column. phaseClock records when
+	// each row's phase began, keyed by phase index (0..renderIdx for the spine
+	// phases, compileTimerKey for the compiling-plugins step). phaseFrozen
+	// captures a phase's final elapsed once it completes, so a done row shows a
+	// stable time while the active row's time still advances on each redraw. Both
+	// are checklist-only; other modes never populate them.
+	phaseClock  map[int]time.Time
+	phaseFrozen map[int]time.Duration
+
 	// active is the index into spine.labels of the phase currently in flight, or
 	// -1 before the first phase. Phases at a lower index are done; the active one
 	// spins; higher indices are pending.
@@ -190,6 +204,8 @@ func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpi
 		spine:         spine,
 		active:        -1,
 		staticStarted: map[string]bool{},
+		phaseClock:    map[int]time.Time{},
+		phaseFrozen:   map[int]time.Duration{},
 	}
 }
 
@@ -215,7 +231,43 @@ const (
 	// ansiClearLine erases from the cursor to the end of the line so a shorter
 	// redraw never leaves stale characters from a longer prior label.
 	ansiClearLine = "\x1b[K"
+	// ansiDim opens the SGR dim (faint) attribute; it is closed with ansiReset.
+	// The per-phase elapsed field is drawn dim so it reads as secondary to the
+	// phase label and bar.
+	ansiDim = "\x1b[2m"
 )
+
+const (
+	// progressBarWidth is the fixed cell count of the render-phase percentage
+	// bar: filled cells drawn with '█', the remainder with '░'. Fixed so the bar
+	// occupies a stable column across redraws regardless of the percentage.
+	progressBarWidth = 18
+	// rowBodyColumn is the column the dim elapsed field is padded out to, so the
+	// elapsed times line up in a single right-hand column across every row. It is
+	// wide enough to clear the longest body (the render row: marker + label + a
+	// full bar + " NNN% done/total").
+	rowBodyColumn = 44
+	// elapsedFieldWidth right-aligns the elapsed value within its own column so
+	// single- and multi-digit second counts still align on their trailing 's'.
+	elapsedFieldWidth = 6
+)
+
+// terminalWidth reports the column count of w when it is an interactive
+// terminal, or 0 when the width is unknown (w is not an *os.File, or the query
+// fails). It is a package-level seam so the width-clamp branch is unit-testable
+// without a real TTY; a 0 return disables clamping, which is the correct default
+// for the buffer sinks tests drive.
+var terminalWidth = func(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	cols, _, err := term.GetSize(int(f.Fd()))
+	if err != nil || cols < 0 {
+		return 0
+	}
+	return cols
+}
 
 var spinnerFrames = []rune{'|', '/', '-', '\\'}
 
@@ -268,11 +320,13 @@ func (p *progressReporter) phase(i int) {
 		}
 		return
 	}
+	p.freezeTimer(p.active)
 	p.active = i
 	if p.mode == progressStatic {
 		p.staticLine(p.spine.labels[i])
 		return
 	}
+	p.startTimer(i)
 	p.draw()
 }
 
@@ -310,6 +364,7 @@ func (p *progressReporter) pluginCompiling() {
 		}
 		return
 	}
+	p.startTimer(compileTimerKey)
 	p.draw()
 }
 
@@ -333,11 +388,13 @@ func (p *progressReporter) renderNode(done, total int, nodeID string) {
 	if first {
 		p.renderTotal = total
 		p.renderNext = renderThrottleStep(total)
+		p.startTimer(p.spine.renderIdx)
 	}
 	p.beginRenderStage()
 	p.compileActive = false
 	if p.compileShown {
 		p.compileDone = true
+		p.freezeTimer(compileTimerKey)
 	}
 	p.renderDone = done
 
@@ -362,12 +419,160 @@ func (p *progressReporter) renderNode(done, total int, nodeID string) {
 }
 
 // beginRenderStage marks the transition out of the pre-render phases: every phase
-// before the render phase is done and none of them is the active spinner.
+// before the render phase is done and none of them is the active spinner. It
+// freezes the timer of the phase being left so its row stops advancing.
 func (p *progressReporter) beginRenderStage() {
 	if p.started.IsZero() {
 		p.started = time.Now()
 	}
+	p.freezeTimer(p.active)
 	p.inRenderStage = true
+}
+
+// compileTimerKey is the phaseClock / phaseFrozen key for the compiling-plugins
+// step, chosen outside the non-negative spine-index range so it never collides
+// with a phase index.
+const compileTimerKey = -2
+
+// startTimer records the start instant of a row's phase the first time it
+// becomes active, so its elapsed can be reported. A no-op after the first call
+// for that key, and outside checklist mode (the maps stay empty).
+func (p *progressReporter) startTimer(key int) {
+	if p.phaseClock == nil {
+		return
+	}
+	if _, ok := p.phaseClock[key]; !ok {
+		p.phaseClock[key] = time.Now()
+	}
+}
+
+// freezeTimer captures a phase's final elapsed when it completes, so its row
+// shows a stable time thereafter. Idempotent, and a no-op for a phase that never
+// started (never became active).
+func (p *progressReporter) freezeTimer(key int) {
+	if p.phaseClock == nil {
+		return
+	}
+	st, ok := p.phaseClock[key]
+	if !ok {
+		return
+	}
+	if _, done := p.phaseFrozen[key]; done {
+		return
+	}
+	p.phaseFrozen[key] = time.Since(st)
+}
+
+// elapsedStr returns the dim-column value for a row's phase: the frozen elapsed
+// for a completed phase, the live elapsed for the active one, or "" for a phase
+// that has not started (no time is shown on a pending row).
+func (p *progressReporter) elapsedStr(key int) string {
+	if p.phaseClock == nil {
+		return ""
+	}
+	if d, ok := p.phaseFrozen[key]; ok {
+		return formatPhaseElapsed(d)
+	}
+	if st, ok := p.phaseClock[key]; ok {
+		return formatPhaseElapsed(time.Since(st))
+	}
+	return ""
+}
+
+// formatPhaseElapsed renders a per-phase wall-clock for the checklist elapsed
+// column as seconds to one decimal ("0.4s", "5.3s"). Like the build-summary
+// duration it is intentionally nondeterministic; it lands only on the diagnostic
+// sink and is never part of the rendered artifacts.
+func formatPhaseElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// renderBar composes the render phase's progress detail for a known node count:
+// a fixed-width bar of filled '█' and empty '░' cells reflecting the completed
+// fraction, then the whole-number percentage and the done/total counter, e.g.
+// "████████████░░░░░░ 62% 23/37". A non-positive total yields an empty string
+// (no bar is fabricated for a phase with no count).
+func renderBar(done, total int) string {
+	if total <= 0 {
+		return ""
+	}
+	if done < 0 {
+		done = 0
+	}
+	if done > total {
+		done = total
+	}
+	filled := done * progressBarWidth / total
+	pct := done * 100 / total
+	return fmt.Sprintf("%s%s %d%% %d/%d",
+		strings.Repeat("█", filled),
+		strings.Repeat("░", progressBarWidth-filled),
+		pct, done, total)
+}
+
+// composeRow assembles a checklist row from its visible body (marker, label, and
+// any bar) and its elapsed value. The elapsed is padded to a common column and
+// drawn dim so the times line up in a single right-hand column across rows; an
+// empty elapsed (a not-yet-started phase) yields the bare body. The dim escapes
+// carry no display width, so the row's visible width is the body plus the padded
+// elapsed field — which the redraw path uses to keep its line bookkeeping exact.
+func composeRow(body, elapsed string) string {
+	if elapsed == "" {
+		return body
+	}
+	pad := rowBodyColumn - utf8.RuneCountInString(body)
+	if pad < 1 {
+		pad = 1
+	}
+	return body + strings.Repeat(" ", pad) + ansiDim + fmt.Sprintf("%*s", elapsedFieldWidth, elapsed) + ansiReset
+}
+
+// clampVisibleWidth truncates s so its visible width does not exceed max
+// columns, leaving ANSI escape sequences intact (they carry no width) and
+// closing with a reset when a truncation occurred, so a cut can never leave a
+// dangling attribute. A non-positive max disables clamping. The redraw path uses
+// it to guarantee no row wraps past the terminal width: a wrapped row would
+// occupy more physical lines than the logical row count the cursor-up rewind is
+// computed from, desynchronising the redraw into a reprint.
+func clampVisibleWidth(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	var b strings.Builder
+	visible := 0
+	truncated := false
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			j := i + 1
+			if j < len(s) && s[j] == '[' {
+				j++
+				for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+					j++
+				}
+				if j < len(s) {
+					j++
+				}
+			}
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		if visible >= max {
+			truncated = true
+			break
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		b.WriteRune(r)
+		visible++
+		i += size
+	}
+	if truncated {
+		b.WriteString(ansiReset)
+	}
+	return b.String()
 }
 
 // note emits a supplementary debug line for the current phase — a count or a
@@ -407,12 +612,19 @@ func renderThrottleStep(total int) int {
 func (p *progressReporter) draw() {
 	p.ensureTicker()
 	rows := p.rows()
+	// Clamp each row to the terminal width so no row wraps onto a second physical
+	// line. A wrapped row would occupy more physical lines than the logical row
+	// count linesDrawn tracks, so the next redraw's cursor-up rewind would
+	// under-shoot the block top and the surface would reprint instead of redraw.
+	// Clamping keeps physical lines == logical rows == linesDrawn, so the rewind
+	// is always exact. Width 0 (unknown, or a non-terminal sink) disables it.
+	width := terminalWidth(p.out)
 	if p.linesDrawn > 0 {
 		fmt.Fprintf(p.out, "\x1b[%dA", p.linesDrawn)
 	}
 	fmt.Fprint(p.out, "\r")
 	for _, row := range rows {
-		fmt.Fprintf(p.out, "%s%s\n", row, ansiClearLine)
+		fmt.Fprintf(p.out, "%s%s\n", clampVisibleWidth(row, width), ansiClearLine)
 	}
 	p.linesDrawn = len(rows)
 	p.spin++
@@ -463,26 +675,25 @@ func (p *progressReporter) rows() []string {
 	rows := make([]string, 0, len(p.spine.labels)+1)
 
 	for i := 0; i < preCount; i++ {
-		rows = append(rows, p.phaseRow(i, frame)+p.spine.labels[i])
+		rows = append(rows, composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 	}
 	if p.spine.renderIdx < 0 {
 		// No render phase (pull): the remaining labels are ordinary spine phases.
 		for i := preCount; i < len(p.spine.labels); i++ {
-			rows = append(rows, p.phaseRow(i, frame)+p.spine.labels[i])
+			rows = append(rows, composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 		}
 		return rows
 	}
 	if p.compileShown {
-		switch {
-		case p.compileDone:
-			rows = append(rows, markDone+compilePhaseLabel)
-		case p.compileActive:
-			rows = append(rows, markActive(frame)+compilePhaseLabel)
-		default:
-			rows = append(rows, markDone+compilePhaseLabel)
+		// The compiling-plugins step has no node count, so it keeps the spinner and
+		// shows only its elapsed — never a fabricated percentage bar.
+		marker := markDone
+		if p.compileActive && !p.compileDone {
+			marker = markActive(frame)
 		}
+		rows = append(rows, composeRow(marker+compilePhaseLabel, p.elapsedStr(compileTimerKey)))
 	}
-	rows = append(rows, p.renderRow(frame))
+	rows = append(rows, composeRow(p.renderRowBody(frame), p.elapsedStr(p.spine.renderIdx)))
 	return rows
 }
 
@@ -505,11 +716,13 @@ func (p *progressReporter) phaseRow(i int, frame rune) string {
 	}
 }
 
-// renderRow returns the render-phase checklist row with its X/Y node counter.
-func (p *progressReporter) renderRow(frame rune) string {
+// renderRowBody returns the render-phase checklist row body (marker, label, and
+// — once a node count is known — the fixed-width percentage bar with its NN%
+// done/total detail). The elapsed field is added by composeRow, not here.
+func (p *progressReporter) renderRowBody(frame rune) string {
 	label := p.spine.labels[p.spine.renderIdx]
 	if p.renderTotal > 0 {
-		label = fmt.Sprintf("%s %d/%d", label, p.renderDone, p.renderTotal)
+		label = fmt.Sprintf("%s %s", label, renderBar(p.renderDone, p.renderTotal))
 	}
 	rendered := p.renderDone > 0 || p.inRenderStage
 	switch {
@@ -602,6 +815,12 @@ func (p *progressReporter) finish() {
 		return
 	}
 	if p.mode == progressChecklist && p.linesDrawn > 0 {
+		// Freeze any still-running timers so the completed checklist shows stable
+		// times: the active pre-render phase (an early error before render), the
+		// render phase, and the compiling-plugins step.
+		p.freezeTimer(p.active)
+		p.freezeTimer(p.spine.renderIdx)
+		p.freezeTimer(compileTimerKey)
 		p.draw()
 	}
 }

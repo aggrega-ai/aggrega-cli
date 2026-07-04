@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // ttyReporter builds a checklist reporter over a forced-terminal sink.
@@ -204,8 +205,9 @@ func TestProgress_WarmProfile_OmitsCompileStep(t *testing.T) {
 	}
 }
 
-// TestProgress_RenderNode_TTY_Counter pins the render row's X/Y counter on a
-// checklist sink.
+// TestProgress_RenderNode_TTY_Counter pins the render row on a checklist sink:
+// the label followed by the percentage bar, the whole-number percent, and the
+// done/total counter, redrawn in place at each node.
 func TestProgress_RenderNode_TTY_Counter(t *testing.T) {
 	withTTY(t, true)
 
@@ -222,10 +224,183 @@ func TestProgress_RenderNode_TTY_Counter(t *testing.T) {
 	if !strings.Contains(got, "\r") {
 		t.Errorf("TTY render progress must redraw in place; got %q", got)
 	}
-	for _, want := range []string{"rendering 1/3", "rendering 2/3", "rendering 3/3"} {
+	// Each node's redraw carries the bar cells, the percent, and the done/total
+	// counter for that step.
+	for _, want := range []string{"rendering ", "33% 1/3", "66% 2/3", "100% 3/3"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("expected render counter %q; got %q", want, got)
+			t.Errorf("expected render detail %q; got %q", want, got)
 		}
+	}
+	if !strings.ContainsRune(got, '█') || !strings.ContainsRune(got, '░') {
+		t.Errorf("expected a filled/empty percentage bar on the render row; got %q", got)
+	}
+}
+
+// TestProgress_ActiveRenderRow_HasBarPercentAndDimElapsed asserts the composed
+// active render row carries all four locked elements — the filled/empty bar, the
+// NN% percentage, the done/total counter, and a dim, right-aligned elapsed field
+// — and that the elapsed value is drawn with the ANSI dim attribute and closed
+// with a reset.
+func TestProgress_ActiveRenderRow_HasBarPercentAndDimElapsed(t *testing.T) {
+	withTTY(t, true)
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(false))
+	p.phase(phaseRender)
+	p.renderNode(23, 37, "svc")
+
+	rows := p.rows()
+	row := rows[len(rows)-1] // the render row is last
+
+	if !strings.ContainsRune(row, '█') || !strings.ContainsRune(row, '░') {
+		t.Errorf("active render row must contain the filled/empty bar; got %q", row)
+	}
+	if !strings.Contains(row, "62%") {
+		t.Errorf("active render row must contain the percentage; got %q", row)
+	}
+	if !strings.Contains(row, "23/37") {
+		t.Errorf("active render row must contain the done/total counter; got %q", row)
+	}
+	// The elapsed field is dim (opened with the dim SGR, closed with a reset) and
+	// carries a seconds value.
+	dimIdx := strings.Index(row, ansiDim)
+	if dimIdx < 0 {
+		t.Fatalf("active render row must render the elapsed field dim; got %q", row)
+	}
+	field := row[dimIdx:]
+	if !strings.HasSuffix(field, ansiReset) {
+		t.Errorf("dim elapsed field must be closed with a reset; got %q", field)
+	}
+	if !strings.Contains(field, "s") {
+		t.Errorf("dim elapsed field must carry a seconds value; got %q", field)
+	}
+	// Right-alignment: every drawn row shares the same dim-field start column, so
+	// the times line up. Compare the render row's dim-column offset (visible
+	// width before the dim escape) with a pre-render row's.
+	preRows := rows[:len(rows)-1]
+	renderOffset := visibleRuneWidth(row[:strings.Index(row, ansiDim)])
+	for _, r := range preRows {
+		i := strings.Index(r, ansiDim)
+		if i < 0 {
+			continue // a pending row shows no elapsed
+		}
+		if off := visibleRuneWidth(r[:i]); off != renderOffset {
+			t.Errorf("elapsed column misaligned: render row starts at %d, other row at %d (%q)", renderOffset, off, r)
+		}
+	}
+}
+
+// visibleRuneWidth counts display columns in s, skipping ANSI SGR escape
+// sequences (which carry no width). Test helper for the alignment assertion.
+func visibleRuneWidth(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			for i < len(s) && s[i] != 'm' {
+				i++
+			}
+			if i < len(s) {
+				i++
+			}
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		n++
+		i += size
+	}
+	return n
+}
+
+// TestProgress_UncountedPhase_NoBar confirms a phase with no node count (a
+// pre-render phase, and the compiling-plugins step) keeps the spinner and shows
+// only its elapsed — it never fabricates a percentage bar.
+func TestProgress_UncountedPhase_NoBar(t *testing.T) {
+	withTTY(t, true)
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
+	p.phase(phaseLoadCatalog)
+	p.phase(phaseRender)
+	p.pluginCompiling() // cold profile: the compiling-plugins step is active
+
+	for _, row := range p.rows() {
+		if strings.ContainsRune(row, '█') || strings.ContainsRune(row, '░') || strings.Contains(row, "%") {
+			// Only the render row (last, once a count is known) may carry a bar; no
+			// count is known here, so no row may.
+			t.Errorf("uncounted phase must not fabricate a bar/percent; got row %q", row)
+		}
+	}
+}
+
+// TestProgress_ForcedStatic_RenderNoEscapesNoBar confirms the forced non-TTY
+// static path emits plain lines for the render phase too — no ANSI escapes, no
+// bar cells, no dim elapsed — so redirected logs stay clean.
+func TestProgress_ForcedStatic_RenderNoEscapesNoBar(t *testing.T) {
+	withTTY(t, false)
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{progress: true}, buildProgressSpine(false))
+	p.phase(phaseRender)
+	total := 20
+	for i := 1; i <= total; i++ {
+		p.renderNode(i, total, "node")
+	}
+	p.finish()
+
+	got := buf.String()
+	if strings.ContainsRune(got, '\x1b') {
+		t.Errorf("static render output must contain no ANSI escapes; got %q", got)
+	}
+	if strings.ContainsRune(got, '█') || strings.ContainsRune(got, '░') {
+		t.Errorf("static render output must contain no bar cells; got %q", got)
+	}
+	if !strings.Contains(got, "rendering 20/20...") {
+		t.Errorf("expected the plain static final count; got %q", got)
+	}
+}
+
+// TestRenderBar_ExactShape pins the pure bar composition: fixed-width filled and
+// empty cells, the truncated whole-number percent, and the done/total counter.
+func TestRenderBar_ExactShape(t *testing.T) {
+	cases := []struct {
+		done, total int
+		want        string
+	}{
+		{0, 4, "░░░░░░░░░░░░░░░░░░ 0% 0/4"},
+		{2, 4, "█████████░░░░░░░░░ 50% 2/4"},
+		{4, 4, "██████████████████ 100% 4/4"},
+		{23, 37, "███████████░░░░░░░ 62% 23/37"},
+	}
+	for _, c := range cases {
+		if got := renderBar(c.done, c.total); got != c.want {
+			t.Errorf("renderBar(%d,%d) = %q, want %q", c.done, c.total, got, c.want)
+		}
+	}
+	if got := renderBar(1, 0); got != "" {
+		t.Errorf("renderBar with non-positive total must be empty; got %q", got)
+	}
+}
+
+// TestClampVisibleWidth_NoWrap confirms the redraw clamp caps a row's visible
+// width without splitting an ANSI escape, and leaves an escape-free short row
+// untouched.
+func TestClampVisibleWidth_NoWrap(t *testing.T) {
+	// A row wider than the terminal is truncated to the width in visible columns
+	// (escapes excluded) and closed with a reset.
+	row := "abcdef" + ansiDim + "GHIJ" + ansiReset
+	got := clampVisibleWidth(row, 8)
+	if w := visibleRuneWidth(got); w != 8 {
+		t.Errorf("clamped visible width = %d, want 8; got %q", w, got)
+	}
+	if !strings.HasSuffix(got, ansiReset) {
+		t.Errorf("a truncated row must end with a reset so no attribute dangles; got %q", got)
+	}
+	// A row already within width is returned unchanged.
+	short := "[/] rendering"
+	if got := clampVisibleWidth(short, 80); got != short {
+		t.Errorf("a within-width row must be unchanged; got %q", got)
+	}
+	// Width 0 disables clamping.
+	if got := clampVisibleWidth(row, 0); got != row {
+		t.Errorf("width 0 must disable clamping; got %q", got)
 	}
 }
 
