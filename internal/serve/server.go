@@ -75,6 +75,25 @@ type RunConfig struct {
 	// derives it (the daemon cannot, living below the main package); an empty
 	// value stamps an empty compiler-version.
 	CompilerVersion string
+
+	// RenderDiagnostics, when non-nil, overrides the serve.render_diagnostics
+	// config-file key for this daemon invocation: the command layer sets it
+	// from the --render-diagnostics flag only when the operator passed the
+	// flag, so an unset flag (nil) leaves the config-file value in force. It
+	// controls whether the IR-graph inspection request runs the render pass —
+	// true produces render-time warnings at the cost of loading rendering
+	// plugins; false (the default) returns the graph without rendering.
+	RenderDiagnostics *bool
+}
+
+// resolveRenderDiagnostics applies the render-diagnostics precedence: an
+// explicit flag (flag non-nil, set from --render-diagnostics) wins over the
+// config-file key; absent the flag, the config-file value applies.
+func resolveRenderDiagnostics(flag *bool, cfgValue bool) bool {
+	if flag != nil {
+		return *flag
+	}
+	return cfgValue
 }
 
 // Diagnostic is the wire shape returned by `aggrega/validate` and
@@ -164,6 +183,13 @@ type Server struct {
 	// String() wire token.
 	workspaceMarker workspaceconfig.Marker
 	wsConfig        workspaceconfig.Config
+	// renderDiagnostics is the resolved serve render-diagnostics dial (the
+	// --render-diagnostics flag overriding the serve.render_diagnostics config
+	// key). When false (the default), handleIrGraph skips the render pass and
+	// returns the IR graph without loading rendering plugins; when true, render
+	// runs so render-time warnings surface. Written once at construction, then
+	// only read during handler execution — an immutable snapshot needing no lock.
+	renderDiagnostics bool
 
 	// shuttingDown is set at the dispatch loop's acceptance of an
 	// aggrega/shutdown message — on the single-threaded main loop, so
@@ -464,6 +490,7 @@ func Run(cfg RunConfig) error {
 		compilerVersion:    cfg.CompilerVersion,
 		workspaceMarker:    marker,
 		wsConfig:           wsCfg,
+		renderDiagnostics:  resolveRenderDiagnostics(cfg.RenderDiagnostics, wsCfg.Serve.RenderDiagnostics),
 		lazyCatalog:        lazyCatalog,
 		parseCache:         newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
 		pluginCompileCache: pluginCompileCache,

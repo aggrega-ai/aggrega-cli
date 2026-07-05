@@ -446,6 +446,16 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 // well-formed IRGraph envelope. Per-handler dispatch is additionally
 // unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
+// irGraphPipelineOptions builds the pipeline options for the irGraph
+// inspection path. Render-skip is the default: irGraph reads only the IR
+// graph and discards render output, so unless render-time diagnostics are
+// explicitly requested (the render-diagnostics dial) the pipeline stops
+// after the IR graph is finalised and never loads rendering plugins. The
+// returned graph is byte-identical either way — render never mutates it.
+func (s *Server) irGraphPipelineOptions() pipeline.Options {
+	return pipeline.Options{IncludeTrace: false, SkipRender: !s.renderDiagnostics}
+}
+
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	releasePath := filepath.Join(s.workspaceRoot, params.Release)
 
@@ -542,7 +552,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		// irGraph is resilient inspection — it returns the IR graph even when
 		// resolution is incomplete, so it does not run the render-time
 		// resolution-completeness halt (that gate is the CLI build's).
-		pipeline.Options{IncludeTrace: false},
+		s.irGraphPipelineOptions(),
 	)
 	if err != nil {
 		return irGraphResult{}, &jsonRPCError{

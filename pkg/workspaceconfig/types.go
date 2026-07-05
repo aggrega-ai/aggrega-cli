@@ -79,6 +79,7 @@ type Config struct {
 	Lint        LintConfig        `yaml:"lint"`
 	ParseCache  ParseCacheConfig  `yaml:"parse_cache"`
 	Concurrency ConcurrencyConfig `yaml:"concurrency"`
+	Serve       ServeConfig       `yaml:"serve"`
 
 	// Signing carries the global signing defaults: the keyless service
 	// URLs and an optional keyed-key path. A per-registry signing block
@@ -447,6 +448,23 @@ type ConcurrencyConfig struct {
 	// concurrently; set it to 1 to run requests serially in arrival
 	// order. Values below 1 clamp to 1 at dispatch-loop startup.
 	PoolSize int `yaml:"pool_size"`
+}
+
+// ServeConfig carries behavior settings for the daemon (`aggrega serve`),
+// the compiler-as-service consumed by IDE integrations.
+type ServeConfig struct {
+	// RenderDiagnostics selects whether the IR-graph inspection request runs
+	// the render pass. The default (false) skips render: the daemon returns
+	// the intermediate graph without loading rendering plugins, which is
+	// faster and drops only render-stage advisory warnings — those warnings
+	// are written to the daemon's diagnostic stream, not part of the
+	// client-facing diagnostics, which come from the earlier resolution and
+	// analysis stages. The returned graph is identical whether render runs or
+	// not (render never mutates the graph). Set true to run render on the
+	// inspection path so render-time warnings are produced, at the cost of
+	// loading rendering plugins and the extra work. A serve --render-diagnostics
+	// flag overrides this key for one daemon invocation.
+	RenderDiagnostics bool `yaml:"render_diagnostics"`
 }
 
 // Default returns a Config populated with the documented defaults.

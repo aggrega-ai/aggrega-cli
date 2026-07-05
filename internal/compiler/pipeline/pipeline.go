@@ -122,6 +122,15 @@ type Inputs struct {
 // Result.Trace stays nil and the trace writer is a no-op.
 type Options struct {
 	IncludeTrace bool
+
+	// SkipRender, when true, stops the pipeline after Step 4b (once the IR
+	// graph is finalised and Component/Feature assertions have run) and
+	// returns the graph with no Artifacts. Step 5 render — the sole path that
+	// loads rendering plugins — never runs, so an IR-inspection caller that
+	// needs only the graph avoids the render cost entirely. The returned graph
+	// is byte-identical to a full-render run's graph, because render never
+	// mutates it. Left false — the common case — the pipeline renders as usual.
+	SkipRender bool
 	// RecipeResolutionVerifier, when set, runs after IR-build and before render
 	// to assert every component/feature instance resolves to exactly one recipe
 	// (halting loudly on a no-recipe instance or an unmapped ambiguously-
@@ -678,6 +687,16 @@ func RunPipeline(
 			if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
 				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
 			}
+		}
+
+		// Render-skip cutoff: an IR-inspection caller that needs only the graph
+		// stops here, before any render machinery (trace writer, plugin
+		// compilation cache, provider engines) is constructed — so no rendering
+		// plugin loads. The graph is already final after Step 4b; render never
+		// mutates it, so this returns the same graph a full run would.
+		if opts.SkipRender {
+			result = &Result{IRGraph: graph}
+			return nil
 		}
 
 		// Step 5: Render. Trace writer selection: in-memory collection when

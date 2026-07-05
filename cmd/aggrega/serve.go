@@ -42,6 +42,10 @@ handler if any, refuses new requests with code 1005, and exits
 cleanly within a 2-second drain budget.`,
 		RunE: runServe,
 	}
+	c.Flags().Bool("render-diagnostics", false,
+		"Run the render pass on IR-graph inspection so render-time warnings are produced. "+
+			"Off by default (faster; the returned graph is identical either way, only render-stage "+
+			"advisory warnings are dropped). When set, overrides the serve.render_diagnostics config key.")
 	return c
 }
 
@@ -51,12 +55,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Pass the flag only when the operator set it, so an unset flag falls
+	// through to the config-file key rather than forcing false over it.
+	var renderDiagnostics *bool
+	if cmd.Flags().Changed("render-diagnostics") {
+		v, _ := cmd.Flags().GetBool("render-diagnostics")
+		renderDiagnostics = &v
+	}
 	return serve.Run(serve.RunConfig{
-		Stdin:           cmd.InOrStdin(),
-		Stdout:          cmd.OutOrStdout(),
-		Stderr:          cmd.ErrOrStderr(),
-		WorkspaceRoot:   root,
-		CompilerVersion: provenanceCompilerVersion(),
+		Stdin:             cmd.InOrStdin(),
+		Stdout:            cmd.OutOrStdout(),
+		Stderr:            cmd.ErrOrStderr(),
+		WorkspaceRoot:     root,
+		CompilerVersion:   provenanceCompilerVersion(),
+		RenderDiagnostics: renderDiagnostics,
 	})
 }
 
