@@ -74,16 +74,12 @@ func NewHybrid(
 	memo := map[string]renderer.Engine{}
 	factory := func(providerRef string) (renderer.Engine, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
-		goEngine, err := fallback(bare)
+		engine, memoKey, err := routeEngine(providerRef, bare, fallback, catalogLookup, pluginLookup, sharedLoader)
 		if err != nil {
-			// Unknown engine kind — surface the fallback's error exactly as today,
-			// without memoizing a nil engine.
-			return nil, err
-		}
-		engine, memoKey, err := routeEngine(providerRef, bare, goEngine, catalogLookup, pluginLookup, sharedLoader)
-		if err != nil {
-			// A version-pinned binding that no provider plugin satisfies — halt
-			// loudly rather than silently rendering through the versionless Go engine.
+			// Either a version-pinned binding that no provider plugin satisfies, or
+			// an unknown engine kind surfaced by the lazy fallback construction on the
+			// fallback route — halt loudly rather than memoizing a nil engine or
+			// silently rendering through the versionless Go engine.
 			return nil, err
 		}
 		if e, ok := memo[memoKey]; ok {
@@ -111,12 +107,15 @@ func NewHybrid(
 // the Plugin's compatibleProviders and version constraint) → render_node chain
 // against the catalog. It returns the engine and the memo key that identifies it
 // (the resolved Plugin identity for a Wasm route, the bare engine kind for a
-// fallback). Any non-version break in the chain returns goEngine keyed on bare,
-// so the fallback is the safe default whenever the Wasm path is not fully wired.
-// A non-nil error is a loud halt: a version pin the catalog cannot satisfy.
+// fallback). The fallback engine is constructed lazily — routeEngine calls
+// fallback only on a non-version break in the chain (the fallback route, keyed on
+// bare), so a Wasm-routed binding never constructs a fallback engine. The fallback
+// is the safe default whenever the Wasm path is not fully wired. A non-nil error
+// is a loud halt: a version pin the catalog cannot satisfy, or an unknown engine
+// kind surfaced by the lazy fallback construction on the fallback route.
 func routeEngine(
 	providerRef, bare string,
-	goEngine renderer.Engine,
+	fallback renderer.EngineFactory,
 	catalogLookup resolver.CatalogLookup,
 	pluginLookup pluginpath.Lookup,
 	sharedLoader *wasm.Loader,
@@ -126,6 +125,14 @@ func routeEngine(
 		return nil, "", err
 	}
 	if !routed {
+		// Lazy fallback construction: build the Go fallback engine only now that the
+		// binding is known to render through it. An unknown engine kind surfaces the
+		// fallback's error here, unchanged — the same loud halt that a genuinely
+		// unknown provider produces on this route.
+		goEngine, err := fallback(bare)
+		if err != nil {
+			return nil, "", err
+		}
 		return goEngine, bare, nil
 	}
 	// The adapter's lookup key is the resolved Plugin's entity identity
