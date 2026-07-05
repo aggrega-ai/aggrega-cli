@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//go:build integration
-
 package pipeline_test
 
 import (
@@ -135,7 +133,7 @@ func TestHybridCutoverComposeRouting(t *testing.T) {
 	defer func() { _ = closeLoader() }()
 
 	// Hub provider-Plugin wired, advertises assemble_boundary → assembler adapter.
-	hybrid := enginefactory.NewHybrid(enginefactory.Dispatch, parts.buildLookup, pluginLookup, sharedLoader)
+	hybrid, _ := enginefactory.NewHybrid(enginefactory.Dispatch, parts.buildLookup, pluginLookup, sharedLoader)
 	eng, err := hybrid("compose")
 	if err != nil {
 		t.Fatalf("hybrid(compose): %v", err)
@@ -156,7 +154,7 @@ func TestHybridCutoverComposeRouting(t *testing.T) {
 	// ProviderPlugin accessor removed → hybrid falls back to the Go engine.
 	goLookup := parts.buildLookup
 	goLookup.ProviderPlugin = nil
-	fallbackHybrid := enginefactory.NewHybrid(enginefactory.Dispatch, goLookup, pluginLookup, sharedLoader)
+	fallbackHybrid, _ := enginefactory.NewHybrid(enginefactory.Dispatch, goLookup, pluginLookup, sharedLoader)
 	fbEng, err := fallbackHybrid("compose")
 	if err != nil {
 		t.Fatalf("fallback hybrid(compose): %v", err)

@@ -37,23 +37,23 @@ var pluginFS embed.FS
 // helmProviderURI is the canonical content-addressed URI the helm provider
 // rendering plugin's decompressed bytes register under. It is the artifact
 // reference a Plugin entity's spec.plugin names; the sha256 digest pins the
-// exact bytes committed (compressed) under plugins/, so a resolution of this
+// exact bytes committed (uncompressed) under plugins/, so a resolution of this
 // URI through the embed tier verifies byte-for-byte against a lockfile pin.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:642928733b166393716f82b60dcd1b5d0ef967e5e23b7d079e81e8bf363c56fd"
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:b0a43deaedef55063ac5c86dfda7a6ed5d33314447a191bfac4171a49463d7d8"
 
 // composeProviderURI is the canonical content-addressed URI the compose provider
 // rendering plugin's decompressed bytes register under. Like helmProviderURI, the
-// sha256 digest pins the exact bytes committed (compressed) under plugins/, so a
+// sha256 digest pins the exact bytes committed (uncompressed) under plugins/, so a
 // resolution of this URI through the embed tier verifies byte-for-byte against a
 // lockfile pin.
-const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:e666128813bd1a71d3920a356f0688dd5eb38831f5ebde766d4055506ff8abb4"
+const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:f2a5112d5ae8e92b99a3c4a080baea35597e4001c1b2ce8f4e6303ad9d71fe68"
 
 // helmChartProviderURI is the canonical content-addressed URI the helm-chart
 // provider rendering plugin's decompressed bytes register under. Like the other
-// provider URIs, the sha256 digest pins the exact bytes committed (compressed)
+// provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
 // under plugins/, so a resolution of this URI through the embed tier verifies
 // byte-for-byte against a lockfile pin.
-const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:d5818048458e180de742867fcb2a1007c09fc1ff1f09d4ee263d34dafef89add"
+const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:bd74da5550eea0a62c7e382ec36e3cf5e1645f828479d8838fd4ecfbc332bc56"
 
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from

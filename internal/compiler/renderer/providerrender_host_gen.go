@@ -69,6 +69,10 @@ type NodeProvenance struct {
 	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty"`
 	// Environment The environment name, stamped as the aggrega.ai/environment label when non-empty.
 	Environment string `json:"environment,omitempty" yaml:"environment,omitempty"`
+	// ProviderName The bare provider engine kind, stamped as the aggrega.ai/provider label when non-empty.
+	ProviderName string `json:"provider_name,omitempty" yaml:"provider_name,omitempty"`
+	// ProviderVersion The resolved provider-rendering plugin version, stamped as the aggrega.ai/provider-version label when non-empty.
+	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty"`
 }
 
 // CatalogProjection The pre-packaged catalog content a Provider guest renders against when the host supplies catalog entries in the payload rather than behind host functions. It is a closure walk outward from the IR node: only the catalog entries transitively referenced by the node being rendered are included, not the whole catalog. Each map is keyed by catalog URI and preserves key order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads each entry through the catalog entity's own wire contract.
@@ -573,6 +577,22 @@ func (t NodeProvenance) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"environment\":")
 		writeJSONString(&buf, t.Environment)
 	}
+	if t.ProviderName != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"provider_name\":")
+		writeJSONString(&buf, t.ProviderName)
+	}
+	if t.ProviderVersion != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"provider_version\":")
+		writeJSONString(&buf, t.ProviderVersion)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -608,6 +628,18 @@ func (t *NodeProvenance) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Environment = s
+			}
+		case "provider_name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ProviderName = s
+			}
+		case "provider_version":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ProviderVersion = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

@@ -250,6 +250,8 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 		RecipeName:       in.Node.RecipeName,
 		RecipeVersion:    in.Node.RecipeVersion,
 		LabelComponentID: in.Node.LabelComponentID,
+		ProviderName:     in.Node.Provenance.ProviderName,
+		ProviderVersion:  in.Node.Provenance.ProviderVersion,
 		Provenance: renderer.ProvenanceContext{
 			CompilerVersion: in.Node.Provenance.CompilerVersion,
 			AggregateName:   in.Node.Provenance.AggregateName,

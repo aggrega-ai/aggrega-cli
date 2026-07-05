@@ -263,6 +263,8 @@ func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types
 			CompilerVersion: nodeCtx.Provenance.CompilerVersion,
 			AggregateName:   nodeCtx.Provenance.AggregateName,
 			Environment:     nodeCtx.Provenance.Environment,
+			ProviderName:    nodeCtx.ProviderName,
+			ProviderVersion: nodeCtx.ProviderVersion,
 		},
 	}
 }
