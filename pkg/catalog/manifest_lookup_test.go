@@ -315,6 +315,62 @@ func TestVerifyManifestImplementsConsistency_CaretAware(t *testing.T) {
 	}
 }
 
+// TestManifestMappingConsistent pins the bidirectional version truth table the
+// consistency check applies between a Manifest mapping key and the mapped
+// recipe's spec.implements. The key may be bare or version-pinned; the
+// implements may be bare, exact, or caret. A bare key imposes no version
+// constraint (base match suffices, including against a version-pinned
+// implements); a version-pinned key is judged by exact/caret/base
+// satisfaction.
+func TestManifestMappingConsistent(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		impl, key string
+		want      bool
+	}{
+		{"bare key, bare impl, same base", "core/datastore/postgres", "core/datastore/postgres", true},
+		{"bare key, versioned impl, same base", "core/datastore/postgres:1.0.0", "core/datastore/postgres", true},
+		{"bare key, caret impl, same base", "core/datastore/postgres:^1.0.0", "core/datastore/postgres", true},
+		{"versioned key, bare impl, same base", "core/datastore/postgres", "core/datastore/postgres:1.0.0", true},
+		{"versioned key, exact impl, same version", "core/datastore/postgres:1.0.0", "core/datastore/postgres:1.0.0", true},
+		{"versioned key in caret range", "core/api:^1.0.0", "core/api:1.2.0", true},
+		{"versioned key out of caret range", "core/api:^1.0.0", "core/api:2.0.0", false},
+		{"versioned key, exact impl, version mismatch", "core/api:1.0.0", "core/api:2.0.0", false},
+		{"bare key, differing base", "core/datastore/mysql", "core/datastore/postgres", false},
+		{"versioned key, differing base", "core/datastore/mysql:1.0.0", "core/datastore/postgres:1.0.0", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := manifestMappingConsistent(tc.impl, tc.key); got != tc.want {
+				t.Errorf("manifestMappingConsistent(impl=%q, key=%q) = %v; want %v", tc.impl, tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestVerifyManifestImplementsConsistency_BareKeyVersionedImpl pins the
+// regressed case end-to-end through the public verifier: a bare mapping key
+// against a recipe whose spec.implements carries a version is consistent (the
+// bare key does not constrain the version).
+func TestVerifyManifestImplementsConsistency_BareKeyVersionedImpl(t *testing.T) {
+	t.Parallel()
+	c := fakeCatalog(
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres:1.0.0"),
+	)
+	flatComponents := &types.MappingTier{}
+	flatComponents.Type.Set("core/datastore/postgres", "core/helm/postgres-bitnami")
+	manifest := &types.Manifest{
+		Spec: types.ManifestSpec{
+			Mappings: types.ManifestMappings{Components: flatComponents},
+		},
+	}
+	if errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml"); len(errs) != 0 {
+		t.Errorf("bare key against versioned implements should be consistent; got %v", errs)
+	}
+}
+
 // TestVerifyManifestImplementsConsistency_NilManifest pins boundary:
 // nil manifest returns nil (no consistency errors to surface).
 func TestVerifyManifestImplementsConsistency_NilManifest(t *testing.T) {

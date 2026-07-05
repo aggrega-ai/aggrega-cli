@@ -484,6 +484,29 @@ func implementsSatisfies(impl, componentType string) bool {
 	return impl == cBase
 }
 
+// manifestMappingConsistent reports whether a Manifest mapping key and the
+// mapped recipe's spec.implements refer to the same type at compatible
+// versions. It is bidirectional over the version dimension:
+//
+//   - A version-pinned key (exact or caret) is judged by implementsSatisfies,
+//     which honours an exact version, a caret range, and an unversioned
+//     implements (a recipe implementing any version of the base).
+//   - A bare (versionless) key imposes no version constraint, so a base match
+//     alone is consistent — including a bare key against a version-pinned
+//     implements. implementsSatisfies rejects that direction because it treats
+//     a versionless request as unmatchable, so the bare-key case is handled
+//     here rather than by loosening implementsSatisfies (whose other caller
+//     passes a concrete component version, where a bare request never arises).
+func manifestMappingConsistent(impl, key string) bool {
+	if implementsSatisfies(impl, key) {
+		return true
+	}
+	if _, _, keyHasVer := splitVersionedURI(key); !keyHasVer {
+		return stripVersion(impl) == key
+	}
+	return false
+}
+
 // recipesImplementing returns the sorted, provider-qualified identity keys of
 // every catalog recipe whose spec.implements satisfies componentType. It is a
 // SUGGESTION provider only — resolution is mapping-only and never consults it.
@@ -644,7 +667,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 			if !ok {
 				continue // missing recipe → resolution path's concern, not a consistency violation
 			}
-			if !implementsSatisfies(r.Spec.Implements, compType) {
+			if !manifestMappingConsistent(r.Spec.Implements, compType) {
 				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q)", compType, recipeURI, r.Spec.Implements, compType)))
 			}
 		}
@@ -656,7 +679,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 			if !ok {
 				continue // missing featurerecipe → resolution path's concern
 			}
-			if !implementsSatisfies(fr.Spec.Implements, featType) {
+			if !manifestMappingConsistent(fr.Spec.Implements, featType) {
 				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest feature mapping %q -> %q: featurerecipe spec.implements is %q (expected %q)", featType, frURI, fr.Spec.Implements, featType)))
 			}
 		}
