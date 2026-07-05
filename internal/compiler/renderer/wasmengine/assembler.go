@@ -30,7 +30,7 @@ const AssembleBoundaryExport = "assemble_boundary"
 // resolution and shared per-build loader; the assemble surface has its own wire
 // shapes (AssembleBoundaryInput to AssembleBoundaryOutput), so it carries its own
 // invoke helper rather than the render Engine's. The adapter is provider-agnostic:
-// it drives whichever guest the wrapped Go engine advertises.
+// it drives whichever guest the provider advertises.
 type AssemblerEngine struct {
 	*Engine
 }
@@ -39,13 +39,13 @@ var _ renderer.BoundaryAssembler = (*AssemblerEngine)(nil)
 
 // NewAssembler returns an AssemblerEngine that assembles through the guest at
 // pluginURI, resolving its bytes via lookup and loading through the shared loader.
-// It wraps the same in-tree Go engine the render adapter wraps — via New — so
-// plugin identity and input-kind capabilities stay single-sourced across the two
-// adapters. The loader is shared across the build so its compilation cache (when
-// present) warms once; a nil loader is an injection-site bug rather than a
-// supported zero value, matching New's contract.
-func NewAssembler(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.Engine, loader *wasm.Loader) *AssemblerEngine {
-	return &AssemblerEngine{Engine: New(lookup, pluginURI, goEngine, loader)}
+// It carries the same host-side capability holder the render adapter carries —
+// via New — so plugin identity and input-kind capabilities stay single-sourced
+// across the two adapters. The loader is shared across the build so its
+// compilation cache (when present) warms once; a nil loader is an injection-site
+// bug rather than a supported zero value, matching New's contract.
+func NewAssembler(lookup pluginpath.Lookup, pluginURI string, hostCaps renderer.HostCapabilities, loader *wasm.Loader) *AssemblerEngine {
+	return &AssemblerEngine{Engine: New(lookup, pluginURI, hostCaps, loader)}
 }
 
 // AssembleBoundary projects the host BoundaryInfo onto the assemble_boundary wire
@@ -59,9 +59,9 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.
 // path from the guest is a loud error rather than a silent last-writer-wins
 // overwrite.
 //
-// When the wrapped Go engine projects sub-charts (an umbrella assembler), the
-// adapter populates the wire's sub-chart carriers and umbrella scalars from the
-// engine's host-side projection — including the pristine bytes of each vendored
+// When the provider projects sub-charts (an umbrella assembler), the adapter
+// populates the wire's sub-chart carriers and umbrella scalars from the holder's
+// host-side projection — including the pristine bytes of each vendored
 // Chart.yaml the engine reads at compile time — so the guest assembles the
 // umbrella from pure data alone. Each sub-chart's values are inserted in sorted
 // key order for the determinism contract. A provider that does not project
@@ -100,9 +100,9 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 		Edges:         edges,
 	}
 
-	// Populate the umbrella scalars only when the wrapped provider projects
-	// sub-charts (an umbrella assembler). Asking the wrapped provider's host
-	// capabilities "do you project sub-charts?" — not "are you helm-chart?" —
+	// Populate the umbrella scalars only when the provider projects sub-charts
+	// (an umbrella assembler). Asking the provider's host capabilities "do you
+	// project sub-charts?" — not "are you helm-chart?" —
 	// keeps the adapter provider-agnostic and keeps a flat-assembling provider's
 	// wire free of these carriers. The host performs the pristine Chart.yaml read
 	// here so the guest assembles from pure data alone; the adapter never touches

@@ -333,6 +333,14 @@ func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info rendere
 	return map[string][]byte{}, false, nil
 }
 
+// HostCapabilities marks this fake as a boundary-assembling provider that merges
+// per-node fragments, so the orchestrator classifies its per-node output
+// Intermediate=true and routes it to AssembleBoundary — the data-flag equivalent
+// of the production compose engine's holder.
+func (c *captureComposerEngine) HostCapabilities() renderer.HostCapabilities {
+	return renderer.HostCapabilities{AssemblesBoundary: true}
+}
+
 // TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler asserts that
 // artifacts from a BoundaryAssembler-engine Recipe — whether inline or
 // file-loaded — are routed by the orchestrator's post-Phase-B grouping into

@@ -39,6 +39,15 @@ type HostCapabilities struct {
 	// vendored bytes into filesystem-free projections for an umbrella-assembling
 	// provider. Nil ⇒ the provider assembles no umbrella sub-charts.
 	ProjectSubCharts func(subCharts []SubChartInfo) ([]SubChartProjection, error)
+	// AssemblesBoundary marks a provider that assembles its dispatch group's
+	// per-node render outputs into a single artifact — the data form of the
+	// BoundaryAssembler capability. It is true for a provider whose engine merges
+	// or composes per-node output at the dispatch boundary (compose merges
+	// fragments into one docker-compose.yaml; helm-chart emits an umbrella chart)
+	// and false for a flat-output provider (helm). The host reads it to classify
+	// render output and to elect a dispatch group's assembler without asserting a
+	// concrete engine type.
+	AssemblesBoundary bool
 	// ExternalArtifacts marks a provider that handles artifacts outside the
 	// standard per-node emission path (merging $import:-loaded entries into the
 	// chart's templates/ directory). It is the data form of the
@@ -56,6 +65,20 @@ type HostCapabilities struct {
 	// returning per-consumer environment overrides from a boundary-scope
 	// FeatureRecipe's edge-enriched template context. Nil ⇒ no overrides.
 	BoundaryConsumerEnvOverrides func(frCtx *types.TemplateContext) (map[string]map[string]string, error)
+}
+
+// RenderIsIntermediate reports whether a provider's per-node render/synthesis
+// output is intermediate input to a per-(path, provider) boundary assembly pass
+// rather than a file written directly at the dispatch path. It is true for a
+// provider that assembles its dispatch group from per-node fragments (compose
+// merges them into one docker-compose.yaml) and false both for a flat-output
+// provider (helm) and for a boundary-assembling provider that places per-node
+// content at engine-controlled positions via the umbrella nest-per-node contract
+// (helm-chart, marked by ExternalArtifacts). This is the single home of the
+// intermediate-marking rule; every classification site reads it from the
+// resolved holder.
+func (hc HostCapabilities) RenderIsIntermediate() bool {
+	return hc.AssemblesBoundary && !hc.ExternalArtifacts
 }
 
 // HostCapable is implemented by anything that can report its host-side

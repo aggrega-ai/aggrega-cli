@@ -1226,7 +1226,7 @@ func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
 		pd.assembler = a
 		return nil
 	}
-	if _, hostAssembles := hostEngine(selected).(BoundaryAssembler); hostAssembles && key.Path != "" {
+	if ResolveHostCaps(selected).AssemblesBoundary && key.Path != "" {
 		inner := fmt.Errorf("%w: provider %q renders per node but its rendering plugin does not provide boundary assembly (assemble_boundary); dispatch path %q would emit unassembled fragments",
 			ErrBoundaryAssemblerMissing, key.Provider, key.Path)
 		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())

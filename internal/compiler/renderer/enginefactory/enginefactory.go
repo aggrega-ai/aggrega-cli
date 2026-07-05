@@ -43,6 +43,28 @@ func Dispatch(providerName string) (renderer.Engine, error) {
 	}
 }
 
+// HostCapsFor returns a provider's host-side capability holder by name, resolved
+// from the provider package's own holder function — the same holder the in-tree
+// engine reports through renderer.HostCapable, so the Wasm route and the in-tree
+// route read one source and cannot drift. It obtains the holder without
+// constructing the provider's Go engine, so the Wasm render route (which takes a
+// holder, not an engine) never depends on a constructed engine instance. The
+// empty-string branch mirrors Dispatch's defensive default to "helm". ok is false
+// for a provider name that binds to no shipped provider, matching Dispatch's
+// unknown-name contract.
+func HostCapsFor(providerName string) (renderer.HostCapabilities, bool) {
+	switch providerName {
+	case "helm", "":
+		return renderHelm.HostCaps(), true
+	case "helm-chart":
+		return renderHelmChart.HostCaps(), true
+	case "compose":
+		return renderCompose.HostCaps(), true
+	default:
+		return renderer.HostCapabilities{}, false
+	}
+}
+
 // CapabilitiesFor reports a provider's engine capabilities, resolved through the
 // same Dispatch the render-time input-kind gate uses — so any early consumer
 // (the lint detector) reads identical capabilities to the authoritative gate, by

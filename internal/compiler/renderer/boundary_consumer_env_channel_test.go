@@ -49,8 +49,6 @@ type envOverrideUnwrapStub struct {
 	wrapped Engine
 }
 
-func (e envOverrideUnwrapStub) Unwrap() Engine { return e.wrapped }
-
 func (e envOverrideUnwrapStub) HostCapabilities() HostCapabilities {
 	return ResolveHostCaps(e.wrapped)
 }

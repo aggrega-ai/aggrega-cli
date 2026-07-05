@@ -75,6 +75,7 @@ func HostCaps() renderer.HostCapabilities {
 		Codec:              NewHelmChartCodec,
 		ProjectSource:      ProjectSourcedChart,
 		ProjectSubCharts:   projectSubCharts,
+		AssemblesBoundary:  true,
 		ExternalArtifacts:  true,
 		PathForArtifact:    hostPathForArtifact,
 		ArtifactDelimiters: hostArtifactDelimiters,

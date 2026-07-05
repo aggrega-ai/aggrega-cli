@@ -15,21 +15,22 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
-// failingLookup is a plugin-path lookup that always errors. The unwrap and
-// intermediate-classification paths never load the guest, so the lookup is
-// never called; the failure documents that no guest resolution happens on
-// these paths.
+// failingLookup is a plugin-path lookup that always errors. The host-capability
+// and intermediate-classification paths never load the guest, so the lookup is
+// never called; the failure documents that no guest resolution happens on these
+// paths.
 func failingLookup(string) (pluginpath.ResolvedPlugin, error) {
-	return pluginpath.ResolvedPlugin{}, errors.New("lookup must not be called on unwrap/classification paths")
+	return pluginpath.ResolvedPlugin{}, errors.New("lookup must not be called on capability/classification paths")
 }
 
-// TestWasmEngineUnwrapExposesHostCapabilities proves the wrapper itself
-// implements none of the host-side capabilities the wrapped helm-chart engine
-// carries, while Unwrap resolves to the engine that does — the seam that keeps
-// those host-side capabilities visible when a provider routes through Wasm.
-func TestWasmEngineUnwrapExposesHostCapabilities(t *testing.T) {
+// TestWasmEngineExposesForwardedHostCapabilities proves the wrapper itself
+// implements none of the host-side capability interfaces the helm-chart provider
+// carries, while its forwarded host-capability holder surfaces them — the seam
+// that keeps those host-side capabilities visible when a provider routes through
+// Wasm.
+func TestWasmEngineExposesForwardedHostCapabilities(t *testing.T) {
 	loader := &wasm.Loader{}
-	w := wasmengine.New(failingLookup, "test://x", &helmchart.HelmEngine{}, loader)
+	w := wasmengine.New(failingLookup, "test://x", helmchart.HostCaps(), loader)
 
 	var e renderer.Engine = w
 	if _, ok := e.(renderer.CodecProvider); ok {
@@ -45,48 +46,36 @@ func TestWasmEngineUnwrapExposesHostCapabilities(t *testing.T) {
 		t.Error("wrapper unexpectedly implements ArtifactsTemplateDelims directly")
 	}
 
-	u := w.Unwrap()
-	if _, ok := u.(renderer.CodecProvider); !ok {
-		t.Error("unwrapped engine does not satisfy CodecProvider")
+	caps := renderer.ResolveHostCaps(w)
+	if !caps.ExternalArtifacts {
+		t.Error("forwarded holder does not carry ExternalArtifacts")
 	}
-	if _, ok := u.(renderer.ExternalArtifactsHandler); !ok {
-		t.Error("unwrapped engine does not satisfy ExternalArtifactsHandler")
+	if caps.Codec == nil {
+		t.Error("forwarded holder does not carry Codec")
 	}
-	if _, ok := u.(renderer.ArtifactsPathProvider); !ok {
-		t.Error("unwrapped engine does not satisfy ArtifactsPathProvider")
+	if caps.PathForArtifact == nil {
+		t.Error("forwarded holder does not carry PathForArtifact")
 	}
-	if _, ok := u.(renderer.ArtifactsTemplateDelims); !ok {
-		t.Error("unwrapped engine does not satisfy ArtifactsTemplateDelims")
+	if caps.ArtifactDelimiters == nil {
+		t.Error("forwarded holder does not carry ArtifactDelimiters")
 	}
 }
 
-// TestRenderIsIntermediateThroughWasmWrapper proves the classification unwraps
-// to the wrapped engine: helm-chart nests per node and must never be classified
-// intermediate even when Wasm-wrapped (including as an assembler, where the
-// wrapper alone would answer BoundaryAssembler=true without the seam), while
-// compose merges fragments and remains intermediate.
+// TestRenderIsIntermediateThroughWasmWrapper proves the classification reads the
+// forwarded holder: helm-chart nests per node and must never be classified
+// intermediate even when Wasm-wrapped (including as an assembler, where a raw
+// BoundaryAssembler assertion on the wrapper would answer true), while compose
+// merges fragments and remains intermediate.
 func TestRenderIsIntermediateThroughWasmWrapper(t *testing.T) {
 	loader := &wasm.Loader{}
-	helm := &helmchart.HelmEngine{}
-	composeEng := &compose.ComposeEngine{}
 
-	if got := renderer.RenderIsIntermediate(wasmengine.New(failingLookup, "test://x", helm, loader)); got {
+	if got := renderer.RenderIsIntermediate(wasmengine.New(failingLookup, "test://x", helmchart.HostCaps(), loader)); got {
 		t.Error("RenderIsIntermediate(New helm-chart) = true, want false")
 	}
-	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(failingLookup, "test://x", helm, loader)); got {
+	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(failingLookup, "test://x", helmchart.HostCaps(), loader)); got {
 		t.Error("RenderIsIntermediate(NewAssembler helm-chart) = true, want false")
 	}
-	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(failingLookup, "test://x", composeEng, loader)); !got {
+	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(failingLookup, "test://x", compose.HostCaps(), loader)); !got {
 		t.Error("RenderIsIntermediate(NewAssembler compose) = false, want true")
-	}
-}
-
-// TestHelmEngineIsNotUnwrapper documents that an in-tree engine is not an
-// Unwrapper, so hostEngine returns it unchanged (identity) — the non-wrapper
-// branch of the seam.
-func TestHelmEngineIsNotUnwrapper(t *testing.T) {
-	var e renderer.Engine = &helmchart.HelmEngine{}
-	if _, ok := e.(renderer.Unwrapper); ok {
-		t.Error("helmchart.HelmEngine unexpectedly implements Unwrapper")
 	}
 }

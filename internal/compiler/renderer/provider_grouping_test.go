@@ -52,6 +52,14 @@ func (a *versionedAssembler) Capabilities() renderer.ProviderCapabilities {
 	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
+// HostCapabilities marks this synthetic provider as a boundary-assembler through
+// its host-capability holder, so the orchestrator classifies its per-node output
+// Intermediate=true and routes it to AssembleBoundary — the data-flag equivalent
+// of the production assembling engines' holders.
+func (a *versionedAssembler) HostCapabilities() renderer.HostCapabilities {
+	return renderer.HostCapabilities{AssemblesBoundary: true}
+}
+
 func (a *versionedAssembler) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
 	*a.assembledBy = a.version
 	*a.assembleCount++

@@ -26,24 +26,22 @@ const RenderNodeExport = "render_node"
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves the
 // guest's bytes via lookup, loads them through the injected shared loader once
-// per call, and reports the input-kind capabilities of the Go engine it wraps.
-// The adapter is provider-agnostic: it drives whichever guest the wrapped Go
-// engine advertises, and projects a sourced node's source through the wrapped
-// engine's own SourceProjector rather than any hardcoded provider package.
+// per call, and reports the host-side capabilities of the provider it stands in
+// for from a holder supplied at construction. The adapter is provider-agnostic:
+// it drives whichever guest the provider advertises, and projects a sourced
+// node's source through the holder's own ProjectSource rather than any hardcoded
+// provider package.
 type Engine struct {
 	lookup    pluginpath.Lookup
 	pluginURI string
-	// goEngine is the in-tree Go engine this adapter fronts. Its Capabilities
-	// gate the input kinds (so the render-time gate stays Go-decided), and its
-	// SourceProjector projects a sourced node's source onto the render wire —
-	// the seam that keeps the adapter free of any provider package import.
-	goEngine renderer.Engine
-	caps      renderer.ProviderCapabilities
-	// hostCaps is the host-side capability holder captured at construction from
-	// the wrapped Go engine. The wrapper exposes it directly (HostCapabilities),
-	// so host-side capability checks resolve a provider's codec, source and
-	// sub-chart projection, external-artifacts placement, and env-override
-	// channel from this holder rather than by unwrapping to the concrete engine.
+	// hostCaps is the provider's host-side capability holder supplied at
+	// construction. Its Caps gate the input kinds (so the render-time gate stays
+	// Go-decided), its ProjectSource projects a sourced node's source onto the
+	// render wire, and it carries the codec, sub-chart projection,
+	// external-artifacts placement, boundary-assembly marker, and env-override
+	// channel. The wrapper exposes it directly (HostCapabilities), so host-side
+	// capability checks resolve from this holder rather than from a concrete
+	// engine — the seam that keeps the adapter free of any provider package.
 	hostCaps renderer.HostCapabilities
 	// loader is the shared per-build loader every Render / SynthesizeWorkload
 	// call loads through. It carries the build's external-input service and,
@@ -56,47 +54,35 @@ type Engine struct {
 var (
 	_ renderer.Engine              = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer = (*Engine)(nil)
-	_ renderer.Unwrapper           = (*Engine)(nil)
 	_ renderer.HostCapable         = (*Engine)(nil)
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
-// its bytes via lookup and loading through the shared loader. It wraps goEngine
-// — the in-tree Go engine for the same provider — deriving its input-kind
-// capabilities from goEngine.Capabilities() so the render-time gate stays
-// Go-decided, and holding goEngine so a sourced Render projects the source
-// through goEngine's SourceProjector. The loader is shared across the build so
+// its bytes via lookup and loading through the shared loader. It carries the
+// provider's host-side capability holder — supplied by the caller from the
+// provider-name registry — deriving its input-kind capabilities from hostCaps.Caps
+// so the render-time gate stays Go-decided, and projecting a sourced Render's
+// source through hostCaps.ProjectSource. The loader is shared across the build so
 // its compilation cache (when present) warms once; a nil loader is an
 // injection-site bug — every call would nil-panic — rather than a supported
 // zero value.
-func New(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.Engine, loader *wasm.Loader) *Engine {
-	return &Engine{lookup: lookup, pluginURI: pluginURI, goEngine: goEngine, caps: goEngine.Capabilities(), hostCaps: renderer.ResolveHostCaps(goEngine), loader: loader}
+func New(lookup pluginpath.Lookup, pluginURI string, hostCaps renderer.HostCapabilities, loader *wasm.Loader) *Engine {
+	return &Engine{lookup: lookup, pluginURI: pluginURI, hostCaps: hostCaps, loader: loader}
 }
 
 // Capabilities reports the input-kind capabilities configured at construction.
 func (e *Engine) Capabilities() renderer.ProviderCapabilities {
-	return e.caps
+	return e.hostCaps.Caps
 }
 
 // HostCapabilities satisfies renderer.HostCapable, exposing the host-side
-// capability holder captured from the wrapped Go engine at construction. The
-// wrapper drives the guest for render and synthesis; the host reads the wrapped
-// provider's host-side capabilities from this holder — so a provider routed to a
-// Wasm guest exposes the same host-side capabilities as the in-tree engine it
-// stands in for. AssemblerEngine embeds *Engine and inherits this method.
+// capability holder supplied at construction. The wrapper drives the guest for
+// render and synthesis; the host reads the provider's host-side capabilities from
+// this holder — so a provider routed to a Wasm guest exposes the same host-side
+// capabilities as the in-tree engine it stands in for. AssemblerEngine embeds
+// *Engine and inherits this method.
 func (e *Engine) HostCapabilities() renderer.HostCapabilities {
 	return e.hostCaps
-}
-
-// Unwrap exposes the wrapped in-tree engine so host-side capability checks the
-// wrapper does not itself implement — codec selection, artifacts handling,
-// intermediate classification, and the boundary->consumer env-override channel —
-// resolve against it. The wrapper drives the guest for render and synthesis; the
-// host still asserts those host-side capabilities against the engine the wrapper
-// stands in for. AssemblerEngine embeds *Engine and inherits this method,
-// returning the same wrapped engine.
-func (e *Engine) Unwrap() renderer.Engine {
-	return e.goEngine
 }
 
 // Render projects the sourced node into a render_node payload and returns the
@@ -115,8 +101,8 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 
 	if e.hostCaps.ProjectSource == nil {
 		return nil, fmt.Errorf(
-			"wasmengine: node %q: internal error — provider engine %T was routed to a Wasm guest for sourced render but reports no source projection",
-			nodeCtx.NodeID, e.goEngine)
+			"wasmengine: node %q: internal error — provider %q was routed to a Wasm guest for sourced render but reports no source projection",
+			nodeCtx.NodeID, e.pluginURI)
 	}
 
 	proj, err := e.hostCaps.ProjectSource(src)
@@ -152,13 +138,14 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 // projection the in-tree engine uses, so both surfaces resolve a workload secret
 // reference to the same generated Secret identity.
 //
-// Each emitted file carries the same Intermediate marking the wrapped Go engine
-// would set on its own synthesis output, classified through the wrapped engine
-// (renderer.RenderIsIntermediate): a BoundaryAssembler provider (compose) marks
-// its fragments intermediate so the orchestrator routes them to AssembleBoundary
-// rather than writing them at the dispatch path, while a flat-output provider
-// (helm) marks them false. Reproducing the flag here keeps a provider routed to
-// Wasm byte-for-byte equivalent to the in-tree engine it stands in for.
+// Each emitted file carries the same Intermediate marking the in-tree engine
+// would set on its own synthesis output, classified from the provider's host-side
+// capability holder (renderer.HostCapabilities.RenderIsIntermediate): a
+// boundary-assembling provider (compose) marks its fragments intermediate so the
+// orchestrator routes them to AssembleBoundary rather than writing them at the
+// dispatch path, while a flat-output provider (helm) marks them false.
+// Reproducing the flag here keeps a provider routed to Wasm byte-for-byte
+// equivalent to the in-tree engine it stands in for.
 func (e *Engine) SynthesizeWorkload(
 	ctx context.Context,
 	tmplCtx *types.TemplateContext,
@@ -182,7 +169,7 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, err
 	}
 
-	intermediate := renderer.RenderIsIntermediate(e.goEngine)
+	intermediate := e.hostCaps.RenderIsIntermediate()
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
 	for _, f := range out.Files {
 		emitted = append(emitted, renderer.EmittedFile{Name: f.Path, Body: f.Content, Intermediate: intermediate})

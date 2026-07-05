@@ -16,10 +16,11 @@ import (
 
 // renderOnlyAssemblerWrapper mimics the Wasm-provider render adapter for an
 // assembler provider whose plugin advertises only per-node rendering: it drives
-// render itself, does NOT implement BoundaryAssembler, and exposes the wrapped
-// in-tree assembler engine only through Unwrap. Boundary assembly is functional
-// dispatch asserted on the dispatched engine, not a host-side capability that
-// unwraps — so this wrapper genuinely cannot assemble.
+// render itself, does NOT implement BoundaryAssembler, and forwards the wrapped
+// provider's host capabilities (including AssemblesBoundary) through its holder.
+// Boundary assembly is functional dispatch asserted on the dispatched engine, not
+// a host-side capability — so this wrapper reports it assembles yet genuinely
+// cannot, which is exactly the mismatch the guardrail catches.
 type renderOnlyAssemblerWrapper struct {
 	wrapped renderer.Engine
 }
@@ -32,7 +33,9 @@ func (renderOnlyAssemblerWrapper) Capabilities() renderer.ProviderCapabilities {
 	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
-func (w renderOnlyAssemblerWrapper) Unwrap() renderer.Engine { return w.wrapped }
+func (w renderOnlyAssemblerWrapper) HostCapabilities() renderer.HostCapabilities {
+	return renderer.ResolveHostCaps(w.wrapped)
+}
 
 // TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts proves the Loud
 // Guardrail: when a provider whose in-tree engine assembles a dispatch group is
@@ -74,12 +77,13 @@ func TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts(t *testing.T) 
 	wrapper := renderOnlyAssemblerWrapper{wrapped: &captureComposerEngine{}}
 
 	// The guardrail is only meaningful if the dispatched engine genuinely
-	// cannot assemble while its wrapped engine can.
+	// cannot assemble while reporting — via its forwarded host-capability holder —
+	// that the provider it stands in for does.
 	if _, ok := renderer.Engine(wrapper).(renderer.BoundaryAssembler); ok {
 		t.Fatal("wrapper unexpectedly implements BoundaryAssembler directly; guardrail scenario not exercised")
 	}
-	if _, ok := wrapper.Unwrap().(renderer.BoundaryAssembler); !ok {
-		t.Fatal("wrapped engine must implement BoundaryAssembler for this scenario")
+	if !renderer.ResolveHostCaps(wrapper).AssemblesBoundary {
+		t.Fatal("wrapper must report AssemblesBoundary via its forwarded holder for this scenario")
 	}
 
 	factory := func(string) (renderer.Engine, error) { return wrapper, nil }

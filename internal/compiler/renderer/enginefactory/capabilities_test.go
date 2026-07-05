@@ -14,6 +14,64 @@ import (
 // engine. Kept in lockstep with enginefactory.Dispatch.
 var dispatchableProviders = []string{"helm", "helm-chart", "compose"}
 
+// TestHostCapsFor_MatchesDispatchedEngine pins the single-source contract between
+// the provider-name host-capability registry (the Wasm render route's source of
+// caps) and the in-tree engine's own holder: for every dispatchable provider,
+// HostCapsFor(name) must equal the holder the constructed engine reports through
+// renderer.HostCapable. If the two dispatch tables ever drift — a provider added
+// to Dispatch but not the registry, or divergent holder contents — the Wasm route
+// and the fallback route would resolve different host capabilities for the same
+// provider. The registry and the engine method share each provider package's
+// HostCaps function, so this test proves they cannot silently separate.
+func TestHostCapsFor_MatchesDispatchedEngine(t *testing.T) {
+	t.Parallel()
+	for _, name := range dispatchableProviders {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			reg, ok := enginefactory.HostCapsFor(name)
+			if !ok {
+				t.Fatalf("HostCapsFor(%q): ok=false; Dispatch routes this provider but the registry does not", name)
+			}
+			engine, err := enginefactory.Dispatch(name)
+			if err != nil {
+				t.Fatalf("Dispatch(%q): %v", name, err)
+			}
+			viaEngine := renderer.ResolveHostCaps(engine)
+
+			if reg.Caps != viaEngine.Caps {
+				t.Errorf("Caps: registry=%+v engine=%+v", reg.Caps, viaEngine.Caps)
+			}
+			if reg.AssemblesBoundary != viaEngine.AssemblesBoundary {
+				t.Errorf("AssemblesBoundary: registry=%v engine=%v", reg.AssemblesBoundary, viaEngine.AssemblesBoundary)
+			}
+			if reg.ExternalArtifacts != viaEngine.ExternalArtifacts {
+				t.Errorf("ExternalArtifacts: registry=%v engine=%v", reg.ExternalArtifacts, viaEngine.ExternalArtifacts)
+			}
+			// Function-valued capabilities compare by presence: both sides derive
+			// from one HostCaps function, so a nil-ness mismatch signals drift.
+			if (reg.Codec == nil) != (viaEngine.Codec == nil) {
+				t.Errorf("Codec presence mismatch: registry-nil=%v engine-nil=%v", reg.Codec == nil, viaEngine.Codec == nil)
+			}
+			if (reg.ProjectSource == nil) != (viaEngine.ProjectSource == nil) {
+				t.Errorf("ProjectSource presence mismatch: registry-nil=%v engine-nil=%v", reg.ProjectSource == nil, viaEngine.ProjectSource == nil)
+			}
+			if (reg.ProjectSubCharts == nil) != (viaEngine.ProjectSubCharts == nil) {
+				t.Errorf("ProjectSubCharts presence mismatch: registry-nil=%v engine-nil=%v", reg.ProjectSubCharts == nil, viaEngine.ProjectSubCharts == nil)
+			}
+			if (reg.PathForArtifact == nil) != (viaEngine.PathForArtifact == nil) {
+				t.Errorf("PathForArtifact presence mismatch: registry-nil=%v engine-nil=%v", reg.PathForArtifact == nil, viaEngine.PathForArtifact == nil)
+			}
+			if (reg.ArtifactDelimiters == nil) != (viaEngine.ArtifactDelimiters == nil) {
+				t.Errorf("ArtifactDelimiters presence mismatch: registry-nil=%v engine-nil=%v", reg.ArtifactDelimiters == nil, viaEngine.ArtifactDelimiters == nil)
+			}
+			if (reg.BoundaryConsumerEnvOverrides == nil) != (viaEngine.BoundaryConsumerEnvOverrides == nil) {
+				t.Errorf("BoundaryConsumerEnvOverrides presence mismatch: registry-nil=%v engine-nil=%v", reg.BoundaryConsumerEnvOverrides == nil, viaEngine.BoundaryConsumerEnvOverrides == nil)
+			}
+		})
+	}
+}
+
 // TestCapabilities_SynthesizedMatchesWorkloadSynthesizer pins the synthesis
 // consistency invariant: an engine self-reports Capabilities().Synthesized if
 // and only if it implements renderer.WorkloadSynthesizer. The central input-kind

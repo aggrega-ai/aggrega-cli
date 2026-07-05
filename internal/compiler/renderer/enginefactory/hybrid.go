@@ -4,6 +4,8 @@
 package enginefactory
 
 import (
+	"fmt"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -138,13 +140,23 @@ func routeEngine(
 	// Plugin advertises only render_node — a flat-output provider like helm —
 	// stays on the render-only adapter, unchanged.
 	//
-	// Wrap the Go engine so the adapter derives input-kind capabilities from it
-	// (the gate stays Go-decided) and projects a sourced node's source through its
-	// own SourceProjector.
-	if advertisesAssembleBoundary(plugin) {
-		return wasmengine.NewAssembler(pluginLookup, pluginKey, goEngine, sharedLoader), pluginKey, nil
+	// The adapter carries the provider's host-side capability holder — resolved
+	// from the provider-name registry, not from a constructed Go engine — so it
+	// derives input-kind capabilities from the holder (the gate stays Go-decided)
+	// and projects a sourced node's source through the holder's own ProjectSource.
+	// The registry shares each provider's holder function with the in-tree engine,
+	// so the Wasm route and the fallback route read one source.
+	hostCaps, ok := HostCapsFor(bare)
+	if !ok {
+		// Unreachable in normal flow: fallback(bare) already resolved bare to a
+		// shipped engine, and HostCapsFor covers the same provider set (guarded by
+		// a parity test). A miss here would mean the two dispatch tables drifted.
+		return nil, "", fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, bare)
 	}
-	return wasmengine.New(pluginLookup, pluginKey, goEngine, sharedLoader), pluginKey, nil
+	if advertisesAssembleBoundary(plugin) {
+		return wasmengine.NewAssembler(pluginLookup, pluginKey, hostCaps, sharedLoader), pluginKey, nil
+	}
+	return wasmengine.New(pluginLookup, pluginKey, hostCaps, sharedLoader), pluginKey, nil
 }
 
 // resolvePluginIdentity resolves providerRef to the provider-rendering Plugin

@@ -56,6 +56,7 @@ func HostCaps() renderer.HostCapabilities {
 	return renderer.HostCapabilities{
 		Caps:                         hostCapabilities(),
 		ProjectSource:                ProjectComposeSource,
+		AssemblesBoundary:            true,
 		BoundaryConsumerEnvOverrides: computeBridgeConsumerEnvOverrides,
 	}
 }
