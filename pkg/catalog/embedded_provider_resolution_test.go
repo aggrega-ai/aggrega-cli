@@ -88,7 +88,10 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 	if lookup.ProviderPlugin == nil {
 		t.Fatal("CatalogLookup.ProviderPlugin accessor is nil; the eager constructor did not wire it")
 	}
-	pplug, ok := lookup.ProviderPlugin("helm")
+	pplug, ok, err := lookup.ProviderPlugin("helm")
+	if err != nil {
+		t.Fatalf("ProviderPlugin(\"helm\") errored: %v", err)
+	}
 	if !ok {
 		t.Fatal("ProviderPlugin(\"helm\") not found")
 	}

@@ -29,12 +29,17 @@ type CatalogLookup struct {
 	// entity URI → spec.plugin → cascade. May be nil in catalog-less paths; a
 	// socket that needs it then resolves nothing and halts as not-an-entity.
 	Plugin func(uri string) (types.Plugin, bool)
-	// ProviderPlugin resolves a provider NAME to the provider-rendering Plugin
-	// entity serving it, plus a found flag. A pluginType: provider Plugin serves
-	// the provider names in its compatibleProviders; this accessor finds the unique
-	// such Plugin (version-selected when several versions of one plugin match).
-	// May be nil in catalog-less paths; a consumer that needs it then resolves nothing.
-	ProviderPlugin func(name string) (types.Plugin, bool)
+	// ProviderPlugin resolves a provider binding to the provider-rendering Plugin
+	// entity serving it, plus a found flag and an error. The binding is the bare
+	// provider name ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0")
+	// where the pin constrains the plugin version. A pluginType: provider Plugin
+	// serves the provider names in its compatibleProviders; this accessor finds the
+	// unique such Plugin whose version satisfies the pin (highest-in-range for a
+	// caret, highest overall when unpinned). A bare miss returns (_, false, nil) so
+	// the caller falls back to the in-tree engine; a version pin nothing satisfies
+	// returns a non-nil error so the caller halts loudly. May be nil in catalog-less
+	// paths; a consumer that needs it then resolves nothing.
+	ProviderPlugin func(ref string) (types.Plugin, bool, error)
 	// SchemaLibraries is the catalog's resolved SchemaLibrary set keyed by
 	// library metadata.name, used to resolve cross-library schema `$ref`s when
 	// compiling a Component's schema (whole-pillar and base+flavor composition).

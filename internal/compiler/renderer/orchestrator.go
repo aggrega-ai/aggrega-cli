@@ -330,12 +330,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
 
-		// Resolve engine for this node's provider via factory
+		// Resolve engine for this node's provider via factory. The factory
+		// receives the full binding (version pin included) so it can resolve the
+		// pinned provider-rendering plugin; every other consumer below keys on the
+		// bare engine kind (dispatch grouping, path segment, codec, compatibility).
+		providerRef := ""
 		providerName := ""
 		if recipe != nil {
-			providerName = recipe.Spec.Provider
+			providerRef = recipe.Spec.Provider
+			providerName = ProviderEngineKind(recipe.Spec.Provider)
 		}
-		engine, err := engineFactory(providerName)
+		engine, err := engineFactory(providerRef)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q engine factory", nodeID))
 		}
@@ -748,7 +753,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if !ok {
 			continue
 		}
-		frProvider := fr.Spec.Provider
+		// Bare engine kind for the {{ .provider }} path segment and the dispatch
+		// grouping; the FR's files were already rendered through its version-pinned
+		// engine upstream, so no engine resolution happens here.
+		frProvider := ProviderEngineKind(fr.Spec.Provider)
 		// Compute the dispatch path for this boundary-scope FR. The FR is
 		// attached at the boundary level (no per-component BoundaryInfra
 		// entry), so look up the boundary's authored directory/subDirectory

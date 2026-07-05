@@ -1251,15 +1251,16 @@ func (l *LazyLookup) PluginByURI(uri string) (types.Plugin, bool) {
 	return l.recipeCatalog().PluginByURI(uri)
 }
 
-// ProviderPluginByName resolves a provider name to the provider-rendering Plugin
-// entity serving it (via its compatibleProviders) over the lazily-enumerated
+// ProviderPluginByName resolves a provider binding (bare name or version-pinned
+// form) to the provider-rendering Plugin entity serving it (via its
+// compatibleProviders and version constraint) over the lazily-enumerated
 // (Tier-1 + pinned Tier-2) Plugin set. It delegates to the same *Catalog matcher
 // the eager backing uses (via the recipeCatalog() shell), so the two backings
 // resolve identically — no per-backing matcher.
-func (l *LazyLookup) ProviderPluginByName(name string) (types.Plugin, bool) {
+func (l *LazyLookup) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.recipeCatalog().ProviderPluginByName(name)
+	return l.recipeCatalog().ProviderPluginByName(ref)
 }
 
 // ClosureRecipeLoader exposes the source-descent recipe loader over the lazily-

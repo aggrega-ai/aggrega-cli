@@ -160,8 +160,11 @@ spec:
 		t.Fatal("fixture invalid: eager view is missing the helm-renderer Plugin (Plugin/ProviderPlugin parity is vacuous otherwise)")
 	}
 
-	epp, eok := eager.ProviderPlugin("helm")
-	lpp, lok := primed.ProviderPlugin("helm")
+	epp, eok, eerr := eager.ProviderPlugin("helm")
+	lpp, lok, lerr := primed.ProviderPlugin("helm")
+	if eerr != nil || lerr != nil {
+		t.Fatalf("ProviderPlugin helm errored (eager=%v, lazy=%v)", eerr, lerr)
+	}
 	if eok != lok || !reflect.DeepEqual(epp, lpp) {
 		t.Errorf("ProviderPlugin helm diverges (eager ok=%v, lazy ok=%v)", eok, lok)
 	}

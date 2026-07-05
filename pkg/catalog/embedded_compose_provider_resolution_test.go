@@ -75,7 +75,10 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 	if lookup.ProviderPlugin == nil {
 		t.Fatal("CatalogLookup.ProviderPlugin accessor is nil; the eager constructor did not wire it")
 	}
-	pplug, ok := lookup.ProviderPlugin("compose")
+	pplug, ok, err := lookup.ProviderPlugin("compose")
+	if err != nil {
+		t.Fatalf("ProviderPlugin(\"compose\") errored: %v", err)
+	}
 	if !ok {
 		t.Fatal("ProviderPlugin(\"compose\") not found")
 	}

@@ -332,9 +332,10 @@ func dispatchBoundaryScopeFR(
 			parameters = input.ResolveResult.Parameters
 		}
 		renderCtx := buildBoundaryFRRenderCtx(key.BoundaryPath, parameters, boundaryAnnotations)
-		// own provider is the boundary-scope FR's own provider; a boundary-scope
-		// FR has no single host component (host nil), so hostProvider is empty.
-		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, fr.Spec.Provider, "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
+		// own provider is the boundary-scope FR's own engine kind (version pin
+		// stripped — codec + compatibility key on the kind); a boundary-scope FR
+		// has no single host component (host nil), so hostProvider is empty.
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Provider), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
 		if perr != nil {
 			return perr
 		}

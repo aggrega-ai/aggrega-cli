@@ -77,7 +77,11 @@ spec:
 	for _, tc := range cases {
 		// Resolve through both the direct method and the CatalogLookup accessor;
 		// they must agree.
-		got, ok := cat.ProviderPluginByName(tc.provider)
+		got, ok, err := cat.ProviderPluginByName(tc.provider)
+		if err != nil {
+			t.Errorf("ProviderPluginByName(%q): unexpected error %v", tc.provider, err)
+			continue
+		}
 		if !ok {
 			t.Errorf("ProviderPluginByName(%q): not found; want %q", tc.provider, tc.wantName)
 			continue
@@ -86,15 +90,15 @@ spec:
 			t.Errorf("ProviderPluginByName(%q): got plugin %q; want %q (frp_step must not shadow the provider engine)",
 				tc.provider, got.Metadata.Name, tc.wantName)
 		}
-		viaLookup, ok := lookup.ProviderPlugin(tc.provider)
-		if !ok || viaLookup.Metadata.Name != tc.wantName {
-			t.Errorf("CatalogLookup.ProviderPlugin(%q): got (%q, %v); want (%q, true)",
-				tc.provider, viaLookup.Metadata.Name, ok, tc.wantName)
+		viaLookup, ok, err := lookup.ProviderPlugin(tc.provider)
+		if err != nil || !ok || viaLookup.Metadata.Name != tc.wantName {
+			t.Errorf("CatalogLookup.ProviderPlugin(%q): got (%q, %v, %v); want (%q, true, nil)",
+				tc.provider, viaLookup.Metadata.Name, ok, err, tc.wantName)
 		}
 	}
 
-	if got, ok := cat.ProviderPluginByName("terraform"); ok {
-		t.Errorf("ProviderPluginByName(\"terraform\"): got (%q, true); want (_, false) for a provider no plugin serves", got.Metadata.Name)
+	if got, ok, err := cat.ProviderPluginByName("terraform"); ok || err != nil {
+		t.Errorf("ProviderPluginByName(\"terraform\"): got (%q, %v, %v); want (_, false, nil) for a provider no plugin serves", got.Metadata.Name, ok, err)
 	}
 }
 
@@ -112,7 +116,10 @@ func TestProviderPluginByNameSelectsHighestVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
-	got, ok := cat.ProviderPluginByName("helm")
+	got, ok, err := cat.ProviderPluginByName("helm")
+	if err != nil {
+		t.Fatalf("ProviderPluginByName(\"helm\"): unexpected error %v", err)
+	}
 	if !ok {
 		t.Fatal("ProviderPluginByName(\"helm\"): not found; want the highest version")
 	}

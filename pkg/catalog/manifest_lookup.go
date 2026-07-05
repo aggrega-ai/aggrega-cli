@@ -49,6 +49,18 @@ var ErrDuplicateEntityIdentity = errors.New("duplicate entity identity within a 
 // satisfies errors.Is against both this name and ErrDuplicateEntityIdentity.
 var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 
+// ErrProviderVersionUnsatisfiable fires when a Recipe binds a version-pinned
+// provider — "helm:1.0.0" or "helm:^1.0.0" — but no provider-rendering Plugin
+// serving that provider satisfies the pin: either the provider has no serving
+// Plugin at all, or the serving Plugin's available versions do not satisfy the
+// exact/caret constraint. The version pin is an explicit request the compiler
+// cannot honor, so the build halts loudly rather than silently rendering through
+// the versionless in-tree engine. The wrapped message names the provider and the
+// pinned version so each provider yields a specific diagnostic. It is distinct
+// from ErrUnsatisfiableEntityVersion, which covers Component / Feature / Aggregate
+// version references, not provider-engine selection.
+var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
+
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
 // Manifest mapping for its type. Resolution is mapping-only — the catalog never
 // chooses a recipe by spec.implements, so an unmapped instance halts regardless
@@ -365,18 +377,29 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 	return c.Plugins[key], true
 }
 
-// ProviderPluginByName resolves a provider NAME to the provider-rendering Plugin
-// entity serving it, plus a found flag. A pluginType: provider Plugin serves the
-// provider names listed in its compatibleProviders; this finds the unique such
-// Plugin claiming name. When several versions of one plugin (same metadata.name)
-// claim name, the highest-satisfying version wins — the same three-form version
-// select the other by-name lookups use. When two DISTINCT plugin names each claim
-// name, the accessor returns (_, false): the ambiguity is a load-time conflict
-// caught loudly during catalog validation, so the accessor stays deterministic
-// and bool-only rather than choosing arbitrarily. A linter or frp_step plugin
-// whose compatibleProviders happens to list name is excluded — that list carries
-// a different meaning for a non-provider plugin (the provider a pipeline step
-// renders alongside), not a render-engine claim.
+// ProviderPluginByName resolves a provider binding to the provider-rendering
+// Plugin entity serving it, plus a found flag and an error. The binding is the
+// bare provider name ("helm") or a version-pinned form ("helm:1.0.0",
+// "helm:^1.0.0") where the trailing segment constrains the Plugin version; the
+// provider name (the part before any pin) is matched against compatibleProviders.
+// A pluginType: provider Plugin serves the provider names listed in its
+// compatibleProviders; this finds the unique such Plugin claiming the provider
+// name and, among that plugin's versions, the one satisfying the pin — highest
+// overall when unpinned, exact for an exact pin, highest-in-range for a caret —
+// via the same three-form version select the other by-name lookups use. A linter
+// or frp_step plugin whose compatibleProviders happens to list the name is
+// excluded — that list carries a different meaning for a non-provider plugin (the
+// provider a pipeline step renders alongside), not a render-engine claim.
+//
+// Return contract:
+//   - (plugin, true, nil) on a satisfying match;
+//   - (_, false, nil) on a bare miss (no serving plugin, or an ambiguous claim by
+//     more than one distinct provider plugin — the latter caught loudly at catalog
+//     load), so the caller falls back to the in-tree engine;
+//   - (_, false, ErrProviderVersionUnsatisfiable) when the binding is version-pinned
+//     but no serving plugin version satisfies the pin (including the case where the
+//     provider has no serving plugin at all) — a loud halt, since the pin is an
+//     explicit request the compiler cannot honor.
 //
 // Determinism (byte-identical output): matches collect into a sub-index that the
 // shared version select sorts before choosing, so the outcome never depends on
@@ -385,7 +408,8 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // Served by both catalog backings: the lazy backing exposes its enumerated Plugin
 // set through the recipeCatalog() *Catalog shell, so its ProviderPluginByName
 // delegates here against the same matcher (no per-backing reimplementation).
-func (c *Catalog) ProviderPluginByName(name string) (types.Plugin, bool) {
+func (c *Catalog) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
+	name, verSeg, hasVer := splitVersionedURI(ref)
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
 	for key, p := range c.Plugins {
@@ -401,19 +425,36 @@ func (c *Catalog) ProviderPluginByName(name string) (types.Plugin, bool) {
 	// Zero matches, or an ambiguous claim by more than one distinct provider
 	// plugin (the latter is caught loudly at catalog load).
 	if len(distinctNames) != 1 {
-		return types.Plugin{}, false
+		if hasVer && len(distinctNames) == 0 {
+			// A version-pinned provider with no serving plugin at all cannot be
+			// honored — halt loudly rather than falling back.
+			return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no provider-rendering plugin serves it", ErrProviderVersionUnsatisfiable, name, verSeg)
+		}
+		return types.Plugin{}, false, nil
 	}
 	var base string
 	for n := range distinctNames {
 		base = n
 	}
-	key, ok, _ := selectEntityVersion(matches, base, func(v types.Plugin) (string, string) {
+	// Thread the version constraint into the shared three-form select by rebuilding
+	// the caller URI against the PLUGIN's identity name (which differs from the
+	// provider name — e.g. provider "helm" served by plugin "helm-renderer").
+	callerURI := base
+	if hasVer {
+		callerURI = base + ":" + verSeg
+	}
+	key, ok, err := selectEntityVersion(matches, callerURI, func(v types.Plugin) (string, string) {
 		return v.Metadata.Name, v.Metadata.Version
 	})
-	if !ok {
-		return types.Plugin{}, false
+	if err != nil {
+		// selectEntityVersion signals an unsatisfiable exact/caret constraint;
+		// translate it to the provider-specific halt naming the pin.
+		return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no serving plugin version satisfies it", ErrProviderVersionUnsatisfiable, name, verSeg)
 	}
-	return matches[key], true
+	if !ok {
+		return types.Plugin{}, false, nil
+	}
+	return matches[key], true, nil
 }
 
 // implementsSatisfies reports whether a recipe declaring spec.implements==impl

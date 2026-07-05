@@ -495,9 +495,10 @@ func phaseB6(
 					FeatureOrderIndex: featureOrderIndex,
 				})
 			} else {
-				// own provider is the FR's own provider; host provider is the host
-				// component's recipe provider (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, fr.Spec.Provider, hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				// own provider is the FR's own engine kind (version pin stripped —
+				// codec + compatibility key on the kind); host provider is the host
+				// component's recipe engine kind (threaded in from the orchestrator).
+				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Provider), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, nil, nil, perr
 				}
