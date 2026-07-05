@@ -24,7 +24,8 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // recommended-label set for every emitted manifest whose document carries a
 // metadata block. Only values that satisfy the Kubernetes label-value charset
 // live here: the sanitised component-id (both `app.kubernetes.io/name` and
-// `aggrega.ai/component-id`), and the conditional aggregate-name / environment /
+// `aggrega.ai/component-id`), the resolved provider name / provider-version, and
+// the conditional aggregate-name / environment /
 // compiler-version entries. The charset-unsafe provenance (recipe-uri,
 // boundary-path, sync-wave) lives in annotations via
 // [BuildAggregaProvenanceAnnotations].
@@ -39,6 +40,12 @@ func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":  componentID,
 		"aggrega.ai/component-id": componentID,
+	}
+	if nodeCtx.ProviderName != "" {
+		labels["aggrega.ai/provider"] = nodeCtx.ProviderName
+	}
+	if nodeCtx.ProviderVersion != "" {
+		labels["aggrega.ai/provider-version"] = nodeCtx.ProviderVersion
 	}
 	if nodeCtx.Provenance.CompilerVersion != "" {
 		labels["aggrega.ai/compiler-version"] = nodeCtx.Provenance.CompilerVersion

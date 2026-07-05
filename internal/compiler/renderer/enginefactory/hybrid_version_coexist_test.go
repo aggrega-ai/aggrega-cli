@@ -69,7 +69,7 @@ func TestHybridVersionPinnedProvidersCoexist(t *testing.T) {
 		},
 	}
 	lookup := resolver.CatalogLookup{ProviderPlugin: cat.ProviderPluginByName}
-	factory := enginefactory.NewHybrid(stubFallback, lookup, nil, nil)
+	factory, providerVersion := enginefactory.NewHybrid(stubFallback, lookup, nil, nil)
 
 	// Same pin, twice — the memo returns the identical instance.
 	e100a, err := factory("helm:1.0.0")
@@ -117,5 +117,23 @@ func TestHybridVersionPinnedProvidersCoexist(t *testing.T) {
 	// sentinel, rather than silently falling back to the versionless engine.
 	if _, err := factory("helm:^9.0"); !errors.Is(err, catalog.ErrProviderVersionUnsatisfiable) {
 		t.Errorf("factory(helm:^9.0): got err %v; want ErrProviderVersionUnsatisfiable", err)
+	}
+
+	// The version resolver reports the resolved plugin version behind each
+	// binding — the one the routed engine renders through — and "" for a binding
+	// served by no render_node plugin (the fallback route). It shares the
+	// factory's resolution, so its answers track the engines selected above.
+	for _, tc := range []struct {
+		ref  string
+		want string
+	}{
+		{"helm:1.0.0", "1.0.0"}, // exact pin → that plugin version
+		{"helm:1.0.1", "1.0.1"},
+		{"helm", "1.0.1"}, // bare → highest available
+		{"eval", ""},      // served by no render_node plugin → version-less
+	} {
+		if got := providerVersion(tc.ref); got != tc.want {
+			t.Errorf("providerVersion(%q) = %q; want %q", tc.ref, got, tc.want)
+		}
 	}
 }

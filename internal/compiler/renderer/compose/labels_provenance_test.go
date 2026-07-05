@@ -21,6 +21,8 @@ func fullyPopulatedProvenanceCtx() renderer.NodeRenderContext {
 		BoundaryPath:     "production/edge",
 		RecipeName:       "web-service",
 		RecipeVersion:    "1.4.2",
+		ProviderName:     "compose",
+		ProviderVersion:  "1.0.0",
 		SyncWave:         3,
 		Provenance: renderer.ProvenanceContext{
 			CompilerVersion: "0.9.0",

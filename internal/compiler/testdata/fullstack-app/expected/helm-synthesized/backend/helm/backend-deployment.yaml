@@ -8,6 +8,7 @@ metadata:
     aggrega.ai/compiler-version: 0.1.0
     aggrega.ai/component-id: backend
     aggrega.ai/environment: production
+    aggrega.ai/provider: helm
     app: backend
     app.kubernetes.io/name: backend
   annotations:
@@ -26,6 +27,7 @@ spec:
         aggrega.ai/compiler-version: 0.1.0
         aggrega.ai/component-id: backend
         aggrega.ai/environment: production
+        aggrega.ai/provider: helm
         app: backend
         app.kubernetes.io/name: backend
     spec:

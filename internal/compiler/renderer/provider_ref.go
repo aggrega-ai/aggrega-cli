@@ -3,7 +3,11 @@
 
 package renderer
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Masterminds/semver/v3"
+)
 
 // ProviderEngineKind returns the bare engine kind of a recipe.spec.provider
 // binding, stripping any trailing version segment. A binding may carry a
@@ -24,4 +28,42 @@ func ProviderEngineKind(providerRef string) string {
 		return providerRef[:i]
 	}
 	return providerRef
+}
+
+// providerVersionGreater orders resolved provider versions for boundary-assembler
+// selection within a dispatch group. A populated version outranks the empty
+// version — a version-less binding (the in-tree fallback route, which carries no
+// resolved plugin version) sorts below every versioned binding. Between two
+// populated versions the higher semver wins; a version that does not parse as
+// semver sorts below one that does, and two unparseable versions order lexically,
+// so the ordering is total and deterministic for any input.
+//
+// It reports whether a ranks strictly above b. Equal versions return false, so a
+// caller iterating candidates in processing order and replacing only on a strict
+// win keeps the earliest candidate on a tie — the deterministic tie-break.
+func providerVersionGreater(a, b string) bool {
+	if a == b {
+		return false
+	}
+	if a == "" {
+		return false
+	}
+	if b == "" {
+		return true
+	}
+	av, aerr := semver.NewVersion(a)
+	bv, berr := semver.NewVersion(b)
+	switch {
+	case aerr == nil && berr == nil:
+		if av.Equal(bv) {
+			return false
+		}
+		return av.GreaterThan(bv)
+	case aerr == nil:
+		return true
+	case berr == nil:
+		return false
+	default:
+		return a > b
+	}
 }

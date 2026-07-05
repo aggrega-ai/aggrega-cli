@@ -86,6 +86,15 @@ type ProviderCapabilities struct {
 // assumption about instance identity.
 type EngineFactory func(providerName string) (Engine, error)
 
+// ProviderVersionResolver reports the resolved provider-rendering plugin version
+// behind a provider binding (recipe.spec.provider, version pin included), or the
+// empty string when the binding renders through the in-tree engine with no
+// resolved plugin version. It shares the provider→plugin resolution the engine
+// factory performs, so the version reported here is the one behind the engine the
+// factory returns for the same binding. A nil resolver reports every binding as
+// version-less.
+type ProviderVersionResolver func(providerRef string) string
+
 // BoundaryAssembler is the optional interface a provider engine implements to
 // assemble per-(evaluated_path, provider) artifacts from the per-node Render
 // outputs at that dispatch path. The helm-chart provider uses this to emit an
@@ -279,6 +288,15 @@ type NodeRenderContext struct {
 	OriginalSource any
 	RecipeName     string // recipe metadata.name; empty when no Recipe selected for this node
 	RecipeVersion  string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
+	// ProviderName is the bare provider engine kind rendering this node
+	// (recipe.spec.provider with any version pin stripped). When set it is the
+	// value of the aggrega.ai/provider label.
+	ProviderName string
+	// ProviderVersion is the resolved provider-rendering plugin version behind
+	// ProviderName, or empty when the node renders through the in-tree engine
+	// with no resolved plugin version. When set it is the value of the
+	// aggrega.ai/provider-version label; empty omits that label.
+	ProviderVersion string
 	// LabelComponentID, when non-empty, overrides NodeID as the value of the
 	// app.kubernetes.io/name and aggrega.ai/component-id labels. Used by FR-
 	// emitted resources whose internal NodeID carries marker syntax

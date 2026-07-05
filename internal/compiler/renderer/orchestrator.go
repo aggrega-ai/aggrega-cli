@@ -59,8 +59,20 @@ type pendingDispatch struct {
 	nodeComponent          map[string]string
 	subCharts              []SubChartInfo
 	assembler              BoundaryAssembler
+	assemblerCandidates    []assemblerCandidate
 	engineByNode           map[string]Engine
 	contributingBoundaries []string
+}
+
+// assemblerCandidate is one node's contribution to its dispatch group's
+// boundary-assembler election: the engine that rendered the node and the
+// resolved provider version behind it. The group's assembler is the engine of
+// the highest-version candidate (see selectBoundaryAssembler); candidates are
+// appended in node-processing order, so iterating them in order keeps the
+// earliest node's engine on a version tie.
+type assemblerCandidate struct {
+	engine  Engine
+	version string
 }
 
 // RecipeLookup resolves a component/feature instance to its Recipe and
@@ -340,6 +352,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			providerRef = recipe.Spec.Provider
 			providerName = ProviderEngineKind(recipe.Spec.Provider)
 		}
+		// Resolved provider-rendering plugin version behind this binding, shared
+		// with the engine the factory returns for it. Empty for a binding that
+		// renders through the in-tree engine (no resolved plugin version). Stamped
+		// on the aggrega.ai/provider-version label and used to pick the dispatch
+		// group's boundary assembler when the group mixes provider versions.
+		providerVersion := ""
+		if input.ProviderVersion != nil {
+			providerVersion = input.ProviderVersion(providerRef)
+		}
 		engine, err := engineFactory(providerRef)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q engine factory", nodeID))
@@ -353,6 +374,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// workload-only Recipe, and coexists with a source-based render when
 		// a Recipe declares both source and workload.
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
+		nodeCtx.ProviderName = providerName
+		nodeCtx.ProviderVersion = providerVersion
 		if recipe != nil {
 			nodeCtx.RecipeName = recipe.Metadata.Name
 			nodeCtx.RecipeVersion = recipe.Metadata.Version
@@ -604,25 +627,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			Values:     values,
 			Source:     nodeCtx.Source,
 		})
-		if dispatch[key].assembler == nil {
-			if a, ok := engine.(BoundaryAssembler); ok {
-				dispatch[key].assembler = a
-			} else if _, hostAssembles := hostEngine(engine).(BoundaryAssembler); hostAssembles && key.Path != "" {
-				// Loud Guardrail (No Ghost Infrastructure): the provider's
-				// in-tree engine assembles this dispatch group into a single
-				// artifact, but the engine actually dispatched for the provider
-				// cannot — a rendering plugin advertising per-node rendering
-				// without the matching boundary-assembly export. Boundary
-				// assembly is functional dispatch asserted on the dispatched
-				// engine itself, not a host-side capability that unwraps, so a
-				// render-only wrapper genuinely cannot assemble. Left unchecked,
-				// assembly is silently skipped and the group emits unmerged
-				// per-node fragments. Halt instead.
-				inner := fmt.Errorf("%w: provider %q renders per node but its rendering plugin does not provide boundary assembly (assemble_boundary); dispatch path %q would emit unassembled fragments",
-					ErrBoundaryAssemblerMissing, key.Provider, key.Path)
-				return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())
-			}
-		}
+		// Record this node as a boundary-assembler candidate for its dispatch
+		// group. The group's assembler is elected after the per-node loop as the
+		// engine of the highest resolved provider version (selectBoundaryAssembler)
+		// — not the first engine seen — so a mixed-version group assembles through
+		// its newest provider. Candidates append in node-processing order, which
+		// the election's earliest-wins tie-break relies on.
+		dispatch[key].assemblerCandidates = append(dispatch[key].assemblerCandidates, assemblerCandidate{
+			engine:  engine,
+			version: providerVersion,
+		})
 
 		// Phase B.6 — FeatureRecipe Resource Generation (both non-credential
 		// and credential FRs). Returns prefixed paths
@@ -904,6 +918,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
+	// Elect each dispatch group's boundary assembler now that every contributing
+	// node has been grouped: the engine of the highest resolved provider version
+	// in the group, ties broken by node-processing order. Halts loudly if the
+	// elected engine cannot assemble a group its provider is expected to assemble
+	// — it never falls back to a lower-version engine that happens to assemble.
+	for _, key := range orderedDispatch {
+		if err := selectBoundaryAssembler(dispatch[key], key); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, key := range orderedDispatch {
 		pd := dispatch[key]
 		// Disk-write prefix is the evaluated final_path verbatim. Default
@@ -1168,6 +1193,45 @@ func buildNodeRenderContext(
 		nrc.Provenance.Environment = input.ResolveResult.Release.Metadata.Environment
 	}
 	return nrc
+}
+
+// selectBoundaryAssembler elects a dispatch group's boundary assembler and, on a
+// mismatch, halts with the No-Ghost-Infrastructure loud guardrail. The assembler
+// is the engine of the highest resolved provider version among the group's nodes
+// (providerVersionGreater); a version-less node — the in-tree fallback route,
+// carrying no resolved plugin version — ranks below any versioned node. Ties
+// break on node-processing order: candidates append in that order and the scan
+// replaces the leader only on a strict version win, so the earliest node keeps
+// the assembler on a tie.
+//
+// The guardrail applies to the ELECTED engine, never a lower-version fallback:
+// when that engine cannot assemble but the in-tree engine it stands in for can (a
+// rendering plugin advertising per-node rendering without the matching
+// boundary-assembly export), the build halts rather than silently emitting
+// unmerged per-node fragments. A group with no candidates (e.g. only boundary-
+// scope FeatureRecipe contributions) leaves the assembler unset — the group
+// finalizes flat.
+func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
+	best := -1
+	for i := range pd.assemblerCandidates {
+		if best == -1 || providerVersionGreater(pd.assemblerCandidates[i].version, pd.assemblerCandidates[best].version) {
+			best = i
+		}
+	}
+	if best == -1 {
+		return nil
+	}
+	selected := pd.assemblerCandidates[best].engine
+	if a, ok := selected.(BoundaryAssembler); ok {
+		pd.assembler = a
+		return nil
+	}
+	if _, hostAssembles := hostEngine(selected).(BoundaryAssembler); hostAssembles && key.Path != "" {
+		inner := fmt.Errorf("%w: provider %q renders per node but its rendering plugin does not provide boundary assembly (assemble_boundary); dispatch path %q would emit unassembled fragments",
+			ErrBoundaryAssemblerMissing, key.Provider, key.Path)
+		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())
+	}
+	return nil
 }
 
 func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {

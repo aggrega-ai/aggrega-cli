@@ -6,6 +6,7 @@ metadata:
     aggrega.ai/compiler-version: 0.1.0
     aggrega.ai/component-id: backend
     aggrega.ai/environment: production
+    aggrega.ai/provider: helm-chart
     app.kubernetes.io/name: backend
   annotations:
     aggrega.ai/boundary-path: backend-ns

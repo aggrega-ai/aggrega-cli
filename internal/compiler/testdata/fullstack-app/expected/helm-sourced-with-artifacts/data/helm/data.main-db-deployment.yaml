@@ -9,6 +9,7 @@ metadata:
     aggrega.ai/compiler-version: 0.1.0
     aggrega.ai/component-id: data.main-db
     aggrega.ai/environment: production
+    aggrega.ai/provider: helm
     app.kubernetes.io/name: data.main-db
   annotations:
     aggrega.ai/boundary-path: data-ns

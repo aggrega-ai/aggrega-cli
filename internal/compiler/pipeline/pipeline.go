@@ -681,7 +681,8 @@ func RunPipeline(
 				fmt.Fprintf(os.Stderr, "  plugin: close compilation cache: %s\n", cerr)
 			}
 		}()
-		hybrid := enginefactory.NewHybrid(engineFactory, catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+		hybrid, providerVersion := enginefactory.NewHybrid(engineFactory, catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+		rendererInput.ProviderVersion = providerVersion
 
 		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, hybrid)
 		if rerr != nil {

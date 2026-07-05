@@ -43,12 +43,19 @@ import (
 // render_node-advertising Wasm plugin renders through the same Go engine it
 // always has, so wrapping the dispatch changes nothing until a provider-Plugin
 // declaring that provider in its compatibleProviders is present.
+// NewHybrid also returns a [renderer.ProviderVersionResolver] alongside the
+// factory: it reports the resolved provider-rendering plugin version behind a
+// binding (the version the routed engine renders through), or "" for a binding
+// that renders through the fallback engine. Both share one plugin-resolution
+// pass so the version reported and the engine returned for a binding always
+// agree. The orchestrator stamps that version on the aggrega.ai/provider-version
+// label and uses it to pick a mixed-version dispatch group's boundary assembler.
 func NewHybrid(
 	fallback renderer.EngineFactory,
 	catalogLookup resolver.CatalogLookup,
 	pluginLookup pluginpath.Lookup,
 	sharedLoader *wasm.Loader,
-) renderer.EngineFactory {
+) (renderer.EngineFactory, renderer.ProviderVersionResolver) {
 	// Memo keyed on the RESOLVED engine identity so two version-distinct bindings
 	// of one provider (helm:1.0.0 and helm:1.0.1) coexist as two entries rather
 	// than collapsing under a shared bare name, while two bindings that resolve to
@@ -63,7 +70,7 @@ func NewHybrid(
 	// ever go concurrent, this memo (and the shared loader's per-call load) would
 	// need a guard.
 	memo := map[string]renderer.Engine{}
-	return func(providerRef string) (renderer.Engine, error) {
+	factory := func(providerRef string) (renderer.Engine, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
 		goEngine, err := fallback(bare)
 		if err != nil {
@@ -83,6 +90,18 @@ func NewHybrid(
 		memo[memoKey] = engine
 		return engine, nil
 	}
+	// The version resolver shares resolvePluginIdentity with routeEngine, so a
+	// binding's reported provider-version is the one behind the engine the factory
+	// returns for it. A binding that routes to the fallback engine (no serving
+	// render_node plugin, no catalog, or an unsatisfiable pin) is version-less.
+	versionResolver := func(providerRef string) string {
+		plugin, routed, err := resolvePluginIdentity(providerRef, catalogLookup)
+		if err != nil || !routed {
+			return ""
+		}
+		return plugin.Metadata.Version
+	}
+	return factory, versionResolver
 }
 
 // routeEngine decides whether providerRef renders through the Wasm adapter or the
@@ -100,14 +119,11 @@ func routeEngine(
 	pluginLookup pluginpath.Lookup,
 	sharedLoader *wasm.Loader,
 ) (renderer.Engine, string, error) {
-	if catalogLookup.ProviderPlugin == nil {
-		return goEngine, bare, nil
-	}
-	plugin, ok, err := catalogLookup.ProviderPlugin(providerRef)
+	plugin, routed, err := resolvePluginIdentity(providerRef, catalogLookup)
 	if err != nil {
 		return nil, "", err
 	}
-	if !ok || !advertisesRenderNode(plugin) {
+	if !routed {
 		return goEngine, bare, nil
 	}
 	// The adapter's lookup key is the resolved Plugin's entity identity
@@ -129,6 +145,29 @@ func routeEngine(
 		return wasmengine.NewAssembler(pluginLookup, pluginKey, goEngine, sharedLoader), pluginKey, nil
 	}
 	return wasmengine.New(pluginLookup, pluginKey, goEngine, sharedLoader), pluginKey, nil
+}
+
+// resolvePluginIdentity resolves providerRef to the provider-rendering Plugin
+// that serves it and reports whether the render routes through Wasm. It is the
+// single resolution both routeEngine (engine selection) and the version resolver
+// (the provider-version label and assembler ordering) share, so the version
+// reported for a binding is the one behind the engine selected for it. routed is
+// false — with a zero Plugin — whenever the binding renders through the fallback
+// engine: no catalog accessor, no plugin serving the provider, or a plugin that
+// does not advertise render_node. A non-nil error is a loud halt: a version pin
+// the catalog cannot satisfy.
+func resolvePluginIdentity(providerRef string, catalogLookup resolver.CatalogLookup) (plugin types.Plugin, routed bool, err error) {
+	if catalogLookup.ProviderPlugin == nil {
+		return types.Plugin{}, false, nil
+	}
+	p, ok, err := catalogLookup.ProviderPlugin(providerRef)
+	if err != nil {
+		return types.Plugin{}, false, err
+	}
+	if !ok || !advertisesRenderNode(p) {
+		return types.Plugin{}, false, nil
+	}
+	return p, true, nil
 }
 
 // advertisesRenderNode reports whether the Plugin entity declares the export the
