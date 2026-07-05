@@ -35,11 +35,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
-// defaultDrainTimeout bounds how long the dispatch loop waits after
-// the reader goroutine observes an aggrega/shutdown notification
-// before returning. The timer starts at notification ARRIVAL (in the
-// reader), not at observation in the main loop — so worst-case exit
-// latency is max(in_flight_handler_runtime, defaultDrainTimeout).
+// defaultDrainTimeout is the tight backstop the SECOND aggrega/shutdown
+// (the abort) arms: after the reader cancels serverCtx, this budget
+// gives the dispatch loop an exit trigger once cancellation has
+// propagated to in-flight handlers. The FIRST shutdown does not arm it —
+// that signal drains accepted in-flight work to completion.
 const defaultDrainTimeout = 2 * time.Second
 
 // RunConfig carries the I/O streams the daemon reads from and writes
@@ -62,11 +62,11 @@ type RunConfig struct {
 	// the flag were not passed).
 	WorkspaceRoot string
 
-	// DrainTimeout sets the budget the dispatch loop waits after
-	// observing an aggrega/shutdown notification before returning.
-	// Zero value defaults to defaultDrainTimeout (2 seconds). Tests
-	// pass a short value (e.g., 50ms) so shutdown behavior exercises
-	// in subsecond wall time.
+	// DrainTimeout sets the tight backstop the second aggrega/shutdown
+	// (the abort) arms after cancelling in-flight work. Zero value
+	// defaults to defaultDrainTimeout (2 seconds). Tests pass a short
+	// value (e.g., 50ms) so shutdown behavior exercises in subsecond
+	// wall time.
 	DrainTimeout time.Duration
 
 	// CompilerVersion is the binary's build identity, stamped into the IR
@@ -191,25 +191,24 @@ type Server struct {
 	// only read during handler execution — an immutable snapshot needing no lock.
 	renderDiagnostics bool
 
-	// shuttingDown is set at the dispatch loop's acceptance of an
+	// shuttingDown is set at the dispatch loop's acceptance of the first
 	// aggrega/shutdown message — on the single-threaded main loop, so
-	// every message accepted afterward strictly observes the flag —
-	// and is idempotently re-set by dispatchShutdown on the worker.
-	// The acceptance-boundary gate consults it to reject subsequent
-	// requests with errShuttingDown and drop subsequent notifications
-	// before they reach a worker; once a message clears that gate and
-	// reaches a worker, dispatch processes it normally. Atomic because
-	// the main loop and the worker store it on different goroutines
-	// under the pool, while the main loop also loads it at the gate.
+	// every message accepted afterward strictly observes the flag. The
+	// acceptance-boundary gate consults it to reject subsequent requests
+	// with errShuttingDown and drop subsequent notifications before they
+	// reach a worker. It stays atomic because the shutdown handler stores
+	// it and the gate loads it; both run on the main loop today, and the
+	// atomic keeps the surface safe if a store ever moves onto a worker.
 	shuttingDown atomic.Bool
 
 	// serverCtx is the session-level context every per-request context
 	// derives from; serverCancel cancels it. The reader goroutine calls
-	// serverCancel the moment an aggrega/shutdown notification arrives,
-	// which cancels the derived context of any in-flight handler so it
-	// can return within the drain budget instead of running to
-	// completion. Both are initialised in dispatchLoop. serverCancel is
-	// idempotent — the dispatch loop also defers it as an exit backstop.
+	// serverCancel on the SECOND aggrega/shutdown (the abort), which
+	// cancels the derived context of any in-flight handler so it returns
+	// at its next phase boundary within the drain budget. The FIRST
+	// shutdown does not cancel — it drains in-flight work to completion.
+	// Both are initialised in dispatchLoop. serverCancel is idempotent —
+	// the dispatch loop also defers it as an exit backstop.
 	serverCtx    context.Context
 	serverCancel context.CancelFunc
 
@@ -419,9 +418,10 @@ func (s *Server) diagnosticsFiles() []string {
 
 // Run anchors the workspace root, loads the merged workspace +
 // global config, constructs a Server, and enters the JSON-RPC
-// dispatch loop. Returns when stdin reaches EOF, the dispatch loop's
-// drain timer fires after an aggrega/shutdown notification, or an
-// unrecoverable I/O error occurs.
+// dispatch loop. Returns when stdin reaches EOF, the drain-then-abort
+// shutdown sequence completes (the first aggrega/shutdown drains
+// accepted in-flight work; a second aborts it), or an unrecoverable I/O
+// error occurs.
 //
 // Workspace-root anchoring:
 //   - When cfg.WorkspaceRoot is non-empty, Run uses the explicit

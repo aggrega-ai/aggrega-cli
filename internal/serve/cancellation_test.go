@@ -148,10 +148,11 @@ func TestDeadlineComposesOverPerRequestContext(t *testing.T) {
 }
 
 // TestShutdownCancelsConcurrentInFlightHandlers proves source (a) under
-// the pool: with N handlers held in-flight, an aggrega/shutdown
-// notification cancels every one of their per-request contexts within
-// the drain budget, and the dispatch loop exits. This extends the
-// single-in-flight arrival-based drain tests into the multiple-concurrent
+// the pool: with N handlers held in-flight, the SECOND aggrega/shutdown
+// (the abort) cancels every one of their per-request contexts within the
+// drain budget, and the dispatch loop exits. The first shutdown drains
+// (it does not cancel); the second aborts. This extends the
+// single-in-flight drain-then-abort tests into the multiple-concurrent
 // case the pool enables.
 func TestShutdownCancelsConcurrentInFlightHandlers(t *testing.T) {
 	t.Parallel()
@@ -214,9 +215,13 @@ func TestShutdownCancelsConcurrentInFlightHandlers(t *testing.T) {
 				t.Fatal("handlers never all entered in-flight")
 			}
 
-			// Now fire shutdown; serverCancel cancels every per-request ctx.
+			// First shutdown drains (no cancel); the second aborts —
+			// serverCancel then cancels every per-request ctx.
 			if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
-				t.Fatalf("write shutdown: %v", err)
+				t.Fatalf("write first shutdown: %v", err)
+			}
+			if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+				t.Fatalf("write second shutdown: %v", err)
 			}
 			stdinW.Close()
 

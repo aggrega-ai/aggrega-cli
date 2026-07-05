@@ -213,8 +213,8 @@ func (z *serializer) closeAndWait() {
 // surfaces record it here; the dispatch path then closes the request's
 // ordered slot exactly once after the handler returns — emitting the
 // recorded body, or a body-less done-frame when the handler produced no
-// response (a notification, a shutdown, or a request dropped during
-// drain). This keeps the serializer's arrival-sequence cursor advancing
+// response (a notification or a request dropped during drain). This
+// keeps the serializer's arrival-sequence cursor advancing
 // past response-less slots without stalling. Notifications bypass the
 // slot entirely and emit immediately.
 type requestSink struct {

@@ -6,9 +6,11 @@ package serve
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,14 +45,14 @@ func startServerWithPipes(t *testing.T) (stdinW io.WriteCloser, stdoutR io.Reade
 	stdinR, stdinWriter := io.Pipe()
 	stdoutBuf := &bytes.Buffer{}
 	srv := &Server{
-		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         workspaceconfig.Default(),
-		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdinR),
-		out:              stdoutBuf,
-		stderr:           io.Discard,
+		workspaceRoot: "/tmp/test-workspace",
+		wsConfig:      workspaceconfig.Default(),
+		lazyCatalog:   catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
+		parseCache:    newCache(0, 0),
+		diagnostics:   map[string][]Diagnostic{},
+		in:            bufio.NewReader(stdinR),
+		out:           stdoutBuf,
+		stderr:        io.Discard,
 	}
 	ch := make(chan error, 1)
 	go func() {
@@ -59,11 +61,12 @@ func startServerWithPipes(t *testing.T) (stdinW io.WriteCloser, stdoutR io.Reade
 	return stdinWriter, stdoutBuf, ch
 }
 
-// TestShutdownNotificationCausesCleanExit verifies that an
-// aggrega/shutdown notification reaches the daemon → drain timer
-// arms in the reader goroutine → dispatch loop returns within the
-// drain budget. No in-flight handler is exercised here; the test
-// pins the basic clean-exit semantic.
+// TestShutdownNotificationCausesCleanExit verifies that a single
+// aggrega/shutdown notification, with no in-flight work, drains the
+// (empty) worker pool and returns cleanly within a generous multiple
+// of the drain budget. The first shutdown enters DRAINING; with no
+// accepted work to finish, the background drain completes at once and
+// the loop exits.
 func TestShutdownNotificationCausesCleanExit(t *testing.T) {
 	stdin, _, done := startServerWithPipes(t)
 
@@ -72,87 +75,322 @@ func TestShutdownNotificationCausesCleanExit(t *testing.T) {
 		t.Fatalf("write shutdown: %v", err)
 	}
 
-	// Loop should exit within ~drainTimeout * a generous multiplier.
+	// Loop should exit promptly once the empty pool drains.
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Errorf("dispatchLoop exited with error: %v", err)
 		}
 	case <-time.After(shortDrain * 20):
-		t.Fatal("dispatch loop did not exit within drain budget multiple")
+		t.Fatal("dispatch loop did not exit after the empty pool drained")
+	}
+}
+
+// TestShutdownFirstSignalDrainsInFlight is the drain-side proof of the
+// drain-then-abort ruling: the FIRST aggrega/shutdown does NOT cancel an
+// in-flight handler — it lets it run to completion. The handler races
+// its own per-request ctx.Done against a fixed timer; under drain
+// semantics the timer wins (the handler completed), and the loop exits
+// only after that completion.
+func TestShutdownFirstSignalDrainsInFlight(t *testing.T) {
+	t.Parallel()
+	const handlerRun = 150 * time.Millisecond
+
+	var completed, cancelled int32
+	entered := make(chan struct{})
+
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(stdinR, stdout, 1, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		if len(id) == 0 {
+			return // the shutdown notification carries no id
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+			// The first shutdown must NOT reach here.
+			atomic.AddInt32(&cancelled, 1)
+		case <-time.After(handlerRun):
+			atomic.AddInt32(&completed, 1)
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.dispatchLoop(shortDrain) }()
+
+	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never entered in-flight")
+	}
+
+	// First shutdown: DRAIN, not abort. serverCtx must stay live so the
+	// in-flight handler runs to completion.
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		t.Fatalf("write shutdown: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("dispatchLoop error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatch loop did not exit after the in-flight handler drained")
+	}
+
+	if got := atomic.LoadInt32(&cancelled); got != 0 {
+		t.Errorf("in-flight handler was cancelled on the FIRST shutdown (%d); drain must let it finish", got)
+	}
+	if got := atomic.LoadInt32(&completed); got != 1 {
+		t.Errorf("in-flight handler did not run to completion under drain; completed=%d", got)
+	}
+}
+
+// TestShutdownSecondNotificationAborts is the abort-side proof: the
+// FIRST aggrega/shutdown drains (an in-flight handler blocked on its
+// per-request ctx.Done is NOT cancelled and the loop does not exit),
+// while the SECOND aggrega/shutdown ABORTS — it cancels the in-flight
+// handler and the loop exits within the drain budget.
+func TestShutdownSecondNotificationAborts(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{})
+	released := make(chan struct{})
+	var cancelled int32
+
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(stdinR, stdout, 1, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		if len(id) == 0 {
+			return
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+			atomic.StoreInt32(&cancelled, 1)
+		case <-released:
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.dispatchLoop(shortDrain) }()
+
+	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		close(released)
+		t.Fatal("handler never entered in-flight")
+	}
+
+	// First shutdown drains: the loop must stay alive and the handler
+	// must stay uncancelled while it is in-flight.
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		close(released)
+		t.Fatalf("write first shutdown: %v", err)
+	}
+	select {
+	case err := <-done:
+		close(released)
+		t.Fatalf("loop exited on the FIRST shutdown while a handler was in-flight (err=%v); the first signal must drain", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if atomic.LoadInt32(&cancelled) != 0 {
+		close(released)
+		t.Fatal("in-flight handler cancelled on the FIRST shutdown; the first signal must drain, not abort")
+	}
+
+	// Second shutdown aborts: cancels the in-flight handler and bounds
+	// the exit at the drain budget.
+	start := time.Now()
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		close(released)
+		t.Fatalf("write second shutdown: %v", err)
+	}
+	select {
+	case err := <-done:
+		elapsed := time.Since(start)
+		if err != nil {
+			t.Errorf("dispatchLoop error: %v", err)
+		}
+		if elapsed > shortDrain*20 {
+			t.Errorf("exit after the second shutdown took %v; drain budget %v exceeded", elapsed, shortDrain)
+		}
+	case <-time.After(2 * time.Second):
+		close(released)
+		t.Fatal("dispatch loop did not exit after the SECOND shutdown (abort)")
+	}
+	if atomic.LoadInt32(&cancelled) != 1 {
+		t.Error("in-flight handler was not cancelled by the SECOND shutdown (abort)")
+	}
+	close(released)
+}
+
+// TestShutdownAbortIsPromptOnSecondSignal pins that the SECOND
+// shutdown's abort reaches the in-flight handler promptly rather than
+// waiting for the handler's own eventual completion. The handler races
+// ctx.Done against a long (2s) self-completion fallback; under a working
+// abort the second signal's cancellation fires the ctx.Done branch and
+// the loop exits well under the fallback. A regression that failed to
+// abort on the second signal would let the loop hang until the 2s
+// fallback elapsed.
+func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
+	t.Parallel()
+	const (
+		fallback   = 2 * time.Second
+		upperBound = 500 * time.Millisecond
+	)
+
+	entered := make(chan struct{})
+
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(stdinR, stdout, 1, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		if len(id) == 0 {
+			return
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+		case <-time.After(fallback):
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.dispatchLoop(shortDrain) }()
+
+	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never entered in-flight")
+	}
+
+	// Drain, then abort. The pipe stays open (no EOF): the abort's cancel
+	// — armed by the reader at the second signal's arrival — is what
+	// releases the handler and lets the loop exit.
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		t.Fatalf("write first shutdown: %v", err)
+	}
+	start := time.Now()
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		t.Fatalf("write second shutdown: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		elapsed := time.Since(start)
+		if err != nil {
+			t.Errorf("dispatchLoop error: %v", err)
+		}
+		if elapsed > upperBound {
+			t.Errorf("exit after second shutdown took %v (> %v); abort did not cancel the in-flight handler promptly", elapsed, upperBound)
+		}
+	case <-time.After(fallback + time.Second):
+		t.Fatal("dispatch loop did not exit after the second shutdown")
 	}
 }
 
 // TestShutdownRejectsSubsequentRequests verifies the request-path
-// behavior during drain: after aggrega/shutdown arrives, a
-// subsequent JSON-RPC request gets an errShuttingDown envelope.
+// behavior during drain: after aggrega/shutdown arrives, a subsequent
+// JSON-RPC request gets an errShuttingDown envelope. A prior request is
+// held in-flight so the drain does not complete before the follow-on
+// request is accepted and rejected, making the 1005 deterministic.
 func TestShutdownRejectsSubsequentRequests(t *testing.T) {
-	// Compose stdin payload up front: shutdown notification, then a
-	// validate request. Both bytes hit the read pipe before the
-	// reader goroutine gets a chance to drain — the order is
-	// deterministic via a single write because the pipe is unbuffered
-	// and the reader consumes sequentially.
-	payload := append([]byte{}, framedNotification("aggrega/shutdown", nil)...)
-	payload = append(payload, framedRequest(42, "aggrega/validate", map[string]string{
-		"file":    "/dev/null",
-		"content": "",
-	})...)
+	t.Parallel()
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
 
 	stdinR, stdinW := io.Pipe()
-	stdoutBuf := &bytes.Buffer{}
-	srv := &Server{
-		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         workspaceconfig.Default(),
-		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdinR),
-		out:              stdoutBuf,
-		stderr:           io.Discard,
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(stdinR, stdout, 4, nil)
+	srv.testCtxHook = func(_ context.Context, id json.RawMessage) {
+		var n int
+		if json.Unmarshal(id, &n) != nil || n != 1 {
+			return
+		}
+		close(entered)
+		<-release // hold the worker so the drain stays in progress
 	}
+
 	done := make(chan error, 1)
-	// Use a longer drain here so the dispatcher has time to process
-	// BOTH messages before the timer fires. The test is asserting on
-	// the response envelope, not on exit latency.
-	go func() {
-		done <- srv.dispatchLoop(500 * time.Millisecond)
-	}()
+	go func() { done <- srv.dispatchLoop(500 * time.Millisecond) }()
 
-	if _, err := stdinW.Write(payload); err != nil {
-		t.Fatalf("write payload: %v", err)
+	// Hold request 1 in-flight.
+	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write held request: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("held request never entered in-flight")
 	}
 
-	// Wait for the loop to exit on drain.
+	// Shutdown (drain begins), then a follow-on request that must be
+	// rejected with 1005 while the drain is still in progress.
+	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
+		close(release)
+		t.Fatalf("write shutdown: %v", err)
+	}
+	if _, err := stdinW.Write(framedRequest(42, "aggrega/validate", map[string]string{
+		"file":    "/dev/null",
+		"content": "",
+	})); err != nil {
+		close(release)
+		t.Fatalf("write follow-on request: %v", err)
+	}
+
+	// Release the held request; the drain completes and the loop exits.
+	// The serializer emits in arrival order: request 1's response, then
+	// the shutdown's body-less slot, then request 42's 1005.
+	close(release)
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("dispatch loop did not exit")
 	}
 
-	// Inspect responses on stdout. The shutdown notification produces
-	// no response; the validate request produces a 1005 envelope.
-	r := bufio.NewReader(stdoutBuf)
-	body, err := readMessage(r)
-	if err != nil {
-		t.Fatalf("read first response: %v (stdout: %s)", err, stdoutBuf.String())
+	r := bufio.NewReader(bytes.NewReader(stdout.bytes()))
+	resps := readResponses(t, r, 2)
+
+	// First response: the held request 1, no error.
+	if resps[0].Error != nil {
+		t.Errorf("held request response carried error: %+v", resps[0].Error)
 	}
-	var resp jsonRPCResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		t.Fatalf("unmarshal first response: %v", err)
+	var id0 int
+	if err := json.Unmarshal(resps[0].ID, &id0); err != nil {
+		t.Fatalf("held response id parse: %v", err)
 	}
-	if resp.Error == nil {
-		t.Fatalf("expected error envelope, got result: %s", resp.Result)
+	if id0 != 1 {
+		t.Errorf("first response id = %d; want 1", id0)
 	}
-	if resp.Error.Code != errShuttingDown {
-		t.Errorf("error code: got %d, want %d", resp.Error.Code, errShuttingDown)
+
+	// Second response: the follow-on request 42, rejected with 1005.
+	if resps[1].Error == nil {
+		t.Fatalf("expected error envelope for follow-on request, got result: %s", resps[1].Result)
 	}
-	// id round-trips as the request's id (42).
-	var id int
-	if err := json.Unmarshal(resp.ID, &id); err != nil {
-		t.Fatalf("id parse: %v", err)
+	if resps[1].Error.Code != errShuttingDown {
+		t.Errorf("error code: got %d, want %d", resps[1].Error.Code, errShuttingDown)
 	}
-	if id != 42 {
-		t.Errorf("id: got %d, want 42", id)
+	var id1 int
+	if err := json.Unmarshal(resps[1].ID, &id1); err != nil {
+		t.Fatalf("follow-on id parse: %v", err)
+	}
+	if id1 != 42 {
+		t.Errorf("follow-on id: got %d, want 42", id1)
 	}
 }
 
@@ -178,14 +416,14 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 	cfg := workspaceconfig.Default()
 	cfg.Concurrency.PoolSize = 4
 	srv := &Server{
-		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         cfg,
-		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdinR),
-		out:              stdoutBuf,
-		stderr:           io.Discard,
+		workspaceRoot: "/tmp/test-workspace",
+		wsConfig:      cfg,
+		lazyCatalog:   catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
+		parseCache:    newCache(0, 0),
+		diagnostics:   map[string][]Diagnostic{},
+		in:            bufio.NewReader(stdinR),
+		out:           stdoutBuf,
+		stderr:        io.Discard,
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -204,192 +442,5 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 	if stdoutBuf.Len() != 0 {
 		t.Errorf("expected empty stdout (no responses for shutdown+notification), got: %s",
 			stdoutBuf.String())
-	}
-}
-
-// TestShutdownDrainBudgetEnforced verifies that the loop exits
-// within the drain budget after shutdown, even when no further
-// messages arrive on stdin. The drain timer is the load-bearing
-// exit cause.
-func TestShutdownDrainBudgetEnforced(t *testing.T) {
-	stdinR, stdinW := io.Pipe()
-	stdoutBuf := &bytes.Buffer{}
-	srv := &Server{
-		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         workspaceconfig.Default(),
-		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdinR),
-		out:              stdoutBuf,
-		stderr:           io.Discard,
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.dispatchLoop(shortDrain)
-	}()
-
-	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
-		t.Fatalf("write shutdown: %v", err)
-	}
-
-	start := time.Now()
-	select {
-	case err := <-done:
-		elapsed := time.Since(start)
-		if err != nil {
-			t.Errorf("dispatchLoop returned error: %v", err)
-		}
-		// Exit within a generous multiple of the drain budget — the
-		// goroutine scheduler plus reader-pipe handshake adds tens
-		// of milliseconds on slow CI.
-		if elapsed > shortDrain*20 {
-			t.Errorf("drain budget exceeded: exited after %v (budget %v)", elapsed, shortDrain)
-		}
-	case <-time.After(shortDrain * 50):
-		t.Fatal("dispatch loop did not exit on drain budget")
-	}
-}
-
-// TestShutdownDrainTimerIsArrivalBased pins the arrival-based timer
-// semantic against an observation-based regression. The reader
-// goroutine MUST create the drain timer at the moment it parses the
-// shutdown notification, NOT when the main loop later observes it
-// after the in-flight handler returns.
-//
-// Setup: handler sleeps 300ms (via testInDispatchHook); drain budget
-// is 100ms. Wire sequence: validate request, then shutdown.
-//
-// Expected timing under ARRIVAL-based semantics:
-//
-//	t=0      reader parses validate, forwards to messages channel
-//	t=0      main loop receives validate, calls handle() → sleeps 300ms
-//	t=0+     reader parses shutdown, arms 100ms timer (timer fires t=100)
-//	t=100    timer fires; main loop is still sleeping
-//	t=300    handle() returns; main loop selects; drainCh is ready → exit
-//	→ total elapsed ≈ 300ms
-//
-// Expected timing under OBSERVATION-based semantics (regression
-// shape):
-//
-//	t=0      reader forwards validate
-//	t=0      main loop sleeps 300ms in handle()
-//	t=300    handle() returns; main loop receives shutdown; handler
-//	         sets shuttingDown, dispatch loop then arms 100ms timer
-//	t=400    timer fires; main loop exits
-//	→ total elapsed ≈ 400ms
-//
-// Bound: exit must complete within 350ms. Arrival-based PASSES;
-// observation-based FAILS by ≥50ms.
-func TestShutdownDrainTimerIsArrivalBased(t *testing.T) {
-	const (
-		handlerDelay = 300 * time.Millisecond
-		drainBudget  = 100 * time.Millisecond
-		upperBound   = 350 * time.Millisecond
-	)
-
-	stdinR, stdinW := io.Pipe()
-	stdoutBuf := &bytes.Buffer{}
-	// One-shot delay: only the first handle() call sleeps. Without
-	// the gate the hook would also delay the shutdown handler,
-	// adding another handlerDelay and masking the arrival-vs-
-	// observation timing distinction.
-	hookFired := false
-	// The arrival-vs-observation timing distinction this test asserts depends on
-	// serial dispatch: the delayed validate handler must run to completion before
-	// the shutdown notification is handled. Pin the pool to 1 so the two requests
-	// do not overlap (which would also race the one-shot hookFired gate).
-	cfg := workspaceconfig.Default()
-	cfg.Concurrency.PoolSize = 1
-	srv := &Server{
-		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         cfg,
-		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdinR),
-		out:              stdoutBuf,
-		stderr:           io.Discard,
-		testInDispatchHook: func() {
-			if hookFired {
-				return
-			}
-			hookFired = true
-			time.Sleep(handlerDelay)
-		},
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.dispatchLoop(drainBudget)
-	}()
-
-	payload := append([]byte{}, framedRequest(1, "aggrega/validate", map[string]string{
-		"file":    "/dev/null",
-		"content": "",
-	})...)
-	payload = append(payload, framedNotification("aggrega/shutdown", nil)...)
-
-	start := time.Now()
-	if _, err := stdinW.Write(payload); err != nil {
-		t.Fatalf("write payload: %v", err)
-	}
-
-	select {
-	case err := <-done:
-		elapsed := time.Since(start)
-		if err != nil {
-			t.Errorf("dispatchLoop returned error: %v", err)
-		}
-		if elapsed > upperBound {
-			t.Errorf("exit elapsed %v exceeds %v — drain timer appears observation-based "+
-				"(expected arrival-based, where elapsed ≈ %v not %v)",
-				elapsed, upperBound, handlerDelay, handlerDelay+drainBudget)
-		}
-		t.Logf("arrival-based exit confirmed: elapsed %v (bound %v)", elapsed, upperBound)
-	case <-time.After(2 * time.Second):
-		t.Fatal("dispatch loop did not exit")
-	}
-}
-
-// TestShutdownSecondNotificationIsIdempotent covers an edge case:
-// receiving aggrega/shutdown twice during drain is a no-op. The
-// dispatchShutdown handler sets s.shuttingDown again (already true)
-// and returns nil; the reader's cap-1 install channel discards the
-// duplicate timer install.
-func TestShutdownSecondNotificationIsIdempotent(t *testing.T) {
-	payload := append([]byte{}, framedNotification("aggrega/shutdown", nil)...)
-	payload = append(payload, framedNotification("aggrega/shutdown", nil)...)
-
-	stdinR, stdinW := io.Pipe()
-	stdoutBuf := &bytes.Buffer{}
-	srv := &Server{
-		workspaceRoot:    "/tmp/test-workspace",
-		wsConfig:         workspaceconfig.Default(),
-		lazyCatalog:      catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdinR),
-		out:              stdoutBuf,
-		stderr:           io.Discard,
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.dispatchLoop(shortDrain)
-	}()
-
-	if _, err := stdinW.Write(payload); err != nil {
-		t.Fatalf("write payload: %v", err)
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("dispatchLoop returned error: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("dispatch loop did not exit")
-	}
-	if stdoutBuf.Len() != 0 {
-		t.Errorf("expected no responses for shutdown notifications, got: %s", stdoutBuf.String())
 	}
 }

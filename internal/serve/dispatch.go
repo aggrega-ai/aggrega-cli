@@ -113,12 +113,30 @@ type incomingMessage struct {
 
 // dispatchLoop spawns a reader goroutine to consume stdin and runs a
 // select-driven submission loop in the main goroutine. The reader peeks
-// at each message's method field: when it sees aggrega/shutdown it
-// creates a time.Timer for the drain budget and emits the timer's
-// channel onto drainTimerInstall (cap 1) so the main loop can begin
-// watching it. All messages — including the shutdown notification —
-// are forwarded onto the message channel; the main loop assigns each an
-// arrival sequence and submits it to the worker pool.
+// at each message's method field to drive the drain-then-abort shutdown
+// sequence; all messages — including the shutdown notifications — are
+// forwarded onto the message channel, and the main loop assigns each an
+// arrival sequence.
+//
+// Shutdown is a two-step, drain-then-abort sequence:
+//
+//   - The FIRST aggrega/shutdown (or stdin EOF) enters DRAINING. The
+//     main loop stops accepting new work — subsequent requests are
+//     rejected and subsequent notifications dropped at the acceptance
+//     boundary — and begins draining the worker pool in the background,
+//     letting in-flight work (an in-flight validation) run to
+//     completion. serverCtx is NOT cancelled, so accepted work is never
+//     cut short. When the background drain completes, the loop exits
+//     cleanly.
+//   - The SECOND aggrega/shutdown ABORTS. The reader cancels serverCtx
+//     at the instant it parses the message, so in-flight handlers return
+//     at their next phase boundary, and it arms a tight drain-budget
+//     backstop timer that gives the loop an exit trigger once
+//     cancellation has propagated. The background pool drain still
+//     precedes serializer teardown, so a handler that does not observe
+//     cancellation promptly is bounded only by its own completion; the
+//     spawning client's force escalation is the ultimate stop for such
+//     work.
 //
 // Each message off the single stdin stream gets a dense, gap-free
 // arrival sequence. The id-order stdout serializer emits responses in
@@ -127,14 +145,6 @@ type incomingMessage struct {
 // serially in arrival order and the serializer's reordering buffer
 // stays empty. The serializer is the sole owner of stdout, so
 // concurrent workers never race the writer.
-//
-// The drain timer is arrival-based: it starts when the reader parses
-// the shutdown notification, not when the main loop observes the
-// notification (which could be delayed by an in-flight handler).
-// Worst-case exit latency from the client's POV is
-// max(in_flight_handler_runtime, drainTimeout). On every exit path the
-// loop drains the pool (bounded by serverCtx cancellation) and flushes
-// the serializer before returning.
 //
 // Per-request error handling:
 //   - Header parse error (malformed framing): logged to stderr, loop
@@ -191,54 +201,75 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 
 	go func() {
 		defer close(messages)
-		// timerArmed is local to the reader goroutine and never read
-		// by any other goroutine; it gates the timer creation so
-		// only the FIRST aggrega/shutdown notification arms a drain
-		// timer. Subsequent shutdown notifications during the reader's
-		// lifetime are no-ops — no timer allocated, no resource leak,
-		// no race (the flag is reader-local). This protects against
-		// spaced-duplicate shutdowns where the main loop has already
-		// installed the first timer and would otherwise overwrite the
-		// drainCh with a second one, leaking the first timer's
-		// resources until it fires.
-		timerArmed := false
+		// shutdownCount is reader-local and never read by any other
+		// goroutine. It distinguishes the FIRST aggrega/shutdown (drain)
+		// from the SECOND (abort). The FIRST does NOT cancel serverCtx: an
+		// in-flight handler runs to completion so accepted work is never cut
+		// short. The SECOND cancels serverCtx here — at the instant the
+		// message is parsed, so in-flight work is signalled to stop without
+		// waiting for the main loop to dequeue the message — and arms the
+		// tight drain-budget backstop timer, emitting its channel onto
+		// drainTimerInstall (cap 1) for the main loop to watch. serverCtx is
+		// idempotent to cancel and the install channel is cap 1, so a
+		// third-or-later shutdown is a no-op.
+		shutdownCount := 0
 		for {
 			body, err := readMessage(s.in)
 			if err != nil {
 				messages <- incomingMessage{err: err}
 				return
 			}
-			// Peek the method before forwarding so the reader can
-			// arm the drain timer without waiting for the main
-			// goroutine to observe.
+			// Peek the method before forwarding so the reader can arm the
+			// second-shutdown abort without waiting for the main goroutine
+			// to observe.
 			var peek struct {
 				Method string `json:"method"`
 			}
-			if jerr := json.Unmarshal(body, &peek); jerr == nil && peek.Method == "aggrega/shutdown" && !timerArmed {
-				timerArmed = true
-				// Cancel serverCtx at notification ARRIVAL, from the
-				// reader goroutine — the only site that runs concurrently
-				// with a blocked in-flight handler in the main goroutine.
-				// dispatchShutdown (which sets shuttingDown) cannot do this:
-				// it runs in the main loop only after the in-flight handler
-				// returns, too late to interrupt it. This is what bounds
-				// worst-case exit latency at the drain budget rather than at
-				// in-flight-handler completion.
-				s.serverCancel()
-				timer := time.NewTimer(drainTimeout)
-				drainTimerInstall <- timer.C
+			if jerr := json.Unmarshal(body, &peek); jerr == nil && peek.Method == "aggrega/shutdown" {
+				shutdownCount++
+				if shutdownCount == 2 {
+					s.serverCancel()
+					timer := time.NewTimer(drainTimeout)
+					drainTimerInstall <- timer.C
+				}
 			}
 			messages <- incomingMessage{body: body}
 		}
 	}()
 
-	// teardown drains the pool (waiting for in-flight workers, bounded by
-	// serverCtx cancellation) and then flushes and stops the serializer,
-	// returning any fatal stdout write error the serializer reported. It
-	// runs on every loop exit — EOF, read error, or drain-timer fire —
-	// so exit stays bounded by the drain budget with workers in flight.
+	// drainStarted guards a single pool.drain. The FIRST aggrega/shutdown
+	// begins draining the worker pool in the background so the main loop
+	// stays responsive to a SECOND shutdown while accepted in-flight work
+	// finishes; drainDone closes when that background drain completes and
+	// is the loop's clean-exit trigger. Both are touched only by the main
+	// goroutine (startDrain, teardown, and the select all run there).
+	var drainStarted bool
+	var drainDone chan struct{}
+	startDrain := func() {
+		if drainStarted {
+			return
+		}
+		drainStarted = true
+		drainDone = make(chan struct{})
+		go func(d chan struct{}) {
+			pool.drain()
+			close(d)
+		}(drainDone)
+	}
+
+	// teardown completes the pool drain — waiting on the background drain
+	// if one is already running, else draining inline — then flushes and
+	// stops the serializer, returning any fatal stdout write error the
+	// serializer reported. It runs on every loop exit: EOF, read error,
+	// background-drain completion, or the second-shutdown backstop timer.
+	// The pool drain always precedes the serializer close so no worker can
+	// emit a frame after the serializer has stopped.
 	teardown := func() error {
-		pool.drain()
+		if drainStarted {
+			<-drainDone
+		} else {
+			pool.drain()
+		}
 		ser.closeAndWait()
 		select {
 		case err := <-ser.errCh:
@@ -310,17 +341,27 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 				continue
 			}
 			// Acceptance-boundary drain gate. The single-threaded main
-			// loop is the serialization point for shutdown ordering: set
-			// shuttingDown HERE, on accepting the shutdown message, so
-			// every message the loop accepts afterward strictly observes
-			// the flag. Setting it inside the worker (dispatchShutdown)
-			// would let the loop accept and submit a following message
-			// before the worker stored the flag, under a multi-worker
-			// pool. The worker's own Store is a harmless idempotent
-			// re-set.
+			// loop is the serialization point for shutdown ordering: the
+			// shutdown message is handled HERE, on acceptance, and never
+			// submitted to the worker pool, so every message the loop
+			// accepts afterward strictly observes the draining state.
+			// Handling it off the main loop would let the loop accept and
+			// submit a following message before the drain state was
+			// visible, under a multi-worker pool.
 			if req.Method == "aggrega/shutdown" {
+				// Acceptance of a shutdown: enter draining. The FIRST
+				// shutdown sets the flag and begins the background pool
+				// drain so accepted in-flight work finishes naturally — it
+				// does NOT cancel serverCtx. The SECOND shutdown's abort
+				// (serverCancel + backstop timer) is armed by the reader at
+				// arrival. The shutdown message itself yields no response, so
+				// close its ordered slot with a body-less done-frame.
 				s.shuttingDown.Store(true)
-			} else if s.shuttingDown.Load() {
+				startDrain()
+				ser.emit(seq, nil)
+				continue
+			}
+			if s.shuttingDown.Load() {
 				// Accepted after shutdown was observed: drop at the loop
 				// rather than submitting. The seq is already assigned, so
 				// its ordered slot must be closed or the serializer
@@ -340,7 +381,13 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 				continue
 			}
 			pool.submit(queuedRequest{seq: seq, req: &req})
+		case <-drainDone:
+			// The first-shutdown (or EOF) background pool drain finished:
+			// all accepted in-flight work completed. Exit cleanly. A nil
+			// drainDone (no drain started yet) makes this case never ready.
+			return teardown()
 		case <-drainCh:
+			// The second-shutdown backstop timer fired: complete teardown.
 			return teardown()
 		}
 	}
@@ -348,8 +395,8 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 
 // handle dispatches one request and returns the response body for its
 // ordered serializer slot (nil when the request produces no response —
-// a notification, a shutdown, or a request dropped during drain — in
-// which case the worker closes the slot with a body-less done-frame).
+// a notification or a request dropped during drain — in which case the
+// worker closes the slot with a body-less done-frame).
 //
 // The per-request sink carrying the request's serializer and arrival
 // sequence is installed on the context here; every write surface the
@@ -364,11 +411,11 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 	// dispatchLoop initialises serverCtx before spawning the reader
 	// goroutine and the worker pool (the test harness initialises it at
 	// Server construction), so this read is never concurrent with a
-	// write. When the reader cancels serverCtx on aggrega/shutdown
-	// arrival, this child cancels too, so an in-flight handler observes
-	// ctx.Err() at its next interruption point and returns within the
-	// drain budget. cancel runs when handle returns, releasing the child
-	// promptly.
+	// write. When the reader cancels serverCtx on the SECOND
+	// aggrega/shutdown (the abort), this child cancels too, so an
+	// in-flight handler observes ctx.Err() at its next interruption point
+	// and returns within the drain budget. cancel runs when handle
+	// returns, releasing the child promptly.
 	ctx, cancel := context.WithCancel(s.serverCtx)
 	defer cancel()
 	// Thread the daemon-lifetime shared compilation cache into the request's
@@ -410,16 +457,13 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 // the daemon's wire protocol: adding a new method means adding a
 // case here.
 //
-// Post-shutdown rejection happens at the dispatch-loop acceptance
-// boundary, not here: the main loop sets s.shuttingDown when it
-// accepts aggrega/shutdown and drops every message it accepts
-// afterward, so dispatch only ever sees pre-shutdown-accepted
-// messages — which process normally — plus the shutdown message
-// itself, routed to dispatchShutdown.
+// The aggrega/shutdown message never reaches dispatch: the main loop
+// intercepts it at the acceptance boundary to drive the drain-then-abort
+// sequence. Post-shutdown rejection happens there too — the main loop
+// sets s.shuttingDown when it accepts the first shutdown and drops every
+// message it accepts afterward — so dispatch only ever sees
+// pre-shutdown-accepted messages, which process normally.
 func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
-	if req.Method == "aggrega/shutdown" {
-		return s.dispatchShutdown(ctx, req)
-	}
 	switch req.Method {
 	case "aggrega/initialize":
 		return s.dispatchInitialize(ctx, req)
