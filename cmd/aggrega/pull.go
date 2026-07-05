@@ -622,6 +622,13 @@ func pullRun(cfg pullConfig) error {
 			// build's honoring auto-pull would silently drop a recorded deprecation
 			// and mask a deprecated dependency.
 			carryForwardDeprecation(lf, lockfilePath)
+			// Carry forward the prior lockfile's external-input pins. These are
+			// render-time remote-input pins recorded by build and acquire, not
+			// part of the catalog closure buildLockfile materialises, so a pull
+			// would otherwise rewrite the lockfile with an empty list and force
+			// the next build to re-acquire from the network. A --regenerate pull
+			// removes the prior lockfile up front, so this refreshes the pins.
+			carryForwardExternalInputs(lf, lockfilePath)
 			// Lock-time signature verification: verify each registry-resolved
 			// entity's signature against the registry's trust policy, record
 			// the verified fact, and cache the bundle for air-gapped re-verify.

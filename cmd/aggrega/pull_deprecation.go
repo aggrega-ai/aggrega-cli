@@ -146,6 +146,34 @@ func carryForwardDeprecation(lf *lockfile.Lockfile, lockfilePath string) {
 	}
 }
 
+// carryForwardExternalInputs copies the prior lockfile's recorded external-input
+// pins at lockfilePath into lf. External inputs are render-time remote-input pins
+// written by build (after render) and by acquire — they are not part of the
+// catalog closure, so buildLockfile produces none. Without this carry-forward a
+// pull would rewrite the lockfile with an empty external-inputs list, wiping the
+// pins a prior build or acquire recorded and forcing the next build to
+// re-acquire from the network. The list is copied wholesale (buildLockfile
+// leaves it empty) with each entry's RequiredBy slice deep-copied so lf never
+// aliases the prior lockfile's backing arrays. A missing or unreadable prior
+// lockfile is a no-op: the first pull has nothing to carry forward, and a
+// --regenerate pull (which removes the prior lockfile up front) naturally
+// carries nothing, refreshing the pins on the next build.
+func carryForwardExternalInputs(lf *lockfile.Lockfile, lockfilePath string) {
+	prior, _, err := lockfile.LoadLockfile(lockfilePath)
+	if err != nil || prior == nil {
+		return
+	}
+	if len(prior.ExternalInputs) == 0 {
+		return
+	}
+	carried := make([]lockfile.ExternalInput, len(prior.ExternalInputs))
+	for i, x := range prior.ExternalInputs {
+		x.RequiredBy = append([]string(nil), x.RequiredBy...)
+		carried[i] = x
+	}
+	lf.ExternalInputs = carried
+}
+
 // errNoDeprecationMarker signals that an artifact carries no deprecation
 // referrer — the common, non-error case. discoverClosureDeprecations skips a
 // row that returns it, distinguishing "not deprecated" from "deprecated by a

@@ -422,6 +422,95 @@ func TestPullRegenerateDiscardsExistingLockfile(t *testing.T) {
 	}
 }
 
+// seedExternalInput loads the lockfile at path, records one external-input pin,
+// and rewrites it — simulating a pin a prior build or acquire wrote. External
+// inputs are not part of the catalog closure, so a plain pull never produces
+// them; this is the only way to place one for the carry-forward tests.
+func seedExternalInput(t *testing.T, path string) lockfile.ExternalInput {
+	t.Helper()
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("load lockfile to seed external input: %v", err)
+	}
+	pin := lockfile.ExternalInput{
+		URL:        "https://example.com/schemas/base.json",
+		Sha256:     strings.Repeat("a", 64),
+		Size:       512,
+		RequiredBy: []string{"provider.kubernetes"},
+	}
+	lf.ExternalInputs = []lockfile.ExternalInput{pin}
+	if err := lockfile.WriteLockfile(path, lf); err != nil {
+		t.Fatalf("rewrite lockfile with seeded external input: %v", err)
+	}
+	return pin
+}
+
+// TestPullPreservesExternalInputsWarm proves a warm pull (no --regenerate)
+// carries forward the external-input pins a prior build or acquire recorded.
+// The pull path materialises the lockfile from the catalog closure alone, which
+// contains no external inputs; without the carry-forward it would rewrite the
+// lockfile with an empty external_inputs list, forcing the next build to
+// re-acquire from the network.
+func TestPullPreservesExternalInputsWarm(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+	lockfilePath := filepath.Join(root, "release.lock")
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	want := seedExternalInput(t, lockfilePath)
+
+	// Warm re-pull (no --regenerate): the honoring reconcile path.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("warm re-pull: %v", err)
+	}
+
+	lf, _, err := lockfile.LoadLockfile(lockfilePath)
+	if err != nil {
+		t.Fatalf("load lockfile after warm re-pull: %v", err)
+	}
+	if len(lf.ExternalInputs) != 1 {
+		t.Fatalf("warm re-pull dropped external_inputs: got %d, want 1: %+v", len(lf.ExternalInputs), lf.ExternalInputs)
+	}
+	got := lf.ExternalInputs[0]
+	if got.URL != want.URL || got.Sha256 != want.Sha256 || got.Size != want.Size {
+		t.Errorf("carried external input mismatch: got %+v, want %+v", got, want)
+	}
+	if len(got.RequiredBy) != 1 || got.RequiredBy[0] != want.RequiredBy[0] {
+		t.Errorf("carried external input required_by mismatch: got %v, want %v", got.RequiredBy, want.RequiredBy)
+	}
+}
+
+// TestPullRegenerateDropsExternalInputs proves --regenerate refreshes the pins:
+// it removes the prior lockfile up front, so the carry-forward finds nothing and
+// the rewritten lockfile carries an empty external_inputs list. This is the
+// intended "re-acquire from scratch" behavior.
+func TestPullRegenerateDropsExternalInputs(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+	lockfilePath := filepath.Join(root, "release.lock")
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	seedExternalInput(t, lockfilePath)
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}, Regenerate: true}); err != nil {
+		t.Fatalf("regenerate pull: %v", err)
+	}
+
+	lf, _, err := lockfile.LoadLockfile(lockfilePath)
+	if err != nil {
+		t.Fatalf("load lockfile after regenerate: %v", err)
+	}
+	if len(lf.ExternalInputs) != 0 {
+		t.Errorf("--regenerate did not drop external_inputs: got %d: %+v", len(lf.ExternalInputs), lf.ExternalInputs)
+	}
+}
+
 func stripGeneratedAt(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	for _, line := range bytes.Split(data, []byte("\n")) {
