@@ -30,13 +30,37 @@ var (
 	_ renderer.Engine              = (*HelmEngine)(nil)
 	_ renderer.WorkloadSynthesizer = (*HelmEngine)(nil)
 	_ renderer.SourceProjector     = (*HelmEngine)(nil)
+	_ renderer.HostCapable         = (*HelmEngine)(nil)
 )
 
-// Capabilities reports helm's input-kind support: sourced (chart source),
+// hostCapabilities reports helm's input-kind support: sourced (chart source),
 // synthesised (Workload via SynthesizeWorkload), and artifacts-only (flat
-// per-node manifest emission). The describe() analog for this engine.
-func (e *HelmEngine) Capabilities() renderer.ProviderCapabilities {
+// per-node manifest emission). The describe() analog for this engine, and the
+// single home the engine method and the standalone HostCaps holder both read.
+func hostCapabilities() renderer.ProviderCapabilities {
 	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+}
+
+// HostCaps returns helm's host-side capability holder, built from the provider
+// package's standalone functions rather than methods on HelmEngine — so the
+// host can resolve helm's host capabilities independently of the engine's
+// identity.
+func HostCaps() renderer.HostCapabilities {
+	return renderer.HostCapabilities{
+		Caps:          hostCapabilities(),
+		ProjectSource: ProjectChartSource,
+	}
+}
+
+// Capabilities reports helm's input-kind support. See hostCapabilities.
+func (e *HelmEngine) Capabilities() renderer.ProviderCapabilities {
+	return hostCapabilities()
+}
+
+// HostCapabilities satisfies renderer.HostCapable, exposing helm's host-side
+// capability holder.
+func (e *HelmEngine) HostCapabilities() renderer.HostCapabilities {
+	return HostCaps()
 }
 
 // Render produces a map of relative file paths → YAML bytes.

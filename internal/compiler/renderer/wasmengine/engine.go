@@ -39,6 +39,12 @@ type Engine struct {
 	// the seam that keeps the adapter free of any provider package import.
 	goEngine renderer.Engine
 	caps      renderer.ProviderCapabilities
+	// hostCaps is the host-side capability holder captured at construction from
+	// the wrapped Go engine. The wrapper exposes it directly (HostCapabilities),
+	// so host-side capability checks resolve a provider's codec, source and
+	// sub-chart projection, external-artifacts placement, and env-override
+	// channel from this holder rather than by unwrapping to the concrete engine.
+	hostCaps renderer.HostCapabilities
 	// loader is the shared per-build loader every Render / SynthesizeWorkload
 	// call loads through. It carries the build's external-input service and,
 	// when constructed via wasm.NewCachingLoader, a shared compilation cache so
@@ -51,6 +57,7 @@ var (
 	_ renderer.Engine              = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer = (*Engine)(nil)
 	_ renderer.Unwrapper           = (*Engine)(nil)
+	_ renderer.HostCapable         = (*Engine)(nil)
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
@@ -63,12 +70,22 @@ var (
 // injection-site bug — every call would nil-panic — rather than a supported
 // zero value.
 func New(lookup pluginpath.Lookup, pluginURI string, goEngine renderer.Engine, loader *wasm.Loader) *Engine {
-	return &Engine{lookup: lookup, pluginURI: pluginURI, goEngine: goEngine, caps: goEngine.Capabilities(), loader: loader}
+	return &Engine{lookup: lookup, pluginURI: pluginURI, goEngine: goEngine, caps: goEngine.Capabilities(), hostCaps: renderer.ResolveHostCaps(goEngine), loader: loader}
 }
 
 // Capabilities reports the input-kind capabilities configured at construction.
 func (e *Engine) Capabilities() renderer.ProviderCapabilities {
 	return e.caps
+}
+
+// HostCapabilities satisfies renderer.HostCapable, exposing the host-side
+// capability holder captured from the wrapped Go engine at construction. The
+// wrapper drives the guest for render and synthesis; the host reads the wrapped
+// provider's host-side capabilities from this holder — so a provider routed to a
+// Wasm guest exposes the same host-side capabilities as the in-tree engine it
+// stands in for. AssemblerEngine embeds *Engine and inherits this method.
+func (e *Engine) HostCapabilities() renderer.HostCapabilities {
+	return e.hostCaps
 }
 
 // Unwrap exposes the wrapped in-tree engine so host-side capability checks the
@@ -96,14 +113,13 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 			nodeCtx.NodeID, nodeCtx.Source)
 	}
 
-	projector, ok := e.goEngine.(renderer.SourceProjector)
-	if !ok {
+	if e.hostCaps.ProjectSource == nil {
 		return nil, fmt.Errorf(
-			"wasmengine: node %q: internal error — provider engine %T was routed to a Wasm guest for sourced render but does not implement renderer.SourceProjector",
+			"wasmengine: node %q: internal error — provider engine %T was routed to a Wasm guest for sourced render but reports no source projection",
 			nodeCtx.NodeID, e.goEngine)
 	}
 
-	proj, err := projector.ProjectSource(src)
+	proj, err := e.hostCaps.ProjectSource(src)
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,60 @@ var (
 	_ renderer.CodecProvider            = (*HelmEngine)(nil)
 	_ renderer.SourceProjector          = (*HelmEngine)(nil)
 	_ renderer.SubChartProjector        = (*HelmEngine)(nil)
+	_ renderer.HostCapable              = (*HelmEngine)(nil)
 )
+
+// hostCapabilities reports helm-chart's input-kind support: sourced only. It
+// produces an umbrella chart from a chart source; it does not synthesise from a
+// Workload (no WorkloadSynthesizer) and does not render artifacts-only (it
+// injects artifacts into the umbrella chart, which an artifacts-only node
+// lacks). The describe() analog for this engine, and the single home the engine
+// method and the standalone HostCaps holder both read.
+func hostCapabilities() renderer.ProviderCapabilities {
+	return renderer.ProviderCapabilities{Sourced: true}
+}
+
+// hostPathForArtifact is the single home for helm-chart's per-node-relative
+// $import:-loaded artifact placement. Each artifact file lands at
+// templates/<basename> within the per-node output; the orchestrator's
+// per-boundary nesting layers boundaries/<bp>/charts/<nodeID>/ on top, so the
+// emitted file is positioned alongside the sourced chart's templates and
+// participates in Helm's downstream render pass.
+func hostPathForArtifact(_ renderer.NodeRenderContext, basename string) string {
+	return "templates/" + basename
+}
+
+// hostArtifactDelimiters is the single home for helm-chart's $import:-loaded
+// artifact delimiter pair. Files use "[[", "]]" for Aggrega's pre-templating
+// pass so Helm's "{{ ... }}" template syntax inside the file survives untouched
+// into Helm's downstream render. Authors writing $import:-loaded artifact files
+// for helm-chart use [[ .pillar ]] for Aggrega context and {{ .Values.x }} for
+// Helm context.
+func hostArtifactDelimiters() (string, string) {
+	return "[[", "]]"
+}
+
+// HostCaps returns helm-chart's host-side capability holder, built from the
+// provider package's standalone functions rather than methods on HelmEngine —
+// so the host can resolve helm-chart's host capabilities independently of the
+// engine's identity.
+func HostCaps() renderer.HostCapabilities {
+	return renderer.HostCapabilities{
+		Caps:               hostCapabilities(),
+		Codec:              NewHelmChartCodec,
+		ProjectSource:      ProjectSourcedChart,
+		ProjectSubCharts:   projectSubCharts,
+		ExternalArtifacts:  true,
+		PathForArtifact:    hostPathForArtifact,
+		ArtifactDelimiters: hostArtifactDelimiters,
+	}
+}
+
+// HostCapabilities satisfies renderer.HostCapable, exposing helm-chart's
+// host-side capability holder.
+func (e *HelmEngine) HostCapabilities() renderer.HostCapabilities {
+	return HostCaps()
+}
 
 // Codec satisfies renderer.CodecProvider: the helm-chart provider overrides the
 // stock YAML codec with a structure-with-holes codec for its emitted chart
@@ -45,13 +98,9 @@ func (e *HelmEngine) Codec(yamlIndent int) frp.Codec {
 	return NewHelmChartCodec(yamlIndent)
 }
 
-// Capabilities reports helm-chart's input-kind support: sourced only. It
-// produces an umbrella chart from a chart source; it does not synthesise from a
-// Workload (no WorkloadSynthesizer) and does not render artifacts-only (as an
-// ExternalArtifactsHandler it injects artifacts into the umbrella chart, which
-// an artifacts-only node lacks). The describe() analog for this engine.
+// Capabilities reports helm-chart's input-kind support. See hostCapabilities.
 func (e *HelmEngine) Capabilities() renderer.ProviderCapabilities {
-	return renderer.ProviderCapabilities{Sourced: true}
+	return hostCapabilities()
 }
 
 // HandlesArtifactsExternally satisfies renderer.ExternalArtifactsHandler.
@@ -63,24 +112,16 @@ func (e *HelmEngine) Capabilities() renderer.ProviderCapabilities {
 // as physical files.
 func (e *HelmEngine) HandlesArtifactsExternally() {}
 
-// PathForArtifact satisfies renderer.ArtifactsPathProvider. Each
-// $import:-loaded artifact file lands at templates/<basename> within the
-// per-node output; the orchestrator's per-boundary nesting layers
-// boundaries/<bp>/charts/<nodeID>/ on top, so the emitted file is
-// positioned alongside the sourced chart's templates and participates in
-// Helm's downstream render pass.
-func (e *HelmEngine) PathForArtifact(_ renderer.NodeRenderContext, basename string) string {
-	return "templates/" + basename
+// PathForArtifact satisfies renderer.ArtifactsPathProvider. See
+// hostPathForArtifact.
+func (e *HelmEngine) PathForArtifact(nodeCtx renderer.NodeRenderContext, basename string) string {
+	return hostPathForArtifact(nodeCtx, basename)
 }
 
-// ArtifactDelimiters satisfies renderer.ArtifactsTemplateDelims. helm-chart
-// $import:-loaded artifact files use "[[", "]]" for Aggrega's pre-templating
-// pass so Helm's "{{ ... }}" template syntax inside the file survives
-// untouched into Helm's downstream render. Authors writing $import:-loaded
-// artifact files for helm-chart use [[ .pillar ]] for Aggrega context and
-// {{ .Values.x }} for Helm context.
+// ArtifactDelimiters satisfies renderer.ArtifactsTemplateDelims. See
+// hostArtifactDelimiters.
 func (e *HelmEngine) ArtifactDelimiters() (string, string) {
-	return "[[", "]]"
+	return hostArtifactDelimiters()
 }
 
 // Render produces the sub-chart contents for one node.

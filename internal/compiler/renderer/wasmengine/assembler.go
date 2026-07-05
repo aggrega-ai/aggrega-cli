@@ -100,14 +100,15 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 		Edges:         edges,
 	}
 
-	// Populate the umbrella scalars only when the wrapped engine projects
-	// sub-charts (an umbrella assembler). Asking the raw wrapped Go engine "do you
-	// project sub-charts?" — not "are you helm-chart?" — keeps the adapter
-	// provider-agnostic and keeps a flat-assembling provider's wire free of these
-	// carriers. The host performs the pristine Chart.yaml read here so the guest
-	// assembles from pure data alone; the adapter never touches the filesystem.
-	if scp, ok := e.goEngine.(renderer.SubChartProjector); ok {
-		projs, err := scp.ProjectSubCharts(info.SubCharts)
+	// Populate the umbrella scalars only when the wrapped provider projects
+	// sub-charts (an umbrella assembler). Asking the wrapped provider's host
+	// capabilities "do you project sub-charts?" — not "are you helm-chart?" —
+	// keeps the adapter provider-agnostic and keeps a flat-assembling provider's
+	// wire free of these carriers. The host performs the pristine Chart.yaml read
+	// here so the guest assembles from pure data alone; the adapter never touches
+	// the filesystem.
+	if e.hostCaps.ProjectSubCharts != nil {
+		projs, err := e.hostCaps.ProjectSubCharts(info.SubCharts)
 		if err != nil {
 			return nil, false, err
 		}

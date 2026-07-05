@@ -128,7 +128,8 @@ func evaluateArtifacts(
 		return nil, nil
 	}
 
-	if _, external := hostEngine(engine).(ExternalArtifactsHandler); external {
+	hostCaps := ResolveHostCaps(engine)
+	if hostCaps.ExternalArtifacts {
 		// External-handler engines (helm-chart and similar): each
 		// artifact entry must be a file-import (mode 2). Inline
 		// content is forbidden because the engine consumes pre-
@@ -136,12 +137,12 @@ func evaluateArtifacts(
 		// inline-template-string pattern doesn't survive the chart's
 		// own template engine.
 		leftDelim, rightDelim := "{{", "}}"
-		if d, ok := hostEngine(engine).(ArtifactsTemplateDelims); ok {
-			leftDelim, rightDelim = d.ArtifactDelimiters()
+		if hostCaps.ArtifactDelimiters != nil {
+			leftDelim, rightDelim = hostCaps.ArtifactDelimiters()
 		}
 		pathFn := func(_ NodeRenderContext, basename string) string { return basename }
-		if p, ok := hostEngine(engine).(ArtifactsPathProvider); ok {
-			pathFn = p.PathForArtifact
+		if hostCaps.PathForArtifact != nil {
+			pathFn = hostCaps.PathForArtifact
 		}
 		var out []EmittedFile
 		for _, name := range state.Recipe.Spec.Artifacts.Keys() {

@@ -35,15 +35,40 @@ var (
 	_ renderer.WorkloadSynthesizer = (*ComposeEngine)(nil)
 	_ renderer.BoundaryAssembler   = (*ComposeEngine)(nil)
 	_ renderer.SourceProjector     = (*ComposeEngine)(nil)
+	_ renderer.HostCapable         = (*ComposeEngine)(nil)
 )
 
-// Capabilities reports compose's input-kind support: sourced (a compose file)
-// and synthesised (Workload → service fragment via SynthesizeWorkload). compose
-// does NOT render artifacts-only: as a BoundaryAssembler it merges per-node
-// output into docker-compose.yaml services, and an artifacts-only node has none
-// to contribute. The describe() analog for this engine.
-func (e *ComposeEngine) Capabilities() renderer.ProviderCapabilities {
+// hostCapabilities reports compose's input-kind support: sourced (a compose
+// file) and synthesised (Workload → service fragment via SynthesizeWorkload).
+// compose does NOT render artifacts-only: as a BoundaryAssembler it merges
+// per-node output into docker-compose.yaml services, and an artifacts-only node
+// has none to contribute. The describe() analog for this engine, and the single
+// home the engine method and the standalone HostCaps holder both read.
+func hostCapabilities() renderer.ProviderCapabilities {
 	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true}
+}
+
+// HostCaps returns compose's host-side capability holder, built from the
+// provider package's standalone functions rather than methods on ComposeEngine
+// — so the host can resolve compose's host capabilities independently of the
+// engine's identity.
+func HostCaps() renderer.HostCapabilities {
+	return renderer.HostCapabilities{
+		Caps:                         hostCapabilities(),
+		ProjectSource:                ProjectComposeSource,
+		BoundaryConsumerEnvOverrides: computeBridgeConsumerEnvOverrides,
+	}
+}
+
+// Capabilities reports compose's input-kind support. See hostCapabilities.
+func (e *ComposeEngine) Capabilities() renderer.ProviderCapabilities {
+	return hostCapabilities()
+}
+
+// HostCapabilities satisfies renderer.HostCapable, exposing compose's host-side
+// capability holder.
+func (e *ComposeEngine) HostCapabilities() renderer.HostCapabilities {
+	return HostCaps()
 }
 
 // Render produces a map of relative file paths → YAML bytes for the compose

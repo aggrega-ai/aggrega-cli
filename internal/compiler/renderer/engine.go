@@ -123,7 +123,7 @@ type BoundaryAssembler interface {
 // identically to the in-tree engine it stands in for.
 func RenderIsIntermediate(engine Engine) bool {
 	_, isAssembler := hostEngine(engine).(BoundaryAssembler)
-	_, isExternal := hostEngine(engine).(ExternalArtifactsHandler)
+	isExternal := ResolveHostCaps(engine).ExternalArtifacts
 	return isAssembler && !isExternal
 }
 

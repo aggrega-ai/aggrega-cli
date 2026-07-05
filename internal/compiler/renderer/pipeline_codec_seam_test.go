@@ -45,6 +45,9 @@ func (e codecProviderEngine) Capabilities() ProviderCapabilities { return Provid
 func (e codecProviderEngine) Codec(yamlIndent int) frp.Codec {
 	return markerCodec{inner: newStockYAMLCodec(yamlIndent), segments: e.segments}
 }
+func (e codecProviderEngine) HostCapabilities() HostCapabilities {
+	return HostCapabilities{Codec: e.Codec}
+}
 
 // plainEngine is an Engine that does NOT implement CodecProvider — it must fall
 // back to the stock codec.

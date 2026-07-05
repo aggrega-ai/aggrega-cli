@@ -56,6 +56,13 @@ func (stubExternalArtifactsEngine) PathForArtifact(_ NodeRenderContext, basename
 	return "templates/" + basename
 }
 func (stubExternalArtifactsEngine) ArtifactDelimiters() (string, string) { return "[[", "]]" }
+func (e stubExternalArtifactsEngine) HostCapabilities() HostCapabilities {
+	return HostCapabilities{
+		ExternalArtifacts:  true,
+		PathForArtifact:    e.PathForArtifact,
+		ArtifactDelimiters: e.ArtifactDelimiters,
+	}
+}
 
 func newArtifactsCtx() (*types.TemplateContext, *PhaseBState, NodeRenderContext) {
 	tmplCtx := &types.TemplateContext{

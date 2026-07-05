@@ -31,19 +31,29 @@ func (e envOverrideStubEngine) BoundaryConsumerEnvOverrides(*types.TemplateConte
 	return e.overrides, nil
 }
 
+func (e envOverrideStubEngine) HostCapabilities() HostCapabilities {
+	return HostCapabilities{BoundaryConsumerEnvOverrides: e.BoundaryConsumerEnvOverrides}
+}
+
 // envOverrideUnwrapStub mimics the Wasm-provider adapter: it drives render and
 // synthesis itself (via the embedded stubEngine, which does NOT implement the
-// host-side BoundaryConsumerEnvOverrider channel) and exposes the wrapped
-// in-tree engine only through Unwrap. It stands in for the case where a provider
-// whose in-tree engine drives the env-override channel is routed to a Wasm guest
-// — the dispatched engine is the narrower wrapper, so the channel resolves only
-// through the unwrap seam.
+// host-side BoundaryConsumerEnvOverrider channel directly) and exposes the
+// wrapped in-tree engine's host capabilities by forwarding them through
+// HostCapabilities — exactly as the real adapter captures its wrapped engine's
+// holder. It stands in for the case where a provider whose in-tree engine drives
+// the env-override channel is routed to a Wasm guest: the dispatched engine is
+// the narrower wrapper, so the channel resolves from the wrapper's forwarded
+// holder rather than from a direct capability assertion.
 type envOverrideUnwrapStub struct {
 	stubEngine
 	wrapped Engine
 }
 
 func (e envOverrideUnwrapStub) Unwrap() Engine { return e.wrapped }
+
+func (e envOverrideUnwrapStub) HostCapabilities() HostCapabilities {
+	return ResolveHostCaps(e.wrapped)
+}
 
 // TestApplyConsumerEnvOverrides_NonDisturbance exercises the apply-site contract:
 // the override is a targeted last-wins set on exactly its keys, leaving every
@@ -146,14 +156,15 @@ func TestBoundaryConsumerEnvChannel_PopulatesViaEngineHook(t *testing.T) {
 	}
 }
 
-// TestBoundaryConsumerEnvChannel_RoutesThroughUnwrapSeam proves the channel
-// resolves through the unwrap seam: when the provider engine is a Wasm-provider
-// wrapper that does not implement BoundaryConsumerEnvOverrider itself but wraps
-// an in-tree engine that does, the override map is still stored. A raw type
+// TestBoundaryConsumerEnvChannel_RoutesThroughForwardedHolder proves the channel
+// resolves from the wrapper's forwarded host-capability holder: when the
+// provider engine is a Wasm-provider wrapper that does not implement
+// BoundaryConsumerEnvOverrider itself but forwards the host capabilities of an
+// in-tree engine that does, the override map is still stored. A raw type
 // assertion on the wrapper would miss the channel and silently drop the
 // overrides — this test fails against that regression and passes only when the
-// dispatch unwraps first.
-func TestBoundaryConsumerEnvChannel_RoutesThroughUnwrapSeam(t *testing.T) {
+// dispatch resolves through the forwarded holder.
+func TestBoundaryConsumerEnvChannel_RoutesThroughForwardedHolder(t *testing.T) {
 	t.Parallel()
 	fr := boundaryScopeProvidesFR()
 	lookup := dbProvidesLookup(fr)
