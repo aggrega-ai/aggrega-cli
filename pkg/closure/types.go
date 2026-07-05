@@ -61,12 +61,13 @@ type Closure struct {
 // artifact dedupe to one SourceArtifact with multiple ReferencedBy
 // records.
 type SourceArtifact struct {
-	Kind          string
-	URL           string
-	PinnedVersion string
-	Digest        string
-	Mediatype     string
-	ReferencedBy  []SourceArtifactReference
+	Kind           string
+	URL            string
+	PinnedVersion  string
+	Digest         string
+	ManifestDigest string
+	Mediatype      string
+	ReferencedBy   []SourceArtifactReference
 }
 
 // SourceArtifactReference is the closure-side back-pointer mirror
@@ -163,6 +164,7 @@ type ResolvedSource struct {
 	URL            string
 	PinnedVersion  string
 	Digest         string
+	ManifestDigest string
 	Mediatype      string
 	CachePath      string
 	OriginalSource any

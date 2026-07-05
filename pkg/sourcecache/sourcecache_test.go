@@ -354,6 +354,65 @@ func TestLookupAndExtractFaithfulOCISlotPasses(t *testing.T) {
 	}
 }
 
+// TestLookupAndExtractForgedManifestCaughtByLockfilePin is the independent-root
+// proof for OCI source charts. It defeats the content-vs-manifest check that the
+// existing manifest-authority test relies on: here the attacker forges the archive,
+// every recorded CONTENT pin (this slot's metadata.yaml and the lockfile digest),
+// AND the persisted manifest itself so the manifest commits to the forged archive
+// — VerifyContentAgainstManifest would pass. The only surviving root of trust is
+// the lockfile's manifest_digest, which pins the ORIGINAL manifest. The read must
+// halt on VerifyManifestDigest (ErrCachedManifestIntegrity), proving the chart now
+// has a manifest-digest root independent of the content chain.
+func TestLookupAndExtractForgedManifestCaughtByLockfilePin(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	original := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 1.0.0\n"})
+	forged := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 6.6.6-evil\n"})
+	forgedDigest := digestOf(forged)
+
+	// The lockfile pin commits to the ORIGINAL manifest — the value a genuine pull
+	// recorded. The attacker cannot re-derive it from the forged content.
+	originalManifestDigest := digestOf(ociChartManifest(t, original))
+
+	// Seed the slot at the forged content coordinate with the forged archive and a
+	// forged metadata pin, then plant a FORGED manifest that commits to the forged
+	// archive — every content-level check now agrees with the forgery.
+	slot := seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", forged, forgedDigest)
+	if err := os.WriteFile(filepath.Join(slot, cacheslot.ManifestFile), ociChartManifest(t, forged), 0o644); err != nil {
+		t.Fatalf("plant forged manifest: %v", err)
+	}
+
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", forgedDigest)
+	lf.SourceArtifacts[0].ManifestDigest = originalManifestDigest
+
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
+	if !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+		t.Errorf("forged archive + forged content pins + forged manifest: err = %v; want ErrCachedManifestIntegrity from the lockfile manifest-digest pin", err)
+	}
+}
+
+// TestLookupAndExtractFaithfulManifestPinPasses is the faithful-pass companion:
+// a complete OCI slot whose persisted manifest matches the lockfile's
+// manifest_digest pin and whose content matches every pin extracts cleanly. This
+// proves the new manifest-digest gate does not reject a genuine slot.
+func TestLookupAndExtractFaithfulManifestPinPasses(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 1.0.0\n"})
+	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digestOf(blob))
+
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
+	lf.SourceArtifacts[0].ManifestDigest = digestOf(ociChartManifest(t, blob))
+
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("faithful OCI slot with matching manifest pin: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extracted, "mariadb", "Chart.yaml")); err != nil {
+		t.Errorf("Chart.yaml missing after faithful extract: %v", err)
+	}
+}
+
 func TestExtractTarGzDeterministicAcrossRuns(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

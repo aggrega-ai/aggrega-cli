@@ -4,6 +4,7 @@
 package lockfile_test
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -601,6 +602,86 @@ func TestWriteSourceArtifactsCanonicalOrdering(t *testing.T) {
 	}
 	if !(helm25Idx < helm26Idx) {
 		t.Errorf("within same Kind+URL, PinnedVersion should sort lexicographically: 25.0.0@%d 26.0.0@%d", helm25Idx, helm26Idx)
+	}
+}
+
+// TestWriteSourceArtifactManifestDigestPresenceAndDeterminism proves the
+// resolver-written manifest_digest pin lands on an OCI source-artifact row, stays
+// absent on a non-OCI row (omitempty), survives a write→read→schema-validate
+// round-trip, and does not perturb byte-output determinism.
+func TestWriteSourceArtifactManifestDigestPresenceAndDeterminism(t *testing.T) {
+	t.Parallel()
+	lf := &lockfile.Lockfile{
+		Version:     1,
+		Release:     "./r.yaml",
+		GeneratedAt: "2026-05-22T10:23:14Z",
+		SourceArtifacts: []lockfile.SourceArtifact{
+			{
+				Kind:           "helm-oci-chart",
+				URL:            "oci://hub.aggrega.ai/charts/mariadb",
+				PinnedVersion:  "25.0.8",
+				Digest:         "sha256:aaaa",
+				ManifestDigest: "sha256:bbbb",
+				Mediatype:      "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+				ReferencedBy:   []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u-oci", Field: "spec.source"}},
+			},
+			{
+				Kind:          "helm-https-chart",
+				URL:           "https://charts.example.com/mariadb-25.0.8.tgz",
+				PinnedVersion: "25.0.8",
+				Digest:        "sha256:cccc",
+				Mediatype:     "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+				ReferencedBy:  []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u-https", Field: "spec.source"}},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	path1 := filepath.Join(dir, "a.lock")
+	path2 := filepath.Join(dir, "b.lock")
+	if err := lockfile.WriteLockfile(path1, lf); err != nil {
+		t.Fatalf("first WriteLockfile: %v", err)
+	}
+	if err := lockfile.WriteLockfile(path2, lf); err != nil {
+		t.Fatalf("second WriteLockfile: %v", err)
+	}
+	b1, _ := os.ReadFile(path1)
+	b2, _ := os.ReadFile(path2)
+	if !bytes.Equal(b1, b2) {
+		t.Errorf("two WriteLockfile runs produced different bytes:\n--- first ---\n%s\n--- second ---\n%s", b1, b2)
+	}
+
+	// The OCI row carries manifest_digest; the non-OCI row omits it entirely.
+	if n := strings.Count(string(b1), "manifest_digest:"); n != 1 {
+		t.Errorf("manifest_digest occurrences = %d; want exactly 1 (OCI row only)\n%s", n, b1)
+	}
+	if !strings.Contains(string(b1), "manifest_digest: sha256:bbbb") {
+		t.Errorf("OCI row missing its manifest_digest pin:\n%s", b1)
+	}
+
+	// Round-trip through the schema-validating loader: proves the schema accepts
+	// the new optional property and the field survives read-back.
+	got, _, err := lockfile.LoadLockfile(path1)
+	if err != nil {
+		t.Fatalf("LoadLockfile (schema validation must accept manifest_digest): %v", err)
+	}
+	var oci, https *lockfile.SourceArtifact
+	for i := range got.SourceArtifacts {
+		switch got.SourceArtifacts[i].Kind {
+		case "helm-oci-chart":
+			oci = &got.SourceArtifacts[i]
+		case "helm-https-chart":
+			https = &got.SourceArtifacts[i]
+		}
+	}
+	if oci == nil || https == nil {
+		t.Fatalf("round-trip lost a source artifact: %+v", got.SourceArtifacts)
+	}
+	if oci.ManifestDigest != "sha256:bbbb" {
+		t.Errorf("OCI ManifestDigest round-trip = %q; want sha256:bbbb", oci.ManifestDigest)
+	}
+	if https.ManifestDigest != "" {
+		t.Errorf("non-OCI ManifestDigest = %q; want empty", https.ManifestDigest)
 	}
 }
 

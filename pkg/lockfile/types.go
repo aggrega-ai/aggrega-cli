@@ -200,12 +200,18 @@ type LibraryConsumer struct {
 //   - terraform-module-oci: reserved for the future terraform
 //     provider; no adapter ships in the current implementation.
 type SourceArtifact struct {
-	Kind          string                    `yaml:"kind"`
-	URL           string                    `yaml:"url"`
-	PinnedVersion string                    `yaml:"pinned_version"`
-	Digest        string                    `yaml:"digest"`
-	Mediatype     string                    `yaml:"mediatype"`
-	ReferencedBy  []SourceArtifactReference `yaml:"referenced_by"`
+	Kind          string `yaml:"kind"`
+	URL           string `yaml:"url"`
+	PinnedVersion string `yaml:"pinned_version"`
+	Digest        string `yaml:"digest"`
+	// ManifestDigest is the OCI manifest digest the cached archive is verified
+	// against — the independent root of trust. It differs from Digest, the
+	// portable content digest used for the cache pin and integrity check. Present
+	// only for an OCI-distributed source (a helm-oci-chart); empty (and omitted)
+	// for an https or git source, which carries no manifest by construction.
+	ManifestDigest string                    `yaml:"manifest_digest,omitempty"`
+	Mediatype      string                    `yaml:"mediatype"`
+	ReferencedBy   []SourceArtifactReference `yaml:"referenced_by"`
 }
 
 // SourceArtifactReference is a single back-pointer from a catalog

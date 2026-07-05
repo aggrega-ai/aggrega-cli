@@ -42,6 +42,7 @@ func (sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedSou
 		URL:            rs.URL,
 		PinnedVersion:  rs.PinnedVersion,
 		Digest:         rs.Digest,
+		ManifestDigest: rs.ManifestDigest,
 		Mediatype:      rs.Mediatype,
 		CachePath:      rs.CachePath,
 		OriginalSource: rs.OriginalSource,

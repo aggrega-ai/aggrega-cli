@@ -155,11 +155,12 @@ func DescendRecipeSources(
 			sa, exists := dedupe[key]
 			if !exists {
 				sa = &SourceArtifact{
-					Kind:          resolved.Kind,
-					URL:           resolved.URL,
-					PinnedVersion: resolved.PinnedVersion,
-					Digest:        resolved.Digest,
-					Mediatype:     resolved.Mediatype,
+					Kind:           resolved.Kind,
+					URL:            resolved.URL,
+					PinnedVersion:  resolved.PinnedVersion,
+					Digest:         resolved.Digest,
+					ManifestDigest: resolved.ManifestDigest,
+					Mediatype:      resolved.Mediatype,
 				}
 				dedupe[key] = sa
 				order = append(order, key)

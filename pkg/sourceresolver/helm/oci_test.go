@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
@@ -66,6 +67,49 @@ func TestOCIResolveHappyPath(t *testing.T) {
 	}
 	if verr := ocierr.VerifyContentAgainstManifest(manifestBytes, blob); verr != nil {
 		t.Errorf("persisted manifest does not authority the cached archive: %v", verr)
+	}
+}
+
+// TestOCIResolveSetsManifestDigest proves the OCI adapter records the manifest
+// digest — the independent root of trust — on the ResolvedSource, and that it
+// equals the digest of the manifest bytes persisted beside the archive. That
+// equality (manifest_digest == ContentDigest(persisted manifest)) is the
+// invariant the build-time VerifyManifestDigest relies on: the lockfile pin the
+// cached manifest is later re-hashed against.
+func TestOCIResolveSetsManifestDigest(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	store, _, manifestDigest := buildChartStore(t, "mariadb", "25.0.8")
+	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return store, nil }}
+
+	got, err := a.Resolve(sourceresolver.SourceSpec{
+		Kind:          KindOCI,
+		URL:           "oci://hub.aggrega.ai/charts/mariadb",
+		Version:       "25.0.8",
+		WorkspaceRoot: root,
+		CacheDir:      ".aggrega/cache",
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.ManifestDigest == "" {
+		t.Fatal("ManifestDigest is empty; OCI resolve must record the manifest digest")
+	}
+	if got.ManifestDigest != manifestDigest {
+		t.Errorf("ManifestDigest = %q; want the push manifest digest %q", got.ManifestDigest, manifestDigest)
+	}
+	if got.ManifestDigest == got.Digest {
+		t.Errorf("ManifestDigest must be independent of the content Digest; both = %q", got.Digest)
+	}
+	// The pin must equal the digest of the manifest bytes persisted in the slot —
+	// the exact value the build-time VerifyManifestDigest recomputes and compares.
+	manifestBytes, err := os.ReadFile(filepath.Join(filepath.Dir(got.CachePath), cacheslot.ManifestFile))
+	if err != nil {
+		t.Fatalf("read persisted manifest: %v", err)
+	}
+	if rehashed := digest.ContentDigest(manifestBytes); rehashed != got.ManifestDigest {
+		t.Errorf("ContentDigest(persisted manifest) = %q; want the recorded ManifestDigest %q", rehashed, got.ManifestDigest)
 	}
 }
 

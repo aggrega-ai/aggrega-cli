@@ -114,15 +114,26 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, 
 	// its OCI manifest beside the archive; it is the root the archive is verified
 	// against — the manifest is an independent record of the expected content, so
 	// a forged archive is caught even when every recorded content pin (this slot's
-	// metadata.yaml and the lockfile entry) has been forged to match it. Because
-	// an OCI source always persists its manifest, a manifest-less slot for an OCI
-	// kind is an incomplete cache entry and reads as a miss so the caller re-pulls,
-	// mirroring the entity and plugin reads. A non-OCI source (an HTTPS chart, a
-	// git module) has no manifest by construction and keeps the git-tracked
-	// lockfile content pin verified above as its root of trust.
+	// metadata.yaml and the lockfile entry) has been forged to match it. When the
+	// lockfile entry records a manifest_digest, the manifest itself is first
+	// anchored to that independent pin (a fully-forged manifest is caught before it
+	// becomes the authority a content check would trust), then the content is
+	// verified against the manifest's layer digest — the same order the catalog
+	// entity and plugin reads use. An empty pin (a pre-existing lockfile written
+	// before source manifest pinning) keeps the content-vs-manifest check only.
+	// Because an OCI source always persists its manifest, a manifest-less slot for
+	// an OCI kind is an incomplete cache entry and reads as a miss so the caller
+	// re-pulls, mirroring the entity and plugin reads. A non-OCI source (an HTTPS
+	// chart, a git module) has no manifest by construction and keeps the
+	// git-tracked lockfile content pin verified above as its root of trust.
 	manifestBytes, mrerr := os.ReadFile(filepath.Join(slot, cacheslot.ManifestFile))
 	switch {
 	case mrerr == nil:
+		if entry.ManifestDigest != "" {
+			if verr := oci.VerifyManifestDigest(manifestBytes, entry.ManifestDigest); verr != nil {
+				return "", fmt.Errorf("sourcecache: cached manifest for %s: %w", blobPath, verr)
+			}
+		}
 		if verr := oci.VerifyContentAgainstManifest(manifestBytes, blobBytes); verr != nil {
 			return "", fmt.Errorf("sourcecache: %s: %w", blobPath, verr)
 		}

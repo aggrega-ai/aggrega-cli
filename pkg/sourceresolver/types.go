@@ -95,10 +95,15 @@ type SourceSpec struct {
 // lockfile writer copies the field verbatim into the lockfile's
 // `source_artifacts[].mediatype` slot.
 type ResolvedSource struct {
-	Kind           string `yaml:"kind"`
-	URL            string `yaml:"url"`
-	PinnedVersion  string `yaml:"pinned_version"`
-	Digest         string `yaml:"digest"`
+	Kind          string `yaml:"kind"`
+	URL           string `yaml:"url"`
+	PinnedVersion string `yaml:"pinned_version"`
+	Digest        string `yaml:"digest"`
+	// ManifestDigest is the OCI manifest digest the cached archive is verified
+	// against — the independent root of trust. It differs from Digest, the
+	// portable content digest. Only an OCI-distributed source (helm-oci-chart)
+	// populates it; https and git resolvers leave it empty.
+	ManifestDigest string `yaml:"manifest_digest,omitempty"`
 	Mediatype      string `yaml:"mediatype"`
 	CachePath      string `yaml:"cache_path,omitempty"`
 	ExtractedPath  string `yaml:"extracted_path,omitempty"`
