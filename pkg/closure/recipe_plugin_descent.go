@@ -6,7 +6,37 @@ package closure
 import (
 	"fmt"
 	"sort"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// ProviderPluginResolver resolves a Recipe / FeatureRecipe spec.provider binding
+// — a bare engine name or a version-pinned form ("helm", "helm:1.0.0",
+// "helm:^1.0.0") — to the provider-rendering Plugin entity serving it, plus a
+// found flag and an error. It backs the lock-time provider pin: the descent
+// reads the resolved Plugin's identity to pin the provider-rendering Plugin
+// entity and its .wasm artifact into the closure, so a build resolves the same
+// provider-plugin version the pin recorded.
+//
+// A bare binding no provider-rendering plugin serves returns (_, false, nil), so
+// the descent leaves the provider to build-time engine resolution rather than
+// halting. A version-pinned binding no serving plugin version satisfies returns
+// a non-nil error, so the descent halts the pull loudly on a pin the catalog
+// cannot honor. A nil resolver disables provider-plugin descent.
+type ProviderPluginResolver func(providerRef string) (types.Plugin, bool, error)
+
+// providerPluginEntityURI builds the catalog URI identifying a resolved
+// provider-rendering Plugin entity — its metadata name pinned to the resolved
+// version. The lock-time provider pin keys on this URI so a build resolves the
+// same provider-plugin version the pin recorded. A version-less resolution
+// (empty metadata.version) yields the bare name, which resolves through the
+// three-form unversioned rule.
+func providerPluginEntityURI(p types.Plugin) string {
+	if p.Metadata.Version == "" {
+		return p.Metadata.Name
+	}
+	return p.Metadata.Name + ":" + p.Metadata.Version
+}
 
 // pluginKindHint marks a closure entry emitted for a pipeline plugin artifact
 // (the .wasm reference a Plugin entity's spec.plugin names). The plugin
@@ -32,6 +62,18 @@ const tier1CatalogPath = "tier-1-catalog"
 // same ResolveCatalogEntity path the provider axis uses. It does NOT load any
 // entity body and does NOT resolve any .wasm artifact — that is Phase B
 // (DescendRecipePluginArtifacts).
+//
+// It also discovers the provider-rendering Plugin ENTITY each Recipe /
+// FeatureRecipe binds through spec.provider. When a providerResolver is supplied,
+// each non-empty spec.provider binding resolves to its serving Plugin identity,
+// and that Plugin entity is pinned on the same catalog-entity axis and descended
+// to its .wasm artifact in Phase B exactly like a pipeline plugin — so the
+// provider a build renders through is pinned to a resolved version and content
+// digest at lock time. A provider Plugin that is also referenced as a pipeline
+// plugin dedupes by URI (its referenced-from sites merge; it is not recorded
+// twice). A binding no plugin serves is left to build-time engine resolution; a
+// version pin no serving plugin version satisfies halts the pull. A nil
+// providerResolver disables provider-plugin descent.
 //
 // The split exists because a freshly-pulled plugin entity is pinned here but is
 // not yet visible to the entity-front the artifact-load phase reads: the caller
@@ -61,7 +103,7 @@ const tier1CatalogPath = "tier-1-catalog"
 // Newly-discovered entities are appended to c.Entities (deduped by URI against
 // what is already present, accumulating referenced-from sites). A nil loader is
 // a no-op (the caller wired no recipe-body access).
-func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup) error {
+func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -71,7 +113,7 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup)
 		entityIndex[e.URI] = i
 	}
 
-	recipeRefs, entityURIs, err := discoverPluginEntities(c, loader)
+	recipeRefs, entityURIs, err := discoverPluginEntities(c, loader, providerResolver)
 	if err != nil {
 		return err
 	}
@@ -212,13 +254,19 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 }
 
 // discoverPluginEntities walks the closure's Recipe / FeatureRecipe entities,
-// reading each spec.pipeline[].plugin URI, and returns the deduped set of plugin
-// entity URIs to descend plus, per entity, the set of Recipe / FeatureRecipe URIs
-// that reference it. A Plugin entity already on the entity axis (a workspace
-// plugin socket ComputeClosure pinned) is added as its own descent target with no
-// recipe-ref. The returned entity-URI slice is sorted, so the descent is
-// order-independent and each entity is descended once.
-func discoverPluginEntities(c *Closure, loader RecipeLoader) (map[string]map[string]struct{}, []string, error) {
+// reading each spec.pipeline[].plugin URI and each spec.provider binding, and
+// returns the deduped set of plugin entity URIs to descend plus, per entity, the
+// set of Recipe / FeatureRecipe URIs that reference it. A Plugin entity already on
+// the entity axis (a workspace plugin socket ComputeClosure pinned) is added as
+// its own descent target with no recipe-ref. The returned entity-URI slice is
+// sorted, so the descent is order-independent and each entity is descended once.
+//
+// A non-empty spec.provider is resolved through providerResolver to its serving
+// provider-rendering Plugin identity and recorded as a descent target, keyed by
+// the resolved Plugin's version-exact URI. A provider Plugin that is also a
+// pipeline plugin dedupes to a single descent target. A nil providerResolver
+// skips provider discovery.
+func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver ProviderPluginResolver) (map[string]map[string]struct{}, []string, error) {
 	recipeRefs := map[string]map[string]struct{}{}
 	var entityURIs []string
 	seen := map[string]struct{}{}
@@ -238,6 +286,25 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader) (map[string]map[str
 		}
 		recipeRefs[entityURI][recipeURI] = struct{}{}
 	}
+	// recordProvider resolves a Recipe / FeatureRecipe spec.provider binding to
+	// its serving provider-rendering Plugin entity and records it as a descent
+	// target referenced from the recipe. A binding no plugin serves is left to
+	// build-time engine resolution; a version pin no serving plugin version
+	// satisfies propagates the resolver's error.
+	recordProvider := func(providerRef, recipeURI string) error {
+		if providerResolver == nil || providerRef == "" {
+			return nil
+		}
+		plugin, ok, err := providerResolver(providerRef)
+		if err != nil {
+			return fmt.Errorf("resolve: provider %q for %q: %w", providerRef, recipeURI, err)
+		}
+		if !ok {
+			return nil
+		}
+		recordRecipeRef(providerPluginEntityURI(plugin), recipeURI)
+		return nil
+	}
 
 	for _, ent := range c.Entities {
 		entityKind, ok := ent.KindHint, ent.KindHint != ""
@@ -256,6 +323,9 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader) (map[string]map[str
 			for _, step := range r.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
 			}
+			if err := recordProvider(r.Spec.Provider, ent.URI); err != nil {
+				return nil, nil, err
+			}
 		case "feature_recipe":
 			fr, err := loader.LoadFeatureRecipe(ent.URI)
 			if err != nil {
@@ -263,6 +333,9 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader) (map[string]map[str
 			}
 			for _, step := range fr.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
+			}
+			if err := recordProvider(fr.Spec.Provider, ent.URI); err != nil {
+				return nil, nil, err
 			}
 		case pluginKindHint:
 			// A Plugin entity pinned on the entity axis directly — a workspace

@@ -433,17 +433,19 @@ func pullRun(cfg pullConfig) error {
 		return fmt.Errorf("resolve: sub-aggregate descent: %w", err)
 	}
 	// Pull-side pipeline-plugin descent, two-pass: Phase A reads each in-closure
-	// Recipe / FeatureRecipe's spec.pipeline[].plugin URIs and pins a registry-resolved
-	// plugin ENTITY into the closure (catalog-entity axis), so a registry-published
-	// pipeline plugin participates in the deterministic lockfile pin like any other
-	// catalog entity. The freshly-pinned plugin entities are then folded into the lazy
-	// index by re-applying the closure's pins, so Phase B's entity-body load resolves
-	// them; the Phase-B loader is RE-DERIVED after the re-fold (SetPins drops the cached
-	// recipe view). Phase B reads each entity's spec.plugin (.wasm reference) and pins
-	// the ARTIFACT (plugin axis). A Tier-1-local plugin is left out (resolved at build
-	// through its local path). Lock-time only — the build path reads plugin pins from
-	// the lockfile and never descends.
-	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
+	// Recipe / FeatureRecipe's spec.pipeline[].plugin URIs — and its spec.provider
+	// binding, resolved by name to the provider-rendering plugin serving it — and pins
+	// a registry-resolved plugin ENTITY into the closure (catalog-entity axis), so a
+	// registry-published pipeline or provider plugin participates in the deterministic
+	// lockfile pin like any other catalog entity. The freshly-pinned plugin entities
+	// are then folded into the lazy index by re-applying the closure's pins, so Phase
+	// B's entity-body load resolves them; the Phase-B loader is RE-DERIVED after the
+	// re-fold (SetPins drops the cached recipe view). Phase B reads each entity's
+	// spec.plugin (.wasm reference) and pins the ARTIFACT (plugin axis). A
+	// Tier-1-local plugin is left out (resolved at build through its local path).
+	// Lock-time only — the build path reads plugin pins from the lockfile and never
+	// descends.
+	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup, lazyView.ProviderPluginByName); err != nil {
 		return fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
 	}
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
