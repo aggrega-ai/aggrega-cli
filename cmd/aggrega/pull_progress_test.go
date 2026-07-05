@@ -36,7 +36,7 @@ func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
 	}
 
 	errStr := stderr.String()
-	for _, label := range []string{"loading catalog...", "computing closure...", "writing lockfile..."} {
+	for _, label := range []string{"loading catalog...", "resolving dependencies...", "writing lockfile..."} {
 		if !strings.Contains(errStr, label) {
 			t.Errorf("expected pull phase line %q on stderr; got %q", label, errStr)
 		}

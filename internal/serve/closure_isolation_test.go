@@ -126,7 +126,7 @@ func isolationServer(t *testing.T, tmp, catalogDir string) *Server {
 }
 
 // closureDiagnostics counts the Tier-D closure-level diagnostics in a validate
-// response (those carrying the "Closure: " prefix — closure resolution / pillar /
+// response (those carrying the "Dependencies: " prefix — closure resolution / pillar /
 // extends failures).
 func closureDiagnostics(t *testing.T, srv *Server) []Diagnostic {
 	t.Helper()
@@ -147,7 +147,7 @@ func closureDiagnostics(t *testing.T, srv *Server) []Diagnostic {
 	}
 	var closureDiags []Diagnostic
 	for _, d := range result.Diagnostics {
-		if strings.HasPrefix(d.Message, "Closure: ") {
+		if strings.HasPrefix(d.Message, "Dependencies: ") {
 			closureDiags = append(closureDiags, d)
 		}
 	}

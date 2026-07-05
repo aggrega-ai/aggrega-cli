@@ -92,7 +92,7 @@ func buildProgressSpine(cold bool) progressSpine {
 		labels: []string{
 			phaseLoadCatalog: "loading catalog",
 			phaseLockfile:    "resolving lockfile",
-			phaseClosure:     "computing closure",
+			phaseClosure:     "resolving dependencies",
 			phaseValidate:    "validating",
 			phaseInheritance: "resolving inheritance",
 			phaseRender:      "rendering",

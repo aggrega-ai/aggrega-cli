@@ -114,7 +114,7 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 			})
 		},
 	}
-	c.Flags().StringVar(&lintReleasePath, "release", "", "Path to a Release YAML to lint over its resolved closure (closure-scoped schema-pillar overlap + pillar validation; mutually exclusive with an entity argument)")
+	c.Flags().StringVar(&lintReleasePath, "release", "", "Path to a Release YAML to lint over its resolved dependencies (dependency-scoped schema-pillar overlap + pillar validation; mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&lintEntityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
 	c.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
 	c.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
@@ -277,10 +277,10 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 		for _, e := range extErrs {
 			fmt.Fprintf(diagOut, "  extends: %s\n", e)
 		}
-		return fmt.Errorf("release closure validation failed: %d extends resolution error(s)", len(extErrs))
+		return fmt.Errorf("release dependency validation failed: %d extends resolution error(s)", len(extErrs))
 	}
 	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
-		return fmt.Errorf("release closure validation failed: %w", err)
+		return fmt.Errorf("release dependency validation failed: %w", err)
 	}
 
 	// Authored-value conformance: validate the Release's resolved (post-parameter-
@@ -320,10 +320,10 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 		for _, e := range errs {
 			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
 		}
-		return fmt.Errorf("release closure validation failed: %d input-kind capability error(s)", len(errs))
+		return fmt.Errorf("release dependency validation failed: %d input-kind capability error(s)", len(errs))
 	}
 
-	fmt.Fprintf(out, "release closure validation passed: %s (schema-pillar + closure pillars)\n", releasePath)
+	fmt.Fprintf(out, "release dependency validation passed: %s (schema-pillar + dependency pillars)\n", releasePath)
 	return nil
 }
 

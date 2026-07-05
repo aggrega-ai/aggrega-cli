@@ -489,7 +489,7 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 			res, err = lookup.ResolveCatalogEntity(uri, pending.kindHint)
 		}
 		if err != nil {
-			return fmt.Errorf("closure: resolve entity %q: %w", uri, err)
+			return fmt.Errorf("resolve: resolve entity %q: %w", uri, err)
 		}
 		if res.NotFound {
 			return fmt.Errorf("%w: entity %q (referenced from %s)",
@@ -530,7 +530,7 @@ func (s *walkState) resolveLibraries(lookup Lookup, schemas bool) error {
 			res, err = lookup.ResolveMappingLibrary(resolveURI)
 		}
 		if err != nil {
-			return fmt.Errorf("closure: resolve library %q: %w", uri, err)
+			return fmt.Errorf("resolve: resolve library %q: %w", uri, err)
 		}
 		if res.NotFound {
 			return fmt.Errorf("%w: library %q", ErrUnresolvableURI, uri)

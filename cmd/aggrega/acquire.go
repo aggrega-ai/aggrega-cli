@@ -70,7 +70,7 @@ func dispatchAcquire(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		fmt.Fprintf(out, "pinned %s sha256:%s (%d bytes)\n", rec.URL, rec.Sha256, rec.Size)
 	}
 	if len(acquired) == 0 {
-		fmt.Fprintln(out, "Acquire complete: no new external inputs (closure already pinned)")
+		fmt.Fprintln(out, "Acquire complete: no new external inputs (dependencies already pinned)")
 		return nil
 	}
 	fmt.Fprintf(out, "Acquire complete: %d external input(s) pinned\n", len(acquired))

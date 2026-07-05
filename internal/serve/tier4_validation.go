@@ -41,7 +41,7 @@ import (
 //	         Distinguished from Tier D in a future iteration.
 //	Tier D — closure-level: catalog load failures, lockfile drift,
 //	         cross-file IR assembly errors; fall back to {1, 1}
-//	         with the "Closure: " prefix.
+//	         with the "Dependencies: " prefix.
 //
 // When the request file is not the active Release's Aggregate (e.g.,
 // the operator validates a sibling catalog Component while the
@@ -85,7 +85,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  "Closure: " + envelope.Message,
+			Message:  "Dependencies: " + envelope.Message,
 		}}
 	}
 
@@ -117,7 +117,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  fmt.Sprintf("Closure: catalog extends: %v", extErrs[0]),
+			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", extErrs[0]),
 		}}
 	}
 
@@ -135,7 +135,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  "Closure: " + s.skipContext(view, err.Error()),
+			Message:  "Dependencies: " + s.skipContext(view, err.Error()),
 		}}
 	}
 
@@ -202,7 +202,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 				Line:     1,
 				Column:   1,
 				Severity: "error",
-				Message:  "Closure: " + ferr.Error(),
+				Message:  "Dependencies: " + ferr.Error(),
 			})
 		}
 	}
@@ -216,7 +216,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 // authoring site; this helper walks it to a sub-file position and
 // spans the offending key (Tier-B fidelity). When the Field is empty
 // or walks to a path the document does not contain, the diagnostic
-// falls back to file:1:1 with the "Closure: " prefix.
+// falls back to file:1:1 with the "Dependencies: " prefix.
 //
 // Cross-file filter: each AnalysisError carries an OriginFile
 // field naming the source file where the violating authoring
@@ -255,7 +255,7 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 			EndLine:   endLine,
 			EndColumn: endCol,
 			Severity:  "error",
-			Message:   "Closure: " + errs[i].Error(),
+			Message:   "Dependencies: " + errs[i].Error(),
 		})
 	}
 	return out
@@ -375,12 +375,12 @@ func walkSegments(n *yaml.Node, segments []string) *yaml.Node {
 // tier4PhaseErrorMessage formats a non-resolver pre-analyzer phase
 // error into the Tier-D message shape. RunTier4Pipeline wraps phase
 // errors with "Step N (phase): ..." framing; strip the framing for
-// brevity and prefix with "Closure: " so the message reads naturally
+// brevity and prefix with "Dependencies: " so the message reads naturally
 // in the IDE.
 func tier4PhaseErrorMessage(err error) string {
 	msg := err.Error()
 	if idx := strings.Index(msg, "): "); idx > 0 && strings.HasPrefix(msg, "Step ") {
 		msg = msg[idx+3:]
 	}
-	return fmt.Sprintf("Closure: %s", msg)
+	return fmt.Sprintf("Dependencies: %s", msg)
 }

@@ -62,7 +62,7 @@ func TestProgress_ForcedStatic_NonTTY(t *testing.T) {
 			t.Errorf("forced static output must not contain spinner chars; got %q", got)
 		}
 	}
-	if !strings.Contains(got, "loading catalog...") || !strings.Contains(got, "computing closure...") {
+	if !strings.Contains(got, "loading catalog...") || !strings.Contains(got, "resolving dependencies...") {
 		t.Errorf("expected plain per-phase lines; got %q", got)
 	}
 }
@@ -91,7 +91,7 @@ func TestProgress_TTY_Checklist(t *testing.T) {
 	if !strings.Contains(got, markDone) {
 		t.Errorf("TTY checklist must tick completed phases with a done mark; got %q", got)
 	}
-	for _, label := range []string{"loading catalog", "computing closure", "rendering"} {
+	for _, label := range []string{"loading catalog", "resolving dependencies", "rendering"} {
 		if !strings.Contains(got, label) {
 			t.Errorf("expected phase label %q in the checklist; got %q", label, got)
 		}
@@ -556,7 +556,7 @@ func TestProgress_Pull_Checklist_NoCompileStep(t *testing.T) {
 	p.finish()
 
 	got := buf.String()
-	for _, label := range []string{"loading catalog", "computing closure", "writing lockfile"} {
+	for _, label := range []string{"loading catalog", "resolving dependencies", "writing lockfile"} {
 		if !strings.Contains(got, label) {
 			t.Errorf("expected pull phase label %q; got %q", label, got)
 		}

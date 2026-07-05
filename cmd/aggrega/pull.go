@@ -42,14 +42,14 @@ func newPullCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "pull",
 		Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
-		Long: `Resolve the Release's catalog and source closure into the cache and write the per-Release lockfile.
+		Long: `Resolve the Release's catalog and source dependencies into the cache and write the per-Release lockfile.
 
-By default, pull reconciles the lockfile against the current closure while honoring
+By default, pull reconciles the lockfile against the current dependency resolution while honoring
 the pins it already records. A pinned entity is fetched at its pinned version and
 verified against its pinned digest; if the registry no longer serves the pinned bytes,
 pull halts rather than silently re-pinning. A reference with no pin — newly added, or
-removed from the lockfile by hand — is resolved fresh and added. Entities no longer in
-the closure are pruned. Re-running pull on an unchanged closure is a no-op.
+removed from the lockfile by hand — is resolved fresh and added. Entities no longer among
+the resolved dependencies are pruned. Re-running pull on an unchanged dependency set is a no-op.
 
 Use --regenerate to discard the existing lockfile and re-resolve every entity from
 current registry state, floating each dependency to the highest available version.`,
@@ -76,7 +76,7 @@ current registry state, floating each dependency to the highest available versio
 	c.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&pullCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and re-resolve every entity from current registry state, floating each dependency to the highest available version (ignores existing pins)")
-	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current closure without writing; exits non-zero on drift or missing lockfile")
+	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile")
 	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
 	c.Flags().BoolVar(&pullDetail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
 	c.Flags().BoolVar(&pullQuiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
@@ -153,7 +153,7 @@ func pullProgressSpine() progressSpine {
 		labels: []string{
 			pullPhaseLoadCatalog:  "loading catalog",
 			pullPhaseDependencies: "resolving dependencies",
-			pullPhaseClosure:      "computing closure",
+			pullPhaseClosure:      "resolving dependencies",
 			pullPhaseLibraries:    "resolving libraries",
 			pullPhaseValidate:     "validating",
 			pullPhaseSources:      "resolving sources",
@@ -402,7 +402,7 @@ func pullRun(cfg pullConfig) error {
 	progress.phase(pullPhaseClosure)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
-		return withSkipContext(fmt.Errorf("closure: %w", err), skipped)
+		return withSkipContext(fmt.Errorf("resolve: %w", err), skipped)
 	}
 	// pull's determinism-wired lazy lookup: the post-fetch consumers — closure-
 	// library discovery, closure-scoped validation, and the source-descent
@@ -419,10 +419,10 @@ func pullRun(cfg pullConfig) error {
 	// and a build of the same Release compute the identical library closure.
 	progress.phase(pullPhaseLibraries)
 	if err := discoverClosureLibraries(&cl, lazyView, lookup); err != nil {
-		return fmt.Errorf("closure: schema-library discovery: %w", err)
+		return fmt.Errorf("resolve: schema-library discovery: %w", err)
 	}
 	if err := discoverClosureMappingLibraries(&cl, lazyView, lookup); err != nil {
-		return fmt.Errorf("closure: mapping-library discovery: %w", err)
+		return fmt.Errorf("resolve: mapping-library discovery: %w", err)
 	}
 	// Pull-side transitive sub-aggregate descent: pin the closure of every
 	// Aggregate reachable through a chain of sub-aggregate references, loading
@@ -430,7 +430,7 @@ func pullRun(cfg pullConfig) error {
 	// build path reads these pins from the lockfile and never descends.
 	aggLoader, _ := lookup.(closure.AggregateLoader)
 	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
-		return fmt.Errorf("closure: sub-aggregate descent: %w", err)
+		return fmt.Errorf("resolve: sub-aggregate descent: %w", err)
 	}
 	// Pull-side pipeline-plugin descent, two-pass: Phase A reads each in-closure
 	// Recipe / FeatureRecipe's spec.pipeline[].plugin URIs and pins a registry-resolved
@@ -444,11 +444,11 @@ func pullRun(cfg pullConfig) error {
 	// through its local path). Lock-time only — the build path reads plugin pins from
 	// the lockfile and never descends.
 	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
-		return fmt.Errorf("closure: pipeline-plugin entity descent: %w", err)
+		return fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
 	}
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
 	if err := closure.DescendRecipePluginArtifacts(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
-		return fmt.Errorf("closure: pipeline-plugin artifact descent: %w", err)
+		return fmt.Errorf("resolve: pipeline-plugin artifact descent: %w", err)
 	}
 	// Re-derive each plugin's host functions from the freshly-cached, digest-
 	// verified .wasm and verify they match the machine-owned stamp the publish
@@ -484,7 +484,7 @@ func pullRun(cfg pullConfig) error {
 		if verr := lockfile.Verify(lf, cl); verr != nil {
 			return fmt.Errorf("verify: %w", verr)
 		}
-		fmt.Fprintf(out, "Verify: lockfile %s matches current closure (entities=%d)\n",
+		fmt.Fprintf(out, "Verify: lockfile %s matches current dependency resolution (entities=%d)\n",
 			lockfilePath, len(cl.Entities))
 		return nil
 	}

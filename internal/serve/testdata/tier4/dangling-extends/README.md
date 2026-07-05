@@ -13,7 +13,7 @@ subtree so the daemon's lazy lookup finds the broken Component.
 This fixture documents the diagnostic shape the daemon produces
 when the lazy-lookup encounters a dangling extends. Today's
 shape: Tier-D fall-back at file:1:1 with a message prefixed
-`"Closure: "` and mentioning `extends`. The emission flows
+`"Dependencies: "` and mentioning `extends`. The emission flows
 through `runTier4Validation`'s resolveReleaseClosure-envelope
 branch (the outer `resolveReleaseClosure` short-circuits the
 catalog-load failure into a `*jsonRPCError` envelope), so the

@@ -29,7 +29,7 @@ const maxSubAggregateDepth = 10
 // evades the visited set (for example a version-renaming chain that presents a
 // fresh identity at every level). An ordinary cycle (A imports B imports A)
 // terminates earlier via the visited set and never reaches this bound.
-var ErrSubAggregateDepth = errors.New("closure: sub-aggregate inclusion depth exceeded")
+var ErrSubAggregateDepth = errors.New("resolve: sub-aggregate inclusion depth exceeded")
 
 // AggregateLoader loads the parsed body of a resolved (pinned) sub-aggregate so
 // DescendSubAggregates can re-walk its own references. The digest is the pin
@@ -99,7 +99,7 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 
 		agg, err := loader.LoadAggregate(f.uri, f.version, f.digest)
 		if err != nil {
-			return fmt.Errorf("closure: load sub-aggregate %q: %w", f.uri, err)
+			return fmt.Errorf("resolve: load sub-aggregate %q: %w", f.uri, err)
 		}
 
 		sub := newWalkState()

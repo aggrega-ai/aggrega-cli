@@ -177,20 +177,20 @@ type ResolvedSource struct {
 // DescendRecipeSources's lock-time evaluation pass. The build-time
 // counterpart (lockfile-vs-actual drift) wraps ErrFetchIntegrity at
 // the orchestrator, not this sentinel.
-var ErrSourceTemplateAtLockTime = errors.New("closure: source-template evaluation failure at lock time")
+var ErrSourceTemplateAtLockTime = errors.New("resolve: source-template evaluation failure at lock time")
 
 // ErrSourceTemplateParse marks a source-template that fails to PARSE (malformed
 // template text). A parse error is a structural authoring bug at any phase, so
 // lock-time local resolution keeps it loud rather than tolerating it. Errors of
 // this class also wrap ErrSourceTemplateAtLockTime.
-var ErrSourceTemplateParse = errors.New("closure: source-template parse error")
+var ErrSourceTemplateParse = errors.New("resolve: source-template parse error")
 
 // ErrSourceTemplateProvidesRef marks a source-template that references
 // `.provides`. Locals feed `.provides`, never the reverse — a template (or a
 // local) reading `.provides` is an invalid reverse reference at any phase, not a
 // lock-time-only absence, so lock-time local resolution keeps it loud. Errors of
 // this class also wrap ErrSourceTemplateAtLockTime.
-var ErrSourceTemplateProvidesRef = errors.New("closure: source-template references .provides (invalid reverse reference)")
+var ErrSourceTemplateProvidesRef = errors.New("resolve: source-template references .provides (invalid reverse reference)")
 
 // ResolvedRef captures a single catalog-entity or Wasm-plugin
 // resolution result. Mirrors the lockfile package's Entity /
@@ -315,19 +315,19 @@ type LibraryResolution struct {
 // incompatible major versions of the same library URI. The
 // wrapped error message names the library URI, the conflicting
 // versions, and the consumer chain.
-var ErrMVSConflict = errors.New("closure: minimum version selection conflict — incompatible library version requirements")
+var ErrMVSConflict = errors.New("resolve: minimum version selection conflict — incompatible library version requirements")
 
 // ErrUnresolvableURI wraps a Lookup NotFound return that the
 // walker cannot proceed past (a missing catalog entity inside the
 // Release's closure halts the walk). The wrapped error names the
 // offending URI and the referenced_from path that led to it.
-var ErrUnresolvableURI = errors.New("closure: URI not resolvable via Lookup")
+var ErrUnresolvableURI = errors.New("resolve: URI not resolvable via Lookup")
 
 // ErrInvalidLibraryRef surfaces when a $ref: or $import: value
 // does not match the canonical library-reference URI shape per
 // the file-import vocabulary spec. The wrapped error names the
 // offending input string.
-var ErrInvalidLibraryRef = errors.New("closure: invalid library reference URI")
+var ErrInvalidLibraryRef = errors.New("resolve: invalid library reference URI")
 
 // inputs bundles the four loaded structures ComputeClosure walks.
 // Keeping them in one struct keeps the public signature small and

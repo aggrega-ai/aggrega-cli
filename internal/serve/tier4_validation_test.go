@@ -555,7 +555,7 @@ func TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile(t *testing.T) {
 // When a catalog Component declares spec.extends against a
 // non-existent parent URI and an Aggregate references that broken
 // Component, the daemon's runTier4Validation produces a Tier-D
-// fall-back diagnostic (file:1:1 with "Closure: " prefix) rather
+// fall-back diagnostic (file:1:1 with "Dependencies: " prefix) rather
 // than a sub-file position-mapped diagnostic.
 //
 // The path empirically traced: the validate request enters
@@ -569,14 +569,14 @@ func TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile(t *testing.T) {
 // errEntityNotResolvable, Message: <wrapped string>} and returns
 // that envelope to runTier4Validation; runTier4Validation's
 // resolveReleaseClosure-envelope branch emits Diagnostic{Line:1,
-// Column:1, Message: "Closure: " + envelope.Message}. The
+// Column:1, Message: "Dependencies: " + envelope.Message}. The
 // downstream resolveRecipeCatalog branch (which would prefix
-// "Closure: catalog load: ...") is never reached on this path
+// "Dependencies: catalog load: ...") is never reached on this path
 // because resolveReleaseClosure already short-circuited the
 // failure. The absence of the "catalog load:" substring is
 // asserted below to pin which fall-back branch fires — without
 // it, both Tier-D branches in runTier4Validation produce messages
-// matching "Closure: " and "extends", and the test would not
+// matching "Dependencies: " and "extends", and the test would not
 // disambiguate.
 //
 // Position recovery for the per-Component ValidationError is not
@@ -672,7 +672,7 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 	if d.Severity != "error" {
 		t.Errorf("Severity = %q; want %q", d.Severity, "error")
 	}
-	if !containsSubstring(d.Message, "Closure: ") {
+	if !containsSubstring(d.Message, "Dependencies: ") {
 		t.Errorf("Message should carry Tier-D prefix; got %q", d.Message)
 	}
 	if !containsSubstring(d.Message, "extends") {
@@ -680,8 +680,8 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 	}
 	// Pin which Tier-D branch fires. runTier4Validation has two
 	// Tier-D fall-back paths producing similar messages: the
-	// resolveReleaseClosure-envelope path ("Closure: <envelope.Message>")
-	// and the resolveRecipeCatalog-error path ("Closure: catalog load: <err>").
+	// resolveReleaseClosure-envelope path ("Dependencies: <envelope.Message>")
+	// and the resolveRecipeCatalog-error path ("Dependencies: catalog load: <err>").
 	// The dangling-extends class flows through the resolveReleaseClosure-
 	// envelope path because resolveReleaseClosure internally invokes
 	// resolveRecipeCatalog and short-circuits the catalog-load failure;

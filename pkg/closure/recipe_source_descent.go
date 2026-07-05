@@ -96,7 +96,7 @@ func DescendRecipeSources(
 			continue
 		}
 		if loadErr != nil {
-			return nil, fmt.Errorf("closure: load %s %q: %w", entityKind, ent.URI, loadErr)
+			return nil, fmt.Errorf("resolve: load %s %q: %w", entityKind, ent.URI, loadErr)
 		}
 		if source == nil {
 			continue
@@ -138,7 +138,7 @@ func DescendRecipeSources(
 
 			resolved, err := sourceResolver.Resolve(*spec)
 			if err != nil {
-				return nil, fmt.Errorf("closure: resolve source for %s %q: %w", entityKind, ent.URI, err)
+				return nil, fmt.Errorf("resolve: resolve source for %s %q: %w", entityKind, ent.URI, err)
 			}
 
 			ref := SourceArtifactReference{
@@ -269,7 +269,7 @@ func buildSourceSpec(source any, values, infra map[string]any, locals types.Orde
 		return buildSpecFromMap(s, values, infra, locals, recipeURI, source)
 	default:
 		return nil, fmt.Errorf(
-			"closure: %s spec.source has unsupported shape %T: %w "+
+			"resolve: %s spec.source has unsupported shape %T: %w "+
 				"(refactor to a scalar URI or to the structured form {kind, url, version, ...})",
 			recipeURI, source, ErrSourceTemplateAtLockTime)
 	}
@@ -328,7 +328,7 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 	}
 	if !isKnownKind(spec.Kind) {
 		return nil, fmt.Errorf(
-			"closure: %s spec.source.kind %q not recognised: %w",
+			"resolve: %s spec.source.kind %q not recognised: %w",
 			recipeURI, spec.Kind, ErrSourceTemplateAtLockTime)
 	}
 	return spec, nil
@@ -377,7 +377,7 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 		"optional": optionalFunc,
 	}).Parse(input)
 	if err != nil {
-		return "", fmt.Errorf("closure: parse template at %s: %w (also %w) (cause: %s)",
+		return "", fmt.Errorf("resolve: parse template at %s: %w (also %w) (cause: %s)",
 			fieldPath, ErrSourceTemplateAtLockTime, ErrSourceTemplateParse, err)
 	}
 	if err := rejectProvidesReference(tmpl, fieldPath); err != nil {
@@ -390,7 +390,7 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 		"locals": ctx.Locals,
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("closure: evaluate template at %s: %w (cause: %s)",
+		return "", fmt.Errorf("resolve: evaluate template at %s: %w (cause: %s)",
 			fieldPath, ErrSourceTemplateAtLockTime, err)
 	}
 	return buf.String(), nil
@@ -592,7 +592,7 @@ func classifyKindFromScheme(url, recipeURI string) (string, error) {
 		return "terraform-module-git", nil
 	default:
 		return "", fmt.Errorf(
-			"closure: %s spec.source URL %q is ambiguous — "+
+			"resolve: %s spec.source URL %q is ambiguous — "+
 				"refactor to the structured form {kind, url, version, ...} so the kind is explicit: %w",
 			recipeURI, url, ErrSourceTemplateAtLockTime)
 	}

@@ -84,7 +84,7 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup)
 		recipeFromSet := recipeRefs[entityURI]
 		entRes, err := lookup.ResolveCatalogEntity(entityURI, pluginKindHint)
 		if err != nil {
-			return fmt.Errorf("closure: resolve wasm plugin entity %q: %w", entityURI, err)
+			return fmt.Errorf("resolve: resolve wasm plugin entity %q: %w", entityURI, err)
 		}
 		// A plugin entity referenced by a recipe but resolvable through no tier is not
 		// a closure gap here: it may resolve at build through a local catalog the
@@ -174,7 +174,7 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 		// path serving the same trivial field), so leave the two independent.
 		wp, err := loader.LoadPlugin(entityURI)
 		if err != nil {
-			return fmt.Errorf("closure: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
+			return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
 		}
 		artifactURI := wp.Spec.Plugin
 		if artifactURI == "" {
@@ -182,7 +182,7 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 		}
 		artRes, err := lookup.ResolvePlugin(artifactURI)
 		if err != nil {
-			return fmt.Errorf("closure: resolve pipeline plugin artifact %q: %w", artifactURI, err)
+			return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
 		}
 		if artRes.NotFound {
 			continue
@@ -251,7 +251,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader) (map[string]map[str
 		case "recipe":
 			r, err := loader.LoadRecipe(ent.URI)
 			if err != nil {
-				return nil, nil, fmt.Errorf("closure: load recipe %q for plugin descent: %w", ent.URI, err)
+				return nil, nil, fmt.Errorf("resolve: load recipe %q for plugin descent: %w", ent.URI, err)
 			}
 			for _, step := range r.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
@@ -259,7 +259,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader) (map[string]map[str
 		case "feature_recipe":
 			fr, err := loader.LoadFeatureRecipe(ent.URI)
 			if err != nil {
-				return nil, nil, fmt.Errorf("closure: load feature recipe %q for plugin descent: %w", ent.URI, err)
+				return nil, nil, fmt.Errorf("resolve: load feature recipe %q for plugin descent: %w", ent.URI, err)
 			}
 			for _, step := range fr.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
