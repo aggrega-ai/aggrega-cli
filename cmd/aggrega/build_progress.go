@@ -238,18 +238,28 @@ const (
 )
 
 const (
-	// progressBarWidth is the fixed cell count of the render-phase percentage
-	// bar: filled cells drawn with '█', the remainder with '░'. Fixed so the bar
-	// occupies a stable column across redraws regardless of the percentage.
+	// progressBarWidth is the fixed cell count of the global progress bar: filled
+	// cells drawn with '█', the remainder with '░'. Fixed so the bar occupies a
+	// stable column across redraws regardless of the percentage.
 	progressBarWidth = 18
 	// rowBodyColumn is the column the dim elapsed field is padded out to, so the
-	// elapsed times line up in a single right-hand column across every row. It is
-	// wide enough to clear the longest body (the render row: marker + label + a
-	// full bar + " NNN% done/total").
-	rowBodyColumn = 44
+	// elapsed times line up in a single right-hand column across every row that
+	// carries one — the phase rows and the total-build-time line. It is wide
+	// enough to clear the longest body (the "resolving dependencies" phase row,
+	// marker included); the render row no longer carries an inline bar, so the
+	// column is far narrower than when it had to clear a full bar.
+	rowBodyColumn = 30
 	// elapsedFieldWidth right-aligns the elapsed value within its own column so
 	// single- and multi-digit second counts still align on their trailing 's'.
 	elapsedFieldWidth = 6
+)
+
+// Fixed captions for the global progress line and the finish block. Verbatim and
+// load-bearing: the layout is asserted against these exact strings.
+const (
+	progressCaption       = "Progress "
+	totalBuildTimeCaption = "Total build time"
+	buildCompletedCaption = "Build completed:"
 )
 
 // terminalWidth reports the column count of w when it is an interactive
@@ -490,27 +500,27 @@ func formatPhaseElapsed(d time.Duration) string {
 	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
-// renderBar composes the render phase's progress detail for a known node count:
-// a fixed-width bar of filled '█' and empty '░' cells reflecting the completed
-// fraction, then the whole-number percentage and the done/total counter, e.g.
-// "████████████░░░░░░ 62% 23/37". A non-positive total yields an empty string
-// (no bar is fabricated for a phase with no count).
-func renderBar(done, total int) string {
-	if total <= 0 {
-		return ""
+// progressBar composes the global progress line's bar and whole-number
+// percentage for the render-node fraction: a fixed-width run of filled '█' and
+// empty '░' cells reflecting the completed fraction, then the percentage, e.g.
+// "████████████░░░░░░ 62%". A non-positive total renders an all-empty bar at 0%,
+// the pre-render state shown before any node completes.
+func progressBar(done, total int) string {
+	filled, pct := 0, 0
+	if total > 0 {
+		if done < 0 {
+			done = 0
+		}
+		if done > total {
+			done = total
+		}
+		filled = done * progressBarWidth / total
+		pct = done * 100 / total
 	}
-	if done < 0 {
-		done = 0
-	}
-	if done > total {
-		done = total
-	}
-	filled := done * progressBarWidth / total
-	pct := done * 100 / total
-	return fmt.Sprintf("%s%s %d%% %d/%d",
+	return fmt.Sprintf("%s%s %d%%",
 		strings.Repeat("█", filled),
 		strings.Repeat("░", progressBarWidth-filled),
-		pct, done, total)
+		pct)
 }
 
 // composeRow assembles a checklist row from its visible body (marker, label, and
@@ -665,24 +675,32 @@ func (p *progressReporter) ensureTicker() {
 
 // rows builds the checklist lines for the current state: the pre-render phases,
 // then the optional compiling-plugins step, then the render phase (with its X/Y
-// counter). Each row carries a done / active / pending marker.
+// counter), then — for a spine with a render phase — the global progress line,
+// and finally the finish block once the run completes. Each phase row carries a
+// done / active / pending marker; the progress line and finish block carry none.
+//
+// The whole block is composed here so linesDrawn (set by draw to len(rows)) is
+// always the exact physical-line count of the block, keeping the in-place redraw
+// rewind exact as the block grows (the compile step appears, the finish block is
+// appended).
 func (p *progressReporter) rows() []string {
 	frame := spinnerFrames[p.spin%len(spinnerFrames)]
 	preCount := len(p.spine.labels)
 	if p.spine.renderIdx >= 0 {
 		preCount = p.spine.renderIdx
 	}
-	rows := make([]string, 0, len(p.spine.labels)+1)
+	rows := make([]string, 0, len(p.spine.labels)+4)
 
 	for i := 0; i < preCount; i++ {
 		rows = append(rows, composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 	}
 	if p.spine.renderIdx < 0 {
-		// No render phase (pull): the remaining labels are ordinary spine phases.
+		// No render phase (pull): the remaining labels are ordinary spine phases,
+		// and there is no node fraction to show, so no global progress line.
 		for i := preCount; i < len(p.spine.labels); i++ {
 			rows = append(rows, composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 		}
-		return rows
+		return append(rows, p.footerRows()...)
 	}
 	if p.compileShown {
 		// The compiling-plugins step has no node count, so it keeps the spinner and
@@ -694,7 +712,30 @@ func (p *progressReporter) rows() []string {
 		rows = append(rows, composeRow(marker+compilePhaseLabel, p.elapsedStr(compileTimerKey)))
 	}
 	rows = append(rows, composeRow(p.renderRowBody(frame), p.elapsedStr(p.spine.renderIdx)))
-	return rows
+	// The global progress line: the render-node fraction as a fixed-width bar and
+	// whole-number percent on its own line below the phase rows — 0% before render,
+	// filling during, 100% at completion.
+	rows = append(rows, progressCaption+progressBar(p.renderDone, p.renderTotal))
+	return append(rows, p.footerRows()...)
+}
+
+// footerRows returns the finish block appended below the checklist once the run
+// completes: the whole-run wall clock on a total-build-time row (its elapsed
+// right-aligned into the same column as the phase rows) and a completion caption.
+// Empty until finish, and empty for a spine with no render phase (pull keeps its
+// own stdout summary and never shows the build finish block).
+func (p *progressReporter) footerRows() []string {
+	if !p.finished || p.spine.renderIdx < 0 {
+		return nil
+	}
+	var elapsed string
+	if !p.started.IsZero() {
+		elapsed = formatPhaseElapsed(time.Since(p.started))
+	}
+	return []string{
+		composeRow(totalBuildTimeCaption, elapsed),
+		buildCompletedCaption,
+	}
 }
 
 // phaseRow returns the marker for a pre-render (or pull) phase at index i.
@@ -717,12 +758,13 @@ func (p *progressReporter) phaseRow(i int, frame rune) string {
 }
 
 // renderRowBody returns the render-phase checklist row body (marker, label, and
-// — once a node count is known — the fixed-width percentage bar with its NN%
-// done/total detail). The elapsed field is added by composeRow, not here.
+// — once a node count is known — the done/total counter). The percentage bar
+// lives on the global progress line, not here; the elapsed field is added by
+// composeRow, not here.
 func (p *progressReporter) renderRowBody(frame rune) string {
 	label := p.spine.labels[p.spine.renderIdx]
 	if p.renderTotal > 0 {
-		label = fmt.Sprintf("%s %s", label, renderBar(p.renderDone, p.renderTotal))
+		label = fmt.Sprintf("%s %d/%d", label, p.renderDone, p.renderTotal)
 	}
 	rendered := p.renderDone > 0 || p.inRenderStage
 	switch {
@@ -817,10 +859,18 @@ func (p *progressReporter) finish() {
 	if p.mode == progressChecklist && p.linesDrawn > 0 {
 		// Freeze any still-running timers so the completed checklist shows stable
 		// times: the active pre-render phase (an early error before render), the
-		// render phase, and the compiling-plugins step.
+		// render phase, and the compiling-plugins step. The redraw appends the
+		// finish block (total build time + completion caption) via rows().
 		p.freezeTimer(p.active)
 		p.freezeTimer(p.spine.renderIdx)
 		p.freezeTimer(compileTimerKey)
 		p.draw()
+		return
+	}
+	if p.mode == progressStatic && p.spine.renderIdx >= 0 && !p.started.IsZero() {
+		// The forced non-TTY surface has no cursor movement, so it prints the plain
+		// equivalent of the checklist finish block as its final lines.
+		fmt.Fprintf(p.out, "%s %s\n", totalBuildTimeCaption, formatPhaseElapsed(now.Sub(p.started)))
+		fmt.Fprintln(p.out, buildCompletedCaption)
 	}
 }
