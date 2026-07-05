@@ -162,12 +162,12 @@ func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (str
 //  2. Legacy v2 per-provider lookup (manifest.Spec.Mappings.Legacy) —
 //     unchanged from pre-migration behavior; included as a transitional
 //     fallback while fixtures still author v2 shape.
-//  3. matchImplements walking spec.implements — final fallback for
-//     fixtures that don't author Manifest mappings at all.
 //
-// Each layer is active for the fixtures that opt in. When manifest is
-// nil, the cascade collapses to layer 3 only — semantically identical
-// to RecipeLookup().
+// Resolution is mapping-only: a type with no flat-shape or legacy mapping
+// is a miss here — the catalog never chooses a recipe by spec.implements.
+// An unmapped instance halts loudly in the pre-render resolution-completeness
+// pass, which names the implementing recipes as pin candidates. When manifest
+// is nil, every type is a miss.
 func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe:        c.componentTypeToRecipeWithManifest(manifest),
@@ -418,9 +418,11 @@ func (c *Catalog) ProviderPluginByName(name string) (types.Plugin, bool) {
 
 // implementsSatisfies reports whether a recipe declaring spec.implements==impl
 // satisfies a request for componentType, under the three-form matching rule
-// (exact, caret-range, unversioned base) — the same precedence matchImplements
-// applies, expressed per-entry so the implements SEARCH can collect every
-// matching recipe (the catalog now holds more than one recipe per type).
+// (exact, caret-range, unversioned base). It is expressed per-entry so the
+// implements SEARCH can collect every matching recipe (the catalog now holds
+// more than one recipe per type), and it is the single caret-aware implements
+// matcher — the manifest-mapping consistency check consumes it too, so mapping
+// validation honours caret ranges rather than comparing version-stripped bases.
 func implementsSatisfies(impl, componentType string) bool {
 	if impl == componentType {
 		return true
@@ -601,9 +603,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 			if !ok {
 				continue // missing recipe → resolution path's concern, not a consistency violation
 			}
-			recipeImplements := stripVersion(r.Spec.Implements)
-			expected := stripVersion(compType)
-			if recipeImplements != expected {
+			if !implementsSatisfies(r.Spec.Implements, compType) {
 				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q)", compType, recipeURI, r.Spec.Implements, compType)))
 			}
 		}
@@ -615,9 +615,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 			if !ok {
 				continue // missing featurerecipe → resolution path's concern
 			}
-			frImplements := stripVersion(fr.Spec.Implements)
-			expected := stripVersion(featType)
-			if frImplements != expected {
+			if !implementsSatisfies(fr.Spec.Implements, featType) {
 				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest feature mapping %q -> %q: featurerecipe spec.implements is %q (expected %q)", featType, frURI, fr.Spec.Implements, featType)))
 			}
 		}

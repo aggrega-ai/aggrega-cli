@@ -279,6 +279,42 @@ func TestVerifyManifestImplementsConsistency_FailOnMismatch(t *testing.T) {
 	}
 }
 
+// TestVerifyManifestImplementsConsistency_CaretAware pins that the consistency
+// check honours caret ranges rather than comparing version-stripped bases: a
+// recipe declaring a caret spec.implements validates against a mapping key
+// whose concrete version falls in range, and fails against one that does not.
+func TestVerifyManifestImplementsConsistency_CaretAware(t *testing.T) {
+	t.Parallel()
+
+	// In-range: recipe implements core/api:^1.0.0, mapping key core/api:1.2.0.
+	inRange := fakeRecipe("recipes/api-impl", "core/api:^1.0.0")
+	cPass := fakeCatalog(inRange)
+	passComponents := &types.MappingTier{}
+	passComponents.Type.Set("core/api:1.2.0", "recipes/api-impl")
+	passManifest := &types.Manifest{
+		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: passComponents}},
+	}
+	if errs := cPass.VerifyManifestImplementsConsistency(passManifest, "manifest.yaml"); len(errs) != 0 {
+		t.Errorf("caret in range should validate; got %v", errs)
+	}
+
+	// Out-of-range: recipe implements core/api:^2.0.0, mapping key core/api:1.0.0.
+	outRange := fakeRecipe("recipes/api-impl", "core/api:^2.0.0")
+	cFail := fakeCatalog(outRange)
+	failComponents := &types.MappingTier{}
+	failComponents.Type.Set("core/api:1.0.0", "recipes/api-impl")
+	failManifest := &types.Manifest{
+		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: failComponents}},
+	}
+	errs := cFail.VerifyManifestImplementsConsistency(failManifest, "manifest.yaml")
+	if len(errs) == 0 {
+		t.Fatal("caret out of range should fail with ErrManifestImplementsMismatch")
+	}
+	if !errors.Is(errs[0], ErrManifestImplementsMismatch) {
+		t.Errorf("expected ErrManifestImplementsMismatch in chain; got %v", errs[0])
+	}
+}
+
 // TestVerifyManifestImplementsConsistency_NilManifest pins boundary:
 // nil manifest returns nil (no consistency errors to surface).
 func TestVerifyManifestImplementsConsistency_NilManifest(t *testing.T) {

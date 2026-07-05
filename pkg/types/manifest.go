@@ -149,11 +149,12 @@ func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
 //     names (e.g., `helm`, `compose`), each carrying its own
 //     `components` / `features` sub-sections.
 //
-// Dispatch precedence at consumption time is flat > legacy >
-// matchImplements-walking-spec.implements. Each layer is the active path
-// for fixtures that opt in. Authors can mix flat entries and legacy
-// entries in one Manifest; flat entries take precedence on overlapping
-// component types.
+// Dispatch precedence at consumption time is flat > legacy; an
+// unmapped component type is a resolution miss that halts at the
+// completeness pass (mappings are explicit — the resolver never walks
+// spec.implements to bind a build). Authors can mix flat entries and
+// legacy entries in one Manifest; flat entries take precedence on
+// overlapping component types.
 //
 // Provider-name discriminator constraint: a provider entity cannot be
 // named "components" or "features" while the legacy shape is accepted,
