@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +112,8 @@ func TestProgress_Quiet_Silent(t *testing.T) {
 	var buf bytes.Buffer
 	p := newProgressReporter(&buf, buildDiagOptions{quiet: true}, buildProgressSpine(true))
 	p.phase(phaseLoadCatalog)
-	p.pluginCompiling()
+	p.pluginCompileBegin(1)
+	p.pluginCompileGuestDone(1)
 	p.renderNode(1, 1, "n")
 	p.finish()
 
@@ -167,9 +169,9 @@ func TestProgress_DebugWinsOverQuiet(t *testing.T) {
 	}
 }
 
-// TestProgress_ColdProfile_ShowsCompileStep pins the cold profile: when a guest
-// is observed compiling during the render step, the "compiling plugins" step
-// joins the checklist between the pre-render phases and the render phase.
+// TestProgress_ColdProfile_ShowsCompileStep pins the cold profile: when the eager
+// plugin-compilation pass opens with a guest to compile, the "Plugin compilation"
+// step joins the checklist between the pre-render phases and the render phase.
 func TestProgress_ColdProfile_ShowsCompileStep(t *testing.T) {
 	withTTY(t, true)
 
@@ -178,7 +180,8 @@ func TestProgress_ColdProfile_ShowsCompileStep(t *testing.T) {
 	p.phase(phaseLoadCatalog)
 	p.phase(phaseInheritance)
 	p.phase(phaseRender)
-	p.pluginCompiling() // a guest compiles
+	p.pluginCompileBegin(1) // a guest compiles
+	p.pluginCompileGuestDone(1)
 	p.renderNode(1, 1, "svc")
 	p.finish()
 
@@ -187,16 +190,17 @@ func TestProgress_ColdProfile_ShowsCompileStep(t *testing.T) {
 	}
 }
 
-// TestProgress_WarmProfile_OmitsCompileStep pins the warm profile: even if a
-// guest loads (a warm-cache cache-hit still drives the observer), the compile
-// step never appears.
+// TestProgress_WarmProfile_OmitsCompileStep pins the warm profile: even if the
+// eager pass reports guests (a warm-cache warm still fires the callbacks), the
+// compile step never appears.
 func TestProgress_WarmProfile_OmitsCompileStep(t *testing.T) {
 	withTTY(t, true)
 
 	var buf bytes.Buffer
 	p := newProgressReporter(&buf, buildDiagOptions{}, buildProgressSpine(false))
 	p.phase(phaseRender)
-	p.pluginCompiling() // observed, but warm profile ignores it
+	p.pluginCompileBegin(1) // reported, but warm profile ignores it
+	p.pluginCompileGuestDone(1)
 	p.renderNode(1, 1, "svc")
 	p.finish()
 
@@ -231,9 +235,11 @@ func TestProgress_RenderNode_TTY_Counter(t *testing.T) {
 			t.Errorf("expected render-row counter %q; got %q", want, got)
 		}
 	}
-	// The global progress line carries the caption, the bar, and the percent for
-	// each step.
-	for _, want := range []string{"Progress ", "33%", "66%", "100%"} {
+	// The global progress line carries the caption, the bar, and the profile-
+	// weighted whole-build percent for each step. Warm profile: the pre-render
+	// phases credit 0.54 once render begins, then render (share 0.40) carries the
+	// bar to 67% / 80% / 94% across the three nodes, and finish snaps it to 100%.
+	for _, want := range []string{"Progress ", "67%", "80%", "94%", "100%"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected progress-line detail %q; got %q", want, got)
 		}
@@ -307,7 +313,9 @@ func TestProgress_LayoutA_RenderRowAndProgressLine(t *testing.T) {
 	if !strings.ContainsRune(progRow, '█') || !strings.ContainsRune(progRow, '░') {
 		t.Errorf("global progress line must contain the filled/empty bar; got %q", progRow)
 	}
-	if !strings.Contains(progRow, "62%") {
+	// Warm profile: pre-render credits 0.54 once render begins, plus render share
+	// 0.40 × 23/37 → 0.789 → floored to 78%.
+	if !strings.Contains(progRow, "78%") {
 		t.Errorf("global progress line must contain the percentage; got %q", progRow)
 	}
 	if strings.Contains(progRow, ansiDim) {
@@ -316,9 +324,9 @@ func TestProgress_LayoutA_RenderRowAndProgressLine(t *testing.T) {
 }
 
 // TestProgress_LayoutA_ElapsedColumnAligned asserts every elapsed field — across
-// all phase rows AND the total-build-time line in the finish block — right-aligns
-// to a single shared column. The finish block also carries the total-build-time
-// row (with elapsed) and the "Build completed:" caption (without).
+// the phase rows and the render row — right-aligns to a single shared column. The
+// completion summary is no longer part of this diagnostic block; it lands on
+// stdout, so no total-build-time row appears here.
 func TestProgress_LayoutA_ElapsedColumnAligned(t *testing.T) {
 	withTTY(t, true)
 
@@ -331,27 +339,18 @@ func TestProgress_LayoutA_ElapsedColumnAligned(t *testing.T) {
 	p.phase(phaseLockfile)
 	p.phase(phaseRender)
 	p.renderNode(23, 37, "svc")
-	// finished=true so footerRows contributes the total-build-time row.
 	p.finished = true
 
 	rows := p.rows()
 
-	// The finish block is present with both captions.
-	if findRow(rows, totalBuildTimeCaption) == "" {
-		t.Errorf("finish block must contain %q; rows=%q", totalBuildTimeCaption, rows)
-	}
-	if findRow(rows, buildCompletedCaption) == "" {
-		t.Errorf("finish block must contain %q; rows=%q", buildCompletedCaption, rows)
-	}
-
 	// Every row that carries a dim elapsed field starts that field at the same
-	// visible column. This spans phase rows, the render row, and total-build-time.
+	// visible column. This spans the started phase rows and the render row.
 	offset := -1
 	fieldsSeen := 0
 	for _, r := range rows {
 		i := strings.Index(r, ansiDim)
 		if i < 0 {
-			continue // pending rows, the progress line, and "Build completed:" show none
+			continue // pending rows and the progress line show none
 		}
 		fieldsSeen++
 		off := visibleRuneWidth(r[:i])
@@ -364,12 +363,7 @@ func TestProgress_LayoutA_ElapsedColumnAligned(t *testing.T) {
 		}
 	}
 	if fieldsSeen < 3 {
-		t.Errorf("expected at least 3 elapsed fields (>=2 phase rows + total-build-time); saw %d", fieldsSeen)
-	}
-	// The total-build-time row specifically carries a dim, right-aligned elapsed.
-	tot := findRow(rows, totalBuildTimeCaption)
-	if !strings.Contains(tot, ansiDim) || !strings.HasSuffix(tot, ansiReset) {
-		t.Errorf("total-build-time row must carry a dim elapsed field; got %q", tot)
+		t.Errorf("expected at least 3 elapsed fields (loading catalog + resolving lockfile + rendering); saw %d", fieldsSeen)
 	}
 }
 
@@ -403,7 +397,7 @@ func TestProgress_UncountedPhase_NoBar(t *testing.T) {
 	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
 	p.phase(phaseLoadCatalog)
 	p.phase(phaseRender)
-	p.pluginCompiling() // cold profile: the compiling-plugins step is active
+	p.pluginCompileBegin(1) // cold profile: the plugin-compilation step is active
 
 	for _, row := range p.rows() {
 		if strings.HasPrefix(row, progressCaption) {
@@ -446,24 +440,27 @@ func TestProgress_ForcedStatic_RenderNoEscapesNoBar(t *testing.T) {
 	}
 }
 
-// TestProgressBar_ExactShape pins the pure global-progress-bar composition:
-// fixed-width filled and empty cells plus the truncated whole-number percent, and
-// no done/total counter (that lives on the render row). A non-positive total
-// renders the all-empty 0% bar rather than an empty string.
+// TestProgressBar_ExactShape pins the pure global-progress-bar composition from a
+// completion fraction: fixed-width filled and empty cells plus the floored
+// whole-number percent, and no done/total counter (that lives on the render row).
+// The fraction is clamped to [0,1]; a below-1.0 fraction floors so it never shows
+// a rounded-up 100%.
 func TestProgressBar_ExactShape(t *testing.T) {
 	cases := []struct {
-		done, total int
-		want        string
+		frac float64
+		want string
 	}{
-		{0, 4, "░░░░░░░░░░░░░░░░░░ 0%"},
-		{2, 4, "█████████░░░░░░░░░ 50%"},
-		{4, 4, "██████████████████ 100%"},
-		{23, 37, "███████████░░░░░░░ 62%"},
-		{1, 0, "░░░░░░░░░░░░░░░░░░ 0%"},
+		{0.0, "░░░░░░░░░░░░░░░░░░ 0%"},
+		{0.5, "█████████░░░░░░░░░ 50%"},
+		{1.0, "██████████████████ 100%"},
+		{0.6216, "███████████░░░░░░░ 62%"},
+		{0.999, "█████████████████░ 99%"},
+		{-0.5, "░░░░░░░░░░░░░░░░░░ 0%"},
+		{1.5, "██████████████████ 100%"},
 	}
 	for _, c := range cases {
-		if got := progressBar(c.done, c.total); got != c.want {
-			t.Errorf("progressBar(%d,%d) = %q, want %q", c.done, c.total, got, c.want)
+		if got := progressBar(c.frac); got != c.want {
+			t.Errorf("progressBar(%v) = %q, want %q", c.frac, got, c.want)
 		}
 	}
 }
@@ -640,8 +637,10 @@ func TestProgress_Pull_Checklist_NoCompileStep(t *testing.T) {
 	p.phase(pullPhaseLoadCatalog)
 	p.phase(pullPhaseClosure)
 	p.phase(pullPhaseLockfile)
-	// Guest observations are meaningless for pull; they must be inert.
-	p.pluginCompiling()
+	// Plugin-compile callbacks are meaningless for pull (no render phase); they
+	// must be inert.
+	p.pluginCompileBegin(1)
+	p.pluginCompileGuestDone(1)
 	p.renderNode(1, 1, "x")
 	p.finish()
 
@@ -657,13 +656,13 @@ func TestProgress_Pull_Checklist_NoCompileStep(t *testing.T) {
 	if strings.Contains(got, "rendering") {
 		t.Errorf("pull has no render phase; got %q", got)
 	}
-	// Pull has no render fraction, so it shows neither the global progress line nor
-	// the build finish block; its completion is the stdout "Pull complete" summary.
+	// Pull has no render fraction, so it shows no global progress line; its
+	// completion is the stdout "Pull complete" summary.
 	if strings.Contains(got, progressCaption) {
 		t.Errorf("pull must not show the global progress line; got %q", got)
 	}
-	if strings.Contains(got, totalBuildTimeCaption) || strings.Contains(got, buildCompletedCaption) {
-		t.Errorf("pull must not show the build finish block; got %q", got)
+	if strings.Contains(got, "Total build time") || strings.Contains(got, "Build completed:") {
+		t.Errorf("pull must not show the build completion summary; got %q", got)
 	}
 }
 
@@ -694,9 +693,10 @@ func parseCursorUp(t *testing.T, s string) int {
 // TestProgress_Redraw_CursorUpMatchesLineCount is the redraw-bookkeeping proof:
 // the in-place redraw rewinds exactly as many lines as the prior block drew, and
 // re-emits the same physical-line count — so physical lines == logical rows ==
-// linesDrawn stays exact after the layout-A lines (the global progress line, and
-// later the finish block) join the block. A desync here would reprint the block
-// instead of redrawing it in place.
+// linesDrawn stays exact with the global progress line in the block. The final
+// finish redraw re-emits the same block in place (the completion summary lives on
+// stdout, not in this block), so the line count is unchanged. A desync here would
+// reprint the block instead of redrawing it in place.
 func TestProgress_Redraw_CursorUpMatchesLineCount(t *testing.T) {
 	withTTY(t, true)
 
@@ -729,26 +729,29 @@ func TestProgress_Redraw_CursorUpMatchesLineCount(t *testing.T) {
 		t.Errorf("linesDrawn = %d after redraw, want %d", p.linesDrawn, firstRows)
 	}
 
-	// finish() appends the two-line finish block: it must rewind over the prior
-	// (firstRows) block and re-emit firstRows+2 lines, keeping the count exact.
+	// finish() redraws the same block in place (no appended finish block): it must
+	// rewind over the prior (firstRows) block and re-emit exactly firstRows lines,
+	// keeping the count exact.
 	buf.Reset()
 	p.finish()
 	fin := buf.String()
 	if up := parseCursorUp(t, fin); up != firstRows {
 		t.Errorf("finish redraw cursor-up = %d, want %d (prior line count)", up, firstRows)
 	}
-	if drawn := strings.Count(fin, "\n"); drawn != firstRows+2 {
-		t.Errorf("finish redraw emitted %d physical lines, want %d (block + finish block)", drawn, firstRows+2)
+	if drawn := strings.Count(fin, "\n"); drawn != firstRows {
+		t.Errorf("finish redraw emitted %d physical lines, want %d", drawn, firstRows)
 	}
-	if p.linesDrawn != firstRows+2 {
-		t.Errorf("linesDrawn = %d after finish, want %d", p.linesDrawn, firstRows+2)
+	if p.linesDrawn != firstRows {
+		t.Errorf("linesDrawn = %d after finish, want %d", p.linesDrawn, firstRows)
 	}
 }
 
-// TestProgress_LayoutA_StaticFinishLines confirms the forced non-TTY surface
-// prints the plain equivalent of the finish block — a "Total build time" line and
-// the "Build completed:" caption — with no cursor movement and no ANSI escapes.
-func TestProgress_LayoutA_StaticFinishLines(t *testing.T) {
+// TestProgress_StaticFinish_NoSummaryOnDiagSink confirms the forced non-TTY
+// surface does NOT print the completion summary on the diagnostic sink: the single
+// "Total build time" / "Build completed:" block lives on stdout in every mode, so
+// the stderr diagnostic surface must not duplicate it. The static surface's finish
+// is silent (its render lines already printed inline).
+func TestProgress_StaticFinish_NoSummaryOnDiagSink(t *testing.T) {
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -758,14 +761,14 @@ func TestProgress_LayoutA_StaticFinishLines(t *testing.T) {
 	p.finish()
 
 	got := buf.String()
-	if !strings.Contains(got, totalBuildTimeCaption+" ") {
-		t.Errorf("static finish must print %q with an elapsed; got %q", totalBuildTimeCaption, got)
+	if strings.Contains(got, "Total build time") {
+		t.Errorf("static finish must not print the total-build-time line on the diagnostic sink; got %q", got)
 	}
-	if !strings.Contains(got, buildCompletedCaption) {
-		t.Errorf("static finish must print %q; got %q", buildCompletedCaption, got)
+	if strings.Contains(got, "Build completed:") {
+		t.Errorf("static finish must not print the completion caption on the diagnostic sink; got %q", got)
 	}
 	if strings.ContainsRune(got, '\r') || strings.ContainsRune(got, '\x1b') {
-		t.Errorf("static finish lines must carry no cursor movement or ANSI escapes; got %q", got)
+		t.Errorf("static surface must carry no cursor movement or ANSI escapes; got %q", got)
 	}
 }
 
@@ -869,5 +872,199 @@ func TestProgress_Plain_NonTTY_StaysSilent(t *testing.T) {
 
 	if buf.Len() != 0 {
 		t.Errorf("plain on a non-TTY with no --progress must stay silent; got %q", buf.String())
+	}
+}
+
+// approxEq reports whether a and b are within a small epsilon — the global-bar
+// weight math is float arithmetic, so checkpoints are compared with tolerance
+// rather than for exact equality.
+func approxEq(a, b float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < 1e-9
+}
+
+// TestProgress_GlobalBar_WarmCheckpoints pins the warm-profile weighted bar: the
+// pre-render phases credit on completion (lockfile brings the bar to ~52% before
+// render), render carries it the rest of the way, and finish snaps it to 100%.
+// The bar is monotonic non-decreasing across the sequence.
+func TestProgress_GlobalBar_WarmCheckpoints(t *testing.T) {
+	withTTY(t, true)
+	orig := spinnerTickInterval
+	spinnerTickInterval = time.Hour // freeze the async ticker for a stable read
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(false))
+
+	p.phase(phaseLoadCatalog)
+	f0 := p.globalFraction()
+	if !approxEq(f0, 0) {
+		t.Errorf("warm: fraction at loading-catalog = %v, want 0", f0)
+	}
+	p.phase(phaseLockfile)
+	p.phase(phaseClosure) // lockfile now completed
+	fLock := p.globalFraction()
+	if !approxEq(fLock, 0.52) {
+		t.Errorf("warm: fraction after lockfile = %v, want 0.52", fLock)
+	}
+	p.phase(phaseRender)
+	fRenderStart := p.globalFraction()
+	if !approxEq(fRenderStart, 0.54) {
+		t.Errorf("warm: fraction entering render = %v, want 0.54", fRenderStart)
+	}
+	p.renderNode(1, 2, "a")
+	fHalf := p.globalFraction()
+	if !approxEq(fHalf, 0.74) {
+		t.Errorf("warm: fraction at render 1/2 = %v, want 0.74", fHalf)
+	}
+	p.renderNode(2, 2, "b")
+	fRenderDone := p.globalFraction()
+	if !approxEq(fRenderDone, 0.94) {
+		t.Errorf("warm: fraction after render = %v, want 0.94", fRenderDone)
+	}
+	p.finish()
+	if f := p.globalFraction(); !approxEq(f, 1) {
+		t.Errorf("warm: fraction at finish = %v, want 1", f)
+	}
+
+	// Monotonic non-decreasing across the observed checkpoints.
+	for i, seq := range []float64{f0, fLock, fRenderStart, fHalf, fRenderDone} {
+		if i > 0 {
+			prev := []float64{f0, fLock, fRenderStart, fHalf, fRenderDone}[i-1]
+			if seq < prev {
+				t.Errorf("warm: bar went backwards at checkpoint %d: %v < %v", i, seq, prev)
+			}
+		}
+	}
+}
+
+// TestProgress_GlobalBar_ColdCheckpoints pins the cold-profile weighted bar: the
+// lockfile leaves it near 4%, the plugin-compilation step (share 0.85) fills it to
+// ~90%, render carries it to ~93%, and finish snaps it to 100%.
+func TestProgress_GlobalBar_ColdCheckpoints(t *testing.T) {
+	withTTY(t, true)
+	orig := spinnerTickInterval
+	spinnerTickInterval = time.Hour
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
+
+	p.phase(phaseLoadCatalog)
+	p.phase(phaseLockfile)
+	p.phase(phaseClosure) // lockfile completed
+	if f := p.globalFraction(); !approxEq(f, 0.04) {
+		t.Errorf("cold: fraction after lockfile = %v, want 0.04", f)
+	}
+	p.phase(phaseRender)
+	if f := p.globalFraction(); !approxEq(f, 0.05) {
+		t.Errorf("cold: fraction entering render (pre-compile) = %v, want 0.05", f)
+	}
+	p.pluginCompileBegin(1)
+	// Just opened: the time ramp has barely started, so the bar sits near the
+	// pre-compile 0.05 (base 0 guests done, negligible elapsed).
+	if f := p.globalFraction(); f < 0.05 || f > 0.06 {
+		t.Errorf("cold: fraction at compile start = %v, want ~0.05", f)
+	}
+	p.pluginCompileGuestDone(1)
+	if f := p.globalFraction(); !approxEq(f, 0.90) {
+		t.Errorf("cold: fraction after compile = %v, want 0.90", f)
+	}
+	p.renderNode(1, 1, "a")
+	if f := p.globalFraction(); !approxEq(f, 0.93) {
+		t.Errorf("cold: fraction after render = %v, want 0.93", f)
+	}
+	p.finish()
+	if f := p.globalFraction(); !approxEq(f, 1) {
+		t.Errorf("cold: fraction at finish = %v, want 1", f)
+	}
+}
+
+// TestProgress_EagerCompile_BarAdvancesDuringCompile is the defect-3 gate in unit
+// form: while a single provider guest is compiling (before its completion
+// callback fires), the global bar must advance with elapsed time rather than
+// freeze — successive reads show an increasing fraction — yet stay below the
+// share the phase credits only on real completion.
+func TestProgress_EagerCompile_BarAdvancesDuringCompile(t *testing.T) {
+	withTTY(t, true)
+	orig := spinnerTickInterval
+	spinnerTickInterval = time.Hour
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
+	p.phase(phaseRender)
+	p.pluginCompileBegin(1)
+
+	// Simulate elapsed compile time by rewinding the ramp anchor, mimicking what
+	// the async redraw ticker observes as the real compile runs.
+	preCompile := p.globalFraction()
+	p.compileStart = time.Now().Add(-2 * time.Second)
+	early := p.globalFraction()
+	p.compileStart = time.Now().Add(-10 * time.Second)
+	late := p.globalFraction()
+
+	if !(preCompile < early && early < late) {
+		t.Errorf("bar did not advance during compile: pre=%v early=%v late=%v", preCompile, early, late)
+	}
+	// The time ramp is capped below the completed-phase share, so it never claims
+	// the guest finished before the completion callback: cold pre-render 0.05 plus
+	// compile share 0.85 = 0.90 at real completion; the ramp must stay under that.
+	if late >= 0.90 {
+		t.Errorf("time ramp overtook real completion: late=%v must stay below 0.90", late)
+	}
+	p.pluginCompileGuestDone(1)
+	if done := p.globalFraction(); !approxEq(done, 0.90) {
+		t.Errorf("fraction after guest-done = %v, want 0.90", done)
+	}
+}
+
+// TestBuild_SingleFinalBlockOnStdout is the defect-1 gate in unit form: a
+// successful build emits exactly ONE clean completion block — the total-build-time
+// line and the files-written line — on STDOUT, with no duplicate, empty, or bare
+// caption lines, and the diagnostic sink (stderr) carries none of that summary.
+func TestBuild_SingleFinalBlockOnStdout(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	writeProgressBuildFixture(t, root)
+
+	withTTY(t, true) // interactive checklist on the diagnostic sink
+
+	orig := spinnerTickInterval
+	spinnerTickInterval = time.Hour
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	catalogRoot := filepath.Join(root, "catalog")
+	releaseYAML := filepath.Join(root, "release.yaml")
+
+	var stdout, stderr bytes.Buffer
+	if err := dispatchBuildWithDiag(nil, releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildRunOptions{}, &stderr, &stdout); err != nil {
+		t.Fatalf("build failed: %v (stderr=%q)", err, stderr.String())
+	}
+
+	// STDOUT: exactly two non-empty lines, in order, no blank/duplicate lines.
+	lines := strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("stdout must be exactly two lines; got %d: %q", len(lines), stdout.String())
+	}
+	if !strings.HasPrefix(lines[0], "Total build time: ") {
+		t.Errorf("first stdout line must be the total-build-time line; got %q", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "Build completed: ") || !strings.Contains(lines[1], "files written to") {
+		t.Errorf("second stdout line must be the files-written line; got %q", lines[1])
+	}
+	// The old duplicated "Build time:" (no "Total") and a bare "Build completed:"
+	// caption must not appear anywhere on stdout.
+	if strings.Contains(stdout.String(), "Build time: ") && !strings.Contains(stdout.String(), "Total build time: ") {
+		t.Errorf("stdout must not carry the old bare 'Build time:' line; got %q", stdout.String())
+	}
+
+	// STDERR (diagnostic sink): carries the checklist but NOT the completion
+	// summary — the block is single-sourced on stdout.
+	if strings.Contains(stderr.String(), "Total build time") {
+		t.Errorf("diagnostic sink must not duplicate the total-build-time line; got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "Build completed:") {
+		t.Errorf("diagnostic sink must not duplicate the completion caption; got %q", stderr.String())
 	}
 }

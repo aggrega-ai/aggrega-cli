@@ -25,11 +25,12 @@ import (
 // cache). If any mode perturbs stdout or the artifacts by one byte, this test
 // fails.
 //
-// The summary's "Build time" line is intentionally wall-clock nondeterministic;
-// it is masked to a fixed token before the cross-mode stdout comparison so the
-// comparison still proves stdout is byte-identical across modes modulo that one
-// legitimately-variable timing value. The dist/ tree comparison is left
-// unmasked — it is the true output-determinism proof and must stay byte-exact.
+// The summary's "Total build time" line is intentionally wall-clock
+// nondeterministic; it is masked to a fixed token before the cross-mode stdout
+// comparison so the comparison still proves stdout is byte-identical across modes
+// modulo that one legitimately-variable timing value. The dist/ tree comparison
+// is left unmasked — it is the true output-determinism proof and must stay
+// byte-exact.
 func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -98,15 +99,15 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 	}
 }
 
-// maskBuildTime replaces the value on the summary's "Build time:" line with a
-// fixed token so a cross-mode stdout comparison is not defeated by the line's
+// maskBuildTime replaces the value on the summary's "Total build time:" line with
+// a fixed token so a cross-mode stdout comparison is not defeated by the line's
 // intended wall-clock variability, while every other stdout byte stays compared
 // verbatim.
 func maskBuildTime(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, ln := range lines {
-		if strings.HasPrefix(ln, "Build time: ") {
-			lines[i] = "Build time: <masked>"
+		if strings.HasPrefix(ln, "Total build time: ") {
+			lines[i] = "Total build time: <masked>"
 		}
 	}
 	return strings.Join(lines, "\n")

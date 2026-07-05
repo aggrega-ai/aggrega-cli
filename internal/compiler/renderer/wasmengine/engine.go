@@ -190,6 +190,26 @@ func (e *Engine) SynthesizeWorkload(
 	return emitted, nil
 }
 
+// Warm compiles the provider guest into the shared loader's compilation cache
+// without rendering a node, so a later per-node load is a cache hit rather than a
+// cold compilation. It resolves the guest's bytes through the same lookup and
+// loads through the same shared loader Render uses, then closes the instance
+// immediately — only the cached compiled machine code (a pure function of the
+// guest bytes) survives, so warming cannot alter rendered output. A resolution or
+// load failure is returned unchanged: it is the same failure the first render
+// load would raise. AssemblerEngine embeds *Engine and inherits this method.
+func (e *Engine) Warm(ctx context.Context) error {
+	resolved, err := e.lookup(e.pluginURI)
+	if err != nil {
+		return fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
+	}
+	plugin, _, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	if err != nil {
+		return err
+	}
+	return plugin.Close(ctx)
+}
+
 // invoke loads the guest through the shared describe-gated loader, calls the
 // named export, and decodes the RenderNodeOutput. The shared loader carries the
 // build's external-input service and its compilation cache, so a guest fetch

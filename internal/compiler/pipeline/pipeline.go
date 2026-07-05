@@ -19,6 +19,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
@@ -139,14 +140,33 @@ type Options struct {
 	// observation point that is a no-op when unset.
 	NodeProgress func(done, total int, nodeID string)
 
-	// PluginLoadObserver, when set, is invoked with a plugin's name each time the
-	// render step's shared loader constructs a guest — the point at which a
-	// cold-cache guest is compiled. It is a diagnostic hook for a progress
-	// surface; like NodeProgress the callback must write only to a diagnostic sink
-	// (never stdout) so rendered output stays byte-deterministic. Left nil — the
-	// common case, and every non-CLI caller — the loader skips the call. It
-	// carries no authority over the load and cannot alter output.
-	PluginLoadObserver func(pluginName string)
+	// PluginCompileBegin, when set, turns on the eager provider-guest compilation
+	// pass: before the render loop, RunPipeline force-compiles the distinct
+	// provider guests the render needs, so a cold guest compilation is a discrete,
+	// attributed phase rather than a freeze inside the first node's render. Begin
+	// is invoked once with the number of guests that will be compiled, before the
+	// first is compiled. Left nil — the common case, and every non-CLI caller —
+	// the eager pass is skipped and guests compile lazily on first per-node load,
+	// as before. It is a diagnostic hook for a progress surface; the callback must
+	// write only to a diagnostic sink (never stdout) so rendered output stays
+	// byte-deterministic, and it carries no authority over the compile.
+	PluginCompileBegin func(guests int)
+
+	// PluginCompileGuestDone, when set, is invoked after each provider guest
+	// finishes compiling in the eager pass, with the running count of guests
+	// compiled so far. Paired with PluginCompileBegin; nil when the eager pass is
+	// off. Like PluginCompileBegin it is a diagnostic hook that must write only to
+	// a diagnostic sink and cannot alter output.
+	PluginCompileGuestDone func(done int)
+}
+
+// guestWarmer is the compile-only capability the eager plugin-compilation pass
+// drives on a provider engine that renders through a Wasm guest: it compiles the
+// guest into the shared compilation cache without rendering a node, so the render
+// loop's per-node loads are cache hits. A provider that renders through the
+// in-tree Go engine does not satisfy it and is skipped by the pass.
+type guestWarmer interface {
+	Warm(ctx context.Context) error
 }
 
 // Result carries the pipeline's outputs. Artifacts is the rendered file
@@ -558,6 +578,59 @@ func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup
 	}, cascade)
 }
 
+// collectProviderGuestWarmers resolves the distinct provider guests the render
+// will load, in the same way the render loop does: it walks the graph's nodes,
+// resolves each node's recipe to its provider reference, and routes that provider
+// through the same hybrid engine factory the render uses. A provider that routes
+// to a Wasm guest yields a guestWarmer; a provider that renders through the
+// in-tree Go engine yields none. Guests are deduplicated by the engine identity
+// the factory memoizes, so two bindings that resolve to one guest warm once.
+// Node order is stable so the pass is deterministic. A factory error (a version
+// pin no plugin satisfies) is returned — the same error the render loop would
+// raise for that provider, surfaced before the render loop instead.
+func collectProviderGuestWarmers(graph *types.IRGraph, recipeLookup renderer.RecipeLookup, engineFactory renderer.EngineFactory) ([]guestWarmer, error) {
+	if recipeLookup.Recipe == nil {
+		return nil, nil
+	}
+	seenRef := map[string]struct{}{}
+	var refs []string
+	for _, nodeID := range graph.Spec.Nodes.Keys() {
+		node, ok := graph.Spec.Nodes.Get(nodeID)
+		if !ok {
+			continue
+		}
+		r, found := recipeLookup.Recipe(nodeID, node.Component)
+		if !found || r == nil || r.Spec.Provider == "" {
+			continue
+		}
+		if _, dup := seenRef[r.Spec.Provider]; dup {
+			continue
+		}
+		seenRef[r.Spec.Provider] = struct{}{}
+		refs = append(refs, r.Spec.Provider)
+	}
+	sort.Strings(refs)
+
+	var warmers []guestWarmer
+	seenGuest := map[guestWarmer]struct{}{}
+	for _, ref := range refs {
+		engine, err := engineFactory(ref)
+		if err != nil {
+			return nil, err
+		}
+		w, ok := engine.(guestWarmer)
+		if !ok {
+			continue
+		}
+		if _, dup := seenGuest[w]; dup {
+			continue
+		}
+		seenGuest[w] = struct{}{}
+		warmers = append(warmers, w)
+	}
+	return warmers, nil
+}
+
 // RunPipeline shares Steps 1-4 with RunTier4Pipeline through the
 // unexported runStepsOneToFour helper, then runs Step 4b + Step 5.
 // First-error-fatal semantic is preserved for terminal phases:
@@ -675,7 +748,6 @@ func RunPipeline(
 		// RunPipeline, so build, serve, and the test harness all route through it
 		// with no per-caller change.
 		sharedLoader, closeLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		sharedLoader.OnLoad = opts.PluginLoadObserver
 		defer func() {
 			if cerr := closeLoader(); cerr != nil {
 				fmt.Fprintf(os.Stderr, "  plugin: close compilation cache: %s\n", cerr)
@@ -683,6 +755,30 @@ func RunPipeline(
 		}()
 		hybrid, providerVersion := enginefactory.NewHybrid(engineFactory, catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
 		rendererInput.ProviderVersion = providerVersion
+
+		// Eager provider-guest compilation. When the caller opts in (a progress
+		// surface that attributes the compile), force-compile the distinct provider
+		// guests the render needs into the shared cache before the render loop, so a
+		// cold guest compilation is a discrete phase the surface can report rather
+		// than a stall inside the first node's render. It warms the same cache the
+		// render loads hit, so it moves compilation earlier without changing output;
+		// a warm cache makes each warm a near-instant cache hit. A compile failure
+		// here is the same failure the render load would raise, surfaced earlier.
+		if opts.PluginCompileBegin != nil {
+			warmers, werr := collectProviderGuestWarmers(graph, recipeLookup, hybrid)
+			if werr != nil {
+				return fmt.Errorf("Step 5 (plugin compilation): %w", werr)
+			}
+			opts.PluginCompileBegin(len(warmers))
+			for i, w := range warmers {
+				if err := w.Warm(ctx); err != nil {
+					return fmt.Errorf("Step 5 (plugin compilation): %w", err)
+				}
+				if opts.PluginCompileGuestDone != nil {
+					opts.PluginCompileGuestDone(i + 1)
+				}
+			}
+		}
 
 		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, hybrid)
 		if rerr != nil {

@@ -70,9 +70,8 @@ const (
 // the render phase (the one that reports per-node progress and may be preceded by
 // a plugin-compilation step); it is -1 for a command with no render phase (pull).
 // coldProfile is true when the plugin compile cache is cold for this build, so a
-// "compiling plugins" step is shown between the phase before render and the
-// render phase once a guest is actually compiled; a warm build leaves it false
-// and the step never appears.
+// "Plugin compilation" step is shown before the render phase while the provider
+// guests are compiled; a warm build leaves it false and the step never appears.
 type progressSpine struct {
 	labels      []string
 	renderIdx   int
@@ -92,8 +91,8 @@ const (
 )
 
 // buildProgressSpine returns the ordered build phase spine. cold selects the
-// cold profile, which allows the "compiling plugins" step to appear before the
-// render phase when a guest is compiled during the render step.
+// cold profile, which allows the "Plugin compilation" step to appear before the
+// render phase while the provider guests are compiled.
 func buildProgressSpine(cold bool) progressSpine {
 	return progressSpine{
 		labels: []string{
@@ -110,8 +109,96 @@ func buildProgressSpine(cold bool) progressSpine {
 }
 
 // compilePhaseLabel is the label of the cold-profile plugin-compilation step
-// shown between the pre-render phase and the render phase.
-const compilePhaseLabel = "compiling plugins"
+// shown between the pre-render phases and the render phase.
+const compilePhaseLabel = "Plugin compilation"
+
+// buildBarWeights assigns each build phase a fixed share of the global progress
+// bar. The compiler cannot know a phase's true duration ahead of time, so the
+// bar approximates progress from a typical build's phase-time profile rather
+// than from measured work. Two profiles apply:
+//
+//   - Warm (compile cache already populated): the plugin-compilation step is
+//     absent and its share folds into the lockfile and render phases. Lockfile
+//     dominates the pre-render span and render dominates the rest.
+//   - Cold (a one-time provider-guest compilation is due): the plugin-
+//     compilation step dominates, since compiling a large guest is the single
+//     longest phase of a first build; every other phase is a thin sliver.
+//
+// The shares within a profile sum to slightly LESS than 1.0. The small remainder
+// is credited only when the whole build completes (artifacts written), so the
+// bar reaches 100% at finish rather than the instant the render loop ends. The
+// bar value at any moment is the sum of completed phases' shares plus the active
+// phase's share scaled by its internal fraction (render: nodes done / total;
+// plugin-compilation: guests compiled plus a bounded time ramp within the guest
+// currently compiling; every other phase has no sub-progress and credits its
+// full share only on completion).
+type buildBarWeights struct {
+	loadCatalog float64
+	lockfile    float64
+	closure     float64
+	validate    float64
+	inheritance float64
+	// compile is the plugin-compilation step's share; zero in the warm profile,
+	// where the step never appears.
+	compile float64
+	render  float64
+}
+
+// buildBarWeightsFor returns the phase-share table for the cold or warm profile.
+// Cold: after the lockfile the bar sits near 4%, the compilation step fills it to
+// roughly 90%, render carries it to about 93%, and finish completes it to 100%.
+// Warm: after the lockfile the bar sits near 52%, render carries it to about 94%,
+// and finish completes it to 100%.
+func buildBarWeightsFor(cold bool) buildBarWeights {
+	if cold {
+		return buildBarWeights{
+			loadCatalog: 0.01,
+			lockfile:    0.03,
+			closure:     0.005,
+			validate:    0.003,
+			inheritance: 0.002,
+			compile:     0.85,
+			render:      0.03,
+		}
+	}
+	return buildBarWeights{
+		loadCatalog: 0.02,
+		lockfile:    0.50,
+		closure:     0.01,
+		validate:    0.005,
+		inheritance: 0.005,
+		render:      0.40,
+	}
+}
+
+// pre returns the share of a pre-render phase by its spine index.
+func (w buildBarWeights) pre(i int) float64 {
+	switch i {
+	case phaseLoadCatalog:
+		return w.loadCatalog
+	case phaseLockfile:
+		return w.lockfile
+	case phaseClosure:
+		return w.closure
+	case phaseValidate:
+		return w.validate
+	case phaseInheritance:
+		return w.inheritance
+	}
+	return 0
+}
+
+const (
+	// compileRampEstimate shapes the time-based sub-progress the global bar shows
+	// while a single provider guest is compiling. It is a display estimate only —
+	// the phase self-times and snaps to its full share the instant the guest
+	// actually finishes — chosen near a typical cold guest-compilation wall-clock
+	// so the ramp reads as steady advancement rather than a stall or a jump.
+	compileRampEstimate = 20 * time.Second
+	// compileRampCap bounds the time ramp below 1 so the bar never claims a guest
+	// finished compiling before its completion callback fires.
+	compileRampCap = 0.95
+)
 
 // progressReporter renders a command's per-phase progress to a diagnostic sink
 // as a phase checklist. Its shape is resolved once at construction (see
@@ -120,10 +207,10 @@ const compilePhaseLabel = "compiling plugins"
 // untouched by the presence or shape of progress.
 //
 // The checklist ticks each phase as it completes and spins the currently-active
-// phase. In the cold profile a "compiling plugins" step appears between the
-// pre-render phase and the render phase the first time a guest is compiled during
-// the render step; a warm build omits it. The render phase carries an X/Y node
-// counter.
+// phase. In the cold profile a "Plugin compilation" step appears before the
+// render phase while the provider guests are eagerly compiled; a warm build omits
+// it. The render phase carries an X/Y node counter. A separate global progress
+// line below the rows shows a profile-weighted whole-build completion bar.
 type progressReporter struct {
 	// mu guards every state mutation and every write to out, so the background
 	// spinner ticker (checklist mode only) and the main build thread never race
@@ -133,6 +220,11 @@ type progressReporter struct {
 	out   io.Writer
 	mode  progressMode
 	spine progressSpine
+
+	// weights is the profile-selected phase-share table backing the global
+	// progress bar. Fixed at construction from the spine's profile (cold or
+	// warm), so the bar's calibration is decided up front.
+	weights buildBarWeights
 
 	// colorOff suppresses the dim ANSI on the checklist elapsed field when the
 	// process-global color-off decision is set. The elapsed value and its column
@@ -155,7 +247,7 @@ type progressReporter struct {
 
 	// Per-phase timing for the checklist elapsed column. phaseClock records when
 	// each row's phase began, keyed by phase index (0..renderIdx for the spine
-	// phases, compileTimerKey for the compiling-plugins step). phaseFrozen
+	// phases, compileTimerKey for the plugin-compilation step). phaseFrozen
 	// captures a phase's final elapsed once it completes, so a done row shows a
 	// stable time while the active row's time still advances on each redraw. Both
 	// are checklist-only; other modes never populate them.
@@ -171,12 +263,22 @@ type progressReporter struct {
 	// phase done.
 	inRenderStage bool
 
-	// compileShown is true once a guest compilation has been observed under the
-	// cold profile, so the "compiling plugins" step joins the checklist.
-	// compileActive spins it; compileDone ticks it once node rendering begins.
+	// compileShown is true once the eager plugin-compilation phase has begun under
+	// the cold profile, so the "Plugin compilation" step joins the checklist.
+	// compileActive spins it; compileDone ticks it once every guest has compiled.
 	compileShown  bool
 	compileActive bool
 	compileDone   bool
+
+	// Plugin-compilation phase progress. guestsTotal is the number of distinct
+	// provider guests the eager compile pass will compile, guestsCompiled the
+	// running completed count, and compileStart the phase's start instant — the
+	// anchor for the time-based sub-progress the bar shows while a single guest
+	// is compiling. All three are cold-profile checklist/static/debug state; they
+	// stay zero on a silent or warm reporter.
+	guestsTotal    int
+	guestsCompiled int
+	compileStart   time.Time
 
 	// renderTotal is the node count the render phase walks, captured on the first
 	// renderNode call. renderDone is the running completed count. renderNext is
@@ -214,6 +316,7 @@ func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpi
 		out:           out,
 		mode:          mode,
 		spine:         spine,
+		weights:       buildBarWeightsFor(spine.coldProfile),
 		colorOff:      opts.noColor || opts.plain,
 		active:        -1,
 		staticStarted: map[string]bool{},
@@ -278,13 +381,9 @@ const (
 	elapsedFieldWidth = 6
 )
 
-// Fixed captions for the global progress line and the finish block. Verbatim and
-// load-bearing: the layout is asserted against these exact strings.
-const (
-	progressCaption       = "Progress "
-	totalBuildTimeCaption = "Total build time"
-	buildCompletedCaption = "Build completed:"
-)
+// progressCaption prefixes the global progress line. Verbatim and load-bearing:
+// the layout is asserted against this exact string.
+const progressCaption = "Progress "
 
 // terminalWidth reports the column count of w when it is an interactive
 // terminal, or 0 when the width is unknown (w is not an *os.File, or the query
@@ -323,7 +422,7 @@ func markActive(frame rune) string { return fmt.Sprintf("[%c] ", frame) }
 // surface. The caller passes phase indices in ascending order; phase closes the
 // previous phase's timing (debug) and opens the next. A silent reporter returns
 // immediately. Indices at or past the render phase are driven by renderNode and
-// pluginCompiling instead, not by phase.
+// the plugin-compile callbacks instead, not by phase.
 func (p *progressReporter) phase(i int) {
 	if p == nil {
 		return
@@ -344,8 +443,8 @@ func (p *progressReporter) phase(i int) {
 	if i < 0 || i >= len(p.spine.labels) {
 		return
 	}
-	// The render phase's detail (compiling-plugins step, per-node counter) is
-	// driven by the pluginCompiling / renderNode callbacks; phase only marks the
+	// The render phase's detail (plugin-compilation step, per-node counter) is
+	// driven by the plugin-compile / renderNode callbacks; phase only marks the
 	// pre-render phases done and opens the render row.
 	if p.spine.renderIdx >= 0 && i == p.spine.renderIdx {
 		p.beginRenderStage()
@@ -364,49 +463,151 @@ func (p *progressReporter) phase(i int) {
 	p.draw()
 }
 
-// pluginCompiling records that a plugin guest is being compiled during the render
-// step. Under the cold profile it surfaces the "compiling plugins" step as the
-// active checklist row until node rendering begins; under the warm profile, or
-// once node rendering has started, it is a no-op. It is invoked from the shared
-// loader's load observer, which fires as each guest is constructed.
-func (p *progressReporter) pluginCompiling() {
+// pluginCompileBegin opens the eager plugin-compilation phase, which force-
+// compiles the provider guests the render needs before the render loop runs, so
+// a cold guest compilation is a discrete, attributed phase rather than a freeze
+// inside the first node's render. total is the number of distinct guests that
+// will be compiled. Under the cold profile it surfaces the "Plugin compilation"
+// step as the active checklist row and starts its self-timing, so the global bar
+// advances during the compile. Under the warm profile (guests already cached, so
+// the compile is near-instant), a silent reporter, a spine with no render phase,
+// or a zero total, it is a no-op. Called once, before the render loop.
+func (p *progressReporter) pluginCompileBegin(total int) {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.mode == progressSilent || p.spine.renderIdx < 0 {
-		return
-	}
-	if !p.spine.coldProfile || p.compileDone || p.renderDone > 0 {
+	if p.mode == progressSilent || p.spine.renderIdx < 0 || !p.spine.coldProfile || total <= 0 {
 		return
 	}
 	p.beginRenderStage()
-	if p.mode == progressDebug {
-		if !p.compileShown {
-			p.compileShown = true
-			fmt.Fprintf(p.out, "  [debug] %-22s start\n", compilePhaseLabel)
-		}
-		return
-	}
-	newlyShown := !p.compileShown
+	p.guestsTotal = total
 	p.compileShown = true
 	p.compileActive = true
+	p.compileStart = time.Now()
+	// Seed the phase timer before the mode branches so every surface — including
+	// debug, whose completion line reads the frozen elapsed — has a start instant.
+	p.startTimer(compileTimerKey)
+	if p.mode == progressDebug {
+		fmt.Fprintf(p.out, "  [debug] %-22s start\n", compilePhaseLabel)
+		return
+	}
 	if p.mode == progressStatic {
-		if newlyShown {
-			p.staticLine(compilePhaseLabel)
+		p.staticLine(compilePhaseLabel)
+		return
+	}
+	p.draw()
+}
+
+// pluginCompileGuestDone records that done of the total provider guests have
+// finished compiling, advancing the plugin-compilation step. Once every guest is
+// done the step ticks complete and freezes its elapsed. Inert on a reporter that
+// never opened the step (warm, silent, or already done). Called once per guest,
+// in ascending order, from the eager compile pass.
+func (p *progressReporter) pluginCompileGuestDone(done int) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.compileShown || p.compileDone {
+		return
+	}
+	p.guestsCompiled = done
+	complete := p.guestsTotal > 0 && done >= p.guestsTotal
+	if complete {
+		p.compileActive = false
+		p.compileDone = true
+		p.freezeTimer(compileTimerKey)
+	} else {
+		// Restart the ramp anchor so the next guest's time ramp begins at zero
+		// rather than continuing from the phase start.
+		p.compileStart = time.Now()
+	}
+	if p.mode == progressDebug {
+		if complete {
+			fmt.Fprintf(p.out, "  [debug] %-22s done in %s\n", compilePhaseLabel, p.elapsedStr(compileTimerKey))
 		}
 		return
 	}
-	p.startTimer(compileTimerKey)
-	p.draw()
+	if p.mode == progressChecklist {
+		p.draw()
+	}
+}
+
+// globalFraction is the whole-build completion the global progress bar shows, in
+// [0,1]. It sums the shares of the phases that have completed and adds the active
+// phase's share scaled by its internal fraction. Pre-render phases have no sub-
+// progress, so each credits its full share only once the next phase begins; the
+// plugin-compilation step and the render phase carry their own fractions. finish
+// forces 1.0 so the bar completes only when the whole build does.
+func (p *progressReporter) globalFraction() float64 {
+	if p.finished {
+		return 1
+	}
+	// Pre-render phases credited as done: those strictly before the active spinner
+	// before render begins, and all of them once render has begun.
+	doneThrough := p.active
+	if p.inRenderStage {
+		doneThrough = p.spine.renderIdx
+	}
+	var frac float64
+	for i := 0; i < doneThrough && i < p.spine.renderIdx; i++ {
+		frac += p.weights.pre(i)
+	}
+	if p.compileShown {
+		switch {
+		case p.compileDone:
+			frac += p.weights.compile
+		case p.compileActive:
+			frac += p.weights.compile * p.compileFraction()
+		}
+	}
+	if p.renderTotal > 0 {
+		frac += p.weights.render * float64(p.renderDone) / float64(p.renderTotal)
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	if frac < 0 {
+		frac = 0
+	}
+	return frac
+}
+
+// compileFraction estimates how far the active plugin-compilation step has
+// progressed, in [0,1). Guests already compiled contribute their full per-guest
+// share; within the guest currently compiling a bounded, time-based ramp advances
+// the bar so a single long compile (the common case — one dominant provider
+// guest) visibly climbs between completion events rather than freezing. The ramp
+// is capped below the guest boundary so it never overtakes a real completion;
+// actual completion snaps the whole step to its full share via compileDone.
+func (p *progressReporter) compileFraction() float64 {
+	if p.guestsTotal <= 0 {
+		return 0
+	}
+	base := float64(p.guestsCompiled) / float64(p.guestsTotal)
+	share := 1.0 / float64(p.guestsTotal)
+	ramp := 0.0
+	if !p.compileStart.IsZero() {
+		ramp = time.Since(p.compileStart).Seconds() / compileRampEstimate.Seconds()
+		if ramp > compileRampCap {
+			ramp = compileRampCap
+		}
+	}
+	f := base + ramp*share
+	if f > 0.999 {
+		f = 0.999
+	}
+	return f
 }
 
 // renderNode advances the render phase's per-node progress, called once per node
 // as the render loop completes it. done is the 1-based count of nodes rendered so
 // far, total is the graph's node count, and nodeID names the node just finished.
 // The total is captured on the first call. The first call also ticks the
-// pre-render phases (and the compiling-plugins step, if shown) done and makes the
+// pre-render phases (and the plugin-compilation step, if shown) done and makes the
 // render phase active. A silent reporter, or a zero/negative total, returns
 // immediately.
 func (p *progressReporter) renderNode(done, total int, nodeID string) {
@@ -463,7 +664,7 @@ func (p *progressReporter) beginRenderStage() {
 	p.inRenderStage = true
 }
 
-// compileTimerKey is the phaseClock / phaseFrozen key for the compiling-plugins
+// compileTimerKey is the phaseClock / phaseFrozen key for the plugin-compilation
 // step, chosen outside the non-negative spine-index range so it never collides
 // with a phase index.
 const compileTimerKey = -2
@@ -525,22 +726,23 @@ func formatPhaseElapsed(d time.Duration) string {
 }
 
 // progressBar composes the global progress line's bar and whole-number
-// percentage for the render-node fraction: a fixed-width run of filled '█' and
-// empty '░' cells reflecting the completed fraction, then the percentage, e.g.
-// "████████████░░░░░░ 62%". A non-positive total renders an all-empty bar at 0%,
-// the pre-render state shown before any node completes.
-func progressBar(done, total int) string {
-	filled, pct := 0, 0
-	if total > 0 {
-		if done < 0 {
-			done = 0
-		}
-		if done > total {
-			done = total
-		}
-		filled = done * progressBarWidth / total
-		pct = done * 100 / total
+// percentage from the whole-build completion fraction: a fixed-width run of
+// filled '█' and empty '░' cells reflecting the fraction, then the percentage,
+// e.g. "████████████░░░░░░ 62%". The fraction is clamped to [0,1]; both the fill
+// and the percentage floor, so the bar shows 100% only at a true fraction of 1.0
+// (finish), never a rounded-up 100% mid-build.
+func progressBar(frac float64) string {
+	if frac < 0 {
+		frac = 0
 	}
+	if frac > 1 {
+		frac = 1
+	}
+	filled := int(frac * progressBarWidth)
+	if filled > progressBarWidth {
+		filled = progressBarWidth
+	}
+	pct := int(frac * 100)
 	return fmt.Sprintf("%s%s %d%%",
 		strings.Repeat("█", filled),
 		strings.Repeat("░", progressBarWidth-filled),
@@ -705,15 +907,16 @@ func (p *progressReporter) ensureTicker() {
 }
 
 // rows builds the checklist lines for the current state: the pre-render phases,
-// then the optional compiling-plugins step, then the render phase (with its X/Y
-// counter), then — for a spine with a render phase — the global progress line,
-// and finally the finish block once the run completes. Each phase row carries a
-// done / active / pending marker; the progress line and finish block carry none.
+// then the optional plugin-compilation step, then the render phase (with its X/Y
+// counter), and — for a spine with a render phase — the global progress line. Each
+// phase row carries a done / active / pending marker; the progress line carries
+// none. The completion summary (total build time, files written) lands on stdout
+// once the build finishes, not in this diagnostic block, so a completed checklist
+// stays as the live surface above that single stdout summary.
 //
 // The whole block is composed here so linesDrawn (set by draw to len(rows)) is
 // always the exact physical-line count of the block, keeping the in-place redraw
-// rewind exact as the block grows (the compile step appears, the finish block is
-// appended).
+// rewind exact as the block grows (the compile step appears).
 func (p *progressReporter) rows() []string {
 	frame := spinnerFrames[p.spin%len(spinnerFrames)]
 	preCount := len(p.spine.labels)
@@ -731,10 +934,10 @@ func (p *progressReporter) rows() []string {
 		for i := preCount; i < len(p.spine.labels); i++ {
 			rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 		}
-		return append(rows, p.footerRows()...)
+		return rows
 	}
 	if p.compileShown {
-		// The compiling-plugins step has no node count, so it keeps the spinner and
+		// The plugin-compilation step has no node count, so it keeps the spinner and
 		// shows only its elapsed — never a fabricated percentage bar.
 		marker := markDone
 		if p.compileActive && !p.compileDone {
@@ -743,30 +946,11 @@ func (p *progressReporter) rows() []string {
 		rows = append(rows, p.composeRow(marker+compilePhaseLabel, p.elapsedStr(compileTimerKey)))
 	}
 	rows = append(rows, p.composeRow(p.renderRowBody(frame), p.elapsedStr(p.spine.renderIdx)))
-	// The global progress line: the render-node fraction as a fixed-width bar and
-	// whole-number percent on its own line below the phase rows — 0% before render,
-	// filling during, 100% at completion.
-	rows = append(rows, progressCaption+progressBar(p.renderDone, p.renderTotal))
-	return append(rows, p.footerRows()...)
-}
-
-// footerRows returns the finish block appended below the checklist once the run
-// completes: the whole-run wall clock on a total-build-time row (its elapsed
-// right-aligned into the same column as the phase rows) and a completion caption.
-// Empty until finish, and empty for a spine with no render phase (pull keeps its
-// own stdout summary and never shows the build finish block).
-func (p *progressReporter) footerRows() []string {
-	if !p.finished || p.spine.renderIdx < 0 {
-		return nil
-	}
-	var elapsed string
-	if !p.started.IsZero() {
-		elapsed = formatPhaseElapsed(time.Since(p.started))
-	}
-	return []string{
-		p.composeRow(totalBuildTimeCaption, elapsed),
-		buildCompletedCaption,
-	}
+	// The global progress line: the whole-build completion fraction as a fixed-
+	// width bar and whole-number percent on its own line below the phase rows —
+	// profile-weighted so it climbs through every phase, not just render.
+	rows = append(rows, progressCaption+progressBar(p.globalFraction()))
+	return rows
 }
 
 // phaseRow returns the marker for a pre-render (or pull) phase at index i.
@@ -890,18 +1074,13 @@ func (p *progressReporter) finish() {
 	if p.mode == progressChecklist && p.linesDrawn > 0 {
 		// Freeze any still-running timers so the completed checklist shows stable
 		// times: the active pre-render phase (an early error before render), the
-		// render phase, and the compiling-plugins step. The redraw appends the
-		// finish block (total build time + completion caption) via rows().
+		// render phase, and the plugin-compilation step. The final redraw lands the
+		// bar at 100% (globalFraction returns 1 once finished) and leaves the block
+		// in place above the stdout completion summary.
 		p.freezeTimer(p.active)
 		p.freezeTimer(p.spine.renderIdx)
 		p.freezeTimer(compileTimerKey)
 		p.draw()
 		return
-	}
-	if p.mode == progressStatic && p.spine.renderIdx >= 0 && !p.started.IsZero() {
-		// The forced non-TTY surface has no cursor movement, so it prints the plain
-		// equivalent of the checklist finish block as its final lines.
-		fmt.Fprintf(p.out, "%s %s\n", totalBuildTimeCaption, formatPhaseElapsed(now.Sub(p.started)))
-		fmt.Fprintln(p.out, buildCompletedCaption)
 	}
 }

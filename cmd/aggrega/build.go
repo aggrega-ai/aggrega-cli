@@ -354,11 +354,16 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			// summary, so rendered output stays byte-deterministic. A no-op
 			// reporter (quiet, no debug) ignores the calls.
 			NodeProgress: progress.renderNode,
-			// Guest-compilation observation for the cold-profile "compiling
-			// plugins" checklist step. Fires as each render guest is constructed;
-			// writes only to the progress reporter's diagnostic sink, so stdout
-			// stays byte-deterministic.
-			PluginLoadObserver: func(string) { progress.pluginCompiling() },
+			// Eager plugin-compilation phase callbacks for the cold-profile "Plugin
+			// compilation" checklist step. Begin fires once with the number of
+			// provider guests to compile before the render loop; GuestDone fires as
+			// each finishes. Both write only to the progress reporter's diagnostic
+			// sink, so stdout stays byte-deterministic. A warm or silent reporter
+			// ignores the calls; when Begin is set, the pipeline runs the eager
+			// compile pass so a cold guest compilation is attributed rather than
+			// buried in the first node's render.
+			PluginCompileBegin:     progress.pluginCompileBegin,
+			PluginCompileGuestDone: progress.pluginCompileGuestDone,
 		},
 	)
 	if err != nil {
@@ -414,7 +419,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// total) before the stdout summary so the progress surface never lingers
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
-	fmt.Fprintf(out, "Build time: %s\n", formatBuildDuration(time.Since(buildStart)))
+	fmt.Fprintf(out, "Total build time: %s\n", formatBuildDuration(time.Since(buildStart)))
 	fmt.Fprintf(out, "Build completed: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
 }
