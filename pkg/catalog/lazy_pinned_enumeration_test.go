@@ -134,10 +134,11 @@ func (p *pinCacheCountingPuller) Pull(context.Context, string, string) (*oci.Pul
 func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob []byte) Pin {
 	t.Helper()
 	_, version, _ := splitVersionedURI(slotURI)
-	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob}); err != nil {
+	mb, md := manifestBytesFor(t, mediaType, blob)
+	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob, ManifestBytes: mb, Digest: md}); err != nil {
 		t.Fatalf("write cache slot %s: %v", slotURI, err)
 	}
-	return Pin{ResolvedVersion: version, Digest: contentDigest(blob)}
+	return Pin{ResolvedVersion: version, Digest: contentDigest(blob), ManifestDigest: md}
 }
 
 // TestLazyLookup_PinnedCacheEnumeration_Resolves proves that a determinism-wired

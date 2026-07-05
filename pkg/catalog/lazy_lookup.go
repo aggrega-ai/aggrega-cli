@@ -484,8 +484,8 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	sort.Strings(uris)
 	for _, uri := range uris {
 		pin := l.pins[uri]
-		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest)
-		if err != nil && errors.Is(err, oci.ErrFetchIntegrity) {
+		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
+		if err != nil && (errors.Is(err, oci.ErrFetchIntegrity) || errors.Is(err, oci.ErrCachedManifestIntegrity)) {
 			return fmt.Errorf("pinned entity %s: %w", uri, err)
 		}
 	}
@@ -500,6 +500,13 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 type Pin struct {
 	ResolvedVersion string
 	Digest          string
+	// ManifestDigest is the OCI manifest digest the independent record (the
+	// lockfile / prior-lockfile entry) committed to — the root of trust the
+	// offline manifest self-verify checks the persisted manifest blob against.
+	// Empty for a pin with no registry manifest (a locally-resolved entity);
+	// the manifest self-verify is then skipped, but the persisted manifest is
+	// still the authority the content is checked against.
+	ManifestDigest string
 }
 
 // PinsFromLockfile builds the version-aware pin set SetPins consumes from a loaded
@@ -514,7 +521,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	}
 	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.Plugins))
 	for _, e := range lf.Entities {
-		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
+		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
 	}
 	for _, sl := range lf.SchemaLibraries {
 		pins[sl.URI] = Pin{ResolvedVersion: sl.ResolvedVersion, Digest: sl.Digest}
@@ -523,7 +530,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
 	}
 	for _, wp := range lf.Plugins {
-		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
+		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
 	}
 	return pins
 }
@@ -536,7 +543,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 func PinsFromClosure(cl closure.Closure) map[string]Pin {
 	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.Plugins))
 	for _, e := range cl.Entities {
-		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
+		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
 	}
 	for _, sl := range cl.SchemaLibraries {
 		pins[sl.URI] = Pin{ResolvedVersion: sl.ResolvedVersion, Digest: sl.Digest}
@@ -545,7 +552,7 @@ func PinsFromClosure(cl closure.Closure) map[string]Pin {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
 	}
 	for _, wp := range cl.Plugins {
-		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest}
+		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
 	}
 	return pins
 }
@@ -578,13 +585,13 @@ func (l *LazyLookup) tier2Verified(uri string) ([]byte, tier2Outcome) {
 	}
 	// The cache slot is keyed by the versioned URI; combine the lookup URI with
 	// the pin's resolved version so a bare-URI pin addresses the right slot.
-	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest)
+	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
 	switch {
 	case err == nil:
 		return bytes, tier2Use
-	case errors.Is(err, oci.ErrFetchIntegrity):
+	case errors.Is(err, oci.ErrFetchIntegrity), errors.Is(err, oci.ErrCachedManifestIntegrity):
 		return nil, tier2Skip
-	default: // oci.ErrFetchNotFound (slot absent) or an unreadable slot
+	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
 		return nil, tier2Fetch
 	}
 }
@@ -1072,7 +1079,7 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		// A bare-URI pin (a sub-aggregate / library referenced by bare name, pinned
 		// with a separate ResolvedVersion) addresses its versioned cache slot via
 		// versionedSlotURI — the same key the cache→catalog bridge reads.
-		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest)
+		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
 		if err != nil {
 			continue
 		}

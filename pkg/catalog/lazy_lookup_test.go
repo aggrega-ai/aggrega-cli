@@ -13,7 +13,39 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"oras.land/oras-go/v2/content/memory"
 )
+
+// faithfulManifest round-trips body through an in-memory CAS to obtain the
+// authoritative OCI manifest bytes and digest a real pull would carry — so test
+// pullers and cache seeds populate the two-blob slot the manifest-authority read
+// requires. Push/Pull against memory never fail for valid inputs.
+func faithfulManifest(ctx context.Context, mt string, body []byte) (manifestBytes []byte, manifestDigest string) {
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", mt, body); err != nil {
+		panic(err)
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		panic(err)
+	}
+	return res.ManifestBytes, res.Digest
+}
+
+// seedVerifiedComponentSlot writes a faithful two-blob Component cache slot
+// (content + manifest) and returns the content pin and manifest digest a
+// lockfile would record for it.
+func seedVerifiedComponentSlot(t *testing.T, ws, cacheDir, uri, version string, body []byte) (contentPin, manifestPin string) {
+	t.Helper()
+	mb, md := faithfulManifest(context.Background(), oci.MediaTypeComponent, body)
+	if err := oci.WriteCached(ws, cacheDir, uri, version, body); err != nil {
+		t.Fatalf("WriteCached: %v", err)
+	}
+	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, mb); err != nil {
+		t.Fatalf("WriteCachedManifest: %v", err)
+	}
+	return pinFor(body), md
+}
 
 // pinFor computes the lockfile content-digest pin for cached bytes, matching
 // the catalog's internal contentDigest (sha256, "sha256:" prefix). Tests use it
@@ -56,7 +88,10 @@ func (m *mockPuller) Pull(ctx context.Context, reference, tag string) (*oci.Pull
 	if !ok {
 		mt = oci.MediaTypeComponent
 	}
-	return &oci.PullResult{Bytes: bytes, MediaType: mt}, nil
+	// A real pull surfaces the OCI manifest; populate it so the cache write lands
+	// the two-blob slot the manifest-authority read requires.
+	manifestBytes, manifestDigest := faithfulManifest(ctx, mt, bytes)
+	return &oci.PullResult{Bytes: bytes, MediaType: mt, Digest: manifestDigest, ManifestBytes: manifestBytes}, nil
 }
 
 // fullstackComponentYAML returns the canonical Component fixture text
@@ -144,12 +179,10 @@ func TestLazyLookupComponentTier2HitFromCacheDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	cacheDir := ".aggrega/cache"
-	if err := oci.WriteCached(tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
-		t.Fatalf("WriteCached: %v", err)
-	}
+	contentPin, manifestPin := seedVerifiedComponentSlot(t, tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML))
 	puller := newMockPuller()
 	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
-	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: pinFor([]byte(cachedComponentYAML))}})
+	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: contentPin, ManifestDigest: manifestPin}})
 	comp, ok := ll.AsCatalogLookup().Component(cachedComponentURI)
 	if !ok {
 		t.Fatalf("Component(%q) not found at Tier-2 under a matching pin", cachedComponentURI)
@@ -171,13 +204,13 @@ func TestLazyLookupComponentTier2DriftSkips(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	cacheDir := ".aggrega/cache"
-	if err := oci.WriteCached(tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
-		t.Fatalf("WriteCached: %v", err)
-	}
+	_, manifestPin := seedVerifiedComponentSlot(t, tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML))
 	puller := newMockPuller()
 	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
-	// Pin does NOT match the cached content -> drift.
-	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"}})
+	// Content pin does NOT match the cached content -> drift. The manifest is
+	// faithful, so the drift surfaces at the content-pin check, not as an
+	// incomplete-slot miss.
+	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000", ManifestDigest: manifestPin}})
 	if _, ok := ll.AsCatalogLookup().Component(cachedComponentURI); ok {
 		t.Errorf("drifted Tier-2 slot must NOT resolve (false-green); got a hit")
 	}

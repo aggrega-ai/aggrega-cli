@@ -12,6 +12,7 @@ import (
 
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
@@ -56,6 +57,15 @@ func TestOCIResolveHappyPath(t *testing.T) {
 	}
 	if meta.Mediatype != MediatypeHelmChart {
 		t.Errorf("metadata mediatype = %q; want %s", meta.Mediatype, MediatypeHelmChart)
+	}
+	// The OCI manifest is persisted beside the archive — the authority the
+	// build-time read verifies the cached chart against.
+	manifestBytes, err := os.ReadFile(filepath.Join(filepath.Dir(got.CachePath), cacheslot.ManifestFile))
+	if err != nil {
+		t.Fatalf("read persisted manifest: %v", err)
+	}
+	if verr := ocierr.VerifyContentAgainstManifest(manifestBytes, blob); verr != nil {
+		t.Errorf("persisted manifest does not authority the cached archive: %v", verr)
 	}
 }
 

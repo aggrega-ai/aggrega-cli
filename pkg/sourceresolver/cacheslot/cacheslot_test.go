@@ -115,7 +115,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	body := []byte("archive-bytes-here")
 	if err := cacheslot.WriteBlobAndMetadata(slot, body,
 		"compose-https-fragment", "https://example.com/fragment.yaml",
-		"1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead", "application/x-yaml"); err != nil {
+		"1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead", "application/x-yaml", nil); err != nil {
 		t.Fatalf("WriteBlobAndMetadata: %v", err)
 	}
 
@@ -125,6 +125,11 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	}
 	if string(blob) != string(body) {
 		t.Errorf("blob bytes mismatch")
+	}
+
+	// A nil manifest writes no manifest file — a non-OCI source has no manifest.
+	if _, err := os.Stat(filepath.Join(slot, cacheslot.ManifestFile)); !os.IsNotExist(err) {
+		t.Errorf("nil manifest should not create a manifest file; stat err = %v", err)
 	}
 
 	m, err := metadata.Read(filepath.Join(slot, "metadata.yaml"))

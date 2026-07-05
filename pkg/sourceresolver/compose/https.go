@@ -99,8 +99,10 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	if err != nil {
 		return nil, fmt.Errorf("compose-https-fragment: %w", err)
 	}
+	// An HTTPS-fetched compose fragment has no OCI manifest; the archive is
+	// verified against the recorded content digest alone.
 	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
-		Kind, spec.URL, spec.Version, digest, MediatypeYAML); err != nil {
+		Kind, spec.URL, spec.Version, digest, MediatypeYAML, nil); err != nil {
 		return nil, fmt.Errorf("compose-https-fragment: %w", err)
 	}
 

@@ -132,8 +132,10 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	if err != nil {
 		return nil, fmt.Errorf("terraform-module-git: %w", err)
 	}
+	// A git-cloned module has no OCI manifest; the archive is verified against
+	// the recorded content digest alone.
 	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
-		Kind, spec.URL, commitSHA, digest, MediatypeTarGz); err != nil {
+		Kind, spec.URL, commitSHA, digest, MediatypeTarGz, nil); err != nil {
 		return nil, fmt.Errorf("terraform-module-git: %w", err)
 	}
 

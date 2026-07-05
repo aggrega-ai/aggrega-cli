@@ -109,7 +109,7 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 		mediatype = MediatypeHelmChart
 	}
 	if err := cacheslot.WriteBlobAndMetadata(slot, result.Bytes,
-		KindOCI, spec.URL, spec.Version, digest, mediatype); err != nil {
+		KindOCI, spec.URL, spec.Version, digest, mediatype, result.ManifestBytes); err != nil {
 		return nil, fmt.Errorf("helm-oci-chart: %w", err)
 	}
 

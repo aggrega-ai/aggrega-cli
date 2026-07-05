@@ -12,7 +12,6 @@ import (
 	"net/http"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -96,9 +95,8 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 		return nil, fmt.Errorf("oci: read content %q: %w", tag, err)
 	}
 
-	if got := digest.ContentDigest(content); got != contentDesc.Digest.String() {
-		return nil, fmt.Errorf("oci: %q digest %s != manifest %s: %w",
-			tag, got, contentDesc.Digest.String(), ErrFetchIntegrity)
+	if err := VerifyContentAgainstManifest(manifestBytes, content); err != nil {
+		return nil, fmt.Errorf("oci: %q: %w", tag, err)
 	}
 
 	return &PullResult{

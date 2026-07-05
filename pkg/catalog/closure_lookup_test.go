@@ -506,15 +506,20 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 		t.Errorf("offline ManifestDigest = %s; want %s", res2.ManifestDigest, res.ManifestDigest)
 	}
 
-	// Tamper the manifest blob: flip its content. The offline read must HALT with
-	// ErrCachedManifestIntegrity. This direction fails ONLY because the read path
-	// re-hashes the stored manifest — it is vacuous without the verify consumer.
+	// Tamper the manifest blob: flip its content. With the prior lockfile's
+	// manifest digest as the independent pin, the offline read HALTS with
+	// ErrCachedManifestIntegrity — the stored manifest no longer matches the pin
+	// it is anchored to (not a digest re-derived from the cached content).
 	slot := oci.CachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
 	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 		t.Fatalf("tamper manifest write: %v", err)
 	}
-	if _, err := offline.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrCachedManifestIntegrity) {
-		t.Errorf("tampered manifest: err = %v; want ErrCachedManifestIntegrity", err)
+	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{
+		artifactURI: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
+	}}
+	reuseOffline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
+	if _, err := reuseOffline.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+		t.Errorf("tampered manifest (reuse pin): err = %v; want ErrCachedManifestIntegrity", err)
 	}
 
 	// Incomplete slot (content blob, no manifest blob): offline resolves to
@@ -537,5 +542,60 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	}
 	if _, err := oci.ReadCachedManifest(dir, ".aggrega/cache", artifactURI, contentDigest); err != nil {
 		t.Errorf("expected manifest blob repopulated after online re-pull: %v", err)
+	}
+}
+
+// TestResolvePluginManifestAuthorityBeatsForgedContentPin is the plugin tamper
+// proof: an attacker forges the .wasm content AND the content pin that names it
+// (the spec.plugin @sha256 the slot is keyed by), so the content-vs-pin check
+// would pass — but the persisted manifest, an independent record of the original
+// content, still halts the read. The manifest is a root of trust beyond the
+// content pin.
+func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 authority fixture")
+	origDigest := digest.ContentDigest(wasmBytes)
+	const repo = "hub.aggrega.ai/wasm/frp/authority"
+	origURI := "oci://" + repo + "@" + origDigest
+
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, oci.ContentDigestTag(origDigest), oci.MediaTypeWasm, wasmBytes); err != nil {
+		t.Fatalf("oci.Push .wasm: %v", err)
+	}
+	// A faithful pull populates the slot and gives us the authoritative manifest.
+	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
+	if _, err := lookup.ResolvePlugin(origURI); err != nil {
+		t.Fatalf("ResolvePlugin (pull): %v", err)
+	}
+	origManifest, err := oci.ReadCachedManifest(dir, ".aggrega/cache", origURI, origDigest)
+	if err != nil {
+		t.Fatalf("read original manifest: %v", err)
+	}
+
+	// The attacker forges the content and a matching content pin — a NEW URI whose
+	// @sha256 equals the forged bytes, so the slot key and the content-vs-pin check
+	// both agree with the forgery — but reuses the ORIGINAL manifest (the record
+	// they cannot re-forge without the independent lockfile manifest digest).
+	forged := []byte("\x00asm\x01\x00\x00\x00 FORGED artifact body")
+	forgedDigest := digest.ContentDigest(forged)
+	forgedURI := "oci://" + repo + "@" + forgedDigest
+	if err := oci.WriteCached(dir, ".aggrega/cache", forgedURI, forgedDigest, forged); err != nil {
+		t.Fatalf("forge content write: %v", err)
+	}
+	if err := oci.WriteCachedManifest(dir, ".aggrega/cache", forgedURI, forgedDigest, origManifest); err != nil {
+		t.Fatalf("plant original manifest: %v", err)
+	}
+
+	offline := cat.ClosureLookup(nil, dir, ".aggrega/cache")
+	if _, err := offline.ResolvePlugin(forgedURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+		t.Errorf("forged content + forged content pin: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
 }

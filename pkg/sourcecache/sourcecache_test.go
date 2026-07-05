@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -16,9 +17,31 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	"oras.land/oras-go/v2/content/memory"
 )
+
+// ociChartManifest round-trips blob through an in-memory CAS to obtain the OCI
+// manifest bytes a real helm-oci-chart pull persists — the manifest whose single
+// layer commits to the archive's content digest. seedSlot writes it so an
+// OCI-chart slot is the complete two-blob-plus-metadata slot the build read
+// expects.
+func ociChartManifest(t *testing.T, blob []byte) []byte {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", "application/vnd.cncf.helm.chart.content.v1.tar+gzip", blob); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	return res.ManifestBytes
+}
 
 // buildTGZ writes a gzipped tar archive containing the named entries
 // and returns the bytes. Used by every test that needs a cache blob
@@ -80,6 +103,13 @@ func seedSlot(t *testing.T, workspaceRoot, cacheDir, kind, url, version string, 
 	}
 	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), blob, 0o644); err != nil {
 		t.Fatalf("write blob: %v", err)
+	}
+	// An OCI-distributed chart slot carries the persisted manifest the build read
+	// enforces; seed a faithful one committing to this blob.
+	if kind == "helm-oci-chart" {
+		if err := os.WriteFile(filepath.Join(slot, cacheslot.ManifestFile), ociChartManifest(t, blob), 0o644); err != nil {
+			t.Fatalf("write manifest: %v", err)
+		}
 	}
 	meta := metadata.CacheMetadata{
 		Kind:      kind,
@@ -215,6 +245,83 @@ func TestLookupAndExtractMetadataMismatchWrapsIntegrity(t *testing.T) {
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity) {
 		t.Errorf("metadata digest mismatch should wrap ErrFetchIntegrity; got %v", err)
+	}
+}
+
+// TestLookupAndExtractManifestAuthorityBeatsForgedPins is the chart tamper proof:
+// an attacker forges the archive AND every recorded content pin — this slot's
+// metadata.yaml digest and the lockfile entry digest — to agree with the forged
+// archive, so both content-pin checks pass. The persisted OCI manifest, an
+// independent record of the original content, still halts the read. The manifest
+// is a root of trust beyond the content pins.
+func TestLookupAndExtractManifestAuthorityBeatsForgedPins(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	original := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 1.0.0\n"})
+	forged := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 6.6.6-evil\n"})
+	forgedDigest := digestOf(forged)
+
+	// The attacker seeds the slot at the FORGED content coordinate (the slot path
+	// is content-addressed) with the forged archive and forged metadata pin — and
+	// the lockfile below records the forged digest too. Every recorded CONTENT pin
+	// agrees with the forgery. But the persisted manifest is the ORIGINAL one,
+	// committing to the original archive: the record the attacker cannot re-forge
+	// without the independent registry manifest.
+	slot := seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", forged, forgedDigest)
+	if err := os.WriteFile(filepath.Join(slot, cacheslot.ManifestFile), ociChartManifest(t, original), 0o644); err != nil {
+		t.Fatalf("plant original manifest: %v", err)
+	}
+
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", forgedDigest)
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+		t.Errorf("forged archive + forged content pins: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
+	}
+}
+
+// TestLookupAndExtractManifestLessSlotFallsBackToContentPin proves a slot with
+// no persisted manifest still verifies against the git-tracked lockfile content
+// pin: faithful content extracts, drifted content halts. The manifest adds
+// authority when present; its absence never weakens the content-pin root.
+func TestLookupAndExtractManifestLessSlotFallsBackToContentPin(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\n"})
+	slot := seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digestOf(blob))
+	if err := os.Remove(filepath.Join(slot, cacheslot.ManifestFile)); err != nil {
+		t.Fatalf("remove manifest: %v", err)
+	}
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
+	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache"); err != nil {
+		t.Errorf("manifest-less faithful slot: err = %v; want resolve on the content pin", err)
+	}
+
+	// Drift the archive but keep the (now stale) lockfile pin: the content pin
+	// halts even without a manifest.
+	tampered := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\ntampered: true\n"})
+	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), tampered, 0o644); err != nil {
+		t.Fatalf("tamper blob: %v", err)
+	}
+	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+		t.Errorf("manifest-less drifted slot: err = %v; want ErrFetchIntegrity", err)
+	}
+}
+
+// TestLookupAndExtractFaithfulOCISlotPasses is the chart faithful-pass case: a
+// complete OCI-chart slot (archive + manifest committing to it + matching pins)
+// extracts cleanly.
+func TestLookupAndExtractFaithfulOCISlotPasses(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 1.0.0\n"})
+	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digestOf(blob))
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("faithful OCI slot: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extracted, "mariadb", "Chart.yaml")); err != nil {
+		t.Errorf("Chart.yaml missing after faithful extract: %v", err)
 	}
 }
 

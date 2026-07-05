@@ -94,6 +94,21 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, 
 			meta.Digest, entry.Digest, ErrFetchIntegrity)
 	}
 
+	// Manifest authority. An OCI-distributed source (a helm-oci-chart) persists
+	// its OCI manifest beside the archive; when present it is the root the archive
+	// is verified against — the manifest is an independent record of the expected
+	// content, so a forged archive is caught even when every recorded content pin
+	// (this slot's metadata.yaml and the lockfile entry) has been forged to match
+	// it. A slot with no persisted manifest (a non-OCI source, or a pre-manifest
+	// slot) falls back to the git-tracked lockfile content pin verified above.
+	if manifestBytes, mrerr := os.ReadFile(filepath.Join(slot, cacheslot.ManifestFile)); mrerr == nil {
+		if verr := oci.VerifyContentAgainstManifest(manifestBytes, blobBytes); verr != nil {
+			return "", fmt.Errorf("sourcecache: %s: %w", blobPath, verr)
+		}
+	} else if !os.IsNotExist(mrerr) {
+		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)
+	}
+
 	extractedDir := filepath.Join(slot, "extracted")
 	if err := os.RemoveAll(extractedDir); err != nil {
 		return "", fmt.Errorf("sourcecache: wipe extracted dir %s: %w", extractedDir, err)

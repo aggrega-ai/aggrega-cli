@@ -324,7 +324,11 @@ func (l *catalogLookup) LoadAggregate(uri, version, digest string) (*types.Aggre
 	if data, ok := l.catalog.EntityBytes("Aggregate", name); ok {
 		return resolver.LoadAggregateFromBytes(data, name)
 	}
-	data, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, version), digest)
+	// The sub-aggregate loader interface carries the content pin but not the
+	// manifest digest; the manifest self-verify step is skipped, while the
+	// persisted manifest still authorities the content (VerifyContentAgainstManifest)
+	// and the content pin remains the independent root of trust.
+	data, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, version), digest, "")
 	if err != nil {
 		return nil, err
 	}
@@ -549,34 +553,35 @@ func (l *catalogLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
 func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest string) (closure.Resolution, error) {
 	if l.cacheDir != "" {
 		if bytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, pinDigest); err == nil {
-			if got := contentDigest(bytes); got != pinDigest {
-				return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
-					uri, got, pinDigest, oci.ErrFetchIntegrity)
-			}
-			// A cache hit recovers the manifest digest deterministically without a
-			// registry round-trip: the manifest is a pure function of the content
-			// (its creation annotation is epoch-pinned), so the digest a push
-			// produced equals the digest computed from the cached bytes. This is the
-			// trusted reference the stored manifest blob is re-hashed against.
-			manifestDigest, mderr := oci.ManifestDigest(context.Background(), oci.MediaTypeWasm, bytes)
-			if mderr != nil {
-				return closure.Resolution{}, fmt.Errorf("catalog: manifest digest of cached plugin artifact %s: %w", uri, mderr)
-			}
-			// Offline manifest self-verify: re-hash the second cache blob — the
-			// stored manifest — and confirm it matches. A slot with a content blob
-			// but no manifest blob is incomplete; treat it as a cache miss so the
-			// Tier-3 re-pull below rewrites both blobs (offline, the miss surfaces
-			// the pull-first remediation rather than trusting a half-populated slot).
+			// Read the persisted manifest from the same slot. A slot with a
+			// content blob but no manifest blob is incomplete; treat it as a
+			// cache miss so the Tier-3 re-pull below rewrites both blobs (offline,
+			// the miss surfaces the pull-first remediation rather than trusting a
+			// half-populated slot).
 			manifestBytes, mrerr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, pinDigest)
 			switch {
 			case mrerr == nil:
-				if got := contentDigest(manifestBytes); got != manifestDigest {
-					return closure.Resolution{}, fmt.Errorf("catalog: cached manifest for plugin artifact %s digest %s does not match %s: %w",
-						uri, got, manifestDigest, oci.ErrCachedManifestIntegrity)
+				// Manifest authority. When a prior lockfile recorded the manifest
+				// digest, self-verify the stored manifest against that independent
+				// pin — the manifest is anchored to the lockfile, not re-derived
+				// from the cached content. Then trust the content only against the
+				// manifest's layer digest.
+				if prior, ok := l.priorPins[uri]; ok && prior.ManifestDigest != "" {
+					if verr := oci.VerifyManifestDigest(manifestBytes, prior.ManifestDigest); verr != nil {
+						return closure.Resolution{}, fmt.Errorf("catalog: cached manifest for plugin artifact %s: %w", uri, verr)
+					}
 				}
-				return pinnedPluginResolution(pinDigest, manifestDigest), nil
+				if verr := oci.VerifyContentAgainstManifest(manifestBytes, bytes); verr != nil {
+					return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s: %w", uri, verr)
+				}
+				// Defense in depth: the content still matches the URI content pin.
+				if got := contentDigest(bytes); got != pinDigest {
+					return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
+						uri, got, pinDigest, oci.ErrFetchIntegrity)
+				}
+				return pinnedPluginResolution(pinDigest, contentDigest(manifestBytes)), nil
 			case errors.Is(mrerr, oci.ErrFetchNotFound):
-				// Incomplete pre-C4 slot: fall through to the Tier-3 re-pull.
+				// Incomplete slot: fall through to the Tier-3 re-pull.
 			default:
 				return closure.Resolution{}, fmt.Errorf("catalog: read cached manifest for plugin artifact %s: %w", uri, mrerr)
 			}
@@ -838,14 +843,39 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 // ErrFetchIntegrity when the cached content does not match the pin. An empty
 // expectedDigest is a programming error at the call site (a read that cannot
 // supply a pin is a gap to wire, never a silent skip) and is reported as such.
-func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest string) ([]byte, error) {
+func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedManifestDigest string) ([]byte, error) {
 	if expectedDigest == "" {
 		return nil, fmt.Errorf("catalog: tier-2 verified read of %s requires a non-empty expected digest", uri)
 	}
-	bytes, _, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
+	bytes, res, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
 	if !ok {
 		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
 	}
+	// Manifest authority. Every registry pull persists the OCI manifest beside the
+	// content; when present it is the root the content is verified against. Verify
+	// the manifest against the independent pin (when one is recorded — a
+	// registry-resolved entity), then verify the content against the manifest's
+	// layer digest, so a forged content+content-pin pair cannot survive an
+	// untampered manifest. A slot with no persisted manifest falls back to the
+	// content-pin check below; the independent lockfile content pin remains the
+	// root of trust either way.
+	manifestBytes, mrerr := oci.ReadCachedManifest(workspaceRoot, cacheDir, uri, res.ResolvedVersion)
+	switch {
+	case mrerr == nil:
+		if expectedManifestDigest != "" {
+			if err := oci.VerifyManifestDigest(manifestBytes, expectedManifestDigest); err != nil {
+				return nil, fmt.Errorf("catalog: cached manifest for %s: %w", uri, err)
+			}
+		}
+		if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
+			return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
+		}
+	case errors.Is(mrerr, oci.ErrFetchNotFound):
+		// No persisted manifest; the content pin below is the authority.
+	default:
+		return nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
+	}
+	// Content still matches the recorded content pin.
 	if got := contentDigest(bytes); got != expectedDigest {
 		return nil, fmt.Errorf("catalog: cached %s content digest %s does not match lockfile pin %s: %w",
 			uri, got, expectedDigest, oci.ErrFetchIntegrity)
@@ -1101,10 +1131,25 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 		if err := os.MkdirAll(slot, 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(slot, "library.yaml"), result.Bytes, 0o644)
+		if err := os.WriteFile(filepath.Join(slot, "library.yaml"), result.Bytes, 0o644); err != nil {
+			return err
+		}
 	default:
-		return oci.WriteCached(workspaceRoot, cacheDir, uri, version, result.Bytes)
+		if err := oci.WriteCached(workspaceRoot, cacheDir, uri, version, result.Bytes); err != nil {
+			return err
+		}
 	}
+	// Persist the OCI manifest as a second self-verifying blob in the same slot.
+	// The offline read verifies the cached content against the manifest's layer
+	// digest — the manifest is the authority — rather than trusting the recorded
+	// content pin alone. A slot written without a manifest is incomplete and the
+	// offline read treats it as a cache miss.
+	if len(result.ManifestBytes) > 0 {
+		if err := oci.WriteCachedManifest(workspaceRoot, cacheDir, uri, version, result.ManifestBytes); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // readCacheSlotBytes reads the entity bytes from a cache slot. Tries

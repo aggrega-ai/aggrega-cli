@@ -73,9 +73,17 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, version, digest string) (str
 	), nil
 }
 
+// ManifestFile is the slot filename for the persisted OCI manifest — the
+// authority the build-time read verifies the cached archive against. It sits
+// beside blob.tgz and metadata.yaml. An OCI-distributed artifact writes it; a
+// non-OCI source (an HTTPS .tgz with no manifest) passes nil manifestBytes and
+// no file is written, so the read path treats the slot as manifest-less.
+const ManifestFile = "manifest"
+
 // WriteBlobAndMetadata creates the cache slot at slotDir if missing,
-// writes blob.tgz with the archive bytes, and writes metadata.yaml
-// with the CacheMetadata. The two writes are not transactional —
+// writes blob.tgz with the archive bytes, writes metadata.yaml with
+// the CacheMetadata, and — when manifestBytes is non-empty — persists
+// the OCI manifest beside them. The writes are not transactional —
 // crash between them leaves a half-populated slot, which the next
 // pull rewrites. Adapters re-pull on any digest mismatch, so partial
 // state is self-healing rather than load-bearing.
@@ -85,14 +93,25 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, version, digest string) (str
 // charts, "application/x-yaml" for compose fragments). The caller
 // supplies it; this package does not infer.
 //
+// manifestBytes is the raw OCI manifest JSON for an OCI-distributed
+// artifact; the build-time read verifies the cached archive against
+// the layer digest the manifest declares. Pass nil for a non-OCI
+// source that has no manifest.
+//
 // PulledAt is set to time.Now().UTC() at write time.
-func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype string) error {
+func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype string, manifestBytes []byte) error {
 	if err := os.MkdirAll(slotDir, 0o755); err != nil {
 		return fmt.Errorf("cacheslot: mkdir %s: %w", slotDir, err)
 	}
 	blobPath := filepath.Join(slotDir, "blob.tgz")
 	if err := os.WriteFile(blobPath, archiveBytes, 0o644); err != nil {
 		return fmt.Errorf("cacheslot: write blob %s: %w", blobPath, err)
+	}
+	if len(manifestBytes) > 0 {
+		manifestPath := filepath.Join(slotDir, ManifestFile)
+		if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+			return fmt.Errorf("cacheslot: write manifest %s: %w", manifestPath, err)
+		}
 	}
 	meta := metadata.CacheMetadata{
 		Kind:      kind,

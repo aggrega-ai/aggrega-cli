@@ -114,8 +114,10 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 	if err != nil {
 		return nil, fmt.Errorf("helm-https-chart: %w", err)
 	}
+	// An HTTPS-distributed chart has no OCI manifest; the archive is verified
+	// against the recorded content digest alone.
 	if err := cacheslot.WriteBlobAndMetadata(slot, body,
-		KindHTTPS, resolvedURL, spec.Version, digest, MediatypeHelmChart); err != nil {
+		KindHTTPS, resolvedURL, spec.Version, digest, MediatypeHelmChart, nil); err != nil {
 		return nil, fmt.Errorf("helm-https-chart: %w", err)
 	}
 
