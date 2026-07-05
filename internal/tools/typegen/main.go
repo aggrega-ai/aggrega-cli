@@ -1041,20 +1041,31 @@ func emitDecodeValue(b *strings.Builder, dst, goType, indent string, defTypes ma
 		fmt.Fprintf(b, "%s}\n", indent)
 	default:
 		// any / interface{} and any other shape with no generated codec:
-		// capture the raw value and unmarshal it. This is the only residual
-		// stdlib decode; it is reached for an opaque `any` value the guest
-		// authors on the output side, never for a typed field on the decode
-		// hot path.
+		// capture the raw value and decode it with a number-preserving decoder.
+		// This is the only residual stdlib decode. It is reached both for an
+		// opaque `any` value the guest authors on the output side and for a
+		// non-def typed field decoded on the guest input hot path — notably
+		// WorkloadProjection.Workload, whose opaque `any` sub-fields must keep
+		// integers as integers rather than widening them to float64.
 		emitDecodeAnyFallback(b, dst, goType, indent)
 	}
 }
 
 // emitDecodeAnyFallback decodes an opaque value (an `any` field, or a pointer
-// to a non-def type) by capturing its raw bytes and unmarshaling them. It is
-// the one place a stdlib reflective decode remains; it is not on the typed
-// decode path of the input payload.
+// to a non-def type) by capturing its raw bytes and decoding them through a
+// json.Decoder with UseNumber set. UseNumber preserves nested opaque numbers as
+// json.Number so an integer is not silently widened to float64 (which would
+// re-serialize a large integer in exponential form and drop precision beyond
+// 2^53). This path is reached on the guest input hot path for non-def typed
+// fields such as WorkloadProjection.Workload, whose opaque `any` sub-fields
+// (scheduling affinity, tolerations, lifecycle httpGet, volume items) must keep
+// integers as integers. It is the one place a stdlib reflective decode remains.
 func emitDecodeAnyFallback(b *strings.Builder, dst, goType, indent string) {
-	fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else if err := json.Unmarshal(raw, &%s); err != nil {\n%s\treturn err\n%s}\n", indent, indent, indent, dst, indent, indent)
+	fmt.Fprintf(b, "%sif raw, err := readRaw(dec, data); err != nil {\n%s\treturn err\n%s} else {\n", indent, indent, indent)
+	fmt.Fprintf(b, "%s\tdec2 := json.NewDecoder(bytes.NewReader(raw))\n", indent)
+	fmt.Fprintf(b, "%s\tdec2.UseNumber()\n", indent)
+	fmt.Fprintf(b, "%s\tif err := dec2.Decode(&%s); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, dst, indent, indent)
+	fmt.Fprintf(b, "%s}\n", indent)
 }
 
 // emitCodecHelpers writes the shared streaming-decode helpers the generated

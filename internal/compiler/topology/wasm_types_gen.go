@@ -290,8 +290,12 @@ func (t *MutatorGraph) UnmarshalJSON(data []byte) error {
 		case "nodes":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Nodes); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Nodes); err != nil {
+					return err
+				}
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -366,8 +370,12 @@ func (t *MutatorNode) UnmarshalJSON(data []byte) error {
 		case "labels":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Labels); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Labels); err != nil {
+					return err
+				}
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

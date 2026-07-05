@@ -274,8 +274,12 @@ func (t *RenderNodeInput) UnmarshalJSON(data []byte) error {
 		case "context":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Context); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Context); err != nil {
+					return err
+				}
 			}
 		case "catalog_projection":
 			if raw, err := readRaw(dec, data); err != nil {
@@ -462,20 +466,32 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 		case "values":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Values); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Values); err != nil {
+					return err
+				}
 			}
 		case "features":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Features); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Features); err != nil {
+					return err
+				}
 			}
 		case "uses":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Uses); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Uses); err != nil {
+					return err
+				}
 			}
 		case "boundary_path":
 			if s, err := readString(dec); err != nil {
@@ -682,32 +698,52 @@ func (t *CatalogProjection) UnmarshalJSON(data []byte) error {
 		case "components":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Components); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Components); err != nil {
+					return err
+				}
 			}
 		case "features":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Features); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Features); err != nil {
+					return err
+				}
 			}
 		case "recipes":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Recipes); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Recipes); err != nil {
+					return err
+				}
 			}
 		case "feature_recipes":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.FeatureRecipes); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.FeatureRecipes); err != nil {
+					return err
+				}
 			}
 		case "mapping_libraries":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.MappingLibraries); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.MappingLibraries); err != nil {
+					return err
+				}
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -811,8 +847,12 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 				var elem renderctx.Diagnostic
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
-				} else if err := json.Unmarshal(raw, &elem); err != nil {
-					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
 				}
 				t.Diagnostics = append(t.Diagnostics, elem)
 			}
@@ -1090,8 +1130,12 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 		case "workload":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Workload); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Workload); err != nil {
+					return err
+				}
 			}
 		case "secrets":
 			t.Secrets = make(map[string]types.OrderedMap[string])
@@ -1106,8 +1150,12 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 				var mv types.OrderedMap[string]
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
-				} else if err := json.Unmarshal(raw, &mv); err != nil {
-					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&mv); err != nil {
+						return err
+					}
 				}
 				t.Secrets[mk] = mv
 			}
@@ -1253,8 +1301,12 @@ func (t *AssembleBoundaryInput) UnmarshalJSON(data []byte) error {
 		case "boundary":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Boundary); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Boundary); err != nil {
+					return err
+				}
 			}
 		case "rendered_nodes":
 			t.RenderedNodes = nil
@@ -1278,8 +1330,12 @@ func (t *AssembleBoundaryInput) UnmarshalJSON(data []byte) error {
 		case "context":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Context); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Context); err != nil {
+					return err
+				}
 			}
 		case "boundary_path":
 			if s, err := readString(dec); err != nil {
@@ -1428,8 +1484,12 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 		case "annotations":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Annotations); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Annotations); err != nil {
+					return err
+				}
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -1574,8 +1634,12 @@ func (t *SubChart) UnmarshalJSON(data []byte) error {
 		case "values":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
-			} else if err := json.Unmarshal(raw, &t.Values); err != nil {
-				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Values); err != nil {
+					return err
+				}
 			}
 		case "chart_yaml":
 			if v, err := readBytes(dec); err != nil {
@@ -1697,8 +1761,12 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 				var elem renderctx.Diagnostic
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
-				} else if err := json.Unmarshal(raw, &elem); err != nil {
-					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
 				}
 				t.Diagnostics = append(t.Diagnostics, elem)
 			}
