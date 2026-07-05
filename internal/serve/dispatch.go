@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // jsonRPCRequest is the wire shape for an incoming request. ID is
@@ -369,6 +371,15 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 	// promptly.
 	ctx, cancel := context.WithCancel(s.serverCtx)
 	defer cancel()
+	// Thread the daemon-lifetime shared compilation cache into the request's
+	// context so the render pipeline's per-request Loader references it (warm
+	// compiled guests) rather than minting a fresh per-request cache. The cache
+	// memoizes only compiled machine code — a pure function of the guest bytes —
+	// so sharing it across concurrent workers leaves rendered output unchanged.
+	// nil (a Server built outside Run) leaves the injection a no-op.
+	if s.pluginCompileCache != nil {
+		ctx = wasm.ContextWithSharedCompilationCache(ctx, s.pluginCompileCache)
+	}
 	// Register the SAME per-request cancel handle under the request's id
 	// so a specific in-flight request is addressable by id. This is a
 	// second address for the child handle above, not a second cancel

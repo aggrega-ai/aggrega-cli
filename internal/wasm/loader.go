@@ -142,15 +142,52 @@ func NewCachingLoader(fetch FetchService) (*Loader, func() error) {
 	return newCachingLoader(fetch, false)
 }
 
-// NewCachingLoaderFromContext is NewCachingLoader with the persistent-cache
-// dial read from ctx: when the context carries a disable-persistent-cache
-// signal (see ContextWithDisablePluginCache), the Loader skips the on-disk
-// compile cache and uses an in-memory-only cache that lives for this build
-// alone, compiling every guest fresh. With no such signal it behaves exactly
-// like NewCachingLoader — disk-backed with an in-memory fallback. The returned
-// close function must be invoked when the Loader is no longer needed.
+// NewCachingLoaderFromContext is NewCachingLoader with its cache sourced from
+// ctx. Two context signals govern it, in precedence order:
+//
+//   - A shared server-lifetime cache (see ContextWithSharedCompilationCache):
+//     when present, the Loader is built OVER that cache and the returned close
+//     function is a no-op. The cache's owner — a long-running server that
+//     created it once and injects it into every request — retains the sole
+//     authority to close it, so a per-request Loader must never release it.
+//     Each request still gets its own Loader with its own per-request fields
+//     (OnLoad, ExternalInputs); only the compiled-code cache is shared. Because
+//     the cache memoizes only compiled machine code (a pure function of the
+//     guest bytes), sharing it across concurrent requests cannot alter output.
+//   - Otherwise, the persistent-cache dial (see ContextWithDisablePluginCache):
+//     a disable signal makes the Loader skip the on-disk compile cache and use
+//     an in-memory-only cache that lives for this build alone; with no signal it
+//     behaves exactly like NewCachingLoader — disk-backed with an in-memory
+//     fallback. In this branch the Loader owns a freshly-minted cache and the
+//     returned close function releases it; the caller MUST invoke it when the
+//     Loader is no longer needed.
 func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) (*Loader, func() error) {
+	if shared := SharedCompilationCacheFromContext(ctx); shared != nil {
+		l := &Loader{ExternalInputs: fetch, Cache: shared}
+		return l, func() error { return nil }
+	}
 	return newCachingLoader(fetch, DisablePluginCacheFromContext(ctx))
+}
+
+// NewSharedCompilationCache constructs a wazero CompilationCache for a
+// long-running server to hold across its whole lifetime, plus a close function
+// that releases it. The server creates one at startup, injects it into every
+// request's context via ContextWithSharedCompilationCache (so each request's
+// per-request Loader references it through NewCachingLoaderFromContext), and
+// invokes the returned close function exactly once at shutdown — never
+// per-request.
+//
+// The disk-vs-memory selection is delegated to newCompilationCache, the single
+// decision site shared with the per-build caching Loader: disablePersistent
+// false prefers the on-disk store under wasmCompileCacheDir with an in-memory
+// fallback; true uses an in-memory-only cache. Sharing this cache across the
+// Runtimes of many simultaneously-constructed Plugins is sound — a wazero
+// CompilationCache is safe for concurrent use and is wazero's documented
+// mechanism for sharing compiled machine code across Runtimes — and it changes
+// only compilation cost, never isolation or output.
+func NewSharedCompilationCache(disablePersistent bool) (wazero.CompilationCache, func() error) {
+	cache := newCompilationCache(disablePersistent)
+	return cache, func() error { return cache.Close(context.Background()) }
 }
 
 // newCachingLoader assembles a caching Loader over the cache selected by
@@ -275,6 +312,34 @@ func ContextWithDisablePluginCache(ctx context.Context, disable bool) context.Co
 func DisablePluginCacheFromContext(ctx context.Context) bool {
 	disable, _ := ctx.Value(disablePluginCacheContextKey{}).(bool)
 	return disable
+}
+
+// sharedCompilationCacheContextKey keys an optional server-lifetime shared
+// wazero CompilationCache on a context, for the Loader construction site that
+// receives its per-request plumbing only through the context it is called with.
+type sharedCompilationCacheContextKey struct{}
+
+// ContextWithSharedCompilationCache returns a context carrying a shared,
+// server-owned wazero CompilationCache for downstream caching-Loader
+// construction. When present, NewCachingLoaderFromContext builds the per-request
+// Loader over this cache and returns a no-op close function — the server that
+// created the cache owns its lifetime and closes it once at shutdown, so the
+// per-request pipeline must not. A nil cache is treated as absent. It mirrors
+// ContextWithDisablePluginCache for call paths — the render pipeline's per-step
+// plugin dispatch — whose only shared plumbing to the Loader is the context.
+func ContextWithSharedCompilationCache(ctx context.Context, cache wazero.CompilationCache) context.Context {
+	if cache == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, sharedCompilationCacheContextKey{}, cache)
+}
+
+// SharedCompilationCacheFromContext returns the shared compilation cache carried
+// by ctx, or nil when none is attached. A nil return routes
+// NewCachingLoaderFromContext to its default per-build cache behaviour.
+func SharedCompilationCacheFromContext(ctx context.Context) wazero.CompilationCache {
+	cache, _ := ctx.Value(sharedCompilationCacheContextKey{}).(wazero.CompilationCache)
+	return cache
 }
 
 // Plugin wraps an Extism plugin handle with Aggrega-specific lifecycle
