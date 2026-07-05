@@ -1068,3 +1068,42 @@ func TestBuild_SingleFinalBlockOnStdout(t *testing.T) {
 		t.Errorf("diagnostic sink must not duplicate the completion caption; got %q", stderr.String())
 	}
 }
+
+// TestFormatTotalBuildTimeLine_SharesPhaseTimingRightEdge asserts the summary's
+// total-build-time value is right-aligned to the same right-hand column the
+// per-phase checklist elapsed times occupy, so the value and the phase timings
+// share a right edge.
+func TestFormatTotalBuildTimeLine_SharesPhaseTimingRightEdge(t *testing.T) {
+	// A phase row's visible right edge: composeRow pads the body to rowBodyColumn
+	// then appends the elapsed field of elapsedFieldWidth. colorOff drops the dim
+	// escapes so the rune count is the exact visible width.
+	rp := &progressReporter{colorOff: true}
+	phaseRow := rp.composeRow(markDone+"rendering 8/8", "0.7s")
+	wantEdge := rowBodyColumn + elapsedFieldWidth
+	if got := utf8.RuneCountInString(phaseRow); got != wantEdge {
+		t.Fatalf("phase-row right edge = %d, want %d (row=%q)", got, wantEdge, phaseRow)
+	}
+	for _, value := range []string{"3.1 s", "87 ms", "0.4 s", "999 ms"} {
+		line := formatTotalBuildTimeLine(value)
+		if got := utf8.RuneCountInString(line); got != wantEdge {
+			t.Errorf("total line for %q has right edge %d, want %d (line=%q)", value, got, wantEdge, line)
+		}
+		if !strings.HasSuffix(line, value) {
+			t.Errorf("total line %q must end with the value %q", line, value)
+		}
+		if !strings.HasPrefix(line, "Total build time: ") {
+			t.Errorf("total line %q must keep the 'Total build time: ' prefix", line)
+		}
+	}
+}
+
+// TestFormatTotalBuildTimeLine_LongValueFallsBackToSingleSpace verifies a value
+// long enough to reach (or exceed) the alignment column separates with a single
+// space rather than producing a negative pad.
+func TestFormatTotalBuildTimeLine_LongValueFallsBackToSingleSpace(t *testing.T) {
+	value := strings.Repeat("9", rowBodyColumn+elapsedFieldWidth)
+	line := formatTotalBuildTimeLine(value)
+	if want := "Total build time: " + value; line != want {
+		t.Errorf("long-value line = %q, want single-space separator %q", line, want)
+	}
+}

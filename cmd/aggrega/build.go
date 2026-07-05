@@ -419,9 +419,25 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// total) before the stdout summary so the progress surface never lingers
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
-	fmt.Fprintf(out, "Total build time: %s\n", formatBuildDuration(time.Since(buildStart)))
+	fmt.Fprintf(out, "%s\n", formatTotalBuildTimeLine(formatBuildDuration(time.Since(buildStart))))
 	fmt.Fprintf(out, "Build completed: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
+}
+
+// formatTotalBuildTimeLine renders the successful-build summary's total line with
+// its value right-aligned so the value's last character sits in the same right-
+// hand column the per-phase checklist elapsed times occupy — the two share a
+// right edge. The column is the checklist row body width plus its elapsed field
+// width, so the alignment tracks the checklist layout rather than a fixed number.
+// A value long enough to reach that column falls back to a single separating
+// space rather than a negative pad.
+func formatTotalBuildTimeLine(value string) string {
+	const label = "Total build time:"
+	pad := rowBodyColumn + elapsedFieldWidth - len(label) - len(value)
+	if pad < 1 {
+		pad = 1
+	}
+	return label + strings.Repeat(" ", pad) + value
 }
 
 // formatBuildDuration renders an elapsed build wall-clock for the summary: whole
