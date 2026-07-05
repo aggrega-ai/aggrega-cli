@@ -327,8 +327,7 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 //     time, so under missingkey=zero it renders as the empty string.
 //     The empty-parent case is counterintuitive for users coming
 //     from ecosystems where `{}` is equivalent to omission — see
-//     the LDR Evolution note and parameters-context.md for the
-//     design rationale.
+//     parameters-context.md for the design rationale.
 //
 //   - release-partial-parent: Release authors `database: { host:
 //     "db.prod.example.com" }`. Case 3 merges the Release-authored

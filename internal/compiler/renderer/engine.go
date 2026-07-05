@@ -60,8 +60,8 @@ type SourceProjector interface {
 	ProjectSource(path string) (*SourceProjection, error)
 }
 
-// ProviderCapabilities declares which of the three Recipe input kinds (LDR
-// 0052) a provider engine can render. This is the INPUT-KIND axis only — it is
+// ProviderCapabilities declares which of the three Recipe input kinds a
+// provider engine can render. This is the INPUT-KIND axis only — it is
 // orthogonal to the output-assembly axis (BoundaryAssembler /
 // ExternalArtifactsHandler, which describe how a node's output is assembled,
 // not which input kinds it accepts).

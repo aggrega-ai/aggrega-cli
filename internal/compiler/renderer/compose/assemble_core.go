@@ -296,9 +296,9 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 //
 // Today's emit shape is the short-form list (just service names); the
 // long-form `{ <target>: { condition: service_healthy } }` shape requires a
-// type-shape extension on Service.DependsOn that is reserved for a future
-// intent. The short form is honest and works for compose; service_healthy
-// gating is a future enhancement once Service.DependsOn becomes a map.
+// type-shape extension on Service.DependsOn that is not yet implemented. The
+// short form is honest and works for compose; service_healthy gating becomes
+// available once Service.DependsOn becomes a map.
 func applyDependsOn(merged *ComposeFile, edges []renderer.IREdgeInfo, boundaryByService map[string]string) {
 	addedByService := map[string]map[string]struct{}{}
 	for _, edge := range edges {
