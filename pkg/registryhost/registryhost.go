@@ -10,7 +10,10 @@
 // tree.
 package registryhost
 
-import "strings"
+import (
+	"net"
+	"strings"
+)
 
 // Of returns the host authority of a registry reference or URL: the scheme is
 // stripped, the path (everything from the first "/") is dropped, and any
@@ -39,4 +42,39 @@ func Of(ref string) string {
 		ref = ref[i+1:]
 	}
 	return ref
+}
+
+// IsLoopback reports whether a host authority addresses the local machine, and
+// is the single source for the plain-HTTP-vs-HTTPS decision every registry and
+// artifact client shares. The input is a host authority (as produced by Of) —
+// a bare host, optionally carrying a port and, for an IPv6 literal, brackets;
+// the port and brackets are stripped internally before classification.
+//
+// A host is loopback when it is any of:
+//
+//   - the "localhost" name, or any name under the ".localhost" suffix
+//     (reserved for loopback, so it never legitimately names a remote host);
+//   - a loopback IP literal — 127.0.0.0/8 or ::1;
+//   - "0.0.0.0", the unspecified address, which a client can only ever reach on
+//     the local machine.
+//
+// The ".localhost" suffix match is anchored on a full label boundary, so
+// "localhost.evil.com" is NOT loopback. Names are matched literally and never
+// resolved: a DNS name other than the above that happens to point at a loopback
+// IP stays non-loopback, keeping the plaintext decision independent of resolver
+// state.
+func IsLoopback(authority string) bool {
+	host := authority
+	if h, _, err := net.SplitHostPort(authority); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if host == "0.0.0.0" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

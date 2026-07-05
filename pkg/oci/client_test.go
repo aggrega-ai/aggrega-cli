@@ -287,9 +287,12 @@ func TestNewRemoteRepository_LoopbackPlainHTTP(t *testing.T) {
 		{"127.0.0.1/smoke/component/x", true},
 		{"127.9.8.7:5000/smoke/component/x", true}, // 127.0.0.0/8
 		{"[::1]:5000/smoke/component/x", true},
+		{"app.localhost:5000/smoke/component/x", true}, // reserved-for-loopback subdomain
+		{"0.0.0.0:5000/smoke/component/x", true},       // unspecified, local-only
 		{"hub.aggrega.ai/component/core/compute/server", false},
 		{"registry.example.com:5000/x/y", false},
 		{"10.0.0.7:5000/x/y", false},
+		{"localhost.evil.com:5000/x/y", false}, // not a .localhost name — stays HTTPS
 	}
 	for _, tc := range cases {
 		t.Run(tc.ref, func(t *testing.T) {

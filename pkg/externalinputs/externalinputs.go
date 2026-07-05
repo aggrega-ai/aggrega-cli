@@ -24,7 +24,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,6 +37,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
 // defaultFetchTimeout bounds plain HTTP(S) input fetches when the caller
@@ -421,7 +421,7 @@ func classify(rawURL string) (inputKind, error) {
 	case "https":
 		return kindHTTP, nil
 	case "http":
-		if isLoopbackHost(u.Host) {
+		if registryhost.IsLoopback(u.Host) {
 			return kindHTTP, nil
 		}
 		return 0, fmt.Errorf(
@@ -434,26 +434,6 @@ func classify(rawURL string) (inputKind, error) {
 			"externalinputs: %q: scheme %q is not allowed (allowed schemes: https, http to a loopback host, oci): %w",
 			rawURL, u.Scheme, ErrSchemeNotAllowed)
 	}
-}
-
-// isLoopbackHost reports whether a URL authority addresses the local machine:
-// the "localhost" name or a loopback IP literal (127.0.0.0/8, ::1), with or
-// without a port and IPv6 brackets. Names other than "localhost" are NOT
-// resolved, keeping the plaintext decision independent of resolver state.
-// This mirrors the loopback detection pkg/registrytrust and pkg/oci apply to
-// their own plain-HTTP gates, so an input fetched from a local test server
-// uses plain HTTP exactly as a local registry pull does.
-func isLoopbackHost(host string) bool {
-	h := host
-	if hostOnly, _, err := net.SplitHostPort(host); err == nil {
-		h = hostOnly
-	}
-	h = strings.Trim(h, "[]")
-	if h == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
 }
 
 // parseOCIReference splits an oci:// input URL into the repository reference

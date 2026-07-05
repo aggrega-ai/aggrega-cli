@@ -9,12 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
@@ -221,7 +220,7 @@ func NewRemoteRepository(reference string) (*remote.Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse reference %q: %w", reference, err)
 	}
-	repo.PlainHTTP = isLoopbackRegistry(repo.Reference.Registry)
+	repo.PlainHTTP = registryhost.IsLoopback(repo.Reference.Registry)
 
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
@@ -249,7 +248,7 @@ func VerifyCredential(ctx context.Context, registryHost string, cred auth.Creden
 	if err != nil {
 		return fmt.Errorf("oci: parse registry %q: %w", registryHost, err)
 	}
-	reg.PlainHTTP = isLoopbackRegistry(reg.Reference.Registry)
+	reg.PlainHTTP = registryhost.IsLoopback(reg.Reference.Registry)
 	reg.Client = &auth.Client{
 		Credential: auth.StaticCredential(reg.Reference.Registry, cred),
 	}
@@ -276,33 +275,6 @@ func isUnauthorized(err error) bool {
 		return ec.StatusCode == http.StatusUnauthorized || ec.StatusCode == http.StatusForbidden
 	}
 	return false
-}
-
-// isLoopbackRegistry reports whether an OCI registry host (the
-// reference segment before the first "/", which may carry a port and
-// may bracket an IPv6 literal) addresses the local machine: the
-// "localhost" name, or any loopback IP literal (127.0.0.0/8, ::1).
-// Names other than "localhost" are NOT resolved — a DNS name that
-// happens to point at 127.0.0.1 stays HTTPS, keeping the plaintext
-// decision independent of resolver state.
-//
-// This deliberately does not route through pkg/registryhost.Of: its
-// input is an already-parsed registry reference (no scheme, no
-// userinfo, no path), and the loopback check needs the host with the
-// port stripped and IPv6 brackets removed — the opposite of Of's
-// port-and-bracket-preserving authority extraction. Of would be an
-// identity no-op here, so routing through it would consolidate nothing.
-func isLoopbackRegistry(registry string) bool {
-	host := registry
-	if h, _, err := net.SplitHostPort(registry); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // descriptorFromManifest parses an OCI image manifest's JSON bytes

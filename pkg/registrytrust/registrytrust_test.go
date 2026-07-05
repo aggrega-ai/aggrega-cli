@@ -6,11 +6,58 @@ package registrytrust
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// schemeCapture is an http.RoundTripper that records the scheme of the request
+// URL and answers with a canned trust document, so Fetch's plain-HTTP-vs-HTTPS
+// decision is observable without a live endpoint or DNS.
+type schemeCapture struct{ scheme string }
+
+func (c *schemeCapture) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.scheme = r.URL.Scheme
+	const body = `{"requires_signatures": false, "trusted_identities": [{"identity": "dev@example.com", "issuer": "https://accounts.google.com"}]}`
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, nil
+}
+
+// TestFetchLoopbackHostsUsePlainHTTP proves the plain-HTTP gate covers the full
+// loopback set — reserved ".localhost" names and the unspecified 0.0.0.0
+// address alongside literal loopback IPs and "localhost" — while a public host
+// that merely contains "localhost" as a substring keeps HTTPS.
+func TestFetchLoopbackHostsUsePlainHTTP(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		host       string
+		wantScheme string
+	}{
+		{"localhost:5000", "http"},
+		{"127.0.0.1:5000", "http"},
+		{"app.localhost:5000", "http"},
+		{"0.0.0.0:5000", "http"},
+		{"localhost.evil.com:5000", "https"},
+		{"registry.example.com", "https"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.host, func(t *testing.T) {
+			t.Parallel()
+			cap := &schemeCapture{}
+			if _, err := Fetch(context.Background(), &http.Client{Transport: cap}, tc.host); err != nil {
+				t.Fatalf("Fetch(%q): %v", tc.host, err)
+			}
+			if cap.scheme != tc.wantScheme {
+				t.Errorf("Fetch(%q) used scheme %q; want %q", tc.host, cap.scheme, tc.wantScheme)
+			}
+		})
+	}
+}
 
 // TestDecodeValidDocument proves a well-formed advertised trust document
 // decodes into the expected struct across all four field families.

@@ -28,11 +28,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
 // WellKnownPath is the path, relative to a registry's own origin, at which a
@@ -169,7 +170,7 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 	}
 
 	scheme := "https"
-	if isLoopbackHost(host) {
+	if registryhost.IsLoopback(host) {
 		scheme = "http"
 	}
 	endpoint := (&url.URL{Scheme: scheme, Host: host, Path: WellKnownPath}).String()
@@ -204,23 +205,3 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 // document is a small list of identities; the cap keeps a misbehaving or
 // hostile endpoint from streaming an unbounded body into memory.
 const maxBodyBytes = 1 << 20 // 1 MiB
-
-// isLoopbackHost reports whether a registry authority addresses the local
-// machine: the "localhost" name or a loopback IP literal (127.0.0.0/8, ::1),
-// with or without a port and IPv6 brackets. Names other than "localhost" are
-// NOT resolved, keeping the plaintext decision independent of resolver state.
-// This mirrors pkg/oci's loopback detection so a local development registry
-// contacted for its trust document uses plain HTTP exactly as a pull from it
-// does.
-func isLoopbackHost(host string) bool {
-	h := host
-	if hostOnly, _, err := net.SplitHostPort(host); err == nil {
-		h = hostOnly
-	}
-	h = strings.Trim(h, "[]")
-	if h == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
-}

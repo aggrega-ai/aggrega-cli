@@ -336,6 +336,21 @@ func TestSchemeRejection(t *testing.T) {
 	if !strings.Contains(err.Error(), "loopback") {
 		t.Errorf("non-loopback http error should explain the loopback-only rule: %v", err)
 	}
+
+	// The loopback set that permits plain http covers reserved ".localhost"
+	// names and the unspecified 0.0.0.0 address, not just literal loopback IPs.
+	// With acquisition disabled these stop at the acquisition guard, proving the
+	// scheme gate let them through rather than rejecting the plain-http scheme.
+	noAcq := externalinputs.NewService(t.TempDir(), false, nil, nil)
+	for _, loopbackHTTP := range []string{
+		"http://app.localhost/x.tgz",
+		"http://0.0.0.0/x.tgz",
+	} {
+		_, err = noAcq.Fetch(ctx, loopbackHTTP, "recipe.helm.demo")
+		if errors.Is(err, externalinputs.ErrSchemeNotAllowed) {
+			t.Errorf("%q: plain http to a loopback host must pass the scheme gate, got scheme rejection: %v", loopbackHTTP, err)
+		}
+	}
 }
 
 // TestOCIReferenceRequiresTagOrDigest proves an unversioned oci reference is
