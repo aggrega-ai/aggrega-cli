@@ -768,3 +768,106 @@ func TestProgress_LayoutA_StaticFinishLines(t *testing.T) {
 		t.Errorf("static finish lines must carry no cursor movement or ANSI escapes; got %q", got)
 	}
 }
+
+// TestProgress_NoColor_ChecklistDropsDim pins the color-off accessibility rule
+// for the checklist surface: with the process-global color-off decision set
+// (--no-color / --plain / NO_COLOR), the elapsed field carries no dim ANSI, yet
+// the elapsed value, its column alignment, and the [✓]/[ ] symbol markers all
+// survive — status stays symbol+text, never color-alone. NO_COLOR reaches this
+// surface as buildDiagOptions.noColor, the same field the CLI populates from the
+// process-global decision.
+func TestProgress_NoColor_ChecklistDropsDim(t *testing.T) {
+	withTTY(t, true)
+
+	orig := spinnerTickInterval
+	spinnerTickInterval = time.Hour // keep the async ticker from redrawing mid-test
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{noColor: true}, buildProgressSpine(false))
+	p.phase(phaseLoadCatalog)
+	p.phase(phaseRender)
+	p.renderNode(1, 1, "svc")
+	p.finished = true
+
+	rows := p.rows()
+	joined := strings.Join(rows, "\n")
+
+	if strings.Contains(joined, ansiDim) {
+		t.Errorf("no-color checklist must emit no dim ANSI; got rows %q", rows)
+	}
+	if strings.Contains(joined, "\x1b[") {
+		t.Errorf("no-color checklist rows must carry no ANSI escapes; got rows %q", rows)
+	}
+	if !strings.Contains(joined, markDone) {
+		t.Errorf("no-color checklist must keep the [✓] done marker; got rows %q", rows)
+	}
+	// The elapsed value and its right-aligned column survive the loss of dim: the
+	// render row still carries a seconds value after its counter.
+	renderRow := findRow(rows, "rendering ")
+	if renderRow == "" {
+		t.Fatalf("no render row found; rows=%q", rows)
+	}
+	if !strings.Contains(renderRow, "1/1") {
+		t.Errorf("render row must keep the done/total counter; got %q", renderRow)
+	}
+	if !strings.Contains(renderRow, "s") {
+		t.Errorf("render row must keep the elapsed seconds value; got %q", renderRow)
+	}
+}
+
+// TestProgress_Plain_ForcesStaticEvenOnTTY pins the accessible mode: --plain
+// downgrades what would be the interactive checklist on a terminal to plain
+// static lines. Even with a terminal sink, the surface starts no spinner ticker
+// and does no cursor repaint — no carriage returns, no cursor-up sequences, no
+// spinner frames, no color — so screen readers receive stable line output.
+func TestProgress_Plain_ForcesStaticEvenOnTTY(t *testing.T) {
+	withTTY(t, true) // a terminal sink would normally get the animated checklist
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{plain: true}, buildProgressSpine(false))
+	if p.mode != progressStatic {
+		t.Fatalf("--plain on a terminal must resolve to progressStatic; got mode %d", p.mode)
+	}
+
+	p.phase(phaseLoadCatalog)
+	p.phase(phaseClosure)
+	p.phase(phaseRender)
+	p.renderNode(1, 1, "svc")
+	p.finish()
+
+	got := buf.String()
+	if strings.ContainsRune(got, '\r') {
+		t.Errorf("plain mode must not repaint with carriage returns; got %q", got)
+	}
+	if strings.ContainsRune(got, '\x1b') {
+		t.Errorf("plain mode must emit no ANSI escapes (no color, no cursor-up); got %q", got)
+	}
+	// Static lines carry no checklist markers at all — no animated [|]/[/] spinner
+	// row and no [✓]/[ ] marker — so the '[' character never appears. (A bare
+	// spinner-frame scan would false-match the '/' in the "1/1" counter.)
+	if strings.ContainsRune(got, '[') {
+		t.Errorf("plain mode must draw no checklist/spinner markers; got %q", got)
+	}
+	if !strings.Contains(got, "loading catalog...") {
+		t.Errorf("plain mode must print plain per-phase lines; got %q", got)
+	}
+}
+
+// TestProgress_Plain_NonTTY_StaysSilent pins that --plain does not turn the
+// surface on where it would otherwise be silent: on a non-terminal sink with no
+// --progress, plain removes animation but adds no output. Only --progress forces
+// static lines onto a non-terminal sink.
+func TestProgress_Plain_NonTTY_StaysSilent(t *testing.T) {
+	withTTY(t, false)
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{plain: true}, buildProgressSpine(false))
+	p.phase(phaseLoadCatalog)
+	p.phase(phaseRender)
+	p.renderNode(1, 1, "n")
+	p.finish()
+
+	if buf.Len() != 0 {
+		t.Errorf("plain on a non-TTY with no --progress must stay silent; got %q", buf.String())
+	}
+}

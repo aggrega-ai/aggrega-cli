@@ -30,10 +30,17 @@ import (
 // who asked for verbose output asked for output — then quiet, then progress.
 // So --quiet takes precedence over --progress: an explicit request for silence
 // is honoured even when progress is also requested.
+//
+// noColor is the process-global color-off decision (--no-color / --plain /
+// NO_COLOR); when set, the checklist draws its elapsed field with no dim ANSI.
+// plain is the accessible mode: it forces plain static phase lines even on a
+// terminal — no spinner animation, no cursor repaint — and implies no color.
 type buildDiagOptions struct {
 	quiet    bool
 	debug    bool
 	progress bool
+	noColor  bool
+	plain    bool
 }
 
 // progressMode is the resolved shape of the progress surface, decided once at
@@ -127,6 +134,11 @@ type progressReporter struct {
 	mode  progressMode
 	spine progressSpine
 
+	// colorOff suppresses the dim ANSI on the checklist elapsed field when the
+	// process-global color-off decision is set. The elapsed value and its column
+	// alignment are preserved; only the dim escape sequences are dropped.
+	colorOff bool
+
 	// Spinner ticker lifecycle, live only in checklist mode. The ticker starts
 	// lazily on the first draw and drives periodic redraws so the active phase's
 	// spinner animates even when no phase-transition event occurs. tickerDone
@@ -202,6 +214,7 @@ func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpi
 		out:           out,
 		mode:          mode,
 		spine:         spine,
+		colorOff:      opts.noColor || opts.plain,
 		active:        -1,
 		staticStarted: map[string]bool{},
 		phaseClock:    map[int]time.Time{},
@@ -209,8 +222,16 @@ func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpi
 	}
 }
 
-// resolveProgressMode applies the precedence ladder (debug > quiet > progress >
-// auto) and the sink-shape test to pick the reporter's mode.
+// resolveProgressMode applies the precedence ladder (debug > quiet > plain-on-
+// terminal > checklist-on-terminal > forced-static > auto-silent) and the sink-
+// shape test to pick the reporter's mode.
+//
+// The plain (accessible) mode downgrades what would be the interactive checklist
+// on a terminal to plain static lines — no spinner ticker, no cursor repaint —
+// so screen readers receive stable line-oriented output. It does not turn the
+// surface on where it would otherwise be silent (a non-terminal sink with no
+// --progress stays silent); plain only removes animation where a terminal would
+// have animated.
 func resolveProgressMode(out io.Writer, opts buildDiagOptions) progressMode {
 	if opts.debug {
 		return progressDebug
@@ -219,6 +240,9 @@ func resolveProgressMode(out io.Writer, opts buildDiagOptions) progressMode {
 		return progressSilent
 	}
 	if fileTerminal(out) {
+		if opts.plain {
+			return progressStatic
+		}
 		return progressChecklist
 	}
 	if opts.progress {
@@ -524,12 +548,15 @@ func progressBar(done, total int) string {
 }
 
 // composeRow assembles a checklist row from its visible body (marker, label, and
-// any bar) and its elapsed value. The elapsed is padded to a common column and
-// drawn dim so the times line up in a single right-hand column across rows; an
-// empty elapsed (a not-yet-started phase) yields the bare body. The dim escapes
+// any bar) and its elapsed value. The elapsed is padded to a common column so the
+// times line up in a single right-hand column across rows; an empty elapsed (a
+// not-yet-started phase) yields the bare body. The field is drawn dim unless the
+// process-global color-off decision is set, in which case the value and its
+// column alignment are preserved but the dim escapes are dropped. The dim escapes
 // carry no display width, so the row's visible width is the body plus the padded
-// elapsed field — which the redraw path uses to keep its line bookkeeping exact.
-func composeRow(body, elapsed string) string {
+// elapsed field either way — which the redraw path uses to keep its line
+// bookkeeping exact.
+func (p *progressReporter) composeRow(body, elapsed string) string {
 	if elapsed == "" {
 		return body
 	}
@@ -537,7 +564,11 @@ func composeRow(body, elapsed string) string {
 	if pad < 1 {
 		pad = 1
 	}
-	return body + strings.Repeat(" ", pad) + ansiDim + fmt.Sprintf("%*s", elapsedFieldWidth, elapsed) + ansiReset
+	field := fmt.Sprintf("%*s", elapsedFieldWidth, elapsed)
+	if !p.colorOff {
+		field = ansiDim + field + ansiReset
+	}
+	return body + strings.Repeat(" ", pad) + field
 }
 
 // clampVisibleWidth truncates s so its visible width does not exceed max
@@ -692,13 +723,13 @@ func (p *progressReporter) rows() []string {
 	rows := make([]string, 0, len(p.spine.labels)+4)
 
 	for i := 0; i < preCount; i++ {
-		rows = append(rows, composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
+		rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 	}
 	if p.spine.renderIdx < 0 {
 		// No render phase (pull): the remaining labels are ordinary spine phases,
 		// and there is no node fraction to show, so no global progress line.
 		for i := preCount; i < len(p.spine.labels); i++ {
-			rows = append(rows, composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
+			rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
 		}
 		return append(rows, p.footerRows()...)
 	}
@@ -709,9 +740,9 @@ func (p *progressReporter) rows() []string {
 		if p.compileActive && !p.compileDone {
 			marker = markActive(frame)
 		}
-		rows = append(rows, composeRow(marker+compilePhaseLabel, p.elapsedStr(compileTimerKey)))
+		rows = append(rows, p.composeRow(marker+compilePhaseLabel, p.elapsedStr(compileTimerKey)))
 	}
-	rows = append(rows, composeRow(p.renderRowBody(frame), p.elapsedStr(p.spine.renderIdx)))
+	rows = append(rows, p.composeRow(p.renderRowBody(frame), p.elapsedStr(p.spine.renderIdx)))
 	// The global progress line: the render-node fraction as a fixed-width bar and
 	// whole-number percent on its own line below the phase rows — 0% before render,
 	// filling during, 100% at completion.
@@ -733,7 +764,7 @@ func (p *progressReporter) footerRows() []string {
 		elapsed = formatPhaseElapsed(time.Since(p.started))
 	}
 	return []string{
-		composeRow(totalBuildTimeCaption, elapsed),
+		p.composeRow(totalBuildTimeCaption, elapsed),
 		buildCompletedCaption,
 	}
 }

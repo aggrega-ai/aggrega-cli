@@ -50,16 +50,21 @@ var rootCmd = newRootCmd()
 // Usage block, because that is genuinely a misuse of the command.
 func newRootCmd() *cobra.Command {
 	var workspaceRootFlag string
+	var noColorFlag, plainFlag bool
 	root := &cobra.Command{
 		Use:           "aggrega",
 		Short:         "Aggrega compiler CLI",
 		Long:          "Aggrega compiles declarative aggregates into intermediate representation and deployment artifacts.",
 		SilenceErrors: true,
-		// Attach the lazy workspace resolver to every command's context.
-		// Resolution itself is deferred until a command first asks for it
+		// Attach the lazy workspace resolver to every command's context, and
+		// resolve the process-global display decision once. Workspace
+		// resolution itself is deferred until a command first asks for it
 		// (workspaceFromContext), so version/login/logout run without
-		// discovering a workspace.
+		// discovering a workspace. The display decision is set here — before
+		// any command's RunE — so the color and progress surfaces read one
+		// single-sourced value.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			globalDisplay = resolveGlobalDisplay(noColorFlag, plainFlag, os.LookupEnv)
 			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
 			cmd.SetContext(withWorkspaceResolver(cmd.Context(), root))
 			return nil
@@ -67,6 +72,10 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&workspaceRootFlag, "workspace-root", "",
 		"absolute path to use as the workspace root (skips discovery)")
+	root.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
+		"Disable ANSI color in all output. Also honored via the NO_COLOR environment variable")
+	root.PersistentFlags().BoolVar(&plainFlag, "plain", false,
+		"Accessible mode: disable color and draw plain, static progress lines with no spinner animation or cursor repaint, even on a terminal. Intended for screen readers")
 	root.AddCommand(
 		newBuildCmd(),
 		newAcquireCmd(),

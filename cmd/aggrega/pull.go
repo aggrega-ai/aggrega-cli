@@ -69,7 +69,7 @@ current registry state, floating each dependency to the highest available versio
 				IncludePrerelease: pullIncludePrerelease,
 				Detail:            pullDetail,
 				ws:                rw,
-				diag:              buildDiagOptions{quiet: pullQuiet, progress: pullProgress},
+				diag:              buildDiagOptions{quiet: pullQuiet, progress: pullProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 			})
 		},
 	}

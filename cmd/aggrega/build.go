@@ -84,7 +84,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
-		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress},
+		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache}, os.Stderr, os.Stdout)
 }
 

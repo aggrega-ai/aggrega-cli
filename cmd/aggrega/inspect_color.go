@@ -24,8 +24,9 @@ const (
 
 // colorizer wraps display strings in ANSI sequences when color is enabled, and
 // returns them verbatim when disabled. A single colorizer is resolved once per
-// command from the requested colorMode, the output sink, and the NO_COLOR
-// environment variable, then carried in inspectOptions for every renderer to
+// command from the requested colorMode, the output sink, and the process-global
+// color-off decision (the global --no-color / --plain flags and the NO_COLOR
+// environment variable), then carried in inspectOptions for every renderer to
 // share.
 type colorizer struct {
 	enabled bool
@@ -43,15 +44,13 @@ var fileTerminal = func(w io.Writer) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-// newColorizer resolves the color decision. NO_COLOR (any value, per the
-// no-color.org convention) disables color UNLESS an explicit --color=always was
-// requested — an explicit operator request outranks the environment default.
-// Otherwise colorAlways enables, colorNever disables, and colorAuto enables
-// only when the sink is an interactive terminal.
-//
-// look reads the environment; pass os.Getenv in production. The presence test
-// uses LookupEnv-style semantics threaded through look returning "" for unset —
-// callers supply a lookup that distinguishes set-but-empty from unset.
+// newColorizer resolves the color decision. noColorSet is the process-global
+// color-off signal (the global --no-color / --plain flags or NO_COLOR, any value
+// per the no-color.org convention); it disables color UNLESS an explicit
+// --color=always was requested — an explicit operator request outranks the
+// global default. Otherwise colorAlways enables, colorNever disables, and
+// colorAuto enables only when the global signal is unset and the sink is an
+// interactive terminal.
 func newColorizer(mode colorMode, out io.Writer, noColorSet bool) *colorizer {
 	switch mode {
 	case colorAlways:

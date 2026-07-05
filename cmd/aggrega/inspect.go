@@ -86,7 +86,14 @@ func newInspectCmd() *cobra.Command {
 				return err
 			}
 
-			_, noColorSet := os.LookupEnv("NO_COLOR")
+			// Color precedence: an explicit per-command --color=always|never (or
+			// the --no-color alias mapped to "never" above) is authoritative and
+			// wins over the process-global decision. --color=auto (the default)
+			// defers to the process-global color-off signal — set by the global
+			// --no-color / --plain flags or NO_COLOR — and, failing that, to
+			// whether the sink is a terminal. The global signal is the single
+			// source for the NO_COLOR read; inspect does not read it separately.
+			noColorSet := globalDisplay.colorOff
 			opts := inspectOptions{
 				level:          resolveLevel(listFlag, detailFlag),
 				mode:           resolveMode(rawFlag, resolvedFlag),
