@@ -419,7 +419,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// total) before the stdout summary so the progress surface never lingers
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
-	fmt.Fprintf(out, "%s\n", formatTotalBuildTimeLine(formatBuildDuration(time.Since(buildStart))))
+	fmt.Fprintf(out, "%s\n", formatTotalBuildTimeLine(formatPhaseElapsed(time.Since(buildStart))))
 	fmt.Fprintf(out, "Build completed: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
 }
@@ -438,17 +438,6 @@ func formatTotalBuildTimeLine(value string) string {
 		pad = 1
 	}
 	return label + strings.Repeat(" ", pad) + value
-}
-
-// formatBuildDuration renders an elapsed build wall-clock for the summary: whole
-// milliseconds below one second ("87 ms") and seconds to one decimal at or above
-// one second ("1.4 s"). The value is intentionally nondeterministic; it lands on
-// stdout as human feedback and is not part of the rendered artifacts.
-func formatBuildDuration(d time.Duration) string {
-	if d < time.Second {
-		return fmt.Sprintf("%d ms", d.Milliseconds())
-	}
-	return fmt.Sprintf("%.1f s", d.Seconds())
 }
 
 // newExternalInputsService constructs the per-build external-input gate over

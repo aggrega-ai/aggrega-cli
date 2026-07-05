@@ -1083,7 +1083,7 @@ func TestFormatTotalBuildTimeLine_SharesPhaseTimingRightEdge(t *testing.T) {
 	if got := utf8.RuneCountInString(phaseRow); got != wantEdge {
 		t.Fatalf("phase-row right edge = %d, want %d (row=%q)", got, wantEdge, phaseRow)
 	}
-	for _, value := range []string{"3.1 s", "87 ms", "0.4 s", "999 ms"} {
+	for _, value := range []string{"3.1s", "17.8s", "0.4s", "120.5s"} {
 		line := formatTotalBuildTimeLine(value)
 		if got := utf8.RuneCountInString(line); got != wantEdge {
 			t.Errorf("total line for %q has right edge %d, want %d (line=%q)", value, got, wantEdge, line)
@@ -1094,6 +1094,33 @@ func TestFormatTotalBuildTimeLine_SharesPhaseTimingRightEdge(t *testing.T) {
 		if !strings.HasPrefix(line, "Total build time: ") {
 			t.Errorf("total line %q must keep the 'Total build time: ' prefix", line)
 		}
+	}
+}
+
+// TestFormatPhaseElapsed pins the elapsed rendering shared by the per-phase
+// checklist column and the build-summary total line: seconds to one decimal with
+// no space before the unit, sub-second values still in the "N.Ns" form, and a
+// negative duration clamped to zero.
+func TestFormatPhaseElapsed(t *testing.T) {
+	cases := []struct {
+		name string
+		d    time.Duration
+		want string
+	}{
+		{name: "sub-second", d: 400 * time.Millisecond, want: "0.4s"},
+		{name: "at-one-second", d: 1000 * time.Millisecond, want: "1.0s"},
+		{name: "multi-second", d: 1400 * time.Millisecond, want: "1.4s"},
+		{name: "rounds-to-one-decimal", d: 17750 * time.Millisecond, want: "17.8s"},
+		{name: "zero", d: 0, want: "0.0s"},
+		{name: "negative-clamped-to-zero", d: -5 * time.Second, want: "0.0s"},
+		{name: "large", d: 65 * time.Second, want: "65.0s"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatPhaseElapsed(tc.d); got != tc.want {
+				t.Errorf("formatPhaseElapsed(%s) = %q, want %q", tc.d, got, tc.want)
+			}
+		})
 	}
 }
 
