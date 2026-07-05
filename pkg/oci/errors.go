@@ -31,6 +31,15 @@ var ErrFetchNetworkUnreachable = errors.New("oci: network unreachable")
 // remediation pointer.
 var ErrFetchIntegrity = errors.New("oci: content digest mismatch")
 
+// ErrCachedManifestIntegrity is returned when a cached OCI manifest blob no
+// longer hashes to the manifest digest the artifact commits to — the offline
+// manifest self-verify. It is distinct from ErrFetchIntegrity (which covers a
+// content blob that mismatches its pin): this sentinel names a corrupted or
+// tampered manifest blob specifically. Call sites wrap it with the URI, the
+// recomputed digest, and the expected digest; the remediation is
+// `aggrega pull --regenerate` to refresh the cache from authoritative bytes.
+var ErrCachedManifestIntegrity = errors.New("oci: cached manifest digest mismatch")
+
 // ErrImmutableTagConflict is returned by the publish path when the
 // target tag already exists in the registry pointing at a different
 // manifest digest than the content being pushed. Published bytes are
@@ -99,7 +108,7 @@ func RemediationFor(sentinel error, registryHost string) string {
 		return "remediation: docker login " + host + " (or helm registry login " + host + " for Helm-specific OCI) before re-running aggrega pull"
 	case errors.Is(sentinel, ErrFetchNetworkUnreachable):
 		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
-	case errors.Is(sentinel, ErrFetchIntegrity):
+	case errors.Is(sentinel, ErrFetchIntegrity), errors.Is(sentinel, ErrCachedManifestIntegrity):
 		return "remediation: run aggrega pull --regenerate <release> to refresh the lockfile and cache"
 	default:
 		return ""

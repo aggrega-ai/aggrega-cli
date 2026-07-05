@@ -12,6 +12,7 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -83,6 +84,32 @@ func TestManifestDigestMatchesPush(t *testing.T) {
 	}
 	if preview != pushed {
 		t.Errorf("ManifestDigest preview %s != pushed digest %s", preview, pushed)
+	}
+}
+
+// TestPullSurfacesManifestBytesMatchingDigest pins the exact computation the
+// offline manifest self-verify relies on: Pull surfaces the raw manifest bytes,
+// and digest.ContentDigest of those bytes equals PullResult.Digest (the manifest
+// digest). A cached manifest re-hashed with digest.ContentDigest therefore
+// verifies against the pinned manifest digest without any repack.
+func TestPullSurfacesManifestBytesMatchingDigest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
+
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "1.0.0")
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(res.ManifestBytes) == 0 {
+		t.Fatal("Pull did not surface ManifestBytes")
+	}
+	if got := digest.ContentDigest(res.ManifestBytes); got != res.Digest {
+		t.Errorf("digest.ContentDigest(ManifestBytes) = %s; want manifest digest %s", got, res.Digest)
 	}
 }
 

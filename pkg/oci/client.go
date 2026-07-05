@@ -27,10 +27,17 @@ import (
 
 // PullResult holds the bytes pulled from a target plus the OCI
 // manifest digest and the mediatype the manifest declared.
+//
+// ManifestBytes carries the raw manifest JSON the pull read to derive the
+// content descriptor. Digest is that manifest's digest, so
+// digest.ContentDigest(ManifestBytes) equals Digest — the property a cached
+// manifest is re-hashed against offline. ManifestBytes may be empty for a
+// target that does not surface the manifest body.
 type PullResult struct {
-	Bytes     []byte
-	Digest    string
-	MediaType string
+	Bytes         []byte
+	Digest        string
+	MediaType     string
+	ManifestBytes []byte
 }
 
 // Pull fetches the artifact tagged `tag` from `target` and returns
@@ -95,9 +102,10 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 	}
 
 	return &PullResult{
-		Bytes:     content,
-		Digest:    manifestDesc.Digest.String(),
-		MediaType: mediaType,
+		Bytes:         content,
+		Digest:        manifestDesc.Digest.String(),
+		MediaType:     mediaType,
+		ManifestBytes: manifestBytes,
 	}, nil
 }
 

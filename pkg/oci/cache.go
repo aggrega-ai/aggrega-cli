@@ -73,6 +73,43 @@ func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) erro
 	return nil
 }
 
+// ReadCachedManifest returns the raw OCI manifest bytes previously stored
+// alongside the content blob in the cache slot for uri@version. It is the
+// second, self-verifying blob: a reader re-hashes these bytes and confirms they
+// match the manifest digest the artifact commits to. Returns a wrapped
+// ErrFetchNotFound when the manifest blob is absent (an incomplete slot — a
+// content blob written without its manifest); other errors surface as wrapped
+// read failures. Mirrors ReadCached; the filename is "manifest".
+func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
+	blob := filepath.Join(CachePath(workspaceRoot, cacheDir, uri, version), "manifest")
+	data, err := os.ReadFile(blob)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("oci: manifest cache miss for %s@%s: %w", uri, version, ErrFetchNotFound)
+		}
+		return nil, fmt.Errorf("oci: manifest cache read %s@%s: %w", uri, version, err)
+	}
+	return data, nil
+}
+
+// WriteCachedManifest stores the raw OCI manifest bytes as a second blob in the
+// same cache slot as the content blob for uri@version, creating parent
+// directories as needed. The filename is "manifest"; it sits beside the "blob"
+// content file WriteCached writes. Persisting the manifest lets a later offline
+// read re-derive the manifest digest from a stored artifact rather than trusting
+// a recorded value with nothing to check it against.
+func WriteCachedManifest(workspaceRoot, cacheDir, uri, version string, manifestBytes []byte) error {
+	dir := CachePath(workspaceRoot, cacheDir, uri, version)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("oci: manifest cache mkdir %s: %w", dir, err)
+	}
+	blob := filepath.Join(dir, "manifest")
+	if err := os.WriteFile(blob, manifestBytes, 0o644); err != nil {
+		return fmt.Errorf("oci: manifest cache write %s: %w", blob, err)
+	}
+	return nil
+}
+
 // ContentDigestTag converts a content digest ("sha256:<hex>") into a valid OCI
 // tag: a tag may not contain ":", so the algorithm and hex are joined with "-"
 // ("sha256-<hex>"). An artifact addressed by content can then be tagged by this

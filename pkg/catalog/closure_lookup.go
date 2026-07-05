@@ -556,12 +556,30 @@ func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest st
 			// A cache hit recovers the manifest digest deterministically without a
 			// registry round-trip: the manifest is a pure function of the content
 			// (its creation annotation is epoch-pinned), so the digest a push
-			// produced equals the digest computed from the cached bytes.
+			// produced equals the digest computed from the cached bytes. This is the
+			// trusted reference the stored manifest blob is re-hashed against.
 			manifestDigest, mderr := oci.ManifestDigest(context.Background(), oci.MediaTypeWasm, bytes)
 			if mderr != nil {
 				return closure.Resolution{}, fmt.Errorf("catalog: manifest digest of cached plugin artifact %s: %w", uri, mderr)
 			}
-			return pinnedPluginResolution(pinDigest, manifestDigest), nil
+			// Offline manifest self-verify: re-hash the second cache blob — the
+			// stored manifest — and confirm it matches. A slot with a content blob
+			// but no manifest blob is incomplete; treat it as a cache miss so the
+			// Tier-3 re-pull below rewrites both blobs (offline, the miss surfaces
+			// the pull-first remediation rather than trusting a half-populated slot).
+			manifestBytes, mrerr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, pinDigest)
+			switch {
+			case mrerr == nil:
+				if got := contentDigest(manifestBytes); got != manifestDigest {
+					return closure.Resolution{}, fmt.Errorf("catalog: cached manifest for plugin artifact %s digest %s does not match %s: %w",
+						uri, got, manifestDigest, oci.ErrCachedManifestIntegrity)
+				}
+				return pinnedPluginResolution(pinDigest, manifestDigest), nil
+			case errors.Is(mrerr, oci.ErrFetchNotFound):
+				// Incomplete pre-C4 slot: fall through to the Tier-3 re-pull.
+			default:
+				return closure.Resolution{}, fmt.Errorf("catalog: read cached manifest for plugin artifact %s: %w", uri, mrerr)
+			}
 		} else if !errors.Is(err, oci.ErrFetchNotFound) {
 			return closure.Resolution{}, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
 		}
@@ -589,6 +607,14 @@ func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest st
 	if l.cacheDir != "" {
 		if err := oci.WriteCached(l.workspaceRoot, l.cacheDir, uri, pinDigest, result.Bytes); err != nil {
 			return closure.Resolution{}, fmt.Errorf("catalog: cache write plugin artifact %s: %w", uri, err)
+		}
+		// Store the manifest as a second self-verifying blob in the same slot so a
+		// later offline read can re-derive the manifest digest from a stored
+		// artifact rather than trusting the recorded pin alone.
+		if len(result.ManifestBytes) > 0 {
+			if err := oci.WriteCachedManifest(l.workspaceRoot, l.cacheDir, uri, pinDigest, result.ManifestBytes); err != nil {
+				return closure.Resolution{}, fmt.Errorf("catalog: cache write plugin manifest %s: %w", uri, err)
+			}
 		}
 	}
 	return pinnedPluginResolution(pinDigest, result.Digest), nil

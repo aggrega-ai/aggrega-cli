@@ -59,3 +59,49 @@ func TestWriteReadCachedRoundTrip(t *testing.T) {
 		t.Errorf("round-trip bytes mismatch; got %q want %q", got, want)
 	}
 }
+
+func TestReadCachedManifestMissReturnsErrFetchNotFound(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// A content blob without a manifest blob is an incomplete slot; the manifest
+	// read must report the miss so the caller re-pulls rather than trusts it.
+	if err := oci.WriteCached(dir, ".aggrega/cache", "hub.aggrega.ai/component/foo", "1.0.0", []byte("content")); err != nil {
+		t.Fatalf("WriteCached: %v", err)
+	}
+	_, err := oci.ReadCachedManifest(dir, ".aggrega/cache", "hub.aggrega.ai/component/foo", "1.0.0")
+	if err == nil {
+		t.Fatal("expected manifest cache miss error; got nil")
+	}
+	if !errors.Is(err, oci.ErrFetchNotFound) {
+		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
+	}
+}
+
+func TestWriteReadCachedManifestRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const uri = "hub.aggrega.ai/recipe/core/helm/mariadb"
+	content := []byte("content-blob")
+	manifest := []byte(`{"schemaVersion":2,"layers":[]}`)
+	if err := oci.WriteCached(dir, ".aggrega/cache", uri, "1.0.0", content); err != nil {
+		t.Fatalf("WriteCached: %v", err)
+	}
+	if err := oci.WriteCachedManifest(dir, ".aggrega/cache", uri, "1.0.0", manifest); err != nil {
+		t.Fatalf("WriteCachedManifest: %v", err)
+	}
+	// Both blobs coexist in the same slot: the content blob is unaffected.
+	gotContent, err := oci.ReadCached(dir, ".aggrega/cache", uri, "1.0.0")
+	if err != nil {
+		t.Fatalf("ReadCached: %v", err)
+	}
+	if string(gotContent) != string(content) {
+		t.Errorf("content round-trip mismatch; got %q want %q", gotContent, content)
+	}
+	gotManifest, err := oci.ReadCachedManifest(dir, ".aggrega/cache", uri, "1.0.0")
+	if err != nil {
+		t.Fatalf("ReadCachedManifest: %v", err)
+	}
+	if string(gotManifest) != string(manifest) {
+		t.Errorf("manifest round-trip mismatch; got %q want %q", gotManifest, manifest)
+	}
+}

@@ -449,3 +449,93 @@ func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }
+
+// TestResolvePluginManifestSelfVerify proves the offline manifest self-verify:
+// a content-pin .wasm pull writes BOTH a content blob and a manifest blob into
+// the same slot; a faithful cached manifest re-hashes to the pinned manifest
+// digest and PASSES on the offline (nil-puller) read; a tampered cached manifest
+// FAILS loudly with ErrCachedManifestIntegrity; and an incomplete slot (content
+// blob, no manifest blob) is treated as a cache miss — offline that surfaces
+// NotFound (pull-first), online it re-pulls and repopulates both blobs.
+func TestResolvePluginManifestSelfVerify(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 manifest self-verify fixture")
+	contentDigest := digest.ContentDigest(wasmBytes)
+	const repo = "hub.aggrega.ai/wasm/frp/patch"
+	artifactURI := "oci://" + repo + "@" + contentDigest
+
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, oci.ContentDigestTag(contentDigest), oci.MediaTypeWasm, wasmBytes); err != nil {
+		t.Fatalf("oci.Push .wasm: %v", err)
+	}
+
+	// Tier-3 pull writes both blobs.
+	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
+	res, err := lookup.ResolvePlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolvePlugin (pull): %v", err)
+	}
+	manifestBytes, err := oci.ReadCachedManifest(dir, ".aggrega/cache", artifactURI, contentDigest)
+	if err != nil {
+		t.Fatalf("expected a manifest blob in cache after pull: %v", err)
+	}
+	// The stored manifest re-hashes to the recorded manifest digest — the exact
+	// computation the offline verify performs.
+	if got := digest.ContentDigest(manifestBytes); got != res.ManifestDigest {
+		t.Errorf("cached manifest digest %s != resolution ManifestDigest %s", got, res.ManifestDigest)
+	}
+
+	// Faithful cached manifest verifies on the offline (nil-puller) read.
+	offline := cat.ClosureLookup(nil, dir, ".aggrega/cache")
+	res2, err := offline.ResolvePlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolvePlugin (offline, faithful): %v", err)
+	}
+	if res2.NotFound {
+		t.Fatal("faithful cached manifest: got NotFound; want a cache hit")
+	}
+	if res2.ManifestDigest != res.ManifestDigest {
+		t.Errorf("offline ManifestDigest = %s; want %s", res2.ManifestDigest, res.ManifestDigest)
+	}
+
+	// Tamper the manifest blob: flip its content. The offline read must HALT with
+	// ErrCachedManifestIntegrity. This direction fails ONLY because the read path
+	// re-hashes the stored manifest — it is vacuous without the verify consumer.
+	slot := oci.CachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
+	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
+		t.Fatalf("tamper manifest write: %v", err)
+	}
+	if _, err := offline.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+		t.Errorf("tampered manifest: err = %v; want ErrCachedManifestIntegrity", err)
+	}
+
+	// Incomplete slot (content blob, no manifest blob): offline resolves to
+	// NotFound (cache miss forces re-pull); the content blob is left intact.
+	if err := os.Remove(filepath.Join(slot, "manifest")); err != nil {
+		t.Fatalf("remove manifest blob: %v", err)
+	}
+	resMissing, err := offline.ResolvePlugin(artifactURI)
+	if err != nil {
+		t.Fatalf("ResolvePlugin (offline, incomplete slot): %v", err)
+	}
+	if !resMissing.NotFound {
+		t.Errorf("incomplete slot offline: resolution = %+v; want NotFound", resMissing)
+	}
+
+	// The same incomplete slot re-pulls online and repopulates the manifest blob.
+	online := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
+	if _, err := online.ResolvePlugin(artifactURI); err != nil {
+		t.Fatalf("ResolvePlugin (online repopulate): %v", err)
+	}
+	if _, err := oci.ReadCachedManifest(dir, ".aggrega/cache", artifactURI, contentDigest); err != nil {
+		t.Errorf("expected manifest blob repopulated after online re-pull: %v", err)
+	}
+}
