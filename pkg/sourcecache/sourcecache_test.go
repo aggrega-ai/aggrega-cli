@@ -279,11 +279,13 @@ func TestLookupAndExtractManifestAuthorityBeatsForgedPins(t *testing.T) {
 	}
 }
 
-// TestLookupAndExtractManifestLessSlotFallsBackToContentPin proves a slot with
-// no persisted manifest still verifies against the git-tracked lockfile content
-// pin: faithful content extracts, drifted content halts. The manifest adds
-// authority when present; its absence never weakens the content-pin root.
-func TestLookupAndExtractManifestLessSlotFallsBackToContentPin(t *testing.T) {
+// TestLookupAndExtractOCIManifestLessSlotFailsClosed proves an OCI-chart slot
+// that carries the archive but no persisted manifest reads as a fail-closed
+// cache miss (ErrFetchNotFound) so the caller re-pulls — it does NOT fall back
+// to the content pin. An OCI source always persists its manifest, so a
+// manifest-less OCI slot is an incomplete cache entry, mirroring the entity and
+// plugin reads.
+func TestLookupAndExtractOCIManifestLessSlotFailsClosed(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\n"})
@@ -292,8 +294,35 @@ func TestLookupAndExtractManifestLessSlotFallsBackToContentPin(t *testing.T) {
 		t.Fatalf("remove manifest: %v", err)
 	}
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
-	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache"); err != nil {
-		t.Errorf("manifest-less faithful slot: err = %v; want resolve on the content pin", err)
+	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchNotFound) {
+		t.Errorf("manifest-less OCI slot: err = %v; want ErrFetchNotFound (fail-closed miss)", err)
+	}
+}
+
+// TestLookupAndExtractNonOCIManifestLessSlotReadsOnContentPin is the scoping
+// regression guard: a NON-OCI source (a helm-https-chart) carries no manifest by
+// construction, so a manifest-less slot stays on content-pin authority —
+// faithful content extracts, drifted content halts on the content pin. The
+// fail-closed rule applies only to OCI kinds; a non-OCI slot must not be
+// mistaken for an incomplete OCI slot.
+func TestLookupAndExtractNonOCIManifestLessSlotReadsOnContentPin(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	const kind = "helm-https-chart"
+	const url = "https://charts.example.com/mariadb-1.0.0.tgz"
+	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\n"})
+	slot := seedSlot(t, root, ".aggrega/cache", kind, url, "1.0.0", blob, digestOf(blob))
+	// seedSlot writes no manifest for a non-OCI kind; confirm the slot is manifest-less.
+	if _, err := os.Stat(filepath.Join(slot, cacheslot.ManifestFile)); !os.IsNotExist(err) {
+		t.Fatalf("non-OCI slot unexpectedly has a manifest (stat err = %v)", err)
+	}
+	lf := fixtureLockfile(kind, url, "1.0.0", digestOf(blob))
+	extracted, err := sourcecache.LookupAndExtract(lf, kind, url, "1.0.0", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("non-OCI manifest-less faithful slot: err = %v; want content-pin resolve", err)
+	}
+	if _, err := os.Stat(filepath.Join(extracted, "mariadb", "Chart.yaml")); err != nil {
+		t.Errorf("Chart.yaml missing after faithful non-OCI extract: %v", err)
 	}
 
 	// Drift the archive but keep the (now stale) lockfile pin: the content pin
@@ -302,8 +331,8 @@ func TestLookupAndExtractManifestLessSlotFallsBackToContentPin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), tampered, 0o644); err != nil {
 		t.Fatalf("tamper blob: %v", err)
 	}
-	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity) {
-		t.Errorf("manifest-less drifted slot: err = %v; want ErrFetchIntegrity", err)
+	if _, err := sourcecache.LookupAndExtract(lf, kind, url, "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+		t.Errorf("non-OCI drifted slot: err = %v; want ErrFetchIntegrity", err)
 	}
 }
 

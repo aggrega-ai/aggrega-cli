@@ -30,6 +30,7 @@ func seedChartCache(t *testing.T, root, url, ver string) string {
 	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart", url, ver, digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteChartManifest(t, slot, blob)
 	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
 		Kind: "helm-oci-chart", URL: url, Version: ver, Digest: digest,
 		Mediatype: chartMediatype, PulledAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC),

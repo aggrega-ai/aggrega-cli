@@ -52,8 +52,9 @@ func manifestBytesFor(t *testing.T, mediaType string, body []byte) (manifestByte
 // TestTier2ReadVerified pins the verifying Tier-2 cache read under the manifest-
 // authority model: the persisted manifest is the root the cached content is
 // checked against. A faithful two-blob slot verifies; a wrong content pin, a
-// tampered manifest, an incomplete slot (content without manifest), a missing
-// slot, and an empty pin each halt with the expected sentinel.
+// tampered manifest, an incomplete slot (content without manifest — a
+// fail-closed miss for the always-OCI entity tier), a missing slot, and an empty
+// pin each halt with the expected sentinel.
 func TestTier2ReadVerified(t *testing.T) {
 	t.Parallel()
 
@@ -97,18 +98,17 @@ func TestTier2ReadVerified(t *testing.T) {
 		}
 	})
 
-	t.Run("manifest-less slot falls back to the content pin", func(t *testing.T) {
+	t.Run("manifest-less slot fails closed as a cache miss", func(t *testing.T) {
 		iws := t.TempDir()
 		if err := oci.WriteCached(iws, cacheDir, uri, version, body); err != nil {
 			t.Fatalf("write content only: %v", err)
 		}
-		// With no persisted manifest, the independent lockfile content pin remains
-		// the root of trust: faithful content resolves, drifted content halts.
-		if _, err := tier2ReadVerified(iws, cacheDir, uri, contentPin, manifestPin); err != nil {
-			t.Errorf("manifest-less faithful slot: err = %v; want resolve on the content pin", err)
-		}
-		if _, err := tier2ReadVerified(iws, cacheDir, uri, "sha256:0000000000000000000000000000000000000000000000000000000000000000", manifestPin); !errors.Is(err, oci.ErrFetchIntegrity) {
-			t.Errorf("manifest-less drifted slot: err = %v; want ErrFetchIntegrity", err)
+		// A catalog entity is always OCI-distributed, so a slot that carries content
+		// but no persisted manifest is an incomplete cache entry. The read fails
+		// closed as a miss so the caller re-pulls — it does NOT fall back to the
+		// content pin, even for faithful content matching the pin.
+		if _, err := tier2ReadVerified(iws, cacheDir, uri, contentPin, manifestPin); !errors.Is(err, oci.ErrFetchNotFound) {
+			t.Errorf("manifest-less slot: err = %v; want ErrFetchNotFound (fail-closed miss)", err)
 		}
 	})
 

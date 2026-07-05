@@ -139,6 +139,15 @@ func relocateAggregateToCache(t *testing.T, root, cacheDir, name string) {
 	if err := oci.WriteCached(root, cacheDir, name+":1.0.0", "1.0.0", body); err != nil {
 		t.Fatalf("write aggregate %s to cache: %v", name, err)
 	}
+	// Persist the OCI manifest committing to the aggregate body, mirroring the real
+	// pull's writeEntityToCacheSlot: a manifest-less slot reads as a fail-closed miss.
+	mb, _, err := ociManifestArtifact(oci.MediaTypeAggregate, body)
+	if err != nil {
+		t.Fatalf("build aggregate manifest %s: %v", name, err)
+	}
+	if err := oci.WriteCachedManifest(root, cacheDir, name+":1.0.0", "1.0.0", mb); err != nil {
+		t.Fatalf("write aggregate manifest %s: %v", name, err)
+	}
 	if err := os.Remove(src); err != nil {
 		t.Fatalf("remove local aggregate %s: %v", name, err)
 	}

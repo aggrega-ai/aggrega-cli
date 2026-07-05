@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -19,9 +20,29 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"oras.land/oras-go/v2/content/memory"
 )
+
+// mustWriteChartManifest writes the OCI manifest a real helm-oci-chart pull
+// persists beside blob.tgz — the manifest whose single layer commits to blob's
+// content digest. An OCI-chart cache slot without it reads as a fail-closed miss,
+// so every faithful helm-oci-chart fixture slot must carry it.
+func mustWriteChartManifest(t *testing.T, slot string, blob []byte) {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", chartMediatype, blob); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(slot, cacheslot.ManifestFile), res.ManifestBytes)
+}
 
 func TestResolveSourceForNodeSourcelessRecipeBypassesResolver(t *testing.T) {
 	t.Parallel()
@@ -108,6 +129,7 @@ func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
 		"oci://hub.aggrega.ai/charts/mariadb", "25.0.8", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteChartManifest(t, slot, blob)
 	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
 		Kind:      "helm-oci-chart",
 		URL:       "oci://hub.aggrega.ai/charts/mariadb",
@@ -181,6 +203,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 		"oci://hub.aggrega.ai/charts/tls", "1.2.3", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteChartManifest(t, slot, blob)
 	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
 		Kind:      "helm-oci-chart",
 		URL:       "oci://hub.aggrega.ai/charts/tls",

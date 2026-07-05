@@ -36,8 +36,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
+
+// kindExpectsManifest reports whether a source kind is OCI-distributed and
+// therefore persists an OCI manifest beside its cached archive. Only such a
+// kind's slot is held to manifest authority: a manifest-less slot for an OCI
+// kind is an incomplete cache entry and reads as a miss. A non-OCI source
+// (an HTTPS chart, a git module) has no manifest by construction and stays on
+// content-pin authority. Keyed off the canonical kind constant so the
+// OCI-vs-non-OCI classification has one home.
+func kindExpectsManifest(kind string) bool {
+	return kind == helm.KindOCI
+}
 
 // Re-exports of the canonical fetch-error sentinels. Identity-equal
 // to pkg/oci's; errors.Is against either name matches the same
@@ -58,9 +70,13 @@ var (
 // resolves its artifact within.
 //
 // Returns ErrFetchNotFound when no lockfile entry matches the
-// {kind, url, pinned_version} triple. Returns ErrFetchIntegrity on
-// digest mismatch (either gate) or on archive corruption. Returns
-// wrapped fs errors on read/write/extract failures.
+// {kind, url, pinned_version} triple, or — for an OCI source kind — when the
+// cache slot carries the archive but no persisted OCI manifest (an incomplete
+// cache entry; the caller re-pulls). Returns ErrFetchIntegrity on digest
+// mismatch (either content pin, or the manifest layer digest for an OCI slot)
+// or on archive corruption. Returns wrapped fs errors on read/write/extract
+// failures. A non-OCI source kind (HTTPS chart, git module) carries no manifest
+// by construction and stays on content-pin authority.
 func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, cacheDir string) (string, error) {
 	if lf == nil {
 		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound)
@@ -95,17 +111,26 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, 
 	}
 
 	// Manifest authority. An OCI-distributed source (a helm-oci-chart) persists
-	// its OCI manifest beside the archive; when present it is the root the archive
-	// is verified against — the manifest is an independent record of the expected
-	// content, so a forged archive is caught even when every recorded content pin
-	// (this slot's metadata.yaml and the lockfile entry) has been forged to match
-	// it. A slot with no persisted manifest (a non-OCI source, or a pre-manifest
-	// slot) falls back to the git-tracked lockfile content pin verified above.
-	if manifestBytes, mrerr := os.ReadFile(filepath.Join(slot, cacheslot.ManifestFile)); mrerr == nil {
+	// its OCI manifest beside the archive; it is the root the archive is verified
+	// against — the manifest is an independent record of the expected content, so
+	// a forged archive is caught even when every recorded content pin (this slot's
+	// metadata.yaml and the lockfile entry) has been forged to match it. Because
+	// an OCI source always persists its manifest, a manifest-less slot for an OCI
+	// kind is an incomplete cache entry and reads as a miss so the caller re-pulls,
+	// mirroring the entity and plugin reads. A non-OCI source (an HTTPS chart, a
+	// git module) has no manifest by construction and keeps the git-tracked
+	// lockfile content pin verified above as its root of trust.
+	manifestBytes, mrerr := os.ReadFile(filepath.Join(slot, cacheslot.ManifestFile))
+	switch {
+	case mrerr == nil:
 		if verr := oci.VerifyContentAgainstManifest(manifestBytes, blobBytes); verr != nil {
 			return "", fmt.Errorf("sourcecache: %s: %w", blobPath, verr)
 		}
-	} else if !os.IsNotExist(mrerr) {
+	case os.IsNotExist(mrerr):
+		if kindExpectsManifest(kind) {
+			return "", fmt.Errorf("sourcecache: %s cached without its OCI manifest; run `aggrega pull` first: %w", blobPath, ErrFetchNotFound)
+		}
+	default:
 		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)
 	}
 

@@ -65,9 +65,14 @@ spec:
 	}
 
 	// Cache-only Component: the entity lives only in the Tier-2 cache slot (drifted),
-	// never authored in the catalog dir.
+	// never authored in the catalog dir. The slot carries the persisted OCI manifest
+	// committing to the ORIGINAL (pinned) content, so the drift is caught as an
+	// integrity skip on read, not a fail-closed miss that would re-fetch via Tier-3.
 	if err := oci.WriteCached(tmp, cacheDir, compURI, "1.0.0", cachedComponent); err != nil {
 		t.Fatalf("WriteCached: %v", err)
+	}
+	if err := oci.WriteCachedManifest(tmp, cacheDir, compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
+		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 
 	// Catalog dir carries the Recipe + Provider; the Component itself is absent.

@@ -19,10 +19,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"oras.land/oras-go/v2/content/memory"
 )
 
 const (
@@ -75,6 +78,7 @@ func seedChartCache(t *testing.T, root string, blob []byte, digest string) {
 	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), blob, 0o644); err != nil {
 		t.Fatalf("write blob: %v", err)
 	}
+	writeChartManifest(t, slot, blob)
 	meta := metadata.CacheMetadata{
 		Kind: remoteSrcKind, URL: remoteSrcURL, Version: remoteSrcVersion, Digest: digest,
 		Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
@@ -82,6 +86,25 @@ func seedChartCache(t *testing.T, root string, blob []byte, digest string) {
 	}
 	if err := metadata.Write(filepath.Join(slot, "metadata.yaml"), meta); err != nil {
 		t.Fatalf("write metadata: %v", err)
+	}
+}
+
+// writeChartManifest writes the OCI manifest a real helm-oci-chart pull persists
+// beside blob.tgz — the manifest whose single layer commits to blob's content
+// digest. An OCI-chart cache slot without it reads as a fail-closed miss.
+func writeChartManifest(t *testing.T, slot string, blob []byte) {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", "application/vnd.cncf.helm.chart.content.v1.tar+gzip", blob); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slot, cacheslot.ManifestFile), res.ManifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
 	}
 }
 

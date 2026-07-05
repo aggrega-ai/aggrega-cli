@@ -839,7 +839,10 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 // unverified bytes.
 //
 // Returns the verified bytes on a digest match. Returns ErrFetchNotFound when
-// the cache slot is absent (the caller issues a pull-first remediation) and
+// the cache slot is absent OR when the slot carries content but no persisted
+// OCI manifest (a catalog entity is always OCI-distributed, so a manifest-less
+// slot is an incomplete cache entry, not a content-pin-only fallback) — in
+// either case the caller issues a pull-first remediation. Returns
 // ErrFetchIntegrity when the cached content does not match the pin. An empty
 // expectedDigest is a programming error at the call site (a read that cannot
 // supply a pin is a gap to wire, never a silent skip) and is reported as such.
@@ -852,13 +855,14 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
 	}
 	// Manifest authority. Every registry pull persists the OCI manifest beside the
-	// content; when present it is the root the content is verified against. Verify
-	// the manifest against the independent pin (when one is recorded — a
-	// registry-resolved entity), then verify the content against the manifest's
-	// layer digest, so a forged content+content-pin pair cannot survive an
-	// untampered manifest. A slot with no persisted manifest falls back to the
-	// content-pin check below; the independent lockfile content pin remains the
-	// root of trust either way.
+	// content; it is the root the content is verified against. Verify the manifest
+	// against the independent pin (when one is recorded — a registry-resolved
+	// entity), then verify the content against the manifest's layer digest, so a
+	// forged content+content-pin pair cannot survive an untampered manifest. A
+	// catalog entity is always OCI-distributed, so a slot that carries content but
+	// no persisted manifest is an incomplete cache entry, not a content-pin-only
+	// fallback: treat it as a miss so the caller re-pulls, mirroring the
+	// plugin-artifact read.
 	manifestBytes, mrerr := oci.ReadCachedManifest(workspaceRoot, cacheDir, uri, res.ResolvedVersion)
 	switch {
 	case mrerr == nil:
@@ -871,7 +875,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 			return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 		}
 	case errors.Is(mrerr, oci.ErrFetchNotFound):
-		// No persisted manifest; the content pin below is the authority.
+		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
 	default:
 		return nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
 	}

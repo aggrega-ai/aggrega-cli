@@ -41,7 +41,12 @@ func (p *fakeRemoteMappingLibraryPuller) PullLibrary(_ context.Context, _, _, fl
 			}
 		}
 	}
-	return &oci.PullResult{MediaType: oci.MediaTypeMappingLibrary, Bytes: []byte(fmt.Sprintf(helmHelpersLibrarySourceFmt, version))}, version, nil
+	body := []byte(fmt.Sprintf(helmHelpersLibrarySourceFmt, version))
+	mb, md, err := ociManifestArtifact(oci.MediaTypeMappingLibrary, body)
+	if err != nil {
+		return nil, "", err
+	}
+	return &oci.PullResult{MediaType: oci.MediaTypeMappingLibrary, Bytes: body, Digest: md, ManifestBytes: mb}, version, nil
 }
 
 // helmHelpersLibrarySourceFmt is the served/authored MappingLibrary body,
@@ -190,8 +195,18 @@ func relocateMappingLibraryToCache(t *testing.T, root, cacheDir, version string)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(slot, "library.yaml"), []byte(fmt.Sprintf(helmHelpersLibrarySourceFmt, version)), 0o644); err != nil {
+	body := []byte(fmt.Sprintf(helmHelpersLibrarySourceFmt, version))
+	if err := os.WriteFile(filepath.Join(slot, "library.yaml"), body, 0o644); err != nil {
 		t.Fatalf("write cache slot: %v", err)
+	}
+	// Persist the OCI manifest committing to the library body, mirroring the real
+	// pull's writeEntityToCacheSlot: a manifest-less slot reads as a fail-closed miss.
+	mb, _, err := ociManifestArtifact(oci.MediaTypeMappingLibrary, body)
+	if err != nil {
+		t.Fatalf("build mapping-library manifest: %v", err)
+	}
+	if err := oci.WriteCachedManifest(root, cacheDir, "HelmHelpers:"+version, version, mb); err != nil {
+		t.Fatalf("write cache manifest: %v", err)
 	}
 }
 

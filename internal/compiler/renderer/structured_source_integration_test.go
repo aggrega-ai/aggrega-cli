@@ -22,10 +22,13 @@ import (
 	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"oras.land/oras-go/v2/content/memory"
 )
 
 // These three tests cover the structured-source successful-build
@@ -174,6 +177,7 @@ func seedIntegrationCacheSlot(t *testing.T, workspaceRoot, kind, url, version st
 	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), blob, 0o644); err != nil {
 		t.Fatalf("write blob: %v", err)
 	}
+	writeIntegrationChartManifest(t, slot, blob)
 	meta := metadata.CacheMetadata{
 		Kind: kind, URL: url, Version: version, Digest: digest,
 		Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
@@ -181,6 +185,26 @@ func seedIntegrationCacheSlot(t *testing.T, workspaceRoot, kind, url, version st
 	}
 	if err := metadata.Write(filepath.Join(slot, "metadata.yaml"), meta); err != nil {
 		t.Fatalf("write metadata: %v", err)
+	}
+}
+
+// writeIntegrationChartManifest writes the OCI manifest a real helm-oci-chart
+// pull persists beside blob.tgz — the manifest whose single layer commits to
+// blob's content digest. An OCI-chart cache slot without it reads as a
+// fail-closed miss.
+func writeIntegrationChartManifest(t *testing.T, slot string, blob []byte) {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", "application/vnd.cncf.helm.chart.content.v1.tar+gzip", blob); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slot, cacheslot.ManifestFile), res.ManifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
 	}
 }
 

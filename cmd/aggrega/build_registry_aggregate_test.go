@@ -46,15 +46,16 @@ func (p *fakeAggregatePuller) PullAggregate(ctx context.Context, name, _ string)
 	if !ok {
 		return nil, "", oci.ErrFetchNotFound
 	}
-	// Populate the OCI manifest digest exactly as the real pull does — the digest
-	// of the manifest wrapping the served body — so the sub-aggregate carries a
-	// non-empty manifest digest for signature-referrer resolution, mirroring
-	// production.
-	manifestDigest, err := oci.ManifestDigest(ctx, oci.MediaTypeAggregate, e.body)
+	// Populate the OCI manifest bytes AND digest exactly as the real pull does — the
+	// manifest wrapping the served body — so the sub-aggregate carries a non-empty
+	// manifest digest for signature-referrer resolution, and the persisted cache
+	// slot carries the manifest the verifying read requires (a manifest-less slot
+	// reads as a fail-closed miss).
+	mb, md, err := ociManifestArtifact(oci.MediaTypeAggregate, e.body)
 	if err != nil {
 		return nil, "", err
 	}
-	return &oci.PullResult{MediaType: oci.MediaTypeAggregate, Bytes: e.body, Digest: manifestDigest}, e.servedTag, nil
+	return &oci.PullResult{MediaType: oci.MediaTypeAggregate, Bytes: e.body, Digest: md, ManifestBytes: mb}, e.servedTag, nil
 }
 
 func registryAggregateBody(name, version string, subURIs ...string) []byte {

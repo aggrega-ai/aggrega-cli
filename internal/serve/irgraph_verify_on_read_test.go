@@ -17,7 +17,28 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"oras.land/oras-go/v2/content/memory"
 )
+
+// componentManifestFor round-trips body through an in-memory CAS to obtain the
+// OCI manifest bytes a real component pull persists — the manifest whose single
+// layer commits to body's content digest. Seeded beside a drifted cache blob so
+// verify-on-read catches the drift via manifest authority (an integrity skip)
+// rather than treating the manifest-less slot as a fail-closed miss and issuing
+// a Tier-3 re-fetch.
+func componentManifestFor(t *testing.T, body []byte) []byte {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", oci.MediaTypeComponent, body); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	return res.ManifestBytes
+}
 
 // recordingPuller is a Tier-3 stand-in that records every Pull it receives and
 // can serve a body. In the verify-on-read ordering test it is wired so that a
@@ -128,9 +149,14 @@ spec:
 	}
 
 	// Cache-only Component: the entity lives ONLY in the Tier-2 cache slot (drifted
-	// bytes), never authored in the catalog dir.
+	// bytes), never authored in the catalog dir. The slot carries the persisted OCI
+	// manifest committing to the ORIGINAL (pinned) content — the independent record
+	// against which the drifted blob is caught as an integrity skip, not a miss.
 	if err := oci.WriteCached(tmp, cacheDir, compURI, "1.0.0", cachedComponent); err != nil {
 		t.Fatalf("WriteCached: %v", err)
+	}
+	if err := oci.WriteCachedManifest(tmp, cacheDir, compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
+		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 
 	// Catalog dir carries the Recipe + Provider so the recipe catalog loads and the
@@ -326,9 +352,14 @@ spec:
 
 	// The drifted component lives ONLY in the Tier-2 cache, never in the catalog
 	// dir — so the lazy view, verifying on read, skips it as drifted and the
-	// guard sees it absent.
+	// guard sees it absent. The slot carries the persisted OCI manifest committing
+	// to the ORIGINAL (pinned) content, so the drift is an integrity skip, not a
+	// fail-closed miss.
 	if err := oci.WriteCached(tmp, cacheDir, compURI, "1.0.0", cachedComponent); err != nil {
 		t.Fatalf("WriteCached: %v", err)
+	}
+	if err := oci.WriteCachedManifest(tmp, cacheDir, compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
+		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 
 	catalogDir := filepath.Join(tmp, "catalog")

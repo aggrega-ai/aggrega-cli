@@ -60,6 +60,7 @@ func TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection(t *test
 	slot := sourcecache.SlotPath(root, ".aggrega/cache", kind, url, ver, digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteChartManifest(t, slot, blob)
 	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
 		Kind:      kind,
 		URL:       url,
@@ -156,6 +157,7 @@ func TestDispatchBoundaryScopeFR_InfraTemplatedSourceResolvesFromProjectionInfra
 	slot := sourcecache.SlotPath(root, ".aggrega/cache", kind, url, ver, digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteChartManifest(t, slot, blob)
 	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
 		Kind:      kind,
 		URL:       url,

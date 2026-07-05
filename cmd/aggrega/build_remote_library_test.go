@@ -15,7 +15,29 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"oras.land/oras-go/v2/content/memory"
 )
+
+// ociManifestArtifact round-trips body through an in-memory CAS to obtain the OCI
+// manifest bytes and digest a real registry pull persists — the manifest whose
+// single layer commits to body's content digest, and whose own content digest is
+// the returned manifest digest. Fixture pullers and cache seeders attach the
+// bytes so a cached entity slot is the complete manifest-plus-content slot the
+// verifying read requires; a manifest-less slot for an always-OCI entity reads as
+// a fail-closed miss. Returns an error (rather than taking *testing.T) so puller
+// methods, which cannot fail a test directly, can propagate it.
+func ociManifestArtifact(mediaType string, body []byte) (manifestBytes []byte, manifestDigest string, err error) {
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "seed", mediaType, body); err != nil {
+		return nil, "", err
+	}
+	res, err := oci.Pull(ctx, store, "seed")
+	if err != nil {
+		return nil, "", err
+	}
+	return res.ManifestBytes, res.Digest, nil
+}
 
 // recordingSourceResolver is a stub closure.SourceResolver that records the
 // source version it is asked to resolve (the value the source: template
@@ -73,7 +95,12 @@ func (p *fakeRemoteLibraryPuller) PullLibrary(_ context.Context, _, _, floorVers
 		"spec:\n  schemas:\n    Storage:\n      size: { type: string, default: \"10Gi\" }\n", bodyVersion))
 	// Return the resolved TAG (version); the body carries bodyVersion. When they
 	// differ, the identity rule must pin bodyVersion (metadata.version), not the tag.
-	return &oci.PullResult{MediaType: oci.MediaTypeSchemaLibrary, Bytes: body}, version, nil
+	// The manifest bytes mirror a real pull so the persisted slot is complete.
+	mb, md, err := ociManifestArtifact(oci.MediaTypeSchemaLibrary, body)
+	if err != nil {
+		return nil, "", err
+	}
+	return &oci.PullResult{MediaType: oci.MediaTypeSchemaLibrary, Bytes: body, Digest: md, ManifestBytes: mb}, version, nil
 }
 
 // TestBuildResolvesRemoteLibraryTagVersionMismatch is the library identity proof:
@@ -303,6 +330,15 @@ func relocateLibraryToCache(t *testing.T, root, cacheDir string) {
 	}
 	if err := os.WriteFile(filepath.Join(slot, "library.yaml"), []byte(dbSizingLibrarySource), 0o644); err != nil {
 		t.Fatalf("write cache slot: %v", err)
+	}
+	// Persist the OCI manifest committing to the library body, mirroring the real
+	// pull's writeEntityToCacheSlot: a manifest-less slot reads as a fail-closed miss.
+	mb, _, err := ociManifestArtifact(oci.MediaTypeSchemaLibrary, []byte(dbSizingLibrarySource))
+	if err != nil {
+		t.Fatalf("build library manifest: %v", err)
+	}
+	if err := oci.WriteCachedManifest(root, cacheDir, "DbSizing:1.0.0", "1.0.0", mb); err != nil {
+		t.Fatalf("write cache manifest: %v", err)
 	}
 }
 
