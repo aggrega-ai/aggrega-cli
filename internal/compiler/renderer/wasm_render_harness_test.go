@@ -44,6 +44,7 @@ func embeddedProviderURI(t *testing.T, provider string) string {
 		"helm":       "helm-provider",
 		"compose":    "compose-provider",
 		"helm-chart": "helmchart-provider",
+		"terraform":  "terraform-provider",
 	}[provider]
 	if basename == "" {
 		t.Fatalf("no embedded rendering guest known for provider %q", provider)

@@ -12,7 +12,7 @@ import (
 
 // shippedProviders is the set of provider names the Wasm render route resolves to
 // a host-capability holder.
-var shippedProviders = []string{"helm", "helm-chart", "compose"}
+var shippedProviders = []string{"helm", "helm-chart", "compose", "terraform"}
 
 // TestHostCapsFor_ResolvesEveryShippedProvider pins the provider-name host-
 // capability registry: every shipped provider resolves a non-empty holder, and an
@@ -80,6 +80,12 @@ func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 			assemblesBoundary:               true,
 			hasProjectSource:                true,
 			hasBoundaryConsumerEnvOverrides: true,
+		},
+		{
+			provider:          "terraform",
+			caps:              renderer.ProviderCapabilities{Sourced: true, ArtifactsStandalone: true},
+			externalArtifacts: true,
+			hasProjectSource:  true,
 		},
 	}
 	for _, tc := range cases {

@@ -55,6 +55,13 @@ const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256
 // byte-for-byte against a lockfile pin.
 const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:bd74da5550eea0a62c7e382ec36e3cf5e1645f828479d8838fd4ecfbc332bc56"
 
+// terraformProviderURI is the canonical content-addressed URI the terraform
+// provider rendering plugin's decompressed bytes register under. Like the other
+// provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
+// under plugins/, so a resolution of this URI through the embed tier verifies
+// byte-for-byte against a lockfile pin.
+const terraformProviderURI = "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:435518e59da5924cdf7d4126410cd1d717927fff0eff61a5dd597b98607768f4"
+
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from
 // pluginFS at init by register.
@@ -74,6 +81,7 @@ func register() map[string][]byte {
 		helmProviderURI:      mustDecompress("plugins/helm-provider.wasm.gz"),
 		composeProviderURI:   mustDecompress("plugins/compose-provider.wasm.gz"),
 		helmChartProviderURI: mustDecompress("plugins/helmchart-provider.wasm.gz"),
+		terraformProviderURI: mustDecompress("plugins/terraform-provider.wasm.gz"),
 	}
 }
 

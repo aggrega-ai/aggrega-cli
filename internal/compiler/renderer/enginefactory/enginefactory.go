@@ -14,6 +14,7 @@ import (
 	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	renderTerraform "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
 )
 
 // HostCapsFor returns a provider's host-side capability holder by name, resolved
@@ -32,6 +33,8 @@ func HostCapsFor(providerName string) (renderer.HostCapabilities, bool) {
 		return renderHelmChart.HostCaps(), true
 	case "compose":
 		return renderCompose.HostCaps(), true
+	case "terraform":
+		return renderTerraform.HostCaps(), true
 	default:
 		return renderer.HostCapabilities{}, false
 	}
@@ -42,9 +45,9 @@ func HostCapsFor(providerName string) (renderer.HostCapabilities, bool) {
 // early consumer (the lint detector) reads identical capabilities to the
 // authoritative gate, by construction, with no second capability table to drift.
 // ok is false when the provider name binds to no shipped provider: an unknown,
-// unimplemented (terraform/cloudformation), or eval provider, which a
-// capability-based check skips rather than flags. When ok is true the returned
-// capabilities are the provider's own ProviderCapabilities.
+// unimplemented (cloudformation), or eval provider, which a capability-based
+// check skips rather than flags. When ok is true the returned capabilities are
+// the provider's own ProviderCapabilities.
 func CapabilitiesFor(providerName string) (renderer.ProviderCapabilities, bool) {
 	caps, ok := HostCapsFor(providerName)
 	if !ok {

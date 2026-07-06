@@ -61,6 +61,18 @@ type HostCapabilities struct {
 	// pre-templating uses on each $import:-loaded artifact file for an
 	// ExternalArtifacts provider. Nil ⇒ the default "{{"/"}}" pair.
 	ArtifactDelimiters func() (left, right string)
+	// VerbatimArtifacts marks a provider whose artifact bodies emit
+	// byte-for-byte after Go-template evaluation, skipping the YAML-parse-and-
+	// provenance step and accepting inline entries. It is the data form for a
+	// flat text-emitting provider like terraform, whose config (HCL or
+	// .tf.json) is not Kubernetes YAML and so must not be round-tripped through
+	// a YAML parse or have provenance labels spliced in. It is orthogonal to
+	// ExternalArtifacts: a verbatim provider still routes through the
+	// external-handler branch for delimiter and placement handling, but its
+	// per-entry evaluation stops after template evaluation and returns the
+	// rendered bytes unchanged. False ⇒ the standard YAML-parse-and-provenance
+	// emission path.
+	VerbatimArtifacts bool
 	// BoundaryConsumerEnvOverrides drives the boundary->consumer env channel,
 	// returning per-consumer environment overrides from a boundary-scope
 	// FeatureRecipe's edge-enriched template context. Nil ⇒ no overrides.

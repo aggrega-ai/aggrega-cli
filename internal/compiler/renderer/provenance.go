@@ -3,7 +3,12 @@
 
 package renderer
 
-import "strconv"
+import (
+	"bytes"
+	"sort"
+	"strconv"
+	"strings"
+)
 
 // ProvenanceComponentID returns the Kubernetes-safe component identity for a
 // node — the sanitised LabelComponentID when set (FR-emitted resources whose
@@ -82,6 +87,63 @@ func BuildAggregaProvenanceAnnotations(nodeCtx NodeRenderContext, recipeURI stri
 		annotations["argocd.argoproj.io/sync-wave"] = strconv.Itoa(nodeCtx.SyncWave)
 	}
 	return annotations
+}
+
+// FormatTerraformProvenanceComment renders a node's build provenance as a block
+// of HCL (`#`) comment lines suitable for prepending to a Terraform config file
+// or emitting as a standalone provenance file. It is the single provenance
+// formatter for the terraform provider: the host artifacts path and the guest
+// sourced path both call it, so the stamped identity can never diverge between
+// the two emission surfaces.
+//
+// Every key and value is drawn from the shared [BuildAggregaProvenanceLabels]
+// and [BuildAggregaProvenanceAnnotations] builders — the same source the
+// Kubernetes label and annotation surfaces use — so the formatter re-lists no
+// key literals of its own. Only `aggrega.ai/*` keys are kept; the
+// Kubernetes-runtime-specific keys those builders also produce
+// (app.kubernetes.io/name, argocd.argoproj.io/sync-wave) carry no meaning in a
+// Terraform config and are filtered out by the prefix. The retained set is the
+// cross-provider identity: provider, provider-version, component-id,
+// compiler-version, aggregate-name, environment, boundary-path, recipe-uri, and
+// sync-wave, each present only when its source value is set.
+//
+// recipeURI is passed through to the annotation builder exactly as the
+// annotation surface receives it — the host artifacts path sources it from
+// PhaseBState via [recipeURI], the guest sourced path from the node's Recipe
+// identity via [ProvenanceRecipeURIFromNodeCtx].
+//
+// Line order is a stable alphabetical sort of the retained keys. Provenance
+// keys carry no author-order semantics (they mirror the sorted-key YAML label
+// surface), so the sort is the canonical deterministic order rather than a
+// stand-in for lost ordering: given identical input the block is byte-identical
+// across runs, with no wall-clock or external state read (Deterministic Output).
+func FormatTerraformProvenanceComment(nodeCtx NodeRenderContext, recipeURI string) []byte {
+	fields := map[string]string{}
+	for k, v := range BuildAggregaProvenanceLabels(nodeCtx) {
+		fields[k] = v
+	}
+	for k, v := range BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI) {
+		fields[k] = v
+	}
+
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		if strings.HasPrefix(k, "aggrega.ai/") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var b bytes.Buffer
+	b.WriteString("# Aggrega build provenance\n")
+	for _, k := range keys {
+		b.WriteString("# ")
+		b.WriteString(k)
+		b.WriteString(": ")
+		b.WriteString(fields[k])
+		b.WriteByte('\n')
+	}
+	return b.Bytes()
 }
 
 // ProvenanceRecipeURIFromNodeCtx assembles the recipe-uri annotation value from

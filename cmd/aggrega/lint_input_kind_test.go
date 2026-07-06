@@ -131,13 +131,27 @@ func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
 // catalog scaffolding.
 func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
 	errs := inputKindCapabilityErrors([]types.Recipe{
-		wlRecipe("a", "terraform", true),
 		wlRecipe("b", "cloudformation", true),
 		wlRecipe("c", "eval", true),
 		wlRecipe("d", "nonsense-typo", true),
 	}, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unknown/unimplemented providers must be skipped (ok=false); got: %v", errs)
+	}
+}
+
+// workload: on terraform (engine ships, Synthesized=false) → flagged, with a
+// message naming the input kinds terraform does support (sourced, artifacts-only).
+func TestInputKindCapabilityErrors_FlagsWorkloadOnTerraform(t *testing.T) {
+	errs := inputKindCapabilityErrors([]types.Recipe{wlRecipe("api", "terraform", true)}, nil)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for workload:+terraform; got %d: %v", len(errs), errs)
+	}
+	msg := errs[0].Error()
+	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "terraform"`, "does not support synthesised recipes", "this provider supports: sourced, artifacts-only"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q; got: %s", want, msg)
+		}
 	}
 }
 

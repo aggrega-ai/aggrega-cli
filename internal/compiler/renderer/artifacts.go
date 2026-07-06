@@ -108,6 +108,11 @@ type ArtifactsTemplateDelims interface {
 //     entries are a no-op at B.3; the helm-chart provider's special
 //     pre-template injection path is the responsibility of a follow-up work
 //     item, not B.3.
+//   - verbatim external providers (terraform and similar flat text emitters,
+//     marked VerbatimArtifacts) — each entry (inline or $import) emits
+//     byte-for-byte after Go-template evaluation, skipping the YAML parse,
+//     provenance-label merge, and re-marshal, because the body (HCL,
+//     .tf.json) is not Kubernetes YAML.
 //
 // Self-containment: the chapter requires artifacts to reference only the
 // Recipe's declared inputs (pillars, .workload, .source). Cross-Recipe
@@ -130,16 +135,112 @@ func evaluateArtifacts(
 
 	hostCaps := ResolveHostCaps(engine)
 	if hostCaps.ExternalArtifacts {
+		leftDelim, rightDelim := "{{", "}}"
+		if hostCaps.ArtifactDelimiters != nil {
+			leftDelim, rightDelim = hostCaps.ArtifactDelimiters()
+		}
+
+		if hostCaps.VerbatimArtifacts {
+			// Verbatim providers (terraform and similar flat text emitters):
+			// each artifact body emits byte-for-byte after Go-template
+			// evaluation — no YAML parse, no provenance-label merge, no
+			// re-marshal — because the body (HCL, .tf.json) is not Kubernetes
+			// YAML. Inline and $import entries are both accepted: the
+			// inline-rejection below is specific to a downstream template
+			// engine (the chart's) mangling inline strings, which a verbatim
+			// provider does not run.
+			//
+			// A verbatim body is not Kubernetes YAML, so build provenance
+			// cannot ride in metadata.labels/annotations the way the YAML path
+			// splices it. Placement is format-aware, keyed on the emitted
+			// filename's extension:
+			//
+			//   - HCL body (name does not end in .json — main.tf, *.tf,
+			//     *.tftpl): the provenance is prepended as a leading `#`
+			//     comment block, riding at the top of the file.
+			//   - JSON body (name ends in .json — *.tf.json): a `#` prefix
+			//     would make the body invalid JSON, so the body emits
+			//     byte-for-byte and the provenance travels in a single
+			//     companion comment-only file (aggrega.provenance.tf), the
+			//     same filename the sourced guest uses for its JSON tfvars
+			//     overlay.
+			//
+			// When the node mixes HCL and JSON bodies, the companion is the
+			// sole provenance carrier (HCL bodies then also emit verbatim) so
+			// the block is never duplicated across surfaces. All three
+			// placements use the same shared FormatTerraformProvenanceComment
+			// formatter the sourced guest uses, so the stamped identity is
+			// identical across every terraform emission surface.
+			type verbatimEmit struct {
+				name   string
+				origin EmitOrigin
+				body   []byte
+			}
+			var emits []verbatimEmit
+			hasJSONBody := false
+			for _, name := range state.Recipe.Spec.Artifacts.Keys() {
+				entry, _ := state.Recipe.Spec.Artifacts.Get(name)
+				tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, name)
+				if err != nil {
+					return nil, err
+				}
+				// Inline: the emitted name is the author-declared map key.
+				// $import: the emitted name is the bare basename of the path.
+				emitName := name
+				origin := EmitOriginArtifactsInline
+				if entry.Import != "" {
+					emitName = filepath.Base(entry.Import)
+					origin = EmitOriginArtifactsImport
+				}
+				body, err := evaluateOneArtifactVerbatim(
+					tmplCtx, state, emitName, tmplText,
+					fmt.Sprintf("artifactsVerbatim[%s/%s]", state.RecipeName, emitName),
+					leftDelim, rightDelim,
+				)
+				if err != nil {
+					return nil, err
+				}
+				if strings.HasSuffix(emitName, ".json") {
+					hasJSONBody = true
+				}
+				emits = append(emits, verbatimEmit{name: emitName, origin: origin, body: body})
+			}
+
+			provComment := FormatTerraformProvenanceComment(nodeCtx, recipeURI(state))
+			var out []EmittedFile
+			for _, e := range emits {
+				body := e.body
+				// Pure-HCL node: prepend provenance to each body. When any
+				// JSON body is present the companion below is the sole carrier,
+				// so no body is mutated. Copy provComment per body so the
+				// shared slice is never aliased into an emitted file.
+				if !hasJSONBody {
+					body = append(append([]byte{}, provComment...), body...)
+				}
+				out = append(out, EmittedFile{
+					Name:         e.name,
+					Origin:       e.origin,
+					Body:         body,
+					Intermediate: false,
+				})
+			}
+			if hasJSONBody {
+				out = append(out, EmittedFile{
+					Name:         "aggrega.provenance.tf",
+					Origin:       EmitOriginArtifactsInline,
+					Body:         provComment,
+					Intermediate: false,
+				})
+			}
+			return out, nil
+		}
+
 		// External-handler engines (helm-chart and similar): each
 		// artifact entry must be a file-import (mode 2). Inline
 		// content is forbidden because the engine consumes pre-
 		// templated files at chart-templates/ injection time; the
 		// inline-template-string pattern doesn't survive the chart's
 		// own template engine.
-		leftDelim, rightDelim := "{{", "}}"
-		if hostCaps.ArtifactDelimiters != nil {
-			leftDelim, rightDelim = hostCaps.ArtifactDelimiters()
-		}
 		pathFn := func(_ NodeRenderContext, basename string) string { return basename }
 		if hostCaps.PathForArtifact != nil {
 			pathFn = hostCaps.PathForArtifact
@@ -366,6 +467,35 @@ func evaluateOneArtifactWithDelims(
 		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
 		return []byte(rendered), nil
 	}
+}
+
+// evaluateOneArtifactVerbatim handles the per-entry pipeline for a verbatim
+// provider: nil-pillar pre-check, then Go-template evaluation with the supplied
+// delimiter pair, returning the rendered bytes unchanged. Unlike
+// evaluateOneArtifactWithDelims it performs no YAML parse, no provenance-label
+// merge, and no re-marshal — the body emits byte-for-byte after template
+// evaluation, the correct shape for a flat text provider whose config (HCL,
+// .tf.json) is not Kubernetes YAML. tmplName is the template-engine identifier
+// surfaced in parse / execute error messages; filename is the user-facing
+// artifact name surfaced in CATALOG_ERROR.
+func evaluateOneArtifactVerbatim(
+	tmplCtx *types.TemplateContext,
+	state *PhaseBState,
+	filename string,
+	tmplText string,
+	tmplName string,
+	leftDelim, rightDelim string,
+) ([]byte, error) {
+	if err := preCheckArtifactPillars(state, filename, tmplText, leftDelim, rightDelim); err != nil {
+		return nil, err
+	}
+
+	rendered, err := EvalTemplateWithDelims(tmplName, tmplText, tmplCtx, leftDelim, rightDelim)
+	if err != nil {
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template eval", filename))
+	}
+
+	return []byte(rendered), nil
 }
 
 // preCheckArtifactPillars walks the template's parsed field-access set
