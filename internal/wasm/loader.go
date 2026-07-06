@@ -157,14 +157,18 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 //
 // The selection is made once, at first construction:
 //
-//   - Within a test binary (testing.Testing() reports true) the cache is
-//     in-memory, regardless of disablePersistent. A shared on-disk cache
-//     directory is the one resource many concurrently-running test binaries
-//     would contend on — each holding an independent disk-backed cache over the
-//     same directory, concurrently compiling, writing, and evicting the same
-//     guest entry, the source of an intermittent compile flake. An in-memory
-//     cache per test process removes that cross-process contention and keeps the
-//     suite off the user cache directory entirely.
+//   - Within a test binary (testing.Testing() reports true) the cache is an
+//     on-disk store rooted at a fixed directory under the system temp directory
+//     (see testCompilationCacheDir), regardless of disablePersistent. Every test
+//     process — including the many package binaries a single suite run executes
+//     in parallel — shares that one directory, so each distinct guest compiles at
+//     most once across the whole run and every later process reuses the machine
+//     code instead of cold-compiling its own copy. A wazero cache directory is
+//     concurrency-safe across processes: each entry is written to a unique temp
+//     file and atomically renamed into place, so concurrent compiles never see a
+//     torn entry. The directory is deliberately off the user cache directory, so
+//     the suite never touches a developer's real build cache. An in-memory cache
+//     is the fallback only when that directory cannot be created.
 //   - Otherwise selectCompilationCache honors disablePersistent: false (the
 //     default) prefers the persistent on-disk store under wasmCompileCacheDir
 //     with an in-memory fallback; true uses an in-memory-only cache. Only the
@@ -179,12 +183,32 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 func sharedCompilationCache(disablePersistent bool) wazero.CompilationCache {
 	sharedCompilationCacheOnce.Do(func() {
 		if testing.Testing() {
-			sharedCompilationCacheInstance = wazero.NewCompilationCache()
+			sharedCompilationCacheInstance = testCompilationCache()
 			return
 		}
 		sharedCompilationCacheInstance = selectCompilationCache(disablePersistent)
 	})
 	return sharedCompilationCacheInstance
+}
+
+// testCompilationCacheDir returns the fixed directory that test binaries share
+// as their compile cache. It is a stable location under the system temp
+// directory — the same path for every test process, so a whole suite run
+// compiles each guest once and reuses it — and deliberately distinct from the
+// user cache directory selectCompilationCache uses, so tests never touch a
+// developer's real build cache.
+func testCompilationCacheDir() string {
+	return filepath.Join(os.TempDir(), "aggrega-wasm-compile-test")
+}
+
+// testCompilationCache returns the shared on-disk cache test binaries use,
+// rooted at testCompilationCacheDir, falling back to an in-memory cache only
+// when that directory cannot be created.
+func testCompilationCache() wazero.CompilationCache {
+	if disk, err := wazero.NewCompilationCacheWithDir(testCompilationCacheDir()); err == nil {
+		return disk
+	}
+	return wazero.NewCompilationCache()
 }
 
 var (

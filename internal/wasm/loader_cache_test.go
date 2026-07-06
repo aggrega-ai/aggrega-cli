@@ -103,36 +103,43 @@ func TestDisablePluginCacheContextRoundTrip(t *testing.T) {
 	}
 }
 
-// TestTestModeForcesSharedInMemoryCache is the enforcement guard for the
-// decision site: within a test binary every cache request MUST resolve to ONE
-// process-wide in-memory cache and touch no on-disk cache directory, so a build
-// through any caller — the pipeline, the render harness, a direct constructor —
-// cannot contend on the shared on-disk cache directory (the cross-process
-// compile flake). It exercises the disk-defaulting input (disablePersistent
-// false, which OUTSIDE a test binary would create the on-disk cache) and proves
-// the test-mode gate overrides it and that every constructor hands out the same
-// singleton.
+// TestTestModeSharesOneDiskCache is the enforcement guard for the decision
+// site: within a test binary every cache request MUST resolve to ONE
+// process-wide cache, backed by the shared test compile-cache directory rather
+// than the developer's real user cache directory. Sharing one directory across
+// every test process lets each guest compile once per suite run and every later
+// process reuse the machine code, eliminating the cold-recompile storm; keeping
+// it off the user cache directory leaves a developer's real build cache
+// untouched. It exercises the disk-defaulting input (disablePersistent false)
+// and the disable input (true) and proves both resolve to that same singleton.
 //
-// A regression that removes the gate would let disablePersistent false select
-// the disk cache here and create the directory, failing this test.
-func TestTestModeForcesSharedInMemoryCache(t *testing.T) {
+// A regression that pointed the test-mode cache at the user cache directory
+// would create diskCacheDir here and fail this test; one that reverted to a
+// per-process cache would break the singleton identity assertion.
+func TestTestModeSharesOneDiskCache(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	dir := diskCacheDir(t)
 	if dirExists(t, dir) {
 		t.Fatalf("precondition: cache dir %s already exists in fresh temp", dir)
 	}
 
-	// disablePersistent false is the production disk-default; under go test the
-	// gate must hand back the in-memory singleton regardless, and true must
-	// return that SAME singleton (one cache per process).
+	// disablePersistent false is the production disk-default and true is the
+	// disable dial; under go test both must hand back the SAME shared singleton
+	// (one cache per process).
 	c1 := sharedCompilationCache(false)
 	c2 := sharedCompilationCache(true)
 
 	if dirExists(t, dir) {
-		t.Fatalf("under go test the compile cache must be in-memory; on-disk cache dir %s was created", dir)
+		t.Fatalf("under go test the compile cache must stay off the user cache directory; on-disk cache dir %s was created", dir)
+	}
+	// The test-mode cache is disk-backed at the shared test directory, which the
+	// wazero cache constructor creates on construction; by now the process-wide
+	// singleton exists, so the directory must be present.
+	if !dirExists(t, testCompilationCacheDir()) {
+		t.Fatalf("under go test the shared compile cache must be disk-backed at %s; the directory was not created", testCompilationCacheDir())
 	}
 	if c1 != c2 {
-		t.Fatal("under go test every build must share ONE in-memory cache instance; got two distinct caches")
+		t.Fatal("under go test every build must share ONE cache instance; got two distinct caches")
 	}
 
 	// The exported constructors every production path uses must route through the
