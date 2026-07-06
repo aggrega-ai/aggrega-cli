@@ -173,7 +173,6 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
-		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
 	if err != nil {
@@ -231,7 +230,6 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
-		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
 	if err == nil {

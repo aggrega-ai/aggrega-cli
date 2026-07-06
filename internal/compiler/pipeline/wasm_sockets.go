@@ -44,7 +44,10 @@ func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pl
 // the wrong export name would otherwise raise. A caller that leaves
 // spec.PluginType empty declares no expectation and skips the check.
 func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte) ([]byte, error) {
-	loader := &wasm.Loader{}
+	// The socket loader carries the process-wide shared compilation cache
+	// (honoring the ctx persistent-cache dial), so a socket guest compiles once
+	// and every later socket call and concurrent request reuses the machine code.
+	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)

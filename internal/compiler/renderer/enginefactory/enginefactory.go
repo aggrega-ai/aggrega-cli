@@ -1,57 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package enginefactory provides the canonical provider-name -> renderer.Engine
-// dispatch. It is the single source of truth for which provider names the
-// compiler renders and which engine each maps to; both the CLI build and the
-// build-faithful test harness consume it, so a test renders through exactly the
-// engines a real build uses.
+// Package enginefactory provides the canonical provider-name -> host-capability
+// resolution for the compiler's render routing. It is the single source of truth
+// for which provider names the compiler renders and the host-side capability
+// holder each maps to; both the CLI build and the build-faithful test harness
+// consume it, so a test resolves provider capabilities exactly as a real build
+// does.
 package enginefactory
 
 import (
-	"fmt"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 )
 
-// Dispatch maps a recipe.spec.provider name to a fresh-per-call renderer.Engine.
-// It satisfies renderer.EngineFactory. Three provider names ship:
-//
-//   - "helm" — fresh HelmEngine per call. The empty-string branch also routes
-//     here, a defensive default; the Recipe schema requires spec.provider, so
-//     empty values do not reach this dispatch in normal flow.
-//   - "helm-chart" — fresh helmchart.HelmEngine per call.
-//   - "compose" — fresh ComposeEngine per call.
-//
-// Engines are stateless; per-(path, provider) aggregation happens in the
-// orchestrator. An unknown providerName wraps renderer.ErrUnknownProvider with
-// the offending name so the upstream RenderAll error surfaces with dispatch
-// context intact.
-func Dispatch(providerName string) (renderer.Engine, error) {
-	switch providerName {
-	case "helm", "":
-		return &renderHelm.HelmEngine{}, nil
-	case "helm-chart":
-		return &renderHelmChart.HelmEngine{}, nil
-	case "compose":
-		return &renderCompose.ComposeEngine{}, nil
-	default:
-		return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerName)
-	}
-}
-
 // HostCapsFor returns a provider's host-side capability holder by name, resolved
-// from the provider package's own holder function — the same holder the in-tree
-// engine reports through renderer.HostCapable, so the Wasm route and the in-tree
-// route read one source and cannot drift. It obtains the holder without
-// constructing the provider's Go engine, so the Wasm render route (which takes a
-// holder, not an engine) never depends on a constructed engine instance. The
-// empty-string branch mirrors Dispatch's defensive default to "helm". ok is false
-// for a provider name that binds to no shipped provider, matching Dispatch's
-// unknown-name contract.
+// from the provider package's own holder function — so the Wasm render route
+// reads one source of a provider's host capabilities and cannot drift. It
+// obtains the holder without constructing any engine, so the render route (which
+// takes a holder, not an engine) never depends on a constructed engine instance.
+// The empty-string branch is a defensive default to "helm"; the Recipe schema
+// requires spec.provider, so empty values do not reach here in normal flow. ok
+// is false for a provider name that binds to no shipped provider.
 func HostCapsFor(providerName string) (renderer.HostCapabilities, bool) {
 	switch providerName {
 	case "helm", "":
@@ -65,18 +37,18 @@ func HostCapsFor(providerName string) (renderer.HostCapabilities, bool) {
 	}
 }
 
-// CapabilitiesFor reports a provider's engine capabilities, resolved through the
-// same Dispatch the render-time input-kind gate uses — so any early consumer
-// (the lint detector) reads identical capabilities to the authoritative gate, by
-// construction, with no second capability table to drift. ok is false when the
-// provider name binds to no shipped engine (Dispatch returns ErrUnknownProvider):
-// an unknown, unimplemented (terraform/cloudformation), or eval provider, which a
+// CapabilitiesFor reports a provider's input-kind capabilities, resolved through
+// the same HostCapsFor holder the render-time input-kind gate reads — so any
+// early consumer (the lint detector) reads identical capabilities to the
+// authoritative gate, by construction, with no second capability table to drift.
+// ok is false when the provider name binds to no shipped provider: an unknown,
+// unimplemented (terraform/cloudformation), or eval provider, which a
 // capability-based check skips rather than flags. When ok is true the returned
-// capabilities are the engine's own ProviderCapabilities.
+// capabilities are the provider's own ProviderCapabilities.
 func CapabilitiesFor(providerName string) (renderer.ProviderCapabilities, bool) {
-	engine, err := Dispatch(providerName)
-	if err != nil {
+	caps, ok := HostCapsFor(providerName)
+	if !ok {
 		return renderer.ProviderCapabilities{}, false
 	}
-	return engine.Capabilities(), true
+	return caps.Caps, true
 }

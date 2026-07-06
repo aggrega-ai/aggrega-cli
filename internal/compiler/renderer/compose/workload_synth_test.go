@@ -4,7 +4,6 @@
 package compose
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func TestSynthesizeWorkload_MinimalSingleContainer(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	nodeCtx := nodeCtxFor("api-server")
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+	files, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -78,17 +77,6 @@ func TestSynthesizeWorkload_MinimalSingleContainer(t *testing.T) {
 		t.Errorf("fragment name: got %q", files[0].Name)
 	}
 	goldenCheck(t, "minimal-single-container", files[0].Body)
-}
-
-func TestSynthesizeWorkload_NilWorkload_ReturnsNil(t *testing.T) {
-	t.Parallel()
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, nil, nodeCtxFor("x"))
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if files != nil {
-		t.Errorf("expected nil files for nil workload, got %v", files)
-	}
 }
 
 // TestSynthesizeWorkload_MultiContainerMainAndSidecar — main + sidecar.
@@ -109,7 +97,7 @@ func TestSynthesizeWorkload_MultiContainerMainAndSidecar(t *testing.T) {
 	pubSvc.Ports.Set("http", 8080)
 	w.Services.Set("public", pubSvc)
 
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -144,7 +132,7 @@ func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 	svc.Ports.Set("api", 9000)
 	w.Services.Set("internal", svc)
 
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("store"))
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("store"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -189,7 +177,7 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	pubSvc.Ports.Set("http", 8080)
 	w.Services.Set("public", pubSvc)
 
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("multi"))
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("multi"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -209,7 +197,7 @@ func TestSynthesizeWorkload_HTTPProbeNoPort_Errors(t *testing.T) {
 	}
 	w.Containers.Set("main", c)
 
-	_, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("x"))
+	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for http probe with no ports")
 	}
@@ -235,7 +223,7 @@ func TestSynthesizeWorkload_SecretsAsEnvAndFile(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -258,7 +246,7 @@ func TestSynthesizeWorkload_EnvAuthorOrder(t *testing.T) {
 	c.Secrets.Set("NESTED", types.SecretRef{From: "db-credentials", As: "env"})
 	w.Containers.Set("main", c)
 
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -284,7 +272,7 @@ func TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts(t *testing.T) {
 	internal.Ports.Set("metrics", 9090)
 	w.Services.Set("metrics-only", internal)
 
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("web"))
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("web"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -297,11 +285,11 @@ func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	nodeCtx := nodeCtxFor("api-server")
-	files1, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+	files1, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	files2, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+	files2, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}

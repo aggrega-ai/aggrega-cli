@@ -25,9 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tetratelabs/wazero"
-
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -295,20 +292,6 @@ type Server struct {
 
 	parseCache *cache
 
-	// pluginCompileCache is the daemon-lifetime wazero compilation cache shared
-	// across every request's per-request Loader. A guest's expensive
-	// compilation is paid once for the daemon's life and served warm on later
-	// requests rather than recompiled per request. It is injected into each
-	// request's context (see handle) and referenced — never owned — by the
-	// per-request Loader the render pipeline constructs, so each request keeps
-	// its own OnLoad / ExternalInputs while sharing only compiled machine code.
-	// A wazero CompilationCache is safe for concurrent use across the worker
-	// pool. nil when a Server is built outside Run (the in-memory test harness),
-	// which leaves per-request Loaders on their own fresh caches. closeCompileCache
-	// releases it once at daemon teardown.
-	pluginCompileCache wazero.CompilationCache
-	closeCompileCache  func() error
-
 	// diagMu guards every read and write of the diagnostics map. The
 	// critical section is O(1) map work plus, at publish time, a copy
 	// of one file's slice header; it never spans a pipeline run or any
@@ -477,39 +460,27 @@ func Run(cfg RunConfig) error {
 		wsCfg.Workspace.CatalogDirs,
 		puller,
 	)
-	// One compilation cache for the whole daemon session, warmed across
-	// requests. The daemon does not disable the persistent compile cache, so
-	// this mirrors the per-request Loader's default disk-backed selection —
-	// only now the cache handle outlives the request that first warms it. The
-	// per-request Loaders reference it through the context injected in handle;
-	// it is closed once in the teardown defer below.
-	pluginCompileCache, closeCompileCache := wasm.NewSharedCompilationCache(false)
+	// The render pipeline's per-request Loaders draw on the process-wide shared
+	// compilation cache (see wasm.NewCachingLoaderFromContext): a guest's
+	// expensive compilation is paid once for the daemon's life and served warm on
+	// every later request, and the single cache is safe for concurrent use across
+	// the worker pool. It is a process-lifetime singleton the daemon neither
+	// creates, injects, nor closes — it is reclaimed at process exit.
 	srv := &Server{
-		workspaceRoot:      root,
-		configSource:       source.String(),
-		compilerVersion:    cfg.CompilerVersion,
-		workspaceMarker:    marker,
-		wsConfig:           wsCfg,
-		renderDiagnostics:  resolveRenderDiagnostics(cfg.RenderDiagnostics, wsCfg.Serve.RenderDiagnostics),
-		lazyCatalog:        lazyCatalog,
-		parseCache:         newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
-		pluginCompileCache: pluginCompileCache,
-		closeCompileCache:  closeCompileCache,
-		diagnostics:        map[string][]Diagnostic{},
-		in:                 bufio.NewReader(cfg.Stdin),
-		out:                cfg.Stdout,
-		stderr:             stderr,
+		workspaceRoot:     root,
+		configSource:      source.String(),
+		compilerVersion:   cfg.CompilerVersion,
+		workspaceMarker:   marker,
+		wsConfig:          wsCfg,
+		renderDiagnostics: resolveRenderDiagnostics(cfg.RenderDiagnostics, wsCfg.Serve.RenderDiagnostics),
+		lazyCatalog:       lazyCatalog,
+		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
+		diagnostics:       map[string][]Diagnostic{},
+		in:                bufio.NewReader(cfg.Stdin),
+		out:               cfg.Stdout,
+		stderr:            stderr,
 	}
 	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
-	// The shared compilation cache is a daemon-lifetime resource; release it
-	// once when the dispatch loop returns (EOF, drain, or fatal I/O). Per-request
-	// Loaders only reference it and return no-op closers, so this is the sole
-	// close site.
-	defer func() {
-		if cerr := srv.closeCompileCache(); cerr != nil {
-			fmt.Fprintf(stderr, "  plugin: close compilation cache: %v\n", cerr)
-		}
-	}()
 
 	// The active-Release cascade and the at-startup lockfile + drift
 	// check are NOT run here: they walk the whole workspace tree, and

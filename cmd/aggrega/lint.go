@@ -332,8 +332,8 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 // cannot synthesize — a guaranteed render-time halt, surfaced here at lint time.
 // It is an early, non-authoritative detector: the render-time central input-kind
 // gate remains the single enforcement chokepoint. The detector reads engine
-// capabilities through enginefactory.CapabilitiesFor — the same Dispatch the gate
-// uses — so the two cannot disagree, and it reuses the gate's own message clause
+// capabilities through enginefactory.CapabilitiesFor — the same capability lookup
+// the gate uses — so the two cannot disagree, and it reuses the gate's own message clause
 // (renderer.UnsupportedInputKindMessage) so the early and late diagnostics read
 // identically. A provider whose name binds to no shipped engine (CapabilitiesFor
 // ok=false — unknown, unimplemented terraform/cloudformation, or eval) is skipped:

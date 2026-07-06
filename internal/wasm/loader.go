@@ -57,6 +57,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"testing"
 
 	extism "github.com/extism/go-sdk"
 	"github.com/tetratelabs/wazero"
@@ -98,8 +99,7 @@ type Loader struct {
 	// compiling each load independently, exactly as before. The cache
 	// memoizes only compiled code, a pure function of the guest bytes, so it
 	// cannot alter output and each load still yields a fresh, isolated
-	// Plugin instance. Constructed via NewCachingLoader, which pairs it with
-	// a close function.
+	// Plugin instance. Constructed via NewCachingLoader.
 	Cache wazero.CompilationCache
 
 	// OnLoad, when non-nil, is invoked with the plugin's name each time this
@@ -111,106 +111,101 @@ type Loader struct {
 	OnLoad func(pluginName string)
 }
 
-// NewCachingLoader returns a Loader whose constructed Plugins share a single
-// wazero CompilationCache, plus a close function that releases it. The shared
-// cache amortizes the compilation of a large guest across a build's many
-// per-node loads: the first load compiles the guest, and later loads of the
-// same bytes reuse the cached machine code rather than recompiling. Each load
-// still runs the full load-describe-invoke-close cycle against a fresh,
-// isolated Plugin instance — the cache changes only compilation cost, never
-// isolation or output, since compiled code is a pure function of the identical
-// guest bytes.
+// NewCachingLoader returns a fresh Loader backed by the process-wide shared
+// compilation cache (see sharedCompilationCache).
 //
-// By default the cache is disk-backed under the user cache directory
-// (see wasmCompileCacheDir), so compiled guest machine code survives across
-// separate CLI invocations: the guest is compiled once per machine and reused
-// on every later build of any project, rather than recompiled from scratch
-// each run. The store holds only compiled code keyed by the guest bytes and a
-// wazero version/arch marker, so it can neither alter rendered output nor cross
-// the render-hermeticity firewall — it is a local compiled-artifact cache, not
-// an external runtime input. When a disk-backed cache cannot be created (no
-// resolvable user cache directory, or the directory cannot be provisioned), the
-// loader falls back to an in-memory cache so a build never fails for want of a
-// cache location.
+// Every Loader in the process shares one wazero CompilationCache, so a given
+// guest compiles once per process and every later load — across any build,
+// render step, socket, or served request — reuses the cached machine code.
+// Each load still runs the full load-describe-invoke-close cycle against a
+// fresh, isolated Plugin instance: the cache changes only compilation cost,
+// never isolation or output, since compiled code is a pure function of the
+// identical guest bytes. The store holds only compiled code keyed by the guest
+// bytes and a wazero version/arch marker, so it can neither alter rendered
+// output nor cross the render-hermeticity firewall — it is a local
+// compiled-artifact cache, not an external runtime input.
 //
 // fetch serves the aggrega_fetch_external_input host function for every Plugin
 // the Loader constructs (nil is safe — a guest fetch then receives the in-band
-// not-available envelope). The caller MUST invoke the returned close function
-// when the Loader is no longer needed, typically deferred at the construction
-// site; it releases the cache's resources.
-func NewCachingLoader(fetch FetchService) (*Loader, func() error) {
-	return newCachingLoader(fetch, false)
+// not-available envelope). There is nothing to close: the shared cache is a
+// process-lifetime singleton reclaimed at process exit, not owned by any
+// individual caller.
+func NewCachingLoader(fetch FetchService) *Loader {
+	return &Loader{ExternalInputs: fetch, Cache: sharedCompilationCache(false)}
 }
 
-// NewCachingLoaderFromContext is NewCachingLoader with its cache sourced from
-// ctx. Two context signals govern it, in precedence order:
+// NewCachingLoaderFromContext is NewCachingLoader with the persistent-cache dial
+// read from ctx (see ContextWithDisablePluginCache). The dial only affects the
+// first construction in a process, where it selects the shared cache's backing
+// store: a disable signal makes the process-wide cache in-memory-only, no signal
+// leaves it disk-backed (the default). A process runs a single command's worth
+// of that dial, so first-construction-wins matches real usage. Every later
+// construction returns a Loader over that same shared cache regardless of ctx.
+func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loader {
+	return &Loader{ExternalInputs: fetch, Cache: sharedCompilationCache(DisablePluginCacheFromContext(ctx))}
+}
+
+// sharedCompilationCache returns the one process-wide wazero compilation cache
+// every Loader in the process shares. It is constructed once, on first use, and
+// lives for the whole process; it is never closed, as the process reclaims it at
+// exit.
 //
-//   - A shared server-lifetime cache (see ContextWithSharedCompilationCache):
-//     when present, the Loader is built OVER that cache and the returned close
-//     function is a no-op. The cache's owner — a long-running server that
-//     created it once and injects it into every request — retains the sole
-//     authority to close it, so a per-request Loader must never release it.
-//     Each request still gets its own Loader with its own per-request fields
-//     (OnLoad, ExternalInputs); only the compiled-code cache is shared. Because
-//     the cache memoizes only compiled machine code (a pure function of the
-//     guest bytes), sharing it across concurrent requests cannot alter output.
-//   - Otherwise, the persistent-cache dial (see ContextWithDisablePluginCache):
-//     a disable signal makes the Loader skip the on-disk compile cache and use
-//     an in-memory-only cache that lives for this build alone; with no signal it
-//     behaves exactly like NewCachingLoader — disk-backed with an in-memory
-//     fallback. In this branch the Loader owns a freshly-minted cache and the
-//     returned close function releases it; the caller MUST invoke it when the
-//     Loader is no longer needed.
-func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) (*Loader, func() error) {
-	if shared := SharedCompilationCacheFromContext(ctx); shared != nil {
-		l := &Loader{ExternalInputs: fetch, Cache: shared}
-		return l, func() error { return nil }
-	}
-	return newCachingLoader(fetch, DisablePluginCacheFromContext(ctx))
-}
-
-// NewSharedCompilationCache constructs a wazero CompilationCache for a
-// long-running server to hold across its whole lifetime, plus a close function
-// that releases it. The server creates one at startup, injects it into every
-// request's context via ContextWithSharedCompilationCache (so each request's
-// per-request Loader references it through NewCachingLoaderFromContext), and
-// invokes the returned close function exactly once at shutdown — never
-// per-request.
+// Sharing one cache across every loader — every build, render step, socket, and
+// served request — means each distinct guest compiles once per process and all
+// later loads reuse the machine code, and no loader ever runs against a private
+// or absent cache that would recompile the same guest and contend with the rest.
 //
-// The disk-vs-memory selection is delegated to newCompilationCache, the single
-// decision site shared with the per-build caching Loader: disablePersistent
-// false prefers the on-disk store under wasmCompileCacheDir with an in-memory
-// fallback; true uses an in-memory-only cache. Sharing this cache across the
-// Runtimes of many simultaneously-constructed Plugins is sound — a wazero
-// CompilationCache is safe for concurrent use and is wazero's documented
-// mechanism for sharing compiled machine code across Runtimes — and it changes
-// only compilation cost, never isolation or output.
-func NewSharedCompilationCache(disablePersistent bool) (wazero.CompilationCache, func() error) {
-	cache := newCompilationCache(disablePersistent)
-	return cache, func() error { return cache.Close(context.Background()) }
+// The selection is made once, at first construction:
+//
+//   - Within a test binary (testing.Testing() reports true) the cache is
+//     in-memory, regardless of disablePersistent. A shared on-disk cache
+//     directory is the one resource many concurrently-running test binaries
+//     would contend on — each holding an independent disk-backed cache over the
+//     same directory, concurrently compiling, writing, and evicting the same
+//     guest entry, the source of an intermittent compile flake. An in-memory
+//     cache per test process removes that cross-process contention and keeps the
+//     suite off the user cache directory entirely.
+//   - Otherwise selectCompilationCache honors disablePersistent: false (the
+//     default) prefers the persistent on-disk store under wasmCompileCacheDir
+//     with an in-memory fallback; true uses an in-memory-only cache. Only the
+//     first caller's disablePersistent is consulted, which matches real usage: a
+//     process runs one CLI command's worth of that dial, or the daemon's
+//     disk-backed default.
+//
+// A wazero CompilationCache is safe for concurrent use across the Runtimes of
+// many simultaneously-constructed Plugins, so sharing this one cache across the
+// daemon's concurrent requests and a build's parallel node renders is sound and
+// changes only compilation cost, never isolation or output.
+func sharedCompilationCache(disablePersistent bool) wazero.CompilationCache {
+	sharedCompilationCacheOnce.Do(func() {
+		if testing.Testing() {
+			sharedCompilationCacheInstance = wazero.NewCompilationCache()
+			return
+		}
+		sharedCompilationCacheInstance = selectCompilationCache(disablePersistent)
+	})
+	return sharedCompilationCacheInstance
 }
 
-// newCachingLoader assembles a caching Loader over the cache selected by
-// newCompilationCache and pairs it with a close function. It is the single
-// construction body behind both NewCachingLoader and
-// NewCachingLoaderFromContext; the disk-vs-memory decision lives entirely in
-// newCompilationCache, so the two exported constructors differ only in how they
-// source the disablePersistentCache flag.
-func newCachingLoader(fetch FetchService, disablePersistentCache bool) (*Loader, func() error) {
-	cache := newCompilationCache(disablePersistentCache)
-	l := &Loader{ExternalInputs: fetch, Cache: cache}
-	return l, func() error { return cache.Close(context.Background()) }
-}
+var (
+	sharedCompilationCacheOnce     sync.Once
+	sharedCompilationCacheInstance wazero.CompilationCache
+)
 
-// newCompilationCache selects the wazero compilation cache for a caching
-// Loader. It is the sole decision site for disk-vs-memory: with
-// disablePersistent false (the default) it prefers the persistent on-disk store
-// under wasmCompileCacheDir and falls back to an in-memory cache when no cache
-// directory resolves or the disk store cannot be created; with disablePersistent
-// true it skips the on-disk store unconditionally and returns an in-memory-only
-// cache. The in-memory cache lives only for the life of the returned handle, so
-// nothing is written to disk on that path.
-func newCompilationCache(disablePersistent bool) wazero.CompilationCache {
+// selectCompilationCache is the disk-vs-memory primitive behind
+// sharedCompilationCache's non-test branch: with disablePersistent false it
+// prefers the persistent on-disk store under wasmCompileCacheDir and falls back
+// to an in-memory cache when no cache directory resolves or the disk store
+// cannot be created; with disablePersistent true it returns an in-memory-only
+// cache.
+//
+// Every shipping path reaches this primitive through sharedCompilationCache. The
+// sole direct callers are the disk-branch unit tests, which must exercise the
+// on-disk selection that sharedCompilationCache's test-mode gate would otherwise
+// mask. That deliberate bypass is the only sanctioned way to reach this
+// primitive without the gate; it must not be "simplified" to route through
+// sharedCompilationCache, which would blind the disk-branch coverage.
+func selectCompilationCache(disablePersistent bool) wazero.CompilationCache {
 	if !disablePersistent {
 		if dir, ok := wasmCompileCacheDir(); ok {
 			if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
@@ -312,34 +307,6 @@ func ContextWithDisablePluginCache(ctx context.Context, disable bool) context.Co
 func DisablePluginCacheFromContext(ctx context.Context) bool {
 	disable, _ := ctx.Value(disablePluginCacheContextKey{}).(bool)
 	return disable
-}
-
-// sharedCompilationCacheContextKey keys an optional server-lifetime shared
-// wazero CompilationCache on a context, for the Loader construction site that
-// receives its per-request plumbing only through the context it is called with.
-type sharedCompilationCacheContextKey struct{}
-
-// ContextWithSharedCompilationCache returns a context carrying a shared,
-// server-owned wazero CompilationCache for downstream caching-Loader
-// construction. When present, NewCachingLoaderFromContext builds the per-request
-// Loader over this cache and returns a no-op close function — the server that
-// created the cache owns its lifetime and closes it once at shutdown, so the
-// per-request pipeline must not. A nil cache is treated as absent. It mirrors
-// ContextWithDisablePluginCache for call paths — the render pipeline's per-step
-// plugin dispatch — whose only shared plumbing to the Loader is the context.
-func ContextWithSharedCompilationCache(ctx context.Context, cache wazero.CompilationCache) context.Context {
-	if cache == nil {
-		return ctx
-	}
-	return context.WithValue(ctx, sharedCompilationCacheContextKey{}, cache)
-}
-
-// SharedCompilationCacheFromContext returns the shared compilation cache carried
-// by ctx, or nil when none is attached. A nil return routes
-// NewCachingLoaderFromContext to its default per-build cache behaviour.
-func SharedCompilationCacheFromContext(ctx context.Context) wazero.CompilationCache {
-	cache, _ := ctx.Value(sharedCompilationCacheContextKey{}).(wazero.CompilationCache)
-	return cache
 }
 
 // Plugin wraps an Extism plugin handle with Aggrega-specific lifecycle

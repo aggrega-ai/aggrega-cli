@@ -5,6 +5,7 @@ package helmchart
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,30 +15,44 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// Compile-time assertions: the helm-chart engine satisfies the marker
-// (`ExternalArtifactsHandler`) plus the two companion capability
-// interfaces that drive Phase B.3's external-handler dispatch. A
-// regression breaking any of the satisfactions surfaces as a build error
-// here rather than as a silent dispatch fall-through in evaluateArtifacts.
-//
-// ExternalArtifactsHandler — opts the engine into the external-handler
-// branch (inline artifacts: rejected; file-imported artifact entries
-// routed via the capability interfaces).
-//
-// ArtifactsPathProvider — declares per-artifact path placement
-// (templates/<basename>).
-//
-// ArtifactsTemplateDelims — declares the Aggrega pre-template delimiter
-// pair ("[[", "]]") so Helm's `{{ ... }}` survives the pre-pass.
-var (
-	_ renderer.ExternalArtifactsHandler = (*HelmEngine)(nil)
-	_ renderer.ArtifactsPathProvider    = (*HelmEngine)(nil)
-	_ renderer.ArtifactsTemplateDelims  = (*HelmEngine)(nil)
-)
+// helmChartWasmFactory builds an EngineFactory that renders helm-chart nodes
+// through the embedded helm-chart provider guest via the production wasmengine
+// assembler adapter, carrying the provider's own host-capability holder
+// (external-artifacts placement, delimiters, sub-chart projection). It is the
+// Wasm-only successor to the removed in-tree helm-chart engine as this package's
+// end-to-end render backend.
+func helmChartWasmFactory(t *testing.T) renderer.EngineFactory {
+	t.Helper()
+	loader := wasm.NewCachingLoader(nil)
+	var uri string
+	for _, u := range embedded.URIs() {
+		if strings.Contains(u, "helmchart-provider") {
+			uri = u
+			break
+		}
+	}
+	if uri == "" {
+		t.Fatalf("no embedded helm-chart guest; embedded URIs: %v", embedded.URIs())
+	}
+	lookup := func(u string) (pluginpath.ResolvedPlugin, error) {
+		b, ok := embedded.Lookup(u)
+		if !ok {
+			return pluginpath.ResolvedPlugin{}, fmt.Errorf("no embedded guest for %q", u)
+		}
+		return pluginpath.ResolvedPlugin{Bytes: b, URI: u, Tier: pluginpath.TierEmbed, Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096}}, nil
+	}
+	return func(string) (renderer.Engine, error) {
+		return wasmengine.NewAssembler(lookup, uri, HostCaps(), loader), nil
+	}
+}
 
 // TestHelmChartArtifactsImport_EndToEnd is the integration anchor for
 // helm-chart pre-template artifact injection. It stands up a minimal
@@ -129,7 +144,7 @@ spec:
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	factory := func(string) (renderer.Engine, error) { return &HelmEngine{}, nil }
+	factory := helmChartWasmFactory(t)
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, factory)
 	if err != nil {

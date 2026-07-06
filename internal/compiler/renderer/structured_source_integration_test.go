@@ -19,8 +19,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -52,7 +50,7 @@ func TestRenderAll_BuildsStructuredHelmSource(t *testing.T) {
 
 	input := integrationInput(t, root, "core/compute/api-server", "api", "helm", digest, "oci://r/c", "1.0.0")
 	lookup := structuredSourceRecipeLookup("helm", "helm-oci-chart", "oci://r/c", "1.0.0")
-	factory := testHelmFactory()
+	factory := wasmEngineFactory(t)
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, factory)
 	if err != nil {
@@ -82,7 +80,7 @@ func TestRenderAll_BuildsStructuredHelmChartSource(t *testing.T) {
 
 	input := integrationInput(t, root, "core/compute/api-server", "api", "helm-chart", digest, "oci://r/c", "1.0.0")
 	lookup := structuredSourceRecipeLookup("helm-chart", "helm-oci-chart", "oci://r/c", "1.0.0")
-	factory := func(string) (renderer.Engine, error) { return &renderHelmChart.HelmEngine{}, nil }
+	factory := wasmEngineFactory(t)
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, factory)
 	if err != nil {
@@ -114,7 +112,7 @@ func TestRenderAll_BuildsStructuredComposeSource(t *testing.T) {
 
 	input := integrationInputCompose(t, root, "core/compute/api-server", "api", digest, "https://example.com/compose.yaml", "1.0.0")
 	lookup := structuredSourceRecipeLookup("compose", "compose-https-fragment", "https://example.com/compose.yaml", "1.0.0")
-	factory := func(string) (renderer.Engine, error) { return &renderCompose.ComposeEngine{}, nil }
+	factory := wasmEngineFactory(t)
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, factory)
 	if err != nil {

@@ -409,8 +409,10 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		}
 		// The external-input service rides the pipeline context (the only
 		// plumbing shared with the command layer); absent, the nil field
-		// yields in-band not-available envelopes for guest fetches.
-		loader := &wasm.Loader{ExternalInputs: wasm.ExternalInputsFromContext(ctx)}
+		// yields in-band not-available envelopes for guest fetches. The loader
+		// carries the process-wide shared compilation cache, so a step's guest
+		// compiles once and every later step and concurrent request reuses it.
+		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
 		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
 		if err != nil {
 			return nil, err
@@ -444,8 +446,9 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 			return wasm.PluginDescriptor{}, err
 		}
 		// Same context-carried service as newStepInvoker: describe() runs
-		// guest code too, so its loader carries the same fetch surface.
-		loader := &wasm.Loader{ExternalInputs: wasm.ExternalInputsFromContext(ctx)}
+		// guest code too, so its loader carries the same fetch surface and the
+		// same process-wide shared compilation cache.
+		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
 		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
 		if err != nil {
 			return wasm.PluginDescriptor{}, err

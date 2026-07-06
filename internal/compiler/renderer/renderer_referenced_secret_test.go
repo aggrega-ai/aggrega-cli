@@ -118,7 +118,7 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 	}
 
 	// Producer side: the rendered Secret name must match (single source).
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestIntegration_ReferencedSecret_WorkloadConsumerSymmetry(t *testing.T) {
 	t.Parallel()
 	input, lookup := referencedSecretWorkloadFixture("env")
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestIntegration_ReferencedSecret_WorkloadFileModeReadsProvides(t *testing.T
 	t.Parallel()
 	input, lookup := referencedSecretWorkloadFixture("file")
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestIntegration_ReferencedSecret_WorkloadNotReferenceableHalt(t *testing.T)
 		return baseFR(p, ft)
 	}
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if !errors.Is(err, validator.ErrSecretSlotNotReferenceable) {
 		t.Fatalf("a workload referencing a non-referenceable slot should halt with ErrSecretSlotNotReferenceable; got: %v", err)
 	}

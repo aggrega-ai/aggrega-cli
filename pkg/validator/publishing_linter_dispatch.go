@@ -48,7 +48,7 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 		return nil, fmt.Errorf("publishing_linter: marshal input: %w", err)
 	}
 
-	loader := &wasm.Loader{}
+	loader := wasm.NewCachingLoader(nil)
 	ctx := context.Background()
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
@@ -87,7 +87,7 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 // once in LoadAndDescribe), and spec's caps bound each per-input Call's memory
 // and wall time.
 func DispatchPublishingLinterBatch(spec wasm.PluginSpec, inputs []LinterInput) ([][]LinterFinding, error) {
-	loader := &wasm.Loader{}
+	loader := wasm.NewCachingLoader(nil)
 	ctx := context.Background()
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
 	if err != nil {

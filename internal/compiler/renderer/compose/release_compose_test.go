@@ -4,8 +4,6 @@
 package compose
 
 import (
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +12,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// renderSourcedFile reads a compose source file from disk and renders it through
+// the filesystem-free sourced-mode core, mirroring how the host projects source
+// bytes into the shared render core the provider guest also calls.
+func renderSourcedFile(path string, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return RenderSourcedCore(raw, path, values, nodeCtx)
+}
 
 // goldenCheckAssembled compares actual against
 // testdata/release/<name>.golden.yaml. Set UPDATE_GOLDEN=1 to overwrite.
@@ -43,9 +52,9 @@ func makeFragment(t *testing.T, nodeID string, w *types.Workload, annotations ma
 	t.Helper()
 	nodeCtx := nodeCtxFor(nodeID)
 	nodeCtx.Annotations = annotations
-	files, err := (&ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+	files, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
-		t.Fatalf("SynthesizeWorkload(%s): %v", nodeID, err)
+		t.Fatalf("SynthesizeWorkloadCore(%s): %v", nodeID, err)
 	}
 	return files
 }
@@ -73,7 +82,7 @@ func TestComposeAssemble_SingleBoundary(t *testing.T) {
 		ContributingBoundaries: []string{"default"},
 	}
 
-	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
+	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -124,7 +133,7 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 		ContributingBoundaries: []string{"core", "edge"},
 	}
 
-	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
+	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -165,7 +174,7 @@ func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 		},
 	}
 
-	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
+	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -199,7 +208,7 @@ func TestComposeAssemble_ServiceCollision_Errors(t *testing.T) {
 		ContributingBoundaries: []string{"a", "b"},
 	}
 
-	_, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
+	_, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for service collision across contributors")
 	}
@@ -235,7 +244,7 @@ func TestComposeAssemble_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testin
 		ContributingBoundaries: []string{"STAGE-01"},
 	}
 
-	files, _, err := (&ComposeEngine{}).AssembleBoundary(context.Background(), info)
+	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -277,7 +286,7 @@ services:
 		},
 	}
 
-	out, err := renderSourced(basePath, overlay, nodeCtxFor("app"))
+	out, err := renderSourcedFile(basePath, overlay, nodeCtxFor("app"))
 	if err != nil {
 		t.Fatalf("renderSourced: %v", err)
 	}
@@ -308,17 +317,6 @@ services:
 	}
 }
 
-func TestRenderSourced_MissingFile_Errors(t *testing.T) {
-	t.Parallel()
-	_, err := renderSourced("/nonexistent/path/does-not-exist.yaml", nil, nodeCtxFor("x"))
-	if err == nil {
-		t.Fatal("expected error for missing source file")
-	}
-	if !strings.Contains(err.Error(), "read source") {
-		t.Errorf("expected 'read source' in error: %v", err)
-	}
-}
-
 // TestRenderSourced_MultiDocumentSourceHalts pins the loud guardrail: a single
 // compose source file carrying `---`-separated documents passes the source
 // resolver's file-count guard, but must not be silently parsed as just its
@@ -341,7 +339,7 @@ services:
 	if err := os.WriteFile(srcPath, body, 0o644); err != nil {
 		t.Fatalf("write multi-doc source: %v", err)
 	}
-	_, err := renderSourced(srcPath, nil, nodeCtxFor("app"))
+	_, err := renderSourcedFile(srcPath, nil, nodeCtxFor("app"))
 	if err == nil {
 		t.Fatal("expected a loud error for a multi-document compose source, got nil (silent first-doc drop)")
 	}
@@ -365,50 +363,12 @@ services:
 	if err := os.WriteFile(srcPath, body, 0o644); err != nil {
 		t.Fatalf("write single-doc source: %v", err)
 	}
-	out, err := renderSourced(srcPath, nil, nodeCtxFor("app"))
+	out, err := renderSourcedFile(srcPath, nil, nodeCtxFor("app"))
 	if err != nil {
 		t.Fatalf("single-document source must render, got: %v", err)
 	}
 	if !strings.Contains(string(out["app.compose-fragment.yaml"]), "image: only:1.0") {
 		t.Errorf("single-doc source not rendered:\n%s", out["app.compose-fragment.yaml"])
-	}
-}
-
-func TestCompose_Engine_RegistersAsBoundaryAssembler(t *testing.T) {
-	t.Parallel()
-	var e renderer.Engine = &ComposeEngine{}
-	if _, ok := e.(renderer.BoundaryAssembler); !ok {
-		t.Fatal("ComposeEngine must implement renderer.BoundaryAssembler")
-	}
-	if _, ok := e.(renderer.WorkloadSynthesizer); !ok {
-		t.Fatal("ComposeEngine must implement renderer.WorkloadSynthesizer")
-	}
-}
-
-func TestCompose_NilSource_DefensiveInternalError(t *testing.T) {
-	t.Parallel()
-	// A nil source never reaches Render in a valid build: the central
-	// input-kind gate dispatches Render only for sourced recipes and routes
-	// synthesised mode to Phase B.4. There is no bare-values synthesis path,
-	// so this arm is a defensive internal-error guard.
-	_, err := (&ComposeEngine{}).Render(context.Background(), nil, renderer.NodeRenderContext{NodeID: "x"})
-	if err == nil {
-		t.Fatal("expected a defensive internal error for a nil-source compose render")
-	}
-	if !strings.Contains(err.Error(), "engine.Render dispatched with no source") {
-		t.Errorf("error should be the defensive no-source internal error, got: %v", err)
-	}
-}
-
-func TestCompose_EmptyStringSource_ErrEmptySource(t *testing.T) {
-	t.Parallel()
-	nodeCtx := renderer.NodeRenderContext{NodeID: "x", Source: ""}
-	_, err := (&ComposeEngine{}).Render(context.Background(), nil, nodeCtx)
-	if err == nil {
-		t.Fatal("expected ErrEmptySource for empty string source")
-	}
-	if !errors.Is(err, ErrEmptySource) {
-		t.Errorf("expected ErrEmptySource, got %v", err)
 	}
 }
 

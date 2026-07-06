@@ -10,6 +10,7 @@ services:
       aggrega.ai/component-id: api
       aggrega.ai/environment: production
       aggrega.ai/provider: compose
+      aggrega.ai/provider-version: 1.0.0
       aggrega.ai/recipe-uri: compose-api-synthesized:1.0.0
     networks:
       - dist_app_compose
@@ -26,6 +27,7 @@ services:
       aggrega.ai/component-id: db
       aggrega.ai/environment: production
       aggrega.ai/provider: compose
+      aggrega.ai/provider-version: 1.0.0
       aggrega.ai/recipe-uri: compose-db-synthesized:1.0.0
     networks:
       - dist_app_compose

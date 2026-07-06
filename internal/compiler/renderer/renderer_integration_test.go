@@ -49,7 +49,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err == nil {
 		t.Fatal("expected error for provides self-containment violation")
 	}
@@ -146,7 +146,7 @@ containers:
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -203,7 +203,7 @@ containers:
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -285,7 +285,7 @@ containers:
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

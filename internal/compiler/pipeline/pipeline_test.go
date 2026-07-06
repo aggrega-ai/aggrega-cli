@@ -6,17 +6,12 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
-	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -43,23 +38,6 @@ const (
 	// fixtures compare stably.
 	fixtureCompilerVersion = "0.1.0"
 )
-
-// productionEngineFactory mirrors the closure constructed inside
-// cmd/aggrega/build.go's dispatchBuild. Keeping the dispatch identical
-// guarantees the test exercises the same provider-engine path the CLI
-// does.
-func productionEngineFactory(providerName string) (renderer.Engine, error) {
-	switch providerName {
-	case "helm", "":
-		return &renderHelm.HelmEngine{}, nil
-	case "helm-chart":
-		return &renderHelmChart.HelmEngine{}, nil
-	case "compose":
-		return &renderCompose.ComposeEngine{}, nil
-	default:
-		return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerName)
-	}
-}
 
 // TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs invokes
 // RunPipeline with pre-loaded Release / Manifest / raw Aggregate bytes
@@ -101,7 +79,6 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 		wiredLookup(cat, manifest),
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
-		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
 	if err != nil {
@@ -203,7 +180,6 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
-		productionEngineFactory,
 		pipeline.Options{IncludeTrace: false},
 	)
 	if err != nil {
@@ -248,7 +224,6 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
-		productionEngineFactory,
 		pipeline.Options{IncludeTrace: true},
 	)
 	if err != nil {
@@ -312,7 +287,6 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
-		productionEngineFactory,
 		pipeline.Options{IncludeTrace: true},
 	); err != nil {
 		t.Fatalf("RunPipeline: %v", err)

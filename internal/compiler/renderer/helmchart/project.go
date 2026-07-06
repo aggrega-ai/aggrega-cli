@@ -65,10 +65,3 @@ func ProjectSourcedChart(chartPath string) (*renderer.SourceProjection, error) {
 	}
 	return &renderer.SourceProjection{Files: files}, nil
 }
-
-// ProjectSource implements renderer.SourceProjector by delegating to
-// ProjectSourcedChart, which remains the single-source projection impl the
-// in-tree sourced path and the provider Wasm guest both build on.
-func (e *HelmEngine) ProjectSource(path string) (*renderer.SourceProjection, error) {
-	return ProjectSourcedChart(path)
-}

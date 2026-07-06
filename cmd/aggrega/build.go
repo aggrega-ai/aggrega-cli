@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -318,9 +317,9 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
 
-	// Provider dispatch is the shared enginefactory.Dispatch — the single
-	// source of truth both the CLI build and the build-faithful test harness
-	// use, so a test renders through exactly the engines a real build does.
+	// Provider rendering routes through the pipeline's catalog-driven Wasm
+	// dispatch — the single path both the CLI build and the build-faithful test
+	// harness use, so a test renders through exactly the plugins a real build does.
 	progress.phase(phaseRender)
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
 	buildLookup := lazyView.AsCatalogLookup()
@@ -345,7 +344,6 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		buildLookup,
 		lazyView.RecipeLookupWithManifest(manifest),
 		lazyView.SubAggregateLoader(),
-		enginefactory.Dispatch,
 		pipeline.Options{
 			IncludeTrace:             traceEnabled,
 			RecipeResolutionVerifier: lazyView.VerifyRecipeResolution,

@@ -134,6 +134,7 @@ metadata:
 spec:
   plugin: "builtin:helm"
 `)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// A minimal local Helm chart whose deployment template echoes .Values.image —
 	// the valuesMapping output overlays the chart values, so the imported mapping
 	// fragment's evaluated `image` materializes in the rendered manifest. A local

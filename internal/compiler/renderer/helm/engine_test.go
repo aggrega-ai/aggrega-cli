@@ -5,12 +5,13 @@ package helm_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 )
 
 func nodeCtx(id string, source any) renderer.NodeRenderContext {
@@ -27,12 +28,24 @@ func nodeCtx(id string, source any) renderer.NodeRenderContext {
 	}
 }
 
+// loadChart loads a fixture chart from disk, mirroring how the host projects a
+// chart source into the shared render core the provider guest also renders
+// through.
+func loadChart(t *testing.T, path string) *chart.Chart {
+	t.Helper()
+	ch, err := loader.Load(path)
+	if err != nil {
+		t.Fatalf("load chart %q: %v", path, err)
+	}
+	return ch
+}
+
 func TestHelmEngine_Sourced_NamespaceFromAnnotation(t *testing.T) {
 	t.Parallel()
-	eng := &helm.HelmEngine{}
 	nc := nodeCtx("api", "testdata/ns-chart")
 	nc.Annotations = map[string]string{renderer.AnnotationNamespace: "backend-zone"}
-	files, err := eng.Render(context.Background(), map[string]any{}, nc)
+	files, err := helm.RenderLoadedChart(context.Background(), loadChart(t, "testdata/ns-chart"),
+		map[string]any{}, nc, helm.NewHermeticValuesValidator(forbidFetch(t)))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -44,23 +57,14 @@ func TestHelmEngine_Sourced_NamespaceFromAnnotation(t *testing.T) {
 	t.Errorf("no rendered file carries namespace: backend-zone; files: %v", keys(files))
 }
 
-func TestHelmEngine_EmptySourceIsFatal(t *testing.T) {
-	t.Parallel()
-	eng := &helm.HelmEngine{}
-	_, err := eng.Render(context.Background(), map[string]any{}, nodeCtx("api", ""))
-	if !errors.Is(err, helm.ErrEmptySource) {
-		t.Fatalf("expected ErrEmptySource, got %v", err)
-	}
-}
-
 func TestHelmEngine_Sourced_RendersChart(t *testing.T) {
 	t.Parallel()
-	eng := &helm.HelmEngine{}
 	values := map[string]any{
 		"image":    "api:2.0.0",
 		"replicas": float64(5),
 	}
-	files, err := eng.Render(context.Background(), values, nodeCtx("api", "testdata/minimal-chart"))
+	files, err := helm.RenderLoadedChart(context.Background(), loadChart(t, "testdata/minimal-chart"),
+		values, nodeCtx("api", "testdata/minimal-chart"), helm.NewHermeticValuesValidator(forbidFetch(t)))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,9 +92,9 @@ func TestHelmEngine_Sourced_CarriesAggregaLabels(t *testing.T) {
 	t.Parallel()
 	// Sourced-mode chart output must carry aggrega.ai/* provenance labels —
 	// sourceless mode injects them during generation; sourced mode post-processes.
-	eng := &helm.HelmEngine{}
 	values := map[string]any{"image": "api:2.0.0"}
-	files, err := eng.Render(context.Background(), values, nodeCtx("api", "testdata/minimal-chart"))
+	files, err := helm.RenderLoadedChart(context.Background(), loadChart(t, "testdata/minimal-chart"),
+		values, nodeCtx("api", "testdata/minimal-chart"), helm.NewHermeticValuesValidator(forbidFetch(t)))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,29 +121,4 @@ func keys(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-// TestHelmEngine_StructuredSourceTriggersDefensiveError pins the
-// orchestrator-bug defence: when nodeCtx.Source is non-nil and
-// non-string (e.g., a structured map that the orchestrator failed
-// to resolve), the helm engine MUST halt with an explicit "internal
-// error" message rather than silently passing the unresolved value
-// downstream.
-func TestHelmEngine_StructuredSourceTriggersDefensiveError(t *testing.T) {
-	t.Parallel()
-	eng := &helm.HelmEngine{}
-	structured := map[string]any{
-		"kind":    "helm-oci-chart",
-		"url":     "oci://r/c",
-		"version": "1.0.0",
-	}
-	ctx := nodeCtx("api", structured)
-	ctx.OriginalSource = structured
-	_, err := eng.Render(context.Background(), map[string]any{}, ctx)
-	if err == nil {
-		t.Fatal("expected defensive error; got nil")
-	}
-	if !strings.Contains(err.Error(), "internal error") {
-		t.Errorf("error should reference the defensive contract; got %v", err)
-	}
 }

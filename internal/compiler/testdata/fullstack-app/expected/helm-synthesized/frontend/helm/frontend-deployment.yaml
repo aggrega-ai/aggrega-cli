@@ -9,6 +9,7 @@ metadata:
     aggrega.ai/component-id: frontend
     aggrega.ai/environment: production
     aggrega.ai/provider: helm
+    aggrega.ai/provider-version: 1.0.0
     app: frontend
     app.kubernetes.io/name: frontend
   annotations:
@@ -28,6 +29,7 @@ spec:
         aggrega.ai/component-id: frontend
         aggrega.ai/environment: production
         aggrega.ai/provider: helm
+        aggrega.ai/provider-version: 1.0.0
         app: frontend
         app.kubernetes.io/name: frontend
     spec:

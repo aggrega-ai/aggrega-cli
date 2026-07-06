@@ -43,7 +43,7 @@ func TestRenderAll_FetchErrorCategoryOnMissingLockfileEntry(t *testing.T) {
 	}
 	lookup := structuredSourceRecipeLookup("helm", "helm-oci-chart", "oci://nonexistent/chart", "9.9.9")
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err == nil {
 		t.Fatal("expected error when lockfile entry is missing; got nil")
 	}
@@ -89,7 +89,7 @@ func TestRenderAll_FetchErrorIncludesRemediationOnTamperedArchive(t *testing.T) 
 	input := integrationInput(t, root, "core/compute/api-server", "api", "helm", digest, "oci://r/c", "1.0.0")
 	lookup := structuredSourceRecipeLookup("helm", "helm-oci-chart", "oci://r/c", "1.0.0")
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err == nil {
 		t.Fatal("expected error when archive is tampered; got nil")
 	}

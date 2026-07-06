@@ -15,6 +15,50 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
+// resolveChartRoot returns the directory loader.Load expects to find Chart.yaml
+// in. A local-path or archive source already points at the chart, so it is
+// returned unchanged. A cache-extracted Helm chart, however, untars under a
+// single top-level <chartname>/ directory (the OCI/tgz convention), so the
+// extracted directory is one level above Chart.yaml; this descends to it.
+//
+// The descent is a Loud Guardrail: exactly one top-level subdirectory must
+// carry Chart.yaml. Zero is a malformed archive; more than one is ambiguous —
+// both halt rather than guess. os.ReadDir returns sorted entries, so the
+// ambiguity message and the single-match result are deterministic.
+func resolveChartRoot(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return path, nil // archive (.tgz) — loader.Load handles it directly
+	}
+	if _, err := os.Stat(filepath.Join(path, "Chart.yaml")); err == nil {
+		return path, nil // chart root: Chart.yaml is here
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return "", err
+	}
+	var roots []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(path, e.Name(), "Chart.yaml")); err == nil {
+			roots = append(roots, e.Name())
+		}
+	}
+	switch len(roots) {
+	case 0:
+		return "", fmt.Errorf("no Chart.yaml at the extracted archive root or in any top-level subdirectory")
+	case 1:
+		return filepath.Join(path, roots[0]), nil
+	default:
+		return "", fmt.Errorf("ambiguous chart layout: top-level subdirectories %v each contain Chart.yaml; cannot choose a chart root", roots)
+	}
+}
+
 // ProjectChartSource reads a Helm chart's files from the local source at compile
 // time and packs them into a SourceProjection the host hands a provider Wasm
 // guest, so the guest reconstructs the chart in memory (via loader.LoadFiles)
@@ -54,11 +98,4 @@ func ProjectChartSource(chartPath string) (*renderer.SourceProjection, error) {
 	}
 
 	return &renderer.SourceProjection{Files: files}, nil
-}
-
-// ProjectSource implements renderer.SourceProjector by delegating to
-// ProjectChartSource, which remains the single-source projection impl the
-// in-tree sourced path and the provider Wasm guest both build on.
-func (e *HelmEngine) ProjectSource(path string) (*renderer.SourceProjection, error) {
-	return ProjectChartSource(path)
 }

@@ -651,7 +651,6 @@ func RunPipeline(
 	catalogLookup resolver.CatalogLookup,
 	recipeLookup renderer.RecipeLookup,
 	subAggregateLoader topology.SubAggregateLoader,
-	engineFactory renderer.EngineFactory,
 	opts Options,
 ) (*Result, error) {
 	var result *Result
@@ -759,20 +758,14 @@ func RunPipeline(
 
 		// Route provider rendering through the hybrid dispatch: a provider whose
 		// catalog Provider binds to a render_node-advertising Wasm plugin renders
-		// through the wasmengine adapter; every other provider falls back to the
-		// caller-supplied Go factory unchanged. The shared caching loader warms
-		// the guest's compilation once for the whole build (fresh instance per
-		// node), and its close releases the compilation cache as this
-		// continuation unwinds. The wrap is uniform across every caller of
-		// RunPipeline, so build, serve, and the test harness all route through it
-		// with no per-caller change.
-		sharedLoader, closeLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		defer func() {
-			if cerr := closeLoader(); cerr != nil {
-				fmt.Fprintf(os.Stderr, "  plugin: close compilation cache: %s\n", cerr)
-			}
-		}()
-		hybrid, providerVersion := enginefactory.NewHybrid(engineFactory, catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+		// through the wasmengine adapter; a provider that resolves to no such plugin
+		// is a loud halt. The loader is backed by the process-wide shared
+		// compilation cache, so a guest compiles once and every node, every later
+		// build, and every concurrent served request reuses the machine code. The
+		// routing is uniform across every caller of RunPipeline, so build, serve,
+		// and the test harness all route through it with no per-caller change.
+		sharedLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
+		hybrid, providerVersion := enginefactory.NewHybrid(catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
 		rendererInput.ProviderVersion = providerVersion
 
 		// Eager provider-guest compilation. When the caller opts in (a progress

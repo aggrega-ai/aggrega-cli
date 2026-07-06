@@ -10,155 +10,141 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 )
 
-// dispatchableProviders is the set of provider names Dispatch routes to a real
-// engine. Kept in lockstep with enginefactory.Dispatch.
-var dispatchableProviders = []string{"helm", "helm-chart", "compose"}
+// shippedProviders is the set of provider names the Wasm render route resolves to
+// a host-capability holder.
+var shippedProviders = []string{"helm", "helm-chart", "compose"}
 
-// TestHostCapsFor_MatchesDispatchedEngine pins the single-source contract between
-// the provider-name host-capability registry (the Wasm render route's source of
-// caps) and the in-tree engine's own holder: for every dispatchable provider,
-// HostCapsFor(name) must equal the holder the constructed engine reports through
-// renderer.HostCapable. If the two dispatch tables ever drift — a provider added
-// to Dispatch but not the registry, or divergent holder contents — the Wasm route
-// and the fallback route would resolve different host capabilities for the same
-// provider. The registry and the engine method share each provider package's
-// HostCaps function, so this test proves they cannot silently separate.
-func TestHostCapsFor_MatchesDispatchedEngine(t *testing.T) {
+// TestHostCapsFor_ResolvesEveryShippedProvider pins the provider-name host-
+// capability registry: every shipped provider resolves a non-empty holder, and an
+// unknown provider name resolves nothing (ok=false) rather than a defaulted
+// holder. This is the single source the Wasm render route reads a provider's
+// host-side capabilities from; a provider silently missing here would leave the
+// render route unable to resolve its projections and assembly behaviour.
+func TestHostCapsFor_ResolvesEveryShippedProvider(t *testing.T) {
 	t.Parallel()
-	for _, name := range dispatchableProviders {
+	for _, name := range shippedProviders {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			reg, ok := enginefactory.HostCapsFor(name)
-			if !ok {
-				t.Fatalf("HostCapsFor(%q): ok=false; Dispatch routes this provider but the registry does not", name)
-			}
-			engine, err := enginefactory.Dispatch(name)
-			if err != nil {
-				t.Fatalf("Dispatch(%q): %v", name, err)
-			}
-			viaEngine := renderer.ResolveHostCaps(engine)
-
-			if reg.Caps != viaEngine.Caps {
-				t.Errorf("Caps: registry=%+v engine=%+v", reg.Caps, viaEngine.Caps)
-			}
-			if reg.AssemblesBoundary != viaEngine.AssemblesBoundary {
-				t.Errorf("AssemblesBoundary: registry=%v engine=%v", reg.AssemblesBoundary, viaEngine.AssemblesBoundary)
-			}
-			if reg.ExternalArtifacts != viaEngine.ExternalArtifacts {
-				t.Errorf("ExternalArtifacts: registry=%v engine=%v", reg.ExternalArtifacts, viaEngine.ExternalArtifacts)
-			}
-			// Function-valued capabilities compare by presence: both sides derive
-			// from one HostCaps function, so a nil-ness mismatch signals drift.
-			if (reg.Codec == nil) != (viaEngine.Codec == nil) {
-				t.Errorf("Codec presence mismatch: registry-nil=%v engine-nil=%v", reg.Codec == nil, viaEngine.Codec == nil)
-			}
-			if (reg.ProjectSource == nil) != (viaEngine.ProjectSource == nil) {
-				t.Errorf("ProjectSource presence mismatch: registry-nil=%v engine-nil=%v", reg.ProjectSource == nil, viaEngine.ProjectSource == nil)
-			}
-			if (reg.ProjectSubCharts == nil) != (viaEngine.ProjectSubCharts == nil) {
-				t.Errorf("ProjectSubCharts presence mismatch: registry-nil=%v engine-nil=%v", reg.ProjectSubCharts == nil, viaEngine.ProjectSubCharts == nil)
-			}
-			if (reg.PathForArtifact == nil) != (viaEngine.PathForArtifact == nil) {
-				t.Errorf("PathForArtifact presence mismatch: registry-nil=%v engine-nil=%v", reg.PathForArtifact == nil, viaEngine.PathForArtifact == nil)
-			}
-			if (reg.ArtifactDelimiters == nil) != (viaEngine.ArtifactDelimiters == nil) {
-				t.Errorf("ArtifactDelimiters presence mismatch: registry-nil=%v engine-nil=%v", reg.ArtifactDelimiters == nil, viaEngine.ArtifactDelimiters == nil)
-			}
-			if (reg.BoundaryConsumerEnvOverrides == nil) != (viaEngine.BoundaryConsumerEnvOverrides == nil) {
-				t.Errorf("BoundaryConsumerEnvOverrides presence mismatch: registry-nil=%v engine-nil=%v", reg.BoundaryConsumerEnvOverrides == nil, viaEngine.BoundaryConsumerEnvOverrides == nil)
+			if _, ok := enginefactory.HostCapsFor(name); !ok {
+				t.Fatalf("HostCapsFor(%q): ok=false; a shipped provider must resolve a host-capability holder", name)
 			}
 		})
 	}
-}
-
-// TestCapabilities_SynthesizedMatchesWorkloadSynthesizer pins the synthesis
-// consistency invariant: an engine self-reports Capabilities().Synthesized if
-// and only if it implements renderer.WorkloadSynthesizer. The central input-kind
-// gate trusts Capabilities() to decide whether a workload: Recipe may proceed to
-// Phase B.4; Phase B.4 then type-asserts WorkloadSynthesizer. If those two
-// disagree, a build either gates open and panics at B.4 (claims Synthesized,
-// lacks the method) or gates shut on a capable engine (implements the method,
-// reports false). This test makes the two sides provably co-vary.
-func TestCapabilities_SynthesizedMatchesWorkloadSynthesizer(t *testing.T) {
-	t.Parallel()
-	for _, name := range dispatchableProviders {
-		name := name
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			engine, err := enginefactory.Dispatch(name)
-			if err != nil {
-				t.Fatalf("Dispatch(%q): %v", name, err)
-			}
-			reports := engine.Capabilities().Synthesized
-			_, implements := engine.(renderer.WorkloadSynthesizer)
-			if reports != implements {
-				t.Errorf("provider %q: Capabilities().Synthesized=%v but implements WorkloadSynthesizer=%v; the two must agree", name, reports, implements)
-			}
-		})
+	if _, ok := enginefactory.HostCapsFor("no-such-provider"); ok {
+		t.Errorf("HostCapsFor(%q): ok=true; an unknown provider must resolve no holder", "no-such-provider")
 	}
 }
 
-// TestCapabilities_ProviderMatrix pins each shipped provider's declared
-// input-kind support. The matrix is the contract the central gate enforces:
-// helm supports every kind; helm-chart is sourced-only (it wraps an external
-// chart, so it neither synthesises a workload nor stands up artifacts on its
-// own); compose synthesises and sources but does not stand up artifacts alone.
-func TestCapabilities_ProviderMatrix(t *testing.T) {
+// TestHostCapsFor_ProviderMatrix pins each shipped provider's host-capability
+// holder shape: the input-kind capabilities plus the output-assembly and
+// projection facets the render route reads. The matrix is the contract the
+// central gate and the boundary-assembly dispatch enforce — helm renders every
+// input kind and assembles nothing; helm-chart is sourced-only and assembles an
+// umbrella from external artifacts through its own codec and sub-chart
+// projection; compose synthesises and sources, assembles a merged file, and
+// contributes boundary consumer env overrides.
+func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		provider string
-		want     renderer.ProviderCapabilities
+		provider                        string
+		caps                            renderer.ProviderCapabilities
+		assemblesBoundary               bool
+		externalArtifacts               bool
+		hasCodec                        bool
+		hasProjectSource                bool
+		hasProjectSubCharts             bool
+		hasPathForArtifact              bool
+		hasArtifactDelimiters           bool
+		hasBoundaryConsumerEnvOverrides bool
 	}{
-		{"helm", renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}},
-		{"helm-chart", renderer.ProviderCapabilities{Sourced: true, Synthesized: false, ArtifactsStandalone: false}},
-		{"compose", renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: false}},
+		{
+			provider:         "helm",
+			caps:             renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
+			hasProjectSource: true,
+		},
+		{
+			provider:              "helm-chart",
+			caps:                  renderer.ProviderCapabilities{Sourced: true},
+			assemblesBoundary:     true,
+			externalArtifacts:     true,
+			hasCodec:              true,
+			hasProjectSource:      true,
+			hasProjectSubCharts:   true,
+			hasPathForArtifact:    true,
+			hasArtifactDelimiters: true,
+		},
+		{
+			provider:                        "compose",
+			caps:                            renderer.ProviderCapabilities{Sourced: true, Synthesized: true},
+			assemblesBoundary:               true,
+			hasProjectSource:                true,
+			hasBoundaryConsumerEnvOverrides: true,
+		},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.provider, func(t *testing.T) {
 			t.Parallel()
-			engine, err := enginefactory.Dispatch(tc.provider)
-			if err != nil {
-				t.Fatalf("Dispatch(%q): %v", tc.provider, err)
+			h, ok := enginefactory.HostCapsFor(tc.provider)
+			if !ok {
+				t.Fatalf("HostCapsFor(%q): ok=false", tc.provider)
 			}
-			if got := engine.Capabilities(); got != tc.want {
-				t.Errorf("provider %q capabilities = %+v; want %+v", tc.provider, got, tc.want)
+			if h.Caps != tc.caps {
+				t.Errorf("Caps = %+v; want %+v", h.Caps, tc.caps)
+			}
+			if h.AssemblesBoundary != tc.assemblesBoundary {
+				t.Errorf("AssemblesBoundary = %v; want %v", h.AssemblesBoundary, tc.assemblesBoundary)
+			}
+			if h.ExternalArtifacts != tc.externalArtifacts {
+				t.Errorf("ExternalArtifacts = %v; want %v", h.ExternalArtifacts, tc.externalArtifacts)
+			}
+			if (h.Codec != nil) != tc.hasCodec {
+				t.Errorf("Codec present = %v; want %v", h.Codec != nil, tc.hasCodec)
+			}
+			if (h.ProjectSource != nil) != tc.hasProjectSource {
+				t.Errorf("ProjectSource present = %v; want %v", h.ProjectSource != nil, tc.hasProjectSource)
+			}
+			if (h.ProjectSubCharts != nil) != tc.hasProjectSubCharts {
+				t.Errorf("ProjectSubCharts present = %v; want %v", h.ProjectSubCharts != nil, tc.hasProjectSubCharts)
+			}
+			if (h.PathForArtifact != nil) != tc.hasPathForArtifact {
+				t.Errorf("PathForArtifact present = %v; want %v", h.PathForArtifact != nil, tc.hasPathForArtifact)
+			}
+			if (h.ArtifactDelimiters != nil) != tc.hasArtifactDelimiters {
+				t.Errorf("ArtifactDelimiters present = %v; want %v", h.ArtifactDelimiters != nil, tc.hasArtifactDelimiters)
+			}
+			if (h.BoundaryConsumerEnvOverrides != nil) != tc.hasBoundaryConsumerEnvOverrides {
+				t.Errorf("BoundaryConsumerEnvOverrides present = %v; want %v", h.BoundaryConsumerEnvOverrides != nil, tc.hasBoundaryConsumerEnvOverrides)
 			}
 		})
 	}
 }
 
-// TestCodecProvider_HelmChartOverridesStock pins the codec-selection seam at the
-// real factory: only helm-chart overrides the stock YAML codec (it renders chart
-// source whose templates the stock codec cannot tree), so only its engine
-// satisfies renderer.CodecProvider. The flat providers borrow the stock codec
-// and do not implement the interface — the pipeline executor's type assertion
-// then selects each scope's codec correctly by provider name.
-func TestCodecProvider_HelmChartOverridesStock(t *testing.T) {
+// TestCapabilitiesFor_MatchesHostCapsForCaps pins that the input-kind capability
+// accessor the early lint detector reads resolves through the same holder the
+// render-time gate reads, so the two cannot report divergent input-kind support
+// for a provider. An unknown provider reports ok=false from both.
+func TestCapabilitiesFor_MatchesHostCapsForCaps(t *testing.T) {
 	t.Parallel()
-	overrides := map[string]bool{
-		"helm":       false,
-		"helm-chart": true,
-		"compose":    false,
-	}
-	for provider, want := range overrides {
-		provider, want := provider, want
-		t.Run(provider, func(t *testing.T) {
+	for _, name := range shippedProviders {
+		name := name
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			engine, err := enginefactory.Dispatch(provider)
-			if err != nil {
-				t.Fatalf("Dispatch(%q): %v", provider, err)
+			holder, ok := enginefactory.HostCapsFor(name)
+			if !ok {
+				t.Fatalf("HostCapsFor(%q): ok=false", name)
 			}
-			cp, ok := engine.(renderer.CodecProvider)
-			if ok != want {
-				t.Fatalf("provider %q implements CodecProvider = %v; want %v", provider, ok, want)
+			caps, ok := enginefactory.CapabilitiesFor(name)
+			if !ok {
+				t.Fatalf("CapabilitiesFor(%q): ok=false", name)
 			}
-			if want {
-				if cp.Codec(2) == nil {
-					t.Errorf("provider %q CodecProvider.Codec returned nil", provider)
-				}
+			if caps != holder.Caps {
+				t.Errorf("CapabilitiesFor=%+v; HostCapsFor.Caps=%+v", caps, holder.Caps)
 			}
 		})
+	}
+	if _, ok := enginefactory.CapabilitiesFor("no-such-provider"); ok {
+		t.Errorf("CapabilitiesFor(%q): ok=true; an unknown provider must report no capabilities", "no-such-provider")
 	}
 }

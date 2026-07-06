@@ -82,74 +82,45 @@ func errorChainText(err error) string {
 	return msg
 }
 
-// assertSameFiles asserts two rendered file sets are byte-identical.
-func assertSameFiles(t *testing.T, want, got map[string][]byte) {
-	t.Helper()
-	if len(want) != len(got) {
-		t.Fatalf("file sets differ: %d vs %d files", len(want), len(got))
-	}
-	for k, w := range want {
-		g, ok := got[k]
-		if !ok {
-			t.Errorf("missing file %q", k)
-			continue
-		}
-		if string(w) != string(g) {
-			t.Errorf("bytes differ for %q:\n--- SDK path ---\n%s\n--- hermetic path ---\n%s", k, w, g)
-		}
-	}
-}
-
-// TestValuesSchemaValidationParity proves the hermetic validator and the Helm
-// SDK's own validator agree on a schema-bearing chart: valid values are
-// accepted by both with byte-identical rendered output, and violating values
-// are rejected by both with errors naming the violated constraint.
-func TestValuesSchemaValidationParity(t *testing.T) {
+// TestValuesSchemaValidationHermetic proves the hermetic validator gates a
+// schema-bearing chart: valid values render, and violating values are rejected
+// with an error naming the violated constraint.
+func TestValuesSchemaValidationHermetic(t *testing.T) {
 	ctx := context.Background()
 	nodeCtx := renderer.NodeRenderContext{NodeID: "api"}
 
-	t.Run("valid values accepted by both with byte-identical output", func(t *testing.T) {
-		sdkOut, err := helm.RenderLoadedChart(ctx, loadSchemaChart(t),
-			decodeValues(t, `{"replicas":3,"message":"hello"}`), nodeCtx, nil)
-		if err != nil {
-			t.Fatalf("SDK validation path: %v", err)
-		}
+	t.Run("valid values accepted and rendered", func(t *testing.T) {
 		twinOut, err := helm.RenderLoadedChart(ctx, loadSchemaChart(t),
 			decodeValues(t, `{"replicas":3,"message":"hello"}`), nodeCtx,
 			helm.NewHermeticValuesValidator(forbidFetch(t)))
 		if err != nil {
 			t.Fatalf("hermetic validation path: %v", err)
 		}
-		if len(sdkOut) == 0 {
-			t.Fatal("SDK path rendered no files")
+		if len(twinOut) == 0 {
+			t.Fatal("hermetic path rendered no files")
 		}
-		assertSameFiles(t, sdkOut, twinOut)
 	})
 
-	t.Run("violating values rejected by both naming the constraint", func(t *testing.T) {
-		_, sdkErr := helm.RenderLoadedChart(ctx, loadSchemaChart(t),
-			decodeValues(t, `{"replicas":0}`), nodeCtx, nil)
+	t.Run("violating values rejected naming the constraint", func(t *testing.T) {
 		_, twinErr := helm.RenderLoadedChart(ctx, loadSchemaChart(t),
 			decodeValues(t, `{"replicas":0}`), nodeCtx,
 			helm.NewHermeticValuesValidator(forbidFetch(t)))
-		for name, err := range map[string]error{"SDK": sdkErr, "hermetic": twinErr} {
-			if err == nil {
-				t.Fatalf("%s validation accepted values violating the schema", name)
-			}
-			for _, want := range []string{"replicas", "minimum"} {
-				if !strings.Contains(errorChainText(err), want) {
-					t.Errorf("%s validation error does not name %q: %v", name, want, errorChainText(err))
-				}
+		if twinErr == nil {
+			t.Fatal("hermetic validation accepted values violating the schema")
+		}
+		for _, want := range []string{"replicas", "minimum"} {
+			if !strings.Contains(errorChainText(twinErr), want) {
+				t.Errorf("hermetic validation error does not name %q: %v", want, errorChainText(twinErr))
 			}
 		}
 	})
 }
 
-// TestValuesSchemaValidationParityDependencyChart proves the hermetic
-// validator walks dependency charts' schemas the way the SDK does: the
-// dependency's schema validates the value subtree keyed by the dependency's
-// name, and both strategies agree on acceptance and rejection.
-func TestValuesSchemaValidationParityDependencyChart(t *testing.T) {
+// TestValuesSchemaValidationHermeticDependencyChart proves the hermetic
+// validator walks dependency charts' schemas: the dependency's schema validates
+// the value subtree keyed by the dependency's name, gating acceptance and
+// rejection.
+func TestValuesSchemaValidationHermeticDependencyChart(t *testing.T) {
 	mkChart := func(t *testing.T) *chart.Chart {
 		return chartFromFiles(t, map[string]string{
 			"Chart.yaml":  "apiVersion: v2\nname: parent\nversion: 0.1.0\n",
@@ -164,35 +135,28 @@ func TestValuesSchemaValidationParityDependencyChart(t *testing.T) {
 	ctx := context.Background()
 	nodeCtx := renderer.NodeRenderContext{NodeID: "api"}
 
-	t.Run("valid dependency values accepted by both", func(t *testing.T) {
-		sdkOut, err := helm.RenderLoadedChart(ctx, mkChart(t),
-			decodeValues(t, `{"sub":{"replicas":2}}`), nodeCtx, nil)
-		if err != nil {
-			t.Fatalf("SDK validation path: %v", err)
-		}
+	t.Run("valid dependency values accepted and rendered", func(t *testing.T) {
 		twinOut, err := helm.RenderLoadedChart(ctx, mkChart(t),
 			decodeValues(t, `{"sub":{"replicas":2}}`), nodeCtx,
 			helm.NewHermeticValuesValidator(forbidFetch(t)))
 		if err != nil {
 			t.Fatalf("hermetic validation path: %v", err)
 		}
-		assertSameFiles(t, sdkOut, twinOut)
+		if len(twinOut) == 0 {
+			t.Fatal("hermetic path rendered no files")
+		}
 	})
 
-	t.Run("violating dependency values rejected by both", func(t *testing.T) {
-		_, sdkErr := helm.RenderLoadedChart(ctx, mkChart(t),
-			decodeValues(t, `{"sub":{"replicas":0}}`), nodeCtx, nil)
+	t.Run("violating dependency values rejected", func(t *testing.T) {
 		_, twinErr := helm.RenderLoadedChart(ctx, mkChart(t),
 			decodeValues(t, `{"sub":{"replicas":0}}`), nodeCtx,
 			helm.NewHermeticValuesValidator(forbidFetch(t)))
-		for name, err := range map[string]error{"SDK": sdkErr, "hermetic": twinErr} {
-			if err == nil {
-				t.Fatalf("%s validation accepted dependency values violating the schema", name)
-			}
-			for _, want := range []string{"sub", "minimum"} {
-				if !strings.Contains(errorChainText(err), want) {
-					t.Errorf("%s validation error does not name %q: %v", name, want, errorChainText(err))
-				}
+		if twinErr == nil {
+			t.Fatal("hermetic validation accepted dependency values violating the schema")
+		}
+		for _, want := range []string{"sub", "minimum"} {
+			if !strings.Contains(errorChainText(twinErr), want) {
+				t.Errorf("hermetic validation error does not name %q: %v", want, errorChainText(twinErr))
 			}
 		}
 	})

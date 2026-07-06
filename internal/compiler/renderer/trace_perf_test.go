@@ -54,7 +54,7 @@ import (
 // against any runner-speed variation.
 //
 // The test uses helm-workload-mode Recipes (no source:) for test-
-// infrastructure reuse via testHelmFactory(); compose-workload-mode would
+// infrastructure reuse via testHelmFactory(t); compose-workload-mode would
 // exercise the same per-node trace event count (slots 01-04, 06, 08, 10,
 // 11, 12) through a different engine. The contract under test is engine-
 // independent.
@@ -126,7 +126,7 @@ containers:
 	}
 
 	// Run the compile with tracing on.
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll failed: %v", err)
 	}

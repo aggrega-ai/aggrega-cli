@@ -101,7 +101,7 @@ func TestMutatorSocketInjectsLabelE2E(t *testing.T) {
 		inputs.WorkspaceConfig.Plugins.Mutator = []workspaceconfig.PluginRef{{URI: "proof://mutator"}}
 		inputs.PluginPathLookup = lookup
 		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
-			productionEngineFactory, pipeline.Options{})
+			pipeline.Options{})
 		if err != nil {
 			t.Fatalf("RunPipeline with mutator: %v", err)
 		}
@@ -143,7 +143,7 @@ func TestPolicySocketAllowE2E(t *testing.T) {
 	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://policy-allow": "policy-validator-allow-go.wasm"})
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
-		productionEngineFactory, pipeline.Options{})
+		pipeline.Options{})
 	if err != nil {
 		t.Fatalf("RunPipeline with all-pass policy: unexpected halt: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://policy": "policy-validator-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
-		productionEngineFactory, pipeline.Options{})
+		pipeline.Options{})
 	if err == nil {
 		t.Fatalf("RunPipeline with failing policy: expected a halt, got nil")
 	}
@@ -195,7 +195,7 @@ func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
 	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://mutator-at-policy": "mutator-proof-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
-		productionEngineFactory, pipeline.Options{})
+		pipeline.Options{})
 	if err == nil {
 		t.Fatalf("RunPipeline with a mutator plugin at the policy socket: expected a halt, got nil")
 	}
@@ -220,7 +220,7 @@ func TestSocketsEmptyConfigNoOp(t *testing.T) {
 	}
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
-		productionEngineFactory, pipeline.Options{})
+		pipeline.Options{})
 	if err != nil {
 		t.Fatalf("empty-config build halted: %v", err)
 	}

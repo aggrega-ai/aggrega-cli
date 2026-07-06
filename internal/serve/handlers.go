@@ -15,7 +15,6 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -548,7 +547,6 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		view.AsCatalogLookup(),
 		view.RecipeLookupWithManifest(resolved.Manifest),
 		view.SubAggregateLoader(),
-		enginefactory.Dispatch,
 		// irGraph is resilient inspection — it returns the IR graph even when
 		// resolution is incomplete, so it does not run the render-time
 		// resolution-completeness halt (that gate is the CLI build's).

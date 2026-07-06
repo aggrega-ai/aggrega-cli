@@ -3,10 +3,11 @@
 
 //go:build !wasip1
 
-// Host adapter for the compose provider's boundary→consumer env channel
-// (renderer.BoundaryConsumerEnvOverrider). The bridge's cross-network derivation
-// is pure and tag-free (bridge_ports.go, bridge_gateway.go); this file carries
-// the ComposeEngine method that exposes it to the host pipeline.
+// Host-side derivation for the compose provider's boundary→consumer env channel
+// (the renderer's BoundaryConsumerEnvOverrides host capability). The bridge's
+// cross-network derivation is pure and tag-free (bridge_ports.go,
+// bridge_gateway.go); this file carries the host-capability entry point the
+// pipeline reads through the provider's HostCaps holder.
 
 package compose
 
@@ -16,16 +17,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
-
-// BoundaryConsumerEnvOverrides is the ComposeEngine's implementation of the
-// boundary->component env channel (the renderer's BoundaryConsumerEnvOverrider
-// capability): per-consumer env rewrites for the compose bridge, derived from
-// the boundary's intra-subtree cross-network edges. It shares resolveBridge with
-// the gateway command generation, so the consumer's rewritten port matches the
-// gateway's listen port per edge by construction.
-func (e *ComposeEngine) BoundaryConsumerEnvOverrides(frCtx *types.TemplateContext) (map[string]map[string]string, error) {
-	return computeBridgeConsumerEnvOverrides(frCtx)
-}
 
 // computeBridgeConsumerEnvOverrides rewrites each bridged consumer's
 // host-carrying env var to "aggrega-gw:<assigned-port>". All compose-domain

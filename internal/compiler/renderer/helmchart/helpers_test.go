@@ -4,7 +4,6 @@
 package helmchart
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,19 +12,49 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
-// TestHandlesArtifactsExternally_NoOp pins the marker method —
-// invocation should not panic.
-func TestHandlesArtifactsExternally_NoOp(t *testing.T) {
+// readChartMeta is the test-side stand-in for the removed host chart-meta reader:
+// it reads <dir>/Chart.yaml and resolves name/version through the shared
+// ReadChartMetaBytes core, so the guardrail assertions exercise the same
+// decode-and-validate core the umbrella assembly and the provider guest run.
+func readChartMeta(dir string) (name, version string, err error) {
+	data, rerr := os.ReadFile(filepath.Join(dir, "Chart.yaml"))
+	if rerr != nil {
+		return "", "", rerr
+	}
+	return ReadChartMetaBytes(data, dir)
+}
+
+// buildUmbrella is the test-side stand-in for the removed host umbrella adapter:
+// it projects each sub-chart through the surviving projectSubCharts (the single
+// home for the pristine Chart.yaml read) into filesystem-free CoreSubCharts, then
+// assembles through AssembleUmbrellaCore — the same core the provider guest runs.
+func buildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string, indent int) (map[string][]byte, error) {
+	projs, err := projectSubCharts(subCharts)
+	if err != nil {
+		return nil, err
+	}
+	subs := make([]CoreSubChart, 0, len(projs))
+	for _, p := range projs {
+		subs = append(subs, CoreSubChart{InstanceID: p.InstanceID, Version: p.Version, Values: p.Values, ChartYAML: p.ChartYAML})
+	}
+	return AssembleUmbrellaCore(boundaryName, aggregateName, subs, chartNameOverride, indent)
+}
+
+// TestHostCaps_ReportsExternalArtifacts pins that helm-chart's host-capability
+// holder advertises external-artifacts handling — the facet the orchestrator's
+// artifact placement reads.
+func TestHostCaps_ReportsExternalArtifacts(t *testing.T) {
 	t.Parallel()
-	(&HelmEngine{}).HandlesArtifactsExternally()
+	if !HostCaps().ExternalArtifacts {
+		t.Errorf("HostCaps().ExternalArtifacts = false; helm-chart injects artifacts into the umbrella chart")
+	}
 }
 
 // TestPathForArtifact_PrefixesTemplates pins the path-provider
 // contract: every basename lands under templates/.
 func TestPathForArtifact_PrefixesTemplates(t *testing.T) {
 	t.Parallel()
-	e := &HelmEngine{}
-	got := e.PathForArtifact(renderer.NodeRenderContext{NodeID: "n"}, "deployment.yaml")
+	got := hostPathForArtifact(renderer.NodeRenderContext{NodeID: "n"}, "deployment.yaml")
 	if got != "templates/deployment.yaml" {
 		t.Errorf("got %q; want templates/deployment.yaml", got)
 	}
@@ -35,7 +64,7 @@ func TestPathForArtifact_PrefixesTemplates(t *testing.T) {
 // own {{ }} survives Aggrega's pre-templating pass).
 func TestArtifactDelimiters_HelmCompatible(t *testing.T) {
 	t.Parallel()
-	left, right := (&HelmEngine{}).ArtifactDelimiters()
+	left, right := hostArtifactDelimiters()
 	if left != "[[" || right != "]]" {
 		t.Errorf("delims = (%q, %q); want ([[, ]])", left, right)
 	}
@@ -69,38 +98,11 @@ func TestSanitizeChartName_AllReplacements(t *testing.T) {
 	}
 }
 
-// TestHelmEngine_Render_RejectsEmptySource pins the empty-source rejection.
-// helm-chart is sourced-only (Capabilities reports Sourced alone), so the
-// central input-kind gate never dispatches Render for a sourceless recipe;
-// an empty source reaching Render is a defensive internal-error guard.
-func TestHelmEngine_Render_RejectsEmptySource(t *testing.T) {
-	t.Parallel()
-	e := &HelmEngine{}
-	ctx := renderer.NodeRenderContext{NodeID: "n", Source: ""}
-	_, err := e.Render(context.Background(), nil, ctx)
-	if err == nil {
-		t.Errorf("empty source should reject")
-	}
-	if !strings.Contains(err.Error(), "engine.Render dispatched with no source") {
-		t.Errorf("error should be the defensive no-source internal error; got %v", err)
-	}
-}
-
-// TestHelmEngine_Render_RejectsNonStringSource pins the non-string
-// source rejection (Source is typed as `any`; only string is accepted).
-func TestHelmEngine_Render_RejectsNonStringSource(t *testing.T) {
-	t.Parallel()
-	e := &HelmEngine{}
-	ctx := renderer.NodeRenderContext{NodeID: "n", Source: map[string]any{"chart": "x"}}
-	_, err := e.Render(context.Background(), nil, ctx)
-	if err == nil {
-		t.Errorf("non-string source should reject")
-	}
-}
-
-// TestHelmEngine_Render_HappyPath pins the success path with a real
-// chart directory.
-func TestHelmEngine_Render_HappyPath(t *testing.T) {
+// TestRenderSourcedChart_HappyPath pins the sourced-render success path with a
+// real chart directory: the chart is projected from disk through
+// ProjectSourcedChart and rebuilt into the file map by RenderSourcedChartCore —
+// the same projection-and-render core the provider guest runs.
+func TestRenderSourcedChart_HappyPath(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	chartYAML := `apiVersion: v2
@@ -116,12 +118,11 @@ version: 0.1.0
 	if err := os.WriteFile(filepath.Join(tmp, "templates", "deploy.yaml"), []byte("kind: Deployment\n"), 0o644); err != nil {
 		t.Fatalf("write template: %v", err)
 	}
-	e := &HelmEngine{}
-	ctx := renderer.NodeRenderContext{NodeID: "n", Source: tmp}
-	files, err := e.Render(context.Background(), nil, ctx)
+	proj, err := ProjectSourcedChart(tmp)
 	if err != nil {
-		t.Fatalf("render: %v", err)
+		t.Fatalf("project: %v", err)
 	}
+	files := RenderSourcedChartCore(proj)
 	if _, has := files["Chart.yaml"]; !has {
 		t.Errorf("Chart.yaml missing; got keys=%v", keys(files))
 	}
@@ -266,13 +267,13 @@ func TestReadChartMeta_AllBranches(t *testing.T) {
 func TestBuildUmbrella_AllBranches(t *testing.T) {
 	t.Parallel()
 	// Empty boundary name.
-	_, err := BuildUmbrella("", "", nil, "", 2)
+	_, err := buildUmbrella("", "", nil, "", 2)
 	if err == nil {
 		t.Errorf("empty boundary should error")
 	}
 
 	// Default name with aggregate prefix.
-	files, err := BuildUmbrella("web", "agg", nil, "", 2)
+	files, err := buildUmbrella("web", "agg", nil, "", 2)
 	if err != nil {
 		t.Fatalf("default-with-agg: %v", err)
 	}
@@ -281,7 +282,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	}
 
 	// Default name without aggregate.
-	files, err = BuildUmbrella("solo", "", nil, "", 2)
+	files, err = buildUmbrella("solo", "", nil, "", 2)
 	if err != nil {
 		t.Fatalf("default-no-agg: %v", err)
 	}
@@ -290,7 +291,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	}
 
 	// Override name (cascade).
-	files, err = BuildUmbrella("web", "agg", nil, "override.name", 2)
+	files, err = buildUmbrella("web", "agg", nil, "override.name", 2)
 	if err != nil {
 		t.Fatalf("override: %v", err)
 	}
@@ -303,7 +304,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 		{InstanceID: "gen-1", Version: "1.0.0", Values: map[string]any{"k": "v"}},
 		{InstanceID: "gen-2", Version: ""}, // empty version → default
 	}
-	files, err = BuildUmbrella("web", "", subCharts, "", 2)
+	files, err = buildUmbrella("web", "", subCharts, "", 2)
 	if err != nil {
 		t.Fatalf("generative: %v", err)
 	}
@@ -323,7 +324,7 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	sourcedSC := []renderer.SubChartInfo{
 		{InstanceID: "sourced-i", Version: "1.0.0", Source: tmp},
 	}
-	files, err = BuildUmbrella("web", "", sourcedSC, "", 2)
+	files, err = buildUmbrella("web", "", sourcedSC, "", 2)
 	if err != nil {
 		t.Fatalf("sourced: %v", err)
 	}
@@ -335,40 +336,30 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	badSC := []renderer.SubChartInfo{
 		{InstanceID: "bad-i", Source: "/nonexistent/path"},
 	}
-	_, err = BuildUmbrella("web", "", badSC, "", 2)
+	_, err = buildUmbrella("web", "", badSC, "", 2)
 	if err == nil {
 		t.Errorf("missing source-chart should error")
 	}
 }
 
-// TestAssembleBoundary_DelegatesToBuildUmbrella pins the engine's
-// BoundaryAssembler contract.
-func TestAssembleBoundary_DelegatesToBuildUmbrella(t *testing.T) {
+// TestBuildUmbrella_EmitsChart pins the umbrella assembly contract: a boundary
+// with an aggregate name produces an umbrella Chart.yaml.
+func TestBuildUmbrella_EmitsChart(t *testing.T) {
 	t.Parallel()
-	e := &HelmEngine{}
-	files, nestPerNode, err := e.AssembleBoundary(context.Background(), renderer.BoundaryInfo{
-		BoundaryPath:  "web",
-		AggregateName: "agg",
-	})
+	files, err := buildUmbrella("web", "agg", nil, "", 2)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
-	}
-	if !nestPerNode {
-		t.Errorf("helmchart should nest per node")
 	}
 	if _, has := files["Chart.yaml"]; !has {
 		t.Errorf("Chart.yaml missing")
 	}
 }
 
-// TestAssembleBoundary_PropagatesError pins the error-propagation
-// arm of AssembleBoundary.
-func TestAssembleBoundary_PropagatesError(t *testing.T) {
+// TestBuildUmbrella_EmptyBoundaryErrors pins the empty-boundary guardrail.
+func TestBuildUmbrella_EmptyBoundaryErrors(t *testing.T) {
 	t.Parallel()
-	e := &HelmEngine{}
-	// Empty boundary → BuildUmbrella errors.
-	_, _, err := e.AssembleBoundary(context.Background(), renderer.BoundaryInfo{})
+	_, err := buildUmbrella("", "", nil, "", 2)
 	if err == nil {
-		t.Errorf("empty boundary should propagate error")
+		t.Errorf("empty boundary should error")
 	}
 }

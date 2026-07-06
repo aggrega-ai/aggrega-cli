@@ -4,7 +4,6 @@
 package compose_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -47,13 +46,13 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 		},
 	}
 
-	composeFiles, err := (&compose.ComposeEngine{}).SynthesizeWorkload(context.Background(), nil, makeWorkload(), nodeCtx)
+	composeFiles, err := compose.SynthesizeWorkloadCore(makeWorkload(), nodeCtx)
 	if err != nil {
-		t.Fatalf("compose SynthesizeWorkload: %v", err)
+		t.Fatalf("compose SynthesizeWorkloadCore: %v", err)
 	}
-	helmFiles, err := (&helm.HelmEngine{}).SynthesizeWorkload(context.Background(), nil, makeWorkload(), nodeCtx)
+	helmFiles, err := helm.SynthesizeWorkloadCore(makeWorkload(), renderer.SecretProvidesFromContext(nil), nodeCtx)
 	if err != nil {
-		t.Fatalf("helm SynthesizeWorkload: %v", err)
+		t.Fatalf("helm SynthesizeWorkloadCore: %v", err)
 	}
 
 	composeOrder := composeEnvKeys(t, composeFiles[0].Body)

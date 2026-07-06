@@ -25,12 +25,10 @@ import (
 // so the rendered bytes are identical across validation strategies — only
 // acceptance can differ.
 //
-// A nil ValuesValidator selects the Helm SDK's own validation, which resolves
-// any remote $ref in a chart schema with a live HTTP fetch. Callers that must
-// render hermetically — the provider Wasm guest, whose sandbox grants no
-// ambient network — pass an explicit validator (see
-// NewHermeticValuesValidator) and the SDK's live-fetching validator never
-// runs.
+// Callers that must render hermetically — the provider Wasm guest, whose
+// sandbox grants no ambient network — pass an explicit validator (see
+// NewHermeticValuesValidator) so no remote schema $ref is fetched at render
+// time.
 type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 
 // RenderLoadedChart renders an already-loaded Helm chart against the Phase B
@@ -43,11 +41,11 @@ type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 // re-implement this logic in a caller — route through this function so the two
 // render surfaces stay byte-for-byte identical.
 //
-// validate selects the values-schema validation strategy; the two compile
-// targets differ only here. The host engine passes nil (the SDK's own
-// validation); the guest passes the hermetic validator. Both strategies gate
-// on the same coalesced values table, and neither alters it, so rendered
-// output is byte-identical across strategies for any accepted input.
+// validate is the values-schema validation strategy the caller supplies; it
+// gates on the coalesced values table without altering it, so rendered output
+// is byte-identical for any accepted input. The provider Wasm guest passes the
+// hermetic validator (see NewHermeticValuesValidator), which skips the SDK's
+// live-fetching schema validation.
 func RenderLoadedChart(
 	_ context.Context,
 	ch *chart.Chart,
@@ -76,24 +74,15 @@ func RenderLoadedChart(
 	}
 	caps := chartutil.DefaultCapabilities
 
-	var renderVals chartutil.Values
-	if validate == nil {
-		// The SDK's own strategy: ToRenderValues validates against the chart's
-		// values.schema.json internally, resolving any remote $ref live.
-		renderVals, err = chartutil.ToRenderValues(ch, cvals, relOpts, caps)
-	} else {
-		// Explicit-validator strategy: skip the SDK's live-fetching validator
-		// and gate on the supplied one instead. The table handed to the
-		// validator is the same coalesced values table the SDK would have
-		// validated and the render consumes, so the two strategies accept or
-		// reject identical input.
-		renderVals, err = chartutil.ToRenderValuesWithSchemaValidation(ch, cvals, relOpts, caps, true)
-		if err == nil {
-			if vals, ok := renderVals["Values"].(chartutil.Values); ok {
-				err = validate(ch, vals)
-			} else {
-				err = fmt.Errorf("render values carry no coalesced values table to validate")
-			}
+	// Skip the SDK's live-fetching validator and gate on the supplied one
+	// instead. The table handed to the validator is the same coalesced values
+	// table the render consumes.
+	renderVals, err := chartutil.ToRenderValuesWithSchemaValidation(ch, cvals, relOpts, caps, true)
+	if err == nil {
+		if vals, ok := renderVals["Values"].(chartutil.Values); ok {
+			err = validate(ch, vals)
+		} else {
+			err = fmt.Errorf("render values carry no coalesced values table to validate")
 		}
 	}
 	if err != nil {

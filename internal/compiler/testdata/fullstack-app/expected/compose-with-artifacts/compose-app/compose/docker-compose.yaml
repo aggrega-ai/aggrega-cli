@@ -8,6 +8,7 @@ services:
       aggrega.ai/component-id: overlays
       aggrega.ai/environment: production
       aggrega.ai/provider: compose
+      aggrega.ai/provider-version: 1.0.0
       aggrega.ai/recipe-uri: compose-raw-fragments-with-artifacts:1.0.0
     networks:
       - dist_compose-app_compose

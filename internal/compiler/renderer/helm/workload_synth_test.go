@@ -4,7 +4,6 @@
 package helm
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -82,8 +81,7 @@ func TestSynthesizeWorkload_MinimalDeploymentClusterIP(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	nodeCtx := nodeCtxFor("api-server")
-	engine := &HelmEngine{}
-	files, err := engine.SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -102,20 +100,6 @@ func TestSynthesizeWorkload_MinimalDeploymentClusterIP(t *testing.T) {
 	// Concatenated YAML body is what the test gold-checks.
 	concat := append(append([]byte{}, files[0].Body...), files[1].Body...)
 	goldenCheck(t, "minimal-deployment-clusterip", concat)
-}
-
-// TestSynthesizeWorkload_NilWorkload verifies the no-op case for the
-// dispatcher's nil-safe behaviour.
-func TestSynthesizeWorkload_NilWorkload(t *testing.T) {
-	t.Parallel()
-	engine := &HelmEngine{}
-	files, err := engine.SynthesizeWorkload(context.Background(), nil, nil, nodeCtxFor("ignored"))
-	if err != nil {
-		t.Errorf("nil Workload should produce no error, got %v", err)
-	}
-	if len(files) != 0 {
-		t.Errorf("nil Workload should produce no files, got %d", len(files))
-	}
 }
 
 // concatBodies concatenates EmittedFile bodies in their author order.
@@ -146,7 +130,7 @@ func TestSynthesizeWorkload_MultiContainer(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -171,7 +155,7 @@ func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("data-server"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("data-server"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -195,7 +179,7 @@ func TestSynthesizeWorkload_PersistentTemplateTriggersStatefulSet(t *testing.T) 
 	svc.Ports.Set("db", 5432)
 	w.Services.Set("db", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("postgres"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("postgres"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -226,7 +210,7 @@ func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 	svc.Ports.Set("db", 5432)
 	w.Services.Set("db", svc)
 
-	_, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("postgres"))
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("postgres"))
 	if !errors.Is(err, ErrStatefulSetNoHeadlessService) {
 		t.Fatalf("expected ErrStatefulSetNoHeadlessService; got %v", err)
 	}
@@ -248,7 +232,7 @@ func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
 	h2.Ports.Set("db", 5432)
 	w.Services.Set("db2", h2)
 
-	_, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("postgres"))
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("postgres"))
 	if !errors.Is(err, ErrStatefulSetAmbiguousHeadlessService) {
 		t.Fatalf("expected ErrStatefulSetAmbiguousHeadlessService; got %v", err)
 	}
@@ -273,7 +257,7 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -291,7 +275,7 @@ func TestSynthesizeWorkload_HTTPProbeNoNamedPort_TranslationError(t *testing.T) 
 	c.Health = &types.HealthSpec{Ready: &types.ProbeSpec{HTTP: "/healthz"}}
 	w.Containers.Set("main", c)
 
-	_, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for http probe with no container ports")
 	}
@@ -321,7 +305,7 @@ func TestSynthesizeWorkload_SchedulingAndPodSecurity(t *testing.T) {
 	}
 	w.ServiceAccount = "app-sa"
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -344,7 +328,7 @@ func TestSynthesizeWorkload_InitContainers(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -373,7 +357,7 @@ func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
 	tmplCtx.Secrets.Set("db-password", types.TemplateSecret{Provides: providesBag("db-creds", "password")})
 	tmplCtx.Secrets.Set("tls-cert", types.TemplateSecret{Provides: providesBag("tls-bundle", "tls.crt")})
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), tmplCtx, w, nodeCtxFor("api"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(tmplCtx), nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -393,7 +377,7 @@ func TestSynthesizeWorkload_LoadBalancerService(t *testing.T) {
 	svc.Ports.Set("https", 443)
 	w.Services.Set("public", svc)
 
-	files, err := (&HelmEngine{}).SynthesizeWorkload(context.Background(), nil, w, nodeCtxFor("gateway"))
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("gateway"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -408,15 +392,14 @@ func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	nodeCtx := nodeCtxFor("api-server")
-	engine := &HelmEngine{}
 
-	files1, err := engine.SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+	files1, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtx)
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
 
 	for i := 0; i < 5; i++ {
-		filesN, err := engine.SynthesizeWorkload(context.Background(), nil, w, nodeCtx)
+		filesN, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtx)
 		if err != nil {
 			t.Fatalf("run %d: %v", i+1, err)
 		}

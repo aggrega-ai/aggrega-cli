@@ -107,6 +107,28 @@ spec:
         ports:
           p: 8080
 `
+	// baseComposeRendererPlugin binds the compose provider to the embedded compose
+	// rendering guest through the plugin-resolution cascade's embed tier (the
+	// content-addressed spec.plugin resolves the exact bytes compiled into the
+	// binary), so the minimal base workspace renders through the compose guest.
+	baseComposeRendererPlugin = `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: compose-renderer
+  version: "1.0.0"
+spec:
+  plugin: oci://hub.aggrega.ai/plugins/compose-provider@sha256:f2a5112d5ae8e92b99a3c4a080baea35597e4001c1b2ce8f4e6303ad9d71fe68
+  pluginType: provider
+  abiVersion: v1alpha1
+  compatibleProviders:
+    - compose
+  exports:
+    - name: render_node
+    - name: assemble_boundary
+  runtime:
+    maxMemoryPages: 4096
+    timeoutMs: 300000
+`
 )
 
 // workspaceFiles names the four overridable documents.
@@ -145,6 +167,7 @@ func writeMinimalWorkspace(t *testing.T, wf workspaceFiles) pipelinetest.Input {
 	write("catalog/components/server.yaml", wf.component)
 	write("catalog/providers/compose.yaml", baseProvider)
 	write("catalog/recipes/server.yaml", baseRecipe)
+	write("catalog/plugins/compose-renderer.yaml", baseComposeRendererPlugin)
 	return pipelinetest.Input{
 		ReleasePath:  filepath.Join(dir, "release.yaml"),
 		CatalogPaths: []string{filepath.Join(dir, "catalog")},

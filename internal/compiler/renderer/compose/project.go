@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -39,9 +40,47 @@ func ProjectComposeSource(composePath string) (*renderer.SourceProjection, error
 	}, nil
 }
 
-// ProjectSource implements renderer.SourceProjector by delegating to
-// ProjectComposeSource, which remains the single-source projection impl the
-// in-tree sourced path and the provider Wasm guest both build on.
-func (e *ComposeEngine) ProjectSource(path string) (*renderer.SourceProjection, error) {
-	return ProjectComposeSource(path)
+// resolveComposeSourcePath returns the path of the YAML file that should be
+// loaded for sourced-mode rendering. Two input shapes are accepted:
+//
+//   - chartPath is a regular file: returned as-is (legacy Tier-1 shape —
+//     chartPath points directly at the compose YAML).
+//   - chartPath is a directory: scans for `.yaml` and `.yml` entries and
+//     returns the single matching file. Multiple matches are ambiguous and halt
+//     with an error so authors of multi-file fragments see a clear signal rather
+//     than silent first-wins. Zero matches also halt with an error.
+//
+// The directory shape is what the build-time orchestrator hands to the render
+// path after extracting a compose-https-fragment cache slot — the extracted/
+// subdirectory contains the single YAML the fragment carried.
+func resolveComposeSourcePath(chartPath string) (string, error) {
+	info, err := os.Stat(chartPath)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return chartPath, nil
+	}
+	entries, err := os.ReadDir(chartPath)
+	if err != nil {
+		return "", err
+	}
+	var yamlEntries []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+			yamlEntries = append(yamlEntries, filepath.Join(chartPath, name))
+		}
+	}
+	switch len(yamlEntries) {
+	case 0:
+		return "", fmt.Errorf("directory contains no .yaml/.yml entries")
+	case 1:
+		return yamlEntries[0], nil
+	default:
+		return "", fmt.Errorf("directory contains %d .yaml/.yml entries; expected exactly one", len(yamlEntries))
+	}
 }

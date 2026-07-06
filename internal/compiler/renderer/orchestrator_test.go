@@ -13,21 +13,17 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// testHelmFactory returns an EngineFactory that always returns the helm
-// engine — used by tests that predate the per-node factory dispatch.
-// The helm engine supports sourceless rendering for orchestration unit
-// tests' purposes; the helm-chart provider's sourceless path is no
-// longer supported.
-func testHelmFactory() renderer.EngineFactory {
-	return func(string) (renderer.Engine, error) {
-		return &renderHelm.HelmEngine{}, nil
-	}
+// testHelmFactory returns an EngineFactory backed by the embedded provider
+// guests — used by orchestration tests that render synthesised or artifacts-only
+// recipes through the production Wasm render path. It routes each provider name
+// to its embedded guest, so a helm node renders through the helm guest and a
+// mixed-provider graph resolves each provider independently.
+func testHelmFactory(t *testing.T) renderer.EngineFactory {
+	return wasmEngineFactory(t)
 }
 
 func testInput() renderer.RendererInput {
@@ -102,7 +98,7 @@ containers:
 func TestRenderAll_SimpleNode(t *testing.T) {
 	t.Parallel()
 
-	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), testInput(), testRecipeLookup(), testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +151,7 @@ spec:
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), testInput(), lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), testInput(), lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -186,7 +182,7 @@ spec:
 // end: an artifacts-only Recipe on a provider that does not support standalone
 // artifacts (compose, helm-chart) halts at the central input-kind gate with the
 // uniform capability diagnostic — not a silent skip or a bespoke per-engine
-// message. Uses enginefactory.Dispatch so each provider name resolves to its
+// message. Uses wasmEngineFactory(t) so each provider name resolves to its
 // real engine and its declared capabilities.
 func TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider(t *testing.T) {
 	t.Parallel()
@@ -212,7 +208,7 @@ func TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider(t *testing.T) {
 				},
 				FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 			}
-			_, err := renderer.RenderAll(context.Background(), testInput(), lookup, enginefactory.Dispatch)
+			_, err := renderer.RenderAll(context.Background(), testInput(), lookup, wasmEngineFactory(t))
 			if err == nil {
 				t.Fatalf("expected artifacts-only to be declined by provider %q, got nil", provider)
 			}
@@ -280,7 +276,7 @@ containers:
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,7 +310,7 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -352,7 +348,7 @@ func TestRenderAll_Deterministic(t *testing.T) {
 
 	var firstKeys []string
 	for i := 0; i < 10; i++ {
-		result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+		result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -434,7 +430,7 @@ containers:
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -502,7 +498,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -576,7 +572,7 @@ stringData:
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -683,7 +679,7 @@ containers:
 			Artifacts: art,
 		},
 	}
-	result, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -728,9 +724,9 @@ containers:
 `},
 		},
 	}
-	// enginefactory.Dispatch routes helm-chart to the real helm-chart engine,
+	// wasmEngineFactory(t) routes helm-chart to the real helm-chart engine,
 	// whose Capabilities report Sourced only.
-	_, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), enginefactory.Dispatch)
+	_, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), wasmEngineFactory(t))
 	if err == nil {
 		t.Fatal("expected a gate error for a synthesised FR on a sourced-only provider, got nil")
 	}
@@ -816,7 +812,7 @@ containers:
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -864,7 +860,7 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -973,7 +969,7 @@ func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
 		},
 	}
 
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err == nil {
 		t.Fatalf("expected RenderAll to halt with assertion failure; got nil")
 	}

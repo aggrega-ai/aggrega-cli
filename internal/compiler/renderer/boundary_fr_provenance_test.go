@@ -13,22 +13,16 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// helmOrComposeFactory serves the helm engine for the boundary-scope FR's
-// provider and the compose engine for the per-component nodes — one boundary
-// can mix providers, each landing at its own (path, provider) dispatch group.
-func helmOrComposeFactory() renderer.EngineFactory {
-	return func(provider string) (renderer.Engine, error) {
-		if provider == "helm" {
-			return &renderHelm.HelmEngine{}, nil
-		}
-		return &renderCompose.ComposeEngine{}, nil
-	}
+// helmOrComposeFactory renders through the embedded provider guests, serving the
+// helm guest for the boundary-scope FR's provider and the compose guest for the
+// per-component nodes — one boundary can mix providers, each landing at its own
+// (path, provider) dispatch group.
+func helmOrComposeFactory(t *testing.T) renderer.EngineFactory {
+	return wasmEngineFactory(t)
 }
 
 // boundaryScopeHelmBridgeFR builds a boundary-scope FeatureRecipe served by the
@@ -151,7 +145,7 @@ func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, helmOrComposeFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, helmOrComposeFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}

@@ -104,7 +104,7 @@ func TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src")
 	writeVendoredChart(t, src, "widget", "0.1.0") // vendored chart version != SubChartInfo.Version below
 
-	files, err := BuildUmbrella("app", "demo", []renderer.SubChartInfo{{
+	files, err := buildUmbrella("app", "demo", []renderer.SubChartInfo{{
 		InstanceID: "db",
 		Version:    "1.0.0", // the spec/component version — the OLD (wrong) source for the dep version
 		Values:     map[string]any{"secret": "s3cr3t"},
@@ -157,7 +157,7 @@ func TestUmbrellaSourcedDependencyVersion_MatchesVendoredChart(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src")
 	writeVendoredChart(t, src, "widget", "2.4.6")
 
-	files, err := BuildUmbrella("app", "demo", []renderer.SubChartInfo{{
+	files, err := buildUmbrella("app", "demo", []renderer.SubChartInfo{{
 		InstanceID: "db",
 		Version:    "1.0.0",
 		Source:     src,
@@ -182,7 +182,7 @@ func TestUmbrellaSourcedDependencyVersion_EmptyVersionHaltsLoud(t *testing.T) {
 	// Chart.yaml with a name but no version.
 	writeFileMkdir(t, filepath.Join(src, "Chart.yaml"), "apiVersion: v2\nname: widget\n")
 
-	_, err := BuildUmbrella("app", "demo", []renderer.SubChartInfo{{
+	_, err := buildUmbrella("app", "demo", []renderer.SubChartInfo{{
 		InstanceID: "db",
 		Source:     src,
 	}}, "", 2)

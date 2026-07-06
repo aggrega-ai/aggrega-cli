@@ -13,18 +13,15 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// composeFactory returns the compose engine for any provider name. Used by
-// the boundary-scope FR proof cases (both variants exercise the compose
+// composeFactory renders every node through the embedded compose provider guest.
+// Used by the boundary-scope FR proof cases (both variants exercise the compose
 // provider end-to-end).
-func composeFactory() renderer.EngineFactory {
-	return func(string) (renderer.Engine, error) {
-		return &renderCompose.ComposeEngine{}, nil
-	}
+func composeFactory(t *testing.T) renderer.EngineFactory {
+	return wasmEngineFactory(t)
 }
 
 // composeWorkloadRecipe builds a synthesised-mode compose Recipe — the
@@ -218,7 +215,7 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -374,7 +371,7 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -469,7 +466,7 @@ func TestDispatchBoundaryScopeFR_EvaluatesValuesMapping(t *testing.T) {
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
@@ -607,7 +604,7 @@ containers:
 		},
 	}
 
-	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory())
+	result, err := renderer.RenderAll(context.Background(), input, lookup, composeFactory(t))
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}

@@ -223,13 +223,10 @@ type SubChartProjector interface {
 
 // NodeRenderContext provides identity metadata for manifest generation.
 type NodeRenderContext struct {
-	NodeID          string
-	Labels          map[string]string
-	Annotations     map[string]string // merged release annotations
-	BoundaryPath    string
-	SyncWave        int // deployment wave from the containing boundary's syncWave (signed integer; default 0)
-	ResolvedVersion string
-	Component       string
+	NodeID       string
+	Annotations  map[string]string // merged release annotations
+	BoundaryPath string
+	SyncWave     int // deployment wave from the containing boundary's syncWave (signed integer; default 0)
 	// Source is what engines actually consume (via loader.Load or
 	// equivalent): the resolved filesystem path for remote sources
 	// (extracted directory under the source-artifact cache slot),

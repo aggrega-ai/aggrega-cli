@@ -27,7 +27,10 @@ import "context"
 // before returning so a rejected publish leaks no instance. entityIdentity names
 // the entity in any rejection message.
 func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityCapabilityClaim, wasmBytes []byte) error {
-	loader := &Loader{}
+	// Build through the shared constructor so this loader carries the same
+	// process-wide compilation cache every other loader uses, rather than a
+	// bare cache-less loader that would recompile the guest in isolation.
+	loader := NewCachingLoader(nil)
 	plugin, desc, err := loader.LoadAndDescribe(ctx, PluginSpec{
 		Name:  entityIdentity,
 		Bytes: wasmBytes,

@@ -85,6 +85,7 @@ metadata:
 spec:
   plugin: "builtin:helm"
 `)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
@@ -152,6 +153,7 @@ metadata:
   version: 1.0.0
 spec: {}
 `)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 
 	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
 	t.Cleanup(func() {
@@ -194,6 +196,7 @@ metadata:
   version: 1.0.0
 spec: {}
 `)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// Minimal release pointing to nothing — we expect failure earlier
 	// at catalog extends resolution.
 	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -248,6 +251,7 @@ metadata:
   version: 1.0.0
 spec: {}
 `)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	err := renderReleaseFile(nil, filepath.Join(root, "release.yaml"), nil, []string{catalogRoot}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("malformed release should error")
@@ -321,6 +325,7 @@ metadata:
 spec:
   plugin: "builtin:helm"
 `)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:

@@ -12,16 +12,53 @@ package compiler_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	renderCompose "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// composeWasmFactory renders through the embedded compose provider guest via the
+// production wasmengine assembler adapter — the Wasm-only render backend that
+// replaces the removed in-tree compose engine for this end-to-end recipe proof.
+func composeWasmFactory(t *testing.T) renderer.EngineFactory {
+	t.Helper()
+	loader := wasm.NewCachingLoader(nil)
+	hostCaps, ok := enginefactory.HostCapsFor("compose")
+	if !ok {
+		t.Fatal("HostCapsFor(compose): ok=false")
+	}
+	var uri string
+	for _, u := range embedded.URIs() {
+		if strings.Contains(u, "compose-provider") {
+			uri = u
+			break
+		}
+	}
+	if uri == "" {
+		t.Fatalf("no embedded compose guest; embedded URIs: %v", embedded.URIs())
+	}
+	lookup := func(u string) (pluginpath.ResolvedPlugin, error) {
+		b, ok := embedded.Lookup(u)
+		if !ok {
+			return pluginpath.ResolvedPlugin{}, fmt.Errorf("no embedded guest for %q", u)
+		}
+		return pluginpath.ResolvedPlugin{Bytes: b, URI: u, Tier: pluginpath.TierEmbed, Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096}}, nil
+	}
+	return func(string) (renderer.Engine, error) {
+		return wasmengine.NewAssembler(lookup, uri, hostCaps, loader), nil
+	}
+}
 
 // TestMariaDBRecipes_LoadCleanly is the smoke test for all four in-repo
 // mariadb Recipes. Asserts each loads under the catalog resolver without
@@ -56,7 +93,7 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
 
-	cat, err := catalog.LoadAll("", 
+	cat, err := catalog.LoadAll("",
 		"../../../aggrega-hub/aggrega-catalog/component/core/datastore",
 		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb",
 		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
@@ -97,9 +134,7 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 		},
 	}
 
-	composeFactory := func(string) (renderer.Engine, error) {
-		return &renderCompose.ComposeEngine{}, nil
-	}
+	composeFactory := composeWasmFactory(t)
 
 	mt := &types.MappingTier{}
 	mt.Type.Set("core/datastore/mariadb:1.0.0", "mariadb")

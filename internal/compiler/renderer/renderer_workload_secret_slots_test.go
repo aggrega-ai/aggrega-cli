@@ -103,7 +103,7 @@ containers:
 			return nil, false
 		},
 	}
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	return err
 }
 
@@ -228,7 +228,7 @@ containers:
 			return nil, false
 		},
 	}
-	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory())
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	return err
 }
 

@@ -5,9 +5,9 @@
 // compiles a workspace. It runs the real compilation spine
 // (pipeline.RunPipeline) with the SAME Options the CLI build uses — crucially
 // the recipe-resolution verifier (resolution-completeness, "Step 4c") — and the
-// SAME provider dispatch (enginefactory.Dispatch). A test built through this
-// harness renders the way `aggrega build` renders and is gated the way a real
-// build is gated, so it cannot pass on input a real build would reject.
+// SAME catalog-driven Wasm provider dispatch. A test built through this harness
+// renders the way `aggrega build` renders and is gated the way a real build is
+// gated, so it cannot pass on input a real build would reject.
 //
 // Hand-assembling the pipeline (resolver.Resolve -> topology.Build ->
 // ir.BuildIR -> renderer.RenderAll) in a test skips the verifier and any other
@@ -32,7 +32,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -168,7 +167,6 @@ func compile(in Input) (*pipeline.Result, error) {
 		buildLookup,
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
-		enginefactory.Dispatch,
 		pipeline.Options{
 			// The build-faithful bit: Step 4c (resolution-completeness) ON,
 			// exactly as cmd/aggrega/build.go runs it.

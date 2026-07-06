@@ -96,6 +96,7 @@ metadata:
 spec:
   plugin: "builtin:helm"
 `)
+	writeHelmRendererPlugin(t, filepath.Join(dirA, "providers"))
 	writeFixture(t, filepath.Join(dirA, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
