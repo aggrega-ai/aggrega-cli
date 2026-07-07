@@ -25,7 +25,7 @@ import (
 // spec.plugin. build-embedded-compose-provider.sh recomputes it when the guest
 // source changes.
 const (
-	composeArtifactDigest = "sha256:0031422043e9fb31f23f8950a65d9769fda8096572563db6b54b6efa793128b0"
+	composeArtifactDigest = "sha256:5153b1e001d0996ea1a0f124d4292fddac1cc909f2930c3644a50715d638900f"
 	composeArtifactURI    = "oci://hub.aggrega.ai/plugins/compose-provider@" + composeArtifactDigest
 	composePluginEntity   = "compose-renderer:1.0.0"
 	composeProviderMemPag = 4096
