@@ -85,6 +85,30 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/ProtonMail/go-crypto@v1.
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
+PackageName: github.com/agext/levenshtein
+SPDXID: SPDXRef-Package-go-github.com-agext-levenshtein-v1.2.1
+PackageVersion: v1.2.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/agext/levenshtein/@v/v1.2.1.zip
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright 2016 ALRUX Inc.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/agext/levenshtein@v1.2.1
+PackageComment: <text>Compiled into: wasm-provider-guests</text>
+FilesAnalyzed: false
+
+PackageName: github.com/apparentlymart/go-textseg/v15
+SPDXID: SPDXRef-Package-go-github.com-apparentlymart-go-textseg-v15-v15.0.0
+PackageVersion: v15.0.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/apparentlymart/go-textseg/v15/@v/v15.0.0.zip
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright (c) 2017 Martin Atkins
+Copyright (c) 2014 Couchbase, Inc.
+Copyright © 1991-2017 Unicode, Inc. All rights reserved.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/apparentlymart/go-textseg/v15@v15.0.0
+PackageComment: <text>Compiled into: wasm-provider-guests</text>
+FilesAnalyzed: false
+
 PackageName: github.com/asaskevich/govalidator
 SPDXID: SPDXRef-Package-go-github.com-asaskevich-govalidator-v0.0.0-20230301143203-a9d515a09cc2
 PackageVersion: v0.0.0-20230301143203-a9d515a09cc2
@@ -856,6 +880,17 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/go-retryableht
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
+PackageName: github.com/hashicorp/hcl/v2
+SPDXID: SPDXRef-Package-go-github.com-hashicorp-hcl-v2-v2.24.0
+PackageVersion: v2.24.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/hashicorp/hcl/v2/@v/v2.24.0.zip
+PackageLicenseConcluded: MPL-2.0
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright (c) 2014 HashiCorp, Inc.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/hcl/v2@v2.24.0
+PackageComment: <text>Compiled into: wasm-provider-guests</text>
+FilesAnalyzed: false
+
 PackageName: github.com/huandu/xstrings
 SPDXID: SPDXRef-Package-go-github.com-huandu-xstrings-v1.5.0
 PackageVersion: v1.5.0
@@ -1002,7 +1037,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Mitchell Hashimoto</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/mitchellh/go-wordwrap@v1.0.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/mitchellh/reflectwalk
@@ -1470,6 +1505,17 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 youmark</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/youmark/pkcs8@v0.0.0-20240726163527-a2c0da244d78
 PackageComment: <text>Compiled into: cli-host</text>
+FilesAnalyzed: false
+
+PackageName: github.com/zclconf/go-cty
+SPDXID: SPDXRef-Package-go-github.com-zclconf-go-cty-v1.16.3
+PackageVersion: v1.16.3
+PackageDownloadLocation: https://proxy.golang.org/github.com/zclconf/go-cty/@v/v1.16.3.zip
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright (c) 2017-2018 Martin Atkins</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/zclconf/go-cty@v1.16.3
+PackageComment: <text>Compiled into: wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/auto/sdk
@@ -2423,6 +2469,8 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Mastermin
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-semver-v3-v3.4.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-sprig-v3-v3.3.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-ProtonMail-go-crypto-v1.1.6
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-agext-levenshtein-v1.2.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-apparentlymart-go-textseg-v15-v15.0.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-asaskevich-govalidator-v0.0.0-20230301143203-a9d515a09cc2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-blang-semver-v4-v4.0.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-blang-semver-v3.5.1-incompatible
@@ -2492,6 +2540,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-go-cleanhttp-v0.5.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-go-multierror-v1.1.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-go-retryablehttp-v0.7.8
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-hcl-v2-v2.24.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-huandu-xstrings-v1.5.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-ianlancetaylor-demangle-v0.0.0-20240805132620-81f5be970eca
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-in-toto-attestation-v1.2.0
@@ -2547,6 +2596,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-x448-floa
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-xanzy-ssh-agent-v0.3.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-xlab-treeprint-v1.2.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-youmark-pkcs8-v0.0.0-20240726163527-a2c0da244d78
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-zclconf-go-cty-v1.16.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-auto-sdk-v1.2.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-metric-v1.44.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-trace-v1.44.0

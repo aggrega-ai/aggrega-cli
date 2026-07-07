@@ -380,6 +380,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			nodeCtx.RecipeName = recipe.Metadata.Name
 			nodeCtx.RecipeVersion = recipe.Metadata.Version
 		}
+		// Route the non-fatal advisories a provider guest raises while rendering
+		// this node into the per-node warnings accumulator, which the orchestrator
+		// drains into result.Warnings at the end of the per-node sequence. Set once
+		// here so every downstream crossing that carries this node context —
+		// engine.Render, artifacts emission, workload synthesis, and the FeatureRecipe
+		// sub-renders that copy it — surfaces its guest warnings through one channel.
+		nodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("Step 5 node %q source resolution", nodeID))
@@ -402,6 +409,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// artifacts-only.
 		if err := gateInputKind(nodeID, providerName, engine, hasSource, hasWorkload, hasArtifacts); err != nil {
 			return nil, err
+		}
+
+		// Advertised-only per-node input validation. When the resolved provider's
+		// guest declares the optional input-validation export, run it once here —
+		// after the capability gate, before any Phase B render pass — so a provider
+		// that can detect a malformed input halts loudly (Invariant 4) before
+		// emission rather than producing broken output. Error-severity diagnostics
+		// halt; warnings surface to the build result.
+		if validator, ok := engine.(NodeInputValidator); ok {
+			diags, verr := validator.ValidateNodeInput(ctx, values, nodeCtx)
+			if verr != nil {
+				return nil, cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q input validation", nodeID))
+			}
+			if err := routeNodeInputDiagnostics(nodeID, providerName, diags, nodeCtx.WarningSink); err != nil {
+				return nil, err
+			}
 		}
 
 		// engine.Render (the source-based render) runs only for sourced mode;
@@ -972,6 +995,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				ContributingBoundaries: pd.contributingBoundaries,
 				Edges:                  edges,
 				ChartName:              chartName,
+				WarningSink:            func(w string) { result.Warnings = append(result.Warnings, w) },
 			}
 			boundaryFiles, nestPerNode, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
@@ -1114,6 +1138,29 @@ func gateInputKind(nodeID, providerName string, engine Engine, hasSource, hasWor
 		if !caps.ArtifactsStandalone {
 			return unsupportedInputKindError(nodeID, providerName, "artifacts-only", caps)
 		}
+	}
+	return nil
+}
+
+// routeNodeInputDiagnostics splits a provider's per-node input-validation
+// diagnostics by severity: warning- and info-severity entries go to the node's
+// warning sink (nil-safe; the orchestrator wires it to result.Warnings), and
+// error-severity entries halt the build with the ErrProviderNodeInputInvalid
+// Loud Guardrail, naming the node, the provider, and the guest's messages.
+// Warnings never affect emitted bytes. The component render path and the
+// FeatureRecipe render path share this routing, so a provider's input check
+// reads identically on both surfaces.
+func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, sink func(string)) error {
+	errs, advisories := SplitDiagnostics(diags)
+	for _, a := range advisories {
+		if sink != nil {
+			sink(fmt.Sprintf("node %q (provider %q): %s", nodeID, providerName, a))
+		}
+	}
+	if len(errs) > 0 {
+		inner := fmt.Errorf("%w: node %q, provider %q: %s",
+			ErrProviderNodeInputInvalid, nodeID, providerName, strings.Join(errs, "; "))
+		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, inner.Error())
 	}
 	return nil
 }

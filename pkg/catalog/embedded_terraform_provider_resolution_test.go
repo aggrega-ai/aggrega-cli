@@ -25,7 +25,7 @@ import (
 // spec.plugin. build-embedded-terraform-provider.sh recomputes it when the guest
 // source changes.
 const (
-	terraformArtifactDigest = "sha256:a697427a3fb2f00b594ae96180b95a3595706bf90f786f9f75490c47ebe9e4d1"
+	terraformArtifactDigest = "sha256:8311c3d147b1309fed39566a0619130dee3f7b3ca5c701ade2c4f90915adf82b"
 	terraformArtifactURI    = "oci://hub.aggrega.ai/plugins/terraform-provider@" + terraformArtifactDigest
 	terraformPluginEntity   = "terraform-renderer:1.0.0"
 	terraformProviderMemPag = 4096

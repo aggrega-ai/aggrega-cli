@@ -31,7 +31,7 @@ func terraformRouteCatalog() resolver.CatalogLookup {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					Plugin:              "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:a697427a3fb2f00b594ae96180b95a3595706bf90f786f9f75490c47ebe9e4d1",
+					Plugin:              "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:8311c3d147b1309fed39566a0619130dee3f7b3ca5c701ade2c4f90915adf82b",
 					PluginType:          "provider",
 					AbiVersion:          "v1alpha1",
 					CompatibleProviders: []string{"terraform"},

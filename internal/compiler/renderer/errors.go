@@ -50,6 +50,18 @@ var (
 	// cannot leak into authored source.
 	ErrHostInLibraryImport = errors.New("valuesMapping $import: carries a registry host; reference the mapping library by identity (valuesMapping: { $import: <Library>#/mappings/<entry> })")
 
+	// ErrProviderNodeInputInvalid is the Loud Guardrail halt a provider
+	// engine raises when its optional input-validation export reports an
+	// error-severity diagnostic for a node's resolved input before render
+	// dispatch. The wrapping chain at the emission site names the offending
+	// node, the provider, and the guest's diagnostic message, so the operator
+	// sees which node failed the provider's structural check and why. Warning-
+	// and info-severity diagnostics from the same export do not produce this
+	// halt — they surface to the build result's warnings. Category:
+	// TRANSLATION_ERROR (a provider-reported structural defect in the node's
+	// rendered input). Match with errors.Is(err, ErrProviderNodeInputInvalid).
+	ErrProviderNodeInputInvalid = errors.New("provider rejected node input")
+
 	// ErrUnknownProvider is the compiler-level fatal halt produced by the
 	// build-time engineFactory when a Recipe declares a provider name that
 	// the CLI does not register. The CLI's engineFactory closure wraps this

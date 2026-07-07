@@ -15,7 +15,7 @@
 #
 # Shipped artifacts covered:
 #   - the Go host binary            (./cmd/aggrega)
-#   - the Go wasip1 provider guests (./plugins/{helm,compose,helmchart}-provider,
+#   - the Go wasip1 provider guests (./plugins/{helm,compose,helmchart,terraform}-provider,
 #                                    embedded into the host binary)
 #   - the Rust wasm guest           (./plugins/publishing-linter)
 #
@@ -360,6 +360,7 @@ add_src() {
 module_set ./cmd/aggrega > "$WORK/host.txt"
 GOOS=wasip1 GOARCH=wasm module_set \
 	./plugins/helm-provider ./plugins/compose-provider ./plugins/helmchart-provider \
+	./plugins/terraform-provider \
 	> "$WORK/guest.txt"
 sort -u "$WORK/host.txt" "$WORK/guest.txt" > "$WORK/go-union.txt"
 
@@ -580,8 +581,8 @@ Shipped artifacts covered:
 
 - the Go host binary (`cmd/aggrega`)
 - the Go WebAssembly provider guests (`plugins/helm-provider`,
-  `plugins/compose-provider`, `plugins/helmchart-provider`), embedded into the
-  host binary
+  `plugins/compose-provider`, `plugins/helmchart-provider`,
+  `plugins/terraform-provider`), embedded into the host binary
 - the Rust WebAssembly guest (`plugins/publishing-linter`)
 
 **These files are generated. Do not edit them by hand.** Regenerate with:

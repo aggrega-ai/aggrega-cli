@@ -207,3 +207,108 @@ spec:
 		t.Errorf("expected the placeholder template to land alongside the injected CRD; got paths %v", paths)
 	}
 }
+
+// TestHelmChartArtifactsImport_ProvenanceSkipWarningSurfaces proves that a
+// warning a provider guest raises while rendering reaches the build result's
+// warnings — the diagnostic channel from the guest's render output through the
+// wasmengine to RenderResult.Warnings. It renders a helm-chart node whose
+// $import artifact carries a structural Helm action ({{- if }} ... {{- end }}):
+// helm-chart's [[ ]] host-template delimiters leave the {{ }} untouched, so the
+// bytes reach the guest verbatim; there the file does not survive the pre-render
+// YAML round-trip, so provenance injection is skipped and the guest emits a
+// warning-severity diagnostic. Before the diagnostic channel was plumbed this
+// warning was silently swallowed; the test fails if it does not surface.
+func TestHelmChartArtifactsImport_ProvenanceSkipWarningSurfaces(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+
+	chartDir := filepath.Join(root, "api-chart")
+	if err := os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(`apiVersion: v2
+name: api-chart
+version: 0.1.0
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile Chart.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "templates", "_app.yaml"), []byte("# placeholder template\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile _app.yaml: %v", err)
+	}
+
+	// A structural Helm action never parses as YAML pre-render, so provenance
+	// injection is skipped and the guest raises the skip warning.
+	artifactsDir := filepath.Join(root, "artifacts")
+	if err := os.MkdirAll(artifactsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	cmPath := filepath.Join(artifactsDir, "conditional.yaml")
+	if err := os.WriteFile(cmPath, []byte(`{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: conditional-cm
+{{- end }}
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile conditional.yaml: %v", err)
+	}
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{
+		Component:    "core/compute/api-server",
+		BoundaryPath: "production",
+	})
+
+	input := renderer.RendererInput{
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "demo"},
+			Spec: types.IRSpec{
+				Nodes:      nodes,
+				Provenance: types.IRProvenance{CompilerVersion: "test"},
+			},
+		},
+		FeatureOrder:  ir.FeatureOrder{},
+		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}},
+	}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, _ string) (*types.Recipe, bool) {
+			artifacts := types.OrderedMap[types.ArtifactEntry]{}
+			artifacts.Set("conditional.yaml", types.ArtifactEntry{Import: cmPath})
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
+				Spec: types.RecipeSpec{
+					Provider:      "helm-chart",
+					Source:        chartDir,
+					ValuesMapping: types.ValuesMapping{Inline: `{}`},
+					Artifacts:     artifacts,
+				},
+			}, true
+		},
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, helmChartWasmFactory(t))
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+
+	var found bool
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "skipped provenance label injection") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("guest provenance-skip warning did not reach result.Warnings; warnings: %#v", result.Warnings)
+	}
+
+	// The artifact itself is still emitted verbatim (skipping provenance does not
+	// drop the file) — the warning advises, it does not halt or mutate output.
+	const target = "boundaries/production/helm-chart/charts/api/templates/conditional.yaml"
+	if _, ok := result.Files[target]; !ok {
+		t.Errorf("expected the artifact %q to be emitted despite the provenance skip", target)
+	}
+}

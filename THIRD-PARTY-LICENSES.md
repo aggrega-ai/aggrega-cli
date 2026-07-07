@@ -7,8 +7,8 @@ Shipped artifacts covered:
 
 - the Go host binary (`cmd/aggrega`)
 - the Go WebAssembly provider guests (`plugins/helm-provider`,
-  `plugins/compose-provider`, `plugins/helmchart-provider`), embedded into the
-  host binary
+  `plugins/compose-provider`, `plugins/helmchart-provider`,
+  `plugins/terraform-provider`), embedded into the host binary
 - the Rust WebAssembly guest (`plugins/publishing-linter`)
 
 **These files are generated. Do not edit them by hand.** Regenerate with:
@@ -45,7 +45,7 @@ best-effort. For Rust crates it is read verbatim from the crate's `Cargo.toml`
 
 | Ecosystem | Third-party dependencies |
 | --- | --- |
-| Go | 172 |
+| Go | 176 |
 | Rust | 44 |
 | TypeScript | 0 |
 
@@ -62,6 +62,8 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/Masterminds/semver/v3` | `v3.4.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/Masterminds/sprig/v3` | `v3.3.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/ProtonMail/go-crypto` | `v1.1.6` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/agext/levenshtein` | `v1.2.1` | go | wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/apparentlymart/go-textseg/v15` | `v15.0.0` | go | wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/asaskevich/govalidator` | `v0.0.0-20230301143203-a9d515a09cc2` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/blang/semver/v4` | `v4.0.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/blang/semver` | `v3.5.1+incompatible` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
@@ -131,6 +133,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/hashicorp/go-cleanhttp` | `v0.5.2` | go | cli-host | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/hashicorp/go-multierror` | `v1.1.1` | go | cli-host | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/hashicorp/go-retryablehttp` | `v0.7.8` | go | cli-host | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
+| `github.com/hashicorp/hcl/v2` | `v2.24.0` | go | wasm-provider-guests | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/huandu/xstrings` | `v1.5.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/ianlancetaylor/demangle` | `v0.0.0-20240805132620-81f5be970eca` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/in-toto/attestation` | `v1.2.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -143,7 +146,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/klauspost/cpuid/v2` | `v2.3.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/liggitt/tabwriter` | `v0.0.0-20181228230101-89fcab3d43de` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/mitchellh/copystructure` | `v1.2.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
-| `github.com/mitchellh/go-wordwrap` | `v1.0.1` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `github.com/mitchellh/go-wordwrap` | `v1.0.1` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/mitchellh/reflectwalk` | `v1.0.2` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/moby/term` | `v0.5.2` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/modern-go/concurrent` | `v0.0.0-20180306012644-bacd9c7ef1dd` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -186,6 +189,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/xanzy/ssh-agent` | `v0.3.3` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/xlab/treeprint` | `v1.2.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/youmark/pkcs8` | `v0.0.0-20240726163527-a2c0da244d78` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `github.com/zclconf/go-cty` | `v1.16.3` | go | wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `go.opentelemetry.io/auto/sdk` | `v1.2.1` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.opentelemetry.io/otel/metric` | `v1.44.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.opentelemetry.io/otel/trace` | `v1.44.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -130,6 +131,9 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	if err != nil {
 		return nil, false, err
 	}
+	if err := surfaceAssembleDiagnostics(info.BoundaryPath, out.Diagnostics, info.WarningSink); err != nil {
+		return nil, false, err
+	}
 
 	files := make(map[string][]byte, len(out.Files))
 	for _, f := range out.Files {
@@ -181,7 +185,32 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: decode assemble_boundary output: %w", err)
 	}
+	// Fold guest-emitted warnings into the assemble output's diagnostics as
+	// warning-severity entries, mirroring the render surface, so both guest
+	// advisory channels reach the caller through one list. Drained before the
+	// deferred Close.
+	for _, w := range plugin.DrainWarnings() {
+		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warning", Message: w})
+	}
 	return out, nil
+}
+
+// surfaceAssembleDiagnostics routes a boundary assembler's diagnostics: warning-
+// and info-severity entries go to the dispatch group's warning sink (nil-safe,
+// each prefixed with the boundary path), and error-severity entries are joined
+// into a returned error naming the boundary. Warnings never affect emitted bytes.
+func surfaceAssembleDiagnostics(boundaryPath string, diags []renderer.Diagnostic, sink func(string)) error {
+	errs, advisories := renderer.SplitDiagnostics(diags)
+	for _, a := range advisories {
+		if sink != nil {
+			sink(fmt.Sprintf("boundary %q: %s", boundaryPath, a))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("wasmengine: boundary %q: assembler reported errors: %s",
+			boundaryPath, strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // orderedAnnotations builds a deterministic ordered annotation map from a node's

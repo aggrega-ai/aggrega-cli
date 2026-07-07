@@ -289,6 +289,11 @@ func dispatchBoundaryScopeFR(
 	frNodeCtx.RecipeVersion = fr.Metadata.Version
 	frNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(frNodeCtx.NodeID)
 	frNodeCtx.OriginalSource = fr.Spec.Source
+	// Route this boundary-scope FR's guest advisories into the render state's
+	// warnings, which reach result.Warnings. The context was copied from a
+	// consumer node whose sink (if any) targets a different accumulator, so wire
+	// it explicitly here to the boundary-FR render state.
+	frNodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
 	// The boundary-scope FR's source resolves through the shared
 	// resolve+extract helper against the boundary's own infra — the SAME
 	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —

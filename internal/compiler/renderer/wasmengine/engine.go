@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -25,6 +26,15 @@ import (
 // Plugin entity to advertise the same export the adapter will drive — one name,
 // one source of truth, no drift between the routing precondition and the call.
 const RenderNodeExport = "render_node"
+
+// ValidateNodeInputExport is the optional guest export this adapter drives to
+// structurally validate a node's resolved input before render dispatch. It is
+// deliberately distinct from the whole-graph policy-validator socket's validate
+// export: this one is per-node, provider-scoped, and consumes the same
+// RenderNodeInput projection render_node receives. A provider whose guest does
+// not advertise it in describe() is never invoked here, so the input-validation
+// gate is a no-op for it.
+const ValidateNodeInputExport = "validate_node_input"
 
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves the
@@ -70,6 +80,7 @@ type Engine struct {
 
 var (
 	_ renderer.Engine                   = (*Engine)(nil)
+	_ renderer.NodeInputValidator       = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer      = (*Engine)(nil)
 	_ renderer.ArtifactsEmitter         = (*Engine)(nil)
 	_ renderer.HostCapable              = (*Engine)(nil)
@@ -185,6 +196,9 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	if err != nil {
 		return nil, err
 	}
+	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
+		return nil, err
+	}
 
 	files := make(map[string][]byte, len(out.Files))
 	for _, f := range out.Files {
@@ -231,6 +245,9 @@ func (e *Engine) SynthesizeWorkload(
 	if err != nil {
 		return nil, err
 	}
+	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
+		return nil, err
+	}
 
 	intermediate := renderer.RenderIsIntermediate(e)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
@@ -270,6 +287,9 @@ func (e *Engine) EmitArtifacts(
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input, "")
 	if err != nil {
+		return nil, err
+	}
+	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
 		return nil, err
 	}
 
@@ -388,7 +408,131 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: decode render_node output: %w", err)
 	}
+	// Fold any guest-emitted warnings (aggrega_emit_warning host function) into
+	// the output's diagnostics as warning-severity entries, so the two guest
+	// advisory channels — structured output diagnostics and the emit-warning host
+	// function — reach the caller through one list. Drained here, before the
+	// deferred Close, so nothing is lost when the instance is torn down.
+	for _, w := range plugin.DrainWarnings() {
+		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warning", Message: w})
+	}
 	return out, nil
+}
+
+// surfaceNodeDiagnostics routes a provider guest's render/synthesis diagnostics:
+// warning- and info-severity entries go to the node's warning sink (nil-safe,
+// each prefixed with the node and provider identity), and error-severity entries
+// are joined into a returned render error naming the node and provider. Warnings
+// never affect emitted bytes, so a node's rendered output is byte-identical
+// whether or not a sink is attached.
+func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diags []renderer.Diagnostic) error {
+	errs, advisories := renderer.SplitDiagnostics(diags)
+	for _, a := range advisories {
+		if nodeCtx.WarningSink != nil {
+			nodeCtx.WarningSink(fmt.Sprintf("node %q (provider %q): %s", nodeCtx.NodeID, nodeCtx.ProviderName, a))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("wasmengine: node %q: provider %q reported render errors: %s",
+			nodeCtx.NodeID, nodeCtx.ProviderName, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// advertisesExport reports whether the guest's describe() self-report declares an
+// export of the given name — the per-invocation gate for an optional export. The
+// adapter drives an optional export only when the guest advertises it, so a guest
+// that omits it is never invoked for that crossing.
+func advertisesExport(desc *wasm.PluginDescriptor, name string) bool {
+	for _, ex := range desc.Exports {
+		if ex.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateNodeInput drives the guest's optional validate_node_input export to
+// structurally check a node's resolved input before render dispatch, returning
+// the diagnostics the guest raised. It is advertised-only: a guest that does not
+// declare the export in describe() is never invoked, and this returns no
+// diagnostics and no error. The export consumes the same RenderNodeInput
+// projection render_node receives; because a sourced node's source arrives as a
+// name-only listing, the guest reconstructs the bytes it parses through the
+// pack-source host function, so the per-invocation source root is set before the
+// crossing exactly as it is for render. At the input-kind gate a sourced node has
+// its source resolved (the listing is available); a synthesised or artifacts-only
+// node carries no source at that point, so the validate input carries the node
+// projection and render context alone.
+func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.Diagnostic, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return nil, err
+	}
+	if !advertisesExport(desc, ValidateNodeInputExport) {
+		return nil, nil
+	}
+
+	input := renderer.RenderNodeInput{
+		Node:    e.nodeProjection(nodeCtx, valuesToOrdered(values)),
+		Context: e.renderContext(nodeCtx),
+	}
+	src, _ := nodeCtx.Source.(string)
+	if src != "" {
+		listing, err := enumerateSource(src)
+		if err != nil {
+			return nil, err
+		}
+		input.SourceListing = listing
+	}
+	return e.invokeValidate(ctx, ValidateNodeInputExport, input, src)
+}
+
+// invokeValidate loads a fresh guest instance, calls the input-validation export
+// against the Engine's cached descriptor, and decodes the ValidateNodeOutput. It
+// mirrors invoke's memoized-descriptor, fresh-instance-per-crossing lifecycle and
+// per-invocation source root (the validate export packs source bytes through the
+// same host function render does), but decodes the validate wire shape — a
+// diagnostics-only payload with no files. Guest-emitted warnings are folded into
+// the returned diagnostics as warning-severity entries. The plugin is closed
+// before invokeValidate returns.
+func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) ([]renderer.Diagnostic, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return nil, err
+	}
+
+	resolved, err := e.lookup(e.pluginURI)
+	if err != nil {
+		return nil, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
+	}
+
+	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	if err != nil {
+		return nil, err
+	}
+	defer plugin.Close(ctx)
+
+	plugin.SetSourceRoot(sourceRoot)
+
+	payload, err := input.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("wasmengine: marshal validate_node_input input: %w", err)
+	}
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var out renderer.ValidateNodeOutput
+	if err := out.UnmarshalJSON(raw); err != nil {
+		return nil, fmt.Errorf("wasmengine: decode validate_node_input output: %w", err)
+	}
+	diags := out.Diagnostics
+	for _, w := range plugin.DrainWarnings() {
+		diags = append(diags, renderer.Diagnostic{Severity: "warning", Message: w})
+	}
+	return diags, nil
 }
 
 // nodeProjection builds the wire node projection from the host node context —

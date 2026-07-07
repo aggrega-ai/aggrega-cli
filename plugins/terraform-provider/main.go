@@ -40,12 +40,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	hcljson "github.com/hashicorp/hcl/v2/json"
 )
 
 // tfvarsOverlayName is the output filename of the module-input overlay the guest
@@ -63,7 +68,7 @@ const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 // selection, so render_node declares the aggrega_pack_source host function it
 // imports; the host cross-checks this declaration against the functions the
 // guest actually imports. No assemble_boundary export is offered.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -133,6 +138,98 @@ func renderNode() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+//go:wasmexport validate_node_input
+func validateNodeInput() int32 {
+	var in renderer.RenderNodeInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	var out renderer.ValidateNodeOutput
+	// Only the sourced module is a structural input to validate. A workload or
+	// artifacts projection carries no Terraform module to parse here — artifacts
+	// are host-template-evaluated HCL whose parse is checked inline in render_node
+	// against the emitted bytes — so a payload with no source listing yields no
+	// diagnostics (a valid, empty check).
+	if in.SourceListing != nil {
+		proj, err := packTerraformSource(in.SourceListing)
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
+		out.Diagnostics = validateTerraformModule(proj)
+	}
+
+	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// validateTerraformModule structurally parses every Terraform configuration file
+// in the packed module — .tf as native HCL syntax, .tf.json as the JSON HCL
+// variant — and returns one diagnostic per parse finding, in the host's
+// deterministic file order. It interprets nothing beyond the file's syntactic
+// shape: it does not resolve variables, evaluate expressions, contact a provider,
+// or run any Terraform toolchain — it confirms the module's HCL parses. A file
+// that is neither .tf nor .tf.json is left untouched (e.g. a README, a vendored
+// binary). An empty result means every configuration file parsed cleanly.
+func validateTerraformModule(proj *aggrega.SourceProjection) []renderctx.Diagnostic {
+	var diags []renderctx.Diagnostic
+	for _, f := range proj.Files {
+		switch {
+		case strings.HasSuffix(f.Path, ".tf.json"):
+			_, hd := hcljson.Parse(f.Content, f.Path)
+			diags = append(diags, convertHCLDiagnostics(hd)...)
+		case strings.HasSuffix(f.Path, ".tf"):
+			_, hd := hclsyntax.ParseConfig(f.Content, f.Path, hcl.Pos{Line: 1, Column: 1})
+			diags = append(diags, convertHCLDiagnostics(hd)...)
+		}
+	}
+	return diags
+}
+
+// convertHCLDiagnostics maps HCL parse diagnostics to the shared Wasm-plugin
+// diagnostic shape, preserving order. An HCL error becomes an error-severity
+// diagnostic (which halts the build at the host's input-kind gate); any other
+// HCL diagnostic becomes a warning. The summary and detail are joined into the
+// human-readable message, and the file position — when HCL pins one — travels in
+// the diagnostic location so the halt names the offending file and line.
+func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
+	if len(hd) == 0 {
+		return nil
+	}
+	out := make([]renderctx.Diagnostic, 0, len(hd))
+	for _, d := range hd {
+		severity := "warning"
+		if d.Severity == hcl.DiagError {
+			severity = "error"
+		}
+		msg := d.Summary
+		if d.Detail != "" {
+			msg = d.Summary + ": " + d.Detail
+		}
+		diag := renderctx.Diagnostic{
+			Severity: severity,
+			Code:     "terraform_hcl_parse",
+			Message:  msg,
+		}
+		if d.Subject != nil {
+			diag.Location = &renderctx.DiagnosticLocation{
+				Kind: "terraform",
+				URI:  d.Subject.Filename,
+				Line: d.Subject.Start.Line,
+			}
+		}
+		out = append(out, diag)
+	}
+	return out
 }
 
 // tfvarsOverlay encodes the node's values as a Terraform *.auto.tfvars.json

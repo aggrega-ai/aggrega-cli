@@ -684,6 +684,22 @@ func renderFeatureRecipeFiles(
 		return nil, err
 	}
 
+	// Advertised-only per-node input validation for the FeatureRecipe render —
+	// the same gate the component render path applies, on the same seat (after the
+	// capability gate, before any Phase B pass). frNodeCtx carries the node's
+	// warning sink (inherited from the host component context, or wired by the
+	// boundary-scope caller), so an FR-render warning surfaces through the same
+	// channel a component-render warning does.
+	if validator, ok := frEngine.(NodeInputValidator); ok {
+		diags, verr := validator.ValidateNodeInput(ctx, frValues, frNodeCtx)
+		if verr != nil {
+			return nil, cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe input validation")
+		}
+		if err := routeNodeInputDiagnostics(frNodeCtx.NodeID, fr.Spec.Provider, diags, frNodeCtx.WarningSink); err != nil {
+			return nil, err
+		}
+	}
+
 	// The synthesised and artifacts paths name their resources after the
 	// feature instance, not the host component whose NodeID the FR node carries
 	// — otherwise an FR-synthesised Deployment would be named for the host and

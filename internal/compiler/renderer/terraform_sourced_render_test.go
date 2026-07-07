@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -254,6 +255,61 @@ rds_endpoint: "{{ .values.upstream_endpoint }}"
 		if !bytes.Equal(result2.Files[k], v) {
 			t.Errorf("non-deterministic output for %q across two runs", k)
 		}
+	}
+}
+
+// TestRenderAll_TerraformMalformedModuleHalts proves the provider input-validation
+// guardrail: a terraform node whose sourced module carries structurally invalid
+// HCL (or invalid .tf.json) halts the build loudly at the input-kind gate — before
+// any emission — with the ErrProviderNodeInputInvalid sentinel, and the halt names
+// the offending node and the provider. The check runs in-guest through the
+// embedded terraform provider's validate_node_input export (an in-guest HCL parse,
+// no Terraform toolchain), so this is the real end-to-end guardrail, not a stub.
+func TestRenderAll_TerraformMalformedModuleHalts(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			// A resource block with no closing brace — a native-HCL syntax error.
+			name: "malformed_hcl",
+			files: map[string]string{
+				"main.tf": `resource "aws_db_instance" "app" {
+  identifier = var.db_name
+`,
+			},
+		},
+		{
+			// A .tf.json body that is not well-formed JSON — the JSON-HCL variant
+			// parse fails structurally.
+			name: "malformed_tf_json",
+			files: map[string]string{
+				"main.tf.json": `{ "resource": { "aws_db_instance": `,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			moduleDir := writeTerraformModule(t, tc.files)
+			input := terraformLocalInput("db", "")
+			lookup := terraformLocalRecipeLookup(moduleDir, "")
+
+			_, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
+			if err == nil {
+				t.Fatal("expected RenderAll to halt on the malformed terraform module input; got nil")
+			}
+			if !errors.Is(err, renderer.ErrProviderNodeInputInvalid) {
+				t.Fatalf("halt is not the ErrProviderNodeInputInvalid guardrail: %v", err)
+			}
+			msg := err.Error()
+			for _, want := range []string{`"db"`, "terraform"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("halt message must name %q; got: %s", want, msg)
+				}
+			}
+			t.Logf("halt: %s", msg)
+		})
 	}
 }
 

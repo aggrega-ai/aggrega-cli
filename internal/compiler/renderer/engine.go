@@ -25,6 +25,25 @@ type Engine interface {
 	Capabilities() ProviderCapabilities
 }
 
+// NodeInputValidator is the optional capability a provider engine implements to
+// structurally validate a node's resolved render input before render dispatch.
+// The central input-kind gate calls it once per node, immediately after the
+// (mode, provider) capability check and before any Phase B render pass, so a
+// provider that can detect a malformed input surfaces the defect as a Loud
+// Guardrail before emission rather than producing broken output.
+//
+// The implementation returns the diagnostics the provider raised. An error
+// return is an infrastructure failure (the guest could not run); a nil error
+// with diagnostics is a completed check whose findings the caller routes by
+// severity — an error-severity diagnostic halts the build (ErrProviderNodeInputInvalid,
+// naming the node and provider), a warning or info diagnostic surfaces to the
+// build result without changing rendered output. An engine that does not
+// advertise the capability returns no diagnostics and no error, so the gate is a
+// no-op for it.
+type NodeInputValidator interface {
+	ValidateNodeInput(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) ([]Diagnostic, error)
+}
+
 // CodecProvider is the optional capability an Engine implements to supply its
 // own [frp.Codec] for the pipeline — how the provider's emitted output is
 // carved into addressable units and reassembled byte-faithfully after a step
@@ -196,6 +215,13 @@ type BoundaryInfo struct {
 	// YAMLIndent is the indentation width for the assembled artifact (clamped
 	// to [2,9], default 2). Forwarded from RendererInput.
 	YAMLIndent int
+	// WarningSink, when non-nil, receives the non-fatal advisories a boundary
+	// assembler raises while merging a dispatch group — the warning- and
+	// info-severity diagnostics the guest returns in its assemble output, plus
+	// any guest-emitted warnings. The orchestrator wires it to the build result's
+	// warnings stream; assemblers nil-check it before calling. Warnings never
+	// affect emitted bytes. Host-only: not part of any wire projection.
+	WarningSink func(string)
 }
 
 // IREdgeInfo is the per-edge view passed to a BoundaryAssembler. Decoupled
@@ -246,6 +272,25 @@ type SubChartProjector interface {
 	ProjectSubCharts(subCharts []SubChartInfo) ([]SubChartProjection, error)
 }
 
+// SplitDiagnostics partitions a provider guest's diagnostics by severity into
+// the human-readable messages of its error-severity entries and the messages of
+// its warning- and info-severity entries, each list in the guest's emission
+// order. It is the single classification the render, assemble, and input-validation
+// surfaces share, so a diagnostic's severity means the same thing on every
+// provider-socket crossing: "error" halts, anything else advises. An entry with
+// an unrecognized severity is treated as an advisory (non-halting) so a guest
+// cannot halt the build with a severity the host does not model.
+func SplitDiagnostics(diags []Diagnostic) (errs []string, advisories []string) {
+	for _, d := range diags {
+		if d.Severity == "error" {
+			errs = append(errs, d.Message)
+			continue
+		}
+		advisories = append(advisories, d.Message)
+	}
+	return errs, advisories
+}
+
 // NodeRenderContext provides identity metadata for manifest generation.
 type NodeRenderContext struct {
 	NodeID       string
@@ -292,6 +337,14 @@ type NodeRenderContext struct {
 	// YAMLIndent is the indentation width for artifacts rendered from this
 	// node (clamped to [2,9], default 2). Forwarded from RendererInput.
 	YAMLIndent int
+	// WarningSink, when non-nil, receives the non-fatal advisories a provider
+	// engine raises while rendering this node — the warning- and info-severity
+	// diagnostics the guest returns in its render output, plus any guest-emitted
+	// warnings. The orchestrator wires it to the build result's warnings stream;
+	// engines nil-check it before calling. Warnings never affect emitted bytes,
+	// so byte-identity of rendered files is independent of whether a sink is
+	// attached. Host-only: it is not part of any wire projection sent to a guest.
+	WarningSink func(string)
 }
 
 // ProvenanceContext carries build identity for resource labels.
