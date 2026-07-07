@@ -185,6 +185,15 @@ type Capabilities struct {
 	// node supplies a file set. Absent means the plugin consumes every file in
 	// the set.
 	SourceFilter []string `json:"source_filter,omitempty"`
+
+	// ReusableInstance reports whether one loaded plugin instance may serve
+	// every render, assemble, and validate crossing of the build rather than a
+	// fresh instance per crossing. A plugin declares it true only when it holds
+	// no state across crossings — a pure function of its per-crossing input — so
+	// a single instance produces byte-identical output whether reused or freshly
+	// loaded. Absent (false) is the safe default: the host loads a fresh instance
+	// per crossing, so a plugin that carries state is isolated by construction.
+	ReusableInstance bool `json:"reusable_instance,omitempty"`
 }
 
 // InputKinds reports which Recipe input kinds a plugin renders. Each field is

@@ -4,6 +4,8 @@
 package enginefactory
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -13,6 +15,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// engineCloser is the optional lifecycle interface a routed engine implements to
+// release a reused plugin instance at build end. The wasmengine adapters
+// implement it (Close); the closer NewHybrid returns walks the memoized engines
+// and invokes it on each.
+type engineCloser interface {
+	Close(ctx context.Context) error
+}
 
 // NewHybrid builds a catalog-driven Wasm routing EngineFactory: a provider whose
 // name resolves to a provider-rendering Plugin — the Plugin that lists the
@@ -45,11 +55,18 @@ import (
 // the version reported and the engine returned for a binding always agree. The
 // orchestrator stamps that version on the aggrega.ai/provider-version label and
 // uses it to pick a mixed-version dispatch group's boundary assembler.
+//
+// The third return is a build-end closer: it walks the memoized engines and
+// releases any reused plugin instance each holds (a guest that declares
+// reusable_instance is loaded once per build and its single instance lives on the
+// per-build engine). The caller defers it after the render completes. A guest that
+// makes no reuse claim holds no instance, so its close is a no-op. The closer is
+// idempotent and safe to call once per build.
 func NewHybrid(
 	catalogLookup resolver.CatalogLookup,
 	pluginLookup pluginpath.Lookup,
 	sharedLoader *wasm.Loader,
-) (renderer.EngineFactory, renderer.ProviderVersionResolver) {
+) (renderer.EngineFactory, renderer.ProviderVersionResolver, func(context.Context) error) {
 	// Memo keyed on the RESOLVED plugin identity so two version-distinct bindings
 	// of one provider (helm:1.0.0 and helm:1.0.1) coexist as two entries rather
 	// than collapsing under a shared bare name, while two bindings that resolve to
@@ -89,7 +106,23 @@ func NewHybrid(
 		}
 		return plugin.Metadata.Version
 	}
-	return factory, versionResolver
+	// The build-end closer releases each memoized engine's reused instance. It
+	// reads the same memo the factory populates; the render loop is a single
+	// sequential goroutine and the closer runs after it, so the map is touched by
+	// one goroutine over its life. Iteration order does not matter — closing
+	// produces no rendered output — so a plain map range is deterministic-safe here.
+	closeEngines := func(ctx context.Context) error {
+		var errs []error
+		for _, engine := range memo {
+			if c, ok := engine.(engineCloser); ok {
+				if err := c.Close(ctx); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+		return errors.Join(errs...)
+	}
+	return factory, versionResolver, closeEngines
 }
 
 // routeEngine resolves providerRef to its provider-rendering Wasm adapter,

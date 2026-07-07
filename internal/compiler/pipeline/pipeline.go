@@ -765,7 +765,13 @@ func RunPipeline(
 		// routing is uniform across every caller of RunPipeline, so build, serve,
 		// and the test harness all route through it with no per-caller change.
 		sharedLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		hybrid, providerVersion := enginefactory.NewHybrid(catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+		hybrid, providerVersion, closeEngines := enginefactory.NewHybrid(catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+		// Release each provider engine's reused plugin instance at build end. A
+		// guest that declares reusable_instance is loaded once per build and its
+		// single instance lives on the per-build engine; this closes it after the
+		// render (and eager compile) completes. A guest with no reuse claim holds
+		// no instance, so the close is a no-op.
+		defer func() { _ = closeEngines(ctx) }()
 		rendererInput.ProviderVersion = providerVersion
 
 		// Eager provider-guest compilation. When the caller opts in (a progress

@@ -61,9 +61,10 @@ type EntityExportClaim struct {
 //
 // When the entity authors a plugin-level capabilities claim, it is compared
 // field-by-field against the descriptor's self-reported capabilities: the input
-// kinds, the boundary-assembly mode, the artifact-template delimiter pair, and
-// the source filter must each agree. A nil claim skips the plugin-level
-// comparison — an entity is not required to author a plugin-level claim.
+// kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
+// source filter, and the reusable-instance claim must each agree. A nil claim
+// skips the plugin-level comparison — an entity is not required to author a
+// plugin-level claim.
 //
 // entityIdentity names the entity in the rejection message so the author sees
 // which entity's claim disagreed with which plugin.
@@ -194,6 +195,11 @@ func crossCheckPluginCapabilities(entityIdentity string, want, got Capabilities)
 		return fmt.Errorf(
 			"entity %q declares source_filter %v but the plugin's describe() reports %v: %w",
 			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmCapabilityMismatch)
+	}
+	if want.ReusableInstance != got.ReusableInstance {
+		return fmt.Errorf(
+			"entity %q declares reusable_instance %t but the plugin's describe() reports %t: %w",
+			entityIdentity, want.ReusableInstance, got.ReusableInstance, ErrWasmCapabilityMismatch)
 	}
 	return nil
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -148,32 +147,27 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	return files, out.NestPerNode, nil
 }
 
-// invokeAssemble loads a fresh guest instance through the shared loader, calls the
+// invokeAssemble acquires a guest instance through the shared loader, calls the
 // named assemble export against the embedded Engine's cached descriptor, and decodes
-// the AssembleBoundaryOutput. It mirrors Engine.invoke's memoized-descriptor,
-// fresh-instance-per-crossing lifecycle for the assemble surface — the two share the
-// loader, lookup, and descriptor memo but not the codec, since the assemble wire
-// shapes differ from the render surface. The descriptor read here is the embedded
-// Engine's memo (describe): describe() and its validation run once per provider, not
-// once per crossing. Each call loads and closes its own plugin instance, so dispatch
-// groups stay isolated by construction. The plugin is closed before invokeAssemble
-// returns.
+// the AssembleBoundaryOutput. It mirrors Engine.invoke's memoized-descriptor
+// instance lifecycle for the assemble surface — the two share the loader, lookup,
+// descriptor memo, and reused instance (when the guest declares reusable_instance)
+// but not the codec, since the assemble wire shapes differ from the render surface.
+// The descriptor read here is the embedded Engine's memo (describe): describe() and
+// its validation run once per provider, not once per crossing. When the guest makes
+// no reuse claim the acquired instance is fresh per crossing and the returned
+// release closes it, so dispatch groups stay isolated by construction.
 func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
 	desc, err := e.describe()
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
 	}
 
-	resolved, err := e.lookup(e.pluginURI)
-	if err != nil {
-		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
-	}
-
-	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, release, err := e.acquireInstance(ctx)
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
 	}
-	defer plugin.Close(ctx)
+	defer release()
 
 	payload, err := input.MarshalJSON()
 	if err != nil {

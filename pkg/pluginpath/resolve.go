@@ -141,6 +141,10 @@ type PluginCapabilitiesClaim struct {
 	// SourceFilter is the authored source-file restriction, or nil when the
 	// plugin consumes every file in a supplied set.
 	SourceFilter []string
+	// ReusableInstance is the authored reuse claim: whether one loaded plugin
+	// instance may serve every crossing of a build rather than a fresh instance
+	// per crossing. False when the plugin holds state across crossings.
+	ReusableInstance bool
 }
 
 // PluginInputKindsClaim is one entity's authored input-kind claim in the

@@ -138,6 +138,125 @@ spec:
 	}
 }
 
+// TestRunBuild_VerifyDeterminismSucceedsOverDeterministicGuest pins the CLI-level
+// wire-in of the verify-determinism build mode over a real, deterministic provider
+// guest. The build renders a workload-synthesis node through the embedded helm
+// guest with the verify-determinism dial on, so every node renders twice and the
+// emitted bytes are compared. The shipped helm guest is deterministic — identical
+// input yields byte-identical output — so the second render matches the first and
+// the build completes. A regression that made the guest (or the reused-instance
+// path) non-deterministic would surface here as ErrRenderNondeterministic.
+func TestRunBuild_VerifyDeterminismSucceedsOverDeterministicGuest(t *testing.T) {
+	root := t.TempDir()
+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: verify-smoke
+  version: "1.0.0"
+spec:
+  components:
+    only:
+      type: core/server
+      values:
+        port: 8080
+`)
+
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: verify-smoke-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        only:
+          infra:
+            replicas: 1
+`)
+
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: verify-smoke-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/server: server-recipe:1.0.0
+`)
+
+	catalogRoot := filepath.Join(root, "catalog")
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+`)
+
+	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: "builtin:helm"
+`)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
+
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: server-recipe
+  version: "1.0.0"
+spec:
+  provider: helm
+  implements: core/server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      server:
+        image: test-server:latest
+        ports:
+          web: {{ .values.port }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}
+`)
+
+	err := dispatchBuildWithDiag(
+		resolveTempWorkspace(t),
+		filepath.Join(root, "release.yaml"),
+		[]string{catalogRoot},
+		false,
+		buildDiagOptions{},
+		buildRunOptions{verifyDeterminism: true, outDir: filepath.Join(root, "out")},
+		os.Stderr, os.Stdout,
+	)
+	if err != nil {
+		t.Fatalf("verify-determinism build over the deterministic helm guest failed: %v", err)
+	}
+	if errors.Is(err, renderer.ErrRenderNondeterministic) {
+		t.Fatalf("deterministic guest incorrectly flagged non-deterministic: %v", err)
+	}
+}
+
 // writeHelmRendererPlugin writes the helm-renderer provider Plugin entity into
 // providersDir, binding the helm provider to the embedded helm rendering guest.
 // Its content-addressed spec.plugin resolves through the plugin-resolution
@@ -152,7 +271,7 @@ metadata:
   name: helm-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/helm-provider@sha256:0c5528aecec1a13fa95a0b273051d8d33e68730a316d1fac7ebc5b3da7567fe7
+  plugin: oci://hub.aggrega.ai/plugins/helm-provider@sha256:231c208685404851dfdd91db1717af7cb37521cc7605454abc496dbebac59995
   pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:

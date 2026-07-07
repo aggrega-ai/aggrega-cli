@@ -31,7 +31,7 @@ func terraformRouteCatalog() resolver.CatalogLookup {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					Plugin:              "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:903e3bd6fcfb0d43bbd11bc46a5636c85f8c680ecb1001c5fb844249ef7a4544",
+					Plugin:              "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:941ae740817918f1d2063e251e79abf2f1b303a13fe8add324dc4ef223abd008",
 					PluginType:          "provider",
 					AbiVersion:          "v1alpha1",
 					CompatibleProviders: []string{"terraform"},
@@ -62,7 +62,7 @@ func TestNewHybrid_RoutesTerraform(t *testing.T) {
 	})
 	loader := &wasm.Loader{}
 
-	factory, versionResolver := enginefactory.NewHybrid(lookup, cascade, loader)
+	factory, versionResolver, _ := enginefactory.NewHybrid(lookup, cascade, loader)
 
 	engine, err := factory("terraform")
 	if err != nil {

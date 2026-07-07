@@ -42,6 +42,7 @@ var (
 	buildDebug         bool
 	noAcquireInputs    bool
 	disablePluginCache bool
+	verifyDeterminism  bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -59,6 +60,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
 	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
+	c.Flags().BoolVar(&verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -84,7 +86,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -100,6 +102,10 @@ type buildRunOptions struct {
 	// discarded when the build ends. It changes only compilation cost, not
 	// rendered output.
 	disablePluginCache bool
+	// verifyDeterminism renders every node twice and compares the emitted
+	// bytes, halting the build on any divergence. It changes only whether the
+	// determinism check runs, not the rendered output of a deterministic build.
+	verifyDeterminism bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -328,6 +334,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// fetch seam.
 	buildCtx := wasm.ContextWithExternalInputs(context.Background(), extInputs)
 	buildCtx = wasm.ContextWithDisablePluginCache(buildCtx, run.disablePluginCache)
+	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.verifyDeterminism)
 	result, err := pipeline.RunPipeline(
 		buildCtx,
 		pipeline.Inputs{

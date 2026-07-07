@@ -67,6 +67,7 @@ func wasmCapabilities(c *pluginpath.PluginCapabilitiesClaim) *wasm.Capabilities 
 		},
 		BoundaryAssembly: c.BoundaryAssembly,
 		SourceFilter:     c.SourceFilter,
+		ReusableInstance: c.ReusableInstance,
 	}
 	if c.ArtifactDelimiters != nil {
 		caps.ArtifactDelimiters = &wasm.ArtifactDelimiters{

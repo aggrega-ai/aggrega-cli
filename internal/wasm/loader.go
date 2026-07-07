@@ -374,6 +374,29 @@ func DisablePluginCacheFromContext(ctx context.Context) bool {
 	return disable
 }
 
+// verifyDeterminismContextKey keys the render-twice-and-compare dial on a context
+// for the render crossing, which receives its per-build choices only through the
+// context it is invoked with.
+type verifyDeterminismContextKey struct{}
+
+// ContextWithVerifyDeterminism returns a context that, when verify is true,
+// signals the render crossing to render each node a second time and compare the
+// emitted bytes, halting the build on any divergence. Passing false leaves the
+// default single-render behaviour in place. It mirrors ContextWithDisablePluginCache
+// for call paths — the render pipeline's per-node dispatch — whose only shared
+// plumbing to the render crossing is the context.
+func ContextWithVerifyDeterminism(ctx context.Context, verify bool) context.Context {
+	return context.WithValue(ctx, verifyDeterminismContextKey{}, verify)
+}
+
+// VerifyDeterminismFromContext reports whether ctx signals that each render
+// crossing should render twice and compare the emitted bytes. The zero value —
+// no signal attached — is false, preserving the default single-render behaviour.
+func VerifyDeterminismFromContext(ctx context.Context) bool {
+	verify, _ := ctx.Value(verifyDeterminismContextKey{}).(bool)
+	return verify
+}
+
 // Plugin wraps an Extism plugin handle with Aggrega-specific lifecycle
 // and call-boundary behaviour. Constructed only by Loader.Load.
 //

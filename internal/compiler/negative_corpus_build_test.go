@@ -117,7 +117,7 @@ metadata:
   name: compose-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/compose-provider@sha256:79f80c762604bba96dbc2edc25fcb49ff497357c58c060f8ca5205dddeba75ce
+  plugin: oci://hub.aggrega.ai/plugins/compose-provider@sha256:c45b12954cc018303c6bfd722efcaf5deb8e669950b1a0e289bdc71ad6d26c51
   pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:

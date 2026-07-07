@@ -4,6 +4,7 @@
 package wasmengine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -73,6 +74,21 @@ type Engine struct {
 	// broken guest is reported consistently rather than re-probed per call.
 	descriptor    *wasm.PluginDescriptor
 	descriptorErr error
+	// instance caches a reused plugin instance when the guest's describe()
+	// self-report declares reusable_instance: one instance then serves every
+	// render, assemble, and validate crossing of the build rather than a fresh
+	// instance per crossing. The instance is loaded lazily on the first crossing
+	// that acquires it and closed once at build end via Close. A guest that does
+	// not declare the claim leaves this nil and loads a fresh instance per
+	// crossing, so a stateful guest stays isolated by construction. A reused
+	// instance is safe because the render loop is a single sequential goroutine
+	// and a reusable guest holds no state across crossings; the per-crossing
+	// source root is still set before each crossing (see acquireInstance). The
+	// descriptor is a pure function of the guest bytes, so reuse cannot alter
+	// rendered output. instanceErr caches a load failure so a broken guest is
+	// reported consistently rather than re-probed per crossing.
+	instance    *wasm.Plugin
+	instanceErr error
 }
 
 var (
@@ -151,6 +167,71 @@ func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
 	_ = plugin.Close(context.Background())
 	e.descriptor = &desc
 	return e.descriptor, nil
+}
+
+// acquireInstance returns a plugin instance for one crossing plus a release
+// function the caller defers. When the guest's describe() self-report declares
+// reusable_instance, the instance is loaded once and cached on the Engine for
+// the build's remaining crossings and release is a no-op — the shared instance
+// is closed once at build end via Close. Otherwise a fresh instance is loaded
+// per crossing and release closes it, preserving the isolation default for a
+// guest that makes no reuse claim. The reuse decision reads the guest's own
+// self-report, so a guest opts into reuse rather than the host assuming it. The
+// caller sets the per-crossing source root on the returned instance before
+// invoking, so a reused instance never carries a prior node's source root into
+// the next crossing.
+func (e *Engine) acquireInstance(ctx context.Context) (*wasm.Plugin, func(), error) {
+	desc, err := e.describe()
+	if err != nil {
+		return nil, nil, err
+	}
+	if !desc.Capabilities.ReusableInstance {
+		p, err := e.loadInstance(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		return p, func() { _ = p.Close(ctx) }, nil
+	}
+	if e.instance != nil {
+		return e.instance, func() {}, nil
+	}
+	if e.instanceErr != nil {
+		return nil, nil, e.instanceErr
+	}
+	p, err := e.loadInstance(ctx)
+	if err != nil {
+		e.instanceErr = err
+		return nil, nil, err
+	}
+	e.instance = p
+	return e.instance, func() {}, nil
+}
+
+// loadInstance resolves the guest's bytes through the lookup and loads a fresh
+// instance through the shared loader. It is the single load site both the
+// fresh-per-crossing and reused-instance paths share.
+func (e *Engine) loadInstance(ctx context.Context) (*wasm.Plugin, error) {
+	resolved, err := e.lookup(e.pluginURI)
+	if err != nil {
+		return nil, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
+	}
+	return e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+}
+
+// Close releases the Engine's reused plugin instance, if it holds one. A guest
+// that declares reusable_instance is loaded once per build and its single
+// instance is closed here at build end; a guest with no reuse claim loads and
+// closes a fresh instance per crossing and holds nothing, so Close is a no-op
+// for it. Idempotent. AssemblerEngine embeds *Engine and inherits this method,
+// so closing the assembler adapter closes the same reused instance its render
+// crossings share.
+func (e *Engine) Close(ctx context.Context) error {
+	if e.instance == nil {
+		return nil
+	}
+	err := e.instance.Close(ctx)
+	e.instance = nil
+	return err
 }
 
 // Render projects the sourced node into a render_node payload and returns the
@@ -339,7 +420,7 @@ func (e *Engine) Warm(ctx context.Context) error {
 	return plugin.Close(ctx)
 }
 
-// invoke loads a fresh guest instance through the shared loader, calls the named
+// invoke acquires a guest instance through the shared loader, calls the named
 // export against the Engine's cached descriptor, and decodes the RenderNodeOutput.
 // The shared loader carries the build's external-input service and its compilation
 // cache, so a guest fetch resolves through the pinned channel (nil when none is
@@ -349,32 +430,33 @@ func (e *Engine) Warm(ctx context.Context) error {
 // The descriptor read here is the Engine's memo (describe): the describe() call,
 // its validation, and the load-gate cross-checks are a pure function of the guest
 // bytes, so they run once per provider rather than once per node — validating them
-// per node would be redundant work with byte-identical results. The per-node load
-// is therefore a plain Load (fresh instance) rather than a LoadAndDescribe.
+// per node would be redundant work with byte-identical results.
 //
-// Isolation guarantee: each call loads and closes its own plugin instance, so no
-// guest state carries across nodes by construction — the memo caches only the
-// descriptor (pure data), never a live instance. The plugin is closed before
-// invoke returns.
+// Instance lifecycle: acquireInstance returns either the Engine's reused instance
+// (when the guest declares reusable_instance) or a fresh instance closed via the
+// returned release. A guest that makes no reuse claim keeps the fresh-per-crossing
+// isolation default, so no guest state carries across nodes by construction. The
+// source root is set per crossing on the acquired instance, so a reused instance
+// never carries a prior node's source root into the next crossing.
+//
+// When the build runs under verify-determinism, invoke renders the node a second
+// time through the same instance and compares the emitted bytes; a guest whose two
+// renders of identical input diverge halts the build (ErrRenderNondeterministic),
+// naming the node and provider.
 func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) (renderer.RenderNodeOutput, error) {
 	desc, err := e.describe()
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}
 
-	resolved, err := e.lookup(e.pluginURI)
-	if err != nil {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
-	}
-
-	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, release, err := e.acquireInstance(ctx)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}
-	defer plugin.Close(ctx)
+	defer release()
 
 	// The pack-source and read-source-file host functions resolve the guest's
-	// selections under this node's acquired source. The root is set per invocation
+	// selections under this node's acquired source. The root is set per crossing
 	// rather than captured at load because a plugin instance may render many nodes,
 	// each with its own source; an empty root disables source packing (the synthesis
 	// path passes none).
@@ -387,6 +469,11 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
+	}
+	if wasm.VerifyDeterminismFromContext(ctx) {
+		if err := e.verifyRenderDeterminism(ctx, plugin, *desc, export, payload, raw, input.Node); err != nil {
+			return renderer.RenderNodeOutput{}, err
+		}
 	}
 
 	var out renderer.RenderNodeOutput
@@ -402,6 +489,31 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warning", Message: w})
 	}
 	return out, nil
+}
+
+// verifyRenderDeterminism renders the node a second time through the same
+// instance and payload and compares the emitted bytes against the first render.
+// It is the determinism backstop the verify-determinism build mode runs on every
+// render crossing: a guest whose two renders of identical input diverge — a
+// stateful guest whose output depends on prior crossings, or a guest that is
+// otherwise non-deterministic — halts the build with ErrRenderNondeterministic,
+// naming the node and provider. A deterministic guest produces identical bytes
+// and the check passes. The comparison is over the guest's raw emitted output —
+// the same surface the rendered artifacts are carved from. The second render's
+// guest-emitted warnings fold into the caller's normal drain; under this opt-in
+// mode a warning a guest emits during render may surface twice, which does not
+// affect emitted bytes.
+func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugin, desc wasm.PluginDescriptor, export string, payload, first []byte, node renderer.IRNodeProjection) error {
+	second, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(first, second) {
+		return fmt.Errorf(
+			"wasmengine: node %q (provider %q): two renders of identical input produced different output: %w",
+			node.ID, node.Provenance.ProviderName, renderer.ErrRenderNondeterministic)
+	}
+	return nil
 }
 
 // surfaceNodeDiagnostics routes a provider guest's render/synthesis diagnostics:
@@ -473,30 +585,26 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 	return e.invokeValidate(ctx, ValidateNodeInputExport, input, src)
 }
 
-// invokeValidate loads a fresh guest instance, calls the input-validation export
+// invokeValidate acquires a guest instance, calls the input-validation export
 // against the Engine's cached descriptor, and decodes the ValidateNodeOutput. It
-// mirrors invoke's memoized-descriptor, fresh-instance-per-crossing lifecycle and
-// per-invocation source root (the validate export packs source bytes through the
-// same host function render does), but decodes the validate wire shape — a
-// diagnostics-only payload with no files. Guest-emitted warnings are folded into
-// the returned diagnostics as warning-severity entries. The plugin is closed
-// before invokeValidate returns.
+// mirrors invoke's memoized-descriptor lifecycle and per-crossing source root (the
+// validate export packs source bytes through the same host function render does):
+// the acquired instance is the Engine's reused one when the guest declares
+// reusable_instance, or a fresh instance the returned release closes otherwise. It
+// decodes the validate wire shape — a diagnostics-only payload with no files.
+// Guest-emitted warnings are folded into the returned diagnostics as
+// warning-severity entries.
 func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) ([]renderer.Diagnostic, error) {
 	desc, err := e.describe()
 	if err != nil {
 		return nil, err
 	}
 
-	resolved, err := e.lookup(e.pluginURI)
-	if err != nil {
-		return nil, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
-	}
-
-	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, release, err := e.acquireInstance(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer plugin.Close(ctx)
+	defer release()
 
 	plugin.SetSourceRoot(sourceRoot)
 
@@ -538,16 +646,11 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 		return nil, nil
 	}
 
-	resolved, err := e.lookup(e.pluginURI)
-	if err != nil {
-		return nil, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
-	}
-
-	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, release, err := e.acquireInstance(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer plugin.Close(ctx)
+	defer release()
 
 	input := renderer.BoundaryEnvOverridesInput{InternalUsesEdges: internalUsesEdges, Infra: infra}
 	payload, err := input.MarshalJSON()

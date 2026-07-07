@@ -212,4 +212,18 @@ var (
 	// and assemble_boundary, or to render the provider through its in-tree
 	// engine. Category: TRANSLATION_ERROR.
 	ErrBoundaryAssemblerMissing = errors.New("provider expected to assemble its dispatch group provides no boundary assembler")
+
+	// ErrRenderNondeterministic is the Loud Guardrail halt the verify-determinism
+	// build mode raises when a provider guest renders a node twice from identical
+	// input and produces different output — a guest that carries state across
+	// crossings, or is otherwise non-deterministic. The default build renders each
+	// node once; the opt-in verify-determinism mode renders twice and compares the
+	// emitted bytes, so a divergence that would break the byte-identical-output
+	// contract is caught at build time rather than surfacing as a GitOps diff. The
+	// wrapping chain at the emission site names the offending node and provider.
+	// The comparison is over the guest's raw emitted output, the same surface the
+	// rendered artifacts are carved from. Category: TRANSLATION_ERROR (a
+	// provider-side non-determinism in synthesised output). Match with
+	// errors.Is(err, ErrRenderNondeterministic).
+	ErrRenderNondeterministic = errors.New("provider render is not deterministic")
 )

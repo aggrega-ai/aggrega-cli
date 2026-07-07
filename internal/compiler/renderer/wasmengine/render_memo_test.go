@@ -5,6 +5,7 @@ package wasmengine_test
 
 import (
 	"context"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,9 +14,57 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// nonReusableGuestLookup builds a testdata render fixture whose describe() omits
+// the capabilities block — so it declares no reuse claim — and returns a lookup
+// resolving its bytes plus the URI to address it by. It asserts, through a
+// throwaway describe, that the fixture is genuinely non-reusable, so the
+// fresh-per-node guard rests on a verified premise rather than an assumption. The
+// fixture builds on demand; a missing toolchain skips the test cleanly.
+func nonReusableGuestLookup(t *testing.T) (pluginpath.Lookup, string) {
+	t.Helper()
+	path := wasmtest.EnsureFixtureBuilt(t, "render-node-rust.wasm")
+	guestBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read render fixture %q: %v", path, err)
+	}
+	const uri = "oci://testdata/render-node-rust"
+	lookup := pluginpath.Lookup(func(string) (pluginpath.ResolvedPlugin, error) {
+		return pluginpath.ResolvedPlugin{
+			Bytes:  guestBytes,
+			URI:    uri,
+			Tier:   pluginpath.TierEmbed,
+			Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096},
+		}, nil
+	})
+
+	probe := wasm.NewCachingLoader(nil)
+	p, desc, err := probe.LoadAndDescribe(context.Background(), resolver.PluginSpec(uri, mustResolve(t, lookup, uri)))
+	if err != nil {
+		t.Fatalf("describe render fixture: %v", err)
+	}
+	_ = p.Close(context.Background())
+	if desc.Capabilities.ReusableInstance {
+		t.Fatalf("render-node-rust fixture unexpectedly declares reusable_instance; the fresh-per-node guard needs a guest that does not")
+	}
+	return lookup, uri
+}
+
+// mustResolve resolves uri through lookup, failing the test on error. It keeps the
+// nonReusableGuestLookup probe a one-liner.
+func mustResolve(t *testing.T, lookup pluginpath.Lookup, uri string) pluginpath.ResolvedPlugin {
+	t.Helper()
+	resolved, err := lookup(uri)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", uri, err)
+	}
+	return resolved
+}
 
 // minimalSynthWorkload builds a single-container Workload exposing one ClusterIP
 // service — the smallest end-to-end synthesis case, enough to drive the
@@ -73,21 +122,23 @@ func TestRenderPathDescribesOncePerProvider(t *testing.T) {
 	if got := atomic.LoadInt64(&describes); got != 1 {
 		t.Errorf("describe gate ran %d times across %d nodes; want exactly 1 (describe once per provider)", got, nodes)
 	}
-	// Each crossing loads its own fresh instance (nodes loads), plus one load
-	// backing the one-time describe gate: nodes+1 total.
-	if got := atomic.LoadInt64(&loads); got != nodes+1 {
-		t.Errorf("plugin loaded %d times across %d nodes; want %d (one fresh instance per node plus the one describe-gate load)", got, nodes, nodes+1)
+	// The helm-provider guest declares reusable_instance, so the render path loads
+	// twice regardless of node count: one load backing the one-time describe gate,
+	// and one reused instance every crossing shares.
+	if got := atomic.LoadInt64(&loads); got != 2 {
+		t.Errorf("plugin loaded %d times across %d nodes; want 2 (the one describe-gate load plus the single reused instance)", got, nodes)
 	}
 }
 
-// TestRenderPathLoadsFreshInstancePerNode is the isolation guard: each render-path
-// crossing loads and closes its own plugin instance, so no guest state carries
-// across nodes by construction. It pre-warms the descriptor memo (so the one-time
-// describe gate is separated out), then asserts that N further crossings produce
-// exactly N fresh loads and zero further describe-gate runs. A future refactor that
-// silently shared one instance across nodes — trading isolation for reuse — would
-// drop the load count below N and trip this test.
-func TestRenderPathLoadsFreshInstancePerNode(t *testing.T) {
+// TestRenderPathReusesInstanceForReusableGuest proves the render path reuses one
+// plugin instance across a build's crossings for a guest that declares
+// reusable_instance. It pre-warms the descriptor memo (so the one-time describe
+// gate is separated out), then asserts that the FIRST further crossing loads the
+// one reused instance and every crossing after it loads nothing — the load count
+// tracks the number of providers, not the number of nodes. The isolation default
+// (fresh instance per node) is proven separately for a guest that makes no reuse
+// claim by TestRenderPathLoadsFreshInstancePerNodeForNonReusableGuest.
+func TestRenderPathReusesInstanceForReusableGuest(t *testing.T) {
 	var loads, describes int64
 	loader := wasm.NewCachingLoader(nil)
 	loader.OnLoad = func(string) { atomic.AddInt64(&loads, 1) }
@@ -101,6 +152,54 @@ func TestRenderPathLoadsFreshInstancePerNode(t *testing.T) {
 	if caps := e.Capabilities(); !caps.Synthesized {
 		t.Fatalf("helm-provider guest does not report the synthesized input kind: %+v", caps)
 	}
+	if got := atomic.LoadInt64(&describes); got != 1 {
+		t.Fatalf("descriptor warm ran the describe gate %d times; want 1", got)
+	}
+	atomic.StoreInt64(&loads, 0)
+	atomic.StoreInt64(&describes, 0)
+
+	const nodes = 4
+	for i := 0; i < nodes; i++ {
+		if _, err := e.SynthesizeWorkload(context.Background(), nil, minimalSynthWorkload(), synthNodeCtx("node")); err != nil {
+			t.Fatalf("SynthesizeWorkload node %d: %v", i, err)
+		}
+	}
+
+	if got := atomic.LoadInt64(&loads); got != 1 {
+		t.Errorf("render path loaded %d instances for %d nodes; want 1 (one reused instance for the whole build)", got, nodes)
+	}
+	if got := atomic.LoadInt64(&describes); got != 0 {
+		t.Errorf("render path ran the describe gate %d times after warm; want 0 (descriptor is memoized)", got)
+	}
+	// The reused instance is released at build end.
+	if err := e.Close(context.Background()); err != nil {
+		t.Fatalf("Close reused instance: %v", err)
+	}
+}
+
+// TestRenderPathLoadsFreshInstancePerNodeForNonReusableGuest is the isolation
+// guard for a guest that does NOT declare reusable_instance: each render-path
+// crossing loads and closes its own plugin instance, so no guest state carries
+// across nodes by construction. It drives a testdata render fixture whose
+// describe() omits the reuse claim, pre-warms the descriptor memo, then asserts
+// that N further crossings produce exactly N fresh loads. A regression that reused
+// an instance for a guest that made no reuse claim — trading the isolation default
+// for reuse — would drop the load count below N and trip this test.
+func TestRenderPathLoadsFreshInstancePerNodeForNonReusableGuest(t *testing.T) {
+	lookup, uri := nonReusableGuestLookup(t)
+
+	var loads, describes int64
+	loader := wasm.NewCachingLoader(nil)
+	loader.OnLoad = func(string) { atomic.AddInt64(&loads, 1) }
+	loader.OnDescribe = func(string) { atomic.AddInt64(&describes, 1) }
+
+	e := wasmengine.New(lookup, uri, loader)
+
+	// Warm the descriptor memo so the one-time describe gate is not counted against
+	// the per-node loads. The fixture declares no capabilities block (the helper
+	// asserts it declares no reuse claim), so the render path takes the
+	// fresh-instance-per-crossing default.
+	_ = e.Capabilities()
 	if got := atomic.LoadInt64(&describes); got != 1 {
 		t.Fatalf("descriptor warm ran the describe gate %d times; want 1", got)
 	}

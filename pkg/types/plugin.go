@@ -112,6 +112,13 @@ type PluginCapabilities struct {
 	// supplies a file set. Absent means the plugin consumes every file in the
 	// set. Entries preserve author order.
 	SourceFilter []string `json:"sourceFilter,omitempty" yaml:"sourceFilter,omitempty"`
+	// ReusableInstance is whether one loaded plugin instance may serve every
+	// render, assemble, and validate crossing of a build rather than a fresh
+	// instance per crossing. Authored true only when the plugin holds no state
+	// across crossings — a pure function of its per-crossing input — so a single
+	// instance produces byte-identical output whether reused or freshly loaded.
+	// Absent (false) loads a fresh instance per crossing.
+	ReusableInstance bool `json:"reusableInstance,omitempty" yaml:"reusableInstance,omitempty"`
 }
 
 // PluginInputKinds is a plugin's authored input-kind claim: which of the three
