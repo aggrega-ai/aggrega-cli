@@ -141,10 +141,22 @@ type PluginCapabilitiesClaim struct {
 	// SourceFilter is the authored source-file restriction, or nil when the
 	// plugin consumes every file in a supplied set.
 	SourceFilter []string
+	// AssemblyNameAnnotation is the authored assembly-name annotation, or nil
+	// when the plugin names its assembly from the dispatch path alone.
+	AssemblyNameAnnotation *PluginAssemblyNameAnnotationClaim
 	// ReusableInstance is the authored reuse claim: whether one loaded plugin
 	// instance may serve every crossing of a build rather than a fresh instance
 	// per crossing. False when the plugin holds state across crossings.
 	ReusableInstance bool
+}
+
+// PluginAssemblyNameAnnotationClaim is an entity's authored assembly-name
+// annotation in the neutral shape: the boundary annotation whose resolved value
+// names the artifact the plugin assembles from a dispatch group, and whether
+// every contributing boundary must agree on that value.
+type PluginAssemblyNameAnnotationClaim struct {
+	Annotation    string
+	RequireUnique bool
 }
 
 // PluginInputKindsClaim is one entity's authored input-kind claim in the

@@ -186,6 +186,16 @@ type Capabilities struct {
 	// the set.
 	SourceFilter []string `json:"source_filter,omitempty"`
 
+	// AssemblyNameAnnotation reports a boundary annotation whose resolved value
+	// names the artifact the plugin assembles from a dispatch group. A plugin
+	// that folds a group's contributing boundaries into one named assembly
+	// declares the annotation key it reads and whether every contributing
+	// boundary must agree on that annotation's resolved value; absent means the
+	// plugin names its assembly from the dispatch path alone. The host reads it
+	// from describe() and the load gate cross-checks it against the entity's
+	// authored claim.
+	AssemblyNameAnnotation *AssemblyNameAnnotation `json:"assembly_name_annotation,omitempty"`
+
 	// ReusableInstance reports whether one loaded plugin instance may serve
 	// every render, assemble, and validate crossing of the build rather than a
 	// fresh instance per crossing. A plugin declares it true only when it holds
@@ -218,6 +228,20 @@ type ArtifactDelimiters struct {
 	Left string `json:"left"`
 	// Right is the closing delimiter.
 	Right string `json:"right"`
+}
+
+// AssemblyNameAnnotation is the boundary annotation whose resolved value names a
+// plugin's assembled artifact, reported when the plugin folds a dispatch group's
+// contributing boundaries into one named assembly.
+type AssemblyNameAnnotation struct {
+	// Annotation is the boundary annotation key the plugin reads the assembled
+	// artifact's name from.
+	Annotation string `json:"annotation"`
+	// RequireUnique reports whether every boundary contributing to one dispatch
+	// group must agree on the annotation's resolved value. When true, a group
+	// whose contributing boundaries resolve the annotation to different values
+	// halts the build; when false, the plugin accepts the first resolved value.
+	RequireUnique bool `json:"require_unique,omitempty"`
 }
 
 // PluginType is the kind of a Wasm plugin. It selects the
@@ -373,7 +397,8 @@ const (
 //     when it dispatches a step; here the values are checked for shape
 //     and otherwise piped through.
 //   - the plugin-level capabilities block is well-shaped: boundary_assembly
-//     is none, merge, nest, or empty. This is shape validation only — the
+//     is none, merge, nest, or empty, and a declared assembly_name_annotation
+//     names a non-empty annotation key. This is shape validation only — the
 //     host does not require the block, cross-check it against the plugin
 //     type, or act on its values here; the load gate cross-checks it against
 //     the entity's authored claim, and other input fields are piped through.
@@ -412,7 +437,8 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 }
 
 // validateCapabilities shape-checks the plugin-level capabilities block:
-// boundary_assembly must be none, merge, nest, or empty. This is shape
+// boundary_assembly must be none, merge, nest, or empty, and a declared
+// assembly_name_annotation must name a non-empty annotation key. This is shape
 // validation only — it does not require the block, cross-check it against the
 // plugin type or its compatibleProviders, or act on its values. The load gate
 // cross-checks the block against the entity's authored claim; the other input
@@ -425,6 +451,10 @@ func (d PluginDescriptor) validateCapabilities(pluginIdentity string) error {
 		return fmt.Errorf("plugin %q declares unknown boundary_assembly %q (want %q, %q, %q, or empty): %w",
 			pluginIdentity, d.Capabilities.BoundaryAssembly,
 			BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest, ErrWasmManifestRejected)
+	}
+	if a := d.Capabilities.AssemblyNameAnnotation; a != nil && a.Annotation == "" {
+		return fmt.Errorf("plugin %q declares an assembly_name_annotation with an empty annotation key: %w",
+			pluginIdentity, ErrWasmManifestRejected)
 	}
 	return nil
 }

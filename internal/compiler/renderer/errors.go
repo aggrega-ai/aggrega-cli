@@ -91,12 +91,13 @@ var (
 	ErrInstanceIDCollision = errors.New("multiple contributors share an instance ID at the same dispatch path")
 
 	// ErrChartNameMismatch fires when two or more boundaries' contributing
-	// components evaluate to the same dispatch path under the helm-chart
-	// provider but their effective aggrega.ai/chart-name annotations
+	// components evaluate to the same dispatch path under a provider whose
+	// assembler names its output from a boundary annotation and requires that
+	// name to be unique, but their effective values for that annotation
 	// (computed via the boundary annotation cascade) resolve to different
-	// values. The merged umbrella chart has exactly one name; cascade or
-	// declare matching values explicitly. Category: TRANSLATION_ERROR.
-	ErrChartNameMismatch = errors.New("merged-path helm-chart umbrella has conflicting aggrega.ai/chart-name values")
+	// values. The merged assembly has exactly one name; cascade or declare
+	// matching values explicitly. Category: TRANSLATION_ERROR.
+	ErrChartNameMismatch = errors.New("merged-path assembly has conflicting assembly-name annotation values")
 
 	// ErrPathTemplateInvalidField fires at parse time when a path-template
 	// (Release.spec.boundaries[].directory or subDirectory) references a

@@ -92,13 +92,14 @@ type Engine struct {
 }
 
 var (
-	_ renderer.Engine                   = (*Engine)(nil)
-	_ renderer.NodeInputValidator       = (*Engine)(nil)
-	_ renderer.WorkloadSynthesizer      = (*Engine)(nil)
-	_ renderer.ArtifactsEmitter         = (*Engine)(nil)
-	_ renderer.BoundaryEnvOverrider     = (*Engine)(nil)
-	_ renderer.BoundaryAssemblyReporter = (*Engine)(nil)
-	_ renderer.CodecProvider            = (*Engine)(nil)
+	_ renderer.Engine                         = (*Engine)(nil)
+	_ renderer.NodeInputValidator             = (*Engine)(nil)
+	_ renderer.WorkloadSynthesizer            = (*Engine)(nil)
+	_ renderer.ArtifactsEmitter               = (*Engine)(nil)
+	_ renderer.BoundaryEnvOverrider           = (*Engine)(nil)
+	_ renderer.BoundaryAssemblyReporter       = (*Engine)(nil)
+	_ renderer.AssemblyNameAnnotationReporter = (*Engine)(nil)
+	_ renderer.CodecProvider                  = (*Engine)(nil)
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
@@ -143,6 +144,23 @@ func (e *Engine) BoundaryAssembly() string {
 		return ""
 	}
 	return desc.Capabilities.BoundaryAssembly
+}
+
+// AssemblyNameAnnotation reports the boundary annotation whose resolved value
+// names the provider guest's assembled artifact, read from its live describe()
+// self-report (capabilities.assembly_name_annotation): the annotation key and
+// whether every contributing boundary must agree on its resolved value. The
+// descriptor is loaded and cached on first use; an empty annotation (and false)
+// is returned when the guest declares none or cannot be loaded or described. It
+// satisfies renderer.AssemblyNameAnnotationReporter, so the guard and cascade
+// read the guest's own claim.
+func (e *Engine) AssemblyNameAnnotation() (annotation string, requireUnique bool) {
+	desc, err := e.describe()
+	if err != nil || desc.Capabilities.AssemblyNameAnnotation == nil {
+		return "", false
+	}
+	a := desc.Capabilities.AssemblyNameAnnotation
+	return a.Annotation, a.RequireUnique
 }
 
 // describe loads the provider guest, reads and validates its describe()

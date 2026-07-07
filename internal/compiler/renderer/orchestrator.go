@@ -901,17 +901,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 	}
 
-	// CHART_NAME_MISMATCH check: when a helm-chart dispatch group has more
-	// than one contributing boundary, every contributing boundary's
-	// effective aggrega.ai/chart-name annotation (computed via the
-	// resolver's per-boundary annotation cascade) must resolve to the
-	// same value. Mismatches indicate the operator has merged paths
-	// that conceptually belong to different umbrella charts.
+	// Assembly-name uniqueness check: a provider whose assembler declares an
+	// assembly-name annotation with require-unique folds a dispatch group's
+	// contributing boundaries into one named assembly, so every contributing
+	// boundary's effective value for that annotation (computed via the resolver's
+	// per-boundary annotation cascade) must resolve to the same value. Mismatches
+	// indicate the operator has merged paths that conceptually belong to
+	// different assemblies. A provider that declares no such annotation gets no
+	// check.
 	for _, key := range orderedDispatch {
-		if key.Provider != "helm-chart" {
+		pd := dispatch[key]
+		annotationKey, requireUnique := assemblyNameAnnotationOf(groupAssemblerEngine(pd))
+		if annotationKey == "" || !requireUnique {
 			continue
 		}
-		pd := dispatch[key]
 		if len(pd.contributingBoundaries) <= 1 {
 			continue
 		}
@@ -923,7 +926,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			name := ""
 			if input.ResolveResult != nil {
 				if ann, ok := input.ResolveResult.BoundaryAnnotations[bp]; ok {
-					name, _ = ann.Get("aggrega.ai/chart-name")
+					name, _ = ann.Get(annotationKey)
 				}
 			}
 			mismatchValues[bp] = name
@@ -935,8 +938,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 		if mismatch {
-			inner := fmt.Errorf("%w: boundaries %v merge to assembly path %q under helm-chart provider but their effective aggrega.ai/chart-name annotations resolve to different values: %v; the merged umbrella chart has exactly one name; cascade or declare matching values explicitly",
-				ErrChartNameMismatch, pd.contributingBoundaries, key.Path, mismatchValues)
+			inner := fmt.Errorf("%w: boundaries %v merge to assembly path %q under provider %q but their effective %s annotations resolve to different values: %v; the merged assembly has exactly one name; cascade or declare matching values explicitly",
+				ErrChartNameMismatch, pd.contributingBoundaries, key.Path, key.Provider, annotationKey, mismatchValues)
 			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
 		}
 	}
@@ -970,14 +973,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for _, e := range graph.Spec.Edges {
 				edges = append(edges, IREdgeInfo{Source: e.Source, Target: e.Target})
 			}
-			// Cascaded chart-name lookup for the helm-chart provider's
-			// merged-path scenario; empty when no cascade value resolves
-			// (engine falls back to path-derived naming).
+			// Cascaded assembly-name lookup: a provider whose assembler declares
+			// an assembly-name annotation cascades the first resolved value from
+			// its contributing boundaries into the assembler as
+			// BoundaryInfo.ChartName. Empty when no cascade value resolves or the
+			// provider declares no such annotation (assembler falls back to
+			// path-derived naming).
 			chartName := ""
-			if key.Provider == "helm-chart" && input.ResolveResult != nil {
+			if annotationKey, _ := assemblyNameAnnotationOf(groupAssemblerEngine(pd)); annotationKey != "" && input.ResolveResult != nil {
 				for _, bp := range pd.contributingBoundaries {
 					if ann, ok := input.ResolveResult.BoundaryAnnotations[bp]; ok {
-						if v, ok := ann.Get("aggrega.ai/chart-name"); ok && v != "" {
+						if v, ok := ann.Get(annotationKey); ok && v != "" {
 							chartName = v
 							break
 						}
@@ -1256,16 +1262,10 @@ func buildNodeRenderContext(
 // scope FeatureRecipe contributions) leaves the assembler unset — the group
 // finalizes flat.
 func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
-	best := -1
-	for i := range pd.assemblerCandidates {
-		if best == -1 || providerVersionGreater(pd.assemblerCandidates[i].version, pd.assemblerCandidates[best].version) {
-			best = i
-		}
-	}
-	if best == -1 {
+	selected := groupAssemblerEngine(pd)
+	if selected == nil {
 		return nil
 	}
-	selected := pd.assemblerCandidates[best].engine
 	if a, ok := selected.(BoundaryAssembler); ok {
 		pd.assembler = a
 		return nil
@@ -1276,6 +1276,28 @@ func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
 		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())
 	}
 	return nil
+}
+
+// groupAssemblerEngine returns the engine that assembles a dispatch group — the
+// highest resolved-provider-version candidate, ties broken by node-processing
+// order (candidates append in that order and the scan replaces the leader only on
+// a strict version win). It is the single election both selectBoundaryAssembler
+// (which sets pd.assembler) and the capability reads (the assembly-name guard and
+// cascade) consult, so a group reads its provider-level claim from the same engine
+// that assembles it. Returns nil when the group has no candidates — e.g. only
+// boundary-scope FeatureRecipe contributions — in which case the group finalizes
+// flat.
+func groupAssemblerEngine(pd *pendingDispatch) Engine {
+	best := -1
+	for i := range pd.assemblerCandidates {
+		if best == -1 || providerVersionGreater(pd.assemblerCandidates[i].version, pd.assemblerCandidates[best].version) {
+			best = i
+		}
+	}
+	if best == -1 {
+		return nil
+	}
+	return pd.assemblerCandidates[best].engine
 }
 
 func tmplCtxValues(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {

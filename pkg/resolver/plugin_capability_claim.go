@@ -64,6 +64,12 @@ func pluginCapabilitiesClaim(c *types.PluginCapabilities) *pluginpath.PluginCapa
 			Right: c.ArtifactDelimiters.Right,
 		}
 	}
+	if c.AssemblyNameAnnotation != nil {
+		claim.AssemblyNameAnnotation = &pluginpath.PluginAssemblyNameAnnotationClaim{
+			Annotation:    c.AssemblyNameAnnotation.Annotation,
+			RequireUnique: c.AssemblyNameAnnotation.RequireUnique,
+		}
+	}
 	return claim
 }
 

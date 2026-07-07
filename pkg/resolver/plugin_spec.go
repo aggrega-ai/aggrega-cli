@@ -75,5 +75,11 @@ func wasmCapabilities(c *pluginpath.PluginCapabilitiesClaim) *wasm.Capabilities 
 			Right: c.ArtifactDelimiters.Right,
 		}
 	}
+	if c.AssemblyNameAnnotation != nil {
+		caps.AssemblyNameAnnotation = &wasm.AssemblyNameAnnotation{
+			Annotation:    c.AssemblyNameAnnotation.Annotation,
+			RequireUnique: c.AssemblyNameAnnotation.RequireUnique,
+		}
+	}
 	return caps
 }

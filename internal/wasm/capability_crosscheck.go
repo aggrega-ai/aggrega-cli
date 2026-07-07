@@ -62,9 +62,9 @@ type EntityExportClaim struct {
 // When the entity authors a plugin-level capabilities claim, it is compared
 // field-by-field against the descriptor's self-reported capabilities: the input
 // kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
-// source filter, and the reusable-instance claim must each agree. A nil claim
-// skips the plugin-level comparison — an entity is not required to author a
-// plugin-level claim.
+// assembly-name annotation, the source filter, and the reusable-instance claim
+// must each agree. A nil claim skips the plugin-level comparison — an entity is
+// not required to author a plugin-level claim.
 //
 // entityIdentity names the entity in the rejection message so the author sees
 // which entity's claim disagreed with which plugin.
@@ -191,6 +191,9 @@ func crossCheckPluginCapabilities(entityIdentity string, want, got Capabilities)
 	if err := crossCheckDelimiters(entityIdentity, want.ArtifactDelimiters, got.ArtifactDelimiters); err != nil {
 		return err
 	}
+	if err := crossCheckAssemblyNameAnnotation(entityIdentity, want.AssemblyNameAnnotation, got.AssemblyNameAnnotation); err != nil {
+		return err
+	}
 	if !equalStringSlices(want.SourceFilter, got.SourceFilter) {
 		return fmt.Errorf(
 			"entity %q declares source_filter %v but the plugin's describe() reports %v: %w",
@@ -217,6 +220,24 @@ func crossCheckDelimiters(entityIdentity string, want, got *ArtifactDelimiters) 
 		return fmt.Errorf(
 			"entity %q declares artifact_delimiters %q/%q but the plugin's describe() reports %q/%q: %w",
 			entityIdentity, want.Left, want.Right, got.Left, got.Right, ErrWasmCapabilityMismatch)
+	}
+	return nil
+}
+
+// crossCheckAssemblyNameAnnotation compares the authored and self-reported
+// assembly-name annotation. An entity that declares it while the plugin omits it
+// (or the reverse) disagrees, as does a pair whose annotation key or
+// require-unique flag differs.
+func crossCheckAssemblyNameAnnotation(entityIdentity string, want, got *AssemblyNameAnnotation) error {
+	if (want == nil) != (got == nil) {
+		return fmt.Errorf(
+			"entity %q and the plugin's describe() disagree on whether assembly_name_annotation is declared (entity declares=%t, plugin declares=%t): %w",
+			entityIdentity, want != nil, got != nil, ErrWasmCapabilityMismatch)
+	}
+	if want != nil && *want != *got {
+		return fmt.Errorf(
+			"entity %q declares assembly_name_annotation %q (require_unique=%t) but the plugin's describe() reports %q (require_unique=%t): %w",
+			entityIdentity, want.Annotation, want.RequireUnique, got.Annotation, got.RequireUnique, ErrWasmCapabilityMismatch)
 	}
 	return nil
 }

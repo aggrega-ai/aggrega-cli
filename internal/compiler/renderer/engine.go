@@ -141,6 +141,33 @@ func boundaryAssemblyOf(engine Engine) string {
 	return ""
 }
 
+// AssemblyNameAnnotationReporter is the optional interface an engine implements
+// to report a boundary annotation whose resolved value names the assembled
+// artifact of a dispatch group. A provider that folds a dispatch group's
+// contributing boundaries into one named assembly reports the annotation key it
+// reads and whether every contributing boundary must agree on that annotation's
+// resolved value. The orchestrator reads the resolved value from each
+// contributing boundary's annotations: when require-unique it halts a group whose
+// boundaries disagree, and it cascades the resolved value into the assembler. An
+// engine that reports an empty annotation gets neither the agreement check nor
+// the cascade. A provider routed to a Wasm guest reports the value from the
+// guest's live describe() self-report.
+type AssemblyNameAnnotationReporter interface {
+	AssemblyNameAnnotation() (annotation string, requireUnique bool)
+}
+
+// assemblyNameAnnotationOf returns engine's reported assembly-name annotation and
+// require-unique flag, or ("", false) when engine reports none. It is the single
+// seam the guard and cascade read, so a group's assembly-name rule resolves from
+// the engine's own claim independently of its concrete type. A nil engine reports
+// none.
+func assemblyNameAnnotationOf(engine Engine) (annotation string, requireUnique bool) {
+	if r, ok := engine.(AssemblyNameAnnotationReporter); ok {
+		return r.AssemblyNameAnnotation()
+	}
+	return "", false
+}
+
 // RenderIsIntermediate reports whether an engine's per-node render/synthesis
 // output is intermediate input to a per-(path, provider) boundary assembly pass
 // rather than a file written directly at the dispatch path. It is true only for a

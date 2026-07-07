@@ -112,6 +112,13 @@ type PluginCapabilities struct {
 	// supplies a file set. Absent means the plugin consumes every file in the
 	// set. Entries preserve author order.
 	SourceFilter []string `json:"sourceFilter,omitempty" yaml:"sourceFilter,omitempty"`
+	// AssemblyNameAnnotation is the boundary annotation whose resolved value
+	// names the artifact the plugin assembles from a dispatch group. A plugin
+	// that folds a group's contributing boundaries into one named assembly
+	// declares the annotation key it reads and whether every contributing
+	// boundary must agree on that annotation's resolved value. Absent means the
+	// plugin names its assembly from the dispatch path alone.
+	AssemblyNameAnnotation *PluginAssemblyNameAnnotation `json:"assemblyNameAnnotation,omitempty" yaml:"assemblyNameAnnotation,omitempty"`
 	// ReusableInstance is whether one loaded plugin instance may serve every
 	// render, assemble, and validate crossing of a build rather than a fresh
 	// instance per crossing. Authored true only when the plugin holds no state
@@ -144,6 +151,23 @@ type PluginArtifactDelimiters struct {
 	Left string `json:"left" yaml:"left"`
 	// Right is the closing delimiter.
 	Right string `json:"right" yaml:"right"`
+}
+
+// PluginAssemblyNameAnnotation is a plugin's authored assembly-name annotation:
+// the boundary annotation whose resolved value names the artifact the plugin
+// assembles from a dispatch group, declared when the plugin folds a group's
+// contributing boundaries into one named assembly. The block is hand-written
+// because the generator names it via x-aggrega-go-type on the schema's object
+// node and does not descend into it.
+type PluginAssemblyNameAnnotation struct {
+	// Annotation is the boundary annotation key the plugin reads the assembled
+	// artifact's name from.
+	Annotation string `json:"annotation" yaml:"annotation"`
+	// RequireUnique is whether every boundary contributing to one dispatch group
+	// must agree on the annotation's resolved value. When true, a group whose
+	// contributing boundaries resolve the annotation to different values halts the
+	// build; when false, the plugin accepts the first resolved value.
+	RequireUnique bool `json:"requireUnique,omitempty" yaml:"requireUnique,omitempty"`
 }
 
 // PluginSignature is the optional, documentation-only pointer to a
