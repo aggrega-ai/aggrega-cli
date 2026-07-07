@@ -32,7 +32,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -49,8 +49,8 @@ import (
 // core therefore takes only the Workload and the node context.
 func SynthesizeWorkloadCore(
 	w *types.Workload,
-	nodeCtx renderer.NodeRenderContext,
-) ([]renderer.EmittedFile, error) {
+	nodeCtx rendercore.NodeRenderContext,
+) ([]rendercore.EmittedFile, error) {
 	frag := ComposeFile{
 		Services: map[string]Service{},
 		Volumes:  map[string]Volume{},
@@ -67,7 +67,7 @@ func SynthesizeWorkloadCore(
 	// FeatureRecipe-synthesised workload — so an FR's service/volumes are named
 	// after the feature instance, not the host component whose NodeID the FR node
 	// carries.
-	componentID := renderer.ProvenanceComponentID(nodeCtx)
+	componentID := rendercore.ProvenanceComponentID(nodeCtx)
 	mainServiceName := componentID
 	mainContainerName, hasMain := pickMainContainerName(w)
 
@@ -120,7 +120,7 @@ func SynthesizeWorkloadCore(
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
 	}
 
-	return []renderer.EmittedFile{
+	return []rendercore.EmittedFile{
 		{
 			Name:         componentID + ".compose-fragment.yaml",
 			Body:         body,
@@ -156,7 +156,7 @@ func pickMainContainerName(w *types.Workload) (string, bool) {
 func translateContainer(
 	c types.ContainerSpec,
 	w *types.Workload,
-	nodeCtx renderer.NodeRenderContext,
+	nodeCtx rendercore.NodeRenderContext,
 	isMain bool,
 	mainServiceName string,
 ) (Service, error) {
@@ -540,5 +540,5 @@ func sanitizeServiceName(name string) string {
 // derivation-key ordering. byte-identical input produces byte-identical output
 // across compilations. indent is the configured YAML indentation width.
 func marshalDeterministic(v any, indent int) ([]byte, error) {
-	return renderer.MarshalYAMLIndent(v, indent)
+	return rendercore.MarshalYAMLIndent(v, indent)
 }

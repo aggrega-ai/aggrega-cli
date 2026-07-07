@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package rendercore
 
 // EmitOrigin tags the input kind that produced an EmittedFile. The tag is
 // load-bearing for Phase B.5 filename-collision detection — collisions

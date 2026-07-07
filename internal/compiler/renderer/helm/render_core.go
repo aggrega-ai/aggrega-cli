@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -50,7 +50,7 @@ func RenderLoadedChart(
 	_ context.Context,
 	ch *chart.Chart,
 	values map[string]any,
-	nodeCtx renderer.NodeRenderContext,
+	nodeCtx rendercore.NodeRenderContext,
 	validate ValuesValidator,
 ) (map[string][]byte, error) {
 	// Coalesce the Phase B dict with the chart's default values
@@ -62,7 +62,7 @@ func RenderLoadedChart(
 	// Build release options. We are not installing — just rendering templates.
 	// Namespace comes from the `aggrega.ai/namespace` annotation when present
 	// (merged from boundary + boundary_component); otherwise "default".
-	ns := renderer.NamespaceFromAnnotations(nodeCtx.Annotations)
+	ns := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
 	if ns == "" {
 		ns = "default"
 	}
@@ -142,7 +142,7 @@ func RenderLoadedChart(
 		// filenames on some platforms. ProvenanceComponentID is the raw NodeID
 		// for ordinary components (byte-identical key) and the sanitised
 		// LabelComponentID for FR-emitted nodes.
-		outKey := renderer.ProvenanceComponentID(nodeCtx) + "-" + base
+		outKey := rendercore.ProvenanceComponentID(nodeCtx) + "-" + base
 		out[outKey] = annotated
 	}
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // ResolveSourceSelection locates the base compose document within a source
@@ -22,7 +22,7 @@ import (
 // compose-fragment cache slot extracts to. Zero or more than one such entry is a
 // Loud Guardrail halt naming the source, so an author of a multi-file fragment
 // sees a clear signal rather than a silent first-wins.
-func ResolveSourceSelection(listing *renderer.SourceListing) (string, error) {
+func ResolveSourceSelection(listing *rendercore.SourceListing) (string, error) {
 	if !listing.RootIsDir {
 		return "", nil
 	}

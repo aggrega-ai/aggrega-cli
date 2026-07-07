@@ -38,7 +38,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -66,13 +66,13 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func renderNode() int32 {
-	var in renderer.RenderNodeInput
+	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
 
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	var err error
 	switch {
 	case in.WorkloadProjection != nil:
@@ -101,7 +101,7 @@ func renderNode() int32 {
 
 //go:wasmexport assemble_boundary
 func assembleBoundary() int32 {
-	var in renderer.AssembleBoundaryInput
+	var in rendercore.AssembleBoundaryInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
@@ -124,7 +124,7 @@ func assembleBoundary() int32 {
 
 //go:wasmexport boundary_env_overrides
 func boundaryEnvOverrides() int32 {
-	var in renderer.BoundaryEnvOverridesInput
+	var in rendercore.BoundaryEnvOverridesInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
@@ -136,7 +136,7 @@ func boundaryEnvOverrides() int32 {
 		return 1
 	}
 
-	encoded, err := renderer.BoundaryEnvOverridesOutput{Overrides: overrides}.MarshalJSON()
+	encoded, err := rendercore.BoundaryEnvOverridesOutput{Overrides: overrides}.MarshalJSON()
 	if err != nil {
 		pdk.SetError(err)
 		return 1
@@ -154,32 +154,32 @@ func boundaryEnvOverrides() int32 {
 // path is the network-name fallback for a node with no namespace annotation; the
 // render context carries the indentation width. Compose emits a flat assembled
 // file, so NestPerNode is false.
-func assembleBoundaryFromInput(in renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
-	intermediatesByNode := make(map[string][]renderer.EmittedFile, len(in.RenderedNodes))
+func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
+	intermediatesByNode := make(map[string][]rendercore.EmittedFile, len(in.RenderedNodes))
 	nodeAnnotations := make(map[string]map[string]string, len(in.RenderedNodes))
 	for i := range in.RenderedNodes {
 		rn := in.RenderedNodes[i]
-		files := make([]renderer.EmittedFile, 0, len(rn.Rendered.Files))
+		files := make([]rendercore.EmittedFile, 0, len(rn.Rendered.Files))
 		for _, f := range rn.Rendered.Files {
-			files = append(files, renderer.EmittedFile{Name: f.Path, Body: f.Content})
+			files = append(files, rendercore.EmittedFile{Name: f.Path, Body: f.Content})
 		}
 		intermediatesByNode[rn.ID] = files
 		nodeAnnotations[rn.ID] = orderedStringMapToPlain(&rn.Annotations)
 	}
 
-	edges := make([]renderer.IREdgeInfo, 0, len(in.Edges))
+	edges := make([]rendercore.IREdgeInfo, 0, len(in.Edges))
 	for _, e := range in.Edges {
-		edges = append(edges, renderer.IREdgeInfo{Source: e.Source, Target: e.Target})
+		edges = append(edges, rendercore.IREdgeInfo{Source: e.Source, Target: e.Target})
 	}
 
 	files, err := compose.AssembleBoundaryCore(intermediatesByNode, nodeAnnotations, edges, in.BoundaryPath, in.Context.YAMLIndent)
 	if err != nil {
-		return renderer.AssembleBoundaryOutput{}, err
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
-	out := renderer.AssembleBoundaryOutput{Files: make([]renderer.RenderedFile, 0, len(files))}
+	out := rendercore.AssembleBoundaryOutput{Files: make([]rendercore.RenderedFile, 0, len(files))}
 	for _, path := range sortedKeys(files) {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: files[path]})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path]})
 	}
 	out.NestPerNode = false
 	return out, nil
@@ -209,30 +209,30 @@ func errorChainMessage(err error) string {
 // an orchestrator bug rather than authoring drift and halts loudly. The node's
 // values, identity, provenance, and merged annotations arrive in the node
 // projection and render context.
-func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.SourceListing == nil {
-		return renderer.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no source listing")
+		return rendercore.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no source listing")
 	}
 	proj, err := packComposeSource(in.SourceListing)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 	if len(proj.Files) != 1 {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("compose-provider: packed source carries %d files; the compose base is a single document", len(proj.Files))
+		return rendercore.RenderNodeOutput{}, fmt.Errorf("compose-provider: packed source carries %d files; the compose base is a single document", len(proj.Files))
 	}
 	base := proj.Files[0]
 
-	values := renderer.OrderedMapToPlain(&in.Node.Values)
+	values := rendercore.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
 	rendered, err := compose.RenderSourcedCore(base.Content, base.Path, values, nodeCtx)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 
-	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
+	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered[path]})
 	}
 	return out, nil
 }
@@ -241,7 +241,7 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 // listing and asks the host to pack it. Document resolution is single-sourced in
 // the compose package (shared by the guest here), so the guest only wires the
 // resolved selection into a pack request.
-func packComposeSource(listing *renderer.SourceListing) (*aggrega.SourceProjection, error) {
+func packComposeSource(listing *rendercore.SourceListing) (*aggrega.SourceProjection, error) {
 	rel, err := compose.ResolveSourceSelection(listing)
 	if err != nil {
 		return nil, err
@@ -256,21 +256,21 @@ func packComposeSource(listing *renderer.SourceListing) (*aggrega.SourceProjecti
 // the splice). Entries are placed in author order. The Intermediate marking that
 // routes these fragments to the boundary merge is applied host-side from compose's
 // boundary-assembly self-report, not here.
-func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.ArtifactsProjection == nil {
-		return renderer.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no artifacts projection")
+		return rendercore.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no artifacts projection")
 	}
 	indent := in.Context.YAMLIndent
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
-		body, warning, err := renderer.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
+		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
 		if err != nil {
-			return renderer.RenderNodeOutput{}, err
+			return rendercore.RenderNodeOutput{}, err
 		}
 		if warning != "" {
 			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
 		}
-		out.Files = append(out.Files, renderer.RenderedFile{Path: ent.Name, Content: body})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: body})
 	}
 	return out, nil
 }
@@ -285,21 +285,21 @@ func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOu
 // deterministic and load-bearing (a single Intermediate=true fragment named
 // `<nodeID>.compose-fragment.yaml`), so the files are collected in order and
 // never re-sorted.
-func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.WorkloadProjection == nil {
-		return renderer.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no workload projection")
+		return rendercore.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no workload projection")
 	}
 
 	nodeCtx := nodeCtxFromInput(in)
 
 	emitted, err := compose.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, nodeCtx)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 
-	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(emitted))}
+	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(emitted))}
 	for _, f := range emitted {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Name, Content: f.Body})
 	}
 	return out, nil
 }
@@ -308,7 +308,7 @@ func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutpu
 // mergeAnnotations, sortedKeys) is byte-identical-critical: it reconstructs the
 // render context the render cores stamp from off the wire. The value-flattening
 // that renormalizes wire numerics is single-sourced in the renderer package
-// (renderer.OrderedMapToPlain / renderer.PlainValue), which compiles for both
+// (rendercore.OrderedMapToPlain / rendercore.PlainValue), which compiles for both
 // the host and the wasip1 guest.
 
 // nodeCtxFromInput builds the full render context for a node from the wire
@@ -321,8 +321,8 @@ func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutpu
 // Carrying the full provenance here is what makes the guest's fragments carry
 // the same aggrega.ai labels the in-tree engine emits, so the two produce
 // byte-identical output for identical input.
-func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
-	return renderer.NodeRenderContext{
+func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
+	return rendercore.NodeRenderContext{
 		NodeID:           in.Node.ID,
 		Annotations:      mergeAnnotations(in.Context.Annotations),
 		BoundaryPath:     in.Node.BoundaryPath,
@@ -332,7 +332,7 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 		LabelComponentID: in.Node.LabelComponentID,
 		ProviderName:     in.Node.Provenance.ProviderName,
 		ProviderVersion:  in.Node.Provenance.ProviderVersion,
-		Provenance: renderer.ProvenanceContext{
+		Provenance: rendercore.ProvenanceContext{
 			CompilerVersion: in.Node.Provenance.CompilerVersion,
 			AggregateName:   in.Node.Provenance.AggregateName,
 			Environment:     in.Node.Provenance.Environment,

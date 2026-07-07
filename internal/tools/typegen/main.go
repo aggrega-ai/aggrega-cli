@@ -463,9 +463,9 @@ var codecTargets = map[string]codecTarget{
 	"providerrender_host_gen.go": {
 		schema:     schemas.WasmProviderV1alpha1,
 		schemaFile: "wasm-provider-v1alpha1.schema.json",
-		pkg:        "renderer",
+		pkg:        "rendercore",
 		vocabulary: providerHostVocabulary,
-		helpers:    true, // the host provider render codec is alone in package renderer
+		helpers:    true, // the host provider render codec is alone in package rendercore
 	},
 }
 

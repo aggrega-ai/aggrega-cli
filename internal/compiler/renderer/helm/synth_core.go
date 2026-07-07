@@ -49,7 +49,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -72,8 +72,8 @@ const (
 func SynthesizeWorkloadCore(
 	w *types.Workload,
 	secretProvides map[string]types.OrderedMap[string],
-	nodeCtx renderer.NodeRenderContext,
-) ([]renderer.EmittedFile, error) {
+	nodeCtx rendercore.NodeRenderContext,
+) ([]rendercore.EmittedFile, error) {
 	// Decide top-level resource: StatefulSet if any volume is
 	// persistentTemplate; else Deployment.
 	useStatefulSet := workloadHasPersistentTemplate(w)
@@ -91,13 +91,13 @@ func SynthesizeWorkloadCore(
 	// NodeID the FR node otherwise carries) — this is what keeps an FR's
 	// synthesized Deployment from colliding with the host's own workload, and
 	// keeps a boundary-scope FR's marker-syntax NodeID out of K8s names.
-	componentID := renderer.ProvenanceComponentID(nodeCtx)
+	componentID := rendercore.ProvenanceComponentID(nodeCtx)
 	selectorLabels := map[string]string{"app": componentID}
 	resourceLabels := mergeLabels(selectorLabels, labels)
 	resourceAnnotations := nilIfEmpty(annotations)
-	namespace := renderer.NamespaceFromAnnotations(nodeCtx.Annotations)
+	namespace := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
 
-	var out []renderer.EmittedFile
+	var out []rendercore.EmittedFile
 
 	// Containers: translate each in author-order.
 	containers, err := translateContainers(w, componentID, secretProvides)
@@ -161,7 +161,7 @@ func SynthesizeWorkloadCore(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
-		out = append(out, renderer.EmittedFile{
+		out = append(out, rendercore.EmittedFile{
 			Name: componentID + "-statefulset.yaml",
 			Body: body,
 		})
@@ -180,7 +180,7 @@ func SynthesizeWorkloadCore(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
-		out = append(out, renderer.EmittedFile{
+		out = append(out, rendercore.EmittedFile{
 			Name: componentID + "-deployment.yaml",
 			Body: body,
 		})
@@ -194,7 +194,7 @@ func SynthesizeWorkloadCore(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q pvc marshal", nodeCtx.NodeID))
 		}
-		out = append(out, renderer.EmittedFile{
+		out = append(out, rendercore.EmittedFile{
 			Name: pvc.Metadata.Name + "-pvc.yaml",
 			Body: body,
 		})
@@ -206,7 +206,7 @@ func SynthesizeWorkloadCore(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}
-		out = append(out, renderer.EmittedFile{
+		out = append(out, rendercore.EmittedFile{
 			Name: svc.Metadata.Name + "-service.yaml",
 			Body: body,
 		})
@@ -828,5 +828,5 @@ func intsToInt64s(s []int) []int64 {
 // OrderedMap.MarshalYAML. byte-identical input produces byte-identical output
 // across compilations. indent is the configured YAML indentation width.
 func marshalDeterministic(v any, indent int) ([]byte, error) {
-	return renderer.MarshalYAMLIndent(v, indent)
+	return rendercore.MarshalYAMLIndent(v, indent)
 }

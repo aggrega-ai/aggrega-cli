@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package rendercore
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 // reassembleOne runs Segment + Reassemble for one patched unit, returning the
 // rebuilt file bytes. It mirrors the renderer's fold-back: segment, apply ops
 // to the addressed unit's tree via the stock applier, then reassemble.
-func reassembleOne(t *testing.T, codec stockYAMLCodec, name string, body []byte, ops []frp.JSONPatchOp) []byte {
+func reassembleOne(t *testing.T, codec StockYAMLCodec, name string, body []byte, ops []frp.JSONPatchOp) []byte {
 	t.Helper()
 	units, err := codec.Segment(name, body)
 	if err != nil {

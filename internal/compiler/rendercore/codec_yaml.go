@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package rendercore
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ import (
 // stockYAMLMediaType tags a unit the stock codec carved from YAML output.
 const stockYAMLMediaType = "application/yaml"
 
-// stockYAMLCodec is the core's default codec: the borrow every YAML-shaped
+// StockYAMLCodec is the core's default codec: the borrow every YAML-shaped
 // provider uses unless it overrides with one that knows its own format. It
 // carves a provider's emitted output into discrete YAML documents (the
 // parser-driven multi-document split) and reassembles them surgically at
@@ -30,13 +30,13 @@ const stockYAMLMediaType = "application/yaml"
 // It implements [frp.Codec]. The indent width is carried for the rare op
 // that must synthesise new YAML text (an add of a structured value), so the
 // inserted text matches the renderer's configured indentation.
-type stockYAMLCodec struct {
+type StockYAMLCodec struct {
 	indent int
 }
 
 // newStockYAMLCodec returns the stock codec at the configured indent width.
-func newStockYAMLCodec(indent int) stockYAMLCodec {
-	return stockYAMLCodec{indent: ClampYAMLIndent(indent)}
+func newStockYAMLCodec(indent int) StockYAMLCodec {
+	return StockYAMLCodec{indent: ClampYAMLIndent(indent)}
 }
 
 // NewStockYAMLCodec returns the core's stock YAML codec as a reusable
@@ -62,7 +62,7 @@ func NewStockYAMLCodec(indent int) frp.Codec {
 // A file the parser rejects entirely surfaces a wrapped
 // ErrPipelinePatchTargetNotStructured, mirroring Split: such a file has no
 // addressable units at all.
-func (c stockYAMLCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
+func (c StockYAMLCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 	segs, err := Split(name, body)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (c stockYAMLCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 		}
 		docBody := body[sg.bodyStart:sg.bodyEnd]
 		if len(strings.TrimSpace(string(docBody))) > 0 {
-			raw, cerr := yamlBodyToJSON(docBody)
+			raw, cerr := YAMLBodyToJSON(docBody)
 			if cerr == nil {
 				u.Tree = raw
 			}
@@ -99,7 +99,7 @@ func (c stockYAMLCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 // new member at the established child indent before the mapping region's end;
 // a remove deletes the member's span. A node class it cannot edit surgically
 // is a hard error, not a silent whole-document fallback.
-func (c stockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
+func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
 	if len(patched) == 0 {
 		return append([]byte(nil), body...), nil
 	}
@@ -247,7 +247,7 @@ func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs [
 		return byteEdit{}, err
 	}
 	if valNode.Kind != yaml.ScalarNode {
-		return byteEdit{}, &nonSurgicalOpError{op: "replace", reason: "stock codec replaces scalar values only; replacing a " + nodeKindName(valNode.Kind) + " is not surgically supported"}
+		return byteEdit{}, &nonSurgicalOpError{op: "replace", reason: "stock codec replaces scalar values only; replacing a " + NodeKindName(valNode.Kind) + " is not surgically supported"}
 	}
 	start, end := scalarSpan(body, valNode, offs, bo)
 	repl, err := encodeScalarLike(valNode, value, indent)
@@ -280,7 +280,7 @@ func planAdd(body []byte, doc *yaml.Node, tokens []string, value any, offs []int
 		parent = pn
 	}
 	if parent.Kind != yaml.MappingNode {
-		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "stock codec adds members to mappings only; adding to a " + nodeKindName(parent.Kind) + " is not surgically supported"}
+		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "stock codec adds members to mappings only; adding to a " + NodeKindName(parent.Kind) + " is not surgically supported"}
 	}
 
 	// If the key already exists this is an upsert; RFC-6902 add replaces it.
@@ -399,7 +399,7 @@ func navigate(doc *yaml.Node, tokens []string) (key *yaml.Node, val *yaml.Node, 
 			parent = cur
 			cur = cur.Content[n]
 		default:
-			return nil, nil, nil, &nonSurgicalOpError{op: "navigate", reason: fmt.Sprintf("cannot descend through a %s at segment %q", nodeKindName(cur.Kind), t)}
+			return nil, nil, nil, &nonSurgicalOpError{op: "navigate", reason: fmt.Sprintf("cannot descend through a %s at segment %q", NodeKindName(cur.Kind), t)}
 		}
 		_ = i
 	}

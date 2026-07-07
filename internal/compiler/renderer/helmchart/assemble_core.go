@@ -12,7 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -161,12 +161,12 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 		Dependencies: deps,
 	}
 
-	chartYAML, err := renderer.MarshalYAMLIndent(&umbrella, indent)
+	chartYAML, err := rendercore.MarshalYAMLIndent(&umbrella, indent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal Chart.yaml")
 	}
 
-	valuesYAML, err := renderer.MarshalYAMLIndent(values, indent)
+	valuesYAML, err := rendercore.MarshalYAMLIndent(values, indent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal values.yaml")
 	}

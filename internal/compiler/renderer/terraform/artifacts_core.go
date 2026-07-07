@@ -6,7 +6,7 @@ package terraform
 import (
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // ProvenanceFileName is the output filename of the standalone build-provenance
@@ -35,13 +35,13 @@ const ProvenanceFileName = "aggrega.provenance.tf"
 //     surfaces.
 //
 // The provenance identity is drawn from the node's Recipe identity via the shared
-// [renderer.FormatTerraformProvenanceComment] and [renderer.ProvenanceRecipeURIFromNodeCtx]
+// [rendercore.FormatTerraformProvenanceComment] and [rendercore.ProvenanceRecipeURIFromNodeCtx]
 // — the same formatter the terraform sourced-render path uses — so the stamped
 // identity is identical across every terraform emission surface. Entries are
 // placed in author order (the order the projection carries them); the companion,
 // when present, is appended last.
-func PlaceArtifacts(proj renderer.ArtifactsProjection, nodeCtx renderer.NodeRenderContext) []renderer.RenderedFile {
-	provComment := renderer.FormatTerraformProvenanceComment(nodeCtx, renderer.ProvenanceRecipeURIFromNodeCtx(nodeCtx))
+func PlaceArtifacts(proj rendercore.ArtifactsProjection, nodeCtx rendercore.NodeRenderContext) []rendercore.RenderedFile {
+	provComment := rendercore.FormatTerraformProvenanceComment(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx))
 
 	hasJSONBody := false
 	for _, ent := range proj.Entries {
@@ -51,7 +51,7 @@ func PlaceArtifacts(proj renderer.ArtifactsProjection, nodeCtx renderer.NodeRend
 		}
 	}
 
-	out := make([]renderer.RenderedFile, 0, len(proj.Entries)+1)
+	out := make([]rendercore.RenderedFile, 0, len(proj.Entries)+1)
 	for _, ent := range proj.Entries {
 		body := ent.Content
 		if !hasJSONBody {
@@ -59,10 +59,10 @@ func PlaceArtifacts(proj renderer.ArtifactsProjection, nodeCtx renderer.NodeRend
 			// an emitted file.
 			body = append(append([]byte{}, provComment...), ent.Content...)
 		}
-		out = append(out, renderer.RenderedFile{Path: ent.Name, Content: body})
+		out = append(out, rendercore.RenderedFile{Path: ent.Name, Content: body})
 	}
 	if hasJSONBody {
-		out = append(out, renderer.RenderedFile{Path: ProvenanceFileName, Content: provComment})
+		out = append(out, rendercore.RenderedFile{Path: ProvenanceFileName, Content: provComment})
 	}
 	return out
 }

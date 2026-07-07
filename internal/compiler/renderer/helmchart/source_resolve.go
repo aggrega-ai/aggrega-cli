@@ -6,7 +6,7 @@ package helmchart
 import (
 	"fmt"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // ValidateSourcedChartListing checks that a source listing describes a Helm
@@ -19,7 +19,7 @@ import (
 // The source must be a directory (a chart is a directory, never a single file or
 // archive here) carrying Chart.yaml at its root. A non-directory source or a
 // missing Chart.yaml halts.
-func ValidateSourcedChartListing(listing *renderer.SourceListing) error {
+func ValidateSourcedChartListing(listing *rendercore.SourceListing) error {
 	if !listing.RootIsDir {
 		return fmt.Errorf("helmchart sourced: source %q is not a directory", listing.Root)
 	}
@@ -31,7 +31,7 @@ func ValidateSourcedChartListing(listing *renderer.SourceListing) error {
 
 // listingHasFile reports whether the listing carries a regular-file entry at the
 // given root-relative path.
-func listingHasFile(listing *renderer.SourceListing, path string) bool {
+func listingHasFile(listing *rendercore.SourceListing, path string) bool {
 	for _, e := range listing.Entries {
 		if e.Path == path && !e.IsDir {
 			return true

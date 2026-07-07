@@ -4,7 +4,7 @@
 package compose
 
 import (
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // composeOmittedProvenanceKeys are the two provenance keys the shared
@@ -66,7 +66,7 @@ var composeOmittedProvenanceKeys = []string{
 // The function tolerates malformed compose documents silently — sourced-
 // mode treats the input as authored YAML, and label injection is a
 // metadata enhancement, not a validation gate.
-func injectAggregaLabelsIntoServices(doc map[string]any, origins map[string]renderer.NodeRenderContext) {
+func injectAggregaLabelsIntoServices(doc map[string]any, origins map[string]rendercore.NodeRenderContext) {
 	if doc == nil || len(origins) == 0 {
 		return
 	}
@@ -110,8 +110,8 @@ func injectAggregaLabelsIntoServices(doc map[string]any, origins map[string]rend
 // case where every service in a merged compose document shares one
 // nodeCtx — the single-origin scenario for sourced-mode rendering.
 // Future multi-origin call sites build the map directly per service.
-func buildSingleOriginMap(doc map[string]any, nodeCtx renderer.NodeRenderContext) map[string]renderer.NodeRenderContext {
-	origins := map[string]renderer.NodeRenderContext{}
+func buildSingleOriginMap(doc map[string]any, nodeCtx rendercore.NodeRenderContext) map[string]rendercore.NodeRenderContext {
+	origins := map[string]rendercore.NodeRenderContext{}
 	if doc == nil {
 		return origins
 	}
@@ -134,9 +134,9 @@ func buildSingleOriginMap(doc map[string]any, nodeCtx renderer.NodeRenderContext
 // it has no annotation concept. The two Kubernetes-only keys
 // (composeOmittedProvenanceKeys) are dropped; the remaining set matches the
 // helm and helm-chart engines' provenance for the same node.
-func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
-	labels := renderer.BuildAggregaProvenanceLabels(nodeCtx)
-	for k, v := range renderer.BuildAggregaProvenanceAnnotations(nodeCtx, renderer.ProvenanceRecipeURIFromNodeCtx(nodeCtx)) {
+func buildAggregaLabels(nodeCtx rendercore.NodeRenderContext) map[string]string {
+	labels := rendercore.BuildAggregaProvenanceLabels(nodeCtx)
+	for k, v := range rendercore.BuildAggregaProvenanceAnnotations(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx)) {
 		labels[k] = v
 	}
 	for _, k := range composeOmittedProvenanceKeys {

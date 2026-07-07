@@ -6,7 +6,7 @@
 // Regenerate with `go generate ./internal/tools/typegen` from the
 // aggrega-cli checkout.
 
-package renderer
+package rendercore
 
 import (
 	"bytes"

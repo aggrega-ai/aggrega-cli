@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // ResolveChartRootRel locates the Helm chart root within a source listing and
@@ -25,7 +25,7 @@ import (
 // a malformed archive and more than one is ambiguous; both halt rather than
 // guess. Listing entries are sorted, so the ambiguity message and the
 // single-match result are deterministic.
-func ResolveChartRootRel(listing *renderer.SourceListing) (string, error) {
+func ResolveChartRootRel(listing *rendercore.SourceListing) (string, error) {
 	if !listing.RootIsDir {
 		return "", nil
 	}
@@ -53,7 +53,7 @@ func ResolveChartRootRel(listing *renderer.SourceListing) (string, error) {
 
 // listingHasFile reports whether the listing carries a regular-file entry at the
 // given root-relative path.
-func listingHasFile(listing *renderer.SourceListing, path string) bool {
+func listingHasFile(listing *rendercore.SourceListing, path string) bool {
 	for _, e := range listing.Entries {
 		if e.Path == path && !e.IsDir {
 			return true

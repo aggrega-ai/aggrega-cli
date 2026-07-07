@@ -39,7 +39,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
@@ -67,13 +67,13 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func renderNode() int32 {
-	var in renderer.RenderNodeInput
+	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
 
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	var err error
 	switch {
 	case in.ArtifactsProjection != nil:
@@ -105,16 +105,16 @@ func renderNode() int32 {
 // renderSourcedFromInput copies the sourced sub-chart verbatim into a sub-chart
 // file set via the shared render core, returning each file's bytes keyed by its
 // chart-root-relative path in deterministic order.
-func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	proj, err := packSourcedChart(in.SourceListing)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 	rendered := helmchart.RenderSourcedChartCore(proj)
 
-	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
+	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered[path]})
 	}
 	return out, nil
 }
@@ -129,28 +129,28 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 // non-default delimiter policy — a file whose surviving Helm "{{ ... }}" syntax
 // does not round-trip is emitted unchanged with a skip diagnostic rather than
 // failing the build. Entries are placed in author order.
-func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	indent := in.Context.YAMLIndent
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
 		if ent.Origin == "inline" {
-			return renderer.RenderNodeOutput{}, fmt.Errorf("helm-chart provider (recipe %q): inline artifacts entries are not supported; use the {$import: <path>} mode so the file can be injected into the chart's templates/ directory", in.Node.RecipeName)
+			return rendercore.RenderNodeOutput{}, fmt.Errorf("helm-chart provider (recipe %q): inline artifacts entries are not supported; use the {$import: <path>} mode so the file can be injected into the chart's templates/ directory", in.Node.RecipeName)
 		}
-		body, warning, err := renderer.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, false, indent)
+		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, false, indent)
 		if err != nil {
-			return renderer.RenderNodeOutput{}, err
+			return rendercore.RenderNodeOutput{}, err
 		}
 		if warning != "" {
 			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
 		}
-		out.Files = append(out.Files, renderer.RenderedFile{Path: "templates/" + ent.Name, Content: body})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: "templates/" + ent.Name, Content: body})
 	}
 	return out, nil
 }
 
 //go:wasmexport assemble_boundary
 func assembleBoundary() int32 {
-	var in renderer.AssembleBoundaryInput
+	var in rendercore.AssembleBoundaryInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
@@ -182,26 +182,26 @@ func assembleBoundary() int32 {
 // names the chart from when no chart-name is supplied; the render context carries
 // the indentation width. helm-chart nests each contributor's per-node files under
 // a per-node sub-directory, so NestPerNode is true.
-func assembleBoundaryFromInput(in renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
+func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
 	subs := make([]helmchart.CoreSubChart, 0, len(in.SubCharts))
 	for i := range in.SubCharts {
 		sc := in.SubCharts[i]
 		subs = append(subs, helmchart.CoreSubChart{
 			InstanceID: sc.InstanceID,
 			Version:    sc.Version,
-			Values:     renderer.OrderedMapToPlain(&sc.Values),
+			Values:     rendercore.OrderedMapToPlain(&sc.Values),
 			ChartYAML:  sc.ChartYaml,
 		})
 	}
 
 	files, err := helmchart.AssembleUmbrellaCore(in.BoundaryPath, in.AggregateName, subs, in.ChartName, in.Context.YAMLIndent)
 	if err != nil {
-		return renderer.AssembleBoundaryOutput{}, err
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
-	out := renderer.AssembleBoundaryOutput{Files: make([]renderer.RenderedFile, 0, len(files))}
+	out := rendercore.AssembleBoundaryOutput{Files: make([]rendercore.RenderedFile, 0, len(files))}
 	for _, path := range sortedKeys(files) {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: files[path]})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path]})
 	}
 	out.NestPerNode = true
 	return out, nil
@@ -209,7 +209,7 @@ func assembleBoundaryFromInput(in renderer.AssembleBoundaryInput) (renderer.Asse
 
 //go:wasmexport carve
 func carve() int32 {
-	var in renderer.CarveInput
+	var in rendercore.CarveInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
@@ -221,7 +221,7 @@ func carve() int32 {
 		return 1
 	}
 
-	encoded, err := renderer.CarveOutput{Units: units}.MarshalJSON()
+	encoded, err := rendercore.CarveOutput{Units: units}.MarshalJSON()
 	if err != nil {
 		pdk.SetError(err)
 		return 1
@@ -232,7 +232,7 @@ func carve() int32 {
 
 //go:wasmexport reassemble
 func reassemble() int32 {
-	var in renderer.ReassembleInput
+	var in rendercore.ReassembleInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
@@ -244,7 +244,7 @@ func reassemble() int32 {
 		return 1
 	}
 
-	encoded, err := renderer.ReassembleOutput{Body: body}.MarshalJSON()
+	encoded, err := rendercore.ReassembleOutput{Body: body}.MarshalJSON()
 	if err != nil {
 		pdk.SetError(err)
 		return 1
@@ -291,7 +291,7 @@ func sortedKeys(m map[string][]byte) []string {
 // the render core rebuilds the sub-chart's file map from. Listing validation is
 // single-sourced in the helmchart package (shared by the guest here); the whole
 // tree is then vendored recursively.
-func packSourcedChart(listing *renderer.SourceListing) (*renderer.SourceProjection, error) {
+func packSourcedChart(listing *rendercore.SourceListing) (*rendercore.SourceProjection, error) {
 	if err := helmchart.ValidateSourcedChartListing(listing); err != nil {
 		return nil, err
 	}
@@ -299,9 +299,9 @@ func packSourcedChart(listing *renderer.SourceListing) (*renderer.SourceProjecti
 	if err != nil {
 		return nil, err
 	}
-	proj := &renderer.SourceProjection{Files: make([]renderer.SourceFile, len(packed.Files))}
+	proj := &rendercore.SourceProjection{Files: make([]rendercore.SourceFile, len(packed.Files))}
 	for i, f := range packed.Files {
-		proj.Files[i] = renderer.SourceFile{Path: f.Path, Content: f.Content}
+		proj.Files[i] = rendercore.SourceFile{Path: f.Path, Content: f.Content}
 	}
 	return proj, nil
 }

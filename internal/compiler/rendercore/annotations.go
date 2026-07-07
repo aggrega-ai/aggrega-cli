@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package rendercore
 
 // Well-known provider annotation keys. These are read by the provider engines
 // (helm, helm-chart) out of NodeRenderContext.Annotations and applied to the

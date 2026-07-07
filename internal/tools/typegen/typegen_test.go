@@ -89,8 +89,8 @@ var codecTargetPaths = map[string][]string{
 	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
 	// The host linter codec is committed inside aggrega-cli's validator package.
 	"linter_host_gen.go": {"..", "..", "..", "pkg", "validator"},
-	// The host provider render codec is committed inside aggrega-cli's renderer package.
-	"providerrender_host_gen.go": {"..", "..", "compiler", "renderer"},
+	// The host provider render codec is committed inside aggrega-cli's rendercore package.
+	"providerrender_host_gen.go": {"..", "..", "compiler", "rendercore"},
 }
 
 // TestRegenClean_Codec is the regen-drift gate for the multi-type codec

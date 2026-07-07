@@ -34,7 +34,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -48,7 +48,7 @@ import (
 // Exported so the provider Wasm guest (package main, which cannot reach an
 // unexported compose function) renders through the same single-source core the
 // in-tree sourced path calls, keeping the two surfaces byte-identical.
-func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx rendercore.NodeRenderContext) (map[string][]byte, error) {
 	// A Compose file is a single YAML document. Decode the first document, then
 	// require the stream to be exhausted: a single file carrying `---`-separated
 	// documents passes the source resolver's file-count guard, but
@@ -84,7 +84,7 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 	origins := buildSingleOriginMap(merged, nodeCtx)
 	injectAggregaLabelsIntoServices(merged, origins)
 
-	body, err := renderer.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
+	body, err := rendercore.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
 	}

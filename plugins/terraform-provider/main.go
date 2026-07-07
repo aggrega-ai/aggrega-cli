@@ -43,7 +43,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -78,13 +78,13 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func renderNode() int32 {
-	var in renderer.RenderNodeInput
+	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
 
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	switch {
 	case in.WorkloadProjection != nil:
 		// terraform does not synthesize workloads. A workload projection is an
@@ -98,9 +98,9 @@ func renderNode() int32 {
 			pdk.SetError(err)
 			return 1
 		}
-		out.Files = make([]renderer.RenderedFile, 0, len(proj.Files)+2)
+		out.Files = make([]rendercore.RenderedFile, 0, len(proj.Files)+2)
 		for _, f := range proj.Files {
-			out.Files = append(out.Files, renderer.RenderedFile{Path: f.Path, Content: f.Content})
+			out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Path, Content: f.Content})
 		}
 		// Stamp build provenance as a standalone comment-only .tf file. The
 		// vendored module files stay byte-for-byte verbatim and the JSON tfvars
@@ -108,9 +108,9 @@ func renderNode() int32 {
 		// The shared renderer formatter is the same one the artifacts placement
 		// core uses, so both terraform emission paths carry identical provenance.
 		nodeCtx := nodeCtxFromInput(in)
-		out.Files = append(out.Files, renderer.RenderedFile{
+		out.Files = append(out.Files, rendercore.RenderedFile{
 			Path:    terraform.ProvenanceFileName,
-			Content: renderer.FormatTerraformProvenanceComment(nodeCtx, renderer.ProvenanceRecipeURIFromNodeCtx(nodeCtx)),
+			Content: rendercore.FormatTerraformProvenanceComment(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx)),
 		})
 		if in.Node.Values.Len() > 0 {
 			overlay, err := tfvarsOverlay(in.Node.Values)
@@ -118,7 +118,7 @@ func renderNode() int32 {
 				pdk.SetError(err)
 				return 1
 			}
-			out.Files = append(out.Files, renderer.RenderedFile{Path: tfvarsOverlayName, Content: overlay})
+			out.Files = append(out.Files, rendercore.RenderedFile{Path: tfvarsOverlayName, Content: overlay})
 		}
 	case in.ArtifactsProjection != nil:
 		// Artifacts placement: HCL bodies get build provenance prepended as a
@@ -142,13 +142,13 @@ func renderNode() int32 {
 
 //go:wasmexport validate_node_input
 func validateNodeInput() int32 {
-	var in renderer.RenderNodeInput
+	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
 
-	var out renderer.ValidateNodeOutput
+	var out rendercore.ValidateNodeOutput
 	// Only the sourced module is a structural input to validate. A workload or
 	// artifacts projection carries no Terraform module to parse here — artifacts
 	// are host-template-evaluated HCL whose parse is checked inline in render_node
@@ -262,8 +262,8 @@ func tfvarsOverlay(values types.OrderedMap[any]) ([]byte, error) {
 // context carries only the provenance the comment formatter reads, so the
 // standalone provenance file matches what the host artifacts path emits for the
 // same node.
-func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
-	return renderer.NodeRenderContext{
+func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
+	return rendercore.NodeRenderContext{
 		NodeID:           in.Node.ID,
 		BoundaryPath:     in.Node.BoundaryPath,
 		SyncWave:         in.Node.SyncWave,
@@ -272,7 +272,7 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 		LabelComponentID: in.Node.LabelComponentID,
 		ProviderName:     in.Node.Provenance.ProviderName,
 		ProviderVersion:  in.Node.Provenance.ProviderVersion,
-		Provenance: renderer.ProvenanceContext{
+		Provenance: rendercore.ProvenanceContext{
 			CompilerVersion: in.Node.Provenance.CompilerVersion,
 			AggregateName:   in.Node.Provenance.AggregateName,
 			Environment:     in.Node.Provenance.Environment,
@@ -287,7 +287,7 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 // guest-side resolution the host formerly performed when it packed source bytes
 // directly: terraform vendors all module files verbatim with no ambiguity halt,
 // so the resolution is a straight directory-versus-file branch.
-func packTerraformSource(listing *renderer.SourceListing) (*aggrega.SourceProjection, error) {
+func packTerraformSource(listing *rendercore.SourceListing) (*aggrega.SourceProjection, error) {
 	if listing.RootIsDir {
 		return aggrega.PackSource("tree", "")
 	}

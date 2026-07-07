@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package rendercore
 
 import (
 	"bytes"
@@ -83,15 +83,15 @@ type lineInsertion struct {
 // insertions) — matching the existing injector's "manifests without metadata skip
 // silently" contract.
 func planDocProvenanceSplice(root *yaml.Node, lines []string, labels, annotations map[string]string) ([]lineInsertion, bool) {
-	mapping := documentMapping(root)
+	mapping := DocumentMapping(root)
 	if mapping == nil {
 		return nil, true // no-op: not a mapping document (e.g. a list / scalar fragment)
 	}
-	metaKey, metaVal := findKeyValueNode(mapping, "metadata")
+	metaKey, metaVal := FindKeyValueNode(mapping, "metadata")
 	if metaKey == nil || metaVal == nil {
 		return nil, true // no metadata → skip silently
 	}
-	metaVal = unwrapAlias(metaVal)
+	metaVal = UnwrapAlias(metaVal)
 	if metaVal.Kind != yaml.MappingNode || isFlow(metaVal) || len(metaVal.Content) == 0 {
 		return nil, false // flow-style or empty metadata → non-spliceable, fall back
 	}
@@ -122,16 +122,16 @@ func planMappingChildSplice(metaKey, metaVal *yaml.Node, lines []string, key str
 	}
 	keys := sortedStringKeys(entries)
 
-	childKey, childVal := findKeyValueNode(metaVal, key)
+	childKey, childVal := FindKeyValueNode(metaVal, key)
 	if childKey != nil && childVal != nil {
-		childVal = unwrapAlias(childVal)
+		childVal = UnwrapAlias(childVal)
 		if childVal.Kind != yaml.MappingNode || isFlow(childVal) {
 			return nil, false // non-mapping or flow child → fall back
 		}
 		// Append-only: a pre-existing provenance key would need an in-place
 		// value overwrite, which the line splice does not do — fall back.
 		for _, k := range keys {
-			if ek, _ := findKeyValueNode(childVal, k); ek != nil {
+			if ek, _ := FindKeyValueNode(childVal, k); ek != nil {
 				return nil, false
 			}
 		}
@@ -200,15 +200,15 @@ func postSpliceGuardOK(rendered, spliced string, labels, annotations map[string]
 	// under metadata.labels/annotations rather than at some wrong parent.
 	landed := false
 	for _, doc := range docs {
-		mapping := documentMapping(doc)
+		mapping := DocumentMapping(doc)
 		if mapping == nil {
 			continue
 		}
-		_, metaVal := findKeyValueNode(mapping, "metadata")
+		_, metaVal := FindKeyValueNode(mapping, "metadata")
 		if metaVal == nil {
 			continue
 		}
-		metaVal = unwrapAlias(metaVal)
+		metaVal = UnwrapAlias(metaVal)
 		if metaVal.Kind != yaml.MappingNode {
 			continue
 		}
@@ -223,16 +223,16 @@ func mappingChildHasAllKeys(metaVal *yaml.Node, key string, entries map[string]s
 	if len(entries) == 0 {
 		return true
 	}
-	_, child := findKeyValueNode(metaVal, key)
+	_, child := FindKeyValueNode(metaVal, key)
 	if child == nil {
 		return false
 	}
-	child = unwrapAlias(child)
+	child = UnwrapAlias(child)
 	if child.Kind != yaml.MappingNode {
 		return false
 	}
 	for k := range entries {
-		if ek, _ := findKeyValueNode(child, k); ek == nil {
+		if ek, _ := FindKeyValueNode(child, k); ek == nil {
 			return false
 		}
 	}

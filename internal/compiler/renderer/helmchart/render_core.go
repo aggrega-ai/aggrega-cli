@@ -3,7 +3,7 @@
 
 package helmchart
 
-import "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+import "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 
 // RenderSourcedChartCore rebuilds the sub-chart's path→bytes map from a source
 // projection: each projected file becomes a map entry keyed by its chart-root-
@@ -16,7 +16,7 @@ import "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 // the in-tree engine runs. The orchestrator prefixes the returned keys with
 // `boundaries/<boundary>/charts/<instance_id>/` when placing the sub-chart under
 // the umbrella.
-func RenderSourcedChartCore(proj *renderer.SourceProjection) map[string][]byte {
+func RenderSourcedChartCore(proj *rendercore.SourceProjection) map[string][]byte {
 	out := make(map[string][]byte, len(proj.Files))
 	for _, f := range proj.Files {
 		out[f.Path] = f.Content

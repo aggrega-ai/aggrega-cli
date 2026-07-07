@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // buildAggregaLabels produces the label-safe aggrega.ai/* resource labels for
@@ -15,16 +15,16 @@ import (
 // helm-chart, and artifacts surfaces emit one identical partition with the same
 // sanitised component-id. The compiler has no knowledge of OpenTelemetry;
 // downstream tooling (Prometheus, cost allocation, OTel correlation) consumes them.
-func buildAggregaLabels(nodeCtx renderer.NodeRenderContext) map[string]string {
-	return renderer.BuildAggregaProvenanceLabels(nodeCtx)
+func buildAggregaLabels(nodeCtx rendercore.NodeRenderContext) map[string]string {
+	return rendercore.BuildAggregaProvenanceLabels(nodeCtx)
 }
 
 // buildAggregaAnnotations produces the charset-unsafe aggrega.ai/* annotation
 // set (recipe-uri, boundary-path, sync-wave + argocd.argoproj.io/sync-wave),
 // delegating to the shared provenance builder. The recipe-uri is assembled from
 // this node's Recipe identity.
-func buildAggregaAnnotations(nodeCtx renderer.NodeRenderContext) map[string]string {
-	return renderer.BuildAggregaProvenanceAnnotations(nodeCtx, renderer.ProvenanceRecipeURIFromNodeCtx(nodeCtx))
+func buildAggregaAnnotations(nodeCtx rendercore.NodeRenderContext) map[string]string {
+	return rendercore.BuildAggregaProvenanceAnnotations(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx))
 }
 
 // helmHookWeight returns the stringified SyncWave value to inject as a
@@ -32,7 +32,7 @@ func buildAggregaAnnotations(nodeCtx renderer.NodeRenderContext) map[string]stri
 // no hook-weight should be emitted (SyncWave == 0). Hook detection happens
 // at injection time (per-manifest scan for an existing helm.sh/hook
 // annotation set by the chart author).
-func helmHookWeight(nodeCtx renderer.NodeRenderContext) string {
+func helmHookWeight(nodeCtx rendercore.NodeRenderContext) string {
 	if nodeCtx.SyncWave == 0 {
 		return ""
 	}

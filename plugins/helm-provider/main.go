@@ -29,7 +29,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -58,13 +58,13 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func renderNode() int32 {
-	var in renderer.RenderNodeInput
+	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
 
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	var err error
 	switch {
 	case in.WorkloadProjection != nil:
@@ -117,8 +117,8 @@ func errorChainMessage(err error) string {
 // Carrying the full provenance here is what makes the guest's rendered
 // manifests carry the same aggrega.ai labels and annotations the in-tree engine
 // emits, so the two produce byte-identical output for identical input.
-func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
-	return renderer.NodeRenderContext{
+func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
+	return rendercore.NodeRenderContext{
 		NodeID:           in.Node.ID,
 		Annotations:      mergeAnnotations(in.Context.Annotations),
 		BoundaryPath:     in.Node.BoundaryPath,
@@ -128,7 +128,7 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 		LabelComponentID: in.Node.LabelComponentID,
 		ProviderName:     in.Node.Provenance.ProviderName,
 		ProviderVersion:  in.Node.Provenance.ProviderVersion,
-		Provenance: renderer.ProvenanceContext{
+		Provenance: rendercore.ProvenanceContext{
 			CompilerVersion: in.Node.Provenance.CompilerVersion,
 			AggregateName:   in.Node.Provenance.AggregateName,
 			Environment:     in.Node.Provenance.Environment,
@@ -151,14 +151,14 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 // host's pinned external-input channel. The SDK's own live-fetching validator
 // never runs in the guest. Validation only gates — it never alters values —
 // so rendered bytes stay byte-identical with the in-tree engine.
-func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.SourceListing == nil {
-		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source listing")
+		return rendercore.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source listing")
 	}
 
 	proj, err := packChartSource(in.SourceListing)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 
 	bufs := make([]*loader.BufferedFile, 0, len(proj.Files))
@@ -167,21 +167,21 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 	}
 	ch, err := loader.LoadFiles(bufs)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 
-	values := renderer.OrderedMapToPlain(&in.Node.Values)
+	values := rendercore.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
 	rendered, err := helm.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
 		helm.NewHermeticValuesValidator(aggrega.FetchExternalInput))
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 
-	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
+	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: rendered[path]})
 	}
 	return out, nil
 }
@@ -194,21 +194,21 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 // annotations arrive in the node projection and render context. The core's
 // emission order is deterministic and load-bearing, so the files are collected
 // in order and never re-sorted.
-func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.WorkloadProjection == nil {
-		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no workload projection")
+		return rendercore.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no workload projection")
 	}
 
 	nodeCtx := nodeCtxFromInput(in)
 
 	emitted, err := helm.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.Secrets, nodeCtx)
 	if err != nil {
-		return renderer.RenderNodeOutput{}, err
+		return rendercore.RenderNodeOutput{}, err
 	}
 
-	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(emitted))}
+	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(emitted))}
 	for _, f := range emitted {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Name, Content: f.Body})
 	}
 	return out, nil
 }
@@ -219,21 +219,21 @@ func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutpu
 // shared placer, using the default "{{"/"}}" delimiters (helm's artifact bodies
 // carry no surviving downstream template syntax, so a template-output parse
 // failure is a hard authoring error). Entries are placed in author order.
-func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.ArtifactsProjection == nil {
-		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no artifacts projection")
+		return rendercore.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no artifacts projection")
 	}
 	indent := in.Context.YAMLIndent
-	var out renderer.RenderNodeOutput
+	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
-		body, warning, err := renderer.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
+		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
 		if err != nil {
-			return renderer.RenderNodeOutput{}, err
+			return rendercore.RenderNodeOutput{}, err
 		}
 		if warning != "" {
 			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
 		}
-		out.Files = append(out.Files, renderer.RenderedFile{Path: ent.Name, Content: body})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: body})
 	}
 	return out, nil
 }
@@ -277,7 +277,7 @@ func sortedKeys(m map[string][]byte) []string {
 // only wires the resolved subtree into a pack request. The chart root is packed
 // as a tree, so the packed projection carries every chart file keyed by its
 // chart-root-relative path — the same file set the host formerly packed.
-func packChartSource(listing *renderer.SourceListing) (*aggrega.SourceProjection, error) {
+func packChartSource(listing *rendercore.SourceListing) (*aggrega.SourceProjection, error) {
 	rel, err := helm.ResolveChartRootRel(listing)
 	if err != nil {
 		return nil, fmt.Errorf("helm: locate chart root in %q: %w", listing.Root, err)

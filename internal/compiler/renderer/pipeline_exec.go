@@ -6,14 +6,12 @@ package renderer
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -657,21 +655,6 @@ func firstChangedToken(appliedByToken map[string][]frp.JSONPatchOp) (string, boo
 	}
 	sort.Strings(keys)
 	return keys[0], true
-}
-
-// yamlBodyToJSON converts one YAML document body to a JSON RawMessage,
-// preserving object key order through OrderedMap so the wire payload is
-// deterministic. The stock codec uses it to build a unit's tree-view.
-func yamlBodyToJSON(body []byte) (json.RawMessage, error) {
-	var om types.OrderedMap[any]
-	if err := parse.TemplateOutput(body, &om); err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(om)
-	if err != nil {
-		return nil, err
-	}
-	return raw, nil
 }
 
 // lookupFile returns the pipelineFile for a given emitted-file name.

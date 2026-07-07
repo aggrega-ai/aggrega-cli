@@ -47,7 +47,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -71,9 +71,9 @@ type serviceContrib struct {
 // fallback used when a node carries no namespace annotation; yamlIndent is the
 // indentation width for the assembled artifact.
 func AssembleBoundaryCore(
-	intermediatesByNode map[string][]renderer.EmittedFile,
+	intermediatesByNode map[string][]rendercore.EmittedFile,
 	nodeAnnotations map[string]map[string]string,
-	edges []renderer.IREdgeInfo,
+	edges []rendercore.IREdgeInfo,
 	boundaryPath string,
 	yamlIndent int,
 ) (map[string][]byte, error) {
@@ -104,7 +104,7 @@ func AssembleBoundaryCore(
 	networkNameByNode := map[string]string{}
 	for _, nid := range allNodeIDs {
 		ann := nodeAnnotations[nid]
-		networkNameByNode[nid] = deriveNodeNetworkName(ann[renderer.AnnotationNamespace], boundaryPath)
+		networkNameByNode[nid] = deriveNodeNetworkName(ann[rendercore.AnnotationNamespace], boundaryPath)
 	}
 
 	for _, nid := range allNodeIDs {
@@ -174,7 +174,7 @@ func AssembleBoundaryCore(
 // The compose fragment file's name is `<nodeID>.compose-fragment.yaml`. If
 // a future version produces multiple fragments per node, the loop merges
 // them into one ComposeFile struct.
-func parseNodeFragment(nodeID string, intermediates []renderer.EmittedFile) (*ComposeFile, error) {
+func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*ComposeFile, error) {
 	if len(intermediates) == 0 {
 		return nil, nil
 	}
@@ -299,7 +299,7 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 // type-shape extension on Service.DependsOn that is not yet implemented. The
 // short form is honest and works for compose; service_healthy gating becomes
 // available once Service.DependsOn becomes a map.
-func applyDependsOn(merged *ComposeFile, edges []renderer.IREdgeInfo, boundaryByService map[string]string) {
+func applyDependsOn(merged *ComposeFile, edges []rendercore.IREdgeInfo, boundaryByService map[string]string) {
 	addedByService := map[string]map[string]struct{}{}
 	for _, edge := range edges {
 		_, srcContributes := boundaryByService[edge.Source]

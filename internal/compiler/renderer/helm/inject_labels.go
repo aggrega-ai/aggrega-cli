@@ -12,7 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // injectAggregaLabels post-processes rendered YAML (possibly multi-document) and
@@ -63,7 +63,7 @@ func injectAggregaLabels(yamlBytes []byte, labels map[string]string, indent int)
 			buf.WriteString("---\n")
 		}
 		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(renderer.ClampYAMLIndent(indent))
+		enc.SetIndent(rendercore.ClampYAMLIndent(indent))
 		if err := enc.Encode(doc); err != nil {
 			return nil, fmt.Errorf("encode rendered YAML: %w", err)
 		}
@@ -199,7 +199,7 @@ func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, h
 			buf.WriteString("---\n")
 		}
 		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(renderer.ClampYAMLIndent(indent))
+		enc.SetIndent(rendercore.ClampYAMLIndent(indent))
 		if err := enc.Encode(doc); err != nil {
 			return nil, fmt.Errorf("encode rendered YAML: %w", err)
 		}

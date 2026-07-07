@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
 // helmChartMediaType tags a unit the helm-chart codec carved from a chart
@@ -74,7 +74,7 @@ type HelmChartCodec struct {
 // configured indent width. It borrows the core's stock YAML codec for all
 // node-span structural carving and surgery.
 func NewHelmChartCodec(indent int) frp.Codec {
-	return HelmChartCodec{stock: renderer.NewStockYAMLCodec(indent), indent: indent}
+	return HelmChartCodec{stock: rendercore.NewStockYAMLCodec(indent), indent: indent}
 }
 
 // Segment carves one chart file into addressable units. A non-template file is
