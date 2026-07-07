@@ -10,12 +10,12 @@
 // and assemble cores the in-tree compose engine runs so the two produce
 // byte-identical output for identical input.
 //
-// The guest decodes a RenderNodeInput and routes on which projection it carries:
-// a workload projection is synthesized into a compose service fragment; a source
-// projection is reconstructed in memory (the host read the base compose file at
-// compile time and packed it into the payload — the guest touches no filesystem)
-// and deep-merged with the node's values into a compose fragment. Compose is
-// hermetic-trivially: it fetches nothing, so the guest binds no host functions.
+// The guest decodes a RenderNodeInput and routes on what it carries: a workload
+// projection is synthesized into a compose service fragment; a source listing is
+// resolved to the base compose document, the host is asked to pack it (the guest
+// touches no filesystem itself), and it is deep-merged with the node's values into
+// a compose fragment. Compose fetches no external inputs; its only host function
+// is the pack-source callback its source resolution uses.
 //
 // The guest returns each rendered file's serialized bytes as a RenderedFile. The
 // host writes those bytes verbatim and runs no serializer, so the on-disk output
@@ -35,6 +35,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )
 
@@ -43,8 +44,13 @@ import (
 // compatibility with the compose provider engine, and its plugin-level
 // capability self-report (the input kinds it renders and its boundary-merge
 // assembly). The host reads this once at load and validates it before invoking
-// either export. Compose fetches nothing, so no host functions are declared.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":false},"boundary_assembly":"merge"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// either export. Compose resolves its base compose document from the host's
+// name-only listing and asks the host to pack it, so render_node declares the
+// aggrega_pack_source host function it imports; the host cross-checks this
+// declaration against the functions the guest actually imports. The
+// assemble_boundary export merges fragments already in the payload and imports
+// no host function.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":false},"boundary_assembly":"merge"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -65,10 +71,12 @@ func renderNode() int32 {
 	switch {
 	case in.WorkloadProjection != nil:
 		out, err = renderSynthFromInput(in)
-	case in.SourceProjection != nil:
+	case in.SourceListing != nil:
 		out, err = renderSourcedFromInput(in)
+	case in.ArtifactsProjection != nil:
+		out, err = placeArtifactsFromInput(in)
 	default:
-		pdk.SetError(errors.New("compose-provider: render_node input carries neither a workload projection nor a source projection"))
+		pdk.SetError(errors.New("compose-provider: render_node input carries neither a workload projection, a source listing, nor an artifacts projection"))
 		return 1
 	}
 	if err != nil {
@@ -164,22 +172,26 @@ func errorChainMessage(err error) string {
 	return msg
 }
 
-// renderSourcedFromInput reconstructs the base compose file in memory from the
-// wire input's source projection, runs the same filesystem-free render core the
-// in-tree engine runs, and returns the rendered fragment's serialized bytes as a
-// RenderedFile. Compose's projection is single-file (the base compose document
-// the host read at compile time); a projection with a different file count is an
-// orchestrator bug rather than authoring drift and halts loudly. The node's
+// renderSourcedFromInput resolves the base compose document from the wire
+// input's name-only source listing, asks the host to pack it, reconstructs it in
+// memory, runs the same filesystem-free render core the in-tree engine runs, and
+// returns the rendered fragment's serialized bytes as a RenderedFile. Compose's
+// selection is a single document; a pack that returns a different file count is
+// an orchestrator bug rather than authoring drift and halts loudly. The node's
 // values, identity, provenance, and merged annotations arrive in the node
 // projection and render context.
 func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
-	if in.SourceProjection == nil {
-		return renderer.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no source projection")
+	if in.SourceListing == nil {
+		return renderer.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no source listing")
 	}
-	if len(in.SourceProjection.Files) != 1 {
-		return renderer.RenderNodeOutput{}, fmt.Errorf("compose-provider: source projection carries %d files; the compose base is a single document", len(in.SourceProjection.Files))
+	proj, err := packComposeSource(in.SourceListing)
+	if err != nil {
+		return renderer.RenderNodeOutput{}, err
 	}
-	base := in.SourceProjection.Files[0]
+	if len(proj.Files) != 1 {
+		return renderer.RenderNodeOutput{}, fmt.Errorf("compose-provider: packed source carries %d files; the compose base is a single document", len(proj.Files))
+	}
+	base := proj.Files[0]
 
 	values := renderer.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
@@ -192,6 +204,44 @@ func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOut
 	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {
 		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+	}
+	return out, nil
+}
+
+// packComposeSource resolves the base compose document from the host's name-only
+// listing and asks the host to pack it. Document resolution is single-sourced in
+// the compose package (shared by the guest here), so the guest only wires the
+// resolved selection into a pack request.
+func packComposeSource(listing *renderer.SourceListing) (*aggrega.SourceProjection, error) {
+	rel, err := compose.ResolveSourceSelection(listing)
+	if err != nil {
+		return nil, err
+	}
+	return aggrega.PackSource("file", rel)
+}
+
+// placeArtifactsFromInput places the node's pre-evaluated artifact set. compose
+// emits each artifact at its author-resolved name and splices the host-computed
+// build provenance into the manifest's metadata via the shared placer, using the
+// default "{{"/"}}" delimiters (a manifest without metadata is a silent no-op in
+// the splice). Entries are placed in author order. The Intermediate marking that
+// routes these fragments to the boundary merge is applied host-side from compose's
+// boundary-assembly self-report, not here.
+func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+	if in.ArtifactsProjection == nil {
+		return renderer.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no artifacts projection")
+	}
+	indent := in.Context.YAMLIndent
+	var out renderer.RenderNodeOutput
+	for _, ent := range in.ArtifactsProjection.Entries {
+		body, warning, err := renderer.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
+		if err != nil {
+			return renderer.RenderNodeOutput{}, err
+		}
+		if warning != "" {
+			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
+		}
+		out.Files = append(out.Files, renderer.RenderedFile{Path: ent.Name, Content: body})
 	}
 	return out, nil
 }

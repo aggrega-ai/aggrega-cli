@@ -367,9 +367,11 @@ func TestDefaultInputPattern(t *testing.T) {
 
 // TestHostFunctionAllowlistUnchanged pins the v1alpha1 host-function
 // surface to exactly the curated set: the two baseline diagnostic
-// functions plus the external-input fetch channel. A change that adds
-// a host function without a corresponding decision fails here loudly
-// rather than silently widening the bound surface.
+// functions, the external-input fetch channel, and the two source
+// callbacks a sourced provider guest uses to pack a resolved selection
+// and to read a single file for content-based selection. A change that
+// adds a host function without a corresponding decision fails here
+// loudly rather than silently widening the bound surface.
 func TestHostFunctionAllowlistUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -377,6 +379,8 @@ func TestHostFunctionAllowlistUnchanged(t *testing.T) {
 		"aggrega_log":                  true,
 		"aggrega_emit_warning":         true,
 		"aggrega_fetch_external_input": true,
+		"aggrega_pack_source":          true,
+		"aggrega_read_source_file":     true,
 	}
 	if !reflect.DeepEqual(hostFunctionAllowlist, want) {
 		t.Fatalf("hostFunctionAllowlist changed: got %v, want %v", hostFunctionAllowlist, want)

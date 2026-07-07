@@ -12,10 +12,10 @@
 // terraform concern — so the guest handles a source projection alone and rejects
 // a payload that carries a workload.
 //
-// The guest decodes a RenderNodeInput, reconstructs the module file set in memory
-// from the payload's SourceProjection (the host read the module's files at compile
-// time and packed them into the payload — the guest touches no filesystem), and
-// returns each file's bytes verbatim as a RenderedFile in the projection's order.
+// The guest decodes a RenderNodeInput, resolves the acquired module source from
+// the payload's name-only SourceListing, asks the host to pack the module's bytes
+// through the pack-source host function (the guest touches no filesystem itself),
+// and returns each file's bytes verbatim as a RenderedFile in the pack order.
 // When the node's values are non-empty it appends one more file,
 // aggrega.auto.tfvars.json, whose top-level keys are those values and whose
 // values are their JSON encodings — a module-input overlay Terraform auto-loads.
@@ -42,7 +42,9 @@ import (
 	"errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )
 
@@ -52,21 +54,16 @@ import (
 // to the vendored module with no wrapper wiring.
 const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 
-// provenanceFileName is the output filename of the standalone build-provenance
-// file the guest emits alongside the vendored module. The overlay carrying the
-// node's values is JSON (aggrega.auto.tfvars.json) and cannot hold a comment, so
-// provenance is stamped in a separate comment-only .tf file the Terraform loader
-// parses as an empty (comment-only) config.
-const provenanceFileName = "aggrega.provenance.tf"
-
 // pluginDescriptor is the static describe() self-report: a v1alpha1 provider
 // plugin declaring the render_node export, compatibility with the terraform
 // provider, and its plugin-level capability self-report (sourced and
 // artifacts-standalone input, no boundary assembly). The host reads this once
-// at load and validates it before invoking render_node. terraform vendors
-// module files verbatim and fetches nothing, so no host functions are declared
-// and no assemble_boundary export is offered.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// at load and validates it before invoking render_node. terraform resolves its
+// module source from the host's name-only listing and asks the host to pack the
+// selection, so render_node declares the aggrega_pack_source host function it
+// imports; the host cross-checks this declaration against the functions the
+// guest actually imports. No assemble_boundary export is offered.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -90,19 +87,24 @@ func renderNode() int32 {
 		// loudly.
 		pdk.SetError(errors.New("terraform-provider: render_node received a workload projection; the terraform provider does not synthesize workloads"))
 		return 1
-	case in.SourceProjection != nil:
-		out.Files = make([]renderer.RenderedFile, 0, len(in.SourceProjection.Files)+2)
-		for _, f := range in.SourceProjection.Files {
+	case in.SourceListing != nil:
+		proj, err := packTerraformSource(in.SourceListing)
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
+		out.Files = make([]renderer.RenderedFile, 0, len(proj.Files)+2)
+		for _, f := range proj.Files {
 			out.Files = append(out.Files, renderer.RenderedFile{Path: f.Path, Content: f.Content})
 		}
 		// Stamp build provenance as a standalone comment-only .tf file. The
 		// vendored module files stay byte-for-byte verbatim and the JSON tfvars
 		// overlay cannot carry a comment, so provenance lands in its own file.
-		// The shared renderer formatter is the same one the host artifacts path
-		// uses, so both terraform emission paths carry identical provenance.
+		// The shared renderer formatter is the same one the artifacts placement
+		// core uses, so both terraform emission paths carry identical provenance.
 		nodeCtx := nodeCtxFromInput(in)
 		out.Files = append(out.Files, renderer.RenderedFile{
-			Path:    provenanceFileName,
+			Path:    terraform.ProvenanceFileName,
 			Content: renderer.FormatTerraformProvenanceComment(nodeCtx, renderer.ProvenanceRecipeURIFromNodeCtx(nodeCtx)),
 		})
 		if in.Node.Values.Len() > 0 {
@@ -113,8 +115,16 @@ func renderNode() int32 {
 			}
 			out.Files = append(out.Files, renderer.RenderedFile{Path: tfvarsOverlayName, Content: overlay})
 		}
+	case in.ArtifactsProjection != nil:
+		// Artifacts placement: HCL bodies get build provenance prepended as a
+		// `#` comment; a .tf.json body cannot carry a comment, so provenance
+		// travels in a companion comment-only .tf file. The projection's
+		// labels/annotations are intentionally unused here — terraform config is
+		// not Kubernetes YAML, so provenance rides via the shared HCL-comment
+		// formatter over nodeCtx rather than metadata splicing.
+		out.Files = terraform.PlaceArtifacts(*in.ArtifactsProjection, nodeCtxFromInput(in))
 	}
-	// A payload with neither projection yields an empty output.
+	// A payload with no projection yields an empty output.
 
 	encoded, err := out.MarshalJSON()
 	if err != nil {
@@ -171,6 +181,20 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 			Environment:     in.Node.Provenance.Environment,
 		},
 	}
+}
+
+// packTerraformSource resolves the acquired module source from the host's
+// name-only listing and asks the host to pack the module's bytes. A directory
+// source is vendored whole through a tree pack rooted at the source root; a
+// single-file source (a lone module file) is packed as one file. This is the
+// guest-side resolution the host formerly performed when it packed source bytes
+// directly: terraform vendors all module files verbatim with no ambiguity halt,
+// so the resolution is a straight directory-versus-file branch.
+func packTerraformSource(listing *renderer.SourceListing) (*aggrega.SourceProjection, error) {
+	if listing.RootIsDir {
+		return aggrega.PackSource("tree", "")
+	}
+	return aggrega.PackSource("file", "")
 }
 
 func main() {}

@@ -6,6 +6,9 @@ package wasmengine
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -28,15 +31,15 @@ const RenderNodeExport = "render_node"
 // guest's bytes via lookup, loads them through the injected shared loader once
 // per call, and reports the host-side capabilities of the provider it stands in
 // for from a holder supplied at construction. The adapter is provider-agnostic:
-// it drives whichever guest the provider advertises, and projects a sourced
-// node's source through the holder's own ProjectSource rather than any hardcoded
-// provider package.
+// it drives whichever guest the provider advertises, and hands the guest a
+// generic name-only enumeration of a sourced node's acquired source rather than
+// packing bytes through any hardcoded provider package — the guest resolves and
+// requests the bytes it needs through the pack-source host function.
 type Engine struct {
 	lookup    pluginpath.Lookup
 	pluginURI string
 	// hostCaps is the provider's host-side capability holder supplied at
-	// construction. Its ProjectSource projects a sourced node's source onto the
-	// render wire, and it carries the codec, sub-chart projection,
+	// construction. It carries the codec, sub-chart projection,
 	// external-artifacts placement, and env-override channel. The wrapper exposes
 	// it directly (HostCapabilities), so host-side capability checks resolve from
 	// this holder rather than from a concrete engine — the seam that keeps the
@@ -68,6 +71,7 @@ type Engine struct {
 var (
 	_ renderer.Engine                   = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer      = (*Engine)(nil)
+	_ renderer.ArtifactsEmitter         = (*Engine)(nil)
 	_ renderer.HostCapable              = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter = (*Engine)(nil)
 )
@@ -75,8 +79,8 @@ var (
 // New returns an Engine that renders through the guest at pluginURI, resolving
 // its bytes via lookup and loading through the shared loader. It carries the
 // provider's host-side capability holder — supplied by the caller from the
-// provider-name registry — for the host-side projections it drives (source
-// projection, codec, sub-chart projection, env overrides); its input kinds and
+// provider-name registry — for the host-side projections it drives (codec,
+// sub-chart projection, env overrides); its input kinds and
 // boundary-assembly mode come from the guest's live describe() descriptor. The
 // loader is shared across the build so
 // its compilation cache (when present) warms once; a nil loader is an
@@ -167,23 +171,17 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 			nodeCtx.NodeID, nodeCtx.Source)
 	}
 
-	if e.hostCaps.ProjectSource == nil {
-		return nil, fmt.Errorf(
-			"wasmengine: node %q: internal error — provider %q was routed to a Wasm guest for sourced render but reports no source projection",
-			nodeCtx.NodeID, e.pluginURI)
-	}
-
-	proj, err := e.hostCaps.ProjectSource(src)
+	listing, err := enumerateSource(src)
 	if err != nil {
 		return nil, err
 	}
 
 	input := renderer.RenderNodeInput{
-		Node:             e.nodeProjection(nodeCtx, valuesToOrdered(values)),
-		Context:          e.renderContext(nodeCtx),
-		SourceProjection: proj,
+		Node:          e.nodeProjection(nodeCtx, valuesToOrdered(values)),
+		Context:       e.renderContext(nodeCtx),
+		SourceListing: listing,
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input)
+	out, err := e.invoke(ctx, RenderNodeExport, input, src)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +227,7 @@ func (e *Engine) SynthesizeWorkload(
 			Secrets:  renderer.SecretProvidesFromContext(tmplCtx),
 		},
 	}
-	out, err := e.invoke(ctx, RenderNodeExport, input)
+	out, err := e.invoke(ctx, RenderNodeExport, input, "")
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +238,77 @@ func (e *Engine) SynthesizeWorkload(
 		emitted = append(emitted, renderer.EmittedFile{Name: f.Path, Body: f.Content, Intermediate: intermediate})
 	}
 	return emitted, nil
+}
+
+// EmitArtifacts projects the node's pre-evaluated artifact set into a render_node
+// payload and returns the guest's placed output. The host has already read each
+// entry's source, evaluated it as a Go template with the guest's declared
+// delimiter pair, and computed the build-provenance key sets; the guest decides
+// the output format, the provenance placement, the output path, and the final
+// bytes. Emission order is deterministic and load-bearing (the projection carries
+// entries in author order; the guest preserves it), so the guest's file order is
+// preserved — never re-sorted.
+//
+// The input-kind origin of each placed file is reconstructed by base-name match
+// against the projection's import-origin entries: a file whose base name is an
+// imported entry's name is artifacts-import, and any other file — an inline entry
+// or a guest-emitted companion such as terraform's standalone provenance file —
+// is artifacts-inline, matching the host's prior classification. The Intermediate
+// marking is classified from the guest's boundary-assembly self-report
+// (renderer.RenderIsIntermediate): a fragment-merging provider (compose) marks its
+// artifacts intermediate; a flat-output (helm, terraform) or nesting (helm-chart)
+// provider marks them false.
+func (e *Engine) EmitArtifacts(
+	ctx context.Context,
+	proj renderer.ArtifactsProjection,
+	nodeCtx renderer.NodeRenderContext,
+) ([]renderer.EmittedFile, error) {
+	input := renderer.RenderNodeInput{
+		Node:                e.nodeProjection(nodeCtx, types.OrderedMap[any]{}),
+		Context:             e.renderContext(nodeCtx),
+		ArtifactsProjection: &proj,
+	}
+	out, err := e.invoke(ctx, RenderNodeExport, input, "")
+	if err != nil {
+		return nil, err
+	}
+
+	importNames := make(map[string]bool, len(proj.Entries))
+	for _, ent := range proj.Entries {
+		if ent.Origin == "import" {
+			importNames[ent.Name] = true
+		}
+	}
+
+	intermediate := renderer.RenderIsIntermediate(e)
+	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
+	for _, f := range out.Files {
+		origin := renderer.EmitOriginArtifactsInline
+		if importNames[filepath.Base(f.Path)] {
+			origin = renderer.EmitOriginArtifactsImport
+		}
+		emitted = append(emitted, renderer.EmittedFile{
+			Name:         f.Path,
+			Origin:       origin,
+			Body:         f.Content,
+			Intermediate: intermediate,
+		})
+	}
+	return emitted, nil
+}
+
+// ArtifactTemplateDelimiters reports the Go-template delimiter pair the host
+// evaluates the node's artifact entries with — the guest's own declared pair from
+// its describe() self-report (capabilities.artifact_delimiters), defaulting to the
+// "{{"/"}}" pair when the guest declares none, so a guest whose target syntax
+// collides with that pair (helm-chart's "[["/"]]") has its downstream syntax left
+// untouched by the host's pre-templating pass.
+func (e *Engine) ArtifactTemplateDelimiters() (left, right string) {
+	desc, err := e.describe()
+	if err != nil || desc.Capabilities.ArtifactDelimiters == nil {
+		return "{{", "}}"
+	}
+	return desc.Capabilities.ArtifactDelimiters.Left, desc.Capabilities.ArtifactDelimiters.Right
 }
 
 // Warm compiles the provider guest into the shared loader's compilation cache
@@ -282,7 +351,7 @@ func (e *Engine) Warm(ctx context.Context) error {
 // guest state carries across nodes by construction — the memo caches only the
 // descriptor (pure data), never a live instance. The plugin is closed before
 // invoke returns.
-func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) (renderer.RenderNodeOutput, error) {
 	desc, err := e.describe()
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
@@ -298,6 +367,13 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 		return renderer.RenderNodeOutput{}, err
 	}
 	defer plugin.Close(ctx)
+
+	// The pack-source and read-source-file host functions resolve the guest's
+	// selections under this node's acquired source. The root is set per invocation
+	// rather than captured at load because a plugin instance may render many nodes,
+	// each with its own source; an empty root disables source packing (the synthesis
+	// path passes none).
+	plugin.SetSourceRoot(sourceRoot)
 
 	payload, err := input.MarshalJSON()
 	if err != nil {
@@ -372,6 +448,51 @@ func valuesToOrdered(values map[string]any) types.OrderedMap[any] {
 		om.Set(k, values[k])
 	}
 	return om
+}
+
+// enumerateSource walks the acquired source at root generically — with no
+// domain knowledge — into a name-only listing the host hands a sourced provider
+// guest. It reads no file content: it records the root, whether the root is a
+// directory, and, for a directory root, every entry under it keyed by its
+// slash-separated root-relative path with a directory flag. Entries are sorted
+// by path so the listing is byte-identical across runs of identical input.
+//
+// A single-file source root (a lone compose document, one module file, an
+// archive) yields an empty entry set and a false directory flag; the guest packs
+// the root itself. The guest applies its own resolution logic over the listing
+// and asks the host to pack a chosen selection through the pack-source host
+// function, so no per-provider source knowledge lives in this enumerator.
+func enumerateSource(root string) (*renderer.SourceListing, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("wasmengine: stat source %q: %w", root, err)
+	}
+	listing := &renderer.SourceListing{Root: root, RootIsDir: info.IsDir()}
+	if !info.IsDir() {
+		return listing, nil
+	}
+
+	var entries []renderer.SourceEntry
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		entries = append(entries, renderer.SourceEntry{Path: filepath.ToSlash(rel), IsDir: d.IsDir()})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("wasmengine: enumerate source %q: %w", root, walkErr)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	listing.Entries = entries
+	return listing, nil
 }
 
 // sortedKeys returns m's keys in lexical order.

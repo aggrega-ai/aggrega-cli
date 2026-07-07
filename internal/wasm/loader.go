@@ -400,6 +400,25 @@ type Plugin struct {
 	// allowlist. The load gate cross-checks it against the descriptor's
 	// declared host_functions so describe() cannot drift from the binary.
 	hostFunctions []string
+	// sourceRoot is the acquired source location the pack-source and
+	// read-source-file host functions resolve a guest's selection under. It
+	// varies per node — a single plugin instance may render many nodes, each
+	// with its own acquired source — so the caller sets it through
+	// SetSourceRoot immediately before each export invocation rather than at
+	// load. The host-function closures read it at call time, so a stale value
+	// from a prior node never leaks into a later one.
+	sourceRoot string
+}
+
+// SetSourceRoot sets the acquired source location the pack-source and
+// read-source-file host functions resolve a guest's selection under, for the
+// next export invocation. The caller sets it immediately before invoking a
+// sourced export and re-sets it per node, because one plugin instance may
+// render many nodes, each with its own acquired source. An empty root disables
+// source packing: a pack or read request then receives an in-band
+// not-available error rather than resolving against a stale or absent root.
+func (p *Plugin) SetSourceRoot(root string) {
+	p.sourceRoot = root
 }
 
 // HostFunctions returns the host functions this guest imports from its .wasm,

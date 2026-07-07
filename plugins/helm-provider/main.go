@@ -8,11 +8,12 @@
 // render_node export, reusing the same filesystem-free render core the in-tree
 // helm engine runs so the two produce byte-identical output for identical input.
 //
-// The guest decodes a RenderNodeInput, reconstructs the Helm chart in memory
-// from the payload's SourceProjection (the host read the chart's files at
-// compile time and packed them into the payload — the guest touches no
-// filesystem), renders it against the node's values through the shared render
-// core, and returns each rendered manifest's serialized bytes as a RenderedFile.
+// The guest decodes a RenderNodeInput, resolves the chart root from the payload's
+// name-only SourceListing, asks the host to pack the chart's file tree through the
+// pack-source host function (the guest touches no filesystem itself),
+// reconstructs the Helm chart in memory, renders it against the node's values
+// through the shared render core, and returns each rendered manifest's serialized
+// bytes as a RenderedFile.
 // The host writes those bytes verbatim and runs no serializer, so the on-disk
 // output matches the in-tree engine's bytes.
 //
@@ -24,6 +25,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -39,12 +41,14 @@ import (
 // provider plugin declaring the render_node export, compatibility with
 // the helm provider engine, and its plugin-level capability self-report
 // (the input kinds it renders and how it treats a dispatch group's output).
-// render_node declares the aggrega_fetch_external_input host function it
-// imports to resolve a chart's remote values-schema references through the
-// host's pinned external-input channel; the host cross-checks this declaration
-// against the functions the guest actually imports. The host reads this once at
-// load and validates it before invoking render_node.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// render_node declares two host functions it imports: aggrega_pack_source, which
+// packs the chart source the guest resolves from the host's name-only listing,
+// and aggrega_fetch_external_input, which resolves a chart's remote values-schema
+// references through the host's pinned external-input channel. The host
+// cross-checks these declarations against the functions the guest actually
+// imports. The host reads this once at load and validates it before invoking
+// render_node.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input","aggrega_pack_source"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -65,10 +69,12 @@ func renderNode() int32 {
 	switch {
 	case in.WorkloadProjection != nil:
 		out, err = renderSynthFromInput(in)
-	case in.SourceProjection != nil:
+	case in.SourceListing != nil:
 		out, err = renderSourcedFromInput(in)
+	case in.ArtifactsProjection != nil:
+		out, err = placeArtifactsFromInput(in)
 	default:
-		pdk.SetError(errors.New("helm-provider: render_node input carries neither a workload projection nor a source projection"))
+		pdk.SetError(errors.New("helm-provider: render_node input carries neither a workload projection, a source listing, nor an artifacts projection"))
 		return 1
 	}
 	if err != nil {
@@ -131,27 +137,32 @@ func nodeCtxFromInput(in renderer.RenderNodeInput) renderer.NodeRenderContext {
 	}
 }
 
-// renderSourcedFromInput reconstructs the Helm chart in memory from the wire
-// input's source projection, runs the same filesystem-free render core the
+// renderSourcedFromInput resolves the Helm chart root from the wire input's
+// name-only source listing, asks the host to pack the chart's file tree,
+// reconstructs the chart in memory, runs the same filesystem-free render core the
 // in-tree engine runs, and returns each rendered manifest's serialized bytes as
-// a RenderedFile. The chart's files arrive in the source projection (the host
-// read them at compile time); the node's values, identity, provenance, and
-// merged annotations arrive in the node projection and render context.
+// a RenderedFile. The node's values, identity, provenance, and merged
+// annotations arrive in the node projection and render context.
 //
 // Values-schema validation runs hermetically: the chart's values.schema.json
 // (and dependency charts' schemas) are validated by the render core's
-// hermetic validator, whose chart-local references resolve from the projected
+// hermetic validator, whose chart-local references resolve from the packed
 // chart files and whose remote http/https references resolve through the
 // host's pinned external-input channel. The SDK's own live-fetching validator
 // never runs in the guest. Validation only gates — it never alters values —
 // so rendered bytes stay byte-identical with the in-tree engine.
 func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
-	if in.SourceProjection == nil {
-		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source projection")
+	if in.SourceListing == nil {
+		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source listing")
 	}
 
-	bufs := make([]*loader.BufferedFile, 0, len(in.SourceProjection.Files))
-	for _, f := range in.SourceProjection.Files {
+	proj, err := packChartSource(in.SourceListing)
+	if err != nil {
+		return renderer.RenderNodeOutput{}, err
+	}
+
+	bufs := make([]*loader.BufferedFile, 0, len(proj.Files))
+	for _, f := range proj.Files {
 		bufs = append(bufs, &loader.BufferedFile{Name: f.Path, Data: f.Content})
 	}
 	ch, err := loader.LoadFiles(bufs)
@@ -202,6 +213,31 @@ func renderSynthFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutpu
 	return out, nil
 }
 
+// placeArtifactsFromInput places the node's pre-evaluated artifact set into flat
+// Kubernetes manifests. helm emits each artifact at its author-resolved name and
+// splices the host-computed build provenance into the manifest's metadata via the
+// shared placer, using the default "{{"/"}}" delimiters (helm's artifact bodies
+// carry no surviving downstream template syntax, so a template-output parse
+// failure is a hard authoring error). Entries are placed in author order.
+func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+	if in.ArtifactsProjection == nil {
+		return renderer.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no artifacts projection")
+	}
+	indent := in.Context.YAMLIndent
+	var out renderer.RenderNodeOutput
+	for _, ent := range in.ArtifactsProjection.Entries {
+		body, warning, err := renderer.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
+		if err != nil {
+			return renderer.RenderNodeOutput{}, err
+		}
+		if warning != "" {
+			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
+		}
+		out.Files = append(out.Files, renderer.RenderedFile{Path: ent.Name, Content: body})
+	}
+	return out, nil
+}
+
 // mergeAnnotations flattens the three render-context annotation buckets
 // into the single merged map the helm engine reads (for the namespace
 // annotation). Later buckets win on key collision, matching the
@@ -233,6 +269,20 @@ func sortedKeys(m map[string][]byte) []string {
 		}
 	}
 	return out
+}
+
+// packChartSource resolves the chart root from the host's name-only listing and
+// asks the host to pack the chart's file tree rooted there. Chart-root resolution
+// is single-sourced in the helm package (shared by the guest here), so the guest
+// only wires the resolved subtree into a pack request. The chart root is packed
+// as a tree, so the packed projection carries every chart file keyed by its
+// chart-root-relative path — the same file set the host formerly packed.
+func packChartSource(listing *renderer.SourceListing) (*aggrega.SourceProjection, error) {
+	rel, err := helm.ResolveChartRootRel(listing)
+	if err != nil {
+		return nil, fmt.Errorf("helm: locate chart root in %q: %w", listing.Root, err)
+	}
+	return aggrega.PackSource("tree", rel)
 }
 
 func main() {}

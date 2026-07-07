@@ -14,19 +14,13 @@ import (
 // engine — so the host can resolve terraform's host capabilities independently of
 // any engine identity, including when a node renders through a Wasm guest.
 //
-// terraform is a flat-output provider (it merges nothing at the dispatch
-// boundary) that handles its artifacts through the external path (ExternalArtifacts
-// true) and emits those artifacts verbatim (VerbatimArtifacts true) — a terraform
-// config body (HCL or .tf.json) is not Kubernetes YAML, so it emits byte-for-byte
-// after Go-template evaluation rather than being parsed as YAML and stamped with
-// provenance labels. ProjectSource walks the acquired module directory and packs
-// its files onto the render wire, so the guest reconstructs and vendors the module
-// in memory without filesystem access. The input kinds and boundary-assembly mode
-// are not held here; they are the guest's own describe() self-report.
+// terraform holds no host-side capabilities: it is a flat-output provider that
+// merges nothing at the dispatch boundary, resolves and vendors its module source
+// itself from the host's name-only listing, and places its artifacts itself in the
+// guest (prepending build provenance as an HCL comment for a pure-HCL body, or
+// emitting a companion provenance file when a .tf.json body is present). The input
+// kinds, boundary-assembly mode, and artifact-template delimiters are all the
+// guest's own describe() self-report.
 func HostCaps() renderer.HostCapabilities {
-	return renderer.HostCapabilities{
-		ExternalArtifacts: true,
-		VerbatimArtifacts: true,
-		ProjectSource:     ProjectTerraformSource,
-	}
+	return renderer.HostCapabilities{}
 }

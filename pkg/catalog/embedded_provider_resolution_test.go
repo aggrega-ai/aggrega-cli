@@ -25,7 +25,7 @@ import (
 // spec.plugin. build-embedded-helm-provider.sh recomputes it when the guest
 // source changes.
 const (
-	helmArtifactDigest = "sha256:87845151bddcf3e321fe35874a06e7994aad04b02906ae1f111d252897bf1a29"
+	helmArtifactDigest = "sha256:143a1a2a66a2d970258033f3d7158d06e6e6ef6daa3bbea16d1886c93de36594"
 	helmArtifactURI    = "oci://hub.aggrega.ai/plugins/helm-provider@" + helmArtifactDigest
 	helmPluginEntity   = "helm-renderer:1.0.0"
 	helmProviderMemPag = 4096

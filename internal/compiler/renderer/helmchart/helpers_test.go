@@ -40,36 +40,6 @@ func buildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 	return AssembleUmbrellaCore(boundaryName, aggregateName, subs, chartNameOverride, indent)
 }
 
-// TestHostCaps_ReportsExternalArtifacts pins that helm-chart's host-capability
-// holder advertises external-artifacts handling — the facet the orchestrator's
-// artifact placement reads.
-func TestHostCaps_ReportsExternalArtifacts(t *testing.T) {
-	t.Parallel()
-	if !HostCaps().ExternalArtifacts {
-		t.Errorf("HostCaps().ExternalArtifacts = false; helm-chart injects artifacts into the umbrella chart")
-	}
-}
-
-// TestPathForArtifact_PrefixesTemplates pins the path-provider
-// contract: every basename lands under templates/.
-func TestPathForArtifact_PrefixesTemplates(t *testing.T) {
-	t.Parallel()
-	got := hostPathForArtifact(renderer.NodeRenderContext{NodeID: "n"}, "deployment.yaml")
-	if got != "templates/deployment.yaml" {
-		t.Errorf("got %q; want templates/deployment.yaml", got)
-	}
-}
-
-// TestArtifactDelimiters_HelmCompatible pins the [[ ]] pair (so Helm's
-// own {{ }} survives Aggrega's pre-templating pass).
-func TestArtifactDelimiters_HelmCompatible(t *testing.T) {
-	t.Parallel()
-	left, right := hostArtifactDelimiters()
-	if left != "[[" || right != "]]" {
-		t.Errorf("delims = (%q, %q); want ([[, ]])", left, right)
-	}
-}
-
 // TestSanitizeChartName_AllReplacements pins the dot + underscore + path-separator
 // → hyphen substitution. The path-separator cases are the regression guard for the
 // umbrella chart name: a boundary path's "/" must become "-" so Helm can load the
@@ -98,30 +68,19 @@ func TestSanitizeChartName_AllReplacements(t *testing.T) {
 	}
 }
 
-// TestRenderSourcedChart_HappyPath pins the sourced-render success path with a
-// real chart directory: the chart is projected from disk through
-// ProjectSourcedChart and rebuilt into the file map by RenderSourcedChartCore —
-// the same projection-and-render core the provider guest runs.
+// TestRenderSourcedChart_HappyPath pins the sourced-render success path: a packed
+// chart projection is rebuilt into the file map by RenderSourcedChartCore — the
+// same render core the provider guest runs on the projection the host packs.
 func TestRenderSourcedChart_HappyPath(t *testing.T) {
 	t.Parallel()
-	tmp := t.TempDir()
 	chartYAML := `apiVersion: v2
 name: my-chart
 version: 0.1.0
 `
-	if err := os.WriteFile(filepath.Join(tmp, "Chart.yaml"), []byte(chartYAML), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(tmp, "templates"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(tmp, "templates", "deploy.yaml"), []byte("kind: Deployment\n"), 0o644); err != nil {
-		t.Fatalf("write template: %v", err)
-	}
-	proj, err := ProjectSourcedChart(tmp)
-	if err != nil {
-		t.Fatalf("project: %v", err)
-	}
+	proj := &renderer.SourceProjection{Files: []renderer.SourceFile{
+		{Path: "Chart.yaml", Content: []byte(chartYAML)},
+		{Path: "templates/deploy.yaml", Content: []byte("kind: Deployment\n")},
+	}}
 	files := RenderSourcedChartCore(proj)
 	if _, has := files["Chart.yaml"]; !has {
 		t.Errorf("Chart.yaml missing; got keys=%v", keys(files))
@@ -139,65 +98,59 @@ func keys(m map[string][]byte) []string {
 	return out
 }
 
-// TestProjectSourcedChart_StatError pins the stat-fail path.
-func TestProjectSourcedChart_StatError(t *testing.T) {
+// TestValidateSourcedChartListing_HappyPath pins that a directory listing
+// carrying Chart.yaml at its root validates.
+func TestValidateSourcedChartListing_HappyPath(t *testing.T) {
 	t.Parallel()
-	_, err := ProjectSourcedChart("/nonexistent/path/nope")
-	if err == nil {
-		t.Errorf("missing path should error")
+	listing := &renderer.SourceListing{Root: "/acquired/chart", RootIsDir: true, Entries: []renderer.SourceEntry{
+		{Path: "Chart.yaml", IsDir: false},
+		{Path: "templates", IsDir: true},
+		{Path: "templates/deploy.yaml", IsDir: false},
+	}}
+	if err := ValidateSourcedChartListing(listing); err != nil {
+		t.Errorf("valid chart listing rejected: %v", err)
 	}
 }
 
-// TestProjectSourcedChart_NotADirectory pins the not-a-directory rejection.
-func TestProjectSourcedChart_NotADirectory(t *testing.T) {
+// TestValidateSourcedChartListing_NotADirectory pins the not-a-directory
+// rejection: a non-directory source (a file or archive) is not a chart.
+func TestValidateSourcedChartListing_NotADirectory(t *testing.T) {
 	t.Parallel()
-	tmp := t.TempDir()
-	file := filepath.Join(tmp, "notadir")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	_, err := ProjectSourcedChart(file)
+	listing := &renderer.SourceListing{Root: "/acquired/notadir", RootIsDir: false}
+	err := ValidateSourcedChartListing(listing)
 	if err == nil {
-		t.Errorf("file path should reject")
+		t.Fatal("non-directory source should reject")
+	}
+	if !strings.Contains(err.Error(), "is not a directory") {
+		t.Errorf("error should name the not-a-directory cause; got %v", err)
 	}
 }
 
-// TestProjectSourcedChart_MissingChartYAML pins the missing-Chart.yaml
+// TestValidateSourcedChartListing_MissingChartYAML pins the missing-Chart.yaml
 // rejection.
-func TestProjectSourcedChart_MissingChartYAML(t *testing.T) {
+func TestValidateSourcedChartListing_MissingChartYAML(t *testing.T) {
 	t.Parallel()
-	tmp := t.TempDir()
-	// Populate with a non-Chart.yaml file so the walk runs but the
-	// post-walk check fails.
-	if err := os.WriteFile(filepath.Join(tmp, "templates.yaml"), []byte("k: v\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	_, err := ProjectSourcedChart(tmp)
+	listing := &renderer.SourceListing{Root: "/acquired/nochart", RootIsDir: true, Entries: []renderer.SourceEntry{
+		{Path: "templates.yaml", IsDir: false},
+	}}
+	err := ValidateSourcedChartListing(listing)
 	if err == nil {
-		t.Errorf("directory without Chart.yaml should reject")
+		t.Fatal("directory without Chart.yaml should reject")
+	}
+	if !strings.Contains(err.Error(), "has no Chart.yaml") {
+		t.Errorf("error should name the missing Chart.yaml; got %v", err)
 	}
 }
 
-// TestProjectSourcedChart_NestedFiles pins the recursive walk: nested files are
-// captured with forward-slash relative paths and rebuilt into the file map by the
-// render core.
-func TestProjectSourcedChart_NestedFiles(t *testing.T) {
+// TestRenderSourcedChart_NestedFiles pins the recursive rebuild: a packed
+// projection carrying nested forward-slash paths is rebuilt into the file map by
+// the render core with those paths preserved.
+func TestRenderSourcedChart_NestedFiles(t *testing.T) {
 	t.Parallel()
-	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "Chart.yaml"), []byte("apiVersion: v2\nname: n\nversion: 0.1.0\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	subdir := filepath.Join(tmp, "templates", "deep")
-	if err := os.MkdirAll(subdir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(subdir, "nested.yaml"), []byte("nested: true\n"), 0o644); err != nil {
-		t.Fatalf("write nested: %v", err)
-	}
-	proj, err := ProjectSourcedChart(tmp)
-	if err != nil {
-		t.Fatalf("project: %v", err)
-	}
+	proj := &renderer.SourceProjection{Files: []renderer.SourceFile{
+		{Path: "Chart.yaml", Content: []byte("apiVersion: v2\nname: n\nversion: 0.1.0\n")},
+		{Path: "templates/deep/nested.yaml", Content: []byte("nested: true\n")},
+	}}
 	files := RenderSourcedChartCore(proj)
 	if _, has := files["templates/deep/nested.yaml"]; !has {
 		t.Errorf("nested file missing; got keys=%v", keys(files))

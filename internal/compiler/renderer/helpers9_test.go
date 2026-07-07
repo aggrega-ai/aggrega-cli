@@ -5,47 +5,38 @@ package renderer
 
 import (
 	"testing"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestEvaluateOneArtifactWithDelims_NonDefaultDelimsParseFailWarns
-// pins the non-default-delims parse-failure → warn-and-emit branch:
-// rendered output that yaml.Unmarshal can't parse and uses non-default
-// delimiters falls back to the warning path rather than erroring.
-func TestEvaluateOneArtifactWithDelims_NonDefaultDelimsParseFailWarns(t *testing.T) {
+// TestSpliceArtifactProvenance_NonDefaultDelimsParseFailWarns pins the
+// non-default-delims parse-failure → warn-and-emit branch: content that
+// yaml.Unmarshal can't parse, under the alternate-delimiter policy, falls back to
+// the warning path rather than erroring.
+func TestSpliceArtifactProvenance_NonDefaultDelimsParseFailWarns(t *testing.T) {
 	t.Parallel()
-	state := &PhaseBState{Recipe: &types.Recipe{}}
-	tmplCtx := &types.TemplateContext{}
-	// Output that yaml.Unmarshal will reject but does NOT contain `{{`
-	// (so the pre-emptive short-circuit doesn't fire). Use bare colons
-	// in an unquoted scalar position that yaml.v3 rejects.
-	src := "key: : double-colon-error"
-	body, err := evaluateOneArtifactWithDelims(tmplCtx, state, NodeRenderContext{}, "f", src, "test", "[[", "]]")
+	// Content that yaml.Unmarshal will reject: a bare double-colon scalar.
+	src := []byte("key: : double-colon-error")
+	body, warning, err := SpliceArtifactProvenance("f", src,
+		map[string]string{"aggrega.ai/component-id": "n"}, nil, false, 2)
 	if err != nil {
 		t.Fatalf("non-default + parse-fail should warn-and-emit: %v", err)
 	}
 	if len(body) == 0 {
 		t.Errorf("rendered bytes should be emitted unchanged")
 	}
-	if len(state.Warnings) == 0 {
-		t.Errorf("warning should be appended")
+	if warning == "" {
+		t.Errorf("warning should be returned")
 	}
 }
 
-// TestEvaluateOneArtifactWithDelims_EmptyDocumentNode pins the
-// empty-document branch: an output that parses to a zero-kind yaml.Node
-// (e.g., just whitespace or a `---` separator) returns the bytes as-is
-// without provenance injection.
-func TestEvaluateOneArtifactWithDelims_EmptyDocumentNode(t *testing.T) {
+// TestSpliceArtifactProvenance_EmptyDocumentNode pins the empty-document branch:
+// content that parses to a zero-kind yaml.Node (a `---` separator) returns
+// without provenance injection or error.
+func TestSpliceArtifactProvenance_EmptyDocumentNode(t *testing.T) {
 	t.Parallel()
-	state := &PhaseBState{Recipe: &types.Recipe{}}
-	tmplCtx := &types.TemplateContext{}
-	body, err := evaluateOneArtifactWithDelims(tmplCtx, state, NodeRenderContext{}, "f", "---\n", "test", "{{", "}}")
+	body, _, err := SpliceArtifactProvenance("f", []byte("---\n"),
+		map[string]string{"aggrega.ai/component-id": "n"}, nil, true, 2)
 	if err != nil {
 		t.Fatalf("empty doc: %v", err)
 	}
-	// Output may be the rendered bytes unchanged or a trimmed variant —
-	// both surface the empty-document branch. Just verify no panic + non-error.
 	_ = body
 }

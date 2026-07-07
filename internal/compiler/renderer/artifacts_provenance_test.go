@@ -4,33 +4,30 @@
 package renderer
 
 import (
-	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// spliceArtifact runs one helm-chart ([[ ]]-delim) artifact through the full
-// evaluateArtifacts path and returns the emitted body + warnings.
+// spliceArtifact runs one already-evaluated helm-chart artifact body through the
+// exported SpliceArtifactProvenance placer with the non-default-delimiter policy
+// (a non-round-trippable file skips-and-warns rather than erroring) and returns
+// the placed body plus any warnings. It mirrors what the helm-chart guest does per
+// entry: the host has already template-evaluated the content, so the body passes
+// in verbatim.
 func spliceArtifact(t *testing.T, content string) (string, []string) {
 	t.Helper()
-	tmplCtx, state, nodeCtx := newArtifactsCtx()
-	state.Recipe.Spec.Provider = "helm-chart"
-	dir := t.TempDir()
-	p := filepath.Join(dir, "art.yaml")
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	state.Recipe.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
-	state.Recipe.Spec.Artifacts.Set("art.yaml", types.ArtifactEntry{Import: p})
-	files, err := evaluateArtifacts(context.Background(), tmplCtx, state, stubExternalArtifactsEngine{}, nodeCtx)
+	_, state, nodeCtx := newArtifactsCtx()
+	labels := BuildAggregaProvenanceLabels(nodeCtx)
+	annotations := BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI(state))
+	body, warning, err := SpliceArtifactProvenance("art.yaml", []byte(content), labels, annotations, false, nodeCtx.YAMLIndent)
 	if err != nil {
-		t.Fatalf("evaluateArtifacts: %v", err)
+		t.Fatalf("SpliceArtifactProvenance: %v", err)
 	}
-	return string(findEmitted(t, files, "templates/art.yaml").Body), state.Warnings
+	var warns []string
+	if warning != "" {
+		warns = append(warns, warning)
+	}
+	return string(body), warns
 }
 
 // TestSplice_MultiDocStampsEveryDoc is the regression test for the latent

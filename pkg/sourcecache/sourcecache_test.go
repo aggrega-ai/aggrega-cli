@@ -172,8 +172,8 @@ func TestLookupAndExtractHappyPath(t *testing.T) {
 // archive, whose contents live under a single top-level <chartname>/ directory
 // (unlike the flat synthetic fixture above). Extraction is verbatim: the chart
 // lands at extracted/<chartname>/Chart.yaml, NOT extracted/Chart.yaml. The
-// consumer (the helm engine's resolveChartRoot) descends into <chartname>/;
-// LookupAndExtract itself returns the raw extracted-archive root.
+// consumer (the helm provider guest's chart-root resolution) descends into
+// <chartname>/; LookupAndExtract itself returns the raw extracted-archive root.
 func TestLookupAndExtractNestedChartLayout(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

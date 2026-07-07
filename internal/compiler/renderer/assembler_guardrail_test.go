@@ -44,6 +44,26 @@ func (w renderOnlyAssemblerWrapper) BoundaryAssembly() string {
 	return ""
 }
 
+// ArtifactTemplateDelimiters and EmitArtifacts satisfy renderer.ArtifactsEmitter,
+// mirroring the Wasm adapter: the wrapper places each pre-evaluated entry, marking
+// Intermediate from its forwarded boundary-assembly self-report. The merge
+// self-report makes the placed artifacts intermediate, so the dispatch group needs
+// an assembler the wrapper genuinely lacks — the mismatch the guardrail catches.
+func (renderOnlyAssemblerWrapper) ArtifactTemplateDelimiters() (string, string) { return "{{", "}}" }
+
+func (w renderOnlyAssemblerWrapper) EmitArtifacts(_ context.Context, proj renderer.ArtifactsProjection, _ renderer.NodeRenderContext) ([]renderer.EmittedFile, error) {
+	intermediate := renderer.RenderIsIntermediate(w)
+	files := make([]renderer.EmittedFile, 0, len(proj.Entries))
+	for _, ent := range proj.Entries {
+		origin := renderer.EmitOriginArtifactsInline
+		if ent.Origin == "import" {
+			origin = renderer.EmitOriginArtifactsImport
+		}
+		files = append(files, renderer.EmittedFile{Name: ent.Name, Origin: origin, Body: ent.Content, Intermediate: intermediate})
+	}
+	return files, nil
+}
+
 // TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts proves the Loud
 // Guardrail: when a provider whose in-tree engine assembles a dispatch group is
 // served by an engine that can render per node but cannot assemble (a rendering

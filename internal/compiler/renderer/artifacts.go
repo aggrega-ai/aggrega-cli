@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Phase B.3 artifacts evaluation per chapter 16's three-input-kinds model.
-// `artifacts:` is a single OrderedMap keyed by output filename; each entry
+// Phase B.3 artifacts host-side projection per chapter 16's three-input-kinds
+// model. `artifacts:` is a single OrderedMap keyed by output filename; each entry
 // is either inline content (a templated string) or $import:-loaded (a map
-// containing only $import: with a file path). Both forms evaluate against
-// the full TemplateContext including .workload and .source, get provenance
-// labels merged into K8s-style metadata.labels, and emit as EmittedFile
-// entries tagged with their origin so the Phase B.5 collision detector can
-// name every contributor on a cross-origin clash.
+// containing only $import: with a file path). The host runs the generic,
+// invariant-forced work — the $import read, the pillar pre-check, the Go-template
+// evaluation against the full TemplateContext (including .workload and .source),
+// and the build-provenance key computation — and projects the result to the
+// provider guest, which decides format, provenance placement, output path, and
+// final bytes. This file carries the host projection builder, the exported
+// Kubernetes-YAML provenance placer the YAML-emitting guests call, and the shared
+// provenance-splice primitives.
 
 package renderer
 
@@ -26,295 +29,138 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// ExternalArtifactsHandler is the marker interface implemented by Engines
-// whose provider model handles artifacts outside Phase B's standard
-// emission path. Today: the helm-chart engine, whose $import:-loaded
-// artifact entries are merged into the chart's `templates/` directory
-// rather than emitted as standalone files. Engines satisfying this marker
-// reject inline-content entries at Phase B.3 (the chart structure cannot
-// accept inline-content artifact declarations).
+// ArtifactsEmitter is the optional interface a provider engine implements to
+// place a node's pre-evaluated artifact set into provider-native output. Phase
+// B.3 builds an [ArtifactsProjection] — each entry already read from its source,
+// evaluated as a Go template against the render context, and carrying the host-
+// computed build-provenance key sets — and dispatches it here. The guest owns the
+// format decision, the provenance placement, the output path, and the final
+// bytes; the host runs only the generic, invariant-forced work (the $import read,
+// the pillar pre-check, the template evaluation, and the provenance-key
+// computation).
 //
-// Optional companion capabilities. Engines that opt into external
-// dispatch tune the per-artifact placement and the template delimiter
-// pair through two independent capability interfaces:
-//
-//   - ArtifactsPathProvider — engine declares the per-node-relative path
-//     each emitted $import:-loaded artifact lands at (e.g., helm-chart's
-//     "templates/<basename>"). Engines that don't implement this interface
-//     emit at the bare basename, matching the standard non-external
-//     emission shape.
-//
-//   - ArtifactsTemplateDelims — engine declares the Go-template delimiter
-//     pair Aggrega's pre-templating uses on each $import:-loaded artifact
-//     file (e.g., helm-chart's "[[", "]]" so Helm's "{{ ... }}" survives
-//     into the downstream render). Engines that don't implement this
-//     interface use the default "{{", "}}" delimiters.
-//
-// Dispatch parity. Phase B.3 dispatches by marker assertion in the same
-// shape as the BoundaryAssembler dispatch. The two companion capabilities
-// follow the same pattern (independent type assertions with default
-// fallbacks) used by WorkloadSynthesizer / BoundaryAssembler elsewhere
-// in the package.
-type ExternalArtifactsHandler interface {
-	HandlesArtifactsExternally()
+// Mirrors [WorkloadSynthesizer]: an engine that does not implement it produces a
+// CATALOG_ERROR at B.3. Implemented by the Wasm provider adapter for every shipped
+// provider; the delimiter accessor reports the guest's declared artifact-template
+// delimiter pair so the host evaluates each entry with the pair the guest's target
+// syntax needs (the default "{{"/"}}", or an alternate such as helm-chart's
+// "[["/"]]").
+type ArtifactsEmitter interface {
+	// EmitArtifacts places the pre-evaluated artifact set into provider-native
+	// output. Returns []EmittedFile (each tagged with its artifacts origin and
+	// Intermediate marking by the emitter) or a render error.
+	EmitArtifacts(ctx context.Context, proj ArtifactsProjection, nodeCtx NodeRenderContext) ([]EmittedFile, error)
+	// ArtifactTemplateDelimiters reports the Go-template delimiter pair the host
+	// evaluates each artifact entry with before projecting it — the guest's own
+	// declared pair, so the guest's target syntax (e.g. Helm's "{{ ... }}") is
+	// left untouched by the host's pre-templating pass.
+	ArtifactTemplateDelimiters() (left, right string)
 }
 
-// ArtifactsPathProvider declares per-artifact path placement for engines
-// satisfying ExternalArtifactsHandler. The path the method returns is
-// per-node-relative; the orchestrator's per-(path, provider) nesting layers
-// the dispatch path's prefix and `charts/<nodeID>/` on top for
-// BoundaryAssembler engines. Engines that don't implement this interface
-// fall back to the bare basename — matching the standard non-external
-// emission shape — when the artifacts evaluator dispatches a $import:-loaded
-// artifact entry.
-type ArtifactsPathProvider interface {
-	PathForArtifact(nodeCtx NodeRenderContext, basename string) string
-}
-
-// ArtifactsTemplateDelims declares the Go-template delimiter pair used
-// when Aggrega's pre-templating evaluates $import:-loaded artifact files
-// for an ExternalArtifactsHandler engine. Engines whose provider model
-// runs a downstream templating pass with the same default `{{ }}`
-// delimiters return alternates here so Aggrega's pass leaves the
-// downstream syntax untouched. helm-chart returns "[[", "]]" so Helm's
-// `{{ ... }}` blocks survive into the chart's render pipeline.
+// buildArtifactsProjection performs the generic, invariant-forced host work for a
+// node's artifacts: it walks Recipe.Spec.Artifacts in author order, resolves each
+// entry's text (inline content or the $import:-loaded file the host reads per
+// Invariant 2), runs the pillar pre-check, and evaluates the entry as a Go
+// template against tmplCtx using the supplied delimiter pair. It attaches the
+// host-computed build-provenance label and annotation key sets — the same key
+// computation every emitting surface shares — to each entry. Format, provenance
+// placement, path, and final bytes are the guest's concern via
+// [ArtifactsEmitter.EmitArtifacts].
 //
-// Engines that don't implement this interface fall back to the default
-// "{{", "}}" pair (text/template default).
-type ArtifactsTemplateDelims interface {
-	ArtifactDelimiters() (left, right string)
-}
-
-// evaluateArtifacts walks Recipe.Spec.Artifacts in author order, dispatching
-// per entry on content shape (inline content vs $import:-loaded), evaluates
-// each entry as a Go template against tmplCtx, parses the output as YAML,
-// merges the canonical provenance label set into metadata.labels (when the
-// document carries metadata), and returns the emitted-file slice for the
-// caller to append to state.EmittedFiles. Each emission carries the matching
-// EmitOrigin tag so Phase B.5 cross-origin collision detection can name
-// every contributor.
-//
-// Per-provider dispatch:
-//   - helm / terraform / cloudformation / future flat providers — emissions
-//     land as standalone files under the boundary output directory
-//     (Intermediate=false).
-//   - compose — emissions are tagged Intermediate=true so the orchestrator
-//     routes them to ComposeRelease's parseNodeFragment via ReleaseInfo,
-//     mirroring how engine.Render output is routed for ReleaseComposer
-//     engines today.
-//   - helm-chart — inline-content artifact entries are rejected with a
-//     CATALOG_ERROR because Helm owns the chart's templates/ directory and
-//     cannot accept inline-content artifact declarations. $import:-loaded
-//     entries are a no-op at B.3; the helm-chart provider's special
-//     pre-template injection path is the responsibility of a follow-up work
-//     item, not B.3.
-//   - verbatim external providers (terraform and similar flat text emitters,
-//     marked VerbatimArtifacts) — each entry (inline or $import) emits
-//     byte-for-byte after Go-template evaluation, skipping the YAML parse,
-//     provenance-label merge, and re-marshal, because the body (HCL,
-//     .tf.json) is not Kubernetes YAML.
-//
-// Self-containment: the chapter requires artifacts to reference only the
-// Recipe's declared inputs (pillars, .workload, .source). Cross-Recipe
-// resource references are not compile-time checked — runtime apply catches
-// them. The constraint is documented here on the evaluator; a future
-// iteration may add a static checker.
-func evaluateArtifacts(
-	_ context.Context,
+// The per-entry output name is the author-declared map key for an inline entry
+// and the imported file's base name for an $import:-loaded entry; origin records
+// which form the entry took so a guest that rejects one form can halt on it.
+func buildArtifactsProjection(
 	tmplCtx *types.TemplateContext,
 	state *PhaseBState,
-	engine Engine,
 	nodeCtx NodeRenderContext,
-) ([]EmittedFile, error) {
-	if state == nil || state.Recipe == nil {
-		return nil, nil
-	}
-	if state.Recipe.Spec.Artifacts.Len() == 0 {
-		return nil, nil
-	}
+	leftDelim, rightDelim string,
+) (ArtifactsProjection, error) {
+	labels := BuildAggregaProvenanceLabels(nodeCtx)
+	annotations := BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI(state))
 
-	hostCaps := ResolveHostCaps(engine)
-	if hostCaps.ExternalArtifacts {
-		leftDelim, rightDelim := "{{", "}}"
-		if hostCaps.ArtifactDelimiters != nil {
-			leftDelim, rightDelim = hostCaps.ArtifactDelimiters()
-		}
-
-		if hostCaps.VerbatimArtifacts {
-			// Verbatim providers (terraform and similar flat text emitters):
-			// each artifact body emits byte-for-byte after Go-template
-			// evaluation — no YAML parse, no provenance-label merge, no
-			// re-marshal — because the body (HCL, .tf.json) is not Kubernetes
-			// YAML. Inline and $import entries are both accepted: the
-			// inline-rejection below is specific to a downstream template
-			// engine (the chart's) mangling inline strings, which a verbatim
-			// provider does not run.
-			//
-			// A verbatim body is not Kubernetes YAML, so build provenance
-			// cannot ride in metadata.labels/annotations the way the YAML path
-			// splices it. Placement is format-aware, keyed on the emitted
-			// filename's extension:
-			//
-			//   - HCL body (name does not end in .json — main.tf, *.tf,
-			//     *.tftpl): the provenance is prepended as a leading `#`
-			//     comment block, riding at the top of the file.
-			//   - JSON body (name ends in .json — *.tf.json): a `#` prefix
-			//     would make the body invalid JSON, so the body emits
-			//     byte-for-byte and the provenance travels in a single
-			//     companion comment-only file (aggrega.provenance.tf), the
-			//     same filename the sourced guest uses for its JSON tfvars
-			//     overlay.
-			//
-			// When the node mixes HCL and JSON bodies, the companion is the
-			// sole provenance carrier (HCL bodies then also emit verbatim) so
-			// the block is never duplicated across surfaces. All three
-			// placements use the same shared FormatTerraformProvenanceComment
-			// formatter the sourced guest uses, so the stamped identity is
-			// identical across every terraform emission surface.
-			type verbatimEmit struct {
-				name   string
-				origin EmitOrigin
-				body   []byte
-			}
-			var emits []verbatimEmit
-			hasJSONBody := false
-			for _, name := range state.Recipe.Spec.Artifacts.Keys() {
-				entry, _ := state.Recipe.Spec.Artifacts.Get(name)
-				tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, name)
-				if err != nil {
-					return nil, err
-				}
-				// Inline: the emitted name is the author-declared map key.
-				// $import: the emitted name is the bare basename of the path.
-				emitName := name
-				origin := EmitOriginArtifactsInline
-				if entry.Import != "" {
-					emitName = filepath.Base(entry.Import)
-					origin = EmitOriginArtifactsImport
-				}
-				body, err := evaluateOneArtifactVerbatim(
-					tmplCtx, state, emitName, tmplText,
-					fmt.Sprintf("artifactsVerbatim[%s/%s]", state.RecipeName, emitName),
-					leftDelim, rightDelim,
-				)
-				if err != nil {
-					return nil, err
-				}
-				if strings.HasSuffix(emitName, ".json") {
-					hasJSONBody = true
-				}
-				emits = append(emits, verbatimEmit{name: emitName, origin: origin, body: body})
-			}
-
-			provComment := FormatTerraformProvenanceComment(nodeCtx, recipeURI(state))
-			var out []EmittedFile
-			for _, e := range emits {
-				body := e.body
-				// Pure-HCL node: prepend provenance to each body. When any
-				// JSON body is present the companion below is the sole carrier,
-				// so no body is mutated. Copy provComment per body so the
-				// shared slice is never aliased into an emitted file.
-				if !hasJSONBody {
-					body = append(append([]byte{}, provComment...), body...)
-				}
-				out = append(out, EmittedFile{
-					Name:         e.name,
-					Origin:       e.origin,
-					Body:         body,
-					Intermediate: false,
-				})
-			}
-			if hasJSONBody {
-				out = append(out, EmittedFile{
-					Name:         "aggrega.provenance.tf",
-					Origin:       EmitOriginArtifactsInline,
-					Body:         provComment,
-					Intermediate: false,
-				})
-			}
-			return out, nil
-		}
-
-		// External-handler engines (helm-chart and similar): each
-		// artifact entry must be a file-import (mode 2). Inline
-		// content is forbidden because the engine consumes pre-
-		// templated files at chart-templates/ injection time; the
-		// inline-template-string pattern doesn't survive the chart's
-		// own template engine.
-		pathFn := func(_ NodeRenderContext, basename string) string { return basename }
-		if hostCaps.PathForArtifact != nil {
-			pathFn = hostCaps.PathForArtifact
-		}
-		var out []EmittedFile
-		for _, name := range state.Recipe.Spec.Artifacts.Keys() {
-			entry, _ := state.Recipe.Spec.Artifacts.Get(name)
-			if entry.Inline != "" {
-				return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
-					fmt.Sprintf("recipe %q (%q): provider %q does not support inline artifacts entries; use the {$import: <path>} mode so the file can be injected into the chart's templates/ directory",
-						state.RecipeName, state.RecipePath, state.Recipe.Spec.Provider),
-					nil, nil)
-			}
-			tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, name)
-			if err != nil {
-				return nil, err
-			}
-			basename := filepath.Base(entry.Import)
-			body, err := evaluateOneArtifactWithDelims(
-				tmplCtx, state, nodeCtx, basename, tmplText,
-				fmt.Sprintf("artifactsImport[%s/%s]", state.RecipeName, basename),
-				leftDelim, rightDelim,
-			)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, EmittedFile{
-				Name:         pathFn(nodeCtx, basename),
-				Origin:       EmitOriginArtifactsImport,
-				Body:         body,
-				Intermediate: false,
-			})
-		}
-		return out, nil
-	}
-
-	// Intermediate-tagged emitted files are consumed by the orchestrator's
-	// per-(path, provider) grouping in RenderAll — the `if f.Intermediate`
-	// branch routes solely on the flag. The assembler classification reads the
-	// engine's boundary-assembly self-report rather than asserting a concrete
-	// engine type, so a provider routed to a Wasm guest tags from the guest's
-	// live describe() claim.
-	isAssembler := AssemblesBoundary(engine)
-
-	var out []EmittedFile
-
-	for _, filename := range state.Recipe.Spec.Artifacts.Keys() {
-		entry, _ := state.Recipe.Spec.Artifacts.Get(filename)
-		tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, filename)
+	var proj ArtifactsProjection
+	for _, key := range state.Recipe.Spec.Artifacts.Keys() {
+		entry, _ := state.Recipe.Spec.Artifacts.Get(key)
+		tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, key)
 		if err != nil {
-			return nil, err
+			return ArtifactsProjection{}, err
 		}
-		// Mode 1 (inline) — filename is the author-declared map key.
-		// Mode 2 (file import) — filename is still the map key (the
-		// author chose it; basename derivation happens at the
-		// external-handler path above where the chart-injection
-		// convention requires basename-from-path).
-		origin := EmitOriginArtifactsInline
+		name := key
+		origin := "inline"
 		if entry.Import != "" {
-			origin = EmitOriginArtifactsImport
+			name = filepath.Base(entry.Import)
+			origin = "import"
 		}
-		body, err := evaluateOneArtifact(tmplCtx, state, nodeCtx, filename, tmplText, fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, filename))
+		if err := preCheckArtifactPillars(state, name, tmplText, leftDelim, rightDelim); err != nil {
+			return ArtifactsProjection{}, err
+		}
+		rendered, err := EvalTemplateWithDelims(
+			fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, name),
+			tmplText, tmplCtx, leftDelim, rightDelim,
+		)
 		if err != nil {
-			return nil, err
+			return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("artifact %q template eval", name))
 		}
-		out = append(out, EmittedFile{
-			Name:         filename,
-			Origin:       origin,
-			Body:         body,
-			Intermediate: isAssembler,
+		proj.Entries = append(proj.Entries, ArtifactProjectionEntry{
+			Name:        name,
+			Origin:      origin,
+			Content:     []byte(rendered),
+			Labels:      labels,
+			Annotations: annotations,
 		})
 	}
+	return proj, nil
+}
 
-	return out, nil
+// SpliceArtifactProvenance stamps the supplied build-provenance label and
+// annotation sets into a rendered Kubernetes-YAML artifact's metadata and returns
+// the placed bytes. It is the exported placer a Kubernetes-YAML-emitting provider
+// guest calls once per artifact entry: the guest supplies the entry's already-
+// template-evaluated bytes and the host-computed provenance sets, and receives the
+// stamped body, an optional warning to raise as a diagnostic, and a hard error.
+//
+// Placement path (identical for every YAML-splicing guest): a byte-faithful
+// per-document surgical splice first, falling back to a multi-document round-trip
+// for documents the splice cannot handle. defaultDelims selects the round-trip's
+// parse-failure policy: true (the guest's target syntax was Aggrega's own default
+// "{{"/"}}", already resolved) treats a parse failure as a CATALOG_ERROR; false
+// (an alternate-delimiter guest whose output may still carry the target engine's
+// "{{ ... }}", e.g. helm-chart) treats a non-round-trippable file as a skip —
+// emitting the original bytes unchanged and returning warning naming the file, so
+// provenance for such files rides in the chart's own helpers. indent is the YAML
+// indentation width the round-trip re-marshal uses. Empty content is returned
+// unchanged with no warning.
+//
+// A non-empty warning is advisory (the guest raises it as a diagnostic); a
+// non-nil err is a hard render failure the guest surfaces as such.
+func SpliceArtifactProvenance(name string, rendered []byte, labels, annotations map[string]string, defaultDelims bool, indent int) (body []byte, warning string, err error) {
+	r := string(rendered)
+	if strings.TrimSpace(r) == "" {
+		return rendered, "", nil
+	}
+
+	// Primary: byte-faithful per-document surgical splice. Every byte the splice
+	// does not insert stays identical, so no target-engine token outside the
+	// inserted label lines can be re-shaped. ok=false routes to the round-trip.
+	if out, ok := spliceProvenanceMultiDoc(r, labels, annotations); ok {
+		return []byte(out), "", nil
+	}
+
+	// Fallback: multi-document-aware round-trip for the documents the splice
+	// cannot handle.
+	b, outcome, rtErr := injectProvenanceRoundTrip(name, r, labels, annotations, defaultDelims, indent)
+	switch outcome {
+	case artifactInjected:
+		if rtErr != nil {
+			return nil, "", rtErr // CATALOG_ERROR from the Q1a metadata-shape guard
+		}
+		return b, "", nil
+	case artifactParseFailDefault:
+		return nil, "", cerrors.Wrap(rtErr, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("artifact %q template output is not valid YAML", name))
+	default: // artifactSkip
+		return rendered, provenanceSkipWarning(name), nil
+	}
 }
 
 // provenanceSkipWarning is the user-facing message emitted when a
@@ -345,157 +191,6 @@ var helmTemplateTokenRe = regexp.MustCompile(`\{\{.*?\}\}`)
 // check detects as a dropped token.
 func helmTemplateTokens(s string) []string {
 	return helmTemplateTokenRe.FindAllString(s, -1)
-}
-
-// evaluateOneArtifact is the default-delimiters wrapper used by the
-// standard (non-external-handler) emission path. Thin call into
-// evaluateOneArtifactWithDelims with the literal "{{", "}}" pair — no
-// empty-string sentinel logic.
-func evaluateOneArtifact(
-	tmplCtx *types.TemplateContext,
-	state *PhaseBState,
-	nodeCtx NodeRenderContext,
-	filename string,
-	tmplText string,
-	tmplName string,
-) ([]byte, error) {
-	return evaluateOneArtifactWithDelims(tmplCtx, state, nodeCtx, filename, tmplText, tmplName, "{{", "}}")
-}
-
-// evaluateOneArtifactWithDelims handles the per-entry pipeline: nil-pillar
-// pre-check, Go-template evaluation with the supplied delimiter pair, YAML
-// parse, provenance-label merge, YAML re-marshal. Returns the marshalled
-// bytes ready to attach to an EmittedFile. tmplName is the template-engine
-// identifier surfaced in parse / execute error messages; filename is the
-// user-facing artifact name surfaced in CATALOG_ERROR.
-//
-// YAML parse handling differs by call path:
-//
-//   - Standard (default delimiters, non-external-handler engines): a parse
-//     failure is a CATALOG_ERROR — Aggrega's pre-templating output is
-//     authoritative, and a non-YAML result is an authoring bug.
-//   - External-handler engines using non-default delimiters (helm-chart's
-//     `[[ ]]`): a parse failure is the common case for files mixing Helm
-//     `{{ }}` template structure with YAML, and is NOT an error. The
-//     evaluator emits the rendered bytes unchanged, skips provenance
-//     injection, and appends a state.Warnings entry naming the
-//     $import:-loaded artifact file so the build surfaces the gap.
-//
-// The delimiter pair drives the dispatch — when leftDelim+rightDelim
-// differ from the default `{{ }}`, the parse-failure path takes the
-// warn-and-emit branch.
-func evaluateOneArtifactWithDelims(
-	tmplCtx *types.TemplateContext,
-	state *PhaseBState,
-	nodeCtx NodeRenderContext,
-	filename string,
-	tmplText string,
-	tmplName string,
-	leftDelim, rightDelim string,
-) ([]byte, error) {
-	if err := preCheckArtifactPillars(state, filename, tmplText, leftDelim, rightDelim); err != nil {
-		return nil, err
-	}
-
-	rendered, err := EvalTemplateWithDelims(tmplName, tmplText, tmplCtx, leftDelim, rightDelim)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template eval", filename))
-	}
-
-	if strings.TrimSpace(rendered) == "" {
-		return []byte(rendered), nil
-	}
-
-	usingDefaultDelims := leftDelim == "{{" && rightDelim == "}}"
-
-	// External-handler path (non-default delimiters, e.g. helm-chart's
-	// `[[ ]]`): the post-`[[ ]]` output may still carry Helm `{{ ... }}`
-	// destined for Helm's downstream render. Provenance is merged only when
-	// the YAML round-trip below preserves those Helm references intact —
-	// the gate is "does the round-trip preserve every Helm token", NOT
-	// merely "does it parse":
-	//
-	//   - Helm `{{ }}` confined to QUOTED scalar positions (or files using
-	//     only `[[ ]]` context) round-trip cleanly — the reference rides
-	//     inside a string scalar (the re-marshal may swap `"{{ x }}"` for
-	//     `'{{ x }}'`, cosmetic and harmless). Provenance is merged.
-	//   - UNQUOTED `{{ x }}` at a value position does NOT fail to parse:
-	//     yaml.v3 reads it as a flow mapping and re-marshals it destructively
-	//     (`{{ x }}` -> `{? {x: ''} : ''}`), corrupting the Helm template. A
-	//     parse success with a mangled re-marshal is therefore treated as a
-	//     skip, not an inject — caught by the token check after the marshal.
-	//   - Structural Helm actions (`{{- if }}`, `{{- range }}`,
-	//     `{{- include }}`) fail the parse outright.
-	//
-	// All non-round-trippable cases route to the same outcome: skip
-	// provenance, emit the rendered bytes UNCHANGED, and warn — provenance
-	// for such files belongs in the chart's `_helpers.tpl`.
-	//
-	// Default-delimiter (non-external-handler) callers instead treat a parse
-	// failure as a CATALOG_ERROR — Aggrega's pre-templating output is
-	// authoritative for that path, and its `{{ }}` were Aggrega's own
-	// delimiters, already resolved, so no Helm tokens remain to preserve.
-
-	labels := buildProvenanceLabels(state, nodeCtx)
-	annotations := buildProvenanceAnnotations(state, nodeCtx)
-
-	// Primary: byte-faithful per-document surgical splice. Every byte the splice
-	// does not insert stays identical, so no Helm `{{ }}` token outside the
-	// inserted label lines can be re-shaped — and every document in a multi-doc
-	// stream is stamped (the single-yaml.Unmarshal path this replaces decoded only
-	// the first document and silently dropped the rest). ok=false (a non-spliceable
-	// metadata shape, or a post-splice anomaly) routes to the round-trip fallback.
-	if out, ok := spliceProvenanceMultiDoc(rendered, labels, annotations); ok {
-		return []byte(out), nil
-	}
-
-	// Fallback: multi-document-aware round-trip — verified-safe (decodes every
-	// document, injects each, re-marshals all) for the documents the splice cannot
-	// handle. The external-delims path gates on Helm-token preservation; a
-	// default-delims parse failure is a CATALOG_ERROR; otherwise skip + warn and
-	// emit the ORIGINAL rendered bytes.
-	body, outcome, rtErr := injectProvenanceRoundTrip(filename, rendered, labels, annotations, usingDefaultDelims, nodeCtx.YAMLIndent)
-	switch outcome {
-	case artifactInjected:
-		if rtErr != nil {
-			return nil, rtErr // CATALOG_ERROR from the Q1a metadata-shape guard
-		}
-		return body, nil
-	case artifactParseFailDefault:
-		return nil, cerrors.Wrap(rtErr, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template output is not valid YAML", filename))
-	default: // artifactSkip
-		state.Warnings = append(state.Warnings, provenanceSkipWarning(filename))
-		return []byte(rendered), nil
-	}
-}
-
-// evaluateOneArtifactVerbatim handles the per-entry pipeline for a verbatim
-// provider: nil-pillar pre-check, then Go-template evaluation with the supplied
-// delimiter pair, returning the rendered bytes unchanged. Unlike
-// evaluateOneArtifactWithDelims it performs no YAML parse, no provenance-label
-// merge, and no re-marshal — the body emits byte-for-byte after template
-// evaluation, the correct shape for a flat text provider whose config (HCL,
-// .tf.json) is not Kubernetes YAML. tmplName is the template-engine identifier
-// surfaced in parse / execute error messages; filename is the user-facing
-// artifact name surfaced in CATALOG_ERROR.
-func evaluateOneArtifactVerbatim(
-	tmplCtx *types.TemplateContext,
-	state *PhaseBState,
-	filename string,
-	tmplText string,
-	tmplName string,
-	leftDelim, rightDelim string,
-) ([]byte, error) {
-	if err := preCheckArtifactPillars(state, filename, tmplText, leftDelim, rightDelim); err != nil {
-		return nil, err
-	}
-
-	rendered, err := EvalTemplateWithDelims(tmplName, tmplText, tmplCtx, leftDelim, rightDelim)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template eval", filename))
-	}
-
-	return []byte(rendered), nil
 }
 
 // preCheckArtifactPillars walks the template's parsed field-access set
@@ -548,6 +243,16 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 	return nil
 }
 
+// Deliberate second splicer — do NOT unify with the helm render-core label
+// injector (helm.injectAggregaLabels / injectAggregaAnnotations). This surgical
+// yaml.Node splice is the artifacts path: it preserves the user's authored field
+// order and every byte outside the inserted label lines, which a Helm-authored
+// artifact needs so its `{{ ... }}` template tokens survive. The render-core
+// injector runs on a fully-remarshalled document with its own quoting and
+// hook-weight handling for synthesized manifests. The two operate on genuinely
+// different inputs and unifying them would change emitted bytes; they are left
+// separate on purpose.
+//
 // injectProvenanceNode merges the canonical provenance-label set into the
 // document's metadata.labels block, mutating the supplied *yaml.Node in
 // place. yaml.Node-based traversal preserves the user's authored field

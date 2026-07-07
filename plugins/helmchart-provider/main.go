@@ -16,10 +16,10 @@
 // concern — so the guest handles a source projection alone and rejects a payload
 // that carries none.
 //
-// The render_node guest decodes a RenderNodeInput, reconstructs the sub-chart's
-// file set in memory from the payload's SourceProjection (the host read the
-// chart's files at compile time and packed them into the payload — the guest
-// touches no filesystem), and returns each file's bytes verbatim as a
+// The render_node guest decodes a RenderNodeInput, resolves the sub-chart from
+// the payload's name-only SourceListing, asks the host to pack the chart's file
+// tree through the pack-source host function (the guest touches no filesystem
+// itself), and returns each file's bytes verbatim as a
 // RenderedFile. The assemble_boundary guest decodes an AssembleBoundaryInput,
 // reconstructs each sub-chart's pure-data view from the payload (identity,
 // per-instance values, and the pristine bytes of the vendored chart's Chart.yaml
@@ -35,10 +35,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )
 
@@ -48,9 +51,12 @@ import (
 // capability self-report (sourced-only input, nest-per-node umbrella assembly,
 // and the "[["/"]]" artifact-template delimiter pair). The host reads this
 // once at load and validates it before invoking either export. helm-chart
-// copies chart files verbatim and fetches nothing, so no host functions are
-// declared.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"}},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// resolves its chart source from the host's name-only listing and asks the host
+// to pack it, so render_node declares the aggrega_pack_source host function it
+// imports; the host cross-checks this declaration against the functions the
+// guest actually imports. The assemble_boundary export assembles sub-charts
+// already in the payload and imports no host function.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"}},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -66,19 +72,24 @@ func renderNode() int32 {
 		return 1
 	}
 
-	// helm-chart is sourced-only: it copies a local chart verbatim and
-	// synthesizes nothing. A payload with no source projection is an orchestrator
-	// dispatch error rather than authoring drift, so it halts loudly.
-	if in.SourceProjection == nil {
-		pdk.SetError(errors.New("helmchart-provider: render_node input carries no source projection"))
+	var out renderer.RenderNodeOutput
+	var err error
+	switch {
+	case in.ArtifactsProjection != nil:
+		out, err = placeArtifactsFromInput(in)
+	case in.SourceListing != nil:
+		out, err = renderSourcedFromInput(in)
+	default:
+		// helm-chart is sourced-only for render: it copies a local chart verbatim
+		// and synthesizes nothing. A payload with no source listing and no
+		// artifacts projection is an orchestrator dispatch error rather than
+		// authoring drift, so it halts loudly.
+		pdk.SetError(errors.New("helmchart-provider: render_node input carries neither a source listing nor an artifacts projection"))
 		return 1
 	}
-
-	rendered := helmchart.RenderSourcedChartCore(in.SourceProjection)
-
-	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
-	for _, path := range sortedKeys(rendered) {
-		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+	if err != nil {
+		pdk.SetError(errors.New(errorChainMessage(err)))
+		return 1
 	}
 
 	encoded, err := out.MarshalJSON()
@@ -88,6 +99,52 @@ func renderNode() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+// renderSourcedFromInput copies the sourced sub-chart verbatim into a sub-chart
+// file set via the shared render core, returning each file's bytes keyed by its
+// chart-root-relative path in deterministic order.
+func renderSourcedFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+	proj, err := packSourcedChart(in.SourceListing)
+	if err != nil {
+		return renderer.RenderNodeOutput{}, err
+	}
+	rendered := helmchart.RenderSourcedChartCore(proj)
+
+	out := renderer.RenderNodeOutput{Files: make([]renderer.RenderedFile, 0, len(rendered))}
+	for _, path := range sortedKeys(rendered) {
+		out.Files = append(out.Files, renderer.RenderedFile{Path: path, Content: rendered[path]})
+	}
+	return out, nil
+}
+
+// placeArtifactsFromInput places the node's pre-evaluated artifact set into the
+// chart's templates/ directory. helm-chart is $import-only for artifacts: an
+// inline entry is rejected loudly, because the chart's own downstream template
+// engine mangles an inline-template string that has not survived a file round
+// trip. Each imported entry lands at templates/<name> alongside the sourced
+// chart's own templates and participates in Helm's downstream render pass; the
+// host-computed build provenance is spliced into the manifest's metadata with the
+// non-default delimiter policy — a file whose surviving Helm "{{ ... }}" syntax
+// does not round-trip is emitted unchanged with a skip diagnostic rather than
+// failing the build. Entries are placed in author order.
+func placeArtifactsFromInput(in renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+	indent := in.Context.YAMLIndent
+	var out renderer.RenderNodeOutput
+	for _, ent := range in.ArtifactsProjection.Entries {
+		if ent.Origin == "inline" {
+			return renderer.RenderNodeOutput{}, fmt.Errorf("helm-chart provider (recipe %q): inline artifacts entries are not supported; use the {$import: <path>} mode so the file can be injected into the chart's templates/ directory", in.Node.RecipeName)
+		}
+		body, warning, err := renderer.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, false, indent)
+		if err != nil {
+			return renderer.RenderNodeOutput{}, err
+		}
+		if warning != "" {
+			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
+		}
+		out.Files = append(out.Files, renderer.RenderedFile{Path: "templates/" + ent.Name, Content: body})
+	}
+	return out, nil
 }
 
 //go:wasmexport assemble_boundary
@@ -180,6 +237,26 @@ func sortedKeys(m map[string][]byte) []string {
 		}
 	}
 	return out
+}
+
+// packSourcedChart validates the sourced chart against the host's name-only
+// listing, asks the host to pack its file tree, and returns the packed projection
+// the render core rebuilds the sub-chart's file map from. Listing validation is
+// single-sourced in the helmchart package (shared by the guest here); the whole
+// tree is then vendored recursively.
+func packSourcedChart(listing *renderer.SourceListing) (*renderer.SourceProjection, error) {
+	if err := helmchart.ValidateSourcedChartListing(listing); err != nil {
+		return nil, err
+	}
+	packed, err := aggrega.PackSource("tree", "")
+	if err != nil {
+		return nil, err
+	}
+	proj := &renderer.SourceProjection{Files: make([]renderer.SourceFile, len(packed.Files))}
+	for i, f := range packed.Files {
+		proj.Files[i] = renderer.SourceFile{Path: f.Path, Content: f.Content}
+	}
+	return proj, nil
 }
 
 func main() {}

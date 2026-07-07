@@ -82,10 +82,13 @@ func sampleRenderNodeInput(t *testing.T) renderer.RenderNodeInput {
 				"core/web-service", types.Component{},
 			),
 		},
-		SourceProjection: &renderer.SourceProjection{
-			Files: []renderer.SourceFile{
-				{Path: "Chart.yaml", Content: []byte("apiVersion: v2\nname: payments\nversion: 1.4.2\n")},
-				{Path: "templates/deployment.yaml", Content: []byte("kind: Deployment\n")},
+		SourceListing: &renderer.SourceListing{
+			Root:      "/acquired/payments-chart",
+			RootIsDir: true,
+			Entries: []renderer.SourceEntry{
+				{Path: "Chart.yaml", IsDir: false},
+				{Path: "templates", IsDir: true},
+				{Path: "templates/deployment.yaml", IsDir: false},
 			},
 		},
 	}

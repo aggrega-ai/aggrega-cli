@@ -5,6 +5,9 @@ package renderer
 
 import (
 	"testing"
+
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // forwardingWrapper mimics the Wasm-provider adapter: it drives render itself
@@ -25,17 +28,14 @@ func (w forwardingWrapper) HostCapabilities() HostCapabilities { return w.holder
 // concrete engine type.
 func TestResolveHostCaps_ForwardedHolder(t *testing.T) {
 	holder := HostCapabilities{
-		ExternalArtifacts:  true,
-		PathForArtifact:    func(_ NodeRenderContext, b string) string { return "templates/" + b },
-		ArtifactDelimiters: func() (string, string) { return "[[", "]]" },
+		Codec:                        func(int) frp.Codec { return nil },
+		ProjectSubCharts:             func([]SubChartInfo) ([]SubChartProjection, error) { return nil, nil },
+		BoundaryConsumerEnvOverrides: func(*types.TemplateContext) (map[string]map[string]string, error) { return nil, nil },
 	}
 	wrapper := forwardingWrapper{holder: holder}
 
 	got := ResolveHostCaps(wrapper)
-	if !got.ExternalArtifacts {
-		t.Error("ResolveHostCaps did not surface ExternalArtifacts from the forwarded holder")
-	}
-	if got.PathForArtifact == nil || got.ArtifactDelimiters == nil {
+	if got.Codec == nil || got.ProjectSubCharts == nil || got.BoundaryConsumerEnvOverrides == nil {
 		t.Error("ResolveHostCaps dropped the forwarded holder's function fields")
 	}
 }
@@ -49,7 +49,7 @@ func TestResolveHostCaps_NonHostCapableIsZero(t *testing.T) {
 		t.Fatal("stubEngine unexpectedly implements HostCapable; zero-holder case is not exercised")
 	}
 	got := ResolveHostCaps(e)
-	if got.ExternalArtifacts || got.Codec != nil || got.ProjectSource != nil {
+	if got.Codec != nil || got.ProjectSubCharts != nil || got.BoundaryConsumerEnvOverrides != nil {
 		t.Error("ResolveHostCaps returned a non-zero holder for a non-HostCapable engine")
 	}
 }

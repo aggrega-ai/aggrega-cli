@@ -14,40 +14,17 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// hostPathForArtifact is the single home for helm-chart's per-node-relative
-// $import:-loaded artifact placement. Each artifact file lands at
-// templates/<basename> within the per-node output; the orchestrator's
-// per-boundary nesting layers boundaries/<bp>/charts/<nodeID>/ on top, so the
-// emitted file is positioned alongside the sourced chart's templates and
-// participates in Helm's downstream render pass.
-func hostPathForArtifact(_ renderer.NodeRenderContext, basename string) string {
-	return "templates/" + basename
-}
-
-// hostArtifactDelimiters is the single home for helm-chart's $import:-loaded
-// artifact delimiter pair. Files use "[[", "]]" for Aggrega's pre-templating
-// pass so Helm's "{{ ... }}" template syntax inside the file survives untouched
-// into Helm's downstream render. Authors writing $import:-loaded artifact files
-// for helm-chart use [[ .pillar ]] for Aggrega context and {{ .Values.x }} for
-// Helm context.
-func hostArtifactDelimiters() (string, string) {
-	return "[[", "]]"
-}
-
 // HostCaps returns helm-chart's host-side capability holder, built from the
 // provider package's standalone functions rather than methods on a concrete
 // engine — so the host can resolve helm-chart's host capabilities independently
 // of any engine identity, including when a node renders through a Wasm guest. The
-// input kinds and boundary-assembly mode are not held here; they are the guest's
-// own describe() self-report.
+// input kinds, boundary-assembly mode, and artifact-template delimiters are not
+// held here; they are the guest's own describe() self-report. Artifact placement
+// (templates/<name> path, provenance splice) is the guest's concern too.
 func HostCaps() renderer.HostCapabilities {
 	return renderer.HostCapabilities{
-		Codec:              NewHelmChartCodec,
-		ProjectSource:      ProjectSourcedChart,
-		ProjectSubCharts:   projectSubCharts,
-		ExternalArtifacts:  true,
-		PathForArtifact:    hostPathForArtifact,
-		ArtifactDelimiters: hostArtifactDelimiters,
+		Codec:            NewHelmChartCodec,
+		ProjectSubCharts: projectSubCharts,
 	}
 }
 

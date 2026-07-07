@@ -8,9 +8,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	extism "github.com/extism/go-sdk"
 )
 
@@ -36,6 +41,8 @@ var hostFunctionAllowlist = map[string]bool{
 	"aggrega_log":                  true,
 	"aggrega_emit_warning":         true,
 	"aggrega_fetch_external_input": true,
+	"aggrega_pack_source":          true,
+	"aggrega_read_source_file":     true,
 }
 
 // allowlistedHostFunctionNames returns the curated names as a slice,
@@ -74,6 +81,10 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 			out = append(out, p.hostFunctionAggregaEmitWarning())
 		case "aggrega_fetch_external_input":
 			out = append(out, p.hostFunctionAggregaFetchExternalInput())
+		case "aggrega_pack_source":
+			out = append(out, p.hostFunctionAggregaPackSource())
+		case "aggrega_read_source_file":
+			out = append(out, p.hostFunctionAggregaReadSourceFile())
 		default:
 			// Invariant violation: validateHostFunctionsSubset
 			// admitted a name the builder switch doesn't handle.
@@ -308,6 +319,266 @@ func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env fetchEnvelope
 	offset, err := writer.WriteBytes(b)
 	if err != nil {
 		log.Printf("plugin %q: aggrega_fetch_external_input: memory write failed: %v", p.name, err)
+		return 0
+	}
+	return offset
+}
+
+// hostFunctionAggregaPackSource returns the host-side closure binding
+// aggrega_pack_source(request_ptr i64) -> response_ptr i64. The guest passes a
+// pointer to a SourcePackRequest JSON document naming a selection (op and path)
+// relative to the acquired source root; the host resolves the selection under
+// the current node's source root, packs the selected bytes, and writes one
+// SourcePackResponse JSON document back into plugin memory, returning its offset.
+//
+// The source root is read from the plugin at call time (Plugin.sourceRoot), not
+// captured when the closure is built, because one plugin instance may render
+// many nodes with different acquired sources; the caller sets it per node before
+// each invocation. Failure is in-band — an error envelope, never a trap — so a
+// sandbox rejection or a read failure surfaces as a deterministic render failure
+// the guest carries into its own diagnostics.
+//
+// Body extracted into handleAggregaPackSource so the test suite can exercise the
+// read-pack-write path against fake memory interfaces without fabricating an
+// *extism.CurrentPlugin.
+func (p *Plugin) hostFunctionAggregaPackSource() extism.HostFunction {
+	return extism.NewHostFunctionWithStack(
+		"aggrega_pack_source",
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			p.handleAggregaPackSource(cp, cp, stack)
+		},
+		[]extism.ValueType{extism.ValueTypeI64},
+		[]extism.ValueType{extism.ValueTypeI64},
+	)
+}
+
+// handleAggregaPackSource is the testable inner logic of the aggrega_pack_source
+// host function body. It reads the request JSON from plugin memory at stack[0],
+// resolves the selection under the plugin's source root through the sandbox, packs
+// the selected bytes, and writes the SourcePackResponse envelope into plugin
+// memory, leaving its offset in stack[0]. Every failure produces an error
+// envelope rather than a trap.
+func (p *Plugin) handleAggregaPackSource(reader pluginMemoryReader, writer pluginMemoryWriter, stack []uint64) {
+	reqJSON, err := reader.ReadString(stack[0])
+	if err != nil {
+		log.Printf("plugin %q: aggrega_pack_source: memory read failed: %v", p.name, err)
+		stack[0] = p.writeSourcePackFailure(writer, fmt.Sprintf("aggrega_pack_source: reading the request from plugin memory failed: %v", err))
+		return
+	}
+	var req abi.SourcePackRequest
+	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
+		stack[0] = p.writeSourcePackFailure(writer, fmt.Sprintf("aggrega_pack_source: decoding the request failed: %v", err))
+		return
+	}
+	if p.sourceRoot == "" {
+		stack[0] = p.writeSourcePackFailure(writer, "aggrega_pack_source: no acquired source is available in this context")
+		return
+	}
+	proj, err := p.packSourceSelection(req.Op, req.Path)
+	if err != nil {
+		stack[0] = p.writeSourcePackFailure(writer, err.Error())
+		return
+	}
+	b, err := abi.SourcePackResponse{SourceProjection: proj}.MarshalJSON()
+	if err != nil {
+		log.Printf("plugin %q: aggrega_pack_source: response marshal failed: %v", p.name, err)
+		stack[0] = 0
+		return
+	}
+	stack[0] = p.writeEnvelopeBytes(writer, b)
+}
+
+// hostFunctionAggregaReadSourceFile returns the host-side closure binding
+// aggrega_read_source_file(request_ptr i64) -> response_ptr i64. The guest passes
+// a pointer to a SourceFileRequest JSON document naming a single file relative to
+// the acquired source root; the host resolves it under the current node's source
+// root, reads the file, and writes one SourceFileResponse JSON document back into
+// plugin memory, returning its offset.
+//
+// This is the content-based-selection primitive, designed for a guest whose
+// resolution logic must inspect a file's content before choosing what to pack. No
+// production guest uses it yet — the production guests resolve from the name-only
+// listing alone — so it is exercised by a test-fixture guest rather than a shipped
+// one. It follows aggrega_pack_source's source-root and in-band-failure discipline.
+//
+// Body extracted into handleAggregaReadSourceFile so the test suite can exercise
+// the read-read-write path against fake memory interfaces.
+func (p *Plugin) hostFunctionAggregaReadSourceFile() extism.HostFunction {
+	return extism.NewHostFunctionWithStack(
+		"aggrega_read_source_file",
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			p.handleAggregaReadSourceFile(cp, cp, stack)
+		},
+		[]extism.ValueType{extism.ValueTypeI64},
+		[]extism.ValueType{extism.ValueTypeI64},
+	)
+}
+
+// handleAggregaReadSourceFile is the testable inner logic of the
+// aggrega_read_source_file host function body. It reads the request JSON from
+// plugin memory at stack[0], resolves the file under the plugin's source root
+// through the sandbox, reads it, and writes the SourceFileResponse envelope into
+// plugin memory, leaving its offset in stack[0]. Every failure produces an error
+// envelope rather than a trap.
+func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer pluginMemoryWriter, stack []uint64) {
+	reqJSON, err := reader.ReadString(stack[0])
+	if err != nil {
+		log.Printf("plugin %q: aggrega_read_source_file: memory read failed: %v", p.name, err)
+		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading the request from plugin memory failed: %v", err))
+		return
+	}
+	var req abi.SourceFileRequest
+	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
+		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: decoding the request failed: %v", err))
+		return
+	}
+	if p.sourceRoot == "" {
+		stack[0] = p.writeSourceFileFailure(writer, "aggrega_read_source_file: no acquired source is available in this context")
+		return
+	}
+	resolved, err := p.resolveUnderSourceRoot(req.Path)
+	if err != nil {
+		stack[0] = p.writeSourceFileFailure(writer, err.Error())
+		return
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading %q failed: %v", req.Path, err))
+		return
+	}
+	b, err := abi.SourceFileResponse{Content: data}.MarshalJSON()
+	if err != nil {
+		log.Printf("plugin %q: aggrega_read_source_file: response marshal failed: %v", p.name, err)
+		stack[0] = 0
+		return
+	}
+	stack[0] = p.writeEnvelopeBytes(writer, b)
+}
+
+// packSourceSelection resolves a selection under the plugin's source root and
+// packs it into a SourceProjection. The op names the selection shape:
+//
+//   - "file" packs the single file at the resolved path, keyed by its base name.
+//   - "dir" packs the immediate files of the resolved directory, each keyed by
+//     its base name, in sorted order.
+//   - "tree" packs the whole subtree rooted at the resolved path, recursively, in
+//     the host's deterministic walk order (filepath.WalkDir visits lexically per
+//     directory), each file keyed by its slash-separated path relative to the
+//     resolved root.
+//
+// The resolved path is sandboxed under the source root; a selection escaping
+// above it is refused. The keying and walk order match the enumeration the
+// host-side source projection historically produced, so the packed bytes are
+// byte-identical to the pre-listing model for the same input.
+func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, error) {
+	resolved, err := p.resolveUnderSourceRoot(rel)
+	if err != nil {
+		return nil, err
+	}
+	switch op {
+	case "file":
+		data, err := os.ReadFile(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", rel, err)
+		}
+		return &abi.SourceProjection{Files: []abi.SourceFile{{Path: filepath.Base(resolved), Content: data}}}, nil
+	case "dir":
+		entries, err := os.ReadDir(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("aggrega_pack_source: listing %q failed: %v", rel, err)
+		}
+		var files []abi.SourceFile
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(resolved, e.Name()))
+			if err != nil {
+				return nil, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", e.Name(), err)
+			}
+			files = append(files, abi.SourceFile{Path: e.Name(), Content: data})
+		}
+		return &abi.SourceProjection{Files: files}, nil
+	case "tree":
+		var files []abi.SourceFile
+		walkErr := filepath.WalkDir(resolved, func(pth string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			relPath, err := filepath.Rel(resolved, pth)
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(pth)
+			if err != nil {
+				return err
+			}
+			files = append(files, abi.SourceFile{Path: filepath.ToSlash(relPath), Content: data})
+			return nil
+		})
+		if walkErr != nil {
+			return nil, fmt.Errorf("aggrega_pack_source: walking %q failed: %v", rel, walkErr)
+		}
+		return &abi.SourceProjection{Files: files}, nil
+	default:
+		return nil, fmt.Errorf("aggrega_pack_source: unknown selection op %q", op)
+	}
+}
+
+// resolveUnderSourceRoot resolves a slash-separated, source-root-relative path
+// to an absolute filesystem path under the plugin's source root, refusing any
+// path that escapes above the root. The empty string and "." both name the root
+// itself. The sandbox cleans the joined path and confirms it stays at or under
+// the cleaned root, so a "../" traversal in the guest-supplied path is a loud
+// refusal rather than a read outside the acquired source.
+func (p *Plugin) resolveUnderSourceRoot(rel string) (string, error) {
+	rootClean := filepath.Clean(p.sourceRoot)
+	joined := filepath.Clean(filepath.Join(rootClean, filepath.FromSlash(rel)))
+	if joined != rootClean && !strings.HasPrefix(joined, rootClean+string(filepath.Separator)) {
+		return "", fmt.Errorf("selection %q escapes the source root", rel)
+	}
+	return joined, nil
+}
+
+// writeSourcePackFailure records message on the plugin's warning channel and
+// writes a SourcePackResponse error envelope carrying it, returning the
+// envelope's offset. The warning mirrors the envelope so the host caller sees
+// the same diagnostic the guest received.
+func (p *Plugin) writeSourcePackFailure(writer pluginMemoryWriter, message string) uint64 {
+	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
+	b, err := abi.SourcePackResponse{Error: message}.MarshalJSON()
+	if err != nil {
+		log.Printf("plugin %q: aggrega_pack_source: error envelope marshal failed: %v", p.name, err)
+		return 0
+	}
+	return p.writeEnvelopeBytes(writer, b)
+}
+
+// writeSourceFileFailure is the read-source-file sibling of
+// writeSourcePackFailure: it records message on the plugin's warning channel and
+// writes a SourceFileResponse error envelope carrying it, returning the
+// envelope's offset.
+func (p *Plugin) writeSourceFileFailure(writer pluginMemoryWriter, message string) uint64 {
+	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
+	b, err := abi.SourceFileResponse{Error: message}.MarshalJSON()
+	if err != nil {
+		log.Printf("plugin %q: aggrega_read_source_file: error envelope marshal failed: %v", p.name, err)
+		return 0
+	}
+	return p.writeEnvelopeBytes(writer, b)
+}
+
+// writeEnvelopeBytes writes an already-marshaled envelope into plugin memory,
+// returning the offset the guest reads it from. On a memory write failure it
+// logs a host-side diagnostic and returns offset 0 — the guest-side PDK wrapper
+// treats a zero offset as "host returned no envelope".
+func (p *Plugin) writeEnvelopeBytes(writer pluginMemoryWriter, b []byte) uint64 {
+	offset, err := writer.WriteBytes(b)
+	if err != nil {
+		log.Printf("plugin %q: source host function: memory write failed: %v", p.name, err)
 		return 0
 	}
 	return offset

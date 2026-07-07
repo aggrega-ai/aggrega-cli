@@ -43,24 +43,6 @@ type CodecProvider interface {
 	Codec(yamlIndent int) frp.Codec
 }
 
-// SourceProjector is the optional interface a sourced provider engine
-// implements to read its source from the local filesystem at compile time and
-// pack it into a SourceProjection the host hands a provider Wasm guest, so the
-// guest reconstructs the source in memory and touches no filesystem. Each
-// engine wraps its own package-level projection function (helm's chart-tree
-// walk, compose's single-file read) as the single-source impl.
-//
-// The wasmengine adapter type-asserts the wrapped Go engine to this interface
-// before routing a sourced render to the Wasm guest: an engine routed for
-// sourced render that does not implement it is a loud internal error, not a
-// silent fallback. The adapter asserts this capability off the engine exactly
-// as the pipeline executor asserts BoundaryAssembler and CodecProvider,
-// keeping projection provider-specific without the adapter importing any
-// provider package.
-type SourceProjector interface {
-	ProjectSource(path string) (*SourceProjection, error)
-}
-
 // ProviderCapabilities declares which of the three Recipe input kinds a
 // provider engine can render. This is the INPUT-KIND axis only — it is
 // orthogonal to the output-assembly axis (BoundaryAssembler /

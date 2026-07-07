@@ -51,28 +51,28 @@ var pluginFS embed.FS
 // reference a Plugin entity's spec.plugin names; the sha256 digest pins the
 // exact bytes committed (uncompressed) under plugins/, so a resolution of this
 // URI through the embed tier verifies byte-for-byte against a lockfile pin.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:87845151bddcf3e321fe35874a06e7994aad04b02906ae1f111d252897bf1a29"
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:143a1a2a66a2d970258033f3d7158d06e6e6ef6daa3bbea16d1886c93de36594"
 
 // composeProviderURI is the canonical content-addressed URI the compose provider
 // rendering plugin's decompressed bytes register under. Like helmProviderURI, the
 // sha256 digest pins the exact bytes committed (uncompressed) under plugins/, so a
 // resolution of this URI through the embed tier verifies byte-for-byte against a
 // lockfile pin.
-const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:e58a3914ad4601e457571c41381856babfc7064387ce08ea13ac904b9cb70ca5"
+const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:323abac6c5761e1e9caff27eca491b80898163b4372ca253bbc38c70bd8dcc71"
 
 // helmChartProviderURI is the canonical content-addressed URI the helm-chart
 // provider rendering plugin's decompressed bytes register under. Like the other
 // provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
 // under plugins/, so a resolution of this URI through the embed tier verifies
 // byte-for-byte against a lockfile pin.
-const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:01b1e8ed9b62b2f9f44e90163a233bbf38bc1bc3973fe88712bbf0950bff30f7"
+const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:d46255b8de4699b9027290acb7852badeaa0f8d9101bac4f1ff2e92df2ff555f"
 
 // terraformProviderURI is the canonical content-addressed URI the terraform
 // provider rendering plugin's decompressed bytes register under. Like the other
 // provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
 // under plugins/, so a resolution of this URI through the embed tier verifies
 // byte-for-byte against a lockfile pin.
-const terraformProviderURI = "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:420620ab8d9ed8fce0411866af0d7c4b4f1d450840fae8d725f418d4b18acfa7"
+const terraformProviderURI = "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:a697427a3fb2f00b594ae96180b95a3595706bf90f786f9f75490c47ebe9e4d1"
 
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from

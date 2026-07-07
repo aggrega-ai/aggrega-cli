@@ -38,47 +38,35 @@ func TestHostCapsFor_ResolvesEveryShippedProvider(t *testing.T) {
 }
 
 // TestHostCapsFor_ProviderMatrix pins each shipped provider's host-capability
-// holder shape: the output-side and projection facets the render route reads. The
-// input kinds and the boundary-assembly mode are not held here — they are the
-// guest's own describe() self-report — so the matrix pins only the residual
-// host-side facets: helm projects a chart source and nothing else; helm-chart
-// handles external artifacts through its own codec, sub-chart projection, path, and
-// delimiters; compose projects a compose source and contributes boundary consumer
-// env overrides; terraform handles external artifacts and projects a module source.
+// holder shape: the residual host-side facets the render route reads. The input
+// kinds, boundary-assembly mode, and artifact-template delimiters are not held
+// here — they are the guest's own describe() self-report — and artifact placement
+// (format, provenance, path) is the guest's concern, so no artifact facet is
+// held. The matrix pins what remains: helm and terraform hold nothing; helm-chart
+// holds its codec and sub-chart projection; compose contributes boundary consumer
+// env overrides.
 func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		provider                        string
-		externalArtifacts               bool
 		hasCodec                        bool
-		hasProjectSource                bool
 		hasProjectSubCharts             bool
-		hasPathForArtifact              bool
-		hasArtifactDelimiters           bool
 		hasBoundaryConsumerEnvOverrides bool
 	}{
 		{
-			provider:         "helm",
-			hasProjectSource: true,
+			provider: "helm",
 		},
 		{
-			provider:              "helm-chart",
-			externalArtifacts:     true,
-			hasCodec:              true,
-			hasProjectSource:      true,
-			hasProjectSubCharts:   true,
-			hasPathForArtifact:    true,
-			hasArtifactDelimiters: true,
+			provider:            "helm-chart",
+			hasCodec:            true,
+			hasProjectSubCharts: true,
 		},
 		{
 			provider:                        "compose",
-			hasProjectSource:                true,
 			hasBoundaryConsumerEnvOverrides: true,
 		},
 		{
-			provider:          "terraform",
-			externalArtifacts: true,
-			hasProjectSource:  true,
+			provider: "terraform",
 		},
 	}
 	for _, tc := range cases {
@@ -89,23 +77,11 @@ func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 			if !ok {
 				t.Fatalf("HostCapsFor(%q): ok=false", tc.provider)
 			}
-			if h.ExternalArtifacts != tc.externalArtifacts {
-				t.Errorf("ExternalArtifacts = %v; want %v", h.ExternalArtifacts, tc.externalArtifacts)
-			}
 			if (h.Codec != nil) != tc.hasCodec {
 				t.Errorf("Codec present = %v; want %v", h.Codec != nil, tc.hasCodec)
 			}
-			if (h.ProjectSource != nil) != tc.hasProjectSource {
-				t.Errorf("ProjectSource present = %v; want %v", h.ProjectSource != nil, tc.hasProjectSource)
-			}
 			if (h.ProjectSubCharts != nil) != tc.hasProjectSubCharts {
 				t.Errorf("ProjectSubCharts present = %v; want %v", h.ProjectSubCharts != nil, tc.hasProjectSubCharts)
-			}
-			if (h.PathForArtifact != nil) != tc.hasPathForArtifact {
-				t.Errorf("PathForArtifact present = %v; want %v", h.PathForArtifact != nil, tc.hasPathForArtifact)
-			}
-			if (h.ArtifactDelimiters != nil) != tc.hasArtifactDelimiters {
-				t.Errorf("ArtifactDelimiters present = %v; want %v", h.ArtifactDelimiters != nil, tc.hasArtifactDelimiters)
 			}
 			if (h.BoundaryConsumerEnvOverrides != nil) != tc.hasBoundaryConsumerEnvOverrides {
 				t.Errorf("BoundaryConsumerEnvOverrides present = %v; want %v", h.BoundaryConsumerEnvOverrides != nil, tc.hasBoundaryConsumerEnvOverrides)

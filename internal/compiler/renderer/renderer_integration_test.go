@@ -339,6 +339,25 @@ func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info rendere
 // production compose guest's self-report.
 func (c *captureComposerEngine) BoundaryAssembly() string { return "merge" }
 
+// ArtifactTemplateDelimiters and EmitArtifacts satisfy renderer.ArtifactsEmitter,
+// mirroring the Wasm adapter: the host builds the projection and this fake places
+// each entry at its name, marking Intermediate from its own boundary-assembly
+// self-report (merge ⇒ intermediate) so artifacts route via AssembleBoundary.
+func (c *captureComposerEngine) ArtifactTemplateDelimiters() (string, string) { return "{{", "}}" }
+
+func (c *captureComposerEngine) EmitArtifacts(_ context.Context, proj renderer.ArtifactsProjection, _ renderer.NodeRenderContext) ([]renderer.EmittedFile, error) {
+	intermediate := renderer.RenderIsIntermediate(c)
+	files := make([]renderer.EmittedFile, 0, len(proj.Entries))
+	for _, ent := range proj.Entries {
+		origin := renderer.EmitOriginArtifactsInline
+		if ent.Origin == "import" {
+			origin = renderer.EmitOriginArtifactsImport
+		}
+		files = append(files, renderer.EmittedFile{Name: ent.Name, Origin: origin, Body: ent.Content, Intermediate: intermediate})
+	}
+	return files, nil
+}
+
 // TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler asserts that
 // artifacts from a BoundaryAssembler-engine Recipe — whether inline or
 // file-loaded — are routed by the orchestrator's post-Phase-B grouping into

@@ -27,10 +27,12 @@ type RenderNodeInput struct {
 	Context renderctx.RenderContext `json:"context" yaml:"context"`
 	// CatalogProjection The pre-packaged catalog content the guest renders against when the host supplies catalog entries in the payload rather than behind host functions. Absent when the guest fetches catalog entries through the read-only host functions instead.
 	CatalogProjection *CatalogProjection `json:"catalog_projection,omitempty" yaml:"catalog_projection,omitempty"`
-	// SourceProjection The pre-packaged source content the host read at compile time from the local source and hands the guest, so the guest reconstructs the source in memory and touches no filesystem. Present for sourced providers; absent otherwise.
-	SourceProjection *SourceProjection `json:"source_projection,omitempty" yaml:"source_projection,omitempty"`
+	// SourceListing The generic enumeration of the acquired source the host hands the guest for a sourced provider: the source root, whether that root is a directory, and the sorted root-relative entries under it. The host reads no file content here — it lists names only. The guest applies its own resolution logic over the listing and asks the host to pack a chosen selection through the pack-source host function, so all per-provider source-resolution intelligence lives in the guest. Present for sourced providers; absent otherwise.
+	SourceListing *SourceListing `json:"source_listing,omitempty" yaml:"source_listing,omitempty"`
 	// WorkloadProjection The pre-evaluated workload the host hands the guest to synthesize provider-native manifests from; present when the bound Recipe declares a workload rather than a chart source, absent otherwise.
 	WorkloadProjection *WorkloadProjection `json:"workload_projection,omitempty" yaml:"workload_projection,omitempty"`
+	// ArtifactsProjection The pre-evaluated artifact set the host hands the guest to place into the node's output, present when the bound Recipe declares artifacts. The host has already read each entry's source, evaluated it as a Go template against the render context, and computed the build-provenance key sets; the guest decides the output format, the provenance placement, the on-disk path, and the final bytes. Absent when the node declares no artifacts.
+	ArtifactsProjection *ArtifactsProjection `json:"artifacts_projection,omitempty" yaml:"artifacts_projection,omitempty"`
 }
 
 // IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, outbound uses edges, boundary path, deployment wave, Recipe identity, component-id override, and build provenance. Source-file content is not carried here; it travels separately in the source projection. Values, features, and uses preserve author order so the wire payload is byte-identical across runs of identical input.
@@ -113,10 +115,58 @@ type SourceFile struct {
 	Content []byte `json:"content" yaml:"content"`
 }
 
-// SourceProjection The pre-packaged source content (e.g. a Helm chart's files, keyed by chart-root-relative path, in walk order) the host reads at compile time from the local source and hands the guest, so the guest reconstructs the source in memory and touches no filesystem. Present for sourced providers; absent otherwise.
+// SourceProjection The packed source content (e.g. a Helm chart's files, keyed by source-root-relative path, in walk order) the host reads and returns to the guest in response to a pack-source request, so the guest reconstructs the selected source in memory and touches no filesystem. It is the pack-source host function's success payload.
 type SourceProjection struct {
 	// Files The source files, keyed by source-root-relative path, in the host's deterministic walk order.
 	Files []SourceFile `json:"files" yaml:"files"`
+}
+
+// SourceEntry One entry of a source listing: its path relative to the source root, and whether it is a directory. The host lists names only and reads no content, so an entry carries no bytes.
+type SourceEntry struct {
+	// Path The entry's path relative to the source root, slash-separated (for example Chart.yaml or templates/deployment.yaml).
+	Path string `json:"path" yaml:"path"`
+	// IsDir Whether the entry is a directory. A guest that resolves a chart root or a single source file among the listing reads this to distinguish directories from files without touching the filesystem.
+	IsDir bool `json:"is_dir" yaml:"is_dir"`
+}
+
+// SourceListing The generic enumeration of an acquired source the host hands a sourced provider guest: the source root, whether that root is a directory, and the sorted root-relative entries under it. The host walks the acquired source with no domain knowledge and reads no file content — it lists names only. The guest applies its own resolution logic over the listing (locating a chart root, selecting a single compose document, vendoring a module tree) and asks the host to pack a chosen selection through the pack-source host function. Entries are sorted by path so the listing is byte-identical across runs of identical input.
+type SourceListing struct {
+	// Root The acquired source location the host enumerated. The guest carries it into its own diagnostics when it cannot resolve the source, so a resolution halt names the source the author supplied.
+	Root string `json:"root" yaml:"root"`
+	// RootIsDir Whether the acquired source root is a directory. False for a single-file source (a lone compose document, a single module file, an archive), in which case entries is empty and the guest packs the root itself.
+	RootIsDir bool `json:"root_is_dir,omitempty" yaml:"root_is_dir,omitempty"`
+	// Entries The root-relative entries under a directory source root, sorted by path. Empty for a single-file source root.
+	Entries []SourceEntry `json:"entries" yaml:"entries"`
+}
+
+// SourcePackRequest The selection a guest asks the host to pack from the acquired source through the pack-source host function. The op names the shape of the selection and the path names it relative to the source root; the host resolves the path under the source root, rejecting any escape above it, and returns the packed bytes as a SourceProjection.
+type SourcePackRequest struct {
+	// Op The selection shape: file packs the single file at path; dir packs the immediate files of the directory at path; tree packs the whole subtree rooted at path, recursively, in the host's deterministic walk order.
+	Op string `json:"op" yaml:"op"`
+	// Path The selection location relative to the source root, slash-separated. The empty string (or ".") names the source root itself, so a single-file source is packed with an empty path.
+	Path string `json:"path" yaml:"path"`
+}
+
+// SourcePackResponse The pack-source host function's reply: on success the packed source, on failure an error message. Exactly one of the two fields is populated. Failure is delivered in-band rather than by trapping, so a guest carries a sandbox rejection or a read failure into its own diagnostics as a deterministic render failure.
+type SourcePackResponse struct {
+	// SourceProjection The packed source on success; absent on failure.
+	SourceProjection *SourceProjection `json:"source_projection,omitempty" yaml:"source_projection,omitempty"`
+	// Error The failure message on failure, naming the selection and the reason; absent on success.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+// SourceFileRequest The single-file content read a guest asks the host to perform through the read-source-file host function, for a guest whose resolution logic must inspect a file's content before choosing what to pack. The host resolves the path under the source root, rejecting any escape above it, and returns the file's bytes.
+type SourceFileRequest struct {
+	// Path The file location relative to the source root, slash-separated.
+	Path string `json:"path" yaml:"path"`
+}
+
+// SourceFileResponse The read-source-file host function's reply: on success the file's bytes, on failure an error message. Exactly one of the two fields is populated. Failure is delivered in-band rather than by trapping, so a guest carries a sandbox rejection or a read failure into its own diagnostics as a deterministic render failure.
+type SourceFileResponse struct {
+	// Content The file's raw bytes on success; absent on failure (base64 on the JSON wire).
+	Content []byte `json:"content,omitempty" yaml:"content,omitempty"`
+	// Error The failure message on failure, naming the file and the reason; absent on success.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // WorkloadProjection The pre-evaluated workload content the host hands a Provider guest so the guest synthesizes provider-native manifests from it in memory, present when the bound Recipe declares a workload rather than a chart source. Determinism is the guest's responsibility: identical input must produce identical bytes.
@@ -125,6 +175,26 @@ type WorkloadProjection struct {
 	Workload types.Workload `json:"workload" yaml:"workload"`
 	// Secrets The per-slot secret provides the synthesis consumes, keyed by secret slot; each slot's provides carries the generated Secret's identity a workload secret reference resolves to.
 	Secrets map[string]types.OrderedMap[string] `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+}
+
+// ArtifactsProjection The pre-evaluated artifact set the host hands a Provider guest to place into the node's output. The host has already resolved each entry's source (inline content or an imported file it read), evaluated it as a Go template against the render context using the guest's declared artifact-template delimiter pair, and computed the build-provenance label and annotation key sets. The guest owns the format decision, the provenance placement, the on-disk path, and the final bytes. Entries preserve author order so the placed output is byte-identical across runs of identical input.
+type ArtifactsProjection struct {
+	// Entries The artifact entries the guest places, in author order.
+	Entries []ArtifactProjectionEntry `json:"entries" yaml:"entries"`
+}
+
+// ArtifactProjectionEntry One pre-evaluated artifact entry the host hands a Provider guest to place: its host-resolved output base name, its origin, the already-template-evaluated content bytes, and the build-provenance label and annotation key sets the host computed for the node. The guest decides how to place the provenance (splicing it into a manifest's metadata, prepending it as a comment, or emitting a companion file) and where the file lands.
+type ArtifactProjectionEntry struct {
+	// Name The host-resolved output base name for the entry: the author-declared map key for an inline entry, or the imported file's base name for an imported entry. The guest places the entry at this name or under a provider-specific sub-path derived from it.
+	Name string `json:"name" yaml:"name"`
+	// Origin Whether the entry was authored as inline content or as an imported file. A guest that rejects one form (an umbrella-chart provider rejects inline content) reads this to halt loudly.
+	Origin string `json:"origin" yaml:"origin"`
+	// Content The already-template-evaluated content bytes the host produced from the entry's inline content or imported file, evaluated against the render context using the guest's declared artifact-template delimiter pair (base64 on the JSON wire).
+	Content []byte `json:"content" yaml:"content"`
+	// Labels The Kubernetes-label-safe build-provenance key set the host computed for the node, keyed by label name. A guest that stamps provenance into a manifest's metadata.labels splices these; a guest whose output is not Kubernetes YAML ignores them.
+	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	// Annotations The build-provenance key set the host computed for the node that a Kubernetes label cannot represent, keyed by annotation name. A guest that stamps provenance into a manifest's metadata.annotations splices these; a guest whose output is not Kubernetes YAML ignores them.
+	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
 
 // AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one dispatch group into a single assembled artifact (an umbrella chart, a merged compose file). It carries the per-node render outputs and their merged annotations, the dispatch-group output path the assembled artifact lands at, the graph's uses edges for per-service dependency inference, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
@@ -225,13 +295,13 @@ func (t RenderNodeInput) MarshalJSON() ([]byte, error) {
 			buf.Write(enc)
 		}
 	}
-	if t.SourceProjection != nil {
+	if t.SourceListing != nil {
 		if !first {
 			buf.WriteByte(',')
 		}
 		first = false
-		buf.WriteString("\"source_projection\":")
-		if enc, err := t.SourceProjection.MarshalJSON(); err != nil {
+		buf.WriteString("\"source_listing\":")
+		if enc, err := t.SourceListing.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -244,6 +314,18 @@ func (t RenderNodeInput) MarshalJSON() ([]byte, error) {
 		first = false
 		buf.WriteString("\"workload_projection\":")
 		if enc, err := t.WorkloadProjection.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	if t.ArtifactsProjection != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"artifacts_projection\":")
+		if enc, err := t.ArtifactsProjection.MarshalJSON(); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -295,15 +377,15 @@ func (t *RenderNodeInput) UnmarshalJSON(data []byte) error {
 				}
 				t.CatalogProjection = v
 			}
-		case "source_projection":
+		case "source_listing":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				v := new(SourceProjection)
+				v := new(SourceListing)
 				if err := v.UnmarshalJSON(raw); err != nil {
 					return err
 				}
-				t.SourceProjection = v
+				t.SourceListing = v
 			}
 		case "workload_projection":
 			if raw, err := readRaw(dec, data); err != nil {
@@ -314,6 +396,16 @@ func (t *RenderNodeInput) UnmarshalJSON(data []byte) error {
 					return err
 				}
 				t.WorkloadProjection = v
+			}
+		case "artifacts_projection":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				v := new(ArtifactsProjection)
+				if err := v.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+				t.ArtifactsProjection = v
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -1096,6 +1188,417 @@ func (t *SourceProjection) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON encodes SourceEntry in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourceEntry) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"path\":")
+	writeJSONString(&buf, t.Path)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"is_dir\":")
+	if t.IsDir {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourceEntry with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourceEntry) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		case "is_dir":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.IsDir = v
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes SourceListing in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourceListing) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"root\":")
+	writeJSONString(&buf, t.Root)
+	if t.RootIsDir != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"root_is_dir\":")
+		if t.RootIsDir {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"entries\":")
+	buf.WriteByte('[')
+	for i := range t.Entries {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		ev := t.Entries[i]
+		if enc, err := ev.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	buf.WriteByte(']')
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourceListing with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourceListing) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "root":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Root = s
+			}
+		case "root_is_dir":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.RootIsDir = v
+			}
+		case "entries":
+			t.Entries = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem SourceEntry
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Entries = append(t.Entries, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes SourcePackRequest in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourcePackRequest) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"op\":")
+	writeJSONString(&buf, t.Op)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"path\":")
+	writeJSONString(&buf, t.Path)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourcePackRequest with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourcePackRequest) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "op":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Op = s
+			}
+		case "path":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes SourcePackResponse in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourcePackResponse) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if t.SourceProjection != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"source_projection\":")
+		if enc, err := t.SourceProjection.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourcePackResponse with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourcePackResponse) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "source_projection":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				v := new(SourceProjection)
+				if err := v.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+				t.SourceProjection = v
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes SourceFileRequest in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourceFileRequest) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"path\":")
+	writeJSONString(&buf, t.Path)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourceFileRequest with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourceFileRequest) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes SourceFileResponse in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t SourceFileResponse) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if len(t.Content) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"content\":")
+		writeJSONBytes(&buf, t.Content)
+	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes SourceFileResponse with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *SourceFileResponse) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "content":
+			if v, err := readBytes(dec); err != nil {
+				return err
+			} else {
+				t.Content = v
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
 // MarshalJSON encodes WorkloadProjection in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t WorkloadProjection) MarshalJSON() ([]byte, error) {
@@ -1190,6 +1693,243 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 					}
 				}
 				t.Secrets[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes ArtifactsProjection in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t ArtifactsProjection) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"entries\":")
+	buf.WriteByte('[')
+	for i := range t.Entries {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		ev := t.Entries[i]
+		if enc, err := ev.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	buf.WriteByte(']')
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes ArtifactsProjection with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *ArtifactsProjection) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "entries":
+			t.Entries = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem ArtifactProjectionEntry
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Entries = append(t.Entries, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes ArtifactProjectionEntry in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t ArtifactProjectionEntry) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"name\":")
+	writeJSONString(&buf, t.Name)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"origin\":")
+	writeJSONString(&buf, t.Origin)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"content\":")
+	writeJSONBytes(&buf, t.Content)
+	if len(t.Labels) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"labels\":")
+		{
+			keys := make([]string, 0, len(t.Labels))
+			for k := range t.Labels {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.Labels[k]
+				writeJSONString(&buf, mv)
+			}
+			buf.WriteByte('}')
+		}
+	}
+	if len(t.Annotations) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"annotations\":")
+		{
+			keys := make([]string, 0, len(t.Annotations))
+			for k := range t.Annotations {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.Annotations[k]
+				writeJSONString(&buf, mv)
+			}
+			buf.WriteByte('}')
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes ArtifactProjectionEntry with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *ArtifactProjectionEntry) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "origin":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Origin = s
+			}
+		case "content":
+			if v, err := readBytes(dec); err != nil {
+				return err
+			} else {
+				t.Content = v
+			}
+		case "labels":
+			t.Labels = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.Labels[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		case "annotations":
+			t.Annotations = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.Annotations[mk] = mv
 			}
 			if err := expectDelim(dec, '}'); err != nil {
 				return err

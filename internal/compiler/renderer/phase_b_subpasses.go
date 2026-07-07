@@ -206,19 +206,19 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	return nil
 }
 
-// phaseB3 evaluates Recipe.Spec.Artifacts — each entry is either inline
-// content or a file referenced by its `$import:` directive — the third
-// input kind per chapter 16. Each emitted file carries its own EmitOrigin
-// tag (artifacts-inline / artifacts-import) so the Phase B.5
+// phaseB3 projects Recipe.Spec.Artifacts — each entry is either inline content
+// or a file referenced by its `$import:` directive — the third input kind per
+// chapter 16. The host builds an ArtifactsProjection (the $import read, the
+// pillar pre-check, the Go-template evaluation, and the build-provenance key
+// computation — the generic, invariant-forced work) and dispatches it to the
+// provider's ArtifactsEmitter, which decides the output format, the provenance
+// placement, the output path, and the final bytes. Each returned file carries
+// its own EmitOrigin tag (artifacts-inline / artifacts-import) so the Phase B.5
 // cross-origin collision detector can name every contributor on a clash.
 //
-// The provider's engine governs file routing: BoundaryAssembler engines
-// (compose, helm-chart) receive intermediates that AssembleBoundary merges
-// per-(path, provider); flat engines (helm, terraform, cloudformation)
-// receive standalone files at the dispatch path. helm-chart inline-content
-// artifacts: entries are rejected with a CATALOG_ERROR; $import:-loaded
-// entries are a B.3 no-op for helm-chart (provider-specific pre-template
-// injection lives outside Phase B).
+// An engine that does not implement ArtifactsEmitter, while the Recipe declares
+// artifacts:, produces a CATALOG_ERROR — mirroring the WorkloadSynthesizer gate
+// at B.4.
 func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Engine, nodeCtx NodeRenderContext) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 3
@@ -228,7 +228,18 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 		state.PhaseReached = 3
 		return nil
 	}
-	files, err := evaluateArtifacts(ctx, tmplCtx, state, engine, nodeCtx)
+	emitter, ok := engine.(ArtifactsEmitter)
+	if !ok {
+		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
+			fmt.Sprintf("provider %q does not implement artifacts emission; the Recipe declares artifacts: but the bound provider has no artifacts-emission implementation", state.Recipe.Spec.Provider),
+			nil, nil)
+	}
+	leftDelim, rightDelim := emitter.ArtifactTemplateDelimiters()
+	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, leftDelim, rightDelim)
+	if err != nil {
+		return err
+	}
+	files, err := emitter.EmitArtifacts(ctx, proj, nodeCtx)
 	if err != nil {
 		return err
 	}

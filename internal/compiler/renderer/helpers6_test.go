@@ -12,29 +12,30 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestEvaluateArtifacts_NilState pins the early-return arms of
-// evaluateArtifacts: nil state, nil recipe, zero artifacts.
-func TestEvaluateArtifacts_NilState(t *testing.T) {
+// TestPhaseB3_EarlyReturns pins the early-return arms of phaseB3: nil recipe and
+// zero artifacts are both no-ops (no emitter dispatch, no emitted files).
+func TestPhaseB3_EarlyReturns(t *testing.T) {
 	t.Parallel()
-	files, err := evaluateArtifacts(context.Background(), &types.TemplateContext{}, nil, nil, NodeRenderContext{})
-	if err != nil || files != nil {
-		t.Errorf("nil state: (%v, %v)", files, err)
+	st := &PhaseBState{}
+	if err := phaseB3(context.Background(), &types.TemplateContext{}, st, &stubArtifactsEmitter{}, NodeRenderContext{}); err != nil {
+		t.Errorf("nil recipe: %v", err)
 	}
-	files, err = evaluateArtifacts(context.Background(), &types.TemplateContext{}, &PhaseBState{}, nil, NodeRenderContext{})
-	if err != nil || files != nil {
-		t.Errorf("nil recipe: (%v, %v)", files, err)
+	if len(st.EmittedFiles) != 0 {
+		t.Errorf("nil recipe emitted files: %v", st.EmittedFiles)
 	}
-	state := &PhaseBState{Recipe: &types.Recipe{}}
-	files, err = evaluateArtifacts(context.Background(), &types.TemplateContext{}, state, nil, NodeRenderContext{})
-	if err != nil || files != nil {
-		t.Errorf("zero artifacts: (%v, %v)", files, err)
+	st = &PhaseBState{Recipe: &types.Recipe{}}
+	if err := phaseB3(context.Background(), &types.TemplateContext{}, st, &stubArtifactsEmitter{}, NodeRenderContext{}); err != nil {
+		t.Errorf("zero artifacts: %v", err)
+	}
+	if len(st.EmittedFiles) != 0 {
+		t.Errorf("zero artifacts emitted files: %v", st.EmittedFiles)
 	}
 }
 
-// TestEvaluateArtifacts_FlatEngineHappyPath pins the standard (non-
-// external-handler) engine path with an inline artifact template that
-// produces YAML output requiring no metadata-injection.
-func TestEvaluateArtifacts_FlatEngineHappyPath(t *testing.T) {
+// TestBuildArtifactsProjection_FlatHappyPath pins the host projection for an
+// inline entry whose template produces non-metadata content: the entry carries
+// the evaluated body verbatim.
+func TestBuildArtifactsProjection_FlatHappyPath(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{
 		Recipe:        &types.Recipe{},
@@ -44,96 +45,81 @@ func TestEvaluateArtifacts_FlatEngineHappyPath(t *testing.T) {
 	state.Recipe.Spec.Artifacts.Set("notes.txt", types.ArtifactEntry{
 		Inline: "plain text content\n",
 	})
-	tmplCtx := &types.TemplateContext{}
-	got, err := evaluateArtifacts(context.Background(), tmplCtx, state, noopEngine{}, NodeRenderContext{NodeID: "n"})
+	proj, err := buildArtifactsProjection(&types.TemplateContext{}, state, NodeRenderContext{NodeID: "n"}, "{{", "}}")
 	if err != nil {
 		t.Fatalf("happy: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected 1 file; got %d", len(got))
+	if len(proj.Entries) != 1 {
+		t.Fatalf("expected 1 entry; got %d", len(proj.Entries))
 	}
-	if !strings.Contains(string(got[0].Body), "plain text content") {
-		t.Errorf("body lost; got %s", got[0].Body)
+	if !strings.Contains(string(proj.Entries[0].Content), "plain text content") {
+		t.Errorf("body lost; got %s", proj.Entries[0].Content)
 	}
 }
 
-// TestEvaluateOneArtifact_DefaultDelimsWrapper pins the default-delims
-// wrapper's direct invocation.
-func TestEvaluateOneArtifact_DefaultDelimsWrapper(t *testing.T) {
+// TestSpliceArtifactProvenance_NoMetadataMappingHappyPath pins the placer on a
+// mapping manifest with no metadata block: a silent no-op that returns the body
+// unchanged.
+func TestSpliceArtifactProvenance_NoMetadataMappingHappyPath(t *testing.T) {
 	t.Parallel()
-	state := &PhaseBState{
-		Recipe:        &types.Recipe{},
-		RecipeName:    "test/recipe",
-		RecipeVersion: "1.0.0",
-	}
-	tmplCtx := &types.TemplateContext{}
-	body, err := evaluateOneArtifact(tmplCtx, state, NodeRenderContext{NodeID: "n"}, "f.yaml", "kind: Pod\n", "test")
+	body, warning, err := SpliceArtifactProvenance("f.yaml", []byte("kind: Pod\n"), nil, nil, true, 2)
 	if err != nil {
 		t.Fatalf("happy: %v", err)
+	}
+	if warning != "" {
+		t.Errorf("no-metadata manifest should not warn; got %q", warning)
 	}
 	if !strings.Contains(string(body), "kind: Pod") {
 		t.Errorf("body lost; got %s", body)
 	}
 }
 
-// TestEvaluateOneArtifactWithDelims_EmptyOutput pins the empty-output
-// short-circuit branch (line 283-285 of artifacts.go).
-func TestEvaluateOneArtifactWithDelims_EmptyOutput(t *testing.T) {
+// TestSpliceArtifactProvenance_EmptyOutput pins the empty-content short-circuit:
+// blank content returns as-is with no warning.
+func TestSpliceArtifactProvenance_EmptyOutput(t *testing.T) {
 	t.Parallel()
-	state := &PhaseBState{
-		Recipe: &types.Recipe{},
-	}
-	tmplCtx := &types.TemplateContext{}
-	body, err := evaluateOneArtifactWithDelims(tmplCtx, state, NodeRenderContext{}, "f", "   \n\n  ", "test", "{{", "}}")
+	body, warning, err := SpliceArtifactProvenance("f", []byte("   \n\n  "), nil, nil, true, 2)
 	if err != nil {
 		t.Fatalf("empty: %v", err)
 	}
-	// Empty content returns as-is.
+	if warning != "" {
+		t.Errorf("empty content should not warn; got %q", warning)
+	}
 	if strings.TrimSpace(string(body)) != "" {
 		t.Errorf("expected empty body; got %q", body)
 	}
 }
 
-// TestEvaluateOneArtifactWithDelims_NonDefaultDelimsExternalHandler
-// pins the external-handler path on a metadata-less manifest: the surgical
-// splice has nothing to stamp (no metadata mapping), so it is a SILENT no-op
-// per the "manifests without metadata skip silently" contract — the
-// original bytes (including the unquoted Helm `{{ }}`) are emitted byte-faithfully
-// and no skip warning is appended. (The round-trip path this replaced could not
-// distinguish "no metadata" from "round-trip mangled" and warned spuriously.)
-func TestEvaluateOneArtifactWithDelims_NonDefaultDelimsExternalHandler(t *testing.T) {
+// TestSpliceArtifactProvenance_AlternateDelimsNoMetadataIsByteFaithful pins the
+// alternate-delimiter placer on a metadata-less manifest: the surgical splice has
+// nothing to stamp, so it is a SILENT no-op — the original bytes (including the
+// unquoted Helm `{{ }}` the host left untouched under [[ ]] evaluation) are
+// emitted byte-faithfully and no skip warning is raised.
+func TestSpliceArtifactProvenance_AlternateDelimsNoMetadataIsByteFaithful(t *testing.T) {
 	t.Parallel()
-	state := &PhaseBState{Recipe: &types.Recipe{}}
-	tmplCtx := &types.TemplateContext{}
-	// Template uses [[ ]] delims but content contains {{ }}; no metadata mapping.
-	src := "kind: Pod\nname: [[ .name ]]\nvalueFrom: {{ .Values.x }}\n"
-	tmplCtx.Values.Set("name", "n")
-	body, err := evaluateOneArtifactWithDelims(tmplCtx, state, NodeRenderContext{}, "f", src, "test", "[[", "]]")
+	// Content already evaluated by the host under [[ ]]; the Helm {{ }} survives.
+	src := []byte("kind: Pod\nname: n\nvalueFrom: {{ .Values.x }}\n")
+	body, warning, err := SpliceArtifactProvenance("f", src, nil, nil, false, 2)
 	if err != nil {
 		t.Fatalf("non-default: %v", err)
 	}
-	// Byte-faithful: the unquoted {{ }} survives unchanged.
 	if !strings.Contains(string(body), "valueFrom: {{ .Values.x }}") {
 		t.Errorf("body should preserve the unquoted Helm token; got %s", body)
 	}
 	if strings.Contains(string(body), "aggrega.ai/") {
 		t.Errorf("metadata-less manifest should not be stamped; got %s", body)
 	}
-	if len(state.Warnings) != 0 {
-		t.Errorf("no-metadata manifest is a silent no-op; want no warnings, got %v", state.Warnings)
+	if warning != "" {
+		t.Errorf("no-metadata manifest is a silent no-op; want no warning, got %q", warning)
 	}
 }
 
-// TestEvaluateOneArtifactWithDelims_DefaultDelimsParseError pins the
-// YAML-parse-error path for default delimiters: parse failure returns
-// CATALOG_ERROR.
-func TestEvaluateOneArtifactWithDelims_DefaultDelimsParseError(t *testing.T) {
+// TestSpliceArtifactProvenance_DefaultDelimsParseError pins the YAML-parse-error
+// path for default delimiters: a non-YAML result is a hard error.
+func TestSpliceArtifactProvenance_DefaultDelimsParseError(t *testing.T) {
 	t.Parallel()
-	state := &PhaseBState{Recipe: &types.Recipe{}}
-	tmplCtx := &types.TemplateContext{}
-	// Output that's not valid YAML.
-	src := "this: is: malformed yaml: [unclosed"
-	_, err := evaluateOneArtifactWithDelims(tmplCtx, state, NodeRenderContext{}, "f", src, "test", "{{", "}}")
+	_, _, err := SpliceArtifactProvenance("f", []byte("this: is: malformed yaml: [unclosed"),
+		map[string]string{"aggrega.ai/component-id": "n"}, nil, true, 2)
 	if err == nil {
 		t.Errorf("malformed YAML at default-delims should fail")
 	}
@@ -231,14 +217,14 @@ func TestProvenanceSkipWarning_FilenameSubstring(t *testing.T) {
 	}
 }
 
-// TestEvaluateOneArtifactWithDelims_PillarPrecheckError pins the
-// pre-check error propagation: a template referencing .workload without
-// workload declared returns CATALOG_ERROR.
-func TestEvaluateOneArtifactWithDelims_PillarPrecheckError(t *testing.T) {
+// TestBuildArtifactsProjection_PillarPrecheckError pins the pre-check error
+// propagation: an artifact template referencing .workload without workload
+// declared returns CATALOG_ERROR from the projection builder.
+func TestBuildArtifactsProjection_PillarPrecheckError(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{Recipe: &types.Recipe{}}
-	_, err := evaluateOneArtifactWithDelims(&types.TemplateContext{}, state, NodeRenderContext{},
-		"f", "{{ .workload.x }}", "test", "{{", "}}")
+	state.Recipe.Spec.Artifacts.Set("f.yaml", types.ArtifactEntry{Inline: "{{ .workload.x }}"})
+	_, err := buildArtifactsProjection(&types.TemplateContext{}, state, NodeRenderContext{}, "{{", "}}")
 	if err == nil {
 		t.Errorf("missing-pillar reference should fail")
 	}

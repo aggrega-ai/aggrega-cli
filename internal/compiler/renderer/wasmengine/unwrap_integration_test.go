@@ -53,11 +53,13 @@ func embeddedGuestLookup(uri string) (pluginpath.ResolvedPlugin, error) {
 	}, nil
 }
 
-// TestWasmEngineExposesForwardedHostCapabilities proves the wrapper itself
-// implements none of the host-side capability interfaces the helm-chart provider
-// carries, while its forwarded host-capability holder surfaces them — the seam
-// that keeps those host-side capabilities visible when a provider routes through
-// Wasm.
+// TestWasmEngineExposesForwardedHostCapabilities proves the wrapper does not
+// implement the host-side codec capability directly (it forwards it through the
+// holder), that it DOES implement the render-crossing ArtifactsEmitter seam, and
+// that its forwarded host-capability holder surfaces the helm-chart provider's
+// codec and sub-chart projection — the seam that keeps those host-side
+// capabilities visible when a provider routes through Wasm. With an unloadable
+// guest the artifact-delimiter accessor falls back to the default pair.
 func TestWasmEngineExposesForwardedHostCapabilities(t *testing.T) {
 	loader := &wasm.Loader{}
 	w := wasmengine.New(failingLookup, "test://x", helmchart.HostCaps(), loader)
@@ -66,28 +68,41 @@ func TestWasmEngineExposesForwardedHostCapabilities(t *testing.T) {
 	if _, ok := e.(renderer.CodecProvider); ok {
 		t.Error("wrapper unexpectedly implements CodecProvider directly")
 	}
-	if _, ok := e.(renderer.ExternalArtifactsHandler); ok {
-		t.Error("wrapper unexpectedly implements ExternalArtifactsHandler directly")
-	}
-	if _, ok := e.(renderer.ArtifactsPathProvider); ok {
-		t.Error("wrapper unexpectedly implements ArtifactsPathProvider directly")
-	}
-	if _, ok := e.(renderer.ArtifactsTemplateDelims); ok {
-		t.Error("wrapper unexpectedly implements ArtifactsTemplateDelims directly")
+	if _, ok := e.(renderer.ArtifactsEmitter); !ok {
+		t.Error("wrapper must implement ArtifactsEmitter — the render-crossing artifacts seam")
 	}
 
 	caps := renderer.ResolveHostCaps(w)
-	if !caps.ExternalArtifacts {
-		t.Error("forwarded holder does not carry ExternalArtifacts")
-	}
 	if caps.Codec == nil {
 		t.Error("forwarded holder does not carry Codec")
 	}
-	if caps.PathForArtifact == nil {
-		t.Error("forwarded holder does not carry PathForArtifact")
+	if caps.ProjectSubCharts == nil {
+		t.Error("forwarded holder does not carry ProjectSubCharts")
 	}
-	if caps.ArtifactDelimiters == nil {
-		t.Error("forwarded holder does not carry ArtifactDelimiters")
+
+	// The guest cannot be loaded (failingLookup), so the delimiter accessor takes
+	// its default-pair fallback rather than the guest's declared pair.
+	if l, r := w.ArtifactTemplateDelimiters(); l != "{{" || r != "}}" {
+		t.Errorf("unloadable-guest delimiter fallback = %q/%q; want {{ / }}", l, r)
+	}
+}
+
+// TestArtifactTemplateDelimitersFromDescribe proves the delimiter accessor reads
+// the guest's live describe() self-report: helm-chart declares the "[["/"]]" pair
+// so its artifact bodies leave Helm's "{{ }}" syntax untouched, while helm
+// declares no alternate pair and falls back to the default.
+func TestArtifactTemplateDelimitersFromDescribe(t *testing.T) {
+	loader := wasm.NewCachingLoader(nil)
+	helmchartURI := embeddedGuestURI(t, "helmchart-provider")
+	helmURI := embeddedGuestURI(t, "helm-provider")
+
+	hc := wasmengine.New(embeddedGuestLookup, helmchartURI, helmchart.HostCaps(), loader)
+	if l, r := hc.ArtifactTemplateDelimiters(); l != "[[" || r != "]]" {
+		t.Errorf("helm-chart delimiters = %q/%q; want [[ / ]]", l, r)
+	}
+	h := wasmengine.New(embeddedGuestLookup, helmURI, renderer.HostCapabilities{}, loader)
+	if l, r := h.ArtifactTemplateDelimiters(); l != "{{" || r != "}}" {
+		t.Errorf("helm delimiters = %q/%q; want {{ / }}", l, r)
 	}
 }
 

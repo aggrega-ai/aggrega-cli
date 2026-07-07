@@ -14,10 +14,10 @@ import (
 // single helm-chart-sourced component (the host) with a component-scope
 // FeatureRecipe attached whose pipeline runs a /host PATCH step. The step
 // content-selects the host chart's values.yaml and injects an env var into it.
-// Because helm-chart is a BoundaryAssembler that is ALSO an
-// ExternalArtifactsHandler, its per-node chart source is discrete (not a
-// pre-assembly fragment), so the /host PATCH runs per-node through the
-// helm-chart codec — no post-assembly phase. The step references a Plugin
+// Because helm-chart is a nesting BoundaryAssembler (it places each node's chart
+// under its own umbrella position rather than merging fragments), its per-node
+// chart source is discrete (not a pre-assembly fragment), so the /host PATCH runs
+// per-node through the helm-chart codec — no post-assembly phase. The step references a Plugin
 // ENTITY URI; the entity's spec.plugin .wasm artifact is built on demand from the
 // Rust PDK example and staged into a sidecar directory so the build's entity-front
 // resolves it. When the wasm toolchain is absent the staging build skips the

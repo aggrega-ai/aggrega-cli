@@ -130,8 +130,9 @@ func routeEngine(
 	//
 	// The adapter carries the provider's host-side capability holder — resolved
 	// from the provider-name registry, not from a constructed engine — so it
-	// derives input-kind capabilities from the holder (the gate stays host-decided)
-	// and projects a sourced node's source through the holder's own ProjectSource.
+	// derives input-kind capabilities from the holder (the gate stays host-decided).
+	// A sourced node's source is handed to the guest as a name-only listing the
+	// guest resolves and packs itself, not through any host-side projection.
 	// The unknown-provider halt lives once, above, on the catalog-resolution check
 	// (!routed): a provider with no serving render_node plugin halts before any
 	// holder lookup. HostCapsFor supplies the residual host-side holder for the

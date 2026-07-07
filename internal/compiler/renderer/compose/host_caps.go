@@ -17,7 +17,6 @@ import (
 // own describe() self-report.
 func HostCaps() renderer.HostCapabilities {
 	return renderer.HostCapabilities{
-		ProjectSource:                ProjectComposeSource,
 		BoundaryConsumerEnvOverrides: computeBridgeConsumerEnvOverrides,
 	}
 }
