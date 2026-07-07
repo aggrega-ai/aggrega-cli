@@ -17,17 +17,19 @@ import (
 // rendered output unchanged. Each goroutine mimics one served request: it
 // constructs its own Loader via NewCachingLoader (the exact call every render
 // path makes, all backed by the one shared cache), loads a real guest, and
-// calls it. Run under `go test -race`, the test asserts
+// calls it. All eight goroutines load the SAME guest against a cold cache — the
+// exact concurrent-cold-compile case the loader serializes so it cannot observe
+// a torn, zero-function module. Run under `go test -race`, the test asserts
 //
 //	(a) no data race across the concurrently-shared cache and its Runtimes, and
 //	(b) byte-identical output across every concurrent run — the cache memoizes
 //	    only compiled machine code, a pure function of the guest bytes, so it
 //	    cannot perturb output.
 //
-// Under `go test` the shared cache is in-memory, so the test stays hermetic and
-// off the machine's user cache directory; the concurrency guarantee is a
-// property of the wazero CompilationCache itself, identical for the disk-backed
-// and in-memory variants.
+// Under `go test` the shared cache is disk-backed at a fixed directory off the
+// machine's user cache directory (see testCompilationCacheDir), so the suite
+// never touches a developer's real build cache while still exercising the
+// disk-backed cross-process compile lock.
 func TestSharedCompilationCacheConcurrentLoads(t *testing.T) {
 	// Build the fixture once, before any goroutine loads it, so the on-demand
 	// build never races. Skips cleanly when the toolchain/PDK is absent.

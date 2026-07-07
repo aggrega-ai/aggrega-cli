@@ -26,6 +26,12 @@ dist/
 !internal/compiler/pipeline/testdata/golden-fullstack-app/dist/
 !internal/compiler/pipeline/testdata/golden-fullstack-app/dist/**
 
+# Embedded provider guests are reproducible build artifacts regenerated from
+# guest source by scripts/build-embedded-*.sh (run via `go generate` on the
+# embedded package or by scripts/build.sh). The .gitkeep placeholder stays
+# tracked so the //go:embed all:plugins directory is always present.
+internal/wasm/embedded/plugins/*.wasm.gz
+
 # Dependency directories (if you vendor)
 vendor/
 

@@ -3,12 +3,15 @@
 #
 # Rebuilds the embedded compose provider Wasm guest from source, writes it
 # gzip-compressed to the embed path, and prints the uncompressed content digest.
+# The build is reproducible: the recipe below (GOWORK=off, -trimpath,
+# -ldflags=-buildid=, -buildvcs=false, and gzip -n) strips build-path, build-id,
+# and VCS stamps so the uncompressed guest digest is stable across rebuilds.
 # When the guest source changes, run this and update the new digest at its four
 # coupled sites: the registration URI in internal/wasm/embedded/embedded.go, the
 # artifact reference (spec.plugin) in the compose-renderer Plugin entity, the
 # capstone resolution test's expected pin, and the cutover fixture's Plugin
-# entity. The script does not rewrite those sites — Wasm is not byte-reproducible,
-# so a maintainer confirms the new digest deliberately.
+# entity. The script does not rewrite those sites — a maintainer confirms the new
+# digest deliberately.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,10 +21,10 @@ trap 'rm -rf "$TMP"' EXIT
 WASM="$TMP/compose-provider.wasm"
 
 echo "=== build guest (GOOS=wasip1 GOARCH=wasm) ==="
-GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o "$WASM" ./plugins/compose-provider
+GOWORK=off GOOS=wasip1 GOARCH=wasm go build -trimpath -ldflags=-buildid= -buildvcs=false -buildmode=c-shared -o "$WASM" ./plugins/compose-provider
 
 echo "=== compress to $EMBED ==="
-gzip -9 -c "$WASM" > "$EMBED"
+gzip -n -9 -c "$WASM" > "$EMBED"
 
 DIGEST="sha256:$(sha256sum "$WASM" | cut -d' ' -f1)"
 echo "=== raw $(stat -c%s "$WASM") bytes / gz $(stat -c%s "$EMBED") bytes ==="

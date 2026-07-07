@@ -59,6 +59,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	extism "github.com/extism/go-sdk"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/sys"
@@ -163,12 +164,10 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 //     process — including the many package binaries a single suite run executes
 //     in parallel — shares that one directory, so each distinct guest compiles at
 //     most once across the whole run and every later process reuses the machine
-//     code instead of cold-compiling its own copy. A wazero cache directory is
-//     concurrency-safe across processes: each entry is written to a unique temp
-//     file and atomically renamed into place, so concurrent compiles never see a
-//     torn entry. The directory is deliberately off the user cache directory, so
-//     the suite never touches a developer's real build cache. An in-memory cache
-//     is the fallback only when that directory cannot be created.
+//     code instead of cold-compiling its own copy. The directory is deliberately
+//     off the user cache directory, so the suite never touches a developer's real
+//     build cache. An in-memory cache is the fallback only when that directory
+//     cannot be created.
 //   - Otherwise selectCompilationCache honors disablePersistent: false (the
 //     default) prefers the persistent on-disk store under wasmCompileCacheDir
 //     with an in-memory fallback; true uses an in-memory-only cache. Only the
@@ -176,17 +175,27 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 //     process runs one CLI command's worth of that dial, or the daemon's
 //     disk-backed default.
 //
-// A wazero CompilationCache is safe for concurrent use across the Runtimes of
-// many simultaneously-constructed Plugins, so sharing this one cache across the
-// daemon's concurrent requests and a build's parallel node renders is sound and
-// changes only compilation cost, never isolation or output.
+// Sharing one cache changes only compilation cost, never isolation or output;
+// each load still yields a fresh, isolated Plugin. Concurrent compilation of the
+// SAME guest against a shared cache can race, though — two loads that both find
+// the cache cold may compile at once and one can observe a torn, zero-function
+// module — so Load serializes same-guest compilation: an in-process per-guest
+// lock always, plus a cross-process file lock when the cache is a shared
+// on-disk directory. Different guests still compile in parallel. The
+// serialization changes only when compilation happens, never the compiled code
+// or the rendered bytes.
+//
+// When the resolved cache is disk-backed, the on-disk directory is recorded in
+// sharedCompilationCacheDir so Load's cross-process lock can place its per-guest
+// lock file there; an in-memory cache leaves it empty and Load takes only the
+// in-process lock.
 func sharedCompilationCache(disablePersistent bool) wazero.CompilationCache {
 	sharedCompilationCacheOnce.Do(func() {
 		if testing.Testing() {
-			sharedCompilationCacheInstance = testCompilationCache()
+			sharedCompilationCacheInstance, sharedCompilationCacheDir = testCompilationCache()
 			return
 		}
-		sharedCompilationCacheInstance = selectCompilationCache(disablePersistent)
+		sharedCompilationCacheInstance, sharedCompilationCacheDir = selectCompilationCacheWithDir(disablePersistent)
 	})
 	return sharedCompilationCacheInstance
 }
@@ -203,17 +212,28 @@ func testCompilationCacheDir() string {
 
 // testCompilationCache returns the shared on-disk cache test binaries use,
 // rooted at testCompilationCacheDir, falling back to an in-memory cache only
-// when that directory cannot be created.
-func testCompilationCache() wazero.CompilationCache {
-	if disk, err := wazero.NewCompilationCacheWithDir(testCompilationCacheDir()); err == nil {
-		return disk
+// when that directory cannot be created. The second return is the on-disk
+// directory backing the cache, or "" when the fallback in-memory cache is used;
+// callers record it so the cross-process compile lock can locate its per-guest
+// lock files.
+func testCompilationCache() (wazero.CompilationCache, string) {
+	dir := testCompilationCacheDir()
+	if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
+		return disk, dir
 	}
-	return wazero.NewCompilationCache()
+	return wazero.NewCompilationCache(), ""
 }
 
 var (
 	sharedCompilationCacheOnce     sync.Once
 	sharedCompilationCacheInstance wazero.CompilationCache
+	// sharedCompilationCacheDir is the on-disk directory backing the process-wide
+	// shared compilation cache, or "" when that cache is in-memory. It is written
+	// exactly once, inside sharedCompilationCacheOnce.Do, so every later read
+	// (Load's cross-process compile lock) observes it through the Once's
+	// happens-before. It is the single source of truth for the cache directory:
+	// the same path passed to wazero.NewCompilationCacheWithDir, never recomputed.
+	sharedCompilationCacheDir string
 )
 
 // selectCompilationCache is the disk-vs-memory primitive behind
@@ -230,14 +250,25 @@ var (
 // primitive without the gate; it must not be "simplified" to route through
 // sharedCompilationCache, which would blind the disk-branch coverage.
 func selectCompilationCache(disablePersistent bool) wazero.CompilationCache {
+	cache, _ := selectCompilationCacheWithDir(disablePersistent)
+	return cache
+}
+
+// selectCompilationCacheWithDir is selectCompilationCache's primitive: it makes
+// the same disk-vs-memory choice and additionally returns the on-disk directory
+// backing the cache, or "" when the in-memory fallback is used. It is the single
+// site that decides the cache directory; sharedCompilationCache records the
+// returned directory so Load's cross-process compile lock can locate its
+// per-guest lock files without re-deriving the selection.
+func selectCompilationCacheWithDir(disablePersistent bool) (wazero.CompilationCache, string) {
 	if !disablePersistent {
 		if dir, ok := wasmCompileCacheDir(); ok {
 			if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
-				return disk
+				return disk, dir
 			}
 		}
 	}
-	return wazero.NewCompilationCache()
+	return wazero.NewCompilationCache(), ""
 }
 
 // wasmCompileCacheDir returns the directory for the persistent wazero
@@ -498,7 +529,16 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 		config.RuntimeConfig = wazero.NewRuntimeConfig().WithCompilationCache(l.Cache)
 	}
 
+	// Serialize concurrent compilation of THIS guest. NewPlugin compiles the
+	// guest on a cold cache; two concurrent cold loads of the same guest against
+	// the shared cache can race and one can observe a torn, zero-function module.
+	// Keying the lock on the guest's content digest lets different guests still
+	// compile in parallel; only same-guest loads take turns (first compiles and
+	// warms the cache, the rest hit the warm cache). This changes only when
+	// compilation happens, never the compiled code or rendered bytes.
+	releaseCompile := l.lockGuestCompile(digest.ContentDigest(wasmBytes))
 	extismPlugin, err := extism.NewPlugin(ctx, manifest, config, functions)
+	releaseCompile()
 	if err != nil {
 		return nil, fmt.Errorf("wasm: load plugin %q: %w", spec.Name, err)
 	}
@@ -508,6 +548,49 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 		l.OnLoad(spec.Name)
 	}
 	return p, nil
+}
+
+// compileLocks maps a guest content digest to the *sync.Mutex that serializes
+// in-process compilation of that guest. Distinct guests get distinct mutexes, so
+// they compile in parallel; concurrent loads of one guest contend on its single
+// mutex.
+var compileLocks sync.Map
+
+// compileMutex returns the process-wide mutex for key, creating it on first use.
+func compileMutex(key string) *sync.Mutex {
+	m, _ := compileLocks.LoadOrStore(key, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
+
+// lockGuestCompile serializes compilation of the guest identified by key (its
+// content digest) and returns a release function the caller invokes once
+// compilation/instantiation has returned. It always takes an in-process
+// per-guest mutex; when this Loader is backed by a shared on-disk compilation
+// cache it also takes an exclusive cross-process file lock over a per-guest lock
+// file in that cache directory, so parallel processes sharing the directory do
+// not compile the same guest into a torn cache entry at once.
+//
+// The two locks are taken in a fixed order — in-process mutex first, then the
+// file lock — and released in reverse, so concurrent callers cannot deadlock.
+// The file lock is best-effort: if the lock file cannot be opened or locked the
+// in-process mutex still serializes same-guest compilation within this process.
+func (l *Loader) lockGuestCompile(key string) func() {
+	mu := compileMutex(key)
+	mu.Lock()
+
+	// A cross-process lock is only meaningful when this Loader shares a real
+	// on-disk cache directory with other processes; an in-memory cache is
+	// process-private and the in-process mutex alone suffices.
+	dir := sharedCompilationCacheDir
+	if l.Cache == nil || dir == "" {
+		return mu.Unlock
+	}
+
+	releaseFile := flockGuestCompile(dir, key)
+	return func() {
+		releaseFile()
+		mu.Unlock()
+	}
 }
 
 // deterministicModuleConfig returns the wazero ModuleConfig the loader

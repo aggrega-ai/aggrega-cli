@@ -24,6 +24,18 @@ import (
 	"sort"
 )
 
+// The embedded provider guests are reproducible build artifacts, not tracked
+// files: `go generate` rebuilds each gzip-compressed .wasm.gz under plugins/
+// from its guest source via the build-embedded scripts. The scripts pin a
+// reproducible recipe (GOWORK=off, -trimpath, -ldflags=-buildid=,
+// -buildvcs=false, gzip -n) so the uncompressed digest is stable across
+// rebuilds and matches the content-addressed URIs registered below.
+//
+//go:generate bash ../../../scripts/build-embedded-helm-provider.sh
+//go:generate bash ../../../scripts/build-embedded-compose-provider.sh
+//go:generate bash ../../../scripts/build-embedded-helm-chart-provider.sh
+//go:generate bash ../../../scripts/build-embedded-terraform-provider.sh
+
 // pluginFS holds the embedded plugin artifacts. The `all:` prefix matches
 // every file under plugins/ including the dot-prefixed .gitkeep placeholder
 // that keeps the directory present in the tree even when no artifact is checked
@@ -39,28 +51,28 @@ var pluginFS embed.FS
 // reference a Plugin entity's spec.plugin names; the sha256 digest pins the
 // exact bytes committed (uncompressed) under plugins/, so a resolution of this
 // URI through the embed tier verifies byte-for-byte against a lockfile pin.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:b0a43deaedef55063ac5c86dfda7a6ed5d33314447a191bfac4171a49463d7d8"
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:af96ed229f794f517efab15e9734ae2348f3d6b8f42f75641cd9d7777732423a"
 
 // composeProviderURI is the canonical content-addressed URI the compose provider
 // rendering plugin's decompressed bytes register under. Like helmProviderURI, the
 // sha256 digest pins the exact bytes committed (uncompressed) under plugins/, so a
 // resolution of this URI through the embed tier verifies byte-for-byte against a
 // lockfile pin.
-const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:f2a5112d5ae8e92b99a3c4a080baea35597e4001c1b2ce8f4e6303ad9d71fe68"
+const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:65a5648da7159b2b2a7405e382c7e8a50d77f430a7a2593aaf11e5acd88328ce"
 
 // helmChartProviderURI is the canonical content-addressed URI the helm-chart
 // provider rendering plugin's decompressed bytes register under. Like the other
 // provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
 // under plugins/, so a resolution of this URI through the embed tier verifies
 // byte-for-byte against a lockfile pin.
-const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:bd74da5550eea0a62c7e382ec36e3cf5e1645f828479d8838fd4ecfbc332bc56"
+const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:70426f454e252c1d64ee2a127d62c3b39b966fbf8f617349cfdb2313b8f6762b"
 
 // terraformProviderURI is the canonical content-addressed URI the terraform
 // provider rendering plugin's decompressed bytes register under. Like the other
 // provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
 // under plugins/, so a resolution of this URI through the embed tier verifies
 // byte-for-byte against a lockfile pin.
-const terraformProviderURI = "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:435518e59da5924cdf7d4126410cd1d717927fff0eff61a5dd597b98607768f4"
+const terraformProviderURI = "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:9667198cc4a5181e1689d46af66a06d091a7f0d6da80bf864490913da88379bc"
 
 // registry maps a canonical plugin URI to the embedded artifact's decompressed
 // bytes. It is the lookup the cascade's embed tier consults, populated from

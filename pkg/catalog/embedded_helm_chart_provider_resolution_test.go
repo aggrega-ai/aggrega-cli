@@ -25,7 +25,7 @@ import (
 // spec.plugin. build-embedded-helm-chart-provider.sh recomputes it when the guest
 // source changes.
 const (
-	helmChartArtifactDigest = "sha256:bd74da5550eea0a62c7e382ec36e3cf5e1645f828479d8838fd4ecfbc332bc56"
+	helmChartArtifactDigest = "sha256:70426f454e252c1d64ee2a127d62c3b39b966fbf8f617349cfdb2313b8f6762b"
 	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugins/helmchart-provider@" + helmChartArtifactDigest
 	helmChartPluginEntity   = "helm-chart-renderer:1.0.0"
 	helmChartProviderMemPag = 4096
