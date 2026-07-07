@@ -298,19 +298,20 @@ func wasmCompileCacheDir() (string, bool) {
 	return filepath.Join(base, "aggrega", "wasm-compile"), true
 }
 
-// PluginCompileCacheCold reports whether the plugin compile cache is cold for a
-// build using ctx — that is, whether a guest this build loads will be compiled
-// rather than served from an already-populated cache. It is true when the
-// persistent on-disk cache is disabled for this build (see
-// ContextWithDisablePluginCache — the in-memory cache then starts empty), when no
-// persistent cache directory can be resolved (an in-memory cache is used), or
-// when the persistent cache directory does not yet exist or holds no entries.
+// PluginCompileCacheCold reports a coarse, up-front guess of whether a build
+// using ctx will compile a provider guest rather than serve it from the cache.
+// It is used only to pick the progress bar's cold or warm weight profile before
+// rendering starts. It is true when the persistent on-disk cache is disabled for
+// this build (see ContextWithDisablePluginCache — the in-memory cache then starts
+// empty), when no persistent cache directory can be resolved (an in-memory cache
+// is used), or when the persistent cache directory does not yet exist or holds no
+// entries.
 //
-// The check is a coarse, up-front heuristic. It reads only the presence of cache
-// entries, not which specific guests are cached, so a populated directory reports
-// warm even if it lacks the exact guest this build needs. That imprecision is
-// acceptable for a progress surface: it selects a cold or warm phase profile
-// before rendering starts, and the surface tolerates residual weighting error.
+// The check reads only the presence of cache entries, not which specific guests
+// are cached, so a populated directory guesses warm even if it lacks the exact
+// guest this build needs. That imprecision is confined to bar weighting, which
+// tolerates residual error; the visible "compiling" step is not gated on this
+// guess but on whether a guest is observed to actually compile during the build.
 func PluginCompileCacheCold(ctx context.Context) bool {
 	if DisablePluginCacheFromContext(ctx) {
 		return true

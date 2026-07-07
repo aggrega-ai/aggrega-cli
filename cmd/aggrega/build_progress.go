@@ -69,9 +69,10 @@ const (
 // labels is the fixed phase list in execution order. renderIdx is the index of
 // the render phase (the one that reports per-node progress and may be preceded by
 // a plugin-compilation step); it is -1 for a command with no render phase (pull).
-// coldProfile is true when the plugin compile cache is cold for this build, so a
-// "Plugin compilation" step is shown before the render phase while the provider
-// guests are compiled; a warm build leaves it false and the step never appears.
+// coldProfile is the up-front cold/warm guess for this build, used only to pick
+// the global bar's weight profile. It does not gate the "Plugin compilation"
+// step: that step is revealed from whether a guest is observed to actually
+// compile during the build, not from this guess.
 type progressSpine struct {
 	labels      []string
 	renderIdx   int
@@ -91,8 +92,8 @@ const (
 )
 
 // buildProgressSpine returns the ordered build phase spine. cold selects the
-// cold profile, which allows the "Plugin compilation" step to appear before the
-// render phase while the provider guests are compiled.
+// bar's cold weight profile; the "Plugin compilation" step's appearance is
+// driven separately by an observed guest compilation, not by this flag.
 func buildProgressSpine(cold bool) progressSpine {
 	return progressSpine{
 		labels: []string{
@@ -207,10 +208,11 @@ const (
 // untouched by the presence or shape of progress.
 //
 // The checklist ticks each phase as it completes and spins the currently-active
-// phase. In the cold profile a "Plugin compilation" step appears before the
-// render phase while the provider guests are eagerly compiled; a warm build omits
-// it. The render phase carries an X/Y node counter. A separate global progress
-// line below the rows shows a profile-weighted whole-build completion bar.
+// phase. A "Plugin compilation" step appears before the render phase when the
+// eager pass observes a guest actually compiling; a build served entirely from
+// the cache omits it. The render phase carries an X/Y node counter. A separate
+// global progress line below the rows shows a profile-weighted whole-build
+// completion bar.
 type progressReporter struct {
 	// mu guards every state mutation and every write to out, so the background
 	// spinner ticker (checklist mode only) and the main build thread never race
@@ -263,8 +265,8 @@ type progressReporter struct {
 	// phase done.
 	inRenderStage bool
 
-	// compileShown is true once the eager plugin-compilation phase has begun under
-	// the cold profile, so the "Plugin compilation" step joins the checklist.
+	// compileShown is true once a real guest compilation has been observed this
+	// build, so the "Plugin compilation" step joins the checklist.
 	// compileActive spins it; compileDone ticks it once every guest has compiled.
 	compileShown  bool
 	compileActive bool
@@ -463,29 +465,58 @@ func (p *progressReporter) phase(i int) {
 	p.draw()
 }
 
-// pluginCompileBegin opens the eager plugin-compilation phase, which force-
-// compiles the provider guests the render needs before the render loop runs, so
-// a cold guest compilation is a discrete, attributed phase rather than a freeze
-// inside the first node's render. total is the number of distinct guests that
-// will be compiled. Under the cold profile it surfaces the "Plugin compilation"
-// step as the active checklist row and starts its self-timing, so the global bar
-// advances during the compile. Under the warm profile (guests already cached, so
-// the compile is near-instant), a silent reporter, a spine with no render phase,
-// or a zero total, it is a no-op. Called once, before the render loop.
+// pluginCompileBegin records that the eager plugin-compilation pass is about to
+// compile total distinct provider guests, seeding the compilation step's guest
+// count and self-timer. It does not reveal the step: whether the step becomes
+// visible is decided later by pluginCompileRunning, from whether a guest is
+// observed to actually compile this build — a populated cache directory does not
+// mean the specific guest this build needs is already cached. A silent reporter,
+// a spine with no render phase, or a zero total makes it a no-op. Called once,
+// before the first guest is compiled.
 func (p *progressReporter) pluginCompileBegin(total int) {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.mode == progressSilent || p.spine.renderIdx < 0 || !p.spine.coldProfile || total <= 0 {
+	if p.mode == progressSilent || p.spine.renderIdx < 0 || total <= 0 {
+		return
+	}
+	p.guestsTotal = total
+	p.compileStart = time.Now()
+	// Seed the phase timer now so a later reveal reports the elapsed since the
+	// compile pass actually began, not since the reveal.
+	p.startTimer(compileTimerKey)
+}
+
+// pluginCompileRunning reveals the "Plugin compilation" step because a provider
+// guest is being compiled this build rather than served from the cache. The
+// eager pass calls it once a guest's warm runs past the near-instant window a
+// cache hit completes in, so the step appears only for a build that truly
+// recompiles a guest — including a build whose cache directory already existed
+// but lacked the exact guest bytes this build needs. It surfaces the step as the
+// active checklist row, so the row spins and its self-timer advances for the rest
+// of the compile. Idempotent across guests and inert on a reporter that never
+// began the pass (silent, no render phase, or zero guests) or already ticked the
+// step done. May be called from a timer goroutine.
+func (p *progressReporter) pluginCompileRunning() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent || p.spine.renderIdx < 0 || p.guestsTotal <= 0 {
+		return
+	}
+	if p.compileShown || p.compileDone {
 		return
 	}
 	p.beginRenderStage()
-	p.guestsTotal = total
 	p.compileShown = true
 	p.compileActive = true
-	p.compileStart = time.Now()
+	if p.compileStart.IsZero() {
+		p.compileStart = time.Now()
+	}
 	// Seed the phase timer before the mode branches so every surface — including
 	// debug, whose completion line reads the frozen elapsed — has a start instant.
 	p.startTimer(compileTimerKey)

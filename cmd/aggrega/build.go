@@ -151,11 +151,12 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// progress reporter (whose clock is unset in silent mode and only spans the
 	// progress phases) so the summary's "Build time" spans the entire dispatch.
 	buildStart := time.Now()
-	// Cold/warm plugin-compile-cache detection, up front: a cold cache means a
-	// guest this build loads will be compiled, so the checklist may show a
-	// "compiling plugins" step; a warm cache omits it. --disable-plugin-cache
-	// forces cold. Detected before the pipeline runs (and before any pre-warm
-	// would populate the cache) so the phase profile is fixed for the whole run.
+	// Cold/warm plugin-compile-cache guess, up front: it picks the progress bar's
+	// weight profile only. The visible "Plugin compilation" step is revealed
+	// separately, from whether a guest is observed to actually compile during the
+	// build, so a stale-cache rebuild that recompiles still shows it. This guess
+	// is detected before the pipeline runs so the bar's calibration is fixed for
+	// the whole run. --disable-plugin-cache forces the cold profile.
 	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(context.Background(), run.disablePluginCache))
 	progress := newProgressReporter(diagOut, diag, buildProgressSpine(coldCache))
 	defer progress.finish()
@@ -359,16 +360,17 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			// summary, so rendered output stays byte-deterministic. A no-op
 			// reporter (quiet, no debug) ignores the calls.
 			NodeProgress: progress.renderNode,
-			// Eager plugin-compilation phase callbacks for the cold-profile "Plugin
-			// compilation" checklist step. Begin fires once with the number of
-			// provider guests to compile before the render loop; GuestDone fires as
-			// each finishes. Both write only to the progress reporter's diagnostic
-			// sink, so stdout stays byte-deterministic. A warm or silent reporter
-			// ignores the calls; when Begin is set, the pipeline runs the eager
-			// compile pass so a cold guest compilation is attributed rather than
-			// buried in the first node's render.
+			// Eager plugin-compilation phase callbacks for the "Plugin compilation"
+			// checklist step. Begin fires once with the number of provider guests to
+			// compile before the render loop; Running fires when a guest is observed
+			// to actually compile (revealing the step); GuestDone fires as each
+			// finishes. All write only to the progress reporter's diagnostic sink, so
+			// stdout stays byte-deterministic. A silent reporter ignores the calls;
+			// when Begin is set, the pipeline runs the eager compile pass so a guest
+			// compilation is attributed rather than buried in the first node's render.
 			PluginCompileBegin:     progress.pluginCompileBegin,
 			PluginCompileGuestDone: progress.pluginCompileGuestDone,
+			PluginCompileRunning:   progress.pluginCompileRunning,
 		},
 	)
 	if err != nil {

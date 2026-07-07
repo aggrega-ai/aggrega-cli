@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
@@ -167,6 +168,18 @@ type Options struct {
 	// off. Like PluginCompileBegin it is a diagnostic hook that must write only to
 	// a diagnostic sink and cannot alter output.
 	PluginCompileGuestDone func(done int)
+
+	// PluginCompileRunning, when set, is invoked the first time a provider guest
+	// in the eager pass is observed to be compiling rather than served from the
+	// cache — a warm still running after a short cache-hit window. It lets a
+	// progress surface reveal the compilation step only for a build that truly
+	// recompiles a guest, including a build whose cache directory already existed
+	// but lacked the exact guest this build needs. Paired with PluginCompileBegin;
+	// nil leaves the step hidden. Like the other compile hooks it must write only
+	// to a diagnostic sink and carries no authority over the compile. It may fire
+	// from a timer goroutine, so the callback must be safe to call concurrently
+	// with the pass.
+	PluginCompileRunning func()
 }
 
 // guestWarmer is the compile-only capability the eager plugin-compilation pass
@@ -587,6 +600,31 @@ func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup
 	}, cascade)
 }
 
+// pluginCompileRevealDelay is the wall-clock a provider-guest warm must exceed
+// for the eager pass to treat it as a genuine compilation rather than a cache
+// hit. A guest served from the populated compile cache loads in a few
+// milliseconds; compiling one from source takes seconds, so a warm still running
+// past this delay is compiling. The margin is wide enough that a cache hit never
+// crosses it and a real compile always does, so the signal cleanly separates the
+// two without inspecting the cache's internal keys.
+const pluginCompileRevealDelay = 750 * time.Millisecond
+
+// warmProviderGuest compiles one provider guest, reporting through onCompiling
+// when the warm runs long enough to be a genuine compile rather than a cache
+// hit. A warm still running after pluginCompileRevealDelay is compiling: the
+// timer fires onCompiling from its own goroutine while the warm proceeds, so a
+// progress surface can reveal the compilation step mid-compile. A warm that
+// finishes within the delay (a cache hit) cancels the timer and reports nothing.
+// A nil onCompiling skips the timing and warms directly.
+func warmProviderGuest(ctx context.Context, w guestWarmer, onCompiling func()) error {
+	if onCompiling == nil {
+		return w.Warm(ctx)
+	}
+	timer := time.AfterFunc(pluginCompileRevealDelay, onCompiling)
+	defer timer.Stop()
+	return w.Warm(ctx)
+}
+
 // collectProviderGuestWarmers resolves the distinct provider guests the render
 // will load, in the same way the render loop does: it walks the graph's nodes,
 // resolves each node's recipe to its provider reference, and routes that provider
@@ -789,7 +827,7 @@ func RunPipeline(
 			}
 			opts.PluginCompileBegin(len(warmers))
 			for i, w := range warmers {
-				if err := w.Warm(ctx); err != nil {
+				if err := warmProviderGuest(ctx, w, opts.PluginCompileRunning); err != nil {
 					return fmt.Errorf("Step 5 (plugin compilation): %w", err)
 				}
 				if opts.PluginCompileGuestDone != nil {

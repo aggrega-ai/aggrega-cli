@@ -169,10 +169,10 @@ func TestProgress_DebugWinsOverQuiet(t *testing.T) {
 	}
 }
 
-// TestProgress_ColdProfile_ShowsCompileStep pins the cold profile: when the eager
-// plugin-compilation pass opens with a guest to compile, the "Plugin compilation"
-// step joins the checklist between the pre-render phases and the render phase.
-func TestProgress_ColdProfile_ShowsCompileStep(t *testing.T) {
+// TestProgress_RealCompile_ShowsCompileStep pins the reveal path: when the eager
+// pass observes a guest actually compiling, the "Plugin compilation" step joins
+// the checklist between the pre-render phases and the render phase.
+func TestProgress_RealCompile_ShowsCompileStep(t *testing.T) {
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -180,32 +180,55 @@ func TestProgress_ColdProfile_ShowsCompileStep(t *testing.T) {
 	p.phase(phaseLoadCatalog)
 	p.phase(phaseInheritance)
 	p.phase(phaseRender)
-	p.pluginCompileBegin(1) // a guest compiles
+	p.pluginCompileBegin(1)
+	p.pluginCompileRunning() // a guest is observed compiling
 	p.pluginCompileGuestDone(1)
 	p.renderNode(1, 1, "svc")
 	p.finish()
 
 	if !strings.Contains(buf.String(), compilePhaseLabel) {
-		t.Errorf("cold profile must show the %q step once a guest compiles; got %q", compilePhaseLabel, buf.String())
+		t.Errorf("an observed compile must show the %q step; got %q", compilePhaseLabel, buf.String())
 	}
 }
 
-// TestProgress_WarmProfile_OmitsCompileStep pins the warm profile: even if the
-// eager pass reports guests (a warm-cache warm still fires the callbacks), the
-// compile step never appears.
-func TestProgress_WarmProfile_OmitsCompileStep(t *testing.T) {
+// TestProgress_WarmProfileRealCompile_ShowsCompileStep pins the stale-cache case:
+// the up-front guess is warm (bar profile only), but a guest is observed to
+// actually compile this build, so the step must still appear. This is the case a
+// directory-presence gate got wrong — a populated cache directory that lacked the
+// exact guest this build needed.
+func TestProgress_WarmProfileRealCompile_ShowsCompileStep(t *testing.T) {
 	withTTY(t, true)
 
 	var buf bytes.Buffer
 	p := newProgressReporter(&buf, buildDiagOptions{}, buildProgressSpine(false))
 	p.phase(phaseRender)
-	p.pluginCompileBegin(1) // reported, but warm profile ignores it
+	p.pluginCompileBegin(1)
+	p.pluginCompileRunning() // a guest is observed compiling despite the warm guess
+	p.pluginCompileGuestDone(1)
+	p.renderNode(1, 1, "svc")
+	p.finish()
+
+	if !strings.Contains(buf.String(), compilePhaseLabel) {
+		t.Errorf("an observed compile must show the %q step even under the warm bar profile; got %q", compilePhaseLabel, buf.String())
+	}
+}
+
+// TestProgress_NoCompileObserved_OmitsCompileStep pins the genuinely-warm case:
+// the eager pass reports guests (a cache-hit warm still fires begin/done) but no
+// compile is observed, so the step never appears.
+func TestProgress_NoCompileObserved_OmitsCompileStep(t *testing.T) {
+	withTTY(t, true)
+
+	var buf bytes.Buffer
+	p := newProgressReporter(&buf, buildDiagOptions{}, buildProgressSpine(false))
+	p.phase(phaseRender)
+	p.pluginCompileBegin(1) // reported, but no compile observed
 	p.pluginCompileGuestDone(1)
 	p.renderNode(1, 1, "svc")
 	p.finish()
 
 	if strings.Contains(buf.String(), compilePhaseLabel) {
-		t.Errorf("warm profile must omit the %q step; got %q", compilePhaseLabel, buf.String())
+		t.Errorf("a cache-hit build must omit the %q step; got %q", compilePhaseLabel, buf.String())
 	}
 }
 
@@ -397,7 +420,8 @@ func TestProgress_UncountedPhase_NoBar(t *testing.T) {
 	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
 	p.phase(phaseLoadCatalog)
 	p.phase(phaseRender)
-	p.pluginCompileBegin(1) // cold profile: the plugin-compilation step is active
+	p.pluginCompileBegin(1)
+	p.pluginCompileRunning() // a compile is observed: the step is active
 
 	for _, row := range p.rows() {
 		if strings.HasPrefix(row, progressCaption) {
@@ -962,6 +986,7 @@ func TestProgress_GlobalBar_ColdCheckpoints(t *testing.T) {
 		t.Errorf("cold: fraction entering render (pre-compile) = %v, want 0.05", f)
 	}
 	p.pluginCompileBegin(1)
+	p.pluginCompileRunning()
 	// Just opened: the time ramp has barely started, so the bar sits near the
 	// pre-compile 0.05 (base 0 guests done, negligible elapsed).
 	if f := p.globalFraction(); f < 0.05 || f > 0.06 {
@@ -995,6 +1020,7 @@ func TestProgress_EagerCompile_BarAdvancesDuringCompile(t *testing.T) {
 	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
 	p.phase(phaseRender)
 	p.pluginCompileBegin(1)
+	p.pluginCompileRunning()
 
 	// Simulate elapsed compile time by rewinding the ramp anchor, mimicking what
 	// the async redraw ticker observes as the real compile runs.
