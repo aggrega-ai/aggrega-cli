@@ -12,9 +12,9 @@ import (
 )
 
 // envOverrideStubEngine is a test-only provider engine implementing the generic
-// BoundaryConsumerEnvOverrider channel. It returns a fixed per-consumer override
-// map, proving the channel carries opaque string values with zero domain
-// specifics (no compose, no ports, no gateway).
+// BoundaryEnvOverrider channel. It returns a fixed per-consumer override map,
+// proving the channel carries opaque string values with zero domain specifics
+// (no compose, no ports, no gateway).
 type envOverrideStubEngine struct {
 	overrides map[string]map[string]string
 }
@@ -27,30 +27,8 @@ func (e envOverrideStubEngine) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
-func (e envOverrideStubEngine) BoundaryConsumerEnvOverrides(*types.TemplateContext) (map[string]map[string]string, error) {
+func (e envOverrideStubEngine) BoundaryEnvOverrides(context.Context, []types.EnrichedEdge, types.OrderedMap[any]) (map[string]map[string]string, error) {
 	return e.overrides, nil
-}
-
-func (e envOverrideStubEngine) HostCapabilities() HostCapabilities {
-	return HostCapabilities{BoundaryConsumerEnvOverrides: e.BoundaryConsumerEnvOverrides}
-}
-
-// envOverrideUnwrapStub mimics the Wasm-provider adapter: it drives render and
-// synthesis itself (via the embedded stubEngine, which does NOT implement the
-// host-side BoundaryConsumerEnvOverrider channel directly) and exposes the
-// wrapped in-tree engine's host capabilities by forwarding them through
-// HostCapabilities — exactly as the real adapter captures its wrapped engine's
-// holder. It stands in for the case where a provider whose in-tree engine drives
-// the env-override channel is routed to a Wasm guest: the dispatched engine is
-// the narrower wrapper, so the channel resolves from the wrapper's forwarded
-// holder rather than from a direct capability assertion.
-type envOverrideUnwrapStub struct {
-	stubEngine
-	wrapped Engine
-}
-
-func (e envOverrideUnwrapStub) HostCapabilities() HostCapabilities {
-	return ResolveHostCaps(e.wrapped)
 }
 
 // TestApplyConsumerEnvOverrides_NonDisturbance exercises the apply-site contract:
@@ -116,7 +94,7 @@ func TestApplyConsumerEnvOverrides_NilIsNoOp(t *testing.T) {
 
 // TestBoundaryConsumerEnvChannel_PopulatesViaEngineHook proves the generic
 // contract: a boundary-scope FR whose provider engine implements
-// BoundaryConsumerEnvOverrider has its returned map stored in
+// BoundaryEnvOverrider has its returned map stored in
 // state.ConsumerEnvOverrides during the pre-loop, keyed by the producer's
 // consumer-nodeID; a non-named consumer gets no entry. No compose specifics.
 func TestBoundaryConsumerEnvChannel_PopulatesViaEngineHook(t *testing.T) {
@@ -151,51 +129,5 @@ func TestBoundaryConsumerEnvChannel_PopulatesViaEngineHook(t *testing.T) {
 	}
 	if _, ok := state.ConsumerEnvOverrides["other"]; ok {
 		t.Error("non-named consumer 'other' must have no override entry")
-	}
-}
-
-// TestBoundaryConsumerEnvChannel_RoutesThroughForwardedHolder proves the channel
-// resolves from the wrapper's forwarded host-capability holder: when the
-// provider engine is a Wasm-provider wrapper that does not implement
-// BoundaryConsumerEnvOverrider itself but forwards the host capabilities of an
-// in-tree engine that does, the override map is still stored. A raw type
-// assertion on the wrapper would miss the channel and silently drop the
-// overrides — this test fails against that regression and passes only when the
-// dispatch resolves through the forwarded holder.
-func TestBoundaryConsumerEnvChannel_RoutesThroughForwardedHolder(t *testing.T) {
-	t.Parallel()
-	fr := boundaryScopeProvidesFR()
-	lookup := dbProvidesLookup(fr)
-
-	graph := &types.IRGraph{}
-	graph.Spec.Nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
-	infra := types.OrderedMap[any]{}
-	infra.Set("host", "db.internal")
-	inner := types.OrderedMap[types.IRBoundaryFeature]{}
-	inner.Set("db", types.IRBoundaryFeature{Type: "core/db:1.0", Infra: infra})
-	graph.Spec.BoundaryFeatures.Set("cluster", inner)
-
-	release := &types.Release{}
-	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
-
-	state := NewBoundaryFRState()
-	wrapped := envOverrideStubEngine{overrides: map[string]map[string]string{
-		"api": {"FOO_ADDR": "svc-x:1234"},
-	}}
-	wrapper := envOverrideUnwrapStub{wrapped: wrapped}
-
-	// The seam is only load-bearing if the wrapper genuinely lacks the channel.
-	if _, ok := Engine(wrapper).(BoundaryConsumerEnvOverrider); ok {
-		t.Fatal("wrapper unexpectedly implements BoundaryConsumerEnvOverrider directly; seam not load-bearing")
-	}
-
-	factory := func(string) (Engine, error) { return wrapper, nil }
-	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, nil, factory, state); err != nil {
-		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
-	}
-
-	got, ok := state.ConsumerEnvOverrides["api"]
-	if !ok || got["FOO_ADDR"] != "svc-x:1234" {
-		t.Errorf("ConsumerEnvOverrides[api] = %v (ok=%v); want {FOO_ADDR: svc-x:1234} — channel dropped at the wrapper boundary", got, ok)
 	}
 }

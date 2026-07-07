@@ -42,11 +42,11 @@ func (e codecProviderEngine) Render(context.Context, map[string]any, NodeRenderC
 	return nil, nil
 }
 func (e codecProviderEngine) Capabilities() ProviderCapabilities { return ProviderCapabilities{} }
-func (e codecProviderEngine) Codec(yamlIndent int) frp.Codec {
-	return markerCodec{inner: newStockYAMLCodec(yamlIndent), segments: e.segments}
-}
-func (e codecProviderEngine) HostCapabilities() HostCapabilities {
-	return HostCapabilities{Codec: e.Codec}
+
+// PipelineCodec satisfies CodecProvider: it reports a marker codec, standing in
+// for any provider whose guest advertises the carve/reassemble exports.
+func (e codecProviderEngine) PipelineCodec(yamlIndent int) (frp.Codec, bool) {
+	return markerCodec{inner: newStockYAMLCodec(yamlIndent), segments: e.segments}, true
 }
 
 // plainEngine is an Engine that does NOT implement CodecProvider — it must fall

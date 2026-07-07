@@ -17,10 +17,10 @@ import (
 // renderOnlyAssemblerWrapper mimics the Wasm-provider render adapter for an
 // assembler provider whose plugin advertises only per-node rendering: it drives
 // render itself, does NOT implement BoundaryAssembler, and forwards the wrapped
-// provider's host capabilities through its holder and its boundary-assembly
-// self-report. Boundary assembly is functional dispatch asserted on the dispatched
-// engine, not a host-side capability — so this wrapper reports it assembles yet
-// genuinely cannot, which is exactly the mismatch the guardrail catches.
+// provider's boundary-assembly self-report. Boundary assembly is functional
+// dispatch asserted on the dispatched engine — so this wrapper reports it
+// assembles yet genuinely cannot, which is exactly the mismatch the guardrail
+// catches.
 type renderOnlyAssemblerWrapper struct {
 	wrapped renderer.Engine
 }
@@ -31,10 +31,6 @@ func (renderOnlyAssemblerWrapper) Render(_ context.Context, _ map[string]any, _ 
 
 func (renderOnlyAssemblerWrapper) Capabilities() renderer.ProviderCapabilities {
 	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
-}
-
-func (w renderOnlyAssemblerWrapper) HostCapabilities() renderer.HostCapabilities {
-	return renderer.ResolveHostCaps(w.wrapped)
 }
 
 func (w renderOnlyAssemblerWrapper) BoundaryAssembly() string {

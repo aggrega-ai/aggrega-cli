@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//go:build !wasip1
-
-// Host-side derivation for the compose provider's boundary→consumer env channel
-// (the renderer's BoundaryConsumerEnvOverrides host capability). The bridge's
-// cross-network derivation is pure and tag-free (bridge_ports.go,
-// bridge_gateway.go); this file carries the host-capability entry point the
-// pipeline reads through the provider's HostCaps holder.
+// Derivation for the compose provider's boundary→consumer env channel. The
+// bridge's cross-network derivation is pure and tag-free (bridge_ports.go,
+// bridge_gateway.go); this file carries the compute entry point the compose
+// provider guest drives on its boundary_env_overrides export. It compiles for
+// both the host and the wasip1 guest — the guest calls it, the host projects the
+// edge context to the guest.
 
 package compose
 
@@ -18,18 +17,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// computeBridgeConsumerEnvOverrides rewrites each bridged consumer's
-// host-carrying env var to "aggrega-gw:<assigned-port>". All compose-domain
-// logic (network identity, port rule) lives here in the provider engine.
-func computeBridgeConsumerEnvOverrides(frCtx *types.TemplateContext) (map[string]map[string]string, error) {
-	if frCtx == nil || frCtx.Boundary == nil {
-		return nil, nil
-	}
-	portBase := bridgePortBase(frCtx.Infra)
-	hostField := bridgeHostField(frCtx.Infra)
+// ComputeBridgeConsumerEnvOverrides rewrites each bridged consumer's
+// host-carrying env var to "aggrega-gw:<assigned-port>", from a boundary's
+// internal uses edges and the driving feature's resolved infra. All
+// compose-domain logic (network identity, port rule) lives here in the provider
+// package the compose guest runs. A boundary with no bridged edge yields a nil
+// map.
+func ComputeBridgeConsumerEnvOverrides(internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error) {
+	portBase := bridgePortBase(infra)
+	hostField := bridgeHostField(infra)
 
-	specs := make([]bridgeSpec, 0, len(frCtx.Boundary.InternalUsesEdges))
-	for _, edge := range frCtx.Boundary.InternalUsesEdges {
+	specs := make([]bridgeSpec, 0, len(internalUsesEdges))
+	for _, edge := range internalUsesEdges {
 		specs = append(specs, bridgeSpecFromEdge(edge, hostField))
 	}
 	resolved := resolveBridge(specs, portBase)

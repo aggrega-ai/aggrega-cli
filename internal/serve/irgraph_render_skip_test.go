@@ -73,7 +73,7 @@ metadata:
   name: helm-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/helm-provider@sha256:41d389fcabcc1816332fad53f845ed57c19396a271cfbb258de0da5175b68b3f
+  plugin: oci://hub.aggrega.ai/plugins/helm-provider@sha256:0c5528aecec1a13fa95a0b273051d8d33e68730a316d1fac7ebc5b3da7567fe7
   pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:

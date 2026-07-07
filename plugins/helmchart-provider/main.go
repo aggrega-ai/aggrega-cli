@@ -56,7 +56,7 @@ import (
 // imports; the host cross-checks this declaration against the functions the
 // guest actually imports. The assemble_boundary export assembles sub-charts
 // already in the payload and imports no host function.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"}},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"},{"name":"carve","input_pattern":"b","stability":"experimental","description":"carves a chart file into addressable units for a pipeline PATCH"},{"name":"reassemble","input_pattern":"b","stability":"experimental","description":"reassembles a chart file from patched units, byte-faithfully"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"}},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {
@@ -204,6 +204,52 @@ func assembleBoundaryFromInput(in renderer.AssembleBoundaryInput) (renderer.Asse
 	}
 	out.NestPerNode = true
 	return out, nil
+}
+
+//go:wasmexport carve
+func carve() int32 {
+	var in renderer.CarveInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	units, err := helmchart.NewHelmChartCodec(in.YamlIndent).Segment(in.Name, in.Body)
+	if err != nil {
+		pdk.SetError(errors.New(errorChainMessage(err)))
+		return 1
+	}
+
+	encoded, err := renderer.CarveOutput{Units: units}.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+//go:wasmexport reassemble
+func reassemble() int32 {
+	var in renderer.ReassembleInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	body, err := helmchart.NewHelmChartCodec(in.YamlIndent).Reassemble(in.Name, in.Body, in.Segs, in.Patched)
+	if err != nil {
+		pdk.SetError(errors.New(errorChainMessage(err)))
+		return 1
+	}
+
+	encoded, err := renderer.ReassembleOutput{Body: body}.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
 }
 
 // errorChainMessage serializes err's full wrap chain into one message. The

@@ -36,27 +36,24 @@ const RenderNodeExport = "render_node"
 // gate is a no-op for it.
 const ValidateNodeInputExport = "validate_node_input"
 
+// BoundaryEnvOverridesExport is the optional guest export this adapter drives to
+// compute a boundary's per-consumer environment overrides — the boundary-to-
+// consumer env channel a provider whose guest bridges endpoints across a network
+// seam (compose) advertises. A guest whose describe() omits it is never invoked
+// here, so the channel is a no-op for it and the host applies no overrides.
+const BoundaryEnvOverridesExport = "boundary_env_overrides"
+
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves the
-// guest's bytes via lookup, loads them through the injected shared loader once
-// per call, and reports the host-side capabilities of the provider it stands in
-// for from a holder supplied at construction. The adapter is provider-agnostic:
-// it drives whichever guest the provider advertises, and hands the guest a
-// generic name-only enumeration of a sourced node's acquired source rather than
-// packing bytes through any hardcoded provider package — the guest resolves and
-// requests the bytes it needs through the pack-source host function.
+// guest's bytes via lookup and loads them through the injected shared loader once
+// per call. The adapter is provider-agnostic: it drives whichever guest the
+// provider advertises, and hands the guest a generic name-only enumeration of a
+// sourced node's acquired source rather than packing bytes through any hardcoded
+// provider package — the guest resolves and requests the bytes it needs through
+// the pack-source host function.
 type Engine struct {
 	lookup    pluginpath.Lookup
 	pluginURI string
-	// hostCaps is the provider's host-side capability holder supplied at
-	// construction. It carries the codec, sub-chart projection,
-	// external-artifacts placement, and env-override channel. The wrapper exposes
-	// it directly (HostCapabilities), so host-side capability checks resolve from
-	// this holder rather than from a concrete engine — the seam that keeps the
-	// adapter free of any provider package. The input kinds and the boundary-
-	// assembly mode are not held here; they come from the guest's live describe()
-	// descriptor (see Capabilities and BoundaryAssembly).
-	hostCaps renderer.HostCapabilities
 	// loader is the shared per-build loader every Render / SynthesizeWorkload
 	// call loads through. It carries the build's external-input service and,
 	// when constructed via wasm.NewCachingLoader, a shared compilation cache so
@@ -83,22 +80,20 @@ var (
 	_ renderer.NodeInputValidator       = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer      = (*Engine)(nil)
 	_ renderer.ArtifactsEmitter         = (*Engine)(nil)
-	_ renderer.HostCapable              = (*Engine)(nil)
+	_ renderer.BoundaryEnvOverrider     = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter = (*Engine)(nil)
+	_ renderer.CodecProvider            = (*Engine)(nil)
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
-// its bytes via lookup and loading through the shared loader. It carries the
-// provider's host-side capability holder — supplied by the caller from the
-// provider-name registry — for the host-side projections it drives (codec,
-// sub-chart projection, env overrides); its input kinds and
-// boundary-assembly mode come from the guest's live describe() descriptor. The
-// loader is shared across the build so
-// its compilation cache (when present) warms once; a nil loader is an
-// injection-site bug — every call would nil-panic — rather than a supported
-// zero value.
-func New(lookup pluginpath.Lookup, pluginURI string, hostCaps renderer.HostCapabilities, loader *wasm.Loader) *Engine {
-	return &Engine{lookup: lookup, pluginURI: pluginURI, hostCaps: hostCaps, loader: loader}
+// its bytes via lookup and loading through the shared loader. Its input kinds,
+// boundary-assembly mode, codec, and optional export surface all come from the
+// guest's live describe() descriptor rather than any host-side per-provider
+// holder. The loader is shared across the build so its compilation cache (when
+// present) warms once; a nil loader is an injection-site bug — every call would
+// nil-panic — rather than a supported zero value.
+func New(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loader) *Engine {
+	return &Engine{lookup: lookup, pluginURI: pluginURI, loader: loader}
 }
 
 // Capabilities reports the input kinds the provider guest renders, read from its
@@ -156,16 +151,6 @@ func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
 	_ = plugin.Close(context.Background())
 	e.descriptor = &desc
 	return e.descriptor, nil
-}
-
-// HostCapabilities satisfies renderer.HostCapable, exposing the host-side
-// capability holder supplied at construction. The wrapper drives the guest for
-// render and synthesis; the host reads the provider's host-side capabilities from
-// this holder — so a provider routed to a Wasm guest exposes the same host-side
-// capabilities as the in-tree engine it stands in for. AssemblerEngine embeds
-// *Engine and inherits this method.
-func (e *Engine) HostCapabilities() renderer.HostCapabilities {
-	return e.hostCaps
 }
 
 // Render projects the sourced node into a render_node payload and returns the
@@ -533,6 +518,52 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 		diags = append(diags, renderer.Diagnostic{Severity: "warning", Message: w})
 	}
 	return diags, nil
+}
+
+// BoundaryEnvOverrides drives the guest's optional boundary_env_overrides export
+// to compute per-consumer environment overrides from a boundary's internal uses
+// edges and the driving feature's resolved infra, returning the map keyed
+// consumer-nodeID -> {envVar: value}. It is advertised-only: a guest that does
+// not declare the export in describe() is never invoked, and this returns a nil
+// map and no error, so the host applies no overrides for that provider. The
+// computation lives entirely in the guest; the host projects the edge context in
+// and applies the returned overrides. AssemblerEngine embeds *Engine and
+// inherits this method.
+func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return nil, err
+	}
+	if !advertisesExport(desc, BoundaryEnvOverridesExport) {
+		return nil, nil
+	}
+
+	resolved, err := e.lookup(e.pluginURI)
+	if err != nil {
+		return nil, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
+	}
+
+	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	if err != nil {
+		return nil, err
+	}
+	defer plugin.Close(ctx)
+
+	input := renderer.BoundaryEnvOverridesInput{InternalUsesEdges: internalUsesEdges, Infra: infra}
+	payload, err := input.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("wasmengine: marshal boundary_env_overrides input: %w", err)
+	}
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, BoundaryEnvOverridesExport, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var out renderer.BoundaryEnvOverridesOutput
+	if err := out.UnmarshalJSON(raw); err != nil {
+		return nil, fmt.Errorf("wasmengine: decode boundary_env_overrides output: %w", err)
+	}
+	return out.Overrides, nil
 }
 
 // nodeProjection builds the wire node projection from the host node context —

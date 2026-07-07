@@ -468,20 +468,20 @@ func PrepopulateBoundaryScopeProvides(
 			}
 			// Generic boundary->component env channel: if the FR's provider
 			// engine implements the optional override capability, let it
-			// produce per-consumer env overrides from the (now edge-enriched)
-			// boundary context. The channel is provider-agnostic — it stores
-			// whatever opaque string values the engine returns; it does not
-			// interpret them. Production lives in the provider engine, not here.
-			// This is a host-side capability, resolved from the provider's host
-			// capability holder: a provider routed to a Wasm guest exposes the
-			// wrapped in-tree engine's channel through the wrapper's holder.
-			if engineFactory != nil {
+			// produce per-consumer env overrides from the boundary's internal
+			// uses edges and the driving feature's infra. The channel is
+			// provider-agnostic — it stores whatever opaque string values the
+			// engine returns; it does not interpret them. Production lives in the
+			// provider guest, not here: the host projects the edge context and the
+			// guest computes the overrides. The host still applies each named
+			// consumer's overrides into that consumer's render context below.
+			if engineFactory != nil && frCtx.Boundary != nil {
 				eng, engErr := engineFactory(fr.Spec.Provider)
 				if engErr != nil {
 					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", instName))
 				}
-				if envOverrides := ResolveHostCaps(eng).BoundaryConsumerEnvOverrides; envOverrides != nil {
-					overrides, ovErr := envOverrides(frCtx)
+				if ov, ok := eng.(BoundaryEnvOverrider); ok {
+					overrides, ovErr := ov.BoundaryEnvOverrides(context.Background(), frCtx.Boundary.InternalUsesEdges, frCtx.Infra)
 					if ovErr != nil {
 						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
 					}
@@ -493,15 +493,18 @@ func PrepopulateBoundaryScopeProvides(
 	return nil
 }
 
-// BoundaryConsumerEnvOverrider is the optional capability a provider engine may
-// implement to drive the boundary->component env channel. Given a boundary-scope
-// FeatureRecipe's edge-enriched template context, it returns per-consumer
+// BoundaryEnvOverrider is the optional capability a provider engine implements
+// to drive the boundary->component env channel. Given a boundary's internal uses
+// edges and the driving feature's resolved infra, it returns per-consumer
 // environment overrides keyed consumer-nodeID -> {envVar: value}. The channel
 // applies each named consumer's entries to that consumer's injected env after
-// Phase A. The contract is provider-agnostic: values are opaque strings the
-// orchestrator carries without interpretation.
-type BoundaryConsumerEnvOverrider interface {
-	BoundaryConsumerEnvOverrides(frCtx *types.TemplateContext) (map[string]map[string]string, error)
+// Phase A. The contract is provider-agnostic: the values are opaque strings the
+// orchestrator carries without interpretation, and a provider whose guest does
+// not advertise the channel returns an empty map. The computation lives in the
+// provider guest; the host projects the edge context in and applies the returned
+// overrides.
+type BoundaryEnvOverrider interface {
+	BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error)
 }
 
 // applyConsumerEnvOverrides sets each override key into inject.Env and rebuilds

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -62,7 +61,7 @@ func TestRenderPathDescribesOncePerProvider(t *testing.T) {
 	loader.OnDescribe = func(string) { atomic.AddInt64(&describes, 1) }
 
 	helmURI := embeddedGuestURI(t, "helm-provider")
-	e := wasmengine.New(embeddedGuestLookup, helmURI, helm.HostCaps(), loader)
+	e := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 
 	const nodes = 5
 	for i := 0; i < nodes; i++ {
@@ -95,7 +94,7 @@ func TestRenderPathLoadsFreshInstancePerNode(t *testing.T) {
 	loader.OnDescribe = func(string) { atomic.AddInt64(&describes, 1) }
 
 	helmURI := embeddedGuestURI(t, "helm-provider")
-	e := wasmengine.New(embeddedGuestLookup, helmURI, helm.HostCaps(), loader)
+	e := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 
 	// Warm the descriptor memo through the same path the input-kind gate uses,
 	// so the one-time describe gate is not counted against the per-node loads.
@@ -153,7 +152,7 @@ func benchSynthEngine(b *testing.B) (*wasmengine.Engine, wasm.PluginSpec, *wasm.
 	}
 	_ = p.Close(context.Background())
 
-	e := wasmengine.New(embeddedGuestLookup, helmURI, helm.HostCaps(), loader)
+	e := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 	return e, spec, loader
 }
 

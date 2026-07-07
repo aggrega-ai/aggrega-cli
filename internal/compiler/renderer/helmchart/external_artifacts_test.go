@@ -50,7 +50,7 @@ func helmChartWasmFactory(t *testing.T) renderer.EngineFactory {
 		return pluginpath.ResolvedPlugin{Bytes: b, URI: u, Tier: pluginpath.TierEmbed, Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096}}, nil
 	}
 	return func(string) (renderer.Engine, error) {
-		return wasmengine.NewAssembler(lookup, uri, HostCaps(), loader), nil
+		return wasmengine.NewAssembler(lookup, uri, loader), nil
 	}
 }
 

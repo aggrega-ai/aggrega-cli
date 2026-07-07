@@ -25,17 +25,22 @@ func readChartMeta(dir string) (name, version string, err error) {
 }
 
 // buildUmbrella is the test-side stand-in for the removed host umbrella adapter:
-// it projects each sub-chart through the surviving projectSubCharts (the single
-// home for the pristine Chart.yaml read) into filesystem-free CoreSubCharts, then
-// assembles through AssembleUmbrellaCore — the same core the provider guest runs.
+// it reads each sourced sub-chart's pristine Chart.yaml from disk into a
+// filesystem-free CoreSubChart — mirroring the generic host projection the
+// assembler now runs — then assembles through AssembleUmbrellaCore, the same core
+// the provider guest runs.
 func buildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string, indent int) (map[string][]byte, error) {
-	projs, err := projectSubCharts(subCharts)
-	if err != nil {
-		return nil, err
-	}
-	subs := make([]CoreSubChart, 0, len(projs))
-	for _, p := range projs {
-		subs = append(subs, CoreSubChart{InstanceID: p.InstanceID, Version: p.Version, Values: p.Values, ChartYAML: p.ChartYAML})
+	subs := make([]CoreSubChart, 0, len(subCharts))
+	for _, sc := range subCharts {
+		cs := CoreSubChart{InstanceID: sc.InstanceID, Version: sc.Version, Values: sc.Values}
+		if s, ok := sc.Source.(string); ok && s != "" {
+			data, err := os.ReadFile(filepath.Join(s, "Chart.yaml"))
+			if err != nil {
+				return nil, err
+			}
+			cs.ChartYAML = data
+		}
+		subs = append(subs, cs)
 	}
 	return AssembleUmbrellaCore(boundaryName, aggregateName, subs, chartNameOverride, indent)
 }

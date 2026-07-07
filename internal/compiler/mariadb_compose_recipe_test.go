@@ -18,7 +18,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -34,10 +33,6 @@ import (
 func composeWasmFactory(t *testing.T) renderer.EngineFactory {
 	t.Helper()
 	loader := wasm.NewCachingLoader(nil)
-	hostCaps, ok := enginefactory.HostCapsFor("compose")
-	if !ok {
-		t.Fatal("HostCapsFor(compose): ok=false")
-	}
 	var uri string
 	for _, u := range embedded.URIs() {
 		if strings.Contains(u, "compose-provider") {
@@ -56,7 +51,7 @@ func composeWasmFactory(t *testing.T) renderer.EngineFactory {
 		return pluginpath.ResolvedPlugin{Bytes: b, URI: u, Tier: pluginpath.TierEmbed, Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096}}, nil
 	}
 	return func(string) (renderer.Engine, error) {
-		return wasmengine.NewAssembler(lookup, uri, hostCaps, loader), nil
+		return wasmengine.NewAssembler(lookup, uri, loader), nil
 	}
 }
 

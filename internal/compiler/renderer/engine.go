@@ -44,22 +44,22 @@ type NodeInputValidator interface {
 	ValidateNodeInput(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) ([]Diagnostic, error)
 }
 
-// CodecProvider is the optional capability an Engine implements to supply its
-// own [frp.Codec] for the pipeline — how the provider's emitted output is
-// carved into addressable units and reassembled byte-faithfully after a step
-// edits some of them. An engine that does not implement it borrows the core's
-// stock YAML codec ([NewStockYAMLCodec]); an engine that knows its own output
-// shape (a templated format the YAML parser cannot tree directly, for instance)
-// returns a codec that defines its own units.
+// CodecProvider is the optional capability an Engine implements to supply a
+// pipeline codec — how the provider's emitted output is carved into addressable
+// units and reassembled byte-faithfully after a step edits some of them. An
+// engine reports (codec, true) when its provider guest advertises the carve and
+// reassemble exports; the host then drives carve and reassemble across the guest
+// ABI so the provider's own output-shape knowledge (what is a PATCH target
+// versus opaque) lives in the guest rather than the dumb core. An engine that
+// reports (nil, false) — or does not implement the interface at all — borrows
+// the core's stock YAML codec ([NewStockYAMLCodec]).
 //
 // The pipeline executor type-asserts this capability off the engine rendering
 // the scope it is carving, exactly as it asserts BoundaryAssembler and
 // ExternalArtifactsHandler elsewhere: own-scope units use the own engine's
-// codec, host-scope units use the host engine's codec. The returned codec is
-// the provider's call about what is structured (a PATCH target) versus opaque,
-// keeping that policy in the provider rather than the dumb core.
+// codec, host-scope units use the host engine's codec.
 type CodecProvider interface {
-	Codec(yamlIndent int) frp.Codec
+	PipelineCodec(yamlIndent int) (frp.Codec, bool)
 }
 
 // ProviderCapabilities declares which of the three Recipe input kinds a
@@ -253,23 +253,6 @@ type SubChartProjection struct {
 	Version    string
 	Values     map[string]any
 	ChartYAML  []byte
-}
-
-// SubChartProjector is the optional interface an umbrella-assembling engine
-// implements to project each sub-chart's identity, per-instance values, and the
-// pristine bytes of its vendored Chart.yaml — read from the local filesystem at
-// compile time — into filesystem-free SubChartProjections, so a Wasm guest
-// assembles the umbrella from pure data and touches no filesystem.
-//
-// The wasmengine adapter type-asserts the wrapped Go engine to this interface
-// before populating the assemble wire's sub-chart carriers: an engine that does
-// not implement it contributes no sub-chart projection, so the adapter stays
-// provider-agnostic (it asks "do you project sub-charts?", not "are you
-// helm-chart?") and a flat-assembling provider's wire carries no umbrella
-// scalars. The host performs the pristine read; the adapter never touches the
-// filesystem itself.
-type SubChartProjector interface {
-	ProjectSubCharts(subCharts []SubChartInfo) ([]SubChartProjection, error)
 }
 
 // SplitDiagnostics partitions a provider guest's diagnostics by severity into

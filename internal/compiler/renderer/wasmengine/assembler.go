@@ -6,11 +6,14 @@ package wasmengine
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -40,13 +43,13 @@ var _ renderer.BoundaryAssembler = (*AssemblerEngine)(nil)
 
 // NewAssembler returns an AssemblerEngine that assembles through the guest at
 // pluginURI, resolving its bytes via lookup and loading through the shared loader.
-// It carries the same host-side capability holder the render adapter carries —
-// via New — so plugin identity and input-kind capabilities stay single-sourced
-// across the two adapters. The loader is shared across the build so its
-// compilation cache (when present) warms once; a nil loader is an injection-site
-// bug rather than a supported zero value, matching New's contract.
-func NewAssembler(lookup pluginpath.Lookup, pluginURI string, hostCaps renderer.HostCapabilities, loader *wasm.Loader) *AssemblerEngine {
-	return &AssemblerEngine{Engine: New(lookup, pluginURI, hostCaps, loader)}
+// It builds its embedded render Engine via New, so plugin identity and the
+// describe()-sourced capabilities stay single-sourced across the two adapters.
+// The loader is shared across the build so its compilation cache (when present)
+// warms once; a nil loader is an injection-site bug rather than a supported zero
+// value, matching New's contract.
+func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loader) *AssemblerEngine {
+	return &AssemblerEngine{Engine: New(lookup, pluginURI, loader)}
 }
 
 // AssembleBoundary projects the host BoundaryInfo onto the assemble_boundary wire
@@ -101,15 +104,15 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 		Edges:         edges,
 	}
 
-	// Populate the umbrella scalars only when the provider projects sub-charts
-	// (an umbrella assembler). Asking the provider's host capabilities "do you
-	// project sub-charts?" — not "are you helm-chart?" —
-	// keeps the adapter provider-agnostic and keeps a flat-assembling provider's
-	// wire free of these carriers. The host performs the pristine Chart.yaml read
-	// here so the guest assembles from pure data alone; the adapter never touches
-	// the filesystem.
-	if e.hostCaps.ProjectSubCharts != nil {
-		projs, err := e.hostCaps.ProjectSubCharts(info.SubCharts)
+	// Populate the umbrella scalars only when the provider guest assembles an
+	// umbrella (boundary-assembly "nest"). Asking the guest's own self-report
+	// "do you nest per node?" — not "are you helm-chart?" — keeps the adapter
+	// provider-agnostic and keeps a flat-assembling provider's wire free of these
+	// carriers. The host performs the pristine Chart.yaml read here (the guest
+	// has no filesystem) via the generic projectSubCharts core step so the guest
+	// assembles from pure data alone; the adapter never touches the filesystem.
+	if e.BoundaryAssembly() == wasm.BoundaryAssemblyNest {
+		projs, err := projectSubCharts(info.SubCharts)
 		if err != nil {
 			return nil, false, err
 		}
@@ -211,6 +214,36 @@ func surfaceAssembleDiagnostics(boundaryPath string, diags []renderer.Diagnostic
 			boundaryPath, strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// projectSubCharts reads each sourced sub-chart's pristine Chart.yaml from disk
+// into a filesystem-free projection, carrying instance identity, version, and
+// per-instance values through. It is the single home for the umbrella's pristine
+// Chart.yaml read — the invariant-forced host floor an umbrella-assembling
+// provider needs because the guest has no filesystem and the per-node rendered
+// files are not on the assemble wire. It is provider-independent: it reads
+// `<SubChartInfo.Source>/Chart.yaml` for any umbrella assembler, so the assembler
+// projects each sub-chart through it and the guest assembles the umbrella from
+// pure data alone. A generative sub-chart (nil/empty source) carries no ChartYAML
+// and takes the generative fallback in the assembly core.
+func projectSubCharts(subCharts []renderer.SubChartInfo) ([]renderer.SubChartProjection, error) {
+	projs := make([]renderer.SubChartProjection, 0, len(subCharts))
+	for _, sc := range subCharts {
+		proj := renderer.SubChartProjection{
+			InstanceID: sc.InstanceID,
+			Version:    sc.Version,
+			Values:     sc.Values,
+		}
+		if s, ok := sc.Source.(string); ok && s != "" {
+			data, err := os.ReadFile(filepath.Join(s, "Chart.yaml"))
+			if err != nil {
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s}, fmt.Sprintf("umbrella sourced: read Chart.yaml in %q", s))
+			}
+			proj.ChartYAML = data
+		}
+		projs = append(projs, proj)
+	}
+	return projs, nil
 }
 
 // orderedAnnotations builds a deterministic ordered annotation map from a node's

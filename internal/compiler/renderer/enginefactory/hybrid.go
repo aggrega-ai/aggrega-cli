@@ -30,13 +30,13 @@ import (
 // a merged compose file) runs in Wasm too. The assembler adapter embeds the
 // render adapter, so the render behavior is identical across the two tiers.
 //
-// A routed Wasm engine reports the provider's host-side capabilities from its
-// HostCaps holder (resolved via HostCapsFor), so the render-time input-kind gate
-// reads one source and the host-side projections (source, sub-charts, codec,
-// boundary env overrides) stay single-sourced. The Wasm engine loads through
-// sharedLoader (one compilation cache warmed once per build) and resolves its
-// bytes through pluginLookup (the entity-fronted artifact cascade), keyed by the
-// resolved Plugin's entity identity.
+// A routed Wasm engine reports its behaviour — input kinds, boundary-assembly
+// mode, codec, and optional exports (source resolution, sub-chart assembly,
+// boundary env overrides) — from its own describe() self-report, so the compiler
+// carries no per-provider host holder for a standard provider. The Wasm engine
+// loads through sharedLoader (one compilation cache warmed once per build) and
+// resolves its bytes through pluginLookup (the entity-fronted artifact cascade),
+// keyed by the resolved Plugin's entity identity.
 //
 // NewHybrid also returns a [renderer.ProviderVersionResolver] alongside the
 // factory: it reports the resolved provider-rendering plugin version behind a
@@ -128,21 +128,17 @@ func routeEngine(
 	// Plugin advertises only render_node — a flat-output provider like helm —
 	// stays on the render-only adapter, unchanged.
 	//
-	// The adapter carries the provider's host-side capability holder — resolved
-	// from the provider-name registry, not from a constructed engine — so it
-	// derives input-kind capabilities from the holder (the gate stays host-decided).
 	// A sourced node's source is handed to the guest as a name-only listing the
-	// guest resolves and packs itself, not through any host-side projection.
-	// The unknown-provider halt lives once, above, on the catalog-resolution check
-	// (!routed): a provider with no serving render_node plugin halts before any
-	// holder lookup. HostCapsFor supplies the residual host-side holder for the
-	// resolved provider; for the shipped providers a routed name always resolves a
-	// holder, so no second unknown-provider gate is needed here.
-	hostCaps, _ := HostCapsFor(bare)
+	// guest resolves and packs itself, not through any host-side projection, and
+	// the guest self-reports its input kinds, boundary-assembly mode, codec, and
+	// optional exports through describe() — so the adapter carries no per-provider
+	// host holder. The unknown-provider halt lives once, above, on the
+	// catalog-resolution check (!routed): a provider with no serving render_node
+	// plugin halts there.
 	if advertisesAssembleBoundary(plugin) {
-		return wasmengine.NewAssembler(pluginLookup, pluginKey, hostCaps, sharedLoader), pluginKey, nil
+		return wasmengine.NewAssembler(pluginLookup, pluginKey, sharedLoader), pluginKey, nil
 	}
-	return wasmengine.New(pluginLookup, pluginKey, hostCaps, sharedLoader), pluginKey, nil
+	return wasmengine.New(pluginLookup, pluginKey, sharedLoader), pluginKey, nil
 }
 
 // resolvePluginIdentity resolves providerRef to the provider-rendering Plugin

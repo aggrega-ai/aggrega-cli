@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"sort"
@@ -261,6 +262,56 @@ type AssembleBoundaryOutput struct {
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
 	// NestPerNode Whether the orchestrator nests each contributor's per-node files under charts/<nodeID>/ rather than emitting them flat; the assembler signals this per provider (compose emits flat, so false; an umbrella-chart assembler nests, so true).
 	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty"`
+}
+
+// CarveInput The payload a Provider guest receives on its optional carve export: one named output file the pipeline carves into addressable units before a FeatureRecipe step edits some of them. A provider whose output shape the stock YAML codec cannot carve directly (a templated chart, for instance) advertises carve and reassemble so its own output-shape knowledge lives in the guest; a provider that omits the exports borrows the host's stock YAML codec.
+type CarveInput struct {
+	// Name The output file's name, so the codec can apply any name-scoped carving rule.
+	Name string `json:"name" yaml:"name"`
+	// Body The output file's bytes to carve into addressable units (base64 on the JSON wire).
+	Body []byte `json:"body" yaml:"body"`
+	// YamlIndent The indentation width the codec uses when it must synthesize new structured text; carried so the guest's carving matches the render-wide indentation.
+	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty"`
+}
+
+// CarveOutput The payload a Provider guest returns from its carve export: the ordered addressable units it carved the file into. A structured unit carries a tree (a PATCH target); an opaque unit carries only its media type and bytes.
+type CarveOutput struct {
+	// Units The ordered addressable units the guest carved the file into.
+	Units []frp.Unit `json:"units" yaml:"units"`
+}
+
+// ReassembleInput The payload a Provider guest receives on its optional reassemble export: the original file plus its carved units and the patched units a pipeline step produced, so the guest splices the changes back into the original bytes surgically. A token absent from the patched set is re-joined from its original bytes verbatim; a patched token has only its addressed byte-spans edited.
+type ReassembleInput struct {
+	// Name The output file's name, matching the name the same file was carved under.
+	Name string `json:"name" yaml:"name"`
+	// Body The original file bytes the reassembly splices the patched units back into (base64 on the JSON wire).
+	Body []byte `json:"body" yaml:"body"`
+	// Segs The units the file was carved into, as carve returned them.
+	Segs []frp.Unit `json:"segs,omitempty" yaml:"segs,omitempty"`
+	// Patched The units a pipeline step changed, each carrying its token, patched tree, and the ops that produced the change.
+	Patched []frp.PatchedUnit `json:"patched,omitempty" yaml:"patched,omitempty"`
+	// YamlIndent The indentation width the codec uses when an op must synthesize new structured text; carried so the reassembly matches the render-wide indentation.
+	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty"`
+}
+
+// ReassembleOutput The payload a Provider guest returns from its reassemble export: the file's bytes with the patched units spliced back in. Reassembly is byte-faithful — every byte the ops did not touch survives verbatim.
+type ReassembleOutput struct {
+	// Body The reassembled file bytes the host writes verbatim (base64 on the JSON wire).
+	Body []byte `json:"body" yaml:"body"`
+}
+
+// BoundaryEnvOverridesInput The payload a Provider guest receives on its optional boundary_env_overrides export: a boundary's internal uses edges and the driving feature's resolved infra, from which the guest computes per-consumer environment overrides for the boundary-to-consumer env channel. A guest whose provider drives that channel (a compose guest bridging cross-network endpoints) advertises the export; a provider that drives no such channel omits it, and the host applies no overrides for it. The edges and infra are opaque at this schema layer — the guest reads their shapes through the template-context wire contract; the schema does not interpret them.
+type BoundaryEnvOverridesInput struct {
+	// InternalUsesEdges The boundary's internal uses edges — the directed edges whose endpoints both live inside the boundary's subtree, each enriched with the producer's provides and the consumer's inject mapping. The guest reads them to decide which consumers need an env override and what value to write. Opaque at this schema layer; the guest reads the enriched-edge shape through the template-context wire contract.
+	InternalUsesEdges []types.EnrichedEdge `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty"`
+	// Infra The driving feature's resolved infra, an author-ordered key set the guest reads for the channel's tunables (for a compose bridge, the listen-port base and the upstream host provides-field selector). Preserves author order so the payload is byte-identical across runs of identical input.
+	Infra types.OrderedMap[any] `json:"infra,omitempty" yaml:"infra,omitempty"`
+}
+
+// BoundaryEnvOverridesOutput The payload a Provider guest returns from its boundary_env_overrides export: the per-consumer environment overrides the host applies to each named consumer's injected env after the per-node render pass. The values are opaque strings the host carries without interpretation; a consumer absent from the map is left untouched.
+type BoundaryEnvOverridesOutput struct {
+	// Overrides The per-consumer environment overrides, keyed by consumer node id to a map of environment-variable name to override value. An empty or absent map means the guest computed no overrides.
+	Overrides map[string]map[string]string `json:"overrides,omitempty" yaml:"overrides,omitempty"`
 }
 
 // MarshalJSON encodes RenderNodeInput in field-declaration order, omitting
@@ -2633,6 +2684,559 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.NestPerNode = v
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes CarveInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t CarveInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"name\":")
+	writeJSONString(&buf, t.Name)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"body\":")
+	writeJSONBytes(&buf, t.Body)
+	if t.YamlIndent != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"yaml_indent\":")
+		buf.WriteString(strconv.FormatInt(int64(t.YamlIndent), 10))
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes CarveInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *CarveInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "body":
+			if v, err := readBytes(dec); err != nil {
+				return err
+			} else {
+				t.Body = v
+			}
+		case "yaml_indent":
+			if n, err := readInt(dec); err != nil {
+				return err
+			} else {
+				t.YamlIndent = int(n)
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes CarveOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t CarveOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"units\":")
+	buf.WriteByte('[')
+	for i := range t.Units {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		ev := t.Units[i]
+		if enc, err := json.Marshal(ev); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	buf.WriteByte(']')
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes CarveOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *CarveOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "units":
+			t.Units = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem frp.Unit
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
+				}
+				t.Units = append(t.Units, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes ReassembleInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t ReassembleInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"name\":")
+	writeJSONString(&buf, t.Name)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"body\":")
+	writeJSONBytes(&buf, t.Body)
+	if len(t.Segs) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"segs\":")
+		buf.WriteByte('[')
+		for i := range t.Segs {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Segs[i]
+			if enc, err := json.Marshal(ev); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	if len(t.Patched) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"patched\":")
+		buf.WriteByte('[')
+		for i := range t.Patched {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Patched[i]
+			if enc, err := json.Marshal(ev); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	if t.YamlIndent != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"yaml_indent\":")
+		buf.WriteString(strconv.FormatInt(int64(t.YamlIndent), 10))
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes ReassembleInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *ReassembleInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "body":
+			if v, err := readBytes(dec); err != nil {
+				return err
+			} else {
+				t.Body = v
+			}
+		case "segs":
+			t.Segs = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem frp.Unit
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
+				}
+				t.Segs = append(t.Segs, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "patched":
+			t.Patched = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem frp.PatchedUnit
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
+				}
+				t.Patched = append(t.Patched, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "yaml_indent":
+			if n, err := readInt(dec); err != nil {
+				return err
+			} else {
+				t.YamlIndent = int(n)
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes ReassembleOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t ReassembleOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"body\":")
+	writeJSONBytes(&buf, t.Body)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes ReassembleOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *ReassembleOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "body":
+			if v, err := readBytes(dec); err != nil {
+				return err
+			} else {
+				t.Body = v
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes BoundaryEnvOverridesInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t BoundaryEnvOverridesInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if len(t.InternalUsesEdges) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"internal_uses_edges\":")
+		buf.WriteByte('[')
+		for i := range t.InternalUsesEdges {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.InternalUsesEdges[i]
+			if enc, err := json.Marshal(ev); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"infra\":")
+	if enc, err := json.Marshal(t.Infra); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes BoundaryEnvOverridesInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *BoundaryEnvOverridesInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "internal_uses_edges":
+			t.InternalUsesEdges = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem types.EnrichedEdge
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
+				}
+				t.InternalUsesEdges = append(t.InternalUsesEdges, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "infra":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Infra); err != nil {
+					return err
+				}
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes BoundaryEnvOverridesOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t BoundaryEnvOverridesOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if len(t.Overrides) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"overrides\":")
+		{
+			keys := make([]string, 0, len(t.Overrides))
+			for k := range t.Overrides {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.Overrides[k]
+				{
+					keys := make([]string, 0, len(mv))
+					for k := range mv {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+					buf.WriteByte('{')
+					for i, k := range keys {
+						if i > 0 {
+							buf.WriteByte(',')
+						}
+						writeJSONString(&buf, k)
+						buf.WriteByte(':')
+						mv := mv[k]
+						writeJSONString(&buf, mv)
+					}
+					buf.WriteByte('}')
+				}
+			}
+			buf.WriteByte('}')
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes BoundaryEnvOverridesOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *BoundaryEnvOverridesOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "overrides":
+			t.Overrides = make(map[string]map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv map[string]string
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&mv); err != nil {
+						return err
+					}
+				}
+				t.Overrides[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

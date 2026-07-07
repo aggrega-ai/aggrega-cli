@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -36,9 +35,8 @@ func renderLoader() *wasm.Loader {
 // guest's canonical URI, matched by the guest artifact's basename.
 func embeddedProviderURI(t *testing.T, provider string) string {
 	t.Helper()
-	// The empty provider name defaults to helm, mirroring HostCapsFor's own
-	// empty-string default so the harness routes a provider-less binding exactly
-	// as the render route does.
+	// The empty provider name defaults to helm, so the harness routes a
+	// provider-less binding exactly as the render route does.
 	basename := map[string]string{
 		"":           "helm-provider",
 		"helm":       "helm-provider",
@@ -86,8 +84,9 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 	loader := renderLoader()
 	return func(providerRef string) (renderer.Engine, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
-		hostCaps, ok := enginefactory.HostCapsFor(bare)
-		if !ok {
+		switch bare {
+		case "", "helm", "compose", "helm-chart", "terraform":
+		default:
 			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerRef)
 		}
 		uri := embeddedProviderURI(t, bare)
@@ -95,9 +94,9 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 		// flat-output provider to the render-only adapter, exactly as the production
 		// hybrid selects. The assembly mode is the guest's live describe()
 		// self-report, read here by probing a render-only engine's classification.
-		engine := wasmengine.New(embeddedLookup, uri, hostCaps, loader)
+		engine := wasmengine.New(embeddedLookup, uri, loader)
 		if renderer.AssemblesBoundary(engine) {
-			return wasmengine.NewAssembler(embeddedLookup, uri, hostCaps, loader), nil
+			return wasmengine.NewAssembler(embeddedLookup, uri, loader), nil
 		}
 		return engine, nil
 	}

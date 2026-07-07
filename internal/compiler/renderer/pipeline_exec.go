@@ -174,16 +174,19 @@ func runNodePipeline(
 }
 
 // selectCodec resolves the codec for the scope rendered by providerName: the
-// provider's own codec when its host capabilities report one, otherwise the
-// stock YAML codec. An empty providerName (a scope the call has no provider for,
-// such as the host scope of a hostless step) or a provider whose engine does
-// not resolve falls back to the stock codec — the borrow default — so the
-// returned codec is never nil.
+// provider's own codec when its engine reports one (the provider guest
+// advertises the carve and reassemble exports), otherwise the stock YAML codec.
+// An empty providerName (a scope the call has no provider for, such as the host
+// scope of a hostless step) or a provider whose engine does not resolve falls
+// back to the stock codec — the borrow default — so the returned codec is never
+// nil.
 func selectCodec(engineFactory EngineFactory, providerName string, yamlIndent int) frp.Codec {
 	if providerName != "" && engineFactory != nil {
 		if engine, err := engineFactory(providerName); err == nil {
-			if codec := ResolveHostCaps(engine).Codec; codec != nil {
-				return codec(yamlIndent)
+			if cp, ok := engine.(CodecProvider); ok {
+				if codec, has := cp.PipelineCodec(yamlIndent); has && codec != nil {
+					return codec
+				}
 			}
 		}
 	}

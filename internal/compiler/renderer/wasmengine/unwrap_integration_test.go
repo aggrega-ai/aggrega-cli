@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -53,35 +51,31 @@ func embeddedGuestLookup(uri string) (pluginpath.ResolvedPlugin, error) {
 	}, nil
 }
 
-// TestWasmEngineExposesForwardedHostCapabilities proves the wrapper does not
-// implement the host-side codec capability directly (it forwards it through the
-// holder), that it DOES implement the render-crossing ArtifactsEmitter seam, and
-// that its forwarded host-capability holder surfaces the helm-chart provider's
-// codec and sub-chart projection — the seam that keeps those host-side
-// capabilities visible when a provider routes through Wasm. With an unloadable
-// guest the artifact-delimiter accessor falls back to the default pair.
-func TestWasmEngineExposesForwardedHostCapabilities(t *testing.T) {
+// TestWasmEngineExposesCodecAndArtifactsSeams proves the wrapper implements the
+// pipeline-codec seam (CodecProvider) directly — the pipeline codec is the
+// guest's own carve/reassemble self-report, driven through the wrapper — and the
+// render-crossing ArtifactsEmitter seam. With an unloadable guest the codec seam
+// reports no codec (the pipeline
+// borrows the stock YAML codec) and the artifact-delimiter accessor falls back
+// to the default pair.
+func TestWasmEngineExposesCodecAndArtifactsSeams(t *testing.T) {
 	loader := &wasm.Loader{}
-	w := wasmengine.New(failingLookup, "test://x", helmchart.HostCaps(), loader)
+	w := wasmengine.New(failingLookup, "test://x", loader)
 
 	var e renderer.Engine = w
-	if _, ok := e.(renderer.CodecProvider); ok {
-		t.Error("wrapper unexpectedly implements CodecProvider directly")
+	if _, ok := e.(renderer.CodecProvider); !ok {
+		t.Error("wrapper must implement CodecProvider — the pipeline-codec seam")
 	}
 	if _, ok := e.(renderer.ArtifactsEmitter); !ok {
 		t.Error("wrapper must implement ArtifactsEmitter — the render-crossing artifacts seam")
 	}
 
-	caps := renderer.ResolveHostCaps(w)
-	if caps.Codec == nil {
-		t.Error("forwarded holder does not carry Codec")
+	// The guest cannot be loaded (failingLookup), so the codec seam reports no
+	// codec — the pipeline borrows the stock YAML codec — and the delimiter
+	// accessor takes its default-pair fallback rather than the guest's pair.
+	if codec, ok := w.PipelineCodec(2); ok || codec != nil {
+		t.Errorf("unloadable-guest PipelineCodec = (%v, %v); want (nil, false)", codec, ok)
 	}
-	if caps.ProjectSubCharts == nil {
-		t.Error("forwarded holder does not carry ProjectSubCharts")
-	}
-
-	// The guest cannot be loaded (failingLookup), so the delimiter accessor takes
-	// its default-pair fallback rather than the guest's declared pair.
 	if l, r := w.ArtifactTemplateDelimiters(); l != "{{" || r != "}}" {
 		t.Errorf("unloadable-guest delimiter fallback = %q/%q; want {{ / }}", l, r)
 	}
@@ -96,11 +90,11 @@ func TestArtifactTemplateDelimitersFromDescribe(t *testing.T) {
 	helmchartURI := embeddedGuestURI(t, "helmchart-provider")
 	helmURI := embeddedGuestURI(t, "helm-provider")
 
-	hc := wasmengine.New(embeddedGuestLookup, helmchartURI, helmchart.HostCaps(), loader)
+	hc := wasmengine.New(embeddedGuestLookup, helmchartURI, loader)
 	if l, r := hc.ArtifactTemplateDelimiters(); l != "[[" || r != "]]" {
 		t.Errorf("helm-chart delimiters = %q/%q; want [[ / ]]", l, r)
 	}
-	h := wasmengine.New(embeddedGuestLookup, helmURI, renderer.HostCapabilities{}, loader)
+	h := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 	if l, r := h.ArtifactTemplateDelimiters(); l != "{{" || r != "}}" {
 		t.Errorf("helm delimiters = %q/%q; want {{ / }}", l, r)
 	}
@@ -116,13 +110,13 @@ func TestRenderIsIntermediateThroughWasmWrapper(t *testing.T) {
 	helmchartURI := embeddedGuestURI(t, "helmchart-provider")
 	composeURI := embeddedGuestURI(t, "compose-provider")
 
-	if got := renderer.RenderIsIntermediate(wasmengine.New(embeddedGuestLookup, helmchartURI, helmchart.HostCaps(), loader)); got {
+	if got := renderer.RenderIsIntermediate(wasmengine.New(embeddedGuestLookup, helmchartURI, loader)); got {
 		t.Error("RenderIsIntermediate(New helm-chart) = true, want false")
 	}
-	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(embeddedGuestLookup, helmchartURI, helmchart.HostCaps(), loader)); got {
+	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(embeddedGuestLookup, helmchartURI, loader)); got {
 		t.Error("RenderIsIntermediate(NewAssembler helm-chart) = true, want false")
 	}
-	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(embeddedGuestLookup, composeURI, compose.HostCaps(), loader)); !got {
+	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(embeddedGuestLookup, composeURI, loader)); !got {
 		t.Error("RenderIsIntermediate(NewAssembler compose) = false, want true")
 	}
 }

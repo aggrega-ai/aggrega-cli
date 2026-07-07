@@ -242,17 +242,25 @@ var policyGuestVocabulary = map[string]string{}
 // providerGuestVocabulary maps the provider render schema's host type spellings
 // to the neutral, cycle-free guest vocabulary: an opaque cross-package host type
 // (the render-time context, the per-render boundary context, the shared
-// diagnostic) becomes json.RawMessage (verbatim passthrough preserves its
+// diagnostic, the enriched uses edge the boundary-env-overrides input carries)
+// becomes json.RawMessage (verbatim passthrough preserves its
 // bytes), and every order-preserving host container becomes a plain map (the
 // guest reads a map; key order on the wire is the emitting host's concern). The
 // ordered structured content of an output file is the same order-preserving-any
 // container as a node's values, so both surface to the guest as
 // map[string]json.RawMessage — the guest reads and echoes the content by key,
-// and the host runs the single serializer that turns it into bytes.
+// and the host runs the single serializer that turns it into bytes. The
+// pipeline-codec unit and patched-unit shapes surface to the guest opaquely
+// (json.RawMessage): an external PDK provider guest that implements the optional
+// carve/reassemble exports carries them verbatim, while the host realizes them
+// as the typed frp shapes its pipeline drives.
 var providerGuestVocabulary = map[string]string{
 	"renderctx.RenderContext":             "json.RawMessage",
 	"renderctx.BoundaryContext":           "json.RawMessage",
 	"renderctx.Diagnostic":                "json.RawMessage",
+	"Unit":                                "json.RawMessage",
+	"PatchedUnit":                         "json.RawMessage",
+	"types.EnrichedEdge":                  "json.RawMessage",
 	"OrderedMap[any]":                     "map[string]json.RawMessage",
 	"OrderedMap[[]string]":                "map[string][]string",
 	"types.OrderedMap[string]":            "map[string]string",
@@ -275,8 +283,13 @@ var providerGuestVocabulary = map[string]string{
 // the host serializer intact rather than collapsed by an unordered map. The
 // cross-package opaque host types (the render context, the boundary context, the
 // shared diagnostic) carry their real host spelling verbatim (no entry needed);
-// the host marshals them through their own order-preserving codecs.
+// the host marshals them through their own order-preserving codecs. The
+// pipeline-codec unit and patched-unit shapes resolve to the typed frp shapes
+// the host pipeline carves and reassembles with, so the codec seam reuses the
+// same types end-to-end rather than a parallel host copy.
 var providerHostVocabulary = map[string]string{
+	"Unit":                             "frp.Unit",
+	"PatchedUnit":                      "frp.PatchedUnit",
 	"OrderedMap[any]":                  "types.OrderedMap[any]",
 	"OrderedMap[[]string]":             "types.OrderedMap[[]string]",
 	"OrderedMap[types.IRFeatureEntry]": "types.OrderedMap[types.IRFeatureEntry]",
@@ -464,6 +477,7 @@ var knownImports = map[string]string{
 	"yaml":      "go.yaml.in/yaml/v3",
 	"types":     "github.com/aggrega-ai/aggrega-cli/pkg/types",
 	"renderctx": "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx",
+	"frp":       "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline",
 }
 
 // schemaNode is a decoded JSON Schema object node preserving the declared
@@ -1519,15 +1533,36 @@ func genHeaderImports(packageClause, schemaLine, regenLines string, imports []st
 	sort.Strings(imports)
 	switch {
 	case len(imports) == 1:
-		fmt.Fprintf(&head, "import %q\n\n", imports[0])
+		fmt.Fprintf(&head, "import %s\n\n", importSpec(imports[0]))
 	case len(imports) > 1:
 		head.WriteString("import (\n")
 		for _, imp := range imports {
-			fmt.Fprintf(&head, "\t%q\n", imp)
+			fmt.Fprintf(&head, "\t%s\n", importSpec(imp))
 		}
 		head.WriteString(")\n\n")
 	}
 	return head.String()
+}
+
+// importAliases maps an import path to the explicit alias the emitted body
+// references it by, for the rare package whose Go package name is not the
+// selector the vocabulary spells it with. The featurerecipe_pipeline package is
+// referenced as frp in the body (matching the alias the renderer package uses
+// throughout), so its import needs an explicit alias. A path absent here is
+// emitted bare — its package name matches the selector already (types, renderctx,
+// and yaml, whose package name is yaml despite the /v3 path suffix).
+var importAliases = map[string]string{
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline": "frp",
+}
+
+// importSpec renders one import line, adding an explicit alias for a path in
+// importAliases so the qualified type spelling in the body resolves; every other
+// path is emitted bare.
+func importSpec(path string) string {
+	if alias, ok := importAliases[path]; ok {
+		return fmt.Sprintf("%s %q", alias, path)
+	}
+	return fmt.Sprintf("%q", path)
 }
 
 // formatSource gofmts the concatenated header + body. On a gofmt failure it

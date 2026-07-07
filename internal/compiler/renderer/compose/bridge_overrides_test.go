@@ -36,21 +36,17 @@ func bridgeTestEdge(source, target, socket, srcNS, tgtNS, host, port, inVar stri
 // portBase fallback on collision); a same-network edge is excluded.
 func TestBoundaryConsumerEnvOverrides_CrossNetworkFilterAndPorts(t *testing.T) {
 	t.Parallel()
-	frCtx := &types.TemplateContext{
-		Boundary: &types.BoundaryContext{
-			InternalUsesEdges: []types.EnrichedEdge{
-				// cross-network (frontend->backend), target port 5432
-				bridgeTestEdge("web", "db", "backend", "frontend", "backend", "db", "5432", "DB_HOST"),
-				// cross-network, also 5432 -> collision; sorts BEFORE db by key
-				bridgeTestEdge("web", "cache", "caches", "frontend", "backend", "cache", "5432", "CACHE_HOST"),
-				// same network (frontend->frontend) -> NOT bridged
-				bridgeTestEdge("web", "sidecar", "side", "frontend", "frontend", "sidecar", "9000", "SIDE_HOST"),
-			},
-		},
+	edges := []types.EnrichedEdge{
+		// cross-network (frontend->backend), target port 5432
+		bridgeTestEdge("web", "db", "backend", "frontend", "backend", "db", "5432", "DB_HOST"),
+		// cross-network, also 5432 -> collision; sorts BEFORE db by key
+		bridgeTestEdge("web", "cache", "caches", "frontend", "backend", "cache", "5432", "CACHE_HOST"),
+		// same network (frontend->frontend) -> NOT bridged
+		bridgeTestEdge("web", "sidecar", "side", "frontend", "frontend", "sidecar", "9000", "SIDE_HOST"),
 	}
-	got, err := computeBridgeConsumerEnvOverrides(frCtx)
+	got, err := ComputeBridgeConsumerEnvOverrides(edges, types.OrderedMap[any]{})
 	if err != nil {
-		t.Fatalf("BoundaryConsumerEnvOverrides: %v", err)
+		t.Fatalf("ComputeBridgeConsumerEnvOverrides: %v", err)
 	}
 	// Key order: "web\x00cache\x00caches" < "web\x00db\x00backend" → cache claims
 	// 5432, db collides → portBase 10000. sidecar excluded (same network).
@@ -69,14 +65,10 @@ func TestBoundaryConsumerEnvOverrides_CrossNetworkFilterAndPorts(t *testing.T) {
 // crosses a network seam (opt-in: no gateway, no rewrites).
 func TestBoundaryConsumerEnvOverrides_NoBridgedEdges(t *testing.T) {
 	t.Parallel()
-	frCtx := &types.TemplateContext{
-		Boundary: &types.BoundaryContext{
-			InternalUsesEdges: []types.EnrichedEdge{
-				bridgeTestEdge("web", "db", "backend", "app", "app", "db", "5432", "DB_HOST"),
-			},
-		},
+	edges := []types.EnrichedEdge{
+		bridgeTestEdge("web", "db", "backend", "app", "app", "db", "5432", "DB_HOST"),
 	}
-	got, err := computeBridgeConsumerEnvOverrides(frCtx)
+	got, err := ComputeBridgeConsumerEnvOverrides(edges, types.OrderedMap[any]{})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
