@@ -110,6 +110,16 @@ type Loader struct {
 	// activity as guests are constructed. Nil — the zero-value Loader — skips the
 	// call.
 	OnLoad func(pluginName string)
+
+	// OnDescribe, when non-nil, is invoked with the plugin's name each time this
+	// Loader successfully describes a guest through LoadAndDescribe — that is, each
+	// time the guest's describe() export is called and its descriptor validated. Like
+	// OnLoad it is a diagnostic observation hook only: it carries no authority and
+	// cannot alter rendered output. It exists to observe how often the describe gate
+	// runs — a caller that memoizes a descriptor across many per-node loads expects
+	// it to fire once per provider, not once per node. Nil — the zero-value Loader —
+	// skips the call.
+	OnDescribe func(pluginName string)
 }
 
 // NewCachingLoader returns a fresh Loader backed by the process-wide shared
@@ -384,6 +394,26 @@ type Plugin struct {
 	// function; copied from the constructing Loader's ExternalInputs
 	// field. Nil yields in-band not-available error envelopes.
 	externalInputs FetchService
+	// hostFunctions is the host-function set derived from this guest's
+	// .wasm import section at load — canonical (sorted, de-duplicated) and,
+	// because Load admits only allowlisted imports, wholly within the
+	// allowlist. The load gate cross-checks it against the descriptor's
+	// declared host_functions so describe() cannot drift from the binary.
+	hostFunctions []string
+}
+
+// HostFunctions returns the host functions this guest imports from its .wasm,
+// as derived at load. The returned slice is a defensive copy in canonical
+// order (sorted, de-duplicated); because the loader admits only allowlisted
+// imports, every name is in the host-function allowlist. The load gate
+// cross-checks this against the descriptor's declared host_functions.
+func (p *Plugin) HostFunctions() []string {
+	if len(p.hostFunctions) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.hostFunctions))
+	copy(out, p.hostFunctions)
+	return out
 }
 
 // Warnings returns a defensive copy of the warnings accumulated by
@@ -512,7 +542,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	// Extism plugin handle is attached to p after NewPlugin returns.
 	// The loader's external-input service rides along so the
 	// aggrega_fetch_external_input closure can serve guest fetches.
-	p := &Plugin{name: spec.Name, externalInputs: l.ExternalInputs}
+	p := &Plugin{name: spec.Name, externalInputs: l.ExternalInputs, hostFunctions: hostFunctions}
 
 	functions := p.hostFunctionsForDeclared(hostFunctions)
 

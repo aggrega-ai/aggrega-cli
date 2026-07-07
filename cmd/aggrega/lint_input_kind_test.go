@@ -3,10 +3,11 @@
 
 // Tests for the early lint-time input-kind capability detector
 // (inputKindCapabilityErrors): a workload:-declaring Recipe/FeatureRecipe bound
-// to a known provider whose engine cannot synthesize is a guaranteed render
-// halt, surfaced at lint. The detector reads capabilities through
-// enginefactory.CapabilitiesFor (the same Dispatch the render gate uses) and
-// reuses the gate's message clause, so the early and late diagnostics agree.
+// to a provider whose plugin cannot synthesize is a guaranteed render halt,
+// surfaced at lint. The detector reads the provider's input-kind support from the
+// authoring-time capabilities claim on its serving Plugin entity (via
+// enginefactory.CapabilitiesFor) and reuses the gate's message clause, so the
+// early and late diagnostics agree.
 
 package main
 
@@ -36,6 +37,25 @@ spec:
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
 `)
+	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm-chart-renderer
+  version: "1.0.0"
+spec:
+  plugin: oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:01b1e8ed9b62b2f9f44e90163a233bbf38bc1bc3973fe88712bbf0950bff30f7
+  pluginType: provider
+  abiVersion: v1alpha1
+  compatibleProviders:
+    - helm-chart
+  exports:
+    - name: render_node
+    - name: assemble_boundary
+  capabilities:
+    inputKinds:
+      sourced: true
+    boundaryAssembly: nest
+`)
 	err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected lint to flag workload:+helm-chart; got nil")
@@ -62,8 +82,50 @@ spec:
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
 `)
+	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: compose-renderer
+  version: "1.0.0"
+spec:
+  plugin: oci://hub.aggrega.ai/plugins/compose-provider@sha256:e58a3914ad4601e457571c41381856babfc7064387ce08ea13ac904b9cb70ca5
+  pluginType: provider
+  abiVersion: v1alpha1
+  compatibleProviders:
+    - compose
+  exports:
+    - name: render_node
+    - name: assemble_boundary
+  capabilities:
+    inputKinds:
+      sourced: true
+      synthesized: true
+    boundaryAssembly: merge
+`)
 	if err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("workload:+compose (synthesizing) must lint clean; got %v", err)
+	}
+}
+
+// fakeProviderPlugins resolves the shipped provider names to a Plugin entity
+// carrying the provider's authored capabilities.input_kinds claim — the same shape
+// the render route resolves — so the detector's unit tests exercise the
+// entity-claim path without a catalog. An unknown provider resolves nothing.
+func fakeProviderPlugins(ref string) (types.Plugin, bool, error) {
+	claim := func(ik types.PluginInputKinds) (types.Plugin, bool, error) {
+		return types.Plugin{Spec: types.PluginSpec{Capabilities: &types.PluginCapabilities{InputKinds: ik}}}, true, nil
+	}
+	switch ref {
+	case "helm":
+		return claim(types.PluginInputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true})
+	case "compose":
+		return claim(types.PluginInputKinds{Sourced: true, Synthesized: true})
+	case "helm-chart":
+		return claim(types.PluginInputKinds{Sourced: true})
+	case "terraform":
+		return claim(types.PluginInputKinds{Sourced: true, ArtifactsStandalone: true})
+	default:
+		return types.Plugin{}, false, nil
 	}
 }
 
@@ -92,7 +154,7 @@ func wlFeatureRecipe(name, provider string, workload bool) types.FeatureRecipe {
 // workload: on helm-chart (engine ships, Synthesized=false) → flagged, with a
 // message at parity with the render gate's clause.
 func TestInputKindCapabilityErrors_FlagsWorkloadOnNonSynthesizingEngine(t *testing.T) {
-	errs := inputKindCapabilityErrors([]types.Recipe{wlRecipe("api", "helm-chart", true)}, nil)
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "helm-chart", true)}, nil)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for workload:+helm-chart; got %d: %v", len(errs), errs)
 	}
@@ -107,7 +169,7 @@ func TestInputKindCapabilityErrors_FlagsWorkloadOnNonSynthesizingEngine(t *testi
 // workload: on a synthesizing engine (helm, compose, and the empty-name helm
 // default) → clean.
 func TestInputKindCapabilityErrors_AllowsSynthesizingEngines(t *testing.T) {
-	errs := inputKindCapabilityErrors([]types.Recipe{
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("a", "helm", true),
 		wlRecipe("b", "compose", true),
 		wlRecipe("c", "", true),
@@ -120,7 +182,7 @@ func TestInputKindCapabilityErrors_AllowsSynthesizingEngines(t *testing.T) {
 // A non-workload Recipe on helm-chart (sourced/artifacts mode) → clean: only
 // workload: triggers the check.
 func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
-	errs := inputKindCapabilityErrors([]types.Recipe{wlRecipe("api", "helm-chart", false)}, nil)
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "helm-chart", false)}, nil)
 	if len(errs) != 0 {
 		t.Fatalf("non-workload recipe must not trip the check; got: %v", errs)
 	}
@@ -130,7 +192,7 @@ func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
 // (CapabilitiesFor ok=false) → skipped, no false positive against forward-looking
 // catalog scaffolding.
 func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
-	errs := inputKindCapabilityErrors([]types.Recipe{
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("b", "cloudformation", true),
 		wlRecipe("c", "eval", true),
 		wlRecipe("d", "nonsense-typo", true),
@@ -143,7 +205,7 @@ func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
 // workload: on terraform (engine ships, Synthesized=false) → flagged, with a
 // message naming the input kinds terraform does support (sourced, artifacts-only).
 func TestInputKindCapabilityErrors_FlagsWorkloadOnTerraform(t *testing.T) {
-	errs := inputKindCapabilityErrors([]types.Recipe{wlRecipe("api", "terraform", true)}, nil)
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "terraform", true)}, nil)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for workload:+terraform; got %d: %v", len(errs), errs)
 	}
@@ -157,7 +219,7 @@ func TestInputKindCapabilityErrors_FlagsWorkloadOnTerraform(t *testing.T) {
 
 // FeatureRecipe is checked on the same footing as Recipe.
 func TestInputKindCapabilityErrors_FeatureRecipe(t *testing.T) {
-	errs := inputKindCapabilityErrors(nil, []types.FeatureRecipe{wlFeatureRecipe("sidecar", "helm-chart", true)})
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, nil, []types.FeatureRecipe{wlFeatureRecipe("sidecar", "helm-chart", true)})
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `FeatureRecipe "sidecar:1.0.0"`) {
 		t.Fatalf("expected 1 FeatureRecipe error; got: %v", errs)
 	}
@@ -166,7 +228,7 @@ func TestInputKindCapabilityErrors_FeatureRecipe(t *testing.T) {
 // Output order is deterministic regardless of input order (whole-catalog mode
 // ranges an unordered map).
 func TestInputKindCapabilityErrors_Deterministic(t *testing.T) {
-	errs := inputKindCapabilityErrors([]types.Recipe{
+	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("zeta", "helm-chart", true),
 		wlRecipe("alpha", "helm-chart", true),
 	}, nil)

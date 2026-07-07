@@ -43,11 +43,14 @@ import (
 )
 
 // pluginDescriptor is the static describe() self-report: a v1alpha1 provider
-// plugin declaring the render_node and assemble_boundary exports and
-// compatibility with the helm-chart provider engine. The host reads this once at
-// load and validates it before invoking either export. helm-chart copies chart
-// files verbatim and fetches nothing, so no host functions are declared.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// plugin declaring the render_node and assemble_boundary exports,
+// compatibility with the helm-chart provider engine, and its plugin-level
+// capability self-report (sourced-only input, nest-per-node umbrella assembly,
+// and the "[["/"]]" artifact-template delimiter pair). The host reads this
+// once at load and validates it before invoking either export. helm-chart
+// copies chart files verbatim and fetches nothing, so no host functions are
+// declared.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"}},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {

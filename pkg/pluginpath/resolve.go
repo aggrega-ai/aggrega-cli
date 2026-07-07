@@ -116,6 +116,46 @@ type PluginRuntimeLimits struct {
 type PluginCapabilityClaim struct {
 	// Exports is the authored per-export capability claim, in author order.
 	Exports []PluginExportClaim
+
+	// Capabilities is the authored plugin-level capability claim in the neutral
+	// shape, or nil when the entity authors none. The loader's caller maps it
+	// onto the wasm-side claim shape; the load gate cross-checks it against the
+	// plugin's describe() self-report.
+	Capabilities *PluginCapabilitiesClaim
+}
+
+// PluginCapabilitiesClaim is the neutral, pluginpath-owned shape of an entity's
+// authored plugin-level capability claim: the input kinds the plugin renders,
+// how it assembles a dispatch group's per-node output, the artifact-template
+// delimiter pair, and any source-file restriction. It carries no dependency on
+// internal/wasm; the loader's caller maps it onto the wasm-side claim shape.
+type PluginCapabilitiesClaim struct {
+	// InputKinds is the authored input-kind claim.
+	InputKinds PluginInputKindsClaim
+	// BoundaryAssembly is the authored boundary-assembly mode ("none", "merge",
+	// "nest", or empty).
+	BoundaryAssembly string
+	// ArtifactDelimiters is the authored artifact-template delimiter pair, or
+	// nil when the plugin uses the default pair.
+	ArtifactDelimiters *PluginArtifactDelimitersClaim
+	// SourceFilter is the authored source-file restriction, or nil when the
+	// plugin consumes every file in a supplied set.
+	SourceFilter []string
+}
+
+// PluginInputKindsClaim is one entity's authored input-kind claim in the
+// neutral shape: which of the three Recipe input kinds the plugin renders.
+type PluginInputKindsClaim struct {
+	Sourced             bool
+	Synthesized         bool
+	ArtifactsStandalone bool
+}
+
+// PluginArtifactDelimitersClaim is an entity's authored artifact-template
+// delimiter pair in the neutral shape.
+type PluginArtifactDelimitersClaim struct {
+	Left  string
+	Right string
 }
 
 // PluginExportClaim is one export's authored capability in the neutral shape:

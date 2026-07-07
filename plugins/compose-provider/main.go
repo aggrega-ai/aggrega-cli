@@ -39,11 +39,12 @@ import (
 )
 
 // pluginDescriptor is the static describe() self-report: a v1alpha1
-// provider plugin declaring the render_node and assemble_boundary exports and
-// compatibility with the compose provider engine. The host reads this once at
-// load and validates it before invoking either export. Compose fetches nothing,
-// so no host functions are declared.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// provider plugin declaring the render_node and assemble_boundary exports,
+// compatibility with the compose provider engine, and its plugin-level
+// capability self-report (the input kinds it renders and its boundary-merge
+// assembly). The host reads this once at load and validates it before invoking
+// either export. Compose fetches nothing, so no host functions are declared.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":false},"boundary_assembly":"merge"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {

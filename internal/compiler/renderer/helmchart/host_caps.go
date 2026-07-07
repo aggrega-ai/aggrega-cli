@@ -14,15 +14,6 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// hostCapabilities reports helm-chart's input-kind support: sourced only. It
-// produces an umbrella chart from a chart source; it does not synthesise from a
-// Workload and does not render artifacts-only (it injects artifacts into the
-// umbrella chart, which an artifacts-only node lacks). The describe() analog for
-// this provider, and the single home the standalone HostCaps holder reads.
-func hostCapabilities() renderer.ProviderCapabilities {
-	return renderer.ProviderCapabilities{Sourced: true}
-}
-
 // hostPathForArtifact is the single home for helm-chart's per-node-relative
 // $import:-loaded artifact placement. Each artifact file lands at
 // templates/<basename> within the per-node output; the orchestrator's
@@ -46,14 +37,14 @@ func hostArtifactDelimiters() (string, string) {
 // HostCaps returns helm-chart's host-side capability holder, built from the
 // provider package's standalone functions rather than methods on a concrete
 // engine — so the host can resolve helm-chart's host capabilities independently
-// of any engine identity, including when a node renders through a Wasm guest.
+// of any engine identity, including when a node renders through a Wasm guest. The
+// input kinds and boundary-assembly mode are not held here; they are the guest's
+// own describe() self-report.
 func HostCaps() renderer.HostCapabilities {
 	return renderer.HostCapabilities{
-		Caps:               hostCapabilities(),
 		Codec:              NewHelmChartCodec,
 		ProjectSource:      ProjectSourcedChart,
 		ProjectSubCharts:   projectSubCharts,
-		AssemblesBoundary:  true,
 		ExternalArtifacts:  true,
 		PathForArtifact:    hostPathForArtifact,
 		ArtifactDelimiters: hostArtifactDelimiters,

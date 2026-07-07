@@ -36,10 +36,15 @@ import (
 )
 
 // pluginDescriptor is the static describe() self-report: a v1alpha1
-// provider plugin declaring the render_node export and compatibility with
-// the helm provider engine. The host reads this once at load and validates
-// it before invoking render_node.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// provider plugin declaring the render_node export, compatibility with
+// the helm provider engine, and its plugin-level capability self-report
+// (the input kinds it renders and how it treats a dispatch group's output).
+// render_node declares the aggrega_fetch_external_input host function it
+// imports to resolve a chart's remote values-schema references through the
+// host's pinned external-input channel; the host cross-checks this declaration
+// against the functions the guest actually imports. The host reads this once at
+// load and validates it before invoking render_node.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {

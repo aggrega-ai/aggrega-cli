@@ -3,7 +3,10 @@
 
 package wasm
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // EntityCapabilityClaim is the authored capability declaration carried by a
 // catalog Plugin entity, in the neutral shape this package compares against
@@ -14,6 +17,12 @@ import "fmt"
 type EntityCapabilityClaim struct {
 	// Exports is the authored per-export capability claim, in author order.
 	Exports []EntityExportClaim
+
+	// Capabilities is the authored plugin-level capability claim, in the same
+	// neutral shape the plugin self-reports in describe(). Nil when the entity
+	// authors no plugin-level claim, in which case the cross-check compares only
+	// the per-export claims.
+	Capabilities *Capabilities
 }
 
 // EntityExportClaim is one export's authored capability: the export name the
@@ -50,6 +59,12 @@ type EntityExportClaim struct {
 // not required to enumerate every export the plugin offers — but every export
 // the entity does claim must match the plugin's self-report exactly.
 //
+// When the entity authors a plugin-level capabilities claim, it is compared
+// field-by-field against the descriptor's self-reported capabilities: the input
+// kinds, the boundary-assembly mode, the artifact-template delimiter pair, and
+// the source filter must each agree. A nil claim skips the plugin-level
+// comparison — an entity is not required to author a plugin-level claim.
+//
 // entityIdentity names the entity in the rejection message so the author sees
 // which entity's claim disagreed with which plugin.
 func CrossCheckCapabilities(entityIdentity string, claim EntityCapabilityClaim, desc PluginDescriptor) error {
@@ -71,7 +86,147 @@ func CrossCheckCapabilities(entityIdentity string, claim EntityCapabilityClaim, 
 				entityIdentity, want.Name, want.Scope, got.Scope, ErrWasmCapabilityMismatch)
 		}
 	}
+	if claim.Capabilities != nil {
+		if err := crossCheckPluginCapabilities(entityIdentity, *claim.Capabilities, desc.Capabilities); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// crossCheckHostFunctions verifies that the host functions a plugin declares
+// in describe() agree exactly with the host functions it actually imports from
+// its .wasm. The .wasm import section is ground truth (imported is derived from
+// it at load); the descriptor's declared host_functions — the union across all
+// exports — is a claim that must match it. Both sets are within the allowlist
+// (the loader admits only allowlisted imports; the descriptor validator rejects
+// a declared name outside the allowlist), so the comparison is exact-set
+// equality over allowlisted names.
+//
+// A name declared in describe() that the .wasm does not import, or a name the
+// .wasm imports that describe() does not declare, is a Loud Guardrail halt
+// wrapping [ErrWasmManifestRejected] naming the plugin and the offending
+// function — describe() cannot advertise a host surface the binary lacks, nor
+// hide one the binary uses. The comparison is order-independent; the reported
+// name is deterministic (the first offender in sorted order) so the same
+// mismatch yields the same message across runs.
+//
+// pluginIdentity names the plugin in the rejection message. imported is the
+// derived import set ([Plugin.HostFunctions]); the caller passes it so this
+// pure function needs no live plugin.
+func crossCheckHostFunctions(pluginIdentity string, desc PluginDescriptor, imported []string) error {
+	declared := descriptorHostFunctionUnion(desc)
+	importedSet := make(map[string]bool, len(imported))
+	for _, name := range imported {
+		importedSet[name] = true
+	}
+	declaredSet := make(map[string]bool, len(declared))
+	for _, name := range declared {
+		declaredSet[name] = true
+	}
+	for _, name := range declared {
+		if !importedSet[name] {
+			return fmt.Errorf(
+				"plugin %q declares host function %q in describe() that its wasm does not import: %w",
+				pluginIdentity, name, ErrWasmManifestRejected)
+		}
+	}
+	for _, name := range imported {
+		if !declaredSet[name] {
+			return fmt.Errorf(
+				"plugin %q imports host function %q that its describe() does not declare: %w",
+				pluginIdentity, name, ErrWasmManifestRejected)
+		}
+	}
+	return nil
+}
+
+// descriptorHostFunctionUnion returns the sorted, de-duplicated union of the
+// host functions declared across every export in the descriptor. Descriptor
+// host_functions are per-export while .wasm imports are module-level, so the
+// union is the module-level projection of the descriptor's claim — the set the
+// binary-derived import set is compared against.
+func descriptorHostFunctionUnion(desc PluginDescriptor) []string {
+	seen := make(map[string]bool)
+	var union []string
+	for _, export := range desc.Exports {
+		for _, name := range export.HostFunctions {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			union = append(union, name)
+		}
+	}
+	sort.Strings(union)
+	return union
+}
+
+// crossCheckPluginCapabilities compares an entity's authored plugin-level
+// capability claim against the descriptor's self-report field-by-field,
+// returning a Loud Guardrail error wrapping [ErrWasmCapabilityMismatch] that
+// names the first field to disagree, or nil when every field agrees.
+func crossCheckPluginCapabilities(entityIdentity string, want, got Capabilities) error {
+	if want.InputKinds.Sourced != got.InputKinds.Sourced {
+		return fmt.Errorf(
+			"entity %q declares input_kinds.sourced %t but the plugin's describe() reports %t: %w",
+			entityIdentity, want.InputKinds.Sourced, got.InputKinds.Sourced, ErrWasmCapabilityMismatch)
+	}
+	if want.InputKinds.Synthesized != got.InputKinds.Synthesized {
+		return fmt.Errorf(
+			"entity %q declares input_kinds.synthesized %t but the plugin's describe() reports %t: %w",
+			entityIdentity, want.InputKinds.Synthesized, got.InputKinds.Synthesized, ErrWasmCapabilityMismatch)
+	}
+	if want.InputKinds.ArtifactsStandalone != got.InputKinds.ArtifactsStandalone {
+		return fmt.Errorf(
+			"entity %q declares input_kinds.artifacts_standalone %t but the plugin's describe() reports %t: %w",
+			entityIdentity, want.InputKinds.ArtifactsStandalone, got.InputKinds.ArtifactsStandalone, ErrWasmCapabilityMismatch)
+	}
+	if want.BoundaryAssembly != got.BoundaryAssembly {
+		return fmt.Errorf(
+			"entity %q declares boundary_assembly %q but the plugin's describe() reports %q: %w",
+			entityIdentity, want.BoundaryAssembly, got.BoundaryAssembly, ErrWasmCapabilityMismatch)
+	}
+	if err := crossCheckDelimiters(entityIdentity, want.ArtifactDelimiters, got.ArtifactDelimiters); err != nil {
+		return err
+	}
+	if !equalStringSlices(want.SourceFilter, got.SourceFilter) {
+		return fmt.Errorf(
+			"entity %q declares source_filter %v but the plugin's describe() reports %v: %w",
+			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmCapabilityMismatch)
+	}
+	return nil
+}
+
+// crossCheckDelimiters compares the authored and self-reported artifact-template
+// delimiter pairs. An entity that declares the pair while the plugin omits it
+// (or the reverse) disagrees, as does a pair whose left or right differs.
+func crossCheckDelimiters(entityIdentity string, want, got *ArtifactDelimiters) error {
+	if (want == nil) != (got == nil) {
+		return fmt.Errorf(
+			"entity %q and the plugin's describe() disagree on whether artifact_delimiters is declared (entity declares=%t, plugin declares=%t): %w",
+			entityIdentity, want != nil, got != nil, ErrWasmCapabilityMismatch)
+	}
+	if want != nil && *want != *got {
+		return fmt.Errorf(
+			"entity %q declares artifact_delimiters %q/%q but the plugin's describe() reports %q/%q: %w",
+			entityIdentity, want.Left, want.Right, got.Left, got.Right, ErrWasmCapabilityMismatch)
+	}
+	return nil
+}
+
+// equalStringSlices reports whether two string slices carry the same elements
+// in the same order. A nil slice and an empty slice compare equal.
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // findDescriptorExport returns the descriptor's export of the given name and

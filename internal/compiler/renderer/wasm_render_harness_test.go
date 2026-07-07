@@ -91,9 +91,14 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerRef)
 		}
 		uri := embeddedProviderURI(t, bare)
-		if hostCaps.AssemblesBoundary {
+		// A boundary-assembling provider routes to the assembler adapter; a
+		// flat-output provider to the render-only adapter, exactly as the production
+		// hybrid selects. The assembly mode is the guest's live describe()
+		// self-report, read here by probing a render-only engine's classification.
+		engine := wasmengine.New(embeddedLookup, uri, hostCaps, loader)
+		if renderer.AssemblesBoundary(engine) {
 			return wasmengine.NewAssembler(embeddedLookup, uri, hostCaps, loader), nil
 		}
-		return wasmengine.New(embeddedLookup, uri, hostCaps, loader), nil
+		return engine, nil
 	}
 }

@@ -41,11 +41,38 @@ func PluginSpec(name string, resolved pluginpath.ResolvedPlugin) wasm.PluginSpec
 				Scope:    e.Scope,
 			})
 		}
-		spec.Capability = &wasm.EntityCapabilityClaim{Exports: exports}
+		spec.Capability = &wasm.EntityCapabilityClaim{
+			Exports:      exports,
+			Capabilities: wasmCapabilities(resolved.Capability.Capabilities),
+		}
 	}
 	if resolved.Limits != nil {
 		spec.MaxMemoryPages = resolved.Limits.MaxMemoryPages
 		spec.TimeoutMs = resolved.Limits.TimeoutMs
 	}
 	return spec
+}
+
+// wasmCapabilities maps the neutral plugin-level capability claim onto the
+// load gate's cross-check shape, or nil when the resolution carries none.
+func wasmCapabilities(c *pluginpath.PluginCapabilitiesClaim) *wasm.Capabilities {
+	if c == nil {
+		return nil
+	}
+	caps := &wasm.Capabilities{
+		InputKinds: wasm.InputKinds{
+			Sourced:             c.InputKinds.Sourced,
+			Synthesized:         c.InputKinds.Synthesized,
+			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
+		},
+		BoundaryAssembly: c.BoundaryAssembly,
+		SourceFilter:     c.SourceFilter,
+	}
+	if c.ArtifactDelimiters != nil {
+		caps.ArtifactDelimiters = &wasm.ArtifactDelimiters{
+			Left:  c.ArtifactDelimiters.Left,
+			Right: c.ArtifactDelimiters.Right,
+		}
+	}
+	return caps
 }

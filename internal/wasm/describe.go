@@ -13,11 +13,11 @@ import (
 // describe() export — the plugin's self-declaration of the ABI version
 // it binds against, its plugin type, the provider engines it is
 // compatible with, the exports it offers (each with its capability
-// declaration), and optional authorship metadata. The host reads
-// describe() once when it loads a plugin, validates the declaration (see
-// [PluginDescriptor.Validate]), and uses the per-export declarations to
-// bind the least-privilege host surface each export needs before
-// invoking it.
+// declaration), a plugin-level capability self-report, and optional
+// authorship metadata. The host reads describe() once when it loads a
+// plugin, validates the declaration (see [PluginDescriptor.Validate]),
+// and uses the per-export declarations to bind the least-privilege host
+// surface each export needs before invoking it.
 //
 // describe() is cross-plugin-type: one shape covers provider, linter,
 // feature-recipe-pipeline, mutator, and policy-validator plugins. It is consumed by the host
@@ -27,14 +27,14 @@ import (
 // on-disk artifact relies on encoding/json's sorted object keys plus
 // these declared-order slices.
 //
-// **Status: contract definition only — the live caller is not yet
-// wired.** This file ships the describe() shape and a pure validator
-// that the host applies to a parsed descriptor; both are exercised
-// now. The loader step that invokes a guest's describe() export over
-// the runtime wire, reads the returned bytes, and unmarshals them into
-// this shape lands with the runtime that dispatches guest exports. The
-// shape and the validator are stable surface so that work binds
-// against them now.
+// describe() is on the live plugin-load path: for every guest it loads,
+// the host calls the guest's describe() export, unmarshals the returned
+// bytes into this shape, and validates them (see
+// [PluginDescriptor.Validate]) before dispatching any other export. A
+// descriptor the host refuses fails the load rather than being
+// mis-invoked at dispatch. The same shape and validator run in the test
+// suite over crafted bytes, so the parse-and-validate behaviour is
+// exercised with and without a running guest.
 //
 // This is the cross-boundary wire analog of the in-tree
 // renderer.ProviderCapabilities self-report: a provider engine reports
@@ -77,6 +77,15 @@ type PluginDescriptor struct {
 	// binds the per-export host surface before invoking each.
 	Exports []PluginExport `json:"exports"`
 
+	// Capabilities is the plugin's plugin-level capability self-report —
+	// the input kinds it renders, how it assembles a dispatch group's
+	// per-node output, the artifact-template delimiter pair it applies,
+	// and any source-file restriction. Unlike the per-export declarations,
+	// it describes the plugin as a whole. The load gate cross-checks it
+	// against the entity's authored claim; an all-zero value carries no
+	// plugin-level capability claim.
+	Capabilities Capabilities `json:"capabilities,omitempty,omitzero"`
+
 	// Metadata is optional authorship information. It carries no
 	// behavioral contract — the host neither validates nor acts on it.
 	Metadata PluginDescriptorMeta `json:"metadata,omitempty,omitzero"`
@@ -97,12 +106,14 @@ type PluginExport struct {
 	InputPattern InputPattern `json:"input_pattern,omitempty"`
 
 	// HostFunctions lists the host function names this export imports.
-	// Every name MUST be in the host-function allowlist (see
-	// hostfuncs.go); the host binds exactly these functions for this
-	// export and no others, giving each export the least-privilege host
-	// surface it declares. In v1alpha1 the bound surface is the two
-	// baseline diagnostic functions; data-fetch host functions are
-	// contract-reserved but not yet bindable.
+	// Every name MUST be in the host-function allowlist (see hostfuncs.go).
+	// The declaration is authoritative and checked against the binary: the
+	// load gate cross-checks the union of host functions declared across the
+	// plugin's exports against the set the guest actually imports from its
+	// .wasm, halting on any name declared but not imported or imported but
+	// not declared, so this list cannot drift from the functions the guest
+	// really calls. The host binds each imported allowlisted function,
+	// giving the guest the least-privilege host surface its imports declare.
 	HostFunctions []string `json:"host_functions,omitempty"`
 
 	// Description is optional human-readable text describing the export.
@@ -141,6 +152,63 @@ type PluginDescriptorMeta struct {
 	Author     string `json:"author,omitempty"`
 	Repository string `json:"repository,omitempty"`
 	License    string `json:"license,omitempty"`
+}
+
+// Capabilities is a plugin's self-declaration of the compile-time render
+// behaviors it performs across the nodes it renders — the input kinds it
+// accepts, whether and how it assembles a dispatch group's per-node output
+// into a single artifact, the Go-template delimiter pair it applies to
+// imported artifact files, and any restriction on which source files it
+// consumes. It is a plugin-level self-report: it describes the plugin as a
+// whole, not any one export. The host reads it from describe() and the load
+// gate cross-checks it against the entity's authored claim.
+type Capabilities struct {
+	// InputKinds reports which of the three Recipe input kinds the plugin
+	// renders: a sourced file set, a synthesized workload, and a standalone
+	// artifacts-only node.
+	InputKinds InputKinds `json:"input_kinds"`
+
+	// BoundaryAssembly reports how the plugin combines a dispatch group's
+	// per-node render output: "none" writes each node's output directly at the
+	// dispatch path, "merge" folds the per-node fragments into one document,
+	// and "nest" places each node's output under its own position in an
+	// umbrella structure. An empty value carries no assembly claim.
+	BoundaryAssembly string `json:"boundary_assembly"`
+
+	// ArtifactDelimiters reports the Go-template delimiter pair the plugin
+	// applies to imported artifact files. Absent means the default "{{"/"}}"
+	// pair; a plugin whose target syntax collides with that pair reports an
+	// alternate pair here.
+	ArtifactDelimiters *ArtifactDelimiters `json:"artifact_delimiters,omitempty"`
+
+	// SourceFilter reports the source-file paths the plugin consumes when a
+	// node supplies a file set. Absent means the plugin consumes every file in
+	// the set.
+	SourceFilter []string `json:"source_filter,omitempty"`
+}
+
+// InputKinds reports which Recipe input kinds a plugin renders. Each field is
+// an independent claim; a plugin may report any combination.
+type InputKinds struct {
+	// Sourced reports that the plugin renders a sourced file set (a chart, a
+	// module, a compose file).
+	Sourced bool `json:"sourced"`
+	// Synthesized reports that the plugin renders a synthesized workload.
+	Synthesized bool `json:"synthesized"`
+	// ArtifactsStandalone reports that the plugin renders a standalone
+	// artifacts-only node — one carrying imported artifact documents and no
+	// source or workload.
+	ArtifactsStandalone bool `json:"artifacts_standalone"`
+}
+
+// ArtifactDelimiters is the Go-template delimiter pair a plugin applies to
+// imported artifact files, reported when it differs from the default
+// "{{"/"}}" pair.
+type ArtifactDelimiters struct {
+	// Left is the opening delimiter.
+	Left string `json:"left"`
+	// Right is the closing delimiter.
+	Right string `json:"right"`
 }
 
 // PluginType is the kind of a Wasm plugin. It selects the
@@ -228,6 +296,19 @@ const (
 // plugin.
 const providerRenderExportName = "render_node"
 
+// BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
+// the three boundary-assembly modes a plugin reports via
+// [Capabilities.BoundaryAssembly]: none writes each node's output directly at
+// the dispatch path, merge folds the per-node fragments into one document, and
+// nest places each node's output under its own position in an umbrella
+// structure. The shape validator accepts these three values or the empty
+// string; it does not require the field or act on its value.
+const (
+	BoundaryAssemblyNone  = "none"
+	BoundaryAssemblyMerge = "merge"
+	BoundaryAssemblyNest  = "nest"
+)
+
 // operatesPatch and operatesEmit are the two pipeline operations an
 // export may declare via [PluginExport.Operates]. The shape validator
 // accepts these two values or the empty string; it does not require the
@@ -282,6 +363,11 @@ const (
 //     runtime enforces compatibleProviders and acts on operates/scope
 //     when it dispatches a step; here the values are checked for shape
 //     and otherwise piped through.
+//   - the plugin-level capabilities block is well-shaped: boundary_assembly
+//     is none, merge, nest, or empty. This is shape validation only — the
+//     host does not require the block, cross-check it against the plugin
+//     type, or act on its values here; the load gate cross-checks it against
+//     the entity's authored claim, and other input fields are piped through.
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -309,7 +395,29 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
-	return d.validateExportCapabilities(pluginIdentity)
+	if err := d.validateExportCapabilities(pluginIdentity); err != nil {
+		return err
+	}
+
+	return d.validateCapabilities(pluginIdentity)
+}
+
+// validateCapabilities shape-checks the plugin-level capabilities block:
+// boundary_assembly must be none, merge, nest, or empty. This is shape
+// validation only — it does not require the block, cross-check it against the
+// plugin type or its compatibleProviders, or act on its values. The load gate
+// cross-checks the block against the entity's authored claim; the other input
+// fields are piped through unchecked here.
+func (d PluginDescriptor) validateCapabilities(pluginIdentity string) error {
+	switch d.Capabilities.BoundaryAssembly {
+	case "", BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest:
+		// well-shaped
+	default:
+		return fmt.Errorf("plugin %q declares unknown boundary_assembly %q (want %q, %q, %q, or empty): %w",
+			pluginIdentity, d.Capabilities.BoundaryAssembly,
+			BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest, ErrWasmManifestRejected)
+	}
+	return nil
 }
 
 // validateExportCapabilities shape-checks the per-export capability

@@ -11,10 +11,11 @@ package types
 // plugin_gen.go from the published plugin-v1alpha1 schema; their
 // godoc is the schema's descriptions. This hand-written companion holds
 // the optional nested blocks the generator names but does not
-// descend into (PluginSignature, PluginRuntime, PluginProvider), plus
-// any future Plugin methods or marshalers. The shared Maintainer and
-// WellKnownAnnotation types the generated fields reference live in
-// common.go.
+// descend into (PluginSignature, PluginRuntime, PluginProvider,
+// PluginCapabilities and its nested PluginInputKinds and
+// PluginArtifactDelimiters), plus any future Plugin methods or
+// marshalers. The shared Maintainer and WellKnownAnnotation types the
+// generated fields reference live in common.go.
 //
 // The runtime block stays field-aligned with the loader's plugin input
 // (max-memory pages, per-call timeout, the machine-derived host-function
@@ -80,6 +81,62 @@ type PluginExport struct {
 	// acts on (for example "workloads carrying a pod template"). Documentation
 	// for catalog readers; the compiler does not interpret it.
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
+}
+
+// PluginCapabilities is a plugin's self-declared compile-time render
+// behaviors, authored on the entity as the claim the host cross-checks against
+// the plugin's own describe() self-report at publish and at load: the input
+// kinds it renders, how it assembles a dispatch group's per-node output, the
+// Go-template delimiter pair it applies to imported artifact files, and any
+// restriction on which source files it consumes. It describes the plugin as a
+// whole, not any one export. The block is hand-written because the generator
+// names it via x-aggrega-go-type on the schema's object node and does not
+// descend into it.
+type PluginCapabilities struct {
+	// InputKinds is which of the three Recipe input kinds this plugin renders:
+	// a sourced file set, a synthesized workload, and a standalone
+	// artifacts-only node.
+	InputKinds PluginInputKinds `json:"inputKinds,omitempty,omitzero" yaml:"inputKinds,omitempty"`
+	// BoundaryAssembly is how the plugin combines a dispatch group's per-node
+	// render output: "none" writes each node's output directly at the dispatch
+	// path; "merge" folds the per-node fragments into one document; "nest"
+	// places each node's output under its own position in an umbrella
+	// structure. Empty carries no assembly claim.
+	BoundaryAssembly string `json:"boundaryAssembly,omitempty" yaml:"boundaryAssembly,omitempty"`
+	// ArtifactDelimiters is the Go-template delimiter pair the plugin applies
+	// to imported artifact files. Absent means the default "{{"/"}}" pair; a
+	// plugin whose target syntax collides with that pair declares an alternate
+	// pair here.
+	ArtifactDelimiters *PluginArtifactDelimiters `json:"artifactDelimiters,omitempty" yaml:"artifactDelimiters,omitempty"`
+	// SourceFilter is the source-file paths the plugin consumes when a node
+	// supplies a file set. Absent means the plugin consumes every file in the
+	// set. Entries preserve author order.
+	SourceFilter []string `json:"sourceFilter,omitempty" yaml:"sourceFilter,omitempty"`
+}
+
+// PluginInputKinds is a plugin's authored input-kind claim: which of the three
+// Recipe input kinds it renders. Each field is an independent claim.
+type PluginInputKinds struct {
+	// Sourced declares that the plugin renders a sourced file set (a chart, a
+	// module, a compose file).
+	Sourced bool `json:"sourced,omitempty" yaml:"sourced,omitempty"`
+	// Synthesized declares that the plugin renders a synthesized workload into
+	// provider-native artifacts.
+	Synthesized bool `json:"synthesized,omitempty" yaml:"synthesized,omitempty"`
+	// ArtifactsStandalone declares that the plugin renders a standalone
+	// artifacts-only node — one carrying imported artifact documents and no
+	// source or workload.
+	ArtifactsStandalone bool `json:"artifactsStandalone,omitempty" yaml:"artifactsStandalone,omitempty"`
+}
+
+// PluginArtifactDelimiters is a plugin's authored Go-template delimiter pair
+// for imported artifact files, declared when it differs from the default
+// "{{"/"}}" pair.
+type PluginArtifactDelimiters struct {
+	// Left is the opening delimiter.
+	Left string `json:"left" yaml:"left"`
+	// Right is the closing delimiter.
+	Right string `json:"right" yaml:"right"`
 }
 
 // PluginSignature is the optional, documentation-only pointer to a

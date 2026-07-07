@@ -16,13 +16,15 @@ import (
 // pipeline's per-step load and the publishing-linter's workspace-config path)
 // call it rather than each re-spelling the field copy.
 //
-// One authored surface crosses the boundary: the per-export operates/scope (the
+// Two authored surfaces cross the boundary: the per-export operates/scope (the
 // export name keys the cross-check; the selector is free-form documentation and
-// is not carried). The host-function surface is machine-derived and stamped, not
-// authored, so it never participates in a load-time claim. An entity that authors
-// no exports yields nil — no claim, so the cross-check is skipped for that plugin.
+// is not carried) and the plugin-level capabilities block. The host-function
+// surface is machine-derived and stamped, not authored, so it never participates
+// in a load-time claim. An entity that authors neither exports nor a
+// capabilities block yields nil — no claim, so the cross-check is skipped for
+// that plugin.
 func PluginCapabilityClaim(entity types.Plugin) *pluginpath.PluginCapabilityClaim {
-	if len(entity.Spec.Exports) == 0 {
+	if len(entity.Spec.Exports) == 0 && entity.Spec.Capabilities == nil {
 		return nil
 	}
 	exports := make([]pluginpath.PluginExportClaim, 0, len(entity.Spec.Exports))
@@ -34,8 +36,34 @@ func PluginCapabilityClaim(entity types.Plugin) *pluginpath.PluginCapabilityClai
 		})
 	}
 	return &pluginpath.PluginCapabilityClaim{
-		Exports: exports,
+		Exports:      exports,
+		Capabilities: pluginCapabilitiesClaim(entity.Spec.Capabilities),
 	}
+}
+
+// pluginCapabilitiesClaim maps a Plugin entity's authored plugin-level
+// capabilities block into the neutral claim shape, or nil when the entity
+// authors none.
+func pluginCapabilitiesClaim(c *types.PluginCapabilities) *pluginpath.PluginCapabilitiesClaim {
+	if c == nil {
+		return nil
+	}
+	claim := &pluginpath.PluginCapabilitiesClaim{
+		InputKinds: pluginpath.PluginInputKindsClaim{
+			Sourced:             c.InputKinds.Sourced,
+			Synthesized:         c.InputKinds.Synthesized,
+			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
+		},
+		BoundaryAssembly: c.BoundaryAssembly,
+		SourceFilter:     c.SourceFilter,
+	}
+	if c.ArtifactDelimiters != nil {
+		claim.ArtifactDelimiters = &pluginpath.PluginArtifactDelimitersClaim{
+			Left:  c.ArtifactDelimiters.Left,
+			Right: c.ArtifactDelimiters.Right,
+		}
+	}
+	return claim
 }
 
 // PluginRuntimeLimits maps a catalog Plugin entity's authored runtime

@@ -17,10 +17,10 @@ import (
 // renderOnlyAssemblerWrapper mimics the Wasm-provider render adapter for an
 // assembler provider whose plugin advertises only per-node rendering: it drives
 // render itself, does NOT implement BoundaryAssembler, and forwards the wrapped
-// provider's host capabilities (including AssemblesBoundary) through its holder.
-// Boundary assembly is functional dispatch asserted on the dispatched engine, not
-// a host-side capability — so this wrapper reports it assembles yet genuinely
-// cannot, which is exactly the mismatch the guardrail catches.
+// provider's host capabilities through its holder and its boundary-assembly
+// self-report. Boundary assembly is functional dispatch asserted on the dispatched
+// engine, not a host-side capability — so this wrapper reports it assembles yet
+// genuinely cannot, which is exactly the mismatch the guardrail catches.
 type renderOnlyAssemblerWrapper struct {
 	wrapped renderer.Engine
 }
@@ -35,6 +35,13 @@ func (renderOnlyAssemblerWrapper) Capabilities() renderer.ProviderCapabilities {
 
 func (w renderOnlyAssemblerWrapper) HostCapabilities() renderer.HostCapabilities {
 	return renderer.ResolveHostCaps(w.wrapped)
+}
+
+func (w renderOnlyAssemblerWrapper) BoundaryAssembly() string {
+	if r, ok := w.wrapped.(renderer.BoundaryAssemblyReporter); ok {
+		return r.BoundaryAssembly()
+	}
+	return ""
 }
 
 // TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts proves the Loud
@@ -82,8 +89,8 @@ func TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts(t *testing.T) 
 	if _, ok := renderer.Engine(wrapper).(renderer.BoundaryAssembler); ok {
 		t.Fatal("wrapper unexpectedly implements BoundaryAssembler directly; guardrail scenario not exercised")
 	}
-	if !renderer.ResolveHostCaps(wrapper).AssemblesBoundary {
-		t.Fatal("wrapper must report AssemblesBoundary via its forwarded holder for this scenario")
+	if !renderer.AssemblesBoundary(wrapper) {
+		t.Fatal("wrapper must report it assembles via its forwarded self-report for this scenario")
 	}
 
 	factory := func(string) (renderer.Engine, error) { return wrapper, nil }

@@ -25,7 +25,6 @@ func (w forwardingWrapper) HostCapabilities() HostCapabilities { return w.holder
 // concrete engine type.
 func TestResolveHostCaps_ForwardedHolder(t *testing.T) {
 	holder := HostCapabilities{
-		AssemblesBoundary:  true,
 		ExternalArtifacts:  true,
 		PathForArtifact:    func(_ NodeRenderContext, b string) string { return "templates/" + b },
 		ArtifactDelimiters: func() (string, string) { return "[[", "]]" },
@@ -33,9 +32,6 @@ func TestResolveHostCaps_ForwardedHolder(t *testing.T) {
 	wrapper := forwardingWrapper{holder: holder}
 
 	got := ResolveHostCaps(wrapper)
-	if !got.AssemblesBoundary {
-		t.Error("ResolveHostCaps did not surface AssemblesBoundary from the forwarded holder")
-	}
 	if !got.ExternalArtifacts {
 		t.Error("ResolveHostCaps did not surface ExternalArtifacts from the forwarded holder")
 	}
@@ -53,23 +49,53 @@ func TestResolveHostCaps_NonHostCapableIsZero(t *testing.T) {
 		t.Fatal("stubEngine unexpectedly implements HostCapable; zero-holder case is not exercised")
 	}
 	got := ResolveHostCaps(e)
-	if got.AssemblesBoundary || got.ExternalArtifacts || got.Codec != nil || got.ProjectSource != nil {
+	if got.ExternalArtifacts || got.Codec != nil || got.ProjectSource != nil {
 		t.Error("ResolveHostCaps returned a non-zero holder for a non-HostCapable engine")
 	}
 }
 
-// TestRenderIsIntermediateFromHolder pins the intermediate-marking rule to the
-// holder: a boundary-assembling provider that is not external is intermediate; an
-// external boundary-assembler (umbrella nest-per-node) and a flat-output provider
+// boundaryAssemblyEngine is a no-op engine reporting a fixed boundary-assembly
+// mode, standing in for a provider whose guest self-reports the mode via
+// describe(). It exercises the host's render classification from the reported
+// value alone.
+type boundaryAssemblyEngine struct {
+	stubEngine
+	mode string
+}
+
+func (b boundaryAssemblyEngine) BoundaryAssembly() string { return b.mode }
+
+// TestRenderIsIntermediateFromReport pins the intermediate-marking rule to the
+// engine's boundary-assembly self-report: a fragment-merging provider ("merge") is
+// intermediate; a nesting provider ("nest") and a flat-output provider ("none")
 // are not.
-func TestRenderIsIntermediateFromHolder(t *testing.T) {
-	if !(HostCapabilities{AssemblesBoundary: true}).RenderIsIntermediate() {
-		t.Error("AssemblesBoundary && !ExternalArtifacts should be intermediate")
+func TestRenderIsIntermediateFromReport(t *testing.T) {
+	if !RenderIsIntermediate(boundaryAssemblyEngine{mode: "merge"}) {
+		t.Error(`boundary_assembly "merge" should be intermediate`)
 	}
-	if (HostCapabilities{AssemblesBoundary: true, ExternalArtifacts: true}).RenderIsIntermediate() {
-		t.Error("an external boundary-assembler must not be intermediate")
+	if RenderIsIntermediate(boundaryAssemblyEngine{mode: "nest"}) {
+		t.Error(`boundary_assembly "nest" must not be intermediate`)
 	}
-	if (HostCapabilities{}).RenderIsIntermediate() {
-		t.Error("a flat-output provider must not be intermediate")
+	if RenderIsIntermediate(boundaryAssemblyEngine{mode: "none"}) {
+		t.Error(`boundary_assembly "none" must not be intermediate`)
+	}
+}
+
+// TestAssemblesBoundaryFromReport pins the assembler classification to the engine's
+// boundary-assembly self-report: a merging ("merge") or nesting ("nest") provider
+// assembles; a flat-output provider ("none") and an engine that reports no mode do
+// not.
+func TestAssemblesBoundaryFromReport(t *testing.T) {
+	if !AssemblesBoundary(boundaryAssemblyEngine{mode: "merge"}) {
+		t.Error(`boundary_assembly "merge" should assemble`)
+	}
+	if !AssemblesBoundary(boundaryAssemblyEngine{mode: "nest"}) {
+		t.Error(`boundary_assembly "nest" should assemble`)
+	}
+	if AssemblesBoundary(boundaryAssemblyEngine{mode: "none"}) {
+		t.Error(`boundary_assembly "none" must not assemble`)
+	}
+	if AssemblesBoundary(&stubEngine{}) {
+		t.Error("an engine that reports no boundary-assembly mode must not assemble")
 	}
 }

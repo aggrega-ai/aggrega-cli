@@ -141,20 +141,28 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	return files, out.NestPerNode, nil
 }
 
-// invokeAssemble loads the guest through the shared describe-gated loader, calls
-// the named assemble export, and decodes the AssembleBoundaryOutput. It mirrors
-// Engine.invoke's load-describe-invoke-close lifecycle for the assemble surface —
-// the two share the loader and lookup but not the codec, since the assemble wire
-// shapes differ from the render surface. Each call loads and closes its own plugin
-// instance, so dispatch groups stay isolated. The plugin is closed before
-// invokeAssemble returns.
+// invokeAssemble loads a fresh guest instance through the shared loader, calls the
+// named assemble export against the embedded Engine's cached descriptor, and decodes
+// the AssembleBoundaryOutput. It mirrors Engine.invoke's memoized-descriptor,
+// fresh-instance-per-crossing lifecycle for the assemble surface — the two share the
+// loader, lookup, and descriptor memo but not the codec, since the assemble wire
+// shapes differ from the render surface. The descriptor read here is the embedded
+// Engine's memo (describe): describe() and its validation run once per provider, not
+// once per crossing. Each call loads and closes its own plugin instance, so dispatch
+// groups stay isolated by construction. The plugin is closed before invokeAssemble
+// returns.
 func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.AssembleBoundaryOutput{}, err
+	}
+
 	resolved, err := e.lookup(e.pluginURI)
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
 	}
 
-	plugin, desc, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
 	}
@@ -164,7 +172,7 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: marshal assemble_boundary input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
 	}

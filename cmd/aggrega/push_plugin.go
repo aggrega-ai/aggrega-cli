@@ -223,7 +223,36 @@ func entityCapabilityClaim(entity types.Plugin) wasm.EntityCapabilityClaim {
 			Scope:    e.Scope,
 		})
 	}
-	return wasm.EntityCapabilityClaim{Exports: exports}
+	return wasm.EntityCapabilityClaim{
+		Exports:      exports,
+		Capabilities: entityWasmCapabilities(entity.Spec.Capabilities),
+	}
+}
+
+// entityWasmCapabilities maps a Plugin entity's authored plugin-level
+// capabilities block onto the load gate's cross-check shape, or nil when the
+// entity authors none. It mirrors the load-side capabilities mapping so the
+// publish and load surfaces agree on what an authored capability claim is.
+func entityWasmCapabilities(c *types.PluginCapabilities) *wasm.Capabilities {
+	if c == nil {
+		return nil
+	}
+	caps := &wasm.Capabilities{
+		InputKinds: wasm.InputKinds{
+			Sourced:             c.InputKinds.Sourced,
+			Synthesized:         c.InputKinds.Synthesized,
+			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
+		},
+		BoundaryAssembly: c.BoundaryAssembly,
+		SourceFilter:     c.SourceFilter,
+	}
+	if c.ArtifactDelimiters != nil {
+		caps.ArtifactDelimiters = &wasm.ArtifactDelimiters{
+			Left:  c.ArtifactDelimiters.Left,
+			Right: c.ArtifactDelimiters.Right,
+		}
+	}
+	return caps
 }
 
 // stripRegistryScheme returns the registry repository path without any leading

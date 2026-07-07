@@ -199,7 +199,7 @@ func lintCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io.Wri
 	for _, fr := range cat.FeatureRecipes {
 		catFeatureRecipes = append(catFeatureRecipes, fr)
 	}
-	if errs := inputKindCapabilityErrors(catRecipes, catFeatureRecipes); len(errs) > 0 {
+	if errs := inputKindCapabilityErrors(cat.CatalogLookup().ProviderPlugin, catRecipes, catFeatureRecipes); len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
 		}
@@ -316,7 +316,8 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 	for _, w := range lazyView.ClosureNarrowingWarnings() {
 		fmt.Fprintf(diagOut, "  notice: %s\n", w)
 	}
-	if errs := inputKindCapabilityErrors(closureRecipes(lazyView, cl)); len(errs) > 0 {
+	clRecipes, clFeatureRecipes := closureRecipes(lazyView, cl)
+	if errs := inputKindCapabilityErrors(conformanceLookup.ProviderPlugin, clRecipes, clFeatureRecipes); len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
 		}
@@ -328,25 +329,27 @@ func lintRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, diag
 }
 
 // inputKindCapabilityErrors reports each Recipe / FeatureRecipe that declares a
-// workload: block (synthesized mode) bound to a KNOWN provider whose engine
-// cannot synthesize — a guaranteed render-time halt, surfaced here at lint time.
-// It is an early, non-authoritative detector: the render-time central input-kind
-// gate remains the single enforcement chokepoint. The detector reads engine
-// capabilities through enginefactory.CapabilitiesFor — the same capability lookup
-// the gate uses — so the two cannot disagree, and it reuses the gate's own message clause
-// (renderer.UnsupportedInputKindMessage) so the early and late diagnostics read
-// identically. A provider whose name binds to no shipped engine (CapabilitiesFor
-// ok=false — unknown, unimplemented terraform/cloudformation, or eval) is skipped:
-// there is no synthesizing engine to contradict and forward-looking catalog
-// scaffolding must not be flagged. The workload predicate is the gate's own
-// (!Spec.Workload.IsEmpty()), so presence is classified identically.
-func inputKindCapabilityErrors(recipes []types.Recipe, featureRecipes []types.FeatureRecipe) []error {
+// workload: block (synthesized mode) bound to a provider whose plugin cannot
+// synthesize — a guaranteed render-time halt, surfaced here at lint time. It is an
+// early, non-authoritative detector: the render-time central input-kind gate
+// remains the single enforcement chokepoint. The detector reads a provider's
+// input-kind support from the authoring-time capabilities claim on the
+// provider-rendering Plugin entity that serves it, resolved through providerPlugin
+// — the same provider→Plugin resolution the render route follows — and reuses the
+// gate's own message clause (renderer.UnsupportedInputKindMessage) so the early and
+// late diagnostics read identically. A provider whose serving Plugin does not
+// resolve in scope, or whose Plugin carries no capabilities claim (CapabilitiesFor
+// ok=false), is skipped: there is no capability claim to contradict and
+// forward-looking catalog scaffolding must not be flagged. The workload predicate
+// is the gate's own (!Spec.Workload.IsEmpty()), so presence is classified
+// identically.
+func inputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bool, error), recipes []types.Recipe, featureRecipes []types.FeatureRecipe) []error {
 	var errs []error
 	check := func(kind, identity, provider string, workload types.WorkloadTemplate) {
 		if workload.IsEmpty() {
 			return
 		}
-		caps, ok := enginefactory.CapabilitiesFor(provider)
+		caps, ok := enginefactory.CapabilitiesFor(providerPlugin, provider)
 		if !ok || caps.Synthesized {
 			return
 		}

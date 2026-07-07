@@ -60,11 +60,13 @@ const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 const provenanceFileName = "aggrega.provenance.tf"
 
 // pluginDescriptor is the static describe() self-report: a v1alpha1 provider
-// plugin declaring the render_node export and compatibility with the terraform
-// provider. The host reads this once at load and validates it before invoking
-// render_node. terraform vendors module files verbatim and fetches nothing, so no
-// host functions are declared and no assemble_boundary export is offered.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+// plugin declaring the render_node export, compatibility with the terraform
+// provider, and its plugin-level capability self-report (sourced and
+// artifacts-standalone input, no boundary assembly). The host reads this once
+// at load and validates it before invoking render_node. terraform vendors
+// module files verbatim and fetches nothing, so no host functions are declared
+// and no assemble_boundary export is offered.
+const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none"},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {

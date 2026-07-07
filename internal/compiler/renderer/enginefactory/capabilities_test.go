@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // shippedProviders is the set of provider names the Wasm render route resolves to
@@ -37,19 +38,17 @@ func TestHostCapsFor_ResolvesEveryShippedProvider(t *testing.T) {
 }
 
 // TestHostCapsFor_ProviderMatrix pins each shipped provider's host-capability
-// holder shape: the input-kind capabilities plus the output-assembly and
-// projection facets the render route reads. The matrix is the contract the
-// central gate and the boundary-assembly dispatch enforce — helm renders every
-// input kind and assembles nothing; helm-chart is sourced-only and assembles an
-// umbrella from external artifacts through its own codec and sub-chart
-// projection; compose synthesises and sources, assembles a merged file, and
-// contributes boundary consumer env overrides.
+// holder shape: the output-side and projection facets the render route reads. The
+// input kinds and the boundary-assembly mode are not held here — they are the
+// guest's own describe() self-report — so the matrix pins only the residual
+// host-side facets: helm projects a chart source and nothing else; helm-chart
+// handles external artifacts through its own codec, sub-chart projection, path, and
+// delimiters; compose projects a compose source and contributes boundary consumer
+// env overrides; terraform handles external artifacts and projects a module source.
 func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		provider                        string
-		caps                            renderer.ProviderCapabilities
-		assemblesBoundary               bool
 		externalArtifacts               bool
 		hasCodec                        bool
 		hasProjectSource                bool
@@ -60,13 +59,10 @@ func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 	}{
 		{
 			provider:         "helm",
-			caps:             renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			hasProjectSource: true,
 		},
 		{
 			provider:              "helm-chart",
-			caps:                  renderer.ProviderCapabilities{Sourced: true},
-			assemblesBoundary:     true,
 			externalArtifacts:     true,
 			hasCodec:              true,
 			hasProjectSource:      true,
@@ -76,14 +72,11 @@ func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 		},
 		{
 			provider:                        "compose",
-			caps:                            renderer.ProviderCapabilities{Sourced: true, Synthesized: true},
-			assemblesBoundary:               true,
 			hasProjectSource:                true,
 			hasBoundaryConsumerEnvOverrides: true,
 		},
 		{
 			provider:          "terraform",
-			caps:              renderer.ProviderCapabilities{Sourced: true, ArtifactsStandalone: true},
 			externalArtifacts: true,
 			hasProjectSource:  true,
 		},
@@ -95,12 +88,6 @@ func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 			h, ok := enginefactory.HostCapsFor(tc.provider)
 			if !ok {
 				t.Fatalf("HostCapsFor(%q): ok=false", tc.provider)
-			}
-			if h.Caps != tc.caps {
-				t.Errorf("Caps = %+v; want %+v", h.Caps, tc.caps)
-			}
-			if h.AssemblesBoundary != tc.assemblesBoundary {
-				t.Errorf("AssemblesBoundary = %v; want %v", h.AssemblesBoundary, tc.assemblesBoundary)
 			}
 			if h.ExternalArtifacts != tc.externalArtifacts {
 				t.Errorf("ExternalArtifacts = %v; want %v", h.ExternalArtifacts, tc.externalArtifacts)
@@ -127,30 +114,54 @@ func TestHostCapsFor_ProviderMatrix(t *testing.T) {
 	}
 }
 
-// TestCapabilitiesFor_MatchesHostCapsForCaps pins that the input-kind capability
-// accessor the early lint detector reads resolves through the same holder the
-// render-time gate reads, so the two cannot report divergent input-kind support
-// for a provider. An unknown provider reports ok=false from both.
-func TestCapabilitiesFor_MatchesHostCapsForCaps(t *testing.T) {
+// TestCapabilitiesFor_ReadsEntityClaim pins that the input-kind accessor the early
+// lint detector reads resolves the provider's serving Plugin entity through the
+// given lookup and reports the entity's authored capabilities.input_kinds claim. A
+// provider whose serving Plugin does not resolve, or whose Plugin carries no
+// capabilities claim, reports ok=false so a capability-based check skips rather
+// than flags.
+func TestCapabilitiesFor_ReadsEntityClaim(t *testing.T) {
 	t.Parallel()
-	for _, name := range shippedProviders {
-		name := name
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			holder, ok := enginefactory.HostCapsFor(name)
-			if !ok {
-				t.Fatalf("HostCapsFor(%q): ok=false", name)
-			}
-			caps, ok := enginefactory.CapabilitiesFor(name)
-			if !ok {
-				t.Fatalf("CapabilitiesFor(%q): ok=false", name)
-			}
-			if caps != holder.Caps {
-				t.Errorf("CapabilitiesFor=%+v; HostCapsFor.Caps=%+v", caps, holder.Caps)
-			}
-		})
+	lookup := func(ref string) (types.Plugin, bool, error) {
+		switch ref {
+		case "helm-chart":
+			return types.Plugin{Spec: types.PluginSpec{
+				Capabilities: &types.PluginCapabilities{InputKinds: types.PluginInputKinds{Sourced: true}},
+			}}, true, nil
+		case "compose":
+			return types.Plugin{Spec: types.PluginSpec{
+				Capabilities: &types.PluginCapabilities{InputKinds: types.PluginInputKinds{Sourced: true, Synthesized: true}},
+			}}, true, nil
+		case "no-claim":
+			return types.Plugin{Spec: types.PluginSpec{}}, true, nil
+		default:
+			return types.Plugin{}, false, nil
+		}
 	}
-	if _, ok := enginefactory.CapabilitiesFor("no-such-provider"); ok {
-		t.Errorf("CapabilitiesFor(%q): ok=true; an unknown provider must report no capabilities", "no-such-provider")
+
+	caps, ok := enginefactory.CapabilitiesFor(lookup, "helm-chart")
+	if !ok {
+		t.Fatal(`CapabilitiesFor("helm-chart"): ok=false; want the entity claim`)
+	}
+	if want := (renderer.ProviderCapabilities{Sourced: true}); caps != want {
+		t.Errorf("CapabilitiesFor(helm-chart) = %+v; want %+v", caps, want)
+	}
+
+	caps, ok = enginefactory.CapabilitiesFor(lookup, "compose")
+	if !ok {
+		t.Fatal(`CapabilitiesFor("compose"): ok=false; want the entity claim`)
+	}
+	if want := (renderer.ProviderCapabilities{Sourced: true, Synthesized: true}); caps != want {
+		t.Errorf("CapabilitiesFor(compose) = %+v; want %+v", caps, want)
+	}
+
+	if _, ok := enginefactory.CapabilitiesFor(lookup, "no-such-provider"); ok {
+		t.Error("CapabilitiesFor(no-such-provider): ok=true; a provider with no serving Plugin must report no capabilities")
+	}
+	if _, ok := enginefactory.CapabilitiesFor(lookup, "no-claim"); ok {
+		t.Error("CapabilitiesFor(no-claim): ok=true; a Plugin with no capabilities claim must report no capabilities")
+	}
+	if _, ok := enginefactory.CapabilitiesFor(nil, "helm-chart"); ok {
+		t.Error("CapabilitiesFor(nil lookup): ok=true; a nil lookup must report no capabilities")
 	}
 }

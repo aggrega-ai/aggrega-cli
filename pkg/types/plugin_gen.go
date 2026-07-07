@@ -55,4 +55,6 @@ type PluginSpec struct {
 	Exports []PluginExport `json:"exports,omitempty" yaml:"exports,omitempty"`
 	// Provider The provider-socket metadata for a `pluginType: provider` plugin: how its rendering engine translates the aggrega.ai/v1alpha1 Workload kind and which platform-native annotations the engine reads. Present only on provider-rendering plugins; absent on `linter`, `frp_step`, `mutator`, and `policy-validator` plugins, and on provider plugins whose engine renders only sourced or artifact content (no Workload synthesis).
 	Provider *PluginProvider `json:"provider,omitempty" yaml:"provider,omitempty"`
+	// Capabilities The plugin's self-declared compile-time render behaviors, authored as the claim the host cross-checks against the plugin's own self-report at publish and at load: the input kinds it renders, how it assembles a dispatch group's per-node output, the template-delimiter pair it applies to imported artifact files, and any restriction on which source files it consumes. Absent declares no plugin-level capability claim, and the cross-check compares only the per-export claims.
+	Capabilities *PluginCapabilities `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 }

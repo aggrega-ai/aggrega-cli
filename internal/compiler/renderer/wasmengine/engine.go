@@ -35,13 +35,14 @@ type Engine struct {
 	lookup    pluginpath.Lookup
 	pluginURI string
 	// hostCaps is the provider's host-side capability holder supplied at
-	// construction. Its Caps gate the input kinds (so the render-time gate stays
-	// Go-decided), its ProjectSource projects a sourced node's source onto the
+	// construction. Its ProjectSource projects a sourced node's source onto the
 	// render wire, and it carries the codec, sub-chart projection,
-	// external-artifacts placement, boundary-assembly marker, and env-override
-	// channel. The wrapper exposes it directly (HostCapabilities), so host-side
-	// capability checks resolve from this holder rather than from a concrete
-	// engine — the seam that keeps the adapter free of any provider package.
+	// external-artifacts placement, and env-override channel. The wrapper exposes
+	// it directly (HostCapabilities), so host-side capability checks resolve from
+	// this holder rather than from a concrete engine — the seam that keeps the
+	// adapter free of any provider package. The input kinds and the boundary-
+	// assembly mode are not held here; they come from the guest's live describe()
+	// descriptor (see Capabilities and BoundaryAssembly).
 	hostCaps renderer.HostCapabilities
 	// loader is the shared per-build loader every Render / SynthesizeWorkload
 	// call loads through. It carries the build's external-input service and,
@@ -49,20 +50,35 @@ type Engine struct {
 	// the guest compiles once per build rather than once per node. Each call
 	// still loads a fresh, isolated plugin instance through it.
 	loader *wasm.Loader
+	// descriptor caches the guest's validated describe() self-report, loaded once
+	// per Engine. The input-kind gate (Capabilities), the output classification
+	// (BoundaryAssembly), and every per-node crossing (invoke, invokeAssemble) read
+	// the guest's plugin-level capability claim from it: the describe() call, the
+	// descriptor validation, and the load-gate cross-checks (capability and
+	// host-functions) are a pure function of the guest bytes — identical for every
+	// node of the same provider — so they run once per Engine through this memo, not
+	// once per node. The descriptor is a pure function of the guest bytes, so caching
+	// it cannot alter rendered output. RenderAll drives a single sequential loop, so a
+	// plain field needs no guard. descriptorErr caches a load/describe failure so a
+	// broken guest is reported consistently rather than re-probed per call.
+	descriptor    *wasm.PluginDescriptor
+	descriptorErr error
 }
 
 var (
-	_ renderer.Engine              = (*Engine)(nil)
-	_ renderer.WorkloadSynthesizer = (*Engine)(nil)
-	_ renderer.HostCapable         = (*Engine)(nil)
+	_ renderer.Engine                   = (*Engine)(nil)
+	_ renderer.WorkloadSynthesizer      = (*Engine)(nil)
+	_ renderer.HostCapable              = (*Engine)(nil)
+	_ renderer.BoundaryAssemblyReporter = (*Engine)(nil)
 )
 
 // New returns an Engine that renders through the guest at pluginURI, resolving
 // its bytes via lookup and loading through the shared loader. It carries the
 // provider's host-side capability holder — supplied by the caller from the
-// provider-name registry — deriving its input-kind capabilities from hostCaps.Caps
-// so the render-time gate stays Go-decided, and projecting a sourced Render's
-// source through hostCaps.ProjectSource. The loader is shared across the build so
+// provider-name registry — for the host-side projections it drives (source
+// projection, codec, sub-chart projection, env overrides); its input kinds and
+// boundary-assembly mode come from the guest's live describe() descriptor. The
+// loader is shared across the build so
 // its compilation cache (when present) warms once; a nil loader is an
 // injection-site bug — every call would nil-panic — rather than a supported
 // zero value.
@@ -70,9 +86,61 @@ func New(lookup pluginpath.Lookup, pluginURI string, hostCaps renderer.HostCapab
 	return &Engine{lookup: lookup, pluginURI: pluginURI, hostCaps: hostCaps, loader: loader}
 }
 
-// Capabilities reports the input-kind capabilities configured at construction.
+// Capabilities reports the input kinds the provider guest renders, read from its
+// live describe() self-report (capabilities.input_kinds). The descriptor is loaded
+// and cached on first use. When the guest cannot be loaded or described, this
+// reports no supported input kind, so the central input-kind gate halts the node
+// loudly rather than dispatching to an unloadable guest; the underlying load
+// failure surfaces in full on the render path.
 func (e *Engine) Capabilities() renderer.ProviderCapabilities {
-	return e.hostCaps.Caps
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.ProviderCapabilities{}
+	}
+	ik := desc.Capabilities.InputKinds
+	return renderer.ProviderCapabilities{
+		Sourced:             ik.Sourced,
+		Synthesized:         ik.Synthesized,
+		ArtifactsStandalone: ik.ArtifactsStandalone,
+	}
+}
+
+// BoundaryAssembly reports how the provider guest assembles a dispatch group's
+// per-node output — "merge", "nest", or "none" — read from its live describe()
+// self-report (capabilities.boundary_assembly). The descriptor is loaded and cached
+// on first use; an empty string is returned when the guest cannot be loaded or
+// described. It satisfies renderer.BoundaryAssemblyReporter, so the host's render
+// classification reads the guest's own claim.
+func (e *Engine) BoundaryAssembly() string {
+	desc, err := e.describe()
+	if err != nil {
+		return ""
+	}
+	return desc.Capabilities.BoundaryAssembly
+}
+
+// describe loads the provider guest, reads and validates its describe()
+// self-report, and caches the result (or the failure) on the Engine so the
+// input-kind gate and the render classification read the guest's plugin-level
+// capability claim without reloading. The descriptor is a pure function of the
+// guest bytes, so caching it cannot alter rendered output.
+func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
+	if e.descriptor != nil || e.descriptorErr != nil {
+		return e.descriptor, e.descriptorErr
+	}
+	resolved, err := e.lookup(e.pluginURI)
+	if err != nil {
+		e.descriptorErr = fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
+		return nil, e.descriptorErr
+	}
+	plugin, desc, err := e.loader.LoadAndDescribe(context.Background(), resolver.PluginSpec(e.pluginURI, resolved))
+	if err != nil {
+		e.descriptorErr = err
+		return nil, e.descriptorErr
+	}
+	_ = plugin.Close(context.Background())
+	e.descriptor = &desc
+	return e.descriptor, nil
 }
 
 // HostCapabilities satisfies renderer.HostCapable, exposing the host-side
@@ -138,14 +206,11 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 // projection the in-tree engine uses, so both surfaces resolve a workload secret
 // reference to the same generated Secret identity.
 //
-// Each emitted file carries the same Intermediate marking the in-tree engine
-// would set on its own synthesis output, classified from the provider's host-side
-// capability holder (renderer.HostCapabilities.RenderIsIntermediate): a
-// boundary-assembling provider (compose) marks its fragments intermediate so the
-// orchestrator routes them to AssembleBoundary rather than writing them at the
-// dispatch path, while a flat-output provider (helm) marks them false.
-// Reproducing the flag here keeps a provider routed to Wasm byte-for-byte
-// equivalent to the in-tree engine it stands in for.
+// Each emitted file carries the Intermediate marking classified from the guest's
+// boundary-assembly self-report (renderer.RenderIsIntermediate): a fragment-merging
+// provider (compose) marks its fragments intermediate so the orchestrator routes
+// them to AssembleBoundary rather than writing them at the dispatch path, while a
+// nesting provider (helm-chart) and a flat-output provider (helm) mark them false.
 func (e *Engine) SynthesizeWorkload(
 	ctx context.Context,
 	tmplCtx *types.TemplateContext,
@@ -169,7 +234,7 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, err
 	}
 
-	intermediate := e.hostCaps.RenderIsIntermediate()
+	intermediate := renderer.RenderIsIntermediate(e)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
 	for _, f := range out.Files {
 		emitted = append(emitted, renderer.EmittedFile{Name: f.Path, Body: f.Content, Intermediate: intermediate})
@@ -190,27 +255,45 @@ func (e *Engine) Warm(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
 	}
-	plugin, _, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, desc, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
 	if err != nil {
 		return err
+	}
+	if e.descriptor == nil {
+		e.descriptor = &desc
 	}
 	return plugin.Close(ctx)
 }
 
-// invoke loads the guest through the shared describe-gated loader, calls the
-// named export, and decodes the RenderNodeOutput. The shared loader carries the
-// build's external-input service and its compilation cache, so a guest fetch
-// resolves through the pinned channel (nil when none is attached — the guest
-// then receives the in-band not-available envelope) and the guest's machine
-// code compiles once per build. Each call still loads and closes its own plugin
-// instance, so nodes stay isolated. The plugin is closed before invoke returns.
+// invoke loads a fresh guest instance through the shared loader, calls the named
+// export against the Engine's cached descriptor, and decodes the RenderNodeOutput.
+// The shared loader carries the build's external-input service and its compilation
+// cache, so a guest fetch resolves through the pinned channel (nil when none is
+// attached — the guest then receives the in-band not-available envelope) and the
+// guest's machine code compiles once per build.
+//
+// The descriptor read here is the Engine's memo (describe): the describe() call,
+// its validation, and the load-gate cross-checks are a pure function of the guest
+// bytes, so they run once per provider rather than once per node — validating them
+// per node would be redundant work with byte-identical results. The per-node load
+// is therefore a plain Load (fresh instance) rather than a LoadAndDescribe.
+//
+// Isolation guarantee: each call loads and closes its own plugin instance, so no
+// guest state carries across nodes by construction — the memo caches only the
+// descriptor (pure data), never a live instance. The plugin is closed before
+// invoke returns.
 func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput) (renderer.RenderNodeOutput, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.RenderNodeOutput{}, err
+	}
+
 	resolved, err := e.lookup(e.pluginURI)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
 	}
 
-	plugin, desc, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	plugin, err := e.loader.Load(ctx, resolver.PluginSpec(e.pluginURI, resolved))
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}
@@ -220,7 +303,7 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	if err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: marshal render_node input: %w", err)
 	}
-	raw, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}

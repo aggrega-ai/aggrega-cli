@@ -33,18 +33,16 @@ func (stubEngine) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
-// stubComposeEngine implements Engine and BoundaryAssembler and reports
-// AssemblesBoundary through its host-capability holder, so the evaluator — which
-// reads the flag from the holder — routes its emissions to Intermediate=true.
+// stubComposeEngine implements Engine and BoundaryAssembler and reports a
+// fragment-merging boundary-assembly mode, so the evaluator — which reads the mode
+// from the engine's self-report — routes its emissions to Intermediate=true.
 type stubComposeEngine struct{ stubEngine }
 
 func (stubComposeEngine) AssembleBoundary(_ context.Context, _ BoundaryInfo) (map[string][]byte, bool, error) {
 	return nil, false, nil
 }
 
-func (stubComposeEngine) HostCapabilities() HostCapabilities {
-	return HostCapabilities{AssemblesBoundary: true}
-}
+func (stubComposeEngine) BoundaryAssembly() string { return "merge" }
 
 // stubExternalArtifactsEngine implements the ExternalArtifactsHandler
 // marker plus the two companion capability interfaces (ArtifactsPathProvider,

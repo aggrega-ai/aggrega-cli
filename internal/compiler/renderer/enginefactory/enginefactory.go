@@ -15,6 +15,7 @@ import (
 	renderHelm "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	renderHelmChart "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	renderTerraform "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // HostCapsFor returns a provider's host-side capability holder by name, resolved
@@ -40,18 +41,28 @@ func HostCapsFor(providerName string) (renderer.HostCapabilities, bool) {
 	}
 }
 
-// CapabilitiesFor reports a provider's input-kind capabilities, resolved through
-// the same HostCapsFor holder the render-time input-kind gate reads — so any
-// early consumer (the lint detector) reads identical capabilities to the
-// authoritative gate, by construction, with no second capability table to drift.
-// ok is false when the provider name binds to no shipped provider: an unknown,
-// unimplemented (cloudformation), or eval provider, which a capability-based
-// check skips rather than flags. When ok is true the returned capabilities are
-// the provider's own ProviderCapabilities.
-func CapabilitiesFor(providerName string) (renderer.ProviderCapabilities, bool) {
-	caps, ok := HostCapsFor(providerName)
-	if !ok {
+// CapabilitiesFor reports a provider's input-kind capabilities from the
+// authoring-time capabilities claim on the provider-rendering Plugin entity that
+// serves the provider — the same claim the load gate cross-checks against the
+// guest's describe() self-report. It resolves the entity through the given
+// providerPlugin lookup (the provider-name → serving Plugin resolution the render
+// route shares), so an early consumer (the lint detector) reads the published
+// capability claim without loading a guest. ok is false when the lookup is nil, no
+// serving provider Plugin resolves, the resolution errors, or the resolved Plugin
+// carries no capabilities claim: a capability-based check skips rather than flags,
+// leaving the render-time gate as the authoritative backstop.
+func CapabilitiesFor(providerPlugin func(ref string) (types.Plugin, bool, error), providerName string) (renderer.ProviderCapabilities, bool) {
+	if providerPlugin == nil {
 		return renderer.ProviderCapabilities{}, false
 	}
-	return caps.Caps, true
+	plugin, ok, err := providerPlugin(providerName)
+	if err != nil || !ok || plugin.Spec.Capabilities == nil {
+		return renderer.ProviderCapabilities{}, false
+	}
+	ik := plugin.Spec.Capabilities.InputKinds
+	return renderer.ProviderCapabilities{
+		Sourced:             ik.Sourced,
+		Synthesized:         ik.Synthesized,
+		ArtifactsStandalone: ik.ArtifactsStandalone,
+	}, true
 }

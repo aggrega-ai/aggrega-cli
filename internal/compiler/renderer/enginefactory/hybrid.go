@@ -132,13 +132,12 @@ func routeEngine(
 	// from the provider-name registry, not from a constructed engine — so it
 	// derives input-kind capabilities from the holder (the gate stays host-decided)
 	// and projects a sourced node's source through the holder's own ProjectSource.
-	hostCaps, ok := HostCapsFor(bare)
-	if !ok {
-		// A resolved provider-Plugin whose bare provider name maps to no shipped
-		// host-capability holder: the catalog serves a provider the host has no
-		// host-side capabilities for. Halt loudly rather than render with none.
-		return nil, "", fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, bare)
-	}
+	// The unknown-provider halt lives once, above, on the catalog-resolution check
+	// (!routed): a provider with no serving render_node plugin halts before any
+	// holder lookup. HostCapsFor supplies the residual host-side holder for the
+	// resolved provider; for the shipped providers a routed name always resolves a
+	// holder, so no second unknown-provider gate is needed here.
+	hostCaps, _ := HostCapsFor(bare)
 	if advertisesAssembleBoundary(plugin) {
 		return wasmengine.NewAssembler(pluginLookup, pluginKey, hostCaps, sharedLoader), pluginKey, nil
 	}

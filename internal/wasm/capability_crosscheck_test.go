@@ -103,6 +103,110 @@ func TestCrossCheckCapabilities(t *testing.T) {
 	}
 }
 
+// TestCrossCheckCapabilities_PluginLevel exercises the plugin-level
+// capabilities comparison: an authored capabilities claim is checked
+// field-by-field against the descriptor's self-report, and a nil claim skips
+// the plugin-level comparison entirely.
+func TestCrossCheckCapabilities_PluginLevel(t *testing.T) {
+	t.Parallel()
+
+	desc := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeProvider,
+		Exports:    []PluginExport{{Name: "render_node"}},
+		Capabilities: Capabilities{
+			InputKinds:         InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: false},
+			BoundaryAssembly:   BoundaryAssemblyNest,
+			ArtifactDelimiters: &ArtifactDelimiters{Left: "[[", Right: "]]"},
+		},
+	}
+
+	cases := []struct {
+		name      string
+		caps      *Capabilities
+		wantErr   bool
+		wantField string
+	}{
+		{
+			name: "agreeing plugin-level claim returns nil",
+			caps: &Capabilities{
+				InputKinds:         InputKinds{Sourced: true},
+				BoundaryAssembly:   BoundaryAssemblyNest,
+				ArtifactDelimiters: &ArtifactDelimiters{Left: "[[", Right: "]]"},
+			},
+		},
+		{
+			name: "nil plugin-level claim skips the comparison",
+			caps: nil,
+		},
+		{
+			name: "input_kinds.synthesized disagrees halts",
+			caps: &Capabilities{
+				InputKinds:         InputKinds{Sourced: true, Synthesized: true},
+				BoundaryAssembly:   BoundaryAssemblyNest,
+				ArtifactDelimiters: &ArtifactDelimiters{Left: "[[", Right: "]]"},
+			},
+			wantErr:   true,
+			wantField: "input_kinds.synthesized",
+		},
+		{
+			name: "boundary_assembly disagrees halts",
+			caps: &Capabilities{
+				InputKinds:         InputKinds{Sourced: true},
+				BoundaryAssembly:   BoundaryAssemblyMerge,
+				ArtifactDelimiters: &ArtifactDelimiters{Left: "[[", Right: "]]"},
+			},
+			wantErr:   true,
+			wantField: "boundary_assembly",
+		},
+		{
+			name: "artifact_delimiters value disagrees halts",
+			caps: &Capabilities{
+				InputKinds:         InputKinds{Sourced: true},
+				BoundaryAssembly:   BoundaryAssemblyNest,
+				ArtifactDelimiters: &ArtifactDelimiters{Left: "{{", Right: "}}"},
+			},
+			wantErr:   true,
+			wantField: "artifact_delimiters",
+		},
+		{
+			name: "artifact_delimiters presence disagrees halts",
+			caps: &Capabilities{
+				InputKinds:       InputKinds{Sourced: true},
+				BoundaryAssembly: BoundaryAssemblyNest,
+			},
+			wantErr:   true,
+			wantField: "artifact_delimiters",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := CrossCheckCapabilities("provider/helm-chart:1.0.0", EntityCapabilityClaim{Capabilities: tc.caps}, desc)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !errors.Is(err, ErrWasmCapabilityMismatch) {
+				t.Fatalf("error does not wrap ErrWasmCapabilityMismatch: %v", err)
+			}
+			if !strings.Contains(err.Error(), "provider/helm-chart:1.0.0") {
+				t.Errorf("error should name the entity identity; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantField) {
+				t.Errorf("error should mention %q; got: %v", tc.wantField, err)
+			}
+		})
+	}
+}
+
 // TestCrossCheckCapabilities_EmptyClaim proves an entity with no authored
 // exports declares no claim and never halts, regardless of what the plugin
 // reports.

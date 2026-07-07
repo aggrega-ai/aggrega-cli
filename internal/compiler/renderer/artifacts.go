@@ -280,10 +280,10 @@ func evaluateArtifacts(
 	// Intermediate-tagged emitted files are consumed by the orchestrator's
 	// per-(path, provider) grouping in RenderAll — the `if f.Intermediate`
 	// branch routes solely on the flag. The assembler classification reads the
-	// provider's host-side capability holder rather than asserting a concrete
-	// engine type, so a provider routed to a Wasm guest tags identically to the
-	// in-tree engine it stands in for.
-	isAssembler := hostCaps.AssemblesBoundary
+	// engine's boundary-assembly self-report rather than asserting a concrete
+	// engine type, so a provider routed to a Wasm guest tags from the guest's
+	// live describe() claim.
+	isAssembler := AssemblesBoundary(engine)
 
 	var out []EmittedFile
 

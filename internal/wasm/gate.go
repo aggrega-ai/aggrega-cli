@@ -47,6 +47,17 @@ func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 		return nil, PluginDescriptor{}, err
 	}
 
+	// The descriptor's declared host_functions is a claim; the .wasm import
+	// section derived at load is ground truth. Cross-check them so describe()
+	// cannot advertise a host surface the binary lacks nor hide one it uses.
+	// This runs for every guest — the check is a property of the plugin, not of
+	// any entity claim. On mismatch, Close before returning so a rejected load
+	// leaks no instance, matching the descriptor-rejection discipline above.
+	if err := crossCheckHostFunctions(spec.Name, desc, plugin.HostFunctions()); err != nil {
+		_ = plugin.Close(ctx)
+		return nil, PluginDescriptor{}, err
+	}
+
 	// When the spec carries an authored capability claim (the entity-fronted
 	// load path), cross-check it against the validated descriptor. A nil claim
 	// — every non-entity caller and the publish path — skips the cross-check.
@@ -59,6 +70,9 @@ func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 		}
 	}
 
+	if l.OnDescribe != nil {
+		l.OnDescribe(spec.Name)
+	}
 	return plugin, desc, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // Engine renders one node's values dictionary into on-disk-style artifacts.
@@ -116,14 +117,56 @@ type BoundaryAssembler interface {
 	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string][]byte, nestPerNode bool, err error)
 }
 
+// BoundaryAssemblyReporter is the optional interface an engine implements to
+// report how it assembles a dispatch group's per-node output: "merge" folds the
+// per-node fragments into one document, "nest" places each node's output under its
+// own position in an umbrella structure, and "none" writes each node's output
+// directly at the dispatch path. An empty value carries no assembly claim. A
+// provider routed to a Wasm guest reports the value from the guest's live
+// describe() self-report, so the host classifies render output from the same claim
+// the guest advertises rather than from a host-side marker.
+type BoundaryAssemblyReporter interface {
+	BoundaryAssembly() string
+}
+
+// boundaryAssemblyOf returns engine's reported boundary-assembly mode, or the
+// empty string when engine reports none. It is the single seam the classification
+// helpers read, so an engine's assembly behaviour resolves independently of its
+// concrete type.
+func boundaryAssemblyOf(engine Engine) string {
+	if r, ok := engine.(BoundaryAssemblyReporter); ok {
+		return r.BoundaryAssembly()
+	}
+	return ""
+}
+
 // RenderIsIntermediate reports whether an engine's per-node render/synthesis
 // output is intermediate input to a per-(path, provider) boundary assembly pass
-// rather than a file written directly at the dispatch path. It resolves the
-// engine's host-side capability holder and reads the classification from it, so a
-// provider routed to a Wasm guest classifies identically to the in-tree engine it
-// stands in for. See [HostCapabilities.RenderIsIntermediate] for the rule.
+// rather than a file written directly at the dispatch path. It is true only for a
+// provider that folds its dispatch group's per-node fragments into one document
+// (boundary assembly "merge"); a provider that nests each node under its own
+// umbrella position ("nest") and a flat-output provider ("none") write per-node
+// content directly and are not intermediate. It reads the engine's boundary-
+// assembly self-report, so a provider routed to a Wasm guest classifies from the
+// guest's live describe() claim. This is the single home of the
+// intermediate-marking rule; every classification site reads it here.
 func RenderIsIntermediate(engine Engine) bool {
-	return ResolveHostCaps(engine).RenderIsIntermediate()
+	return boundaryAssemblyOf(engine) == wasm.BoundaryAssemblyMerge
+}
+
+// AssemblesBoundary reports whether an engine assembles its dispatch group's
+// per-node output into a combined artifact — true for a provider that folds
+// fragments into one document ("merge") or nests each node under its own umbrella
+// position ("nest"), false for a flat-output provider ("none") or an engine that
+// reports no assembly claim. The assembler election and the artifacts classifier
+// read it to decide whether a dispatch group has an assembler.
+func AssemblesBoundary(engine Engine) bool {
+	switch boundaryAssemblyOf(engine) {
+	case wasm.BoundaryAssemblyMerge, wasm.BoundaryAssemblyNest:
+		return true
+	default:
+		return false
+	}
 }
 
 // BoundaryInfo carries everything the BoundaryAssembler needs.

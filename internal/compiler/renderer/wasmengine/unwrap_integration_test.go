@@ -5,6 +5,8 @@ package wasmengine_test
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -12,15 +14,43 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
 // failingLookup is a plugin-path lookup that always errors. The host-capability
-// and intermediate-classification paths never load the guest, so the lookup is
-// never called; the failure documents that no guest resolution happens on these
-// paths.
+// path never loads the guest, so the lookup is never called; the failure documents
+// that no guest resolution happens on the host-side capability path.
 func failingLookup(string) (pluginpath.ResolvedPlugin, error) {
-	return pluginpath.ResolvedPlugin{}, errors.New("lookup must not be called on capability/classification paths")
+	return pluginpath.ResolvedPlugin{}, errors.New("lookup must not be called on the host-capability path")
+}
+
+// embeddedGuestURI resolves an embedded provider guest URI by basename, and
+// embeddedGuestLookup resolves that URI to the guest's bytes — mirroring the embed
+// tier of the production plugin-resolution cascade so the render classification
+// reads a real guest's describe() self-report.
+func embeddedGuestURI(t *testing.T, basename string) string {
+	t.Helper()
+	for _, uri := range embedded.URIs() {
+		if strings.Contains(uri, basename) {
+			return uri
+		}
+	}
+	t.Fatalf("no embedded guest URI carries %q; embedded URIs: %v", basename, embedded.URIs())
+	return ""
+}
+
+func embeddedGuestLookup(uri string) (pluginpath.ResolvedPlugin, error) {
+	b, ok := embedded.Lookup(uri)
+	if !ok {
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("no embedded guest for %q", uri)
+	}
+	return pluginpath.ResolvedPlugin{
+		Bytes:  b,
+		URI:    uri,
+		Tier:   pluginpath.TierEmbed,
+		Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096},
+	}, nil
 }
 
 // TestWasmEngineExposesForwardedHostCapabilities proves the wrapper itself
@@ -62,20 +92,22 @@ func TestWasmEngineExposesForwardedHostCapabilities(t *testing.T) {
 }
 
 // TestRenderIsIntermediateThroughWasmWrapper proves the classification reads the
-// forwarded holder: helm-chart nests per node and must never be classified
-// intermediate even when Wasm-wrapped (including as an assembler, where a raw
-// BoundaryAssembler assertion on the wrapper would answer true), while compose
-// merges fragments and remains intermediate.
+// guest's live describe() boundary-assembly self-report: helm-chart nests per node
+// and must never be classified intermediate even when Wasm-wrapped (including as an
+// assembler, where a raw BoundaryAssembler assertion on the wrapper would answer
+// true), while compose merges fragments and remains intermediate.
 func TestRenderIsIntermediateThroughWasmWrapper(t *testing.T) {
-	loader := &wasm.Loader{}
+	loader := wasm.NewCachingLoader(nil)
+	helmchartURI := embeddedGuestURI(t, "helmchart-provider")
+	composeURI := embeddedGuestURI(t, "compose-provider")
 
-	if got := renderer.RenderIsIntermediate(wasmengine.New(failingLookup, "test://x", helmchart.HostCaps(), loader)); got {
+	if got := renderer.RenderIsIntermediate(wasmengine.New(embeddedGuestLookup, helmchartURI, helmchart.HostCaps(), loader)); got {
 		t.Error("RenderIsIntermediate(New helm-chart) = true, want false")
 	}
-	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(failingLookup, "test://x", helmchart.HostCaps(), loader)); got {
+	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(embeddedGuestLookup, helmchartURI, helmchart.HostCaps(), loader)); got {
 		t.Error("RenderIsIntermediate(NewAssembler helm-chart) = true, want false")
 	}
-	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(failingLookup, "test://x", compose.HostCaps(), loader)); !got {
+	if got := renderer.RenderIsIntermediate(wasmengine.NewAssembler(embeddedGuestLookup, composeURI, compose.HostCaps(), loader)); !got {
 		t.Error("RenderIsIntermediate(NewAssembler compose) = false, want true")
 	}
 }
