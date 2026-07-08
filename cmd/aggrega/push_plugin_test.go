@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // memStorePuller wraps an in-memory oras store so it satisfies catalog.OCIPuller.
@@ -35,15 +36,15 @@ func (p *memStorePuller) Pull(ctx context.Context, reference, tag string) (*oci.
 
 // agreeingPluginEntity is a Plugin entity whose authored export claim
 // agrees with the frp-step-go fixture's describe() (export "step",
-// operates=patch, scope=own, no custom host functions). spec.plugin is a
-// placeholder reference that publish stamps to the .wasm content digest.
+// operates=patch, scope=own, no custom host functions). spec.plugin is the
+// digest-free artifact identity; publish leaves it unchanged.
 const agreeingPluginEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
+  plugin: "oci://hub.aggrega.ai/wasm/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
   targets:
@@ -76,8 +77,9 @@ func writeAgreeingPlugin(t *testing.T) (entityPath, pluginPath, contentDigest st
 
 // TestPushPluginOrderedPublish proves the ordered, two-artifact publish:
 // the .wasm artifact lands (addressed by its content-digest tag) and the entity
-// lands (tagged by metadata.version, referencing the .wasm by content-digest
-// pin in spec.plugin). Both are resolvable in the registry double after publish.
+// lands (tagged by metadata.version, referencing the .wasm by its digest-free
+// identity in spec.plugin). Both are resolvable in the registry double after
+// publish.
 func TestPushPluginOrderedPublish(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
@@ -93,7 +95,7 @@ func TestPushPluginOrderedPublish(t *testing.T) {
 	}
 
 	// The entity is resolvable by its version tag and carries the entity
-	// mediatype, with spec.plugin stamped to the .wasm content digest.
+	// mediatype, with spec.plugin left as the authored digest-free identity.
 	entityPull, err := oci.Pull(ctx, store, "1.0.0")
 	if err != nil {
 		t.Fatalf("pull entity: %v", err)
@@ -101,9 +103,12 @@ func TestPushPluginOrderedPublish(t *testing.T) {
 	if entityPull.MediaType != oci.MediaTypePlugin {
 		t.Errorf("entity mediatype: got %q want %q", entityPull.MediaType, oci.MediaTypePlugin)
 	}
-	wantPin := "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
-	if !strings.Contains(string(entityPull.Bytes), wantPin) {
-		t.Errorf("published entity spec.plugin not stamped to %q; got:\n%s", wantPin, entityPull.Bytes)
+	wantIdentity := "oci://hub.aggrega.ai/wasm/frp/patch"
+	if !strings.Contains(string(entityPull.Bytes), wantIdentity) {
+		t.Errorf("published entity spec.plugin not the digest-free identity %q; got:\n%s", wantIdentity, entityPull.Bytes)
+	}
+	if strings.Contains(string(entityPull.Bytes), "@sha256:") {
+		t.Errorf("published entity must carry no @sha256: digest in spec.plugin; got:\n%s", entityPull.Bytes)
 	}
 
 	// The .wasm artifact is resolvable by its content-digest tag and carries
@@ -118,6 +123,36 @@ func TestPushPluginOrderedPublish(t *testing.T) {
 	}
 	if got := digest.ContentDigest(wasmPull.Bytes); got != contentDigest {
 		t.Errorf(".wasm content digest: got %q want %q", got, contentDigest)
+	}
+}
+
+// TestPushPluginPublishedEntityReloadsClean proves the published Plugin entity
+// is schema-valid on reload: the bytes push emits pass envelope validation with
+// no error (the digest-free spec.plugin the schema requires), and carry no
+// @sha256: digest.
+func TestPushPluginPublishedEntityReloadsClean(t *testing.T) {
+	ctx := context.Background()
+	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	store := memory.New()
+
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		PushTarget: store,
+	}); err != nil {
+		t.Fatalf("pushRun: %v", err)
+	}
+
+	entityPull, err := oci.Pull(ctx, store, "1.0.0")
+	if err != nil {
+		t.Fatalf("pull entity: %v", err)
+	}
+	if _, err := envelope.ValidateBytes(envelope.KindPlugin, entityPull.Bytes, "reloaded.yaml"); err != nil {
+		t.Fatalf("published entity should reload schema-clean; got %v", err)
+	}
+	if strings.Contains(string(entityPull.Bytes), "@sha256:") {
+		t.Errorf("published entity must carry no @sha256: digest:\n%s", entityPull.Bytes)
 	}
 }
 
@@ -193,89 +228,6 @@ spec:
 	wasmTag := strings.ReplaceAll(contentDigest, ":", "-")
 	if _, exists, rerr := oci.Resolve(ctx, store, wasmTag); rerr != nil || exists {
 		t.Errorf(".wasm tag must not exist after a halted publish (exists=%v err=%v)", exists, rerr)
-	}
-}
-
-// TestPushPluginPrePinnedMismatchHalts proves the digest-stamp guard: an
-// on-disk spec.plugin already pinning a DIFFERENT @sha256: digest than the
-// published .wasm halts loudly rather than silently overwriting the pin.
-func TestPushPluginPrePinnedMismatchHalts(t *testing.T) {
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
-
-	root := t.TempDir()
-	t.Chdir(root)
-	entityPath := filepath.Join(root, "frp-step-patch.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Plugin
-metadata:
-  name: frp/patch
-  version: "1.0.0"
-spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-  pluginType: frp_step
-  abiVersion: v1alpha1
-  exports:
-    - name: step
-      operates: patch
-      scope: own
-`)
-
-	store := memory.New()
-	err := pushRun(pushConfig{
-		EntityPath: entityPath,
-		PluginPath: pluginPath,
-		Registry:   "hub.aggrega.ai",
-		PushTarget: store,
-	})
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
-		t.Fatalf("want ErrFetchIntegrity for a pre-pinned mismatch, got %v", err)
-	}
-	if _, exists, _ := oci.Resolve(context.Background(), store, "1.0.0"); exists {
-		t.Error("entity tag must not exist after a halted pre-pinned-mismatch publish")
-	}
-}
-
-// TestPushPluginPrePinnedMatchSucceeds proves an on-disk spec.plugin
-// already pinned to the EXACT published .wasm content digest is accepted (the
-// pin agrees with the bytes) and publishes without re-stamping.
-func TestPushPluginPrePinnedMatchSucceeds(t *testing.T) {
-	ctx := context.Background()
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
-	wasmBytes, err := os.ReadFile(pluginPath)
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
-	}
-	contentDigest := digest.ContentDigest(wasmBytes)
-
-	root := t.TempDir()
-	t.Chdir(root)
-	entityPath := filepath.Join(root, "frp-step-patch.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Plugin
-metadata:
-  name: frp/patch
-  version: "1.0.0"
-spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch@`+contentDigest+`"
-  pluginType: frp_step
-  abiVersion: v1alpha1
-  exports:
-    - name: step
-      operates: patch
-      scope: own
-`)
-
-	store := memory.New()
-	if err := pushRun(pushConfig{
-		EntityPath: entityPath,
-		PluginPath: pluginPath,
-		Registry:   "hub.aggrega.ai",
-		PushTarget: store,
-	}); err != nil {
-		t.Fatalf("pushRun with a matching pre-pin should succeed; got %v", err)
-	}
-	if _, exists, _ := oci.Resolve(ctx, store, "1.0.0"); !exists {
-		t.Error("entity tag should exist after a successful matching-pre-pin publish")
 	}
 }
 
@@ -442,10 +394,10 @@ func TestContentDigestTagPushPullParity(t *testing.T) {
 
 // TestPublishPullRoundTripPlugin proves the consume-side gap is closed: a
 // Plugin published via the real push path (the .wasm tagged by its content
-// digest, the entity spec.plugin content-pinned) resolves end-to-end through
-// ResolvePlugin — the pull fetches the .wasm by its content-digest tag,
-// content-digest-verifies it, caches it, re-resolves from cache, and a tampered
-// cache slot halts with ErrFetchIntegrity.
+// digest, the entity spec.plugin carrying the digest-free identity) resolves
+// end-to-end through ResolvePlugin — the pull fetches the .wasm by its
+// content-digest tag, content-digest-verifies it, caches it, re-resolves from
+// cache, and a tampered cache slot halts with ErrFetchIntegrity.
 func TestPublishPullRoundTripPlugin(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
@@ -460,16 +412,22 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 		t.Fatalf("pushRun: %v", err)
 	}
 
-	// Read the artifact URI from the PUBLISHED entity's stamped spec.plugin rather
-	// than hand-spelling it — the pull resolves exactly what publish stamped.
+	// The published entity's spec.plugin is the digest-free identity; the
+	// artifactURI below is the resolved artifact reference a consumer forms
+	// after obtaining the content digest at pull, not a value read from the
+	// entity.
 	entityPull, err := oci.Pull(ctx, store, "1.0.0")
 	if err != nil {
 		t.Fatalf("pull entity: %v", err)
 	}
-	artifactURI := "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
-	if !strings.Contains(string(entityPull.Bytes), artifactURI) {
-		t.Fatalf("published entity spec.plugin not content-pinned to %q:\n%s", artifactURI, entityPull.Bytes)
+	wantIdentity := "oci://hub.aggrega.ai/wasm/frp/patch"
+	if !strings.Contains(string(entityPull.Bytes), wantIdentity) {
+		t.Fatalf("published entity spec.plugin not the digest-free identity %q:\n%s", wantIdentity, entityPull.Bytes)
 	}
+	if strings.Contains(string(entityPull.Bytes), "@sha256:") {
+		t.Fatalf("published entity must carry no @sha256: digest in spec.plugin:\n%s", entityPull.Bytes)
+	}
+	artifactURI := "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
 
 	root := t.TempDir()
 	cat, err := catalog.LoadAll("", root)

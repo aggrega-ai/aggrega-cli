@@ -20,22 +20,19 @@ import (
 
 // pushPlugin publishes a Plugin entity and its .wasm artifact as two
 // ordered OCI artifacts: the .wasm first (addressed by its content digest),
-// then the entity referencing it by content-digest pin in spec.plugin. The
-// ordering plus the existing content-digest-pin makes partial-push safe — a
-// failed entity push leaves only an orphan .wasm addressed by digest, and the
-// consume side fails at pull on the absent entity tag rather than loading a
-// silently-broken plugin.
+// then the entity referencing the .wasm by its digest-free identity in
+// spec.plugin. Partial-push safety rests on the ordering — the .wasm lands
+// first, addressed by its content-digest tag, then the entity lands under its
+// version tag — so a failed entity push leaves only an orphan .wasm (harmless,
+// addressed by digest) and no entity tag, and the consume side fails at pull on
+// the absent entity tag rather than loading a silently-broken plugin. The
+// resolved content digest is recorded by the consumer at pull, in the lockfile;
+// it is never embedded in the published entity.
 //
 // Before any bytes land, the .wasm is loaded and its describe() self-report is
 // cross-checked against the entity's authored exports and host-function
 // declaration (wasm.CrossCheckPublishedPlugin); a mismatch halts loudly so a
 // published entity can never promise a capability the binary does not provide.
-//
-// spec.plugin handling (digest stamping): the .wasm content digest is computed
-// once via the canonical content-digest spelling. If the on-disk spec.plugin
-// already pins a digest, it MUST equal the computed one or the publish halts; a
-// tag-form or placeholder spec.plugin is stamped to
-// oci://<wasm-repo>@sha256:<content-digest> in the published entity bytes.
 //
 // Signing reuses the entity-signing flow: the entity manifest's digest is
 // signed and attached as a referrer exactly as every other entity is signed.
@@ -47,7 +44,7 @@ import (
 // signatures cannot diverge in identity.
 func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version string, entityYAML []byte) error {
 	if cfg.PluginPath == "" {
-		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish pushes the .wasm artifact, stamps spec.plugin, then pushes the entity)", name)
+		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish pushes the .wasm artifact, then pushes the entity)", name)
 	}
 
 	var entity types.Plugin
@@ -85,19 +82,12 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// (<registry>/wasm/<socket>/<name>); the entity is addressed by its version
 	// tag, the .wasm by its content digest, so the two never collide on a tag.
 	reference := buildPushReference(registry, "Plugin", "", name)
-	wasmRepoRef := stripRegistryScheme(reference)
 
-	stampedEntity, err := stampPluginDigest(entityYAML, wasmRepoRef, contentDigest)
-	if err != nil {
-		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
-	}
-
-	// Chain the host-function stamp onto the digest-stamped bytes so both
-	// machine-owned fields land in the single published entity. Unlike the
-	// digest (partly authored, so a divergent pin halts), the host-function
-	// record is fully derived: a divergent on-disk value is overwritten with a
-	// warning, never a halt.
-	stampedEntity, err = stampHostFunctions(out, entityIdentity, stampedEntity, derivedHostFunctions)
+	// Stamp the machine-owned host-function record into the published entity.
+	// The set is fully derived from the .wasm, so a divergent on-disk value is
+	// overwritten with a warning, never a halt. spec.plugin is left as the
+	// authored digest-free identity.
+	stampedEntity, err := stampHostFunctions(out, entityIdentity, entityYAML, derivedHostFunctions)
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
@@ -259,55 +249,6 @@ func entityWasmCapabilities(c *types.PluginCapabilities) *wasm.Capabilities {
 		}
 	}
 	return caps
-}
-
-// stripRegistryScheme returns the registry repository path without any leading
-// "oci://" — buildPushReference yields a scheme-less <registry>/<location>, and
-// the stamped spec.plugin adds the oci:// scheme back, so this guards against a
-// double scheme if the input ever carries one.
-func stripRegistryScheme(reference string) string {
-	return strings.TrimPrefix(reference, "oci://")
-}
-
-// stampPluginDigest returns the entity YAML with spec.plugin set to the
-// canonical content-addressed reference oci://<wasmRepoRef>@<contentDigest>.
-//
-// Digest-stamp discipline: when the on-disk spec.plugin already pins an
-// @sha256: digest, it MUST equal the computed content digest or the publish
-// halts loudly (the authored pin disagrees with the bytes being published).
-// When spec.plugin carries a tag-form or placeholder reference (or is empty),
-// it is stamped to the canonical pinned form. The edit is a targeted YAML-node
-// value replacement so the rest of the entity bytes are preserved.
-func stampPluginDigest(entityYAML []byte, wasmRepoRef, contentDigest string) ([]byte, error) {
-	canonical := "oci://" + wasmRepoRef + "@" + contentDigest
-
-	var doc yaml.Node
-	if err := yaml.Unmarshal(entityYAML, &doc); err != nil {
-		return nil, fmt.Errorf("parse entity for digest stamping: %w", err)
-	}
-	pluginNode := findMappingValue(specNode(&doc), "plugin")
-	if pluginNode != nil {
-		if existing := pluginNode.Value; existing != "" {
-			if _, _, pinned := strings.Cut(existing, "@sha256:"); pinned {
-				if existing != canonical {
-					return nil, fmt.Errorf("on-disk spec.plugin %q does not match the published .wasm content digest %q (publish a matching .wasm or update spec.plugin): %w",
-						existing, canonical, oci.ErrFetchIntegrity)
-				}
-				// Already pinned to the exact computed digest: bytes are
-				// stamp-stable, return verbatim.
-				return entityYAML, nil
-			}
-		}
-		pluginNode.Value = canonical
-		pluginNode.Tag = "!!str"
-		pluginNode.Style = yaml.DoubleQuotedStyle
-		stamped, err := marshalNode(&doc)
-		if err != nil {
-			return nil, err
-		}
-		return stamped, nil
-	}
-	return nil, fmt.Errorf("Plugin entity has no spec.plugin field to stamp with the .wasm content digest")
 }
 
 // stampHostFunctions returns the entity YAML with spec.runtime.hostFunctions set

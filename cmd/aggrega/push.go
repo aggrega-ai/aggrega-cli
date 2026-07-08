@@ -78,7 +78,7 @@ func newPushCmd() *cobra.Command {
 	c.Flags().StringVar(&pushRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
 	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
 	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
-	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, stamps spec.plugin, and pushes the entity.")
+	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, and pushes the entity.")
 	return c
 }
 
@@ -117,9 +117,8 @@ type pushConfig struct {
 	// PluginPath is the local filesystem path to the .wasm artifact, required
 	// when publishing a Plugin entity. Publish reads these bytes,
 	// cross-checks them against the entity's authored claims, computes their
-	// content digest, pushes them as an OCI artifact, and stamps spec.plugin
-	// with the digest pin before pushing the entity. Empty for every non-
-	// Plugin kind.
+	// content digest, and pushes them as an OCI artifact addressed by that
+	// digest before pushing the entity. Empty for every non-Plugin kind.
 	PluginPath string
 
 	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
@@ -267,9 +266,10 @@ func pushRun(cfg pushConfig) error {
 	}
 
 	// A Plugin publishes two artifacts in order — the .wasm first, then the
-	// entity referencing it by content-digest pin — with a publish-time
-	// describe()-cross-check against the .wasm bytes. The ordered, two-artifact
-	// flow and the entity-body stamping differ enough from the single-artifact
+	// entity referencing the .wasm by its digest-free identity — with a
+	// publish-time describe()-cross-check against the .wasm bytes. The entity
+	// body still carries a machine-derived host-function record; that plus the
+	// ordered, two-artifact flow differs enough from the single-artifact
 	// catalog-kind path that it has its own helper; signing, the immutability
 	// guard, and the content-digest spelling are reused, not re-spelled.
 	if header.Kind == "Plugin" {
