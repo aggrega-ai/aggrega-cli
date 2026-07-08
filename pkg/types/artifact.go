@@ -5,6 +5,7 @@ package types
 
 import (
 	"errors"
+	"os"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -38,6 +39,29 @@ type ArtifactEntry struct {
 // IsEmpty reports whether neither mode is populated.
 func (a ArtifactEntry) IsEmpty() bool {
 	return a.Inline == "" && a.Import == ""
+}
+
+// Text resolves the entry to its Go-template source string: an empty
+// entry yields "", an inline entry yields its authored content, and a
+// file-import entry yields the bytes read from Import. The returned
+// error is the raw file-read error so callers can apply their own error
+// taxonomy; Import is the resolved absolute path (the catalog rewrites
+// relative $import paths to absolute at load). This is the single reader
+// of an artifact entry's content, shared by every surface that needs the
+// entry's text — the render-time projection and the resolution-time pin
+// digest — so the two never diverge on how an entry is read.
+func (a ArtifactEntry) Text() (string, error) {
+	if a.IsEmpty() {
+		return "", nil
+	}
+	if a.Inline != "" {
+		return a.Inline, nil
+	}
+	data, err := os.ReadFile(a.Import)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // UnmarshalYAML dispatches via the shared unmarshalImportable helper.

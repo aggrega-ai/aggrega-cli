@@ -81,17 +81,11 @@ func resolveWorkloadText(w types.WorkloadTemplate, entityName string) (string, e
 // The envelope schema rejects oci:// prefixes at artifacts entries
 // for the same reason as workload:.
 func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName string) (string, error) {
-	if a.IsEmpty() {
-		return "", nil
-	}
-	if a.Inline != "" {
-		return a.Inline, nil
-	}
-	data, err := os.ReadFile(a.Import)
+	text, err := a.Text()
 	if err != nil {
 		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: a.Import}, fmt.Sprintf("Recipe %q artifact %q file import", entityName, artifactName))
 	}
-	return string(data), nil
+	return text, nil
 }
 
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the

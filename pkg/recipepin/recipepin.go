@@ -104,11 +104,11 @@ func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry]) ([]t
 		if entry.Import == "" {
 			continue
 		}
-		body, err := os.ReadFile(entry.Import)
+		body, err := entry.Text()
 		if err != nil {
 			return nil, fmt.Errorf("recipepin: read artifact %q import %s: %w", name, entry.Import, err)
 		}
-		pins = append(pins, types.ArtifactDigest{Name: name, Digest: digest.ContentDigest(body)})
+		pins = append(pins, types.ArtifactDigest{Name: name, Digest: digest.ContentDigest([]byte(body))})
 	}
 	sortArtifactPins(pins)
 	return pins, nil
