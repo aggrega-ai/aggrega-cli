@@ -642,11 +642,12 @@ func pullRun(cfg pullConfig) error {
 			// Freeze each writable recipe's intrinsic content pins (source +
 			// $import artifact digests) into the recipe file, from the resolved
 			// sources — the resolution-time record the build later verifies.
-			if err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts); err != nil {
+			postFreezeRecipeDigests, err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts)
+			if err != nil {
 				return fmt.Errorf("freeze recipe pins: %w", err)
 			}
 
-			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings)
+			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings, postFreezeRecipeDigests)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
 			// prior lockfile before verification runs. A warm-cache (Tier-2) re-pull
 			// does not re-touch the registry, so it does not re-discover markers; the
@@ -693,7 +694,7 @@ func pullRun(cfg pullConfig) error {
 // buildLockfile materialises a *lockfile.Lockfile from the closure
 // result. Field-for-field copy across the closure / lockfile package
 // boundary; both types intentionally mirror the same shape.
-func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding) *lockfile.Lockfile {
+func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding, postFreezeRecipeDigests map[string]string) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     filepath.Base(releasePath),
@@ -706,10 +707,19 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	sort.Slice(lf.ProviderBindings, func(i, j int) bool { return lf.ProviderBindings[i].Target < lf.ProviderBindings[j].Target })
 
 	for _, e := range cl.Entities {
+		// A writable recipe's content digest was captured at resolution, before
+		// the freeze rewrote the recipe file's intrinsic pins. Overlay the
+		// post-freeze content digest (keyed strictly by URI) so the lockfile
+		// records the file as the build will re-hash it — otherwise the very
+		// next build reports lockfile drift for the recipe the freeze just wrote.
+		entDigest := e.Digest
+		if pf, ok := postFreezeRecipeDigests[e.URI]; ok {
+			entDigest = pf
+		}
 		lf.Entities = append(lf.Entities, lockfile.Entity{
 			URI:             e.URI,
 			ResolvedVersion: e.ResolvedVersion,
-			Digest:          e.Digest,
+			Digest:          entDigest,
 			ManifestDigest:  e.ManifestDigest,
 			ReferencedFrom:  append([]string(nil), e.ReferencedFrom...),
 		})

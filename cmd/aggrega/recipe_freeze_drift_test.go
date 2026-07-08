@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package main
+
+import (
+	"errors"
+	"io"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+)
+
+// fullURICollisionFixture authors a buildable workspace whose Recipe is
+// referenced from the Manifest by its FULL provider-qualified URI
+// (helm/server:1.0.0) so it lands as a pinned closure ENTITY, and whose Recipe
+// carries a $import artifact so the resolution-phase freeze actually WRITES
+// artifactDigests into the recipe file (its on-disk bytes change at freeze). The
+// Recipe's bare name (server) deliberately COLLIDES with the Component's bare
+// name (server) — the exact condition under which a by-bare-name reconciliation
+// would corrupt the Component's recorded digest. Returns the release path.
+func fullURICollisionFixture(t *testing.T, root string) string {
+	t.Helper()
+	catalogRoot := filepath.Join(root, "catalog")
+	// auto_pull off so `build` reads the pull-frozen lockfile and verifies drift
+	// against it, rather than re-pulling and healing any lag — the exact state the
+	// one-pull fixpoint must hold in.
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: server
+      values:
+        port: 8080
+`)
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: drift-rel
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api:
+          infra:
+            replicas: 1
+`)
+	// The recipe is referenced by its FULL provider-qualified URI, not the bare
+	// short form — this is what makes it land as a pinned closure entity.
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        server: helm/server:1.0.0
+`)
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+`)
+	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: "builtin:helm"
+`)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
+	// The $import target: a loose file next to the recipe whose bytes the freeze
+	// hashes into the recipe's artifactDigests, so the recipe file changes at freeze.
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "extra.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: extra
+data:
+  origin: imported
+`)
+	// The recipe's bare name (server) collides with the Component's bare name.
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: server
+  version: "1.0.0"
+spec:
+  target: helm
+  implements: server
+  artifacts:
+    extra.yaml:
+      $import: ./extra.yaml
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      server:
+        image: test-server:latest
+        ports:
+          web: {{ .values.port }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}
+`)
+	return filepath.Join(root, "release.yaml")
+}
+
+// TestFreezeFullURIRecipeOnePullFixpoint proves the one-pull fixpoint for a
+// recipe referenced by full URI whose freeze rewrites its file: after a SINGLE
+// pull, the lockfile records the recipe's POST-freeze content digest, so a build
+// (which verifies the lockfile against a freshly-recomputed closure) sees no
+// drift — no "lockfile out of date" halt and no need for a second, healing pull.
+// It also asserts the collision guard: the Component that shares the recipe's
+// bare name keeps its own untouched content digest in the lockfile.
+func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := fullURICollisionFixture(t, root)
+	catalogDir := filepath.Join(root, "catalog")
+	recipePath := filepath.Join(root, "catalog", "recipes", "server.yaml")
+	componentPath := filepath.Join(root, "catalog", "components", "server.yaml")
+
+	// Content digest of the Component file, which the freeze never touches — the
+	// value the lockfile must carry for the Component both before and after the fix.
+	componentDigest := digest.ContentDigest(mustReadFile(t, componentPath))
+
+	// A single pull: resolves the closure, freezes the recipe's pins into its
+	// file, and writes the lockfile.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+
+	// The freeze must actually have written pins — otherwise the test would not
+	// exercise the post-freeze digest path at all.
+	recipeBody := string(mustReadFile(t, recipePath))
+	if !strings.Contains(recipeBody, "artifactDigests") {
+		t.Fatalf("freeze did not write artifactDigests; the test does not exercise the post-freeze path:\n%s", recipeBody)
+	}
+	// The post-freeze content digest of the recipe file — the value the lockfile's
+	// recipe entity must carry, and the value the build recomputes from the file.
+	recipeDigest := digest.ContentDigest([]byte(recipeBody))
+	if recipeDigest == componentDigest {
+		t.Fatalf("test setup degenerate: recipe and component share a content digest")
+	}
+
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+
+	// Exactly one lockfile entity carries the recipe's POST-freeze digest (the fix)
+	// and exactly one carries the Component's untouched digest (the collision
+	// guard), and they are distinct entities matched by URI.
+	var recipeEntity, componentEntity *lockfile.Entity
+	for i := range lf.Entities {
+		e := &lf.Entities[i]
+		switch e.Digest {
+		case recipeDigest:
+			if recipeEntity != nil {
+				t.Fatalf("two lockfile entities carry the recipe post-freeze digest: %q and %q", recipeEntity.URI, e.URI)
+			}
+			recipeEntity = e
+		case componentDigest:
+			if componentEntity != nil {
+				t.Fatalf("two lockfile entities carry the component digest: %q and %q", componentEntity.URI, e.URI)
+			}
+			componentEntity = e
+		}
+	}
+	if recipeEntity == nil {
+		t.Fatalf("no lockfile entity carries the recipe's post-freeze content digest %s; lockfile records the pre-freeze bytes (the one-pull-lag bug):\n%+v", recipeDigest, lf.Entities)
+	}
+	if componentEntity == nil {
+		t.Fatalf("no lockfile entity carries the component's content digest %s (collision guard: the fix corrupted the component digest):\n%+v", componentDigest, lf.Entities)
+	}
+	if recipeEntity.URI == componentEntity.URI {
+		t.Fatalf("recipe and component collapsed to one entity URI %q — a by-name reconciliation corrupted the collision", recipeEntity.URI)
+	}
+
+	// The one-pull fixpoint: a build after a single pull verifies the frozen
+	// lockfile against a freshly-recomputed closure and must NOT report drift.
+	if err := dispatchBuildWithDiag(nil, releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: filepath.Join(root, "dist", "main")}, io.Discard, io.Discard); err != nil {
+		if errors.Is(err, lockfile.ErrLockfileDrift) {
+			t.Fatalf("build after a single pull reported lockfile drift — the one-pull-lag bug: %v", err)
+		}
+		t.Fatalf("build after a single pull failed: %v", err)
+	}
+
+	// Guard against a SKIP masking a non-run: the build must have produced dist output.
+	if len(snapshotDist(t, filepath.Join(root, "dist"))) == 0 {
+		t.Fatalf("build produced no dist output; the fixpoint assertion never exercised a real render")
+	}
+}
