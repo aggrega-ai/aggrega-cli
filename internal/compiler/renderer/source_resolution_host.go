@@ -10,9 +10,26 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// lockfileSourceRecord returns the lockfile source-artifact record for the
+// identity triple {kind, url, version}, and whether one is present.
+func lockfileSourceRecord(lf *lockfile.Lockfile, kind, url, version string) (lockfile.SourceArtifact, bool) {
+	if lf == nil {
+		return lockfile.SourceArtifact{}, false
+	}
+	for _, sa := range lf.SourceArtifacts {
+		if sa.Kind == kind && sa.URL == url && sa.PinnedVersion == version {
+			return sa, true
+		}
+	}
+	return lockfile.SourceArtifact{}, false
+}
 
 // resolveSourceForNode populates nodeCtx.Source and
 // nodeCtx.OriginalSource per the build-time source-artifact contract.
@@ -61,7 +78,7 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 		infra = parse.NodePayloadMap(input.Graph.Spec.InfraMapping, nodeCtx.NodeID)
 	}
 	resolved, err := resolveEntitySource(
-		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra,
+		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra, recipe.Spec.SourceDigests,
 	)
 	if err != nil {
 		return err
@@ -83,7 +100,7 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 //
 // Wrapping fetch errors into the FETCH_ERROR category is the caller's concern via
 // wrapSourceResolutionError, so both call sites surface fetch failures identically.
-func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any) (any, error) {
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, srcPins []types.SourceDigest) (any, error) {
 	if source == nil {
 		return nil, nil
 	}
@@ -99,6 +116,21 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	}
 	if spec == nil {
 		return nil, nil
+	}
+	// Build-verify: the recipe's own recorded source pin must agree with the
+	// lockfile's source-artifact record for the same {kind, url, version}. Both
+	// derive from one resolution, so a disagreement is an integrity fault; the
+	// cache-extract below independently verifies the cached bytes against the
+	// lockfile digest, so this recipe-vs-lockfile check completes the chain
+	// (recipe pin == lockfile record == cached bytes). A recipe with no recorded
+	// pin (never frozen) has nothing to cross-check and proceeds on the lockfile.
+	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Version); ok {
+		if lfrec, found := lockfileSourceRecord(input.Lockfile, spec.Kind, spec.URL, spec.Version); found {
+			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
+				return nil, fmt.Errorf("source-artifact %s@%s: recipe pin (digest %s) disagrees with lockfile record (digest %s): %w",
+					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity)
+			}
+		}
 	}
 	extracted, err := sourcecache.LookupAndExtract(
 		input.Lockfile,

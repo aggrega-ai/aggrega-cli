@@ -447,7 +447,7 @@ func phaseB6(
 			frInfra = feat.Infra.TemplateAlphabeticalMapDeep()
 			frSrcValues = feat.Values.TemplateAlphabeticalMapDeep()
 		}
-		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frSrcValues, frInfra)
+		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frSrcValues, frInfra, fr.Spec.SourceDigests)
 		if err != nil {
 			return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q feature %q source resolution", nodeID, ref.InstanceName))
 		}
@@ -587,7 +587,7 @@ func phaseB6(
 
 			frNodeCtx := nodeCtx
 			frNodeCtx.OriginalSource = fr.Spec.Source
-			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Values.TemplateAlphabeticalMapDeep(), entry.Infra.TemplateAlphabeticalMapDeep())
+			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Values.TemplateAlphabeticalMapDeep(), entry.Infra.TemplateAlphabeticalMapDeep(), fr.Spec.SourceDigests)
 			if err != nil {
 				return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
 			}
@@ -716,12 +716,13 @@ func renderFeatureRecipeFiles(
 	synth := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: fr.Metadata.Name, Version: fr.Metadata.Version},
 		Spec: types.RecipeSpec{
-			Target:        fr.Spec.Target,
-			Implements:    fr.Spec.Implements,
-			Source:        resolvedSrc,
-			ValuesMapping: fr.Spec.ValuesMapping,
-			Workload:      fr.Spec.Workload,
-			Artifacts:     fr.Spec.Artifacts,
+			Target:          fr.Spec.Target,
+			Implements:      fr.Spec.Implements,
+			Source:          resolvedSrc,
+			ValuesMapping:   fr.Spec.ValuesMapping,
+			Workload:        fr.Spec.Workload,
+			Artifacts:       fr.Spec.Artifacts,
+			ArtifactDigests: fr.Spec.ArtifactDigests,
 		},
 	}
 	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, "")

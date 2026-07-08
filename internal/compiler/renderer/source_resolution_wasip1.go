@@ -29,6 +29,6 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 // Wasm guest build, mirroring resolveSourceForNode's no-acquisition contract.
 // Carries the same signature as the host implementation for the package's
 // compile-time call graph; the guest render path never invokes it at runtime.
-func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any) (any, error) {
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, srcPins []types.SourceDigest) (any, error) {
 	return source, nil
 }

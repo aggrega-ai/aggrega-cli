@@ -21,7 +21,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -87,6 +89,18 @@ func buildArtifactsProjection(
 		if entry.Import != "" {
 			name = filepath.Base(entry.Import)
 			origin = "import"
+			// Build-verify: an imported artifact whose recipe carries a recorded
+			// pin must still hash to that pin — a file edited after resolution
+			// halts loudly rather than rendering unverified content. A recipe with
+			// no recorded pin (never frozen) has nothing to compare and proceeds.
+			if pin, ok := recipepin.MatchArtifactPin(state.Recipe.Spec.ArtifactDigests, key); ok {
+				if got := digest.ContentDigest([]byte(tmplText)); got != pin.Digest {
+					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch,
+						cerrors.CatalogError, cerrors.SourceLocation{File: entry.Import},
+						fmt.Sprintf("Recipe %q artifact %q imported file %s digest %s does not match recorded pin %s",
+							state.RecipeName, key, entry.Import, got, pin.Digest))
+				}
+			}
 		}
 		if err := preCheckArtifactPillars(state, name, tmplText, leftDelim, rightDelim); err != nil {
 			return ArtifactsProjection{}, err

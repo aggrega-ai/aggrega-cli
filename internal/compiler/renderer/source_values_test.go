@@ -161,7 +161,7 @@ func TestResolveEntitySource_PerInstanceValuesResolveDistinctSources(t *testing.
 	source := map[string]any{"kind": "helm-oci-chart", "url": url, "version": "{{ .values.v }}"}
 
 	resolvedVersion := func(values map[string]any) string {
-		got, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "db-fr:1.0.0", values, map[string]any{})
+		got, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "db-fr:1.0.0", values, map[string]any{}, nil)
 		if err != nil {
 			t.Fatalf("resolveEntitySource(%v): %v", values, err)
 		}

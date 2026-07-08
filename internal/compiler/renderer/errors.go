@@ -204,6 +204,19 @@ var (
 	// engine. Category: TRANSLATION_ERROR.
 	ErrBoundaryAssemblerMissing = errors.New("provider expected to assemble its dispatch group provides no boundary assembler")
 
+	// ErrArtifactContentMismatch is the Loud Guardrail halt raised at build when
+	// an artifact's imported file ($import) has drifted from the content digest
+	// the recipe recorded for it at resolution. The recipe carries an
+	// artifactDigests pin per $import artifact, frozen from the file's bytes; the
+	// build re-digests the file and halts here when the two disagree, so an
+	// imported artifact silently edited after resolution never renders unverified.
+	// The wrapping chain names the recipe, the artifact key, and the imported
+	// path; the remedy is to re-resolve (re-freeze the pin) if the change was
+	// intended, or restore the file. Category: CATALOG_ERROR (a catalog-authored
+	// imported artifact drifted from its recorded pin). Match with
+	// errors.Is(err, ErrArtifactContentMismatch).
+	ErrArtifactContentMismatch = errors.New("imported artifact content does not match the recipe's recorded digest")
+
 	// ErrRenderNondeterministic is the Loud Guardrail halt the verify-determinism
 	// build mode raises when a provider guest renders a node twice from identical
 	// input and produces different output — a guest that carries state across

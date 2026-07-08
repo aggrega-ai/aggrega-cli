@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -194,6 +196,39 @@ metadata:
 	}
 	if e.Origin != "import" {
 		t.Errorf("Origin = %q, want import", e.Origin)
+	}
+}
+
+// E6: an imported artifact whose recorded pin matches renders; a pin that no
+// longer matches the file's current content halts loudly with the gap-fix
+// sentinel. This is the resolution-time freeze / build-time verify contract for
+// $import artifact files.
+func TestBuildArtifactsProjection_ImportPinVerify(t *testing.T) {
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "policy.yaml")
+	body := []byte("kind: NetworkPolicy\nmetadata:\n  name: deny-all\n")
+	if err := os.WriteFile(p, body, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	resetArtifacts(state)
+	state.Recipe.Spec.Artifacts.Set("policy", types.ArtifactEntry{Import: p})
+	// A matching pin renders without complaint.
+	state.Recipe.Spec.ArtifactDigests = []types.ArtifactDigest{{Name: "policy", Digest: digest.ContentDigest(body)}}
+	if _, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
+		t.Fatalf("matching pin should render: %v", err)
+	}
+
+	// Tamper the imported file after the freeze: the build must halt loudly.
+	if err := os.WriteFile(p, []byte("kind: NetworkPolicy\nmetadata:\n  name: allow-all\n"), 0o644); err != nil {
+		t.Fatalf("tamper: %v", err)
+	}
+	_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	if err == nil {
+		t.Fatalf("tampered import rendered without halting; expected a loud halt")
+	}
+	if !errors.Is(err, ErrArtifactContentMismatch) {
+		t.Errorf("tampered-import error = %v; want ErrArtifactContentMismatch", err)
 	}
 }
 

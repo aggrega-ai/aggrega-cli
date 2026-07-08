@@ -639,6 +639,13 @@ func pullRun(cfg pullConfig) error {
 			}
 			cl.SourceArtifacts = sourceArtifacts
 
+			// Freeze each writable recipe's intrinsic content pins (source +
+			// $import artifact digests) into the recipe file, from the resolved
+			// sources — the resolution-time record the build later verifies.
+			if err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts); err != nil {
+				return fmt.Errorf("freeze recipe pins: %w", err)
+			}
+
 			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
 			// prior lockfile before verification runs. A warm-cache (Tier-2) re-pull

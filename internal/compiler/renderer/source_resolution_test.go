@@ -236,7 +236,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 		"url":     "oci://hub.aggrega.ai/charts/tls",
 		"version": "1.2.3",
 	}
-	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{})
+	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, nil)
 	if err != nil {
 		t.Fatalf("resolveEntitySource (FR remote): %v", err)
 	}
@@ -246,6 +246,55 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 	}
 	if _, err := os.Stat(filepath.Join(resolvedPath, "Chart.yaml")); err != nil {
 		t.Errorf("Chart.yaml missing in resolved FR Source path — cache HIT not proven: %v", err)
+	}
+}
+
+// TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts proves the
+// recipe-side pin verify (matrix row 14): a recipe-carried sourceDigests pin
+// whose digest disagrees with the lockfile source-artifact record for the same
+// {kind, url, version} is an integrity fault — both derive from one resolution,
+// so a disagreement halts loudly with ErrFetchIntegrity.
+func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	blob := buildTGZForResolveTest(t, map[string]string{
+		"Chart.yaml": "apiVersion: v2\nname: tls\nversion: 1.2.3\n",
+	})
+	digest := digestOfBytes(blob)
+	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
+		"oci://hub.aggrega.ai/charts/tls", "1.2.3", digest)
+	mustMkdirAll(t, slot)
+	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+	mustWriteChartManifest(t, slot, blob)
+	mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
+		Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", Version: "1.2.3",
+		Digest: digest, Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+		PulledAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC),
+	})
+	input := RendererInput{
+		Lockfile: &lockfile.Lockfile{
+			Version: 1, Release: "./r.yaml", GeneratedAt: "2026-05-22T10:00:00Z",
+			SourceArtifacts: []lockfile.SourceArtifact{{
+				Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", PinnedVersion: "1.2.3",
+				Digest: digest, Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+			}},
+		},
+		WorkspaceRoot: root, CacheDir: ".aggrega/cache",
+	}
+	source := map[string]any{"kind": "helm-oci-chart", "url": "oci://hub.aggrega.ai/charts/tls", "version": "1.2.3"}
+	// The recipe pin disagrees with the lockfile digest.
+	badPins := []types.SourceDigest{{Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", Version: "1.2.3", Digest: "sha256:deadbeef"}}
+	_, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, badPins)
+	if err == nil {
+		t.Fatalf("disagreeing recipe pin resolved without halting")
+	}
+	if !errors.Is(err, oci.ErrFetchIntegrity) {
+		t.Errorf("recipe-pin disagreement error = %v; want ErrFetchIntegrity", err)
+	}
+	// An agreeing pin resolves cleanly.
+	goodPins := []types.SourceDigest{{Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", Version: "1.2.3", Digest: digest}}
+	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, goodPins); err != nil {
+		t.Fatalf("agreeing recipe pin should resolve: %v", err)
 	}
 }
 
@@ -262,7 +311,7 @@ func TestResolveEntitySource_LocalForwardsVerbatim(t *testing.T) {
 		WorkspaceRoot: "/ws",
 		CacheDir:      ".aggrega/cache",
 	}
-	resolved, err := resolveEntitySource(input, "./charts/local-tls", types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{})
+	resolved, err := resolveEntitySource(input, "./charts/local-tls", types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, nil)
 	if err != nil {
 		t.Fatalf("resolveEntitySource (local): %v", err)
 	}
