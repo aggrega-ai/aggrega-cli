@@ -35,7 +35,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -120,21 +119,27 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 }
 
 // placeArtifactsFromInput places the node's pre-evaluated artifact set into the
-// chart's templates/ directory. helm-chart is $import-only for artifacts: an
-// inline entry is rejected loudly, because the chart's own downstream template
-// engine mangles an inline-template string that has not survived a file round
-// trip. Each imported entry lands at templates/<name> alongside the sourced
-// chart's own templates and participates in Helm's downstream render pass; the
-// host-computed build provenance is spliced into the manifest's metadata with the
-// non-default delimiter policy — a file whose surviving Helm "{{ ... }}" syntax
-// does not round-trip is emitted unchanged with a skip diagnostic rather than
-// failing the build. Entries are placed in author order.
+// chart, splitting by the entry's authored form. An imported entry
+// ({$import: <path>}) is a Kubernetes manifest: it lands at templates/<name>
+// alongside the sourced chart's own templates and participates in Helm's
+// downstream render pass, with the host-computed build provenance spliced into
+// its metadata under the non-default delimiter policy — a file whose surviving
+// Helm "{{ ... }}" syntax does not round-trip is emitted unchanged with a skip
+// diagnostic rather than failing the build. An inline entry is a loose chart
+// file placed verbatim at the chart root under its authored key, so the chart's
+// own templates can read it via ".Files.Get"/".Files.Glob" (the canonical
+// ConfigMap-from-files pattern); it is not a rendered manifest, so it takes no
+// templates/ prefix and no provenance splice, which would corrupt a
+// non-manifest body. A file whose chart-root path collides with a sourced chart
+// file or another artifact is caught downstream by the cross-origin collision
+// detector. Entries are placed in author order.
 func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	indent := in.Context.YAMLIndent
 	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
 		if ent.Origin == "inline" {
-			return rendercore.RenderNodeOutput{}, fmt.Errorf("helm-chart provider (recipe %q): inline artifacts entries are not supported; use the {$import: <path>} mode so the file can be injected into the chart's templates/ directory", in.Node.RecipeName)
+			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: ent.Content})
+			continue
 		}
 		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, false, indent)
 		if err != nil {

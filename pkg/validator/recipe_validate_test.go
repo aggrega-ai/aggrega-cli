@@ -125,25 +125,22 @@ func TestValidateRecipe_Rule5_NoInputKind_Fails(t *testing.T) {
 // future collision classes (e.g., source-output basename vs artifacts
 // entry names).
 
-// ----- Helm-chart provider: inline artifacts forbidden -----
+// ----- Helm-chart provider: inline artifacts accepted -----
 
-func TestValidateRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
+// A helm-chart Recipe declaring an inline artifact alongside a source chart
+// loads cleanly: the inline body is a loose chart file the provider places at
+// the chart root for the chart's own templates to read via .Files.Get, not a
+// rejected authoring form.
+func TestValidateRecipe_HelmChartInlineArtifacts_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm-chart")
 	r.Spec.Source = "./chart"
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "app:1"}`}
 	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
-	r.Spec.Artifacts.Set("inline-cm.yaml", types.ArtifactEntry{Inline: `kind: ConfigMap`})
+	r.Spec.Artifacts.Set("app-config.properties", types.ArtifactEntry{Inline: "service=app\n"})
 
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrHelmChartInlineArtifacts) {
-		t.Fatalf("expected ErrHelmChartInlineArtifacts, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "inline-cm.yaml") {
-		t.Errorf("error detail should name the offending inline filename, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "$import") {
-		t.Errorf("error should recommend the {$import:} migration path, got %v", err)
+	if err := validator.ValidateRecipe(r, tFile); err != nil {
+		t.Fatalf("expected helm-chart + inline artifact to load cleanly, got %v", err)
 	}
 }
 

@@ -1,0 +1,4 @@
+apiVersion: v2
+name: app
+version: 0.1.0
+description: files-get example chart that reads a loose chart-root file via .Files.Get.

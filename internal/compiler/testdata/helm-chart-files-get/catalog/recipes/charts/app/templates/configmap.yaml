@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  # Consumes the loose chart-root file the recipe's inline artifact places
+  # alongside this chart. .Files.Get resolves at `helm install` time against the
+  # sub-chart root, which is why the file must land there rather than in
+  # templates/.
+  app-config.properties: |-
+{{ .Files.Get "app-config.properties" | indent 4 }}

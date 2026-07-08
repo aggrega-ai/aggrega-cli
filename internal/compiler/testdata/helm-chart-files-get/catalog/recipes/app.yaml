@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-app-files-get
+  version: "1.0.0"
+spec:
+  target: helm-chart
+  implements: core/compute/api-server
+  source: ./charts/app
+  # A standalone inline artifact: a loose chart file placed at the chart root
+  # (its authored key is the path), NOT under templates/. The chart's own
+  # template reads it via `.Files.Get "app-config.properties"`. The host
+  # evaluates the inline body with the helm-chart provider's "[[ ]]" delimiter
+  # pair, so the values it interpolates are resolved ahead of time while Helm's
+  # own "{{ }}" syntax in the chart survives untouched.
+  artifacts:
+    app-config.properties: |
+      service.name=[[ .context.instance_id ]]
+      service.port=[[ .infra.port ]]
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ .infra.port }}"
+  valuesMapping: |
+    {
+      "image": "app:latest",
+      "port": {{ .infra.port }}
+    }

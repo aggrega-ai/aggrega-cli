@@ -95,32 +95,7 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if err := validateFeatureRecipeRule1(fr, sourcePath); err != nil {
 		return err
 	}
-	if err := validateFeatureRecipeHelmChartProvider(fr, sourcePath); err != nil {
-		return err
-	}
 	return nil
-}
-
-// validateFeatureRecipeHelmChartProvider enforces the shared provider-level
-// constraint: the helm-chart provider rejects inline artifact entries (they
-// have no home as standalone files in an umbrella chart; use {$import:} so the
-// file lands in templates/). Same detection and sentinel as the Recipe
-// validator — the constraint is the provider's, not the entity's. The
-// {$import:} composed path (source + file-import artifacts) stays supported.
-func validateFeatureRecipeHelmChartProvider(fr *types.FeatureRecipe, sourcePath string) error {
-	inlineKeys := helmChartInlineArtifactKeys(fr.Spec.Target, fr.Spec.Artifacts)
-	if len(inlineKeys) == 0 {
-		return nil
-	}
-	return &FeatureRecipeValidationError{
-		Path:        sourcePath,
-		Name:        fr.Metadata.Name,
-		Version:     fr.Metadata.Version,
-		Rule:        "helm-chart-inline-artifacts",
-		Description: "provider helm-chart does not support inline artifact entries",
-		Detail:      helmChartInlineArtifactsDetail(inlineKeys),
-		Err:         ErrHelmChartInlineArtifacts,
-	}
 }
 
 // validateFeatureRecipeRule1: valuesMapping requires source. A FeatureRecipe

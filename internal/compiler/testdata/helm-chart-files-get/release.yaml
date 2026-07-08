@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: files-get-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/namespace: "app-zone"
+      components:
+        app:
+          infra:
+            port: 8080

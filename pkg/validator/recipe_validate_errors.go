@@ -28,17 +28,6 @@ var (
 	// ErrRecipeRule5: at least one input kind must be present.
 	ErrRecipeRule5 = errors.New("recipe rule 5: at least one input kind required")
 
-	// ErrHelmChartInlineArtifacts: the helm-chart provider with an inline
-	// artifacts: entry declared. Helm-chart emits an umbrella chart structure;
-	// the artifacts input kind contributes via physical files (each artifacts:
-	// entry uses { $import: <path> }) that the engine injects into the chart's
-	// templates/ directory pre-render. An inline-string artifact has no home as
-	// a standalone file in an umbrella chart, so it is rejected. This is a
-	// provider-level constraint shared by Recipe and FeatureRecipe (both bind a
-	// provider and may declare artifacts), not a member of any single entity's
-	// numbered rule list — hence the descriptive, entity-neutral sentinel name.
-	ErrHelmChartInlineArtifacts = errors.New("helm-chart provider does not support inline artifacts:")
-
 	// ErrRecipeRule7: emission-time filename collision across input-kind
 	// origins (source output, workload synthesis, artifacts). RESERVED
 	// for Phase B.5 emission-time use; not surfaced by ValidateRecipe at
@@ -74,7 +63,7 @@ type RecipeValidationError struct {
 	// requires source"). Authored by the validator at the call site.
 	Description string
 	// Detail is rule-specific context (e.g., for rule 7: the colliding
-	// basenames; for the helm-chart constraint: the offending inline keys).
+	// basenames).
 	Detail string
 	// Err is the sentinel for errors.Is matching.
 	Err error

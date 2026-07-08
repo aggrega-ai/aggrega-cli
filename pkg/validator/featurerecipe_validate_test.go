@@ -5,7 +5,6 @@ package validator_test
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -81,21 +80,18 @@ func TestValidateFeatureRecipe_EvalProvider_InjectOnly_Passes(t *testing.T) {
 	}
 }
 
-// The helm-chart provider rejects inline artifact entries at load — shared
-// provider constraint, same sentinel as the Recipe path.
-func TestValidateFeatureRecipe_HelmChartInlineArtifacts_Fails(t *testing.T) {
+// The helm-chart provider accepts an inline artifact alongside a source chart:
+// the inline body is a loose chart file placed at the chart root for the
+// chart's own templates to read via .Files.Get, not a rejected authoring form.
+func TestValidateFeatureRecipe_HelmChartInlineArtifacts_Passes(t *testing.T) {
 	t.Parallel()
 	fr := newFeatureRecipe("helm-chart")
 	fr.Spec.Source = "./chart"
 	art := types.OrderedMap[types.ArtifactEntry]{}
-	art.Set("inline-cm.yaml", types.ArtifactEntry{Inline: `kind: ConfigMap`})
+	art.Set("app-config.properties", types.ArtifactEntry{Inline: "service=app\n"})
 	fr.Spec.Artifacts = art
-	err := validator.ValidateFeatureRecipe(fr, tFile)
-	if !errors.Is(err, validator.ErrHelmChartInlineArtifacts) {
-		t.Fatalf("expected ErrHelmChartInlineArtifacts, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "inline-cm.yaml") {
-		t.Errorf("error detail should name the offending inline filename, got %v", err)
+	if err := validator.ValidateFeatureRecipe(fr, tFile); err != nil {
+		t.Fatalf("expected helm-chart + inline artifact to load cleanly, got %v", err)
 	}
 }
 

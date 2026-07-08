@@ -15,8 +15,7 @@ import (
 // Recipe is admitted to the catalog map. Returns a *RecipeValidationError
 // (or nil on pass).
 //
-// Rules enforced here: 1, 5 (chapter 16), plus the eval-provider and
-// helm-chart provider constraints.
+// Rules enforced here: 1, 5 (chapter 16), plus the eval-provider constraint.
 // The workload-requires-provider-workloadSchema constraint is enforced at
 // render time by the central input-kind gate (a synthesised Recipe bound to a
 // provider that does not implement workload synthesis halts loudly there).
@@ -44,61 +43,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeRule5(r, sourcePath); err != nil {
 		return err
 	}
-	if err := validateRecipeHelmChartProvider(r, sourcePath); err != nil {
-		return err
-	}
 	return nil
-}
-
-// validateRecipeHelmChartProvider enforces the helm-chart-specific load-time
-// constraint: inline-mode artifact entries are forbidden. Helm-chart emits
-// an umbrella chart structure rather than flat manifests; artifact bodies
-// must be physical files that the engine can inject into the chart's
-// templates/ directory before Helm rendering, so inline (mode 1) entries
-// have no place in this authoring path. Import-mode entries (mode 2,
-// {$import: <local-path>}) are accepted. The fix the message recommends
-// is to migrate the inline content to a file and reference it via
-// {$import:}.
-func validateRecipeHelmChartProvider(r *types.Recipe, sourcePath string) error {
-	inlineKeys := helmChartInlineArtifactKeys(r.Spec.Target, r.Spec.Artifacts)
-	if len(inlineKeys) == 0 {
-		return nil
-	}
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "helm-chart-inline-artifacts",
-		Description: "provider helm-chart does not support inline artifact entries",
-		Detail:      helmChartInlineArtifactsDetail(inlineKeys),
-		Err:         ErrHelmChartInlineArtifacts,
-	}
-}
-
-// helmChartInlineArtifactKeys returns the artifacts: map keys that use inline
-// content under the helm-chart provider — the one unsupportable artifacts
-// sub-case (an umbrella chart has no home for a standalone inline artifact; the
-// file must be {$import:}-ed so it lands in the chart's templates/). Empty
-// result means no violation. Shared by the Recipe and FeatureRecipe validators
-// so the provider constraint is enforced identically and at load for both.
-func helmChartInlineArtifactKeys(provider string, artifacts types.OrderedMap[types.ArtifactEntry]) []string {
-	if provider != "helm-chart" || artifacts.Len() == 0 {
-		return nil
-	}
-	var inlineKeys []string
-	for _, name := range artifacts.Keys() {
-		entry, _ := artifacts.Get(name)
-		if entry.Inline != "" {
-			inlineKeys = append(inlineKeys, name)
-		}
-	}
-	return inlineKeys
-}
-
-// helmChartInlineArtifactsDetail formats the shared remedy message naming the
-// offending inline keys.
-func helmChartInlineArtifactsDetail(inlineKeys []string) string {
-	return fmt.Sprintf("inline artifacts: %s; migrate the content to a file and reference it via {$import: <path>} so the file can be injected into the chart's templates/ directory", strings.Join(inlineKeys, ", "))
 }
 
 // validateRecipeEvalProvider enforces the eval-provider constraint: input-kind

@@ -1,0 +1,2 @@
+image: app:latest
+port: 8080
