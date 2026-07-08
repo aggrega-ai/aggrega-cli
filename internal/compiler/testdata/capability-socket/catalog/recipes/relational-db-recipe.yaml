@@ -4,7 +4,7 @@ metadata:
   name: relational-db-recipe
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/datastore/relational-db
   provides:
     host: "{{ .context.instance_id }}"

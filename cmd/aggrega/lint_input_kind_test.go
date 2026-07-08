@@ -31,7 +31,7 @@ metadata:
   name: api-helmchart
   version: "1.0.0"
 spec:
-  provider: helm-chart
+  target: helm-chart
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -46,7 +46,7 @@ spec:
   plugin: oci://hub.aggrega.ai/plugins/core/helmchart-provider
   pluginType: provider
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm-chart
   exports:
     - name: render_node
@@ -76,7 +76,7 @@ metadata:
   name: api-compose
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -91,7 +91,7 @@ spec:
   plugin: oci://hub.aggrega.ai/plugins/core/compose-provider
   pluginType: provider
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - compose
   exports:
     - name: render_node
@@ -133,7 +133,7 @@ func wlRecipe(name, provider string, workload bool) types.Recipe {
 	var r types.Recipe
 	r.Metadata.Name = name
 	r.Metadata.Version = "1.0.0"
-	r.Spec.Provider = provider
+	r.Spec.Target = provider
 	if workload {
 		r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n"}
 	}
@@ -144,7 +144,7 @@ func wlFeatureRecipe(name, provider string, workload bool) types.FeatureRecipe {
 	var fr types.FeatureRecipe
 	fr.Metadata.Name = name
 	fr.Metadata.Version = "1.0.0"
-	fr.Spec.Provider = provider
+	fr.Spec.Target = provider
 	if workload {
 		fr.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n"}
 	}

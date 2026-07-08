@@ -51,7 +51,7 @@ spec:
   plugin: oci://hub.aggrega.ai/plugins/core/helm-renderer
   pluginType: provider
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm
     - compose
   signature:

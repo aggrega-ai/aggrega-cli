@@ -4,7 +4,7 @@ metadata:
   name: guardrail-host-patcher-compose
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: "feature.myco/guardrail"
   # An artifacts: entry makes this FeatureRecipe resource-generating, so its
   # pipeline runs. Its own output renders under features/guardrail/ via the

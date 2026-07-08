@@ -4,7 +4,7 @@ metadata:
   name: helm-postgres-chart-sourced
   version: "1.0.0"
 spec:
-  provider: helm-chart
+  target: helm-chart
   implements: core/datastore/postgres
   source: ./charts/postgres
   provides:

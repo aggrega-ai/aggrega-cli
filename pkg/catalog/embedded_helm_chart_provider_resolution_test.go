@@ -34,7 +34,7 @@ const (
 // provider-rendering Plugin entity with the same field values the shipped hub YAML
 // declares, so its CatalogLookup drives the real resolution chain against the
 // artifact embedded in the binary. The Plugin serves the "helm-chart" provider
-// name through its compatibleProviders list and advertises BOTH the render_node
+// name through its targets list and advertises BOTH the render_node
 // and assemble_boundary exports — the dual-export signal the render+assemble path
 // routes on.
 func helmChartChainCatalog() *catalog.Catalog {
@@ -45,12 +45,12 @@ func helmChartChainCatalog() *catalog.Catalog {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "helm-chart-renderer", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					Plugin:              helmChartArtifactURI,
-					PluginType:          "provider",
-					AbiVersion:          "v1alpha1",
-					CompatibleProviders: []string{"helm-chart"},
-					Exports:             []types.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
-					Runtime:             &types.PluginRuntime{MaxMemoryPages: helmChartProviderMemPag},
+					Plugin:     helmChartArtifactURI,
+					PluginType: "provider",
+					AbiVersion: "v1alpha1",
+					Targets:    []string{"helm-chart"},
+					Exports:    []types.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
+					Runtime:    &types.PluginRuntime{MaxMemoryPages: helmChartProviderMemPag},
 				},
 			},
 		},
@@ -60,7 +60,7 @@ func helmChartChainCatalog() *catalog.Catalog {
 // TestHelmChartProviderEmbeddedResolutionChain proves the full
 // provider→plugin→artifact resolution chain end-to-end through the real embed
 // tier for the helm-chart provider: the ProviderPlugin accessor (provider name →
-// provider-rendering Plugin via compatibleProviders), the Plugin accessor, the
+// provider-rendering Plugin via targets), the Plugin accessor, the
 // entity-fronted cascade, the pinned-digest integrity check (both arms), and the
 // entity's runtime limits flowing to the loader spec. It does not re-prove render
 // byte-identity — that is the A/B harness's job; this capstone is resolution +
@@ -70,7 +70,7 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 	lookup := cat.CatalogLookup()
 
 	// Level 1: provider name → provider-rendering Plugin entity, via the
-	// ProviderPlugin accessor (compatibleProviders match).
+	// ProviderPlugin accessor (targets match).
 	if lookup.ProviderPlugin == nil {
 		t.Fatal("CatalogLookup.ProviderPlugin accessor is nil; the eager constructor did not wire it")
 	}

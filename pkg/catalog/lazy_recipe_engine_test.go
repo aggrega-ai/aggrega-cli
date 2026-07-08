@@ -28,7 +28,7 @@ metadata:
   name: core/recipe-broken
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
 `)
 
 	ll := NewLazyLookup(dir, "", []string{dir}, nil)

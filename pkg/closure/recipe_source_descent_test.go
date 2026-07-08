@@ -87,8 +87,8 @@ func makeRecipe(uri string, source any) *types.Recipe {
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: uri, Version: "1.0.0"},
 		Spec: types.RecipeSpec{
-			Provider: "helm",
-			Source:   source,
+			Target: "helm",
+			Source: source,
 		},
 	}
 }
@@ -99,8 +99,8 @@ func makeFeatureRecipe(uri string, source any) *types.FeatureRecipe {
 		Kind:       "FeatureRecipe",
 		Metadata:   types.FeatureRecipeMetadata{Name: uri, Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Provider: "helm",
-			Source:   source,
+			Target: "helm",
+			Source: source,
 		},
 	}
 }

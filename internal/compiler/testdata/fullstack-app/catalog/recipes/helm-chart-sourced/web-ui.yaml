@@ -4,7 +4,7 @@ metadata:
   name: helm-web-ui-chart-sourced
   version: "1.0.0"
 spec:
-  provider: helm-chart
+  target: helm-chart
   implements: core/compute/web-ui
   source: ./charts/web-ui
   provides:

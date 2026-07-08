@@ -17,7 +17,7 @@ func boundaryScopeProvidesFR() *types.FeatureRecipe {
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "db-fr", Version: "1.0"},
 		Spec: types.FeatureRecipeSpec{
-			Provider:       "stub",
+			Target:         "stub",
 			Implements:     "core/db:1.0",
 			ExecutionScope: "boundary",
 		},

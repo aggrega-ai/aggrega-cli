@@ -4,7 +4,7 @@ metadata:
   name: compose-raw-fragments-with-artifacts
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/raw/manifest
   # The compose engine's Render() rejects bare values-only Recipes
   # (engine.go: "must declare workload: or source:"). The minimal

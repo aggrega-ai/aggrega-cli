@@ -35,14 +35,14 @@ func renderFeatureRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string,
 	if opts.level == levelList {
 		fmt.Fprintln(opts.out, opts.colorize.uri(identifier))
 		fmt.Fprintf(opts.out, "implements: %s\n", fr.Spec.Implements)
-		fmt.Fprintf(opts.out, "provider: %s\n", fr.Spec.Provider)
+		fmt.Fprintf(opts.out, "target: %s\n", fr.Spec.Target)
 		fmt.Fprintf(opts.out, "artifacts: %d\n", fr.Spec.Artifacts.Len())
 		return nil
 	}
 
 	renderHeader(opts, "FeatureRecipe", identifier)
 	fmt.Fprintf(opts.out, "Implements: %s\n", opts.colorize.uri(fr.Spec.Implements))
-	fmt.Fprintf(opts.out, "Provider: %s\n", fr.Spec.Provider)
+	fmt.Fprintf(opts.out, "Target: %s\n", fr.Spec.Target)
 
 	if fr.Spec.Artifacts.Len() > 0 {
 		fmt.Fprintf(opts.out, "Artifacts (%d):\n", fr.Spec.Artifacts.Len())

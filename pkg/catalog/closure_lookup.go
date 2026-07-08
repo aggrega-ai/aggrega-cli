@@ -686,10 +686,10 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	// digest below is the resolved entity's own bytes even when another
 	// provider ships a recipe of the same name.
 	if r, ok := l.catalog.RecipeByURI(uri); ok {
-		return l.tier1Resolution("Recipe", recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version), r.Metadata.Version, version), true
+		return l.tier1Resolution("Recipe", recipeIdentityKey(r.Spec.Target, r.Metadata.Name, r.Metadata.Version), r.Metadata.Version, version), true
 	}
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
-		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
+		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Target, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
 	}
 	// A Plugin is a by-name entity (keyed metadata.name:version). A workspace
 	// plugin socket or a recipe pipeline step references a

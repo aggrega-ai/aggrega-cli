@@ -91,7 +91,7 @@ func TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts(t *testing.T) 
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
-				Spec:     types.RecipeSpec{Provider: "compose", Artifacts: artifacts},
+				Spec:     types.RecipeSpec{Target: "compose", Artifacts: artifacts},
 			}, true
 		},
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },

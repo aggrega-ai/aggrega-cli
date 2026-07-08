@@ -26,7 +26,7 @@ type engineCloser interface {
 
 // NewHybrid builds a catalog-driven Wasm routing EngineFactory: a provider whose
 // name resolves to a provider-rendering Plugin — the Plugin that lists the
-// provider in its compatibleProviders — advertising a render_node export renders
+// provider in its targets — advertising a render_node export renders
 // through the wasmengine adapter. A provider that resolves to no such Plugin is a
 // loud halt (renderer.ErrUnknownProvider); rendering is Wasm-only, so there is no
 // in-tree engine to fall back to.
@@ -127,7 +127,7 @@ func NewHybrid(
 
 // routeEngine resolves providerRef to its provider-rendering Wasm adapter,
 // following the version-pinned binding → provider-Plugin (via the Plugin's
-// compatibleProviders and version constraint) → render_node chain against the
+// targets and version constraint) → render_node chain against the
 // catalog. It returns the engine and the memo key that identifies it (the
 // resolved Plugin identity). A provider that resolves to no serving render_node
 // plugin is a loud halt (renderer.ErrUnknownProvider): rendering is Wasm-only, so

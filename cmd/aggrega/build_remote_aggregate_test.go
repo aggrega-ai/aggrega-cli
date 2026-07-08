@@ -110,7 +110,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: server
   workload: |
     apiVersion: aggrega.ai/v1alpha1

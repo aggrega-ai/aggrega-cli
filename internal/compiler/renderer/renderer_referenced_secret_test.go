@@ -83,7 +83,7 @@ func referencedSecretFixture(frProvides types.OrderedMap[string]) (renderer.Rend
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
 					Spec: types.FeatureRecipeSpec{
-						Provider:   "helm",
+						Target:     "helm",
 						Implements: "core/referenced-secret:1.0.0",
 						Provides:   frProvides,
 						Artifacts:  artifacts,
@@ -213,7 +213,7 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
 					Spec: types.FeatureRecipeSpec{
-						Provider:   "helm",
+						Target:     "helm",
 						Implements: "core/referenced-secret:1.0.0",
 						Provides:   fullContractProvides(),
 						Artifacts:  artifacts,
@@ -307,7 +307,7 @@ func TestIntegration_ReferencedSecret_WorkloadNotReferenceableHalt(t *testing.T)
 		if ft == "core/secret-value" {
 			return &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: "dotenv-secret"},
-				Spec:     types.FeatureRecipeSpec{Provider: "helm", Implements: "core/secret-value:1.0.0"},
+				Spec:     types.FeatureRecipeSpec{Target: "helm", Implements: "core/secret-value:1.0.0"},
 			}, true
 		}
 		return baseFR(p, ft)

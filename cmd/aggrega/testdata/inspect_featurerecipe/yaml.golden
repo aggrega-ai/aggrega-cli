@@ -4,7 +4,7 @@ metadata:
     name: core/metrics-recipe
     version: "1.0.0"
 spec:
-    provider: helm
+    target: helm
     implements: core/metrics:1.0.0
     artifacts:
         servicemonitor.yaml: |

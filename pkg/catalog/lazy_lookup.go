@@ -163,7 +163,7 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// the entity → spec.plugin two-step from the lazy backing too.
 		Plugin: l.PluginByURI,
 		// ProviderPlugin resolves a provider name to the provider-rendering Plugin
-		// serving it (via compatibleProviders) over the lazily-walked set, so
+		// serving it (via targets) over the lazily-walked set, so
 		// render dispatch resolves the same provider→Plugin binding from the lazy
 		// backing as the eager one.
 		ProviderPlugin: l.ProviderPluginByName,
@@ -994,7 +994,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+		key := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
 		foldFirstWin(l.recipes, key, e,
 			func() { l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes },
 			func() {
@@ -1006,7 +1006,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		key := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+		key := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
 		foldFirstWin(l.featureRecipes, key, e,
 			func() { l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes },
 			func() {
@@ -1260,7 +1260,7 @@ func (l *LazyLookup) PluginByURI(uri string) (types.Plugin, bool) {
 
 // ProviderPluginByName resolves a provider binding (bare name or version-pinned
 // form) to the provider-rendering Plugin entity serving it (via its
-// compatibleProviders and version constraint) over the lazily-enumerated
+// targets and version constraint) over the lazily-enumerated
 // (Tier-1 + pinned Tier-2) Plugin set. It delegates to the same *Catalog matcher
 // the eager backing uses (via the recipeCatalog() shell), so the two backings
 // resolve identically — no per-backing matcher.

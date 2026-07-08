@@ -4,7 +4,7 @@ metadata:
   name: helm-postgres-synthesized
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/datastore/postgres
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"

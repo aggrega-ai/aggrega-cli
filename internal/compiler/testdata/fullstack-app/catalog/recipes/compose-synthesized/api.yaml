@@ -4,7 +4,7 @@ metadata:
   name: compose-api-synthesized
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/compute/api-server
   provides:
     host: "{{ .context.instance_id }}"

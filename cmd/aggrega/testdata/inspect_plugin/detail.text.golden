@@ -2,7 +2,7 @@ Plugin: core/helm-renderer:1.0.0
 Plugin: oci://hub.aggrega.ai/plugins/core/helm-renderer
 Plugin type: provider
 ABI version: v1alpha1
-Compatible providers: helm, compose
+Targets: helm, compose
 Exports:
   render_node
     operates: emit

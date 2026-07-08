@@ -4,7 +4,7 @@ metadata:
   name: vector-db-recipe
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/datastore/vector-db
   provides:
     host: "{{ .context.instance_id }}"

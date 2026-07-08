@@ -46,7 +46,7 @@ spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
   pluginType: frp_step
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm
   exports:
     - name: step

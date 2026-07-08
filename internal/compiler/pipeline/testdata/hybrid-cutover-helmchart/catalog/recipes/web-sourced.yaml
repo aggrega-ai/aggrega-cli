@@ -4,7 +4,7 @@ metadata:
   name: web-sourced
   version: "1.0.0"
 spec:
-  provider: helm-chart
+  target: helm-chart
   implements: core/web
   source: ./sources/web
   provides:

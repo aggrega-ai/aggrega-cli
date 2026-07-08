@@ -69,7 +69,7 @@ func TestDescend_ShortFormFeatureRecipeViaKindHint(t *testing.T) {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "FeatureRecipe",
 				Metadata:   types.FeatureRecipeMetadata{Name: uri, Version: "1.0.0"},
-				Spec:       types.FeatureRecipeSpec{Provider: "helm", Source: "oci://hub.aggrega.ai/charts/k8s-secret"},
+				Spec:       types.FeatureRecipeSpec{Target: "helm", Source: "oci://hub.aggrega.ai/charts/k8s-secret"},
 			},
 		},
 	}
@@ -132,7 +132,7 @@ spec:
 	cfg := workspaceconfig.Default()
 	lookup := &fakeLookup{
 		entities: map[string]closure.Resolution{
-			"core/datastore/mariadb:1.0.0":   resolutionOK("1.0.0", "sha256:a", "tier1-local"),
+			"core/datastore/mariadb:1.0.0":  resolutionOK("1.0.0", "sha256:a", "tier1-local"),
 			"mariadb-bitnami:1.0.0":         resolutionOK("1.0.0", "sha256:b", "tier1-local"),
 			"app/literal-credential:1.0.0":  resolutionOK("1.0.0", "sha256:c", "tier1-local"),
 			"literal-credential-helm:1.0.0": resolutionOK("1.0.0", "sha256:d", "tier1-local"),
@@ -152,7 +152,7 @@ spec:
 	cases := map[string]string{
 		"mariadb-bitnami:1.0.0":         "recipe",         // components-mapping value
 		"literal-credential-helm:1.0.0": "feature_recipe", // features-mapping value
-		"core/datastore/mariadb:1.0.0":   "component",      // mapping key — a Component
+		"core/datastore/mariadb:1.0.0":  "component",      // mapping key — a Component
 		"app/literal-credential:1.0.0":  "feature",        // mapping key — a Feature
 	}
 	for uri, want := range cases {

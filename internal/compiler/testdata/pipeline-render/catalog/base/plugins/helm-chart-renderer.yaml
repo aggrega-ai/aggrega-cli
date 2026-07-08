@@ -11,7 +11,7 @@ spec:
   plugin: oci://hub.aggrega.ai/plugins/core/helmchart-provider
   pluginType: provider
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm-chart
   # BOTH exports: render_node copies each sourced sub-chart into a file set;
   # assemble_boundary merges the dispatch group's sub-charts into a single

@@ -48,7 +48,7 @@ func boundaryScopeHelmBridgeFR(t *testing.T) *types.FeatureRecipe {
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Provider:       "helm",
+			Target:         "helm",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         dir,

@@ -78,7 +78,7 @@ metadata:
   name: demo-server-synthesized
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: demo/svc
   provides:
     host: "{{ .context.instance_id }}"

@@ -49,7 +49,7 @@ metadata:
   name: svc
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: test/svc
   workload: |
     apiVersion: aggrega.ai/v1alpha1

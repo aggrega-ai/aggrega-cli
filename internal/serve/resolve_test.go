@@ -212,7 +212,7 @@ func TestFindReferencesAggregatesAllReferenceShapes(t *testing.T) {
 	// core/postgres in one of the three URI shapes.
 	aggExtends := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: postgres-replica\n  version: 1.0.0\nspec:\n  extends: core/postgres\n"
 	aggComponentsType := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app-a\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n"
-	aggRecipeImplements := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: postgres-recipe\n  version: 1.0.0\nspec:\n  implements: core/postgres\n  provider: helm\n"
+	aggRecipeImplements := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: postgres-recipe\n  version: 1.0.0\nspec:\n  implements: core/postgres\n  target: helm\n"
 	for name, content := range map[string]string{
 		"extends.yaml":           aggExtends,
 		"components-type.yaml":   aggComponentsType,
@@ -261,7 +261,7 @@ func TestFindImplementationsReturnsRecipesPlusChildren(t *testing.T) {
 	dir := t.TempDir()
 	targetPath, targetContent := copyFixtureFile(t, "implements", "target-component.yaml", dir)
 	// One Recipe implementing the target + one Component extending it.
-	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: my-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache\n  provider: helm\n"
+	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: my-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache\n  target: helm\n"
 	child := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: cache-with-metrics\n  version: 1.0.0\nspec:\n  extends: core/cache\n"
 	if err := os.WriteFile(filepath.Join(dir, "recipe.yaml"), []byte(recipe), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)

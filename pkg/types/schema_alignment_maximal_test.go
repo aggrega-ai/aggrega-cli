@@ -100,7 +100,7 @@ func maximalRecipe() types.Recipe {
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: "mariadb", Version: "1.0.0"},
 		Spec: types.RecipeSpec{
-			Provider:   "compose",
+			Target:     "compose",
 			Implements: "core/datastore/mariadb",
 			Source:     "oci://example/chart:1.0.0",
 			Locals:     om[string]("svc", "{{ .context.instance_id }}"),
@@ -118,7 +118,7 @@ func maximalFeatureRecipe() types.FeatureRecipe {
 		Kind:       "FeatureRecipe",
 		Metadata:   types.FeatureRecipeMetadata{Name: "dotenv-secret", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Provider:       "compose",
+			Target:         "compose",
 			Implements:     "core/secret-value",
 			Locals:         om[string]("k", "v"),
 			Provides:       om[string]("ref", "x"),
@@ -146,10 +146,10 @@ func maximalPlugin() types.Plugin {
 			Deprecated:  false,
 		},
 		Spec: types.PluginSpec{
-			Plugin:              "oci://hub.aggrega.ai/wasm/linter/publishing-linter",
-			PluginType:          "linter",
-			AbiVersion:          "v1alpha1",
-			CompatibleProviders: []string{"helm", "compose"},
+			Plugin:     "oci://hub.aggrega.ai/wasm/linter/publishing-linter",
+			PluginType: "linter",
+			AbiVersion: "v1alpha1",
+			Targets:    []string{"helm", "compose"},
 			Signature: &types.PluginSignature{
 				Type:         "sigstore-cosign",
 				SignatureRef: "sha256:1111111111111111111111111111111111111111111111111111111111111111",

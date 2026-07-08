@@ -226,7 +226,7 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "helm-server", Version: "1.0.0"},
 		Spec: types.RecipeSpec{
-			Provider: "helm",
+			Target: "helm",
 			Assertions: omString(t,
 				"provider-must-be-helm",
 				`{{ if ne .Recipe.Metadata.provider "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
@@ -266,7 +266,7 @@ func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 	fr := types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "audit-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Provider: "helm",
+			Target: "helm",
 			Assertions: omString(t,
 				"provider-must-be-helm",
 				`{{ if ne .Recipe.Metadata.provider "helm" }}{{ fail "provider must be helm" }}{{ end }}`,

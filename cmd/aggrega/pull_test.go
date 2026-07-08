@@ -254,7 +254,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -281,7 +281,7 @@ func TestPullEndToEndRoundTrip(t *testing.T) {
 
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 	}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestPullProducesByteIdenticalLockfileAcrossRuns(t *testing.T) {
 
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		Regenerate:  true,
 	}); err != nil {
 		t.Fatalf("second pull: %v", err)
@@ -408,7 +408,7 @@ func TestPullRegenerateDiscardsExistingLockfile(t *testing.T) {
 
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		Regenerate:  true,
 	}); err != nil {
 		t.Fatalf("pullRun --regenerate: %v", err)
@@ -537,7 +537,7 @@ func TestPullVerifyMatchingLockfileExits0(t *testing.T) {
 	// First populate the lockfile via the default pull.
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 	}); err != nil {
 		t.Fatalf("seed pull: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestPullVerifyMatchingLockfileExits0(t *testing.T) {
 	// just used to produce it.
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		Verify:      true,
 	}); err != nil {
 		t.Errorf("pullRun --verify on matching lockfile: got error %v, want nil", err)
@@ -564,7 +564,7 @@ func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
 	// Seed lockfile.
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 	}); err != nil {
 		t.Fatalf("seed pull: %v", err)
 	}
@@ -587,7 +587,7 @@ func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
 
 	err = pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		Verify:      true,
 	})
 	if err == nil {
@@ -610,7 +610,7 @@ func TestPullVerifyMissingLockfileReturnsErr(t *testing.T) {
 
 	err := pullRun(pullConfig{
 		ReleasePath: releasePath,
-		CatalogDirs:  []string{filepath.Join(root, "catalog")},
+		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		Verify:      true,
 	})
 	if err == nil {

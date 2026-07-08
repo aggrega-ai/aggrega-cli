@@ -41,7 +41,7 @@ metadata:
   name: mariadb-rds
   version: 1.0.0
 spec:
-  provider: %s
+  target: %s
   implements: core/datastore/mariadb:1.0.0
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -81,12 +81,12 @@ func TestLoad_TwoProvidersSameRecipeName(t *testing.T) {
 	}
 
 	tf, ok := cat.RecipeByURI("terraform/mariadb-rds:1.0.0")
-	if !ok || tf.Spec.Provider != "terraform" {
-		t.Errorf("qualified exact: got %+v ok=%v", tf.Spec.Provider, ok)
+	if !ok || tf.Spec.Target != "terraform" {
+		t.Errorf("qualified exact: got %+v ok=%v", tf.Spec.Target, ok)
 	}
 	cf, ok := cat.RecipeByURI("cloudformation/mariadb-rds")
-	if !ok || cf.Spec.Provider != "cloudformation" {
-		t.Errorf("qualified unversioned: got %+v ok=%v", cf.Spec.Provider, ok)
+	if !ok || cf.Spec.Target != "cloudformation" {
+		t.Errorf("qualified unversioned: got %+v ok=%v", cf.Spec.Target, ok)
 	}
 
 	// Bare references are ambiguous across the two providers: loud miss,
@@ -100,12 +100,12 @@ func TestLoad_TwoProvidersSameRecipeName(t *testing.T) {
 
 	// Byte cache: each identity retains its own bytes.
 	tfBytes, ok := cat.EntityBytes("Recipe", "terraform/mariadb-rds:1.0.0")
-	if !ok || !strings.Contains(string(tfBytes), "provider: terraform") {
-		t.Errorf("terraform bytes: ok=%v body-match=%v", ok, strings.Contains(string(tfBytes), "provider: terraform"))
+	if !ok || !strings.Contains(string(tfBytes), "target: terraform") {
+		t.Errorf("terraform bytes: ok=%v body-match=%v", ok, strings.Contains(string(tfBytes), "target: terraform"))
 	}
 	cfBytes, ok := cat.EntityBytes("Recipe", "cloudformation/mariadb-rds:1.0.0")
-	if !ok || !strings.Contains(string(cfBytes), "provider: cloudformation") {
-		t.Errorf("cloudformation bytes: ok=%v body-match=%v", ok, strings.Contains(string(cfBytes), "provider: cloudformation"))
+	if !ok || !strings.Contains(string(cfBytes), "target: cloudformation") {
+		t.Errorf("cloudformation bytes: ok=%v body-match=%v", ok, strings.Contains(string(cfBytes), "target: cloudformation"))
 	}
 }
 
@@ -191,11 +191,11 @@ func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 	t.Parallel()
 	v2 := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "2.0.0"},
-		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/datastore/mariadb"},
+		Spec:     types.RecipeSpec{Target: "terraform", Implements: "core/datastore/mariadb"},
 	}
 	v1 := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/datastore/mariadb"},
+		Spec:     types.RecipeSpec{Target: "terraform", Implements: "core/datastore/mariadb"},
 	}
 
 	one := fakeCatalog(v1)
@@ -228,11 +228,11 @@ func TestRecipeLookupWithManifest_ProviderQualifiedMapping(t *testing.T) {
 	t.Parallel()
 	tf := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "terraform", Implements: "core/datastore/mariadb"},
+		Spec:     types.RecipeSpec{Target: "terraform", Implements: "core/datastore/mariadb"},
 	}
 	cf := types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "cloudformation", Implements: "core/datastore/mariadb"},
+		Spec:     types.RecipeSpec{Target: "cloudformation", Implements: "core/datastore/mariadb"},
 	}
 	c := fakeCatalog(tf, cf)
 
@@ -248,8 +248,8 @@ func TestRecipeLookupWithManifest_ProviderQualifiedMapping(t *testing.T) {
 	if !ok {
 		t.Fatal("provider-qualified mapping should resolve")
 	}
-	if r.Spec.Provider != "terraform" {
-		t.Errorf("resolved provider = %q; want terraform", r.Spec.Provider)
+	if r.Spec.Target != "terraform" {
+		t.Errorf("resolved provider = %q; want terraform", r.Spec.Target)
 	}
 
 	// Without a mapping, the implements-search sees BOTH recipes and

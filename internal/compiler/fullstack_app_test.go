@@ -17,8 +17,8 @@ import (
 //
 //	                      | generative (sourceless) | rendering (sourced) |
 //	--------------------- | ----------------------- | ------------------- |
-//	provider: helm        | A                        | B                   |
-//	provider: helm-chart  | C                        | D                   |
+//	target: helm        | A                        | B                   |
+//	target: helm-chart  | C                        | D                   |
 //
 // All 4 variants share the same Aggregate + Release + Manifest; only the Recipe
 // layer changes (which `catalog/recipes/<variant>` sub-directory is loaded).

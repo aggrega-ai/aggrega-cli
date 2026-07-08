@@ -56,7 +56,7 @@ metadata:
   name: lint-child
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: test/lint-child
   workload: |
     apiVersion: aggrega.ai/v1alpha1

@@ -34,7 +34,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return nil
 	}
 
-	if r.Spec.Provider == "eval" {
+	if r.Spec.Target == "eval" {
 		return validateRecipeEvalProvider(r, sourcePath)
 	}
 
@@ -60,7 +60,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 // is to migrate the inline content to a file and reference it via
 // {$import:}.
 func validateRecipeHelmChartProvider(r *types.Recipe, sourcePath string) error {
-	inlineKeys := helmChartInlineArtifactKeys(r.Spec.Provider, r.Spec.Artifacts)
+	inlineKeys := helmChartInlineArtifactKeys(r.Spec.Target, r.Spec.Artifacts)
 	if len(inlineKeys) == 0 {
 		return nil
 	}

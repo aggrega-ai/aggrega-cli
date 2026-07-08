@@ -107,7 +107,7 @@ metadata:
   version: 1.0.0
 spec:
   implements: core/compute/api
-  provider: helm
+  target: helm
   source: /absolute/path
   valuesMapping: '{"image": "x:latest"}'
 `

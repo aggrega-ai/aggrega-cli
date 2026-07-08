@@ -357,10 +357,10 @@ func inputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bo
 			renderer.UnsupportedInputKindMessage(provider, "synthesised", caps)))
 	}
 	for _, r := range recipes {
-		check("Recipe", r.Metadata.Name+":"+r.Metadata.Version, r.Spec.Provider, r.Spec.Workload)
+		check("Recipe", r.Metadata.Name+":"+r.Metadata.Version, r.Spec.Target, r.Spec.Workload)
 	}
 	for _, fr := range featureRecipes {
-		check("FeatureRecipe", fr.Metadata.Name+":"+fr.Metadata.Version, fr.Spec.Provider, fr.Spec.Workload)
+		check("FeatureRecipe", fr.Metadata.Name+":"+fr.Metadata.Version, fr.Spec.Target, fr.Spec.Workload)
 	}
 	// Sort by message so the diagnostic order is deterministic regardless of the
 	// caller's iteration order (the whole-catalog mode ranges an unordered map).
@@ -422,10 +422,10 @@ func verifyNoOCILocationCollision(cat *catalog.Catalog) error {
 		add("Aggregate", "", e.Metadata.Name)
 	}
 	for _, e := range cat.Recipes {
-		add("Recipe", e.Spec.Provider, e.Metadata.Name)
+		add("Recipe", e.Spec.Target, e.Metadata.Name)
 	}
 	for _, e := range cat.FeatureRecipes {
-		add("FeatureRecipe", e.Spec.Provider, e.Metadata.Name)
+		add("FeatureRecipe", e.Spec.Target, e.Metadata.Name)
 	}
 	for _, e := range cat.SchemaLibraries {
 		add("SchemaLibrary", "", e.Metadata.Name)
@@ -505,8 +505,8 @@ type lintEntityHeader struct {
 		Labels  map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Extends  string `yaml:"extends"`
-		Provider string `yaml:"provider"`
+		Extends string `yaml:"extends"`
+		Target  string `yaml:"target"`
 	} `yaml:"spec"`
 }
 
@@ -817,7 +817,7 @@ func fetchPreviousRegistryVersion(
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
 	if target == nil {
-		reference := buildPushReference(wsCfg.DefaultRegistry, header.Kind, header.Spec.Provider, header.Metadata.Name)
+		reference := buildPushReference(wsCfg.DefaultRegistry, header.Kind, header.Spec.Target, header.Metadata.Name)
 		repo, err := oci.NewRemoteRepository(reference)
 		if err != nil {
 			return nil, "", fmt.Errorf("construct repo: %w", err)

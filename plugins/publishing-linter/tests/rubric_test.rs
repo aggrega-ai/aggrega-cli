@@ -152,22 +152,22 @@ fn mappinglibrary_major_body_changed() {
 
 #[test]
 fn recipe_patch_no_load_bearing_diff() {
-    let prev = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload"}});
-    let prop = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload"}});
+    let prev = json!({"kind": "Recipe", "spec": {"target": "helm", "implements": "core/server", "workload": "kind: Workload"}});
+    let prop = json!({"kind": "Recipe", "spec": {"target": "helm", "implements": "core/server", "workload": "kind: Workload"}});
     assert_eq!(classify_once(&fixture("Recipe", prev, prop)), "PATCH");
 }
 
 #[test]
 fn recipe_minor_artifact_added() {
-    let prev = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload", "artifacts": {}}});
-    let prop = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload", "artifacts": {"header": "x"}}});
+    let prev = json!({"kind": "Recipe", "spec": {"target": "helm", "implements": "core/server", "workload": "kind: Workload", "artifacts": {}}});
+    let prop = json!({"kind": "Recipe", "spec": {"target": "helm", "implements": "core/server", "workload": "kind: Workload", "artifacts": {"header": "x"}}});
     assert_eq!(classify_once(&fixture("Recipe", prev, prop)), "MINOR");
 }
 
 #[test]
-fn recipe_major_provider_changed() {
-    let prev = json!({"kind": "Recipe", "spec": {"provider": "helm", "implements": "core/server", "workload": "kind: Workload"}});
-    let prop = json!({"kind": "Recipe", "spec": {"provider": "compose", "implements": "core/server", "workload": "kind: Workload"}});
+fn recipe_major_target_changed() {
+    let prev = json!({"kind": "Recipe", "spec": {"target": "helm", "implements": "core/server", "workload": "kind: Workload"}});
+    let prop = json!({"kind": "Recipe", "spec": {"target": "compose", "implements": "core/server", "workload": "kind: Workload"}});
     assert_eq!(classify_once(&fixture("Recipe", prev, prop)), "MAJOR");
 }
 
@@ -180,22 +180,22 @@ fn recipe_major_provider_changed() {
 
 #[test]
 fn featurerecipe_patch_no_load_bearing_diff() {
-    let prev = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
-    let prop = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
+    let prev = json!({"kind": "FeatureRecipe", "spec": {"target": "helm", "implements": "core/ingress"}});
+    let prop = json!({"kind": "FeatureRecipe", "spec": {"target": "helm", "implements": "core/ingress"}});
     assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), "PATCH");
 }
 
 #[test]
 fn featurerecipe_minor_artifact_added() {
-    let prev = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
-    let prop = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress", "artifacts": {"a": "b"}}});
+    let prev = json!({"kind": "FeatureRecipe", "spec": {"target": "helm", "implements": "core/ingress"}});
+    let prop = json!({"kind": "FeatureRecipe", "spec": {"target": "helm", "implements": "core/ingress", "artifacts": {"a": "b"}}});
     assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), "MINOR");
 }
 
 #[test]
-fn featurerecipe_major_provider_changed() {
-    let prev = json!({"kind": "FeatureRecipe", "spec": {"provider": "helm", "implements": "core/ingress"}});
-    let prop = json!({"kind": "FeatureRecipe", "spec": {"provider": "compose", "implements": "core/ingress"}});
+fn featurerecipe_major_target_changed() {
+    let prev = json!({"kind": "FeatureRecipe", "spec": {"target": "helm", "implements": "core/ingress"}});
+    let prop = json!({"kind": "FeatureRecipe", "spec": {"target": "compose", "implements": "core/ingress"}});
     assert_eq!(classify_once(&fixture("FeatureRecipe", prev, prop)), "MAJOR");
 }
 

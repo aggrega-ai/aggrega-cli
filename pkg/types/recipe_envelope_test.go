@@ -109,7 +109,7 @@ metadata:
   name: inline-recipe
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   source: ./chart
   valuesMapping: |
@@ -139,7 +139,7 @@ metadata:
   name: import-recipe
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   source: ./chart
   valuesMapping:
@@ -167,7 +167,7 @@ metadata:
   name: workload-import
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload:
     $import: ./workload.yaml
@@ -197,7 +197,7 @@ metadata:
   name: workload-oci-import
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload:
     $import: oci://hub.aggrega.ai/aggrega/helpers@1.0.0#/workloads/Default
@@ -224,7 +224,7 @@ metadata:
   name: artifacts-oci-import
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   source: ./chart
   valuesMapping: |
@@ -258,7 +258,7 @@ metadata:
   name: workload-bare-name-import
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload:
     $import: Helpers#/workloads/Default
@@ -285,7 +285,7 @@ metadata:
   name: artifacts-bare-name-import
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   source: ./chart
   valuesMapping: |
@@ -317,7 +317,7 @@ metadata:
   name: bitnami/datastore/mariadb/k8s
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/datastore/mariadb:^1.0.0
   source:
     chart: oci://registry-1.docker.io/bitnamicharts/mariadb
@@ -359,7 +359,7 @@ metadata:
   name: bitnami/datastore/mariadb/k8s
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/datastore/mariadb:^1.0.0
   source:
     chart: oci://registry-1.docker.io/bitnamicharts/mariadb

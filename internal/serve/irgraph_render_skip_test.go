@@ -42,7 +42,7 @@ metadata:
   name: demo-server-synthesized
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: demo/svc
   provides:
     host: "{{ .context.instance_id }}"
@@ -76,7 +76,7 @@ spec:
   plugin: oci://hub.aggrega.ai/plugins/core/helm-provider
   pluginType: provider
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm
   exports:
     - name: render_node

@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-db-chart-name-mismatch
   version: "1.0.0"
 spec:
-  provider: helm-chart
+  target: helm-chart
   implements: core/datastore/mariadb
   source: ./charts/db
   provides:

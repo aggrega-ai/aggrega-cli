@@ -23,7 +23,7 @@ func newRecipe(provider string) *types.Recipe {
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: tName, Version: tVer},
-		Spec:       types.RecipeSpec{Provider: provider, Implements: "core/test:1.0.0"},
+		Spec:       types.RecipeSpec{Target: provider, Implements: "core/test:1.0.0"},
 	}
 }
 

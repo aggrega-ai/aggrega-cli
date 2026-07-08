@@ -73,7 +73,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 			Metadata: map[string]any{
 				"name":     recipe.Metadata.Name,
 				"version":  recipe.Metadata.Version,
-				"provider": recipe.Spec.Provider,
+				"provider": recipe.Spec.Target,
 			},
 			Source: recipe.Spec.Source,
 		}
@@ -110,7 +110,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 				Metadata: map[string]any{
 					"name":     fr.Metadata.Name,
 					"version":  fr.Metadata.Version,
-					"provider": fr.Spec.Provider,
+					"provider": fr.Spec.Target,
 				},
 				Source: fr.Spec.Source,
 			}

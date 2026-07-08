@@ -87,7 +87,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -122,7 +122,7 @@ metadata:
   name: broken-recipe
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
 `)
 	// Broken SchemaLibrary: forbidden $dynamicAnchor — fails the per-entity resolve.
 	writeFixture(t, filepath.Join(catalogRoot, "base", "libs", "broken-lib.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -256,7 +256,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
 `)
 	err := dispatchBuild(nil, releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout)
 	if err == nil {
@@ -336,7 +336,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
 `)
 	err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}})
 	if err == nil {

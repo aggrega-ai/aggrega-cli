@@ -174,11 +174,11 @@ type pushEntityHeader struct {
 		Version string `yaml:"version"`
 	} `yaml:"metadata"`
 	Spec struct {
-		// Provider is the execution engine for Recipe / FeatureRecipe. It is
+		// Target is the render-engine target for Recipe / FeatureRecipe. It is
 		// part of those kinds' identity (recipeIdentityKey is
 		// provider/name:version), so the OCI location must encode it — two
 		// providers may ship a recipe of the same name.
-		Provider string `yaml:"provider"`
+		Target string `yaml:"target"`
 	} `yaml:"spec"`
 }
 
@@ -281,7 +281,7 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: bundle %s: %w", cfg.EntityPath, err)
 	}
 
-	reference := buildPushReference(registry, header.Kind, header.Spec.Provider, header.Metadata.Name)
+	reference := buildPushReference(registry, header.Kind, header.Spec.Target, header.Metadata.Name)
 	tag := header.Metadata.Version
 
 	if cfg.DryRun {

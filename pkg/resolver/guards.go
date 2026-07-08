@@ -33,7 +33,7 @@ type CatalogLookup struct {
 	// entity serving it, plus a found flag and an error. The binding is the bare
 	// provider name ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0")
 	// where the pin constrains the plugin version. A pluginType: provider Plugin
-	// serves the provider names in its compatibleProviders; this accessor finds the
+	// serves the provider names in its targets; this accessor finds the
 	// unique such Plugin whose version satisfies the pin (highest-in-range for a
 	// caret, highest overall when unpinned). A bare miss returns (_, false, nil) so
 	// the caller falls back to the in-tree engine; a version pin nothing satisfies

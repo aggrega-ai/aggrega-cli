@@ -329,7 +329,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 			for _, step := range r.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
 			}
-			if err := recordProvider(r.Spec.Provider, ent.URI); err != nil {
+			if err := recordProvider(r.Spec.Target, ent.URI); err != nil {
 				return nil, nil, err
 			}
 		case "feature_recipe":
@@ -340,7 +340,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 			for _, step := range fr.Spec.Pipeline {
 				recordRecipeRef(step.Plugin, ent.URI)
 			}
-			if err := recordProvider(fr.Spec.Provider, ent.URI); err != nil {
+			if err := recordProvider(fr.Spec.Target, ent.URI); err != nil {
 				return nil, nil, err
 			}
 		case pluginKindHint:

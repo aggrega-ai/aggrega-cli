@@ -21,7 +21,7 @@ metadata:
   name: ` + name + `
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: ` + implements + `
   workload: |
     apiVersion: aggrega.ai/v1alpha1

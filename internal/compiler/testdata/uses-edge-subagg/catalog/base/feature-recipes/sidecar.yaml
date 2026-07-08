@@ -4,7 +4,7 @@ metadata:
   name: sidecar-fr
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/sidecar
   # No workload — a pure-wiring feature: it contributes a uses-edge from the
   # component it attaches to, and renders no resources of its own.

@@ -4,6 +4,6 @@ metadata:
   name: api-server-helm
   version: 1.0.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload: 'kind: Workload'

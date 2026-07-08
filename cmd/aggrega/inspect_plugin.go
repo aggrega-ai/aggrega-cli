@@ -48,7 +48,7 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 // renderPluginFile renders a Plugin authored as a standalone file. The
 // plugin's declared capability surface is shown first: the content-addressed
 // .wasm artifact reference, the socket type it implements, the ABI version
-// it targets, and the provider engines it claims compatibility with. The
+// it targets, and the targets it claims compatibility with. The
 // exports table names each entry point and its authored capability claim
 // (operates / scope / selector); the runtime block reports the execution
 // constraints, describing a platform default qualitatively when a limit is
@@ -56,7 +56,7 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 // drifts from the loader's actual cap.
 //
 //   - levelList: identifier plus the plugin type and export count.
-//   - levelDefault: plugin, plugin type, ABI version, compatible providers,
+//   - levelDefault: plugin, plugin type, ABI version, targets,
 //     the exports table, and the runtime block.
 //   - levelDetail: adds the signature pointer and the runtime config keys.
 func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
@@ -90,7 +90,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 		abiVersion = "(none declared)"
 	}
 	fmt.Fprintf(opts.out, "ABI version: %s\n", abiVersion)
-	fmt.Fprintf(opts.out, "Compatible providers: %s\n", joinedOrNone(wp.Spec.CompatibleProviders))
+	fmt.Fprintf(opts.out, "Targets: %s\n", joinedOrNone(wp.Spec.Targets))
 
 	renderPluginExports(opts, wp.Spec.Exports)
 	renderPluginRuntime(opts, wp.Spec.Runtime)

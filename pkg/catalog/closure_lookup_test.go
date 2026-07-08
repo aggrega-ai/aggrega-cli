@@ -100,7 +100,7 @@ metadata:
   name: server-recipe
   version: 2.5.0
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -138,7 +138,7 @@ spec:
 	}
 	// Golden literal (not a re-derivation): the exact content-address of
 	// recipeBody, guarding the digest format.
-	const wantRecipeDigest = "sha256:c7ee2c4b109a041c1f225a9d85a7b60c4cbf82ca121503fcd346f792426c788d"
+	const wantRecipeDigest = "sha256:29a159f1697493e90caa4a2c15fe26cdeeee491b22ead124d842a0f715ebdb38"
 	if res.Digest != wantRecipeDigest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantRecipeDigest)
 	}

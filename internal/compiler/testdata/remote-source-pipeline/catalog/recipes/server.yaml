@@ -4,7 +4,7 @@ metadata:
   name: demo-server-remote
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: demo/server
   source:
     kind: helm-oci-chart

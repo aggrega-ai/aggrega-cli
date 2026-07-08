@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-db-helm-sourced-art
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/datastore/mariadb
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"

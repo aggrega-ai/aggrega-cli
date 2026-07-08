@@ -51,7 +51,7 @@ func embeddedReferenceDigest(t *testing.T, uri string) string {
 // provider-rendering Plugin entity with the same field values the shipped hub YAML
 // declares, so its CatalogLookup drives the real resolution chain against the
 // artifact embedded in the binary. The Plugin serves the "helm" provider name
-// through its compatibleProviders list.
+// through its targets list.
 func helmChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
@@ -60,12 +60,12 @@ func helmChainCatalog() *catalog.Catalog {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "helm-renderer", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					Plugin:              helmArtifactURI,
-					PluginType:          "provider",
-					AbiVersion:          "v1alpha1",
-					CompatibleProviders: []string{"helm"},
-					Exports:             []types.PluginExport{{Name: "render_node"}},
-					Runtime:             &types.PluginRuntime{MaxMemoryPages: helmProviderMemPag},
+					Plugin:     helmArtifactURI,
+					PluginType: "provider",
+					AbiVersion: "v1alpha1",
+					Targets:    []string{"helm"},
+					Exports:    []types.PluginExport{{Name: "render_node"}},
+					Runtime:    &types.PluginRuntime{MaxMemoryPages: helmProviderMemPag},
 				},
 			},
 		},
@@ -89,7 +89,7 @@ func entityFront(lookup resolver.CatalogLookup, cascade pluginpath.Lookup) plugi
 // TestHelmProviderEmbeddedResolutionChain proves the full provider→plugin→artifact
 // resolution chain end-to-end through the real embed tier: the ProviderPlugin
 // accessor on resolver.CatalogLookup (provider name → provider-rendering Plugin
-// via compatibleProviders), the Plugin accessor, the entity-fronted cascade, the
+// via targets), the Plugin accessor, the entity-fronted cascade, the
 // pinned-digest integrity check (both arms), and the entity's runtime limits
 // flowing to the loader spec. It does not re-prove render byte-identity — that is
 // the A/B harness's job; this capstone is resolution + digest + limits.
@@ -100,7 +100,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 	// Level 1: provider name → provider-rendering Plugin entity, via the
 	// ProviderPlugin accessor wired into the eager CatalogLookup constructor.
 	// Render dispatch resolves a provider name to the Plugin serving it through
-	// the Plugin's compatibleProviders list.
+	// the Plugin's targets list.
 	if lookup.ProviderPlugin == nil {
 		t.Fatal("CatalogLookup.ProviderPlugin accessor is nil; the eager constructor did not wire it")
 	}

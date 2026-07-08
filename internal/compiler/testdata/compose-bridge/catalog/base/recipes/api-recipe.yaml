@@ -4,7 +4,7 @@ metadata:
   name: api-recipe
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/api
   provides:
     host: "{{ .context.instance_id }}"

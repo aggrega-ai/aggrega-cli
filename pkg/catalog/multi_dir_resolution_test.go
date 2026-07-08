@@ -44,7 +44,7 @@ metadata:
   version: "1.0.0"
   description: ` + d + `
 spec:
-  provider: helm
+  target: helm
   implements: "dup/thing"
   provides:
     host: "{{ .context.instance_id }}"
@@ -64,7 +64,7 @@ metadata:
   version: "1.0.0"
   description: ` + d + `
 spec:
-  provider: helm
+  target: helm
   implements: "core/dup-feature"
 `
 	},

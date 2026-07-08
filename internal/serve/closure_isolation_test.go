@@ -88,7 +88,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -176,7 +176,7 @@ metadata:
   name: broken-recipe
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
 `)
 	writeFixtureFile(t, filepath.Join(catalogDir, "libs", "broken-lib.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: SchemaLibrary

@@ -34,7 +34,7 @@ type RenderResult struct {
 // provider boundaries.
 type dispatchKey struct {
 	Path     string // evaluated final_path (post-template-evaluation)
-	Provider string // resolved per-component recipe.Spec.Provider
+	Provider string // resolved per-component recipe.Spec.Target
 }
 
 // pendingDispatch holds per-(path, provider) state across the per-node loop
@@ -349,8 +349,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		providerRef := ""
 		providerName := ""
 		if recipe != nil {
-			providerRef = recipe.Spec.Provider
-			providerName = ProviderEngineKind(recipe.Spec.Provider)
+			providerRef = recipe.Spec.Target
+			providerName = ProviderEngineKind(recipe.Spec.Target)
 		}
 		// Resolved provider-rendering plugin version behind this binding, shared
 		// with the engine the factory returns for it. Empty for a binding that
@@ -679,7 +679,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// pre-assembly fragments, so a /host PATCH against it halts (post-
 		// assembly territory). providerName is the host component's recipe
 		// provider, threaded in so a host-scope pipeline step's
-		// compatibleProviders is enforced against the provider rendering the
+		// targets is enforced against the provider rendering the
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
@@ -793,7 +793,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Bare engine kind for the {{ .provider }} path segment and the dispatch
 		// grouping; the FR's files were already rendered through its version-pinned
 		// engine upstream, so no engine resolution happens here.
-		frProvider := ProviderEngineKind(fr.Spec.Provider)
+		frProvider := ProviderEngineKind(fr.Spec.Target)
 		// Compute the dispatch path for this boundary-scope FR. The FR is
 		// attached at the boundary level (no per-component BoundaryInfra
 		// entry), so look up the boundary's authored directory/subDirectory

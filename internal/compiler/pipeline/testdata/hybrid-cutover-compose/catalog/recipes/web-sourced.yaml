@@ -4,7 +4,7 @@ metadata:
   name: web-sourced
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/web
   source: ./sources/web.yaml
   provides:

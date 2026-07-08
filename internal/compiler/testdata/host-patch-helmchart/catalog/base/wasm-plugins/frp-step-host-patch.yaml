@@ -7,5 +7,5 @@ spec:
   plugin: "oci://hub.aggrega.ai/wasm/frp/host-patch"
   pluginType: frp_step
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm-chart

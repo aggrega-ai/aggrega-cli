@@ -231,7 +231,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	emitter, ok := engine.(ArtifactsEmitter)
 	if !ok {
 		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
-			fmt.Sprintf("provider %q does not implement artifacts emission; the Recipe declares artifacts: but the bound provider has no artifacts-emission implementation", state.Recipe.Spec.Provider),
+			fmt.Sprintf("provider %q does not implement artifacts emission; the Recipe declares artifacts: but the bound provider has no artifacts-emission implementation", state.Recipe.Spec.Target),
 			nil, nil)
 	}
 	leftDelim, rightDelim := emitter.ArtifactTemplateDelimiters()
@@ -272,7 +272,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	}
 	providerName := ""
 	if state.Recipe != nil {
-		providerName = state.Recipe.Spec.Provider
+		providerName = state.Recipe.Spec.Target
 	}
 	files, err := dispatchWorkloadSynthesis(ctx, engine, tmplCtx, state.ParsedWorkload, nodeCtx, providerName)
 	if err != nil {
@@ -341,7 +341,7 @@ func phaseB5(state *PhaseBState) error {
 // PATCH against an assembler host halts (post-assembly phase territory).
 // hostProvider is the host component's recipe provider — the provider rendering
 // the /host documents, against which a host-scope pipeline step's
-// compatibleProviders is enforced. renderCtx is the render-time context every
+// targets is enforced. renderCtx is the render-time context every
 // pipeline step receives.
 func phaseB6(
 	ctx context.Context,
@@ -434,7 +434,7 @@ func phaseB6(
 			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q", nodeID, ref.InstanceName))
 		}
 
-		frEngine, err := engineFactory(fr.Spec.Provider)
+		frEngine, err := engineFactory(fr.Spec.Target)
 		if err != nil {
 			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q engine factory", nodeID, ref.InstanceName))
 		}
@@ -509,7 +509,7 @@ func phaseB6(
 				// own provider is the FR's own engine kind (version pin stripped —
 				// codec + compatibility key on the kind); host provider is the host
 				// component's recipe engine kind (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Provider), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Target), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, nil, nil, perr
 				}
@@ -580,7 +580,7 @@ func phaseB6(
 				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q", nodeID, secretName))
 			}
 
-			frEngine, err := engineFactory(fr.Spec.Provider)
+			frEngine, err := engineFactory(fr.Spec.Target)
 			if err != nil {
 				return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q engine factory", nodeID, secretName))
 			}
@@ -680,7 +680,7 @@ func renderFeatureRecipeFiles(
 	hasWorkload := !fr.Spec.Workload.IsEmpty()
 	hasArtifacts := fr.Spec.Artifacts.Len() > 0
 
-	if err := gateInputKind(frNodeCtx.NodeID, fr.Spec.Provider, frEngine, hasSource, hasWorkload, hasArtifacts); err != nil {
+	if err := gateInputKind(frNodeCtx.NodeID, fr.Spec.Target, frEngine, hasSource, hasWorkload, hasArtifacts); err != nil {
 		return nil, err
 	}
 
@@ -695,7 +695,7 @@ func renderFeatureRecipeFiles(
 		if verr != nil {
 			return nil, cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe input validation")
 		}
-		if err := routeNodeInputDiagnostics(frNodeCtx.NodeID, fr.Spec.Provider, diags, frNodeCtx.WarningSink); err != nil {
+		if err := routeNodeInputDiagnostics(frNodeCtx.NodeID, fr.Spec.Target, diags, frNodeCtx.WarningSink); err != nil {
 			return nil, err
 		}
 	}
@@ -716,7 +716,7 @@ func renderFeatureRecipeFiles(
 	synth := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: fr.Metadata.Name, Version: fr.Metadata.Version},
 		Spec: types.RecipeSpec{
-			Provider:      fr.Spec.Provider,
+			Target:        fr.Spec.Target,
 			Implements:    fr.Spec.Implements,
 			Source:        resolvedSrc,
 			ValuesMapping: fr.Spec.ValuesMapping,

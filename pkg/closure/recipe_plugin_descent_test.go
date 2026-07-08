@@ -90,7 +90,7 @@ func pluginEntity(t *testing.T, name, artifactURI string) *types.Plugin {
 func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.Recipe {
 	t.Helper()
 	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  provider: " + provider + "\n  implements: core/svc\n" +
+		"\n  version: 1.0.0\nspec:\n  target: " + provider + "\n  implements: core/svc\n" +
 		"  pipeline:\n    - id: patch\n      plugin: " + pluginEntityURI + "\n      function: step\n"
 	var r types.Recipe
 	if err := yaml.Unmarshal([]byte(src), &r); err != nil {
@@ -106,7 +106,7 @@ func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI stri
 func featureRecipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.FeatureRecipe {
 	t.Helper()
 	src := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  provider: " + provider + "\n  implements: core/cred\n" +
+		"\n  version: 1.0.0\nspec:\n  target: " + provider + "\n  implements: core/cred\n" +
 		"  pipeline:\n    - id: patch\n      plugin: " + pluginEntityURI + "\n      function: step\n"
 	var fr types.FeatureRecipe
 	if err := yaml.Unmarshal([]byte(src), &fr); err != nil {
@@ -484,7 +484,7 @@ func composeProviderResolver() closure.ProviderPluginResolver {
 	}
 }
 
-// providerRecipeLoader serves a Recipe declaring provider: compose:1.0.0 with no
+// providerRecipeLoader serves a Recipe declaring target: compose:1.0.0 with no
 // pipeline plugin, plus the resolved provider Plugin entity body (keyed by the
 // version-exact URI the descent constructs) whose spec.plugin names the provider
 // artifact Phase B pins.

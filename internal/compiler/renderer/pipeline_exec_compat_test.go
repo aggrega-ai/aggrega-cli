@@ -16,7 +16,7 @@ import (
 )
 
 // describerFor returns a stepDescriber that always reports a frp_step descriptor
-// whose step export declares the given scope and whose compatibleProviders is the
+// whose step export declares the given scope and whose targets is the
 // given set. It is the seam through which the pre-walk compatibility check reads a
 // plugin's declared compatibility without a real .wasm — the executor body
 // (runNodePipelineWithInvoker) is the production code path; only the descriptor is
@@ -24,10 +24,10 @@ import (
 func describerFor(scope string, compatible []string) stepDescriber {
 	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return wasm.PluginDescriptor{
-			ABIVersion:          wasm.ABIVersionV1Alpha1,
-			PluginType:          wasm.PluginTypeFRPStep,
-			CompatibleProviders: compatible,
-			Exports:             []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: scope}},
+			ABIVersion: wasm.ABIVersionV1Alpha1,
+			PluginType: wasm.PluginTypeFRPStep,
+			Targets:    compatible,
+			Exports:    []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: scope}},
 		}, nil
 	}
 }
@@ -117,20 +117,20 @@ func TestProviderCompat_CompatibleProceeds(t *testing.T) {
 	}
 }
 
-// TestProviderCompat_EmptyCompatibleProvidersHalts proves a plugin declaring an
-// empty compatibleProviders set matches no provider — running it anywhere is an
+// TestProviderCompat_EmptyTargetsHalts proves a plugin declaring an
+// empty targets set matches no provider — running it anywhere is an
 // undeclared compatibility claim — so the build halts with
 // ErrPluginProviderIncompatible. Locks the empty=halt decision against regression.
-func TestProviderCompat_EmptyCompatibleProvidersHalts(t *testing.T) {
+func TestProviderCompat_EmptyTargetsHalts(t *testing.T) {
 	t.Parallel()
 
 	_, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
 		ownDeployment(), nil, false,
 		"helm" /* ownProvider */, "",
 		renderctx.RenderContext{}, &types.TemplateContext{}, newStockYAMLCodec(2), newStockYAMLCodec(2),
-		noopInvoker(t), describerFor(wasm.ScopeOwn, nil /* empty compatibleProviders */), "node")
+		noopInvoker(t), describerFor(wasm.ScopeOwn, nil /* empty targets */), "node")
 	if err == nil {
-		t.Fatalf("expected halt for empty compatibleProviders; got nil")
+		t.Fatalf("expected halt for empty targets; got nil")
 	}
 	if !errors.Is(err, ErrPluginProviderIncompatible) {
 		t.Errorf("expected ErrPluginProviderIncompatible; got %v", err)

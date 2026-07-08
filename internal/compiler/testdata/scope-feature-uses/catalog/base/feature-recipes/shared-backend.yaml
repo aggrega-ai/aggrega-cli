@@ -12,5 +12,5 @@ metadata:
     dependency injected into each component in scope), not anything this recipe
     renders; so the recipe is intentionally empty.
 spec:
-  provider: compose
+  target: compose
   implements: core/shared-backend

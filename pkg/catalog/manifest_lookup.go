@@ -292,7 +292,7 @@ func matchOneRecipe(rs map[string]types.Recipe, provider, name, version string) 
 	var match types.Recipe
 	n := 0
 	for _, r := range rs {
-		if provider != "" && r.Spec.Provider != provider {
+		if provider != "" && r.Spec.Target != provider {
 			continue
 		}
 		if r.Metadata.Name != name {
@@ -341,7 +341,7 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 	var match types.FeatureRecipe
 	n := 0
 	for _, fr := range frs {
-		if provider != "" && fr.Spec.Provider != provider {
+		if provider != "" && fr.Spec.Target != provider {
 			continue
 		}
 		if fr.Metadata.Name != name {
@@ -381,13 +381,13 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // Plugin entity serving it, plus a found flag and an error. The binding is the
 // bare provider name ("helm") or a version-pinned form ("helm:1.0.0",
 // "helm:^1.0.0") where the trailing segment constrains the Plugin version; the
-// provider name (the part before any pin) is matched against compatibleProviders.
+// provider name (the part before any pin) is matched against targets.
 // A pluginType: provider Plugin serves the provider names listed in its
-// compatibleProviders; this finds the unique such Plugin claiming the provider
+// targets; this finds the unique such Plugin claiming the provider
 // name and, among that plugin's versions, the one satisfying the pin — highest
 // overall when unpinned, exact for an exact pin, highest-in-range for a caret —
 // via the same three-form version select the other by-name lookups use. A linter
-// or frp_step plugin whose compatibleProviders happens to list the name is
+// or frp_step plugin whose targets happens to list the name is
 // excluded — that list carries a different meaning for a non-provider plugin (the
 // provider a pipeline step renders alongside), not a render-engine claim.
 //
@@ -395,7 +395,7 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 //   - (plugin, true, nil) on a satisfying match;
 //   - (_, false, nil) on a bare miss (no serving plugin, or an ambiguous claim by
 //     more than one distinct provider plugin — the latter caught loudly at catalog
-//     load), so the caller falls back to the in-tree engine;
+//     load), leaving the binding unresolved for the caller to handle;
 //   - (_, false, ErrProviderVersionUnsatisfiable) when the binding is version-pinned
 //     but no serving plugin version satisfies the pin (including the case where the
 //     provider has no serving plugin at all) — a loud halt, since the pin is an
@@ -416,7 +416,7 @@ func (c *Catalog) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
 		if p.Spec.PluginType != "provider" {
 			continue
 		}
-		if !slices.Contains(p.Spec.CompatibleProviders, name) {
+		if !slices.Contains(p.Spec.Targets, name) {
 			continue
 		}
 		matches[key] = p
@@ -516,7 +516,7 @@ func recipesImplementing(recipes map[string]types.Recipe, componentType string) 
 	var ids []string
 	for _, r := range recipes {
 		if implementsSatisfies(r.Spec.Implements, componentType) {
-			ids = append(ids, recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version))
+			ids = append(ids, recipeIdentityKey(r.Spec.Target, r.Metadata.Name, r.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)
@@ -528,7 +528,7 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 	var ids []string
 	for _, fr := range frs {
 		if implementsSatisfies(fr.Spec.Implements, featureType) {
-			ids = append(ids, recipeIdentityKey(fr.Spec.Provider, fr.Metadata.Name, fr.Metadata.Version))
+			ids = append(ids, recipeIdentityKey(fr.Spec.Target, fr.Metadata.Name, fr.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)

@@ -128,7 +128,7 @@ func terraformLocalRecipeLookup(moduleDir, valuesMapping string) renderer.Recipe
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "tf-module-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Provider:      "terraform",
+					Target:        "terraform",
 					Implements:    "core/storage/tf-module",
 					Source:        moduleDir,
 					ValuesMapping: types.ValuesMapping{Inline: valuesMapping},

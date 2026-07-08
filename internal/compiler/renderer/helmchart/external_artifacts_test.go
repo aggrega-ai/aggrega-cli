@@ -57,7 +57,7 @@ func helmChartWasmFactory(t *testing.T) renderer.EngineFactory {
 // TestHelmChartArtifactsImport_EndToEnd is the integration anchor for
 // helm-chart pre-template artifact injection. It stands up a minimal
 // sub-chart skeleton under t.TempDir(), constructs an IRGraph with one
-// node whose Recipe declares `provider: helm-chart`, `source: <chart-dir>`,
+// node whose Recipe declares `target: helm-chart`, `source: <chart-dir>`,
 // and an `artifacts:` entry pointing at `<crd.yaml-path>` via `$import:`,
 // then runs renderer.RenderAll with the helm-chart engine factory. The
 // asserted output:
@@ -134,7 +134,7 @@ spec:
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Provider:      "helm-chart",
+					Target:        "helm-chart",
 					Source:        chartDir,
 					ValuesMapping: types.ValuesMapping{Inline: `{}`},
 					Artifacts:     artifacts,
@@ -279,7 +279,7 @@ metadata:
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Provider:      "helm-chart",
+					Target:        "helm-chart",
 					Source:        chartDir,
 					ValuesMapping: types.ValuesMapping{Inline: `{}`},
 					Artifacts:     artifacts,

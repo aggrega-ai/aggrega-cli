@@ -96,8 +96,8 @@ func TestFRPDecodeGuard(t *testing.T) {
 	if desc.ABIVersion != wasm.ABIVersionV1Alpha1 {
 		t.Fatalf("abi version: got %q want %q", desc.ABIVersion, wasm.ABIVersionV1Alpha1)
 	}
-	if want := []string{"helm", "helm-chart"}; !equalStrings(desc.CompatibleProviders, want) {
-		t.Fatalf("compatible providers: got %v want %v", desc.CompatibleProviders, want)
+	if want := []string{"helm", "helm-chart"}; !equalStrings(desc.Targets, want) {
+		t.Fatalf("compatible providers: got %v want %v", desc.Targets, want)
 	}
 	stepExport, ok := exportByName(desc, "step")
 	if !ok {

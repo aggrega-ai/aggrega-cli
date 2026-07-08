@@ -286,7 +286,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -503,7 +503,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: server
   source:
     kind: helm-oci-chart

@@ -25,7 +25,7 @@
 //        record state.
 //   3. After the per-node loop completes, RenderAll routes boundary-scope
 //      FR Intermediate=true files into the per-(path, provider) dispatch
-//      group at the FR's evaluated path (using fr.Spec.Provider for the
+//      group at the FR's evaluated path (using fr.Spec.Target for the
 //      provider component of the dispatch key). Intermediate=false files
 //      land under <boundary_directory>/<provider>/features/<instance>/.
 //   4. Consumer resolution: when a per-component consumer references
@@ -269,7 +269,7 @@ func dispatchBoundaryScopeFR(
 	}
 
 	// 6. Dispatch to FR's engine.
-	frEngine, err := engineFactory(fr.Spec.Provider)
+	frEngine, err := engineFactory(fr.Spec.Target)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", frInstance))
 	}
@@ -340,7 +340,7 @@ func dispatchBoundaryScopeFR(
 		// own provider is the boundary-scope FR's own engine kind (version pin
 		// stripped — codec + compatibility key on the kind); a boundary-scope FR
 		// has no single host component (host nil), so hostProvider is empty.
-		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Provider), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Target), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
 		if perr != nil {
 			return perr
 		}
@@ -476,7 +476,7 @@ func PrepopulateBoundaryScopeProvides(
 			// guest computes the overrides. The host still applies each named
 			// consumer's overrides into that consumer's render context below.
 			if engineFactory != nil && frCtx.Boundary != nil {
-				eng, engErr := engineFactory(fr.Spec.Provider)
+				eng, engErr := engineFactory(fr.Spec.Target)
 				if engErr != nil {
 					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", instName))
 				}

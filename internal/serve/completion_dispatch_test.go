@@ -134,7 +134,7 @@ func TestCompletionDispatchImplementsCursorRecipe(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeCompletionFixture(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n")
-	recipeContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: cache-recipe\n  version: 1.0.0\nspec:\n  implements: placeholder\n  provider: helm\n"
+	recipeContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: cache-recipe\n  version: 1.0.0\nspec:\n  implements: placeholder\n  target: helm\n"
 	recipePath := writeCompletionFixture(t, dir, "recipe.yaml", recipeContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -156,7 +156,7 @@ func TestCompletionDispatchImplementsCursorFeatureRecipe(t *testing.T) {
 	// A Component in the same workspace — should NOT appear since
 	// FeatureRecipe.spec.implements targets Features only.
 	writeCompletionFixture(t, dir, "component.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec: {}\n")
-	frContent := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: scaling-fr\n  version: 1.0.0\nspec:\n  implements: placeholder\n  provider: helm\n"
+	frContent := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: scaling-fr\n  version: 1.0.0\nspec:\n  implements: placeholder\n  target: helm\n"
 	frPath := writeCompletionFixture(t, dir, "fr.yaml", frContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -278,7 +278,7 @@ func TestCompletionDispatchReleaseAggregatePathCursor(t *testing.T) {
 func TestCompletionDispatchManifestRecipeReferenceCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: recipes/helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  provider: helm\n")
+	writeCompletionFixture(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: recipes/helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  target: helm\n")
 	manifestContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: placeholder\n"
 	manifestPath := writeCompletionFixture(t, dir, "manifest.yaml", manifestContent)
 	srv := newTestServer(t, dir, nil, nil)

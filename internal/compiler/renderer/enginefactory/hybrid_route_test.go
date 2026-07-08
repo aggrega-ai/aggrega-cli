@@ -31,18 +31,18 @@ func terraformRouteCatalog() resolver.CatalogLookup {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					Plugin:              "oci://hub.aggrega.ai/plugins/core/terraform-provider",
-					PluginType:          "provider",
-					AbiVersion:          "v1alpha1",
-					CompatibleProviders: []string{"terraform"},
-					Exports:             []types.PluginExport{{Name: "render_node"}},
+					Plugin:     "oci://hub.aggrega.ai/plugins/core/terraform-provider",
+					PluginType: "provider",
+					AbiVersion: "v1alpha1",
+					Targets:    []string{"terraform"},
+					Exports:    []types.PluginExport{{Name: "render_node"}},
 				},
 			}, true, nil
 		},
 	}
 }
 
-// TestNewHybrid_RoutesTerraform proves that provider: terraform now routes to the
+// TestNewHybrid_RoutesTerraform proves that target: terraform now routes to the
 // terraform-renderer Wasm rendering guest rather than halting: the hybrid factory
 // resolves the provider through the ProviderPlugin accessor and the host-side
 // capability holder, returns a non-nil engine, and reports the resolved provider

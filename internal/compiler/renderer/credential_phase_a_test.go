@@ -17,7 +17,7 @@ func dotenvSecretFR() *types.FeatureRecipe {
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "dotenv-secret"},
 		Spec: types.FeatureRecipeSpec{
-			Provider:      "compose",
+			Target:        "compose",
 			Implements:    "core/secret-value:1.0.0",
 			InjectMapping: "env:\n  {{ .values.key }}: \"{{ .values.origin }}\"\n",
 		},
@@ -30,7 +30,7 @@ func k8sSecretFR() *types.FeatureRecipe {
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
 		Spec: types.FeatureRecipeSpec{
-			Provider:      "helm",
+			Target:        "helm",
 			Implements:    "core/secret-value:1.0.0",
 			Source:        "./charts/k8s-secret",
 			ValuesMapping: types.ValuesMapping{Inline: `secretName: "{{ .secret_name }}"`},

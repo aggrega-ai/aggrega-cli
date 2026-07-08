@@ -22,7 +22,7 @@
 //!   proposed AND proposed introduces ≥1 new path.
 //! - **MAJOR**: any subtractive or narrowing change — field removed,
 //!   type narrowed, required-field added without default, library
-//!   entry removed, Recipe `provider` changed (different rendering
+//!   entry removed, Recipe `target` changed (different rendering
 //!   engine), pipeline reordering.
 //!
 //! Per-kind dispatch:
@@ -238,7 +238,7 @@ fn classify_mapping_library(previous: &Value, proposed: &Value) -> (String, Stri
 
 fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (String, String) {
     let load_bearing = &[
-        "spec.provider",
+        "spec.target",
         "spec.implements",
         "spec.outputs",
         "spec.provides",
@@ -260,11 +260,11 @@ fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (Stri
             format!("{kind}: no diff across load-bearing fields"),
         );
     }
-    // provider or pipeline changes are always MAJOR.
-    if changed.iter().any(|p| p == "spec.provider") {
+    // target or pipeline changes are always MAJOR.
+    if changed.iter().any(|p| p == "spec.target") {
         return (
             "MAJOR".to_string(),
-            format!("{kind}: spec.provider changed (different rendering engine)"),
+            format!("{kind}: spec.target changed (different rendering engine)"),
         );
     }
     if changed.iter().any(|p| p == "spec.pipeline") {

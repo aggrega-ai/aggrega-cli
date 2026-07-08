@@ -4,5 +4,5 @@ metadata:
   name: fr-equality
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/feat-equality

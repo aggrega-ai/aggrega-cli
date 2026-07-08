@@ -117,7 +117,7 @@ func TestRenderAll_MixedProviderVersionGroup_AssemblesAtHighest(t *testing.T) {
 		Recipe: func(instanceName, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
-				Spec:     types.RecipeSpec{Provider: providerByNode[instanceName], Source: "./chart"},
+				Spec:     types.RecipeSpec{Target: providerByNode[instanceName], Source: "./chart"},
 			}, true
 		},
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },

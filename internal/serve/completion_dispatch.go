@@ -28,7 +28,7 @@ import (
 //     the host file's kind).
 //  3. If the navigation Kind is Unknown, invoke completion's
 //     secondary classifier (completion-only contexts: kind:,
-//     apiVersion:, label-values, provider:, schema-keywords).
+//     apiVersion:, label-values, target:, schema-keywords).
 //  4. Unrecognized cursor → empty candidate list (LSP convention for
 //     "no completion available here").
 func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *jsonRPCError) {

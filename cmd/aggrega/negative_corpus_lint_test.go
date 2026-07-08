@@ -59,7 +59,7 @@ metadata:
   name: mariadb
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/datastore/mariadb
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -74,7 +74,7 @@ metadata:
   name: dotenv-secret
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implements: core/secret-value
   injectMapping: |
     env:
@@ -189,7 +189,7 @@ metadata:
   name: mariadb
   version: "1.0.0"
 spec:
-  provider: compose
+  target: compose
   implments: core/datastore/mariadb
   workload: |
     apiVersion: aggrega.ai/v1alpha1

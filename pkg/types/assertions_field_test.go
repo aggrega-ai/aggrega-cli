@@ -71,7 +71,7 @@ func TestAssertionsField_FeatureRoundTrip(t *testing.T) {
 // TestAssertionsField_RecipeRoundTrip pins the field on RecipeSpec.
 func TestAssertionsField_RecipeRoundTrip(t *testing.T) {
 	t.Parallel()
-	src := `provider: helm
+	src := `target: helm
 implements: core/db:^1.0.0
 assertions:
   rule-1: 'body-1'
@@ -90,7 +90,7 @@ assertions:
 // FeatureRecipeSpec.
 func TestAssertionsField_FeatureRecipeRoundTrip(t *testing.T) {
 	t.Parallel()
-	src := `provider: helm
+	src := `target: helm
 implements: ops/audit:^1.0.0
 assertions:
   rule-1: 'body-1'

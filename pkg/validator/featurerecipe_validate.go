@@ -89,7 +89,7 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr == nil {
 		return nil
 	}
-	if fr.Spec.Provider == "eval" {
+	if fr.Spec.Target == "eval" {
 		return validateFeatureRecipeEvalProvider(fr, sourcePath)
 	}
 	if err := validateFeatureRecipeRule1(fr, sourcePath); err != nil {
@@ -108,7 +108,7 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 // validator — the constraint is the provider's, not the entity's. The
 // {$import:} composed path (source + file-import artifacts) stays supported.
 func validateFeatureRecipeHelmChartProvider(fr *types.FeatureRecipe, sourcePath string) error {
-	inlineKeys := helmChartInlineArtifactKeys(fr.Spec.Provider, fr.Spec.Artifacts)
+	inlineKeys := helmChartInlineArtifactKeys(fr.Spec.Target, fr.Spec.Artifacts)
 	if len(inlineKeys) == 0 {
 		return nil
 	}

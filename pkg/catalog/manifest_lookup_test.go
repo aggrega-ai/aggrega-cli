@@ -17,7 +17,7 @@ import (
 func fakeRecipe(uri, implements string) types.Recipe {
 	return types.Recipe{
 		Metadata: types.RecipeMetadata{Name: uri, Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Provider: "helm", Implements: implements},
+		Spec:     types.RecipeSpec{Target: "helm", Implements: implements},
 	}
 }
 
@@ -33,7 +33,7 @@ func fakeCatalog(recipes ...types.Recipe) *Catalog {
 		Aggregates:     map[string]types.Aggregate{},
 	}
 	for _, r := range recipes {
-		c.Recipes[recipeIdentityKey(r.Spec.Provider, r.Metadata.Name, r.Metadata.Version)] = r
+		c.Recipes[recipeIdentityKey(r.Spec.Target, r.Metadata.Name, r.Metadata.Version)] = r
 	}
 	return c
 }
@@ -392,9 +392,9 @@ func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 	t.Parallel()
 	flat := &types.MappingTier{}
 	flat.Type.Set("core/datastore/mariadb:1.0.0", "mariadb-bitnami:1.0.0") // versioned key
-	flat.Type.Set("core/cache/redis", "redis-helm:1.0.0")                 // unversioned key
+	flat.Type.Set("core/cache/redis", "redis-helm:1.0.0")                  // unversioned key
 	flat.Type.Set("core/datastore/postgres:2.0.0", "postgres-helm:2.0.0")  // versioned key
-	flat.Type.Set("core/queue/nats", "nats-helm:1.0.0")                   // unversioned key
+	flat.Type.Set("core/queue/nats", "nats-helm:1.0.0")                    // unversioned key
 	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
 	legacy.Components.Type.Set("core/legacy/thing:1.0.0", "thing-legacy:1.0.0")
 	manifest := &types.Manifest{
@@ -533,17 +533,17 @@ func writeCatalogEntity(t *testing.T, dir, rel, body string) {
 	}
 }
 
-// recipeYAML builds a minimal loadable Recipe. provider: eval bans the
+// recipeYAML builds a minimal loadable Recipe. target: eval bans the
 // three-input-kinds, so the recipe needs no source/workload/artifacts to pass
 // load validation — enough for a resolution-only test.
 func recipeYAML(name, implements string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  provider: eval\n  implements: " + implements + "\n"
+		"\n  version: 1.0.0\nspec:\n  target: eval\n  implements: " + implements + "\n"
 }
 
 func featureRecipeYAML(name, implements string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  provider: eval\n  implements: " + implements + "\n"
+		"\n  version: 1.0.0\nspec:\n  target: eval\n  implements: " + implements + "\n"
 }
 
 // TestNameTierOverride_FiresAtBothJoins is the per-instance recipe-override
@@ -752,7 +752,7 @@ func TestNameTier_PrecedenceWithVersionTolerantType(t *testing.T) {
 	t.Parallel()
 	comp := &types.MappingTier{}
 	comp.Type.Set("core/datastore/mariadb:1.0.0", "recipe-typed") // versioned type key
-	comp.Name.Set("db-primary", "recipe-named")                  // per-instance override
+	comp.Name.Set("db-primary", "recipe-named")                   // per-instance override
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}},
 	}

@@ -13,8 +13,9 @@ import (
 
 // validPlugin is a minimal schema-conforming Plugin entity: the four
 // top-level required fields plus the three required spec fields (plugin,
-// pluginType, abiVersion). The plugin reference is the canonical
-// content-addressed oci://<repo>@sha256:<64-hex> form the schema mandates.
+// pluginType, abiVersion). The plugin reference is the digest-free
+// oci://<repo> identity form the schema mandates; the resolved content
+// digest lives in the lockfile, not in the entity.
 const validPlugin = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:

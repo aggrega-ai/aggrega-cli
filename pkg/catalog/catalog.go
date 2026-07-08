@@ -627,10 +627,10 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 
 	// Provider-plugin conflict guardrail: a provider name must be served by at
 	// most one provider-rendering Plugin. Two distinct pluginType: provider
-	// Plugins both listing the same provider in compatibleProviders make render
+	// Plugins both listing the same provider in targets make render
 	// dispatch ambiguous, so it halts loudly at load rather than resolving to an
 	// arbitrary engine. Only provider plugins count — a linter or frp_step
-	// plugin's compatibleProviders carries a different meaning. Iterating the
+	// plugin's targets carries a different meaning. Iterating the
 	// sorted pluginKeys and sorting the offending names keeps the diagnostic
 	// byte-identical across runs.
 	claimants := map[string]map[string]struct{}{}
@@ -639,7 +639,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		if p.Spec.PluginType != "provider" {
 			continue
 		}
-		for _, provName := range p.Spec.CompatibleProviders {
+		for _, provName := range p.Spec.Targets {
 			if claimants[provName] == nil {
 				claimants[provName] = map[string]struct{}{}
 			}
@@ -820,7 +820,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		rKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+		rKey := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
 		if err := c.claimIdentity("Recipe:"+rKey, fmt.Sprintf("recipe identity %q", rKey), path); err != nil {
 			return err
 		}
@@ -831,7 +831,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		frKey := recipeIdentityKey(e.Spec.Provider, e.Metadata.Name, e.Metadata.Version)
+		frKey := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
 		if err := c.claimIdentity("FeatureRecipe:"+frKey, fmt.Sprintf("feature recipe identity %q", frKey), path); err != nil {
 			return err
 		}

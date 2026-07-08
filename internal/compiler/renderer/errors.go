@@ -177,7 +177,7 @@ var (
 	ErrPipelinePatchPreAssembly = errors.New("pipeline PATCH targets an assembler provider's pre-assembly fragments")
 
 	// ErrPluginProviderIncompatible fires when a pipeline step's plugin declares
-	// an enumerated compatibleProviders set that does not include the provider
+	// an enumerated targets set that does not include the provider
 	// rendering the scope the step touches — the recipe's own provider for an
 	// own-scope step, the host component's provider for a host-scope step. The
 	// list is an explicit tested-compatibility claim, not an implicit "any

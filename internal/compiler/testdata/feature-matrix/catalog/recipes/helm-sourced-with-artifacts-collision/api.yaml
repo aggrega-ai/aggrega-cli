@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-api-helm-sourced-art-collision
   version: "1.0.0"
 spec:
-  provider: helm
+  target: helm
   implements: core/server
   source: ../helm-sourced-with-artifacts/charts/api
   provides:

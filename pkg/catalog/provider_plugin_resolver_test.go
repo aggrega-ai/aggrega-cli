@@ -11,7 +11,7 @@ import (
 )
 
 // providerPlugin renders a minimal schema-conforming pluginType: provider Plugin
-// entity claiming the given provider name in its compatibleProviders.
+// entity claiming the given provider name in its targets.
 func providerPlugin(name, version, provider string) string {
 	return `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
@@ -22,7 +22,7 @@ spec:
   plugin: "oci://hub.aggrega.ai/plugins/core/` + name + `"
   pluginType: provider
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - ` + provider + `
   exports:
     - name: render_node
@@ -31,7 +31,7 @@ spec:
 
 // TestProviderPluginByNameResolvesShippedProviders proves the provider-name →
 // provider-Plugin resolution over a realistic catalog: each of the three shipped
-// provider names resolves to the Plugin that lists it in compatibleProviders, a
+// provider names resolves to the Plugin that lists it in targets, a
 // name no plugin serves misses, and a non-provider (frp_step) plugin that happens
 // to list a provider name is NOT treated as a render engine.
 func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
@@ -40,7 +40,7 @@ func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
 	writeYAMLToCatalog(t, dir, "plugins/helm-renderer.yaml", providerPlugin("helm-renderer", "1.0.0", "helm"))
 	writeYAMLToCatalog(t, dir, "plugins/compose-renderer.yaml", providerPlugin("compose-renderer", "1.0.0", "compose"))
 	writeYAMLToCatalog(t, dir, "plugins/helm-chart-renderer.yaml", providerPlugin("helm-chart-renderer", "1.0.0", "helm-chart"))
-	// An frp_step plugin that lists "helm" in compatibleProviders — a DIFFERENT
+	// An frp_step plugin that lists "helm" in targets — a DIFFERENT
 	// meaning (the provider a pipeline step renders alongside), not a render-engine
 	// claim. It must be excluded: if it counted, "helm" would be claimed by two
 	// distinct plugin names and resolve to (_, false).
@@ -53,7 +53,7 @@ spec:
   plugin: "oci://hub.aggrega.ai/plugins/core/helm-pipeline-step"
   pluginType: frp_step
   abiVersion: v1alpha1
-  compatibleProviders:
+  targets:
     - helm
 `)
 
