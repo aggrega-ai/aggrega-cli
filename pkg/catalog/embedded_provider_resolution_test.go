@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -18,18 +19,33 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// These constants pin the embedded helm provider artifact. The digest is the
-// uncompressed content digest of the artifact compiled into the binary and
-// registered by internal/wasm/embedded; it MUST equal the digest in that
-// package's registration URI and in the helm-renderer Plugin entity's
-// spec.plugin. build-embedded-helm-provider.sh recomputes it when the guest
-// source changes.
+// helmArtifactURI is the digest-free repository reference that is the helm
+// provider plugin's identity — the value the helm-renderer Plugin entity's
+// spec.plugin carries and the key the embed tier registers its bytes under. No
+// digest literal is frozen here: the reference digest is derived from the embed
+// tier's own bytes at test time (see embeddedReferenceDigest), so the resolution
+// assertion is a self-consistency check against the bytes the binary actually
+// ships, not against a hand-maintained constant.
 const (
-	helmArtifactDigest = "sha256:c1f78774421caa5a307427bb13cf94869fefb13d27eee44ba2755ca405d2b2f7"
-	helmArtifactURI    = "oci://hub.aggrega.ai/plugins/helm-provider@" + helmArtifactDigest
+	helmArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helm-provider"
 	helmPluginEntity   = "helm-renderer:1.0.0"
 	helmProviderMemPag = 4096
 )
+
+// embeddedReferenceDigest returns the content digest derived from the embed
+// tier's own bytes for a plugin's digest-free repository reference — the same
+// derivation the pull path uses to record a core plugin in the lockfile. A
+// resolution test asserts the resolved bytes hash to this value, so the check
+// tracks the shipped bytes with no frozen literal to re-pin when a guest is
+// rebuilt.
+func embeddedReferenceDigest(t *testing.T, uri string) string {
+	t.Helper()
+	b, ok := embedded.Lookup(uri)
+	if !ok {
+		t.Fatalf("embed tier has no bytes for %q; the registry key must match the plugin's spec.plugin identity", uri)
+	}
+	return digest.ContentDigest(b)
+}
 
 // helmChainCatalog builds an eager Catalog carrying the helm-renderer
 // provider-rendering Plugin entity with the same field values the shipped hub YAML
@@ -113,7 +129,8 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
-		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: helmArtifactDigest}}
+		refDigest := embeddedReferenceDigest(t, helmArtifactURI)
+		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: refDigest}}
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(helmPluginEntity)
@@ -124,8 +141,8 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 			t.Fatalf("resolved from tier %q, want %q — the artifact must resolve through the real embed tier",
 				resolved.Tier, pluginpath.TierEmbed)
 		}
-		if got := digest.ContentDigest(resolved.Bytes); got != helmArtifactDigest {
-			t.Fatalf("resolved bytes digest = %q, want %q", got, helmArtifactDigest)
+		if got := digest.ContentDigest(resolved.Bytes); got != refDigest {
+			t.Fatalf("resolved bytes digest = %q, want the embed tier's own reference digest %q", got, refDigest)
 		}
 
 		// Limits flow end-to-end from the Plugin entity's runtime.maxMemoryPages
@@ -163,7 +180,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: helmArtifactDigest}}
+		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: embeddedReferenceDigest(t, helmArtifactURI)}}
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(helmPluginEntity)
 		if err != nil {

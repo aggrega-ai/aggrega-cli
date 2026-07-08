@@ -19,7 +19,7 @@ metadata:
   name: publishing-linter
   version: 1.0.0
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter
   pluginType: linter
   abiVersion: v1alpha1
   signature:
@@ -93,7 +93,7 @@ metadata:
   name: p
   version: 1.0.0
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: provider
   abiVersion: v1alpha1
 `
@@ -116,8 +116,9 @@ spec:
 }
 
 // TestPlugin_EnvelopeRejectsMalformed proves the envelope schema halts the
-// authoring mistakes the kind must catch: a missing plugin reference, a bad
-// content-address form, and an unknown plugin type.
+// authoring mistakes the kind must catch: a missing plugin reference, a
+// digest-bearing spec.plugin (identity is digest-free — the digest lives in the
+// lockfile), and an unknown plugin type.
 func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
@@ -128,11 +129,11 @@ spec:
   pluginType: linter
   abiVersion: v1alpha1
 `,
-		"bad oci@sha256 form": `apiVersion: aggrega.ai/v1alpha1
+		"digest-bearing spec.plugin (forbidden)": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/p:1.0.0
+  plugin: oci://hub.aggrega.ai/wasm/linter/p@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   pluginType: linter
   abiVersion: v1alpha1
 `,
@@ -140,7 +141,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: importer
   abiVersion: v1alpha1
 `,
@@ -148,7 +149,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: linter
   abiVersion: v2
 `,
@@ -156,7 +157,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: linter
   abiVersion: v1alpha1
   allowedHosts: [example.com]
@@ -183,7 +184,7 @@ metadata:
   name: publishing-linter
   version: 1.0.0
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter
   pluginType: linter
   abiVersion: v1alpha1
   exports:
@@ -217,7 +218,7 @@ metadata:
   name: publishing-linter
   version: 1.0.0
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter
   pluginType: linter
   abiVersion: v1alpha1
 `
@@ -269,7 +270,7 @@ func TestPlugin_EnvelopeRejectsBadExportEnum(t *testing.T) {
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: linter
   abiVersion: v1alpha1
   exports:
@@ -280,7 +281,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: linter
   abiVersion: v1alpha1
   exports:
@@ -291,7 +292,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: linter
   abiVersion: v1alpha1
   exports:
@@ -301,7 +302,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://r
   pluginType: linter
   abiVersion: v1alpha1
   exports:

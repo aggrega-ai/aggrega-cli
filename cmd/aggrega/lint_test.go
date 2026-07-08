@@ -265,7 +265,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	}
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		wp := types.Plugin{}
-		wp.Spec.Plugin = "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+		wp.Spec.Plugin = "oci://hub.aggrega.ai/wasm/linter/aggrega-publishing"
 		return wp, true
 	}
 	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)

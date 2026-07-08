@@ -16,7 +16,7 @@ import (
 // renderDialWorkspace builds a self-contained workspace whose single helm node
 // resolves end-to-end: a cached+pinned Component, a manifest that maps the
 // component type to a synthesised-mode helm Recipe, and a helm-renderer provider
-// Plugin whose content-addressed artifact resolves through the embed tier. So
+// Plugin whose digest-free artifact identity resolves through the embed tier. So
 // the irGraph render (dial on) runs the helm guest to completion — the render
 // this test needs to actually execute to prove the graph is dial-invariant.
 func renderDialWorkspace(t *testing.T) (ws, releaseRel string) {
@@ -65,15 +65,15 @@ spec:
     additionalProperties: true
 `)
 	// The helm-renderer provider Plugin binds the helm provider to the embedded
-	// helm rendering guest; its content-addressed spec.plugin resolves through the
-	// plugin-resolution cascade's embed tier with no sidecar, cache, or lockfile.
+	// helm rendering guest; its digest-free spec.plugin identity resolves through
+	// the plugin-resolution cascade's embed tier with no sidecar, cache, or lockfile.
 	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: helm-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/helm-provider@sha256:c1f78774421caa5a307427bb13cf94869fefb13d27eee44ba2755ca405d2b2f7
+  plugin: oci://hub.aggrega.ai/plugins/core/helm-provider
   pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:

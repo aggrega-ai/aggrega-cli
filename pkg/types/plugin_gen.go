@@ -8,12 +8,12 @@
 
 package types
 
-// Plugin A content-addressed Wasm plugin: an OCI-hosted WebAssembly artifact pinned by sha256 digest, declaring the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The entity is the authoring and metadata surface for a plugin; the closure pins the artifact by digest and the per-registry trust policy verifies its signature at pull. The compiler is blind to the plugin's behavior — it routes the pinned reference; the WebAssembly runtime executes the bytes.
+// Plugin A Wasm plugin: an OCI-hosted WebAssembly artifact identified by its repository reference, declaring the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. Identity is the repository reference plus the entity's metadata.version — the same shape every other entity carries; the resolved content digest lives in the lockfile, not in the entity. The closure records the digest and the per-registry trust policy verifies the artifact's signature at pull. The compiler is blind to the plugin's behavior — it routes the reference; the WebAssembly runtime executes the bytes.
 type Plugin struct {
 	APIVersion string         `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string         `json:"kind" yaml:"kind"`
 	Metadata   PluginMetadata `json:"metadata" yaml:"metadata"`
-	// Spec The plugin's content-addressed OCI reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
+	// Spec The plugin's OCI repository reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
 	Spec PluginSpec `json:"spec" yaml:"spec"`
 }
 
@@ -37,9 +37,9 @@ type PluginMetadata struct {
 	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// PluginSpec The plugin's content-addressed OCI reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
+// PluginSpec The plugin's OCI repository reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
 type PluginSpec struct {
-	// Plugin The canonical content-addressed reference to the Wasm artifact, in the form `oci://<repository>@sha256:<digest>`. The reference is the plugin's identity; the digest is what the closure pins and the build verifies. A tag-form reference (`oci://<repository>:<tag>`) authored elsewhere resolves to its sha256 digest at pull and pins to this canonical form — the entity's `plugin` field carries the resolved, digest-pinned reference.
+	// Plugin The digest-free OCI repository reference to the Wasm artifact, in the form `oci://<repository>` (first-party artifacts live under `oci://hub.aggrega.ai/plugins/core/<name>`). The reference plus the entity's metadata.version is the plugin's identity — the same identity shape every other entity carries. A digest is never embedded here: a `@sha256:<digest>` suffix is rejected. The resolved content digest lives in the lockfile, where pull records it and the build verifies the resolved bytes against it.
 	Plugin string `json:"plugin" yaml:"plugin"`
 	// PluginType The socket type this plugin implements. A plugin implements exactly one socket type, drawn from the plugin-type taxonomy the runtime recognises: `provider` (renders IR nodes into provider-native artifacts), `linter` (inspects authored content and raises diagnostics), `frp_step` (a feature-recipe-pipeline step that transforms IR within a pipeline), `mutator` (auto-tags topology-graph node labels at Step 2 via JSON Patch), `policy-validator` (evaluates the full IR graph at Step 4 and halts the build on a failed rule).
 	PluginType string `json:"pluginType" yaml:"pluginType"`

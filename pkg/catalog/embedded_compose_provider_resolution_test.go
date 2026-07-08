@@ -18,15 +18,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// These constants pin the embedded compose provider artifact. The digest is the
-// uncompressed content digest of the artifact compiled into the binary and
-// registered by internal/wasm/embedded; it MUST equal the digest in that
-// package's registration URI and in the compose-renderer Plugin entity's
-// spec.plugin. build-embedded-compose-provider.sh recomputes it when the guest
-// source changes.
+// composeArtifactURI is the digest-free repository reference that is the compose
+// provider plugin's identity — the value the compose-renderer Plugin entity's
+// spec.plugin carries and the key the embed tier registers its bytes under. No
+// digest literal is frozen here: the reference digest is derived from the embed
+// tier's own bytes at test time (embeddedReferenceDigest), so the resolution
+// assertion is a self-consistency check against the shipped bytes.
 const (
-	composeArtifactDigest = "sha256:573c77bbc3c99cea31c39562f6c484c4b655dd0460dc4e9741d6043e56c9dedf"
-	composeArtifactURI    = "oci://hub.aggrega.ai/plugins/compose-provider@" + composeArtifactDigest
+	composeArtifactURI    = "oci://hub.aggrega.ai/plugins/core/compose-provider"
 	composePluginEntity   = "compose-renderer:1.0.0"
 	composeProviderMemPag = 4096
 )
@@ -100,7 +99,8 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
-		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: composeArtifactDigest}}
+		refDigest := embeddedReferenceDigest(t, composeArtifactURI)
+		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: refDigest}}
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(composePluginEntity)
@@ -111,8 +111,8 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 			t.Fatalf("resolved from tier %q, want %q — the artifact must resolve through the real embed tier",
 				resolved.Tier, pluginpath.TierEmbed)
 		}
-		if got := digest.ContentDigest(resolved.Bytes); got != composeArtifactDigest {
-			t.Fatalf("resolved bytes digest = %q, want %q", got, composeArtifactDigest)
+		if got := digest.ContentDigest(resolved.Bytes); got != refDigest {
+			t.Fatalf("resolved bytes digest = %q, want the embed tier's own reference digest %q", got, refDigest)
 		}
 
 		// Limits flow end-to-end from the Plugin entity's runtime.maxMemoryPages
@@ -150,7 +150,7 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: composeArtifactDigest}}
+		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: embeddedReferenceDigest(t, composeArtifactURI)}}
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(composePluginEntity)
 		if err != nil {

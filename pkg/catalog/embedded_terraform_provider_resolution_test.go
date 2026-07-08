@@ -18,15 +18,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// These constants pin the embedded terraform provider artifact. The digest is
-// the uncompressed content digest of the artifact compiled into the binary and
-// registered by internal/wasm/embedded; it MUST equal the digest in that
-// package's registration URI and in the terraform-renderer Plugin entity's
-// spec.plugin. build-embedded-terraform-provider.sh recomputes it when the guest
-// source changes.
+// terraformArtifactURI is the digest-free repository reference that is the
+// terraform provider plugin's identity — the value the terraform-renderer Plugin
+// entity's spec.plugin carries and the key the embed tier registers its bytes
+// under. No digest literal is frozen here: the reference digest is derived from
+// the embed tier's own bytes at test time (embeddedReferenceDigest), so the
+// resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	terraformArtifactDigest = "sha256:8a00a123ca053e8c7847ca6bdbc23eb623b8712c7f913818c0754531ac2aa0c7"
-	terraformArtifactURI    = "oci://hub.aggrega.ai/plugins/terraform-provider@" + terraformArtifactDigest
+	terraformArtifactURI    = "oci://hub.aggrega.ai/plugins/core/terraform-provider"
 	terraformPluginEntity   = "terraform-renderer:1.0.0"
 	terraformProviderMemPag = 4096
 )
@@ -99,7 +98,8 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
-		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: terraformArtifactDigest}}
+		refDigest := embeddedReferenceDigest(t, terraformArtifactURI)
+		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: refDigest}}
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(terraformPluginEntity)
@@ -110,8 +110,8 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 			t.Fatalf("resolved from tier %q, want %q — the artifact must resolve through the real embed tier",
 				resolved.Tier, pluginpath.TierEmbed)
 		}
-		if got := digest.ContentDigest(resolved.Bytes); got != terraformArtifactDigest {
-			t.Fatalf("resolved bytes digest = %q, want %q", got, terraformArtifactDigest)
+		if got := digest.ContentDigest(resolved.Bytes); got != refDigest {
+			t.Fatalf("resolved bytes digest = %q, want the embed tier's own reference digest %q", got, refDigest)
 		}
 
 		// Limits flow end-to-end from the Plugin entity's runtime.maxMemoryPages
@@ -149,7 +149,7 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: terraformArtifactDigest}}
+		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: embeddedReferenceDigest(t, terraformArtifactURI)}}
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(terraformPluginEntity)
 		if err != nil {

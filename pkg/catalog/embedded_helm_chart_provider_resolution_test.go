@@ -18,15 +18,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// These constants pin the embedded helm-chart provider artifact. The digest is
-// the uncompressed content digest of the artifact compiled into the binary and
-// registered by internal/wasm/embedded; it MUST equal the digest in that
-// package's registration URI and in the helm-chart-renderer Plugin entity's
-// spec.plugin. build-embedded-helm-chart-provider.sh recomputes it when the guest
-// source changes.
+// helmChartArtifactURI is the digest-free repository reference that is the
+// helm-chart provider plugin's identity — the value the helm-chart-renderer
+// Plugin entity's spec.plugin carries and the key the embed tier registers its
+// bytes under. No digest literal is frozen here: the reference digest is derived
+// from the embed tier's own bytes at test time (embeddedReferenceDigest), so the
+// resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	helmChartArtifactDigest = "sha256:c53babd593f2272a7dd0bbb728930905060ddc47d4011135d0f6f973cc0f05f8"
-	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugins/helmchart-provider@" + helmChartArtifactDigest
+	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helmchart-provider"
 	helmChartPluginEntity   = "helm-chart-renderer:1.0.0"
 	helmChartProviderMemPag = 4096
 )
@@ -100,7 +99,8 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
-		res := pluginpath.Resolver{Pins: map[string]string{helmChartArtifactURI: helmChartArtifactDigest}}
+		refDigest := embeddedReferenceDigest(t, helmChartArtifactURI)
+		res := pluginpath.Resolver{Pins: map[string]string{helmChartArtifactURI: refDigest}}
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(helmChartPluginEntity)
@@ -111,8 +111,8 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 			t.Fatalf("resolved from tier %q, want %q — the artifact must resolve through the real embed tier",
 				resolved.Tier, pluginpath.TierEmbed)
 		}
-		if got := digest.ContentDigest(resolved.Bytes); got != helmChartArtifactDigest {
-			t.Fatalf("resolved bytes digest = %q, want %q", got, helmChartArtifactDigest)
+		if got := digest.ContentDigest(resolved.Bytes); got != refDigest {
+			t.Fatalf("resolved bytes digest = %q, want the embed tier's own reference digest %q", got, refDigest)
 		}
 
 		// Limits flow end-to-end from the Plugin entity's runtime.maxMemoryPages
@@ -150,7 +150,7 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{helmChartArtifactURI: helmChartArtifactDigest}}
+		res := pluginpath.Resolver{Pins: map[string]string{helmChartArtifactURI: embeddedReferenceDigest(t, helmChartArtifactURI)}}
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(helmChartPluginEntity)
 		if err != nil {

@@ -19,7 +19,7 @@ metadata:
   name: ` + name + `
   version: ` + version + `
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/` + name + `@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  plugin: "oci://hub.aggrega.ai/plugins/core/` + name + `"
   pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:
@@ -50,7 +50,7 @@ metadata:
   name: helm-pipeline-step
   version: 1.0.0
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/helm-pipeline-step@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  plugin: "oci://hub.aggrega.ai/plugins/core/helm-pipeline-step"
   pluginType: frp_step
   abiVersion: v1alpha1
   compatibleProviders:

@@ -11,9 +11,12 @@
 // The helm and compose provider rendering plugins are embedded here. Each
 // artifact is committed gzip-compressed under plugins/ (the uncompressed Wasm is
 // large) and decompressed once at init into the registry, keyed by the
-// artifact's canonical content-addressed URI. Adding another embedded plugin is
-// a drop-in: place its gzip-compressed .wasm under plugins/ and register its
-// canonical URI in register.
+// plugin's digest-free repository reference — the same reference a Plugin
+// entity's spec.plugin names. Keying on the repository, not a content digest,
+// means a rebuild of the embedded bytes does not perturb the lookup key: the
+// reference digest is derived from the bytes on demand where a caller needs it.
+// Adding another embedded plugin is a drop-in: place its gzip-compressed .wasm
+// under plugins/ and register its repository reference in register.
 package embedded
 
 import (
@@ -46,43 +49,41 @@ import (
 //go:embed all:plugins
 var pluginFS embed.FS
 
-// helmProviderURI is the canonical content-addressed URI the helm provider
-// rendering plugin's decompressed bytes register under. It is the artifact
-// reference a Plugin entity's spec.plugin names; the sha256 digest pins the
-// exact bytes committed (uncompressed) under plugins/, so a resolution of this
-// URI through the embed tier verifies byte-for-byte against a lockfile pin.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/helm-provider@sha256:c1f78774421caa5a307427bb13cf94869fefb13d27eee44ba2755ca405d2b2f7"
+// helmProviderURI is the digest-free repository reference the helm provider
+// rendering plugin's decompressed bytes register under — the same reference a
+// Plugin entity's spec.plugin names. The reference digest is derived from these
+// bytes on demand (never stored here), so a rebuild of the guest does not change
+// the lookup key.
+const helmProviderURI = "oci://hub.aggrega.ai/plugins/core/helm-provider"
 
-// composeProviderURI is the canonical content-addressed URI the compose provider
+// composeProviderURI is the digest-free repository reference the compose provider
 // rendering plugin's decompressed bytes register under. Like helmProviderURI, the
-// sha256 digest pins the exact bytes committed (uncompressed) under plugins/, so a
-// resolution of this URI through the embed tier verifies byte-for-byte against a
-// lockfile pin.
-const composeProviderURI = "oci://hub.aggrega.ai/plugins/compose-provider@sha256:573c77bbc3c99cea31c39562f6c484c4b655dd0460dc4e9741d6043e56c9dedf"
+// reference digest is derived from the bytes on demand rather than stored in the
+// key, so a guest rebuild does not perturb the lookup.
+const composeProviderURI = "oci://hub.aggrega.ai/plugins/core/compose-provider"
 
-// helmChartProviderURI is the canonical content-addressed URI the helm-chart
+// helmChartProviderURI is the digest-free repository reference the helm-chart
 // provider rendering plugin's decompressed bytes register under. Like the other
-// provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
-// under plugins/, so a resolution of this URI through the embed tier verifies
-// byte-for-byte against a lockfile pin.
-const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/helmchart-provider@sha256:c53babd593f2272a7dd0bbb728930905060ddc47d4011135d0f6f973cc0f05f8"
+// provider references, the reference digest is derived from the bytes on demand,
+// so a guest rebuild does not perturb the lookup key.
+const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/core/helmchart-provider"
 
-// terraformProviderURI is the canonical content-addressed URI the terraform
+// terraformProviderURI is the digest-free repository reference the terraform
 // provider rendering plugin's decompressed bytes register under. Like the other
-// provider URIs, the sha256 digest pins the exact bytes committed (uncompressed)
-// under plugins/, so a resolution of this URI through the embed tier verifies
-// byte-for-byte against a lockfile pin.
-const terraformProviderURI = "oci://hub.aggrega.ai/plugins/terraform-provider@sha256:8a00a123ca053e8c7847ca6bdbc23eb623b8712c7f913818c0754531ac2aa0c7"
+// provider references, the reference digest is derived from the bytes on demand,
+// so a guest rebuild does not perturb the lookup key.
+const terraformProviderURI = "oci://hub.aggrega.ai/plugins/core/terraform-provider"
 
-// registry maps a canonical plugin URI to the embedded artifact's decompressed
-// bytes. It is the lookup the cascade's embed tier consults, populated from
-// pluginFS at init by register.
+// registry maps a plugin's digest-free repository reference to the embedded
+// artifact's decompressed bytes. It is the lookup the cascade's embed tier
+// consults, populated from pluginFS at init by register.
 var registry = map[string][]byte{}
 
-// register binds embedded plugin URIs to their bytes read from pluginFS. It is
-// the single place an embedded plugin is wired: read its artifact from pluginFS
-// and assign it under its canonical URI. The committed artifacts are
-// gzip-compressed, so register decompresses each once here.
+// register binds embedded plugin repository references to their bytes read from
+// pluginFS. It is the single place an embedded plugin is wired: read its
+// artifact from pluginFS and assign it under its repository reference. The
+// committed artifacts are gzip-compressed, so register decompresses each once
+// here.
 //
 // A read or decompression failure for a registered artifact is a
 // build-of-the-binary defect (the file is embedded at compile time), so

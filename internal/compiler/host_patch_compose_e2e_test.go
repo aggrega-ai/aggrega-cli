@@ -24,7 +24,7 @@ import (
 func hostPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
 	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/wasm/frp/host-patch-compose@sha256:3333333333333333333333333333333333333333333333333333333333333333": "frp-step-host-patch-compose-rust.wasm",
+		"oci://hub.aggrega.ai/wasm/frp/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/host-patch-compose/release.yaml",

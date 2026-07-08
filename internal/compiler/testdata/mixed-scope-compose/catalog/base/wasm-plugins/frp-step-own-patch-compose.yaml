@@ -4,7 +4,7 @@ metadata:
   name: core/frp/own-patch-compose
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/own-patch-compose@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  plugin: "oci://hub.aggrega.ai/wasm/frp/own-patch-compose"
   pluginType: frp_step
   abiVersion: v1alpha1
   compatibleProviders:

@@ -226,6 +226,12 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 		if err != nil {
 			return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
 		}
+		// A core plugin embedded in the binary resolves through the embed tier
+		// with a reference digest derived on demand, so it is recorded here (not
+		// NotFound). A genuinely-absent registry reference still resolves to
+		// NotFound and is skipped: it may resolve at build through a local path
+		// the lock-time lookup does not see, and the build-time loader gate halts
+		// on a truly-missing artifact.
 		if artRes.NotFound {
 			continue
 		}

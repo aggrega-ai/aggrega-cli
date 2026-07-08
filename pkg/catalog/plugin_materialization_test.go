@@ -21,7 +21,7 @@ metadata:
   name: core/linter/naming
   version: 1.0.0
 spec:
-  plugin: "oci://registry.example.com/wasm/linter/naming@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  plugin: "oci://registry.example.com/wasm/linter/naming"
   pluginType: linter
   abiVersion: v1alpha1
 `

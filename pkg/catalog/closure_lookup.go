@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -519,12 +520,21 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 }
 
 func (l *catalogLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
-	// A Plugin entity's spec.plugin pins the .wasm artifact by content
-	// (oci://<repo>@sha256:<digest>). That form is the canonical published shape
-	// (every push stamps it), so it is the primary path: the artifact is fetched
-	// by its content-digest-derived tag and the bytes are verified against the
-	// pinned digest, keyed in the cache by the pinned digest so the build re-reads
-	// the identical slot.
+	// Embed tier: a core plugin embedded in the binary resolves offline. Its
+	// reference digest is derived from the embedded bytes on demand — never
+	// stored — so pull records a lockfile entry for a core plugin with no
+	// registry round-trip, and the closure walker no longer drops it as a
+	// NotFound miss. The lockfile carries the derived digest in the existing
+	// digest field; identity stays the digest-free spec.plugin reference.
+	if b, ok := embedded.Lookup(uri); ok {
+		return embeddedPluginResolution(contentDigest(b)), nil
+	}
+	// A Plugin entity's spec.plugin identifies the .wasm artifact by its
+	// digest-free repository reference (oci://<repo>). A digest-bearing form
+	// (oci://<repo>@sha256:<digest>) authored elsewhere still parses here so an
+	// externally-pinned reference fetches by its content-digest tag and verifies
+	// against the pin, keyed in the cache by the pinned digest so the build
+	// re-reads the identical slot.
 	if reference, pinDigest, ok := SplitPluginArtifactURI(uri); ok {
 		return l.resolvePinnedPluginArtifact(uri, reference, pinDigest)
 	}
@@ -638,6 +648,21 @@ func pinnedPluginResolution(pinDigest, manifestDigest string) closure.Resolution
 		Digest:          pinDigest,
 		ManifestDigest:  manifestDigest,
 		ResolutionPath:  "tier-3-pull",
+	}
+}
+
+// embeddedPluginResolution is the resolution descriptor for a core .wasm
+// artifact resolved from the binary's embed tier: ResolvedVersion and Digest are
+// both the reference digest derived from the embedded bytes, so the lockfile
+// records a real content digest for a core plugin without any registry access.
+// ManifestDigest is empty — an embedded artifact carries no registry manifest to
+// verify against. ResolutionPath marks it a resolved (above-Tier-1) pin, so the
+// closure walker records it rather than skipping it as a NotFound miss.
+func embeddedPluginResolution(refDigest string) closure.Resolution {
+	return closure.Resolution{
+		ResolvedVersion: refDigest,
+		Digest:          refDigest,
+		ResolutionPath:  "tier-0-embed",
 	}
 }
 
@@ -1211,15 +1236,16 @@ func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
 // The leading "oci://" scheme is stripped; the split is on the LAST "@" so a
 // repository path that itself contains "@" still parses, with reference=<repo>
 // and contentDigest="sha256:<hex>". Returns ok=false when the URI carries no
-// "@sha256:" segment, so a non-content-pinned reference (a bare path or a
-// "<repo>:<version>" tag form) falls through cleanly to the version-tag path.
+// "@sha256:" segment, so a digest-free reference (the plugin's authored identity
+// oci://<repo>, a bare path, or a "<repo>:<version>" tag form) falls through
+// cleanly to the version-tag path.
 //
-// This is the inverse of the publish-side content-pin construction: publish
-// stamps a Plugin entity's spec.plugin to oci://<repo>@sha256:<content-digest>;
-// the consume side parses it back here to fetch the .wasm by its content-digest
-// tag. The split is deliberately NOT routed through SplitURIForOCI, whose
-// last-colon rule mis-parses the "@sha256:<hex>" form (the hex tail past the
-// colon would read as a version).
+// A plugin's authored spec.plugin identity is digest-free, so this split parses
+// only an externally-supplied content-pinned reference
+// (oci://<repo>@sha256:<hex>) back into its repository reference and digest, to
+// fetch the .wasm by its content-digest tag. The split is deliberately NOT
+// routed through SplitURIForOCI, whose last-colon rule mis-parses the
+// "@sha256:<hex>" form (the hex tail past the colon would read as a version).
 func SplitPluginArtifactURI(uri string) (reference, contentDigest string, ok bool) {
 	trimmed := strings.TrimPrefix(uri, "oci://")
 	at := strings.LastIndex(trimmed, "@")

@@ -109,15 +109,16 @@ spec:
 `
 	// baseComposeRendererPlugin binds the compose provider to the embedded compose
 	// rendering guest through the plugin-resolution cascade's embed tier (the
-	// content-addressed spec.plugin resolves the exact bytes compiled into the
-	// binary), so the minimal base workspace renders through the compose guest.
+	// digest-free spec.plugin identity resolves, keyed on the repository
+	// reference, to the exact bytes compiled into the binary), so the minimal base
+	// workspace renders through the compose guest.
 	baseComposeRendererPlugin = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: compose-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/compose-provider@sha256:573c77bbc3c99cea31c39562f6c484c4b655dd0460dc4e9741d6043e56c9dedf
+  plugin: oci://hub.aggrega.ai/plugins/core/compose-provider
   pluginType: provider
   abiVersion: v1alpha1
   compatibleProviders:
