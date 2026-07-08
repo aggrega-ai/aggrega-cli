@@ -36,6 +36,26 @@ func splitVersionedURI(uri string) (base, version string, hasVersion bool) {
 	return uri[:idx], uri[idx+1:], true
 }
 
+// splitPluginRefVersion splits a provider-plugin OCI identity like
+// "oci://host/path/helm:1.0.0" into its digest-free ref and version-pin
+// segments. Unlike splitVersionedURI it is safe for a scheme-bearing OCI ref:
+// the version separator is a colon AFTER the last path slash, so neither the
+// "oci://" scheme colon nor a host:port colon is mistaken for a version pin.
+// Returns the whole ref as base, "" as version, and false as hasVersion when no
+// post-slash colon is present.
+func splitPluginRefVersion(ref string) (base, version string, hasVersion bool) {
+	off := 0
+	if slash := strings.LastIndex(ref, "/"); slash >= 0 {
+		off = slash + 1
+	}
+	tail := ref[off:]
+	idx := strings.LastIndex(tail, ":")
+	if idx < 0 {
+		return ref, "", false
+	}
+	return ref[:off+idx], ref[off+idx+1:], true
+}
+
 // selectEntityVersion resolves a caller's catalog-entity reference (callerURI,
 // optionally version-pinned) against an index of concrete-version entities,
 // returning the index KEY of the entry that best satisfies it under the

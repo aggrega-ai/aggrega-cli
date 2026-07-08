@@ -1270,6 +1270,29 @@ func (l *LazyLookup) ProviderPluginByName(ref string) (types.Plugin, bool, error
 	return l.recipeCatalog().ProviderPluginByName(ref)
 }
 
+// ProviderPluginCandidates returns every provider-rendering Plugin serving the
+// bare render target over the lazily-enumerated (Tier-1 + pinned Tier-2) Plugin
+// set, sorted deterministically, for the ambiguity diagnostic and the interactive
+// pull binding-helper. Delegates to the same *Catalog matcher the eager backing
+// uses.
+func (l *LazyLookup) ProviderPluginCandidates(target string) []types.Plugin {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().ProviderPluginCandidates(target)
+}
+
+// ProviderPluginForTarget resolves a render target to its provider-rendering
+// Plugin entity honoring an explicit provider_bindings selection, over the
+// lazily-enumerated (Tier-1 + pinned Tier-2) Plugin set. It delegates to the same
+// *Catalog matcher the eager backing uses (via the recipeCatalog() shell), so the
+// two backings resolve identically — no per-backing matcher. Pull passes the
+// workspace-config bindings; build passes the lockfile-derived bindings.
+func (l *LazyLookup) ProviderPluginForTarget(ref string, bindings map[string]string) (types.Plugin, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().ProviderPluginForTarget(ref, bindings)
+}
+
 // ClosureRecipeLoader exposes the source-descent recipe loader over the lazily-
 // enumerated (Tier-1 + pinned Tier-2) recipe set, so pull's lock-time source
 // descent loads a registry-resolved Recipe / FeatureRecipe from the pinned cache.

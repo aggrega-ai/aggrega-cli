@@ -61,6 +61,26 @@ var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 // version references, not provider-engine selection.
 var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
 
+// ErrAmbiguousProviderPlugin fires at resolution when a render target is served
+// by more than one distinct provider-rendering Plugin and no provider_bindings
+// entry disambiguates which one renders it. The compiler never picks arbitrarily
+// among competing render engines — a federated catalog where two publishers each
+// ship a plugin for the same target is legal (the catalog loads), but a build or
+// pull that reaches the target must be told which engine to use. The wrapped
+// message names every candidate plugin, sorted, and points the operator at the
+// provider_bindings surface that selects one. It is a point-of-use halt: it fires
+// at pull (resolution) and at build (render-engine selection), not at catalog
+// load, so an ambiguity outside a Release's reach never blocks an unrelated build.
+var ErrAmbiguousProviderPlugin = errors.New("render target is served by more than one provider plugin; add a provider_bindings entry to select one")
+
+// ErrProviderBindingUnsatisfied fires at resolution when a provider_bindings
+// entry selects a plugin identity that no provider-rendering Plugin serving the
+// target matches — a typo in the binding, or a binding pointing at a plugin that
+// does not (or no longer) serves the target. The explicit selection is a request
+// the catalog cannot honor, so it halts loudly rather than silently falling back
+// to another engine.
+var ErrProviderBindingUnsatisfied = errors.New("provider_bindings entry names a plugin no provider-rendering plugin serving the target matches")
+
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
 // Manifest mapping for its type. Resolution is mapping-only — the catalog never
 // chooses a recipe by spec.implements, so an unmapped instance halts regardless
@@ -377,39 +397,56 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 	return c.Plugins[key], true
 }
 
-// ProviderPluginByName resolves a provider binding to the provider-rendering
-// Plugin entity serving it, plus a found flag and an error. The binding is the
-// bare provider name ("helm") or a version-pinned form ("helm:1.0.0",
-// "helm:^1.0.0") where the trailing segment constrains the Plugin version; the
-// provider name (the part before any pin) is matched against targets.
-// A pluginType: provider Plugin serves the provider names listed in its
-// targets; this finds the unique such Plugin claiming the provider
-// name and, among that plugin's versions, the one satisfying the pin — highest
-// overall when unpinned, exact for an exact pin, highest-in-range for a caret —
-// via the same three-form version select the other by-name lookups use. A linter
-// or frp_step plugin whose targets happens to list the name is
-// excluded — that list carries a different meaning for a non-provider plugin (the
-// provider a pipeline step renders alongside), not a render-engine claim.
+// ProviderPluginForTarget resolves a render target to the provider-rendering
+// Plugin entity that renders it, plus a found flag and an error, honoring an
+// explicit provider_bindings selection. The target ref is the bare engine name
+// ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0") a Recipe binds
+// through spec.target; the bare name (before any pin) is matched against
+// targets. A pluginType: provider Plugin serves the target names listed in
+// its targets; a linter or frp_step plugin whose targets happens to list the name
+// is excluded — that list carries a different meaning for a non-provider plugin.
+//
+// The bindings map is the workspace-config (at pull) or lockfile-derived (at
+// build) provider_bindings, keyed by bare target name; each value is a
+// digest-free plugin OCI identity (matching a Plugin's spec.plugin) with an
+// optional trailing ":version". When an entry is present for the target, the
+// candidate set is filtered to plugins whose spec.plugin matches that identity —
+// so the binding SELECTS the plugin repository among competing publishers. A nil
+// or empty bindings map disables that filter (every provider plugin serving the
+// target is a candidate). Version coexistence is orthogonal to the binding: the
+// binding selects the repository, and the version is chosen by the recipe's pin,
+// else the binding's optional version, else the highest — via the same three-form
+// version select the other by-name lookups use.
 //
 // Return contract:
 //   - (plugin, true, nil) on a satisfying match;
-//   - (_, false, nil) on a bare miss (no serving plugin, or an ambiguous claim by
-//     more than one distinct provider plugin — the latter caught loudly at catalog
-//     load), leaving the binding unresolved for the caller to handle;
-//   - (_, false, ErrProviderVersionUnsatisfiable) when the binding is version-pinned
-//     but no serving plugin version satisfies the pin (including the case where the
-//     provider has no serving plugin at all) — a loud halt, since the pin is an
-//     explicit request the compiler cannot honor.
+//   - (_, false, nil) on a bare miss (no serving plugin and no binding, no
+//     version pin) — left for the caller to handle (build halts loudly at render);
+//   - (_, false, ErrAmbiguousProviderPlugin) when more than one distinct provider
+//     plugin serves the target and no binding disambiguates — a loud point-of-use
+//     halt naming the candidates;
+//   - (_, false, ErrProviderBindingUnsatisfied) when a binding selects a plugin no
+//     serving candidate matches — a loud halt on an unfulfillable explicit choice;
+//   - (_, false, ErrProviderVersionUnsatisfiable) when a version pin is present but
+//     no serving plugin version satisfies it — a loud halt on the pin.
 //
 // Determinism (byte-identical output): matches collect into a sub-index that the
-// shared version select sorts before choosing, so the outcome never depends on
-// map-iteration order.
+// shared version select sorts before choosing, and the candidate names sort before
+// they enter a diagnostic, so no outcome depends on map-iteration order.
 //
 // Served by both catalog backings: the lazy backing exposes its enumerated Plugin
-// set through the recipeCatalog() *Catalog shell, so its ProviderPluginByName
+// set through the recipeCatalog() *Catalog shell, so its ProviderPluginForTarget
 // delegates here against the same matcher (no per-backing reimplementation).
-func (c *Catalog) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
+func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string) (types.Plugin, bool, error) {
 	name, verSeg, hasVer := splitVersionedURI(ref)
+
+	var bindBase, bindVer string
+	var bindHasVer, bound bool
+	if bv, ok := bindings[name]; ok && bv != "" {
+		bound = true
+		bindBase, bindVer, bindHasVer = splitPluginRefVersion(bv)
+	}
+
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
 	for key, p := range c.Plugins {
@@ -419,29 +456,55 @@ func (c *Catalog) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
 		if !slices.Contains(p.Spec.Targets, name) {
 			continue
 		}
+		// A binding selects the plugin repository (spec.plugin identity), filtering
+		// out every competing publisher's plugin for this target.
+		if bound && p.Spec.Plugin != bindBase {
+			continue
+		}
 		matches[key] = p
 		distinctNames[p.Metadata.Name] = struct{}{}
 	}
-	// Zero matches, or an ambiguous claim by more than one distinct provider
-	// plugin (the latter is caught loudly at catalog load).
-	if len(distinctNames) != 1 {
-		if hasVer && len(distinctNames) == 0 {
-			// A version-pinned provider with no serving plugin at all cannot be
-			// honored — halt loudly rather than falling back.
+
+	// The version pin priority: the recipe's target pin, else the binding's
+	// optional version. Threaded into the diagnostic and the version select alike.
+	pin := ""
+	if hasVer {
+		pin = verSeg
+	} else if bound && bindHasVer {
+		pin = bindVer
+	}
+
+	switch len(distinctNames) {
+	case 0:
+		if bound {
+			return types.Plugin{}, false, fmt.Errorf("%w: target %q is bound to plugin %q, but no provider-rendering plugin serving %q matches that identity", ErrProviderBindingUnsatisfied, name, bindBase, name)
+		}
+		if hasVer {
 			return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no provider-rendering plugin serves it", ErrProviderVersionUnsatisfiable, name, verSeg)
 		}
+		// No serving plugin, no binding, no pin — a bare miss the caller resolves.
 		return types.Plugin{}, false, nil
+	case 1:
+		// Exactly one repository — fall through to version select.
+	default:
+		names := make([]string, 0, len(distinctNames))
+		for n := range distinctNames {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return types.Plugin{}, false, fmt.Errorf("%w: target %q is served by more than one provider plugin (%s); add a provider_bindings entry for %q selecting one", ErrAmbiguousProviderPlugin, name, strings.Join(names, ", "), name)
 	}
+
 	var base string
 	for n := range distinctNames {
 		base = n
 	}
 	// Thread the version constraint into the shared three-form select by rebuilding
 	// the caller URI against the PLUGIN's identity name (which differs from the
-	// provider name — e.g. provider "helm" served by plugin "helm-renderer").
+	// target name — e.g. target "helm" served by plugin "helm-renderer").
 	callerURI := base
-	if hasVer {
-		callerURI = base + ":" + verSeg
+	if pin != "" {
+		callerURI = base + ":" + pin
 	}
 	key, ok, err := selectEntityVersion(matches, callerURI, func(v types.Plugin) (string, string) {
 		return v.Metadata.Name, v.Metadata.Version
@@ -449,12 +512,48 @@ func (c *Catalog) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
 	if err != nil {
 		// selectEntityVersion signals an unsatisfiable exact/caret constraint;
 		// translate it to the provider-specific halt naming the pin.
-		return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no serving plugin version satisfies it", ErrProviderVersionUnsatisfiable, name, verSeg)
+		return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no serving plugin version satisfies it", ErrProviderVersionUnsatisfiable, name, pin)
 	}
 	if !ok {
 		return types.Plugin{}, false, nil
 	}
 	return matches[key], true, nil
+}
+
+// ProviderPluginCandidates returns every provider-rendering Plugin serving the
+// bare render target, sorted by metadata name then version, for a diagnostic or
+// an interactive disambiguation prompt. It applies no binding filter and no
+// version select — it is the raw candidate set the ambiguity halt reports over.
+// The sort makes the returned order byte-identical across runs.
+func (c *Catalog) ProviderPluginCandidates(target string) []types.Plugin {
+	var out []types.Plugin
+	for _, p := range c.Plugins {
+		if p.Spec.PluginType != "provider" {
+			continue
+		}
+		if !slices.Contains(p.Spec.Targets, target) {
+			continue
+		}
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Metadata.Name != out[j].Metadata.Name {
+			return out[i].Metadata.Name < out[j].Metadata.Name
+		}
+		return out[i].Metadata.Version < out[j].Metadata.Version
+	})
+	return out
+}
+
+// ProviderPluginByName resolves a render target to its provider-rendering Plugin
+// entity with no explicit binding — the zero-config path where a target served by
+// exactly one provider plugin resolves to it, and an ambiguously-served target
+// halts with ErrAmbiguousProviderPlugin. It is ProviderPluginForTarget with a nil
+// bindings map; the binding-aware callers (pull, build render) pass their bindings
+// directly. Retained as the by-name accessor for the catalog-wide capability
+// checks and the eager CatalogLookup, which resolve without a binding surface.
+func (c *Catalog) ProviderPluginByName(ref string) (types.Plugin, bool, error) {
+	return c.ProviderPluginForTarget(ref, nil)
 }
 
 // implementsSatisfies reports whether a recipe declaring spec.implements==impl

@@ -36,15 +36,16 @@ package lockfile
 // Field declaration order is alphabetical to drive yaml.v3's
 // canonical key emission.
 type Lockfile struct {
-	Entities         []Entity         `yaml:"entities"`
-	ExternalInputs   []ExternalInput  `yaml:"external_inputs"`
-	GeneratedAt      string           `yaml:"generated_at"`
-	MappingLibraries []MappingLibrary `yaml:"mapping_libraries"`
-	Plugins          []Plugin         `yaml:"plugins"`
-	Release          string           `yaml:"release"`
-	SchemaLibraries  []SchemaLibrary  `yaml:"schema_libraries"`
-	SourceArtifacts  []SourceArtifact `yaml:"source_artifacts"`
-	Version          int              `yaml:"version"`
+	Entities         []Entity          `yaml:"entities"`
+	ExternalInputs   []ExternalInput   `yaml:"external_inputs"`
+	GeneratedAt      string            `yaml:"generated_at"`
+	MappingLibraries []MappingLibrary  `yaml:"mapping_libraries"`
+	Plugins          []Plugin          `yaml:"plugins"`
+	ProviderBindings []ProviderBinding `yaml:"provider_bindings"`
+	Release          string            `yaml:"release"`
+	SchemaLibraries  []SchemaLibrary   `yaml:"schema_libraries"`
+	SourceArtifacts  []SourceArtifact  `yaml:"source_artifacts"`
+	Version          int               `yaml:"version"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
@@ -53,15 +54,15 @@ type Lockfile struct {
 // pair that anchor deterministic builds. ReferencedFrom records the
 // authoring-site origins that pulled the URI into closure.
 type Entity struct {
-	URI             string             `yaml:"uri"`
-	ResolvedVersion string             `yaml:"resolved_version"`
-	Digest          string             `yaml:"digest"`
+	URI             string `yaml:"uri"`
+	ResolvedVersion string `yaml:"resolved_version"`
+	Digest          string `yaml:"digest"`
 	// ManifestDigest is the OCI manifest digest the artifact's signature
 	// commits to — the verify subject. It differs from Digest, the portable
 	// content digest used for the cache pin and integrity check. Present only
 	// for a registry-resolved entity; empty (and omitted) otherwise.
-	ManifestDigest string             `yaml:"manifest_digest,omitempty"`
-	ReferencedFrom []string           `yaml:"referenced_from"`
+	ManifestDigest string   `yaml:"manifest_digest,omitempty"`
+	ReferencedFrom []string `yaml:"referenced_from"`
 	// Deprecation records a verified retroactive deprecation marker discovered
 	// at pull time. Present only when a signed, trusted marker was found on the
 	// artifact; empty (and omitted) otherwise. Build reads this recorded fact
@@ -234,19 +235,49 @@ type SourceArtifactReference struct {
 // `recipe.<provider>.<name>.spec.pipeline`) that pulled the URI into
 // closure.
 type Plugin struct {
-	URI             string             `yaml:"uri"`
-	ResolvedVersion string             `yaml:"resolved_version"`
-	Digest          string             `yaml:"digest"`
+	URI             string `yaml:"uri"`
+	ResolvedVersion string `yaml:"resolved_version"`
+	Digest          string `yaml:"digest"`
 	// ManifestDigest is the OCI manifest digest the .wasm artifact's signature
 	// commits to — the verify subject. It differs from Digest, the portable
 	// content digest used for the cache pin and integrity check. Present only
 	// for a registry-resolved artifact; empty (and omitted) otherwise.
-	ManifestDigest string             `yaml:"manifest_digest,omitempty"`
-	ReferencedFrom []string           `yaml:"referenced_from"`
+	ManifestDigest string   `yaml:"manifest_digest,omitempty"`
+	ReferencedFrom []string `yaml:"referenced_from"`
 	// Deprecation records a verified retroactive deprecation marker discovered
 	// at pull time. Present only when a signed, trusted marker was found on the
 	// .wasm artifact; empty (and omitted) otherwise. Build reads this recorded
 	// fact and never touches a registry (the ahead-of-time boundary).
 	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
 	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
+}
+
+// ProviderBinding records the resolved render-engine selection for one
+// render target kind: which provider-rendering plugin renders a target
+// (e.g. "helm"). Pull resolves the binding — from the workspace-config
+// provider_bindings map when the target is ambiguously served, or from
+// the sole serving plugin when unambiguous — and records it here so the
+// build selects the engine from the lockfile rather than re-reading the
+// workspace config. This keeps build output invariant to a
+// provider_bindings change made after the pull (the change is adopted
+// only on the next pull).
+//
+// The plugin's content digest is NOT duplicated here — it stays
+// single-sourced in the Plugins and Entities sections, which this record
+// points into by identity (Plugin is the digest-free spec.plugin OCI
+// ref). Version coexistence is preserved: this record selects the plugin
+// repository per target; the concrete versions live in Entities (one
+// entry per resolved plugin version), and each Recipe's spec.target
+// version pin selects among them at render.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical
+// key emission, matching the Lockfile-wide discipline.
+type ProviderBinding struct {
+	// Plugin is the digest-free OCI identity of the resolved
+	// provider-rendering plugin (matching a Plugin entity's spec.plugin,
+	// e.g. "oci://hub.aggrega.ai/plugins/core/helm").
+	Plugin string `yaml:"plugin"`
+	// Target is the render target kind this binding selects an engine for
+	// — the bare engine name a Recipe binds through spec.target.
+	Target string `yaml:"target"`
 }

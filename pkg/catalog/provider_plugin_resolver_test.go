@@ -4,6 +4,7 @@
 package catalog_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -128,25 +129,89 @@ func TestProviderPluginByNameSelectsHighestVersion(t *testing.T) {
 	}
 }
 
-// TestProviderPluginConflictHaltsAtLoad proves two DISTINCT provider plugins both
-// claiming the same provider halt the catalog load loudly, rather than resolving
-// to an arbitrary engine at render time.
-func TestProviderPluginConflictHaltsAtLoad(t *testing.T) {
+// TestProviderPluginAmbiguityIsPointOfUse proves two DISTINCT provider plugins
+// both serving the same target do NOT halt the catalog load — a federated catalog
+// is legal — and instead halt loudly at resolution (the point of use) when no
+// provider_bindings entry disambiguates, naming both candidates.
+func TestProviderPluginAmbiguityIsPointOfUse(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeYAMLToCatalog(t, dir, "plugins/helm-renderer.yaml", providerPlugin("helm-renderer", "1.0.0", "helm"))
 	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-alt.yaml", providerPlugin("helm-renderer-alt", "1.0.0", "helm"))
 
-	_, err := catalog.LoadAll("", dir)
-	if err == nil {
-		t.Fatal("LoadAll: expected a conflict halt when two distinct provider plugins claim \"helm\"; got nil")
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("LoadAll: a federated catalog (two plugins serving \"helm\") must load without halting; got: %v", err)
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "provider \"helm\" is claimed by more than one provider plugin") {
-		t.Errorf("conflict error message missing the actionable claim; got:\n%s", msg)
+
+	// No binding → loud ambiguity halt naming both candidates at resolution.
+	_, ok, rerr := cat.ProviderPluginByName("helm")
+	if ok || rerr == nil {
+		t.Fatalf("ProviderPluginByName(\"helm\") over an ambiguous catalog: got (ok=%v, err=%v); want (false, ErrAmbiguousProviderPlugin)", ok, rerr)
 	}
-	// Both offending plugin names appear, sorted, so the operator knows what to fix.
-	if !strings.Contains(msg, "helm-renderer") || !strings.Contains(msg, "helm-renderer-alt") {
-		t.Errorf("conflict error message must name both offending plugins; got:\n%s", msg)
+	if !errors.Is(rerr, catalog.ErrAmbiguousProviderPlugin) {
+		t.Errorf("ambiguity error must be ErrAmbiguousProviderPlugin; got: %v", rerr)
+	}
+	if !strings.Contains(rerr.Error(), "helm-renderer") || !strings.Contains(rerr.Error(), "helm-renderer-alt") {
+		t.Errorf("ambiguity error must name both candidates; got:\n%s", rerr.Error())
+	}
+}
+
+// TestProviderPluginBindingDisambiguates proves a provider_bindings entry selects
+// which of two competing plugins renders a target: the binding filters the
+// candidate set to the plugin whose spec.plugin matches the bound OCI identity,
+// and the other publisher's plugin is excluded.
+func TestProviderPluginBindingDisambiguates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeYAMLToCatalog(t, dir, "plugins/helm-renderer.yaml", providerPlugin("helm-renderer", "1.0.0", "helm"))
+	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-alt.yaml", providerPlugin("helm-renderer-alt", "1.0.0", "helm"))
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+
+	bindings := map[string]string{"helm": "oci://hub.aggrega.ai/plugins/core/helm-renderer-alt"}
+	got, ok, rerr := cat.ProviderPluginForTarget("helm", bindings)
+	if rerr != nil || !ok {
+		t.Fatalf("ProviderPluginForTarget with a binding: got (ok=%v, err=%v); want the bound plugin", ok, rerr)
+	}
+	if got.Metadata.Name != "helm-renderer-alt" {
+		t.Errorf("binding must select helm-renderer-alt; got %q", got.Metadata.Name)
+	}
+
+	// A binding naming a plugin no candidate matches is a loud, unfulfillable halt.
+	_, ok, rerr = cat.ProviderPluginForTarget("helm", map[string]string{"helm": "oci://hub.aggrega.ai/plugins/core/nonexistent"})
+	if ok || !errors.Is(rerr, catalog.ErrProviderBindingUnsatisfied) {
+		t.Errorf("an unsatisfiable binding must return ErrProviderBindingUnsatisfied; got (ok=%v, err=%v)", ok, rerr)
+	}
+}
+
+// TestProviderPluginBindingPreservesVersionCoexistence proves the binding selects
+// the plugin repository per target while the version is chosen per-recipe by the
+// target pin — so two recipes pinning different versions of one bound repository
+// each resolve to their own version.
+func TestProviderPluginBindingPreservesVersionCoexistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-100.yaml", providerPlugin("helm-renderer", "1.0.0", "helm"))
+	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-200.yaml", providerPlugin("helm-renderer", "2.0.0", "helm"))
+	// A second publisher whose presence makes the binding necessary.
+	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-alt.yaml", providerPlugin("helm-renderer-alt", "1.0.0", "helm"))
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	bindings := map[string]string{"helm": "oci://hub.aggrega.ai/plugins/core/helm-renderer"}
+
+	v1, ok, rerr := cat.ProviderPluginForTarget("helm:1.0.0", bindings)
+	if rerr != nil || !ok || v1.Metadata.Version != "1.0.0" {
+		t.Errorf("helm:1.0.0 under the binding: got (ver=%q, ok=%v, err=%v); want 1.0.0", v1.Metadata.Version, ok, rerr)
+	}
+	v2, ok, rerr := cat.ProviderPluginForTarget("helm:2.0.0", bindings)
+	if rerr != nil || !ok || v2.Metadata.Version != "2.0.0" {
+		t.Errorf("helm:2.0.0 under the binding: got (ver=%q, ok=%v, err=%v); want 2.0.0", v2.Metadata.Version, ok, rerr)
 	}
 }

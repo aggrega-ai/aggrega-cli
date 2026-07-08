@@ -89,6 +89,83 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 	return nil
 }
 
+// UpsertProviderBinding adds or updates the `provider_bindings.<target>` entry
+// in the workspace config file at path, preserving every other setting, and
+// writes the result back. A file that does not yet exist is created carrying a
+// `workspace: {}` marker and the one binding. An existing entry for the same
+// target is updated in place; a new target is added.
+//
+// Like UpsertRegistry it operates on the document's YAML node tree, rewriting
+// only the `provider_bindings` key, and validates the merged document against the
+// config schema before writing, so a malformed result never reaches disk. This is
+// the write path the interactive pull binding-helper routes through, keeping the
+// config-write, schema-gate, and node-surgery discipline in one place.
+func UpsertProviderBinding(path, target, plugin string) error {
+	if target == "" || plugin == "" {
+		return fmt.Errorf("workspaceconfig: UpsertProviderBinding: target and plugin are required")
+	}
+
+	var root yaml.Node
+	data, rerr := os.ReadFile(path)
+	switch {
+	case rerr == nil:
+		if verr := validateBytes(data, path); verr != nil {
+			return verr
+		}
+		if uerr := yaml.Unmarshal(data, &root); uerr != nil {
+			return fmt.Errorf("workspaceconfig: parse existing %s: %w", path, uerr)
+		}
+	case os.IsNotExist(rerr):
+		if err := root.Encode(map[string]any{"workspace": map[string]any{}}); err != nil {
+			return fmt.Errorf("workspaceconfig: seed fresh config: %w", err)
+		}
+	default:
+		return fmt.Errorf("workspaceconfig: read %s: %w", path, rerr)
+	}
+
+	mapping := rootMapping(&root)
+	if mapping == nil {
+		return fmt.Errorf("workspaceconfig: %s: top-level document is not a mapping", path)
+	}
+
+	bindings := readProviderBindings(mapping)
+	if bindings == nil {
+		bindings = map[string]string{}
+	}
+	bindings[target] = plugin
+
+	var bindNode yaml.Node
+	if err := bindNode.Encode(bindings); err != nil {
+		return fmt.Errorf("workspaceconfig: encode provider_bindings: %w", err)
+	}
+	setMappingKey(mapping, "provider_bindings", &bindNode)
+
+	out, merr := yaml.Marshal(&root)
+	if merr != nil {
+		return fmt.Errorf("workspaceconfig: marshal %s: %w", path, merr)
+	}
+	if verr := validateBytes(out, path); verr != nil {
+		return fmt.Errorf("workspaceconfig: merged config failed validation: %w", verr)
+	}
+	if werr := os.WriteFile(path, out, 0o644); werr != nil {
+		return fmt.Errorf("workspaceconfig: write %s: %w", path, werr)
+	}
+	return nil
+}
+
+// readProviderBindings decodes the existing `provider_bindings` map from a
+// mapping node, or returns nil when the key is absent.
+func readProviderBindings(mapping *yaml.Node) map[string]string {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == "provider_bindings" {
+			var m map[string]string
+			_ = mapping.Content[i+1].Decode(&m)
+			return m
+		}
+	}
+	return nil
+}
+
 // rootMapping returns the mapping node at the root of a parsed document,
 // unwrapping the document node yaml.Unmarshal produces. Returns nil when
 // the root is not a mapping.

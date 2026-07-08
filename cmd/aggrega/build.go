@@ -330,6 +330,18 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	progress.phase(phaseRender)
 	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
 	buildLookup := lazyView.AsCatalogLookup()
+	// Provider resolution reads the resolved bindings from the LOCKFILE, never the
+	// workspace config — so build output is invariant to a provider_bindings change
+	// made after the pull (a change is adopted only on the next pull). A federated
+	// catalog with more than one plugin serving a target is disambiguated by the
+	// pinned binding; without a binding an ambiguous target halts loudly at render.
+	lockfileBindings := map[string]string{}
+	for _, b := range lf.ProviderBindings {
+		lockfileBindings[b.Target] = b.Plugin
+	}
+	buildLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
+		return lazyView.ProviderPluginForTarget(ref, lockfileBindings)
+	}
 	// The pipeline context carries the external-input service to the
 	// renderer's plugin-load sites, where each loader picks it up as its
 	// fetch seam.

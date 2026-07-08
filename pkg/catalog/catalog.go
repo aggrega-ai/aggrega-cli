@@ -556,8 +556,10 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // (different contract from the pillar-wrapped Component / Feature schemas —
 // no SchemaLibrary $ref expansion is expected at the Plugin provider field
 // surface today). Wired so today's catalogs reach the same load-time guardrail
-// the Component / Feature surface enjoys. A final guardrail rejects a provider
-// name claimed by more than one provider-rendering Plugin.
+// the Component / Feature surface enjoys. A render target served by more than one
+// provider-rendering Plugin is NOT a load error — a federated catalog is legal;
+// the ambiguity halts at the point of use (pull resolution / build render) when no
+// provider_bindings entry selects one.
 func (c *Catalog) validateSchemaPillarsPass() error {
 	var validationErrors []error
 
@@ -625,49 +627,13 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		}
 	}
 
-	// Provider-plugin conflict guardrail: a provider name must be served by at
-	// most one provider-rendering Plugin. Two distinct pluginType: provider
-	// Plugins both listing the same provider in targets make render
-	// dispatch ambiguous, so it halts loudly at load rather than resolving to an
-	// arbitrary engine. Only provider plugins count — a linter or frp_step
-	// plugin's targets carries a different meaning. Iterating the
-	// sorted pluginKeys and sorting the offending names keeps the diagnostic
-	// byte-identical across runs.
-	claimants := map[string]map[string]struct{}{}
-	for _, key := range pluginKeys {
-		p := c.Plugins[key]
-		if p.Spec.PluginType != "provider" {
-			continue
-		}
-		for _, provName := range p.Spec.Targets {
-			if claimants[provName] == nil {
-				claimants[provName] = map[string]struct{}{}
-			}
-			claimants[provName][p.Metadata.Name] = struct{}{}
-		}
-	}
-	conflicted := make([]string, 0, len(claimants))
-	for provName, names := range claimants {
-		if len(names) > 1 {
-			conflicted = append(conflicted, provName)
-		}
-	}
-	sort.Strings(conflicted)
-	for _, provName := range conflicted {
-		names := make([]string, 0, len(claimants[provName]))
-		for n := range claimants[provName] {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		validationErrors = append(validationErrors, cerrors.New(
-			cerrors.CatalogError,
-			cerrors.SourceLocation{},
-			fmt.Sprintf("provider %q is claimed by more than one provider plugin (%s); exactly one Plugin may serve a provider",
-				provName, strings.Join(names, ", ")),
-			nil,
-			nil,
-		))
-	}
+	// A render target served by more than one provider-rendering Plugin is NOT a
+	// catalog-load error: a federated catalog where two publishers each ship a
+	// plugin for the same target is legal. Ambiguity is a point-of-use concern the
+	// provider_bindings surface resolves at pull, and it halts loudly there (and at
+	// build render) via ErrAmbiguousProviderPlugin when a reached target is served
+	// by more than one plugin and no binding selects one — so an ambiguity outside a
+	// Release's reach never blocks an unrelated build.
 
 	if len(validationErrors) == 0 {
 		return nil

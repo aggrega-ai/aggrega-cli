@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -445,7 +446,30 @@ func pullRun(cfg pullConfig) error {
 	// Tier-1-local plugin is left out (resolved at build through its local path).
 	// Lock-time only — the build path reads plugin pins from the lockfile and never
 	// descends.
-	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup, lazyView.ProviderPluginByName); err != nil {
+	// Provider resolution honors the workspace-config provider_bindings selection
+	// and records the resolved target → plugin binding for the lockfile, so build
+	// selects the engine from the lockfile rather than re-reading the config. On an
+	// ambiguous target with no binding the interactive helper (TTY, not --quiet)
+	// offers to write the binding; non-interactively the ambiguity halts loudly.
+	resolvedBindings := map[string]lockfile.ProviderBinding{}
+	providerBindResolver := func(ref string) (types.Plugin, bool, error) {
+		bare, _, _ := strings.Cut(ref, ":")
+		p, ok, err := lazyView.ProviderPluginForTarget(ref, wsCfg.ProviderBindings)
+		if errors.Is(err, catalog.ErrAmbiguousProviderPlugin) && providerBindingHelperEligible(cfg) {
+			if herr := runProviderBindingHelper(bare, lazyView.ProviderPluginCandidates(bare), rw.Root(), &wsCfg, cfg.DiagOut); herr != nil {
+				return types.Plugin{}, false, herr
+			}
+			p, ok, err = lazyView.ProviderPluginForTarget(ref, wsCfg.ProviderBindings)
+		}
+		if err != nil {
+			return types.Plugin{}, false, err
+		}
+		if ok {
+			resolvedBindings[bare] = lockfile.ProviderBinding{Target: bare, Plugin: p.Spec.Plugin}
+		}
+		return p, ok, err
+	}
+	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver); err != nil {
 		return fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
 	}
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
@@ -615,7 +639,7 @@ func pullRun(cfg pullConfig) error {
 			}
 			cl.SourceArtifacts = sourceArtifacts
 
-			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg)
+			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
 			// prior lockfile before verification runs. A warm-cache (Tier-2) re-pull
 			// does not re-touch the registry, so it does not re-discover markers; the
@@ -662,12 +686,17 @@ func pullRun(cfg pullConfig) error {
 // buildLockfile materialises a *lockfile.Lockfile from the closure
 // result. Field-for-field copy across the closure / lockfile package
 // boundary; both types intentionally mirror the same shape.
-func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config) *lockfile.Lockfile {
+func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     filepath.Base(releasePath),
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 	}
+
+	for _, b := range bindings {
+		lf.ProviderBindings = append(lf.ProviderBindings, b)
+	}
+	sort.Slice(lf.ProviderBindings, func(i, j int) bool { return lf.ProviderBindings[i].Target < lf.ProviderBindings[j].Target })
 
 	for _, e := range cl.Entities {
 		lf.Entities = append(lf.Entities, lockfile.Entity{

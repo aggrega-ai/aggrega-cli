@@ -7,10 +7,11 @@
 // root marker — its presence marks the workspace root and it holds
 // only the root-defining catalog directories. Pure settings live at
 // the top level: default_registry, offline, auto_pull, and
-// artifact_cache_dir, plus the build, plugins, lint, and parse_cache
-// blocks — covering registry routing, build-time strictness dials,
-// workspace-level Wasm plugin attachments, per-rule lint gates, and
-// the daemon's parse-cache eviction caps.
+// artifact_cache_dir, plus the build, plugins, provider_bindings,
+// lint, and parse_cache blocks — covering registry routing, build-time
+// strictness dials, workspace-level Wasm plugin attachments, per-target
+// render-engine selection, per-rule lint gates, and the daemon's
+// parse-cache eviction caps.
 //
 // The workspace file is flat top-level (no apiVersion/kind/metadata
 // envelope), distinguishing it from catalog content which carries
@@ -74,8 +75,31 @@ type Config struct {
 	// pin and halts when it does not.
 	PluginSidecarDir string `yaml:"plugin_sidecar_dir"`
 
-	Build       BuildConfig       `yaml:"build"`
-	Plugins     PluginsConfig     `yaml:"plugins"`
+	Build   BuildConfig   `yaml:"build"`
+	Plugins PluginsConfig `yaml:"plugins"`
+
+	// ProviderBindings selects, per render target kind, which
+	// provider-rendering plugin renders it — the disambiguation and
+	// override surface for a federated catalog where more than one
+	// provider plugin serves the same target. Each key is the bare
+	// engine name a Recipe binds through spec.target (e.g. "helm");
+	// each value is the digest-free OCI identity of the serving plugin
+	// (matching a Plugin entity's spec.plugin, e.g.
+	// "oci://hub.aggrega.ai/plugins/core/helm"), with an optional
+	// trailing ":version" in the same three forms as a version pin.
+	//
+	// This map is a pull-time input only: pull records the resolved
+	// binding into the per-Release lockfile, and build reads the
+	// lockfile — never this map — so build output is invariant to a
+	// change made here after a pull (adopted only on the next pull).
+	// It is consulted strictly by key at resolution; it is never ranged
+	// to produce rendered output, so a plain map is determinism-safe.
+	// Per-key precedence across config layers (workspace over global)
+	// follows from the loader's overlay-onto-seed merge; there is no
+	// _append companion because the map is a workspace-specific keyed
+	// override, not a composed list.
+	ProviderBindings map[string]string `yaml:"provider_bindings,omitempty"`
+
 	Lint        LintConfig        `yaml:"lint"`
 	ParseCache  ParseCacheConfig  `yaml:"parse_cache"`
 	Concurrency ConcurrencyConfig `yaml:"concurrency"`
