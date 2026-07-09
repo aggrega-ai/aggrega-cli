@@ -54,9 +54,10 @@ var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 // serving that provider satisfies the pin: either the provider has no serving
 // Plugin at all, or the serving Plugin's available versions do not satisfy the
 // exact/caret constraint. The version pin is an explicit request the compiler
-// cannot honor, so the build halts loudly rather than silently rendering through
-// the versionless in-tree engine. The wrapped message names the provider and the
-// pinned version so each provider yields a specific diagnostic. It is distinct
+// cannot honor, so the build halts loudly rather than silently ignoring the pin
+// and rendering through whatever plugin version happens to serve the provider.
+// The wrapped message names the provider and the pinned version so each provider
+// yields a specific diagnostic. It is distinct
 // from ErrUnsatisfiableEntityVersion, which covers Component / Feature / Aggregate
 // version references, not provider-engine selection.
 var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
