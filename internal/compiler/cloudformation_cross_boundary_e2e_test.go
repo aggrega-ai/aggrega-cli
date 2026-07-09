@@ -47,7 +47,7 @@ func cfnCatalogPaths() []string {
 		cfnHubCatalog + "/component/example/compute/db-reader/1.0.0/component.yaml",
 		cfnHubCatalog + "/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
 		cfnHubCatalog + "/recipe/cloudformation/db-reader/1.0.0/recipe.yaml",
-		cfnHubCatalog + "/plugin/cloudformation-renderer/1.0.0/plugin.yaml",
+		cfnHubCatalog + "/plugin/cloudformation-renderer/0.4.0/plugin.yaml",
 	}
 }
 

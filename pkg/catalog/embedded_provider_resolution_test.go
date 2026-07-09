@@ -28,7 +28,7 @@ import (
 // ships, not against a hand-maintained constant.
 const (
 	helmArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helm-provider"
-	helmPluginEntity   = "helm-renderer:1.0.0"
+	helmPluginEntity   = "helm-renderer:0.4.0"
 	helmProviderMemPag = 4096
 )
 
@@ -55,10 +55,10 @@ func embeddedReferenceDigest(t *testing.T, uri string) string {
 func helmChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
-			"helm-renderer:1.0.0": {
+			"helm-renderer:0.4.0": {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "helm-renderer", Version: "1.0.0"},
+				Metadata:   types.PluginMetadata{Name: "helm-renderer", Version: "0.4.0"},
 				Spec: types.PluginSpec{
 					Plugin:     helmArtifactURI,
 					PluginType: "provider",
