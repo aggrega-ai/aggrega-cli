@@ -79,12 +79,15 @@ func LinkPublish(edge rendercore.LinkEdge) (rendercore.LinkPublishOutput, error)
 // LinkResolve produces the consumer-side wiring for one cross-boundary link on
 // the consuming (source) endpoint's side: for each output key the edge injects,
 // it locates the deterministic placeholder the host stamped into the consuming
-// stack and replaces it with a CloudFormation cross-stack reference. The peer's
-// placement annotations select the reference shape — a same-account, same-region
-// peer is imported with Fn::ImportValue against the published export name; a peer
-// in another account or region is read with Fn::GetStackOutput against the
-// producer stack, output, region, and assume-role, all deterministic pointer
-// strings the compiler pipes and the runtime resolves.
+// stack and replaces it with a CloudFormation cross-stack reference. Both ends'
+// placement annotations select the reference shape: only when both ends declare
+// a placement (account or region) and those placements differ is the value read
+// with Fn::GetStackOutput against the producer stack, output, region, and
+// assume-role — the producer (target) side supplies the region and assume-role;
+// otherwise the value is imported with Fn::ImportValue against the published
+// export name. A placement declared on only one end, or matching placements on
+// both, resolves to the same-placement import. Every reference field is a
+// deterministic pointer string the compiler pipes and the runtime resolves.
 //
 // A placeholder that survives only inside a larger string halts loudly: a
 // cross-reference is an intrinsic object and can replace only a whole scalar. A
@@ -100,8 +103,12 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 		return rendercore.LinkResolveOutput{}, fmt.Errorf("cloudformation-provider: parse consumer stack template: %w", err)
 	}
 
-	ann := ReadCloudTargetAnnotationsFromMap(edge.TargetAnnotations)
-	crossAccountOrRegion := ann.AWSAccount != "" || ann.AWSRegion != ""
+	targetAnn := ReadCloudTargetAnnotationsFromMap(edge.TargetAnnotations)
+	sourceAnn := ReadCloudTargetAnnotationsFromMap(edge.SourceAnnotations)
+	targetDeclared := targetAnn.AWSAccount != "" || targetAnn.AWSRegion != ""
+	sourceDeclared := sourceAnn.AWSAccount != "" || sourceAnn.AWSRegion != ""
+	differ := targetAnn.AWSAccount != sourceAnn.AWSAccount || targetAnn.AWSRegion != sourceAnn.AWSRegion
+	crossAccountOrRegion := targetDeclared && sourceDeclared && differ
 
 	ops := make([]frp.JSONPatchOp, 0)
 	for _, outputKey := range injectedOutputKeys(edge) {
@@ -119,8 +126,8 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 			value = map[string]any{"Fn::GetStackOutput": map[string]any{
 				"StackName":  handle[handleStackNameKey],
 				"OutputName": outputKey,
-				"Region":     ann.AWSRegion,
-				"RoleArn":    ann.AWSAssumeRoleARN,
+				"Region":     targetAnn.AWSRegion,
+				"RoleArn":    targetAnn.AWSAssumeRoleARN,
 			}}
 		} else {
 			value = map[string]any{"Fn::ImportValue": handle[handleExportNamePrefix+outputKey]}

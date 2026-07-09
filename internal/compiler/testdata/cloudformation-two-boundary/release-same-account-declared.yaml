@@ -1,0 +1,53 @@
+# Same-account-declared variant of the two-boundary example: both stacks declare
+# AWS placement annotations naming the same account and region. Because the two
+# ends declare the same placement, the consuming stack's reference to the
+# database host resolves through a same-account stack-export import
+# (Fn::ImportValue) — not a cross-account stack-output read (Fn::GetStackOutput).
+# The producer declaring its placement does not on its own select the
+# cross-account shape; the two ends must declare placements that differ. The
+# topology is the sibling aggregate/manifest unchanged — only the boundary
+# placement annotations differ from release.yaml.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-same-account
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    # Stack A: the database and an intra-stack consumer assemble into one stack.
+    # Its AWS placement annotations mark the account and region the stack lands
+    # in, plus the role a cross-account reader would assume.
+    stack-a:
+      directory: ./dist/stack-a
+      annotations:
+        aggrega.ai/aws-account: "111111111111"
+        aggrega.ai/aws-region: "eu-west-1"
+        aggrega.ai/aws-assume-role-arn: "arn:aws:iam::111111111111:role/cross-stack-reader"
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+        app-a: {}
+    # Stack B: a second application that reads the same database assembles into
+    # its own stack in the SAME account and region as stack A. Because both ends
+    # declare the same placement, the reference resolves through a stack-export
+    # import rather than a cross-account stack-output read.
+    stack-b:
+      directory: ./dist/stack-b
+      annotations:
+        aggrega.ai/aws-account: "111111111111"
+        aggrega.ai/aws-region: "eu-west-1"
+      components:
+        app-b: {}

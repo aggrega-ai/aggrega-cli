@@ -48,8 +48,8 @@ type assembledGroup struct {
 //     warning.
 //
 // The host assembles the domain-blind per-edge payload from the edge, the
-// endpoints' dispatch identity, the build's deployment identity, and the
-// consumed end's resolved annotations; it interprets no annotation value
+// endpoints' dispatch identity, the build's deployment identity, and both ends'
+// resolved annotations; it interprets no annotation value
 // (Invariants 1/3) and resolves no runtime state (Invariant 2) — the
 // deterministic pointer strings a guest returns are piped, not resolved. The
 // deployment identity is copied onto both endpoints as an opaque scalar; the
@@ -100,7 +100,7 @@ func wireCrossBoundaryLinks(
 			continue
 		}
 
-		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], deploymentID)
+		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], nodeAnnotations[edge.Source], deploymentID)
 
 		// Producer-side: publish on the consumed (target) end's guest, then apply
 		// its wiring to the target group's assembled files.
@@ -245,17 +245,18 @@ func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*a
 
 // buildLinkEdge assembles the domain-blind per-edge payload for one
 // cross-boundary uses edge: both endpoints' identity (node, boundary dispatch
-// path, render target), the consumed end's resolved annotations as an opaque
-// scalar map, the socket, and the consumed end's provides plus the consuming
-// end's inject mapping. Edge enrichment is single-sourced through
-// [EnrichedEdgeViewFromIREdge]; the host reads the projected view, it does not
-// build a second edge-enrichment path.
-func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations map[string]string, deploymentID string) LinkEdge {
+// path, render target), each end's resolved annotations as an opaque scalar map
+// (the consumed end's and the consuming end's), the socket, and the consumed
+// end's provides plus the consuming end's inject mapping. Edge enrichment is
+// single-sourced through [EnrichedEdgeViewFromIREdge]; the host reads the
+// projected view, it does not build a second edge-enrichment path.
+func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations, sourceAnnotations map[string]string, deploymentID string) LinkEdge {
 	view := EnrichedEdgeViewFromIREdge(edge, allProvides)
 	return LinkEdge{
 		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Deployment: deploymentID},
 		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider, Deployment: deploymentID},
 		TargetAnnotations: targetAnnotations,
+		SourceAnnotations: sourceAnnotations,
 		Socket:            view.Socket,
 		Provides:          view.Provides,
 		Inject:            view.Inject,

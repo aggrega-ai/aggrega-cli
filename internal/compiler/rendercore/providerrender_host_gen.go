@@ -326,7 +326,7 @@ type LinkEndpoint struct {
 	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty"`
 }
 
-// LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, the consumed endpoint's placement annotations as an opaque scalar map the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A render target reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
+// LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, both endpoints' placement annotations as opaque scalar maps the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A render target reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
 type LinkEdge struct {
 	// Source The consuming endpoint — the source end of the directed uses edge, whose assembled output the consumer-side wiring is injected into.
 	Source LinkEndpoint `json:"source" yaml:"source"`
@@ -334,6 +334,8 @@ type LinkEdge struct {
 	Target LinkEndpoint `json:"target" yaml:"target"`
 	// TargetAnnotations The consumed (target) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the target's resolved annotations and passes them verbatim; it infers no meaning from any value. A render target reads them to decide how to shape a cross-reference (for example whether the two ends share a placement or need a cross-placement reference). Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
 	TargetAnnotations map[string]string `json:"target_annotations,omitempty" yaml:"target_annotations,omitempty"`
+	// SourceAnnotations The consuming (source) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the source's resolved annotations and passes them verbatim; it infers no meaning from any value. A render target reads them to compare the two ends' placement — for example whether the source and target share a placement or sit in different ones. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
+	SourceAnnotations map[string]string `json:"source_annotations,omitempty" yaml:"source_annotations,omitempty"`
 	// Socket The socket alias the uses edge is bound under.
 	Socket string `json:"socket" yaml:"socket"`
 	// Provides The consumed endpoint's provides output, an author-ordered key set exposing the target's declared outputs. Preserves author order so the payload is byte-identical across runs of identical input.
@@ -3453,6 +3455,31 @@ func (t LinkEdge) MarshalJSON() ([]byte, error) {
 			buf.WriteByte('}')
 		}
 	}
+	if len(t.SourceAnnotations) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"source_annotations\":")
+		{
+			keys := make([]string, 0, len(t.SourceAnnotations))
+			for k := range t.SourceAnnotations {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.SourceAnnotations[k]
+				writeJSONString(&buf, mv)
+			}
+			buf.WriteByte('}')
+		}
+	}
 	if !first {
 		buf.WriteByte(',')
 	}
@@ -3530,6 +3557,27 @@ func (t *LinkEdge) UnmarshalJSON(data []byte) error {
 					mv = s
 				}
 				t.TargetAnnotations[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		case "source_annotations":
+			t.SourceAnnotations = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.SourceAnnotations[mk] = mv
 			}
 			if err := expectDelim(dec, '}'); err != nil {
 				return err

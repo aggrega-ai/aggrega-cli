@@ -19,9 +19,10 @@ const testDeployment = "prod-release"
 
 // testLinkEdge builds a cross-boundary link edge from consumer "api" to producer
 // "orders-db" on the "database" socket, injecting the target's "host" output. The
-// annotations carry the consumed endpoint's placement, and both endpoints carry
-// the deployment identity the published names are scoped within.
-func testLinkEdge(ann map[string]string) rendercore.LinkEdge {
+// target and source annotation maps carry the consumed and consuming endpoints'
+// placement respectively, and both endpoints carry the deployment identity the
+// published names are scoped within.
+func testLinkEdge(targetAnn, sourceAnn map[string]string) rendercore.LinkEdge {
 	var env types.OrderedMap[string]
 	env.Set("DB_HOST", "host")
 	var inject types.OrderedMap[types.OrderedMap[string]]
@@ -29,14 +30,15 @@ func testLinkEdge(ann map[string]string) rendercore.LinkEdge {
 	return rendercore.LinkEdge{
 		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation", Deployment: testDeployment},
 		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation", Deployment: testDeployment},
-		TargetAnnotations: ann,
+		TargetAnnotations: targetAnn,
+		SourceAnnotations: sourceAnn,
 		Socket:            "database",
 		Inject:            inject,
 	}
 }
 
 func TestLinkPublishAddsExport(t *testing.T) {
-	out, err := LinkPublish(testLinkEdge(nil))
+	out, err := LinkPublish(testLinkEdge(nil, nil))
 	if err != nil {
 		t.Fatalf("LinkPublish: %v", err)
 	}
@@ -81,7 +83,7 @@ func consumerStack(dbHost string) []byte {
 }
 
 func TestLinkResolveSameAccountImportValue(t *testing.T) {
-	edge := testLinkEdge(nil) // no account/region → same account+region
+	edge := testLinkEdge(nil, nil) // neither end declares placement → same account+region
 	pub, err := LinkPublish(edge)
 	if err != nil {
 		t.Fatalf("LinkPublish: %v", err)
@@ -116,7 +118,12 @@ func TestLinkResolveCrossAccountGetStackOutput(t *testing.T) {
 		annotationAWSRegion:        "eu-west-1",
 		annotationAWSAssumeRoleARN: "arn:aws:iam::222222222222:role/xacct",
 	}
-	edge := testLinkEdge(ann)
+	// The consumer (source) declares a different account, so both ends declare a
+	// placement and the placements differ — the cross-placement read fires.
+	sourceAnn := map[string]string{
+		annotationAWSAccount: "111111111111",
+	}
+	edge := testLinkEdge(ann, sourceAnn)
 	pub, err := LinkPublish(edge)
 	if err != nil {
 		t.Fatalf("LinkPublish: %v", err)
@@ -151,8 +158,70 @@ func TestLinkResolveCrossAccountGetStackOutput(t *testing.T) {
 	}
 }
 
+// TestLinkResolveSameAccountDeclaredImportValue proves the tightened
+// peer-selection: a producer (target) that declares its placement no longer
+// forces a cross-placement read on its own. When the consumer (source) declares
+// the same placement, or declares none at all, the two ends are treated as
+// co-located and the reference resolves to a same-placement Fn::ImportValue.
+func TestLinkResolveSameAccountDeclaredImportValue(t *testing.T) {
+	cases := []struct {
+		name      string
+		targetAnn map[string]string
+		sourceAnn map[string]string
+	}{
+		{
+			name: "both declare the same account",
+			targetAnn: map[string]string{
+				annotationAWSAccount: "111111111111",
+			},
+			sourceAnn: map[string]string{
+				annotationAWSAccount: "111111111111",
+			},
+		},
+		{
+			name: "producer declares, consumer undeclared",
+			targetAnn: map[string]string{
+				annotationAWSAccount:       "111111111111",
+				annotationAWSRegion:        "eu-west-1",
+				annotationAWSAssumeRoleARN: "arn:aws:iam::111111111111:role/xacct",
+			},
+			sourceAnn: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			edge := testLinkEdge(tc.targetAnn, tc.sourceAnn)
+			pub, err := LinkPublish(edge)
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			sentinel := rendercore.CrossBoundaryLinkSentinel("api", "orders-db", "database", "host")
+			files := []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack(sentinel)}}
+
+			out, err := LinkResolve(edge, pub.Handle, files)
+			if err != nil {
+				t.Fatalf("LinkResolve: %v", err)
+			}
+			if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
+				t.Fatalf("want one patch with one op, got %+v", out.Patches)
+			}
+			val, ok := out.Patches[0].Ops[0].Value.(map[string]any)
+			if !ok {
+				t.Fatalf("op value not a map: %+v", out.Patches[0].Ops[0].Value)
+			}
+			if _, present := val["Fn::GetStackOutput"]; present {
+				t.Fatalf("same-placement consumer value carries an Fn::GetStackOutput read; want Fn::ImportValue. got %#v", val)
+			}
+			wantExport := ExportName(testDeployment, "prod/data", "orders-db", "host")
+			if val["Fn::ImportValue"] != wantExport {
+				t.Errorf("Fn::ImportValue = %v, want %q", val["Fn::ImportValue"], wantExport)
+			}
+		})
+	}
+}
+
 func TestLinkResolveInterpolatedSentinelHalts(t *testing.T) {
-	edge := testLinkEdge(nil)
+	edge := testLinkEdge(nil, nil)
 	pub, _ := LinkPublish(edge)
 	sentinel := rendercore.CrossBoundaryLinkSentinel("api", "orders-db", "database", "host")
 	// The sentinel survives only inside a larger string — an interpolated value a
@@ -166,7 +235,7 @@ func TestLinkResolveInterpolatedSentinelHalts(t *testing.T) {
 }
 
 func TestLinkResolveMissingConsumerStackHalts(t *testing.T) {
-	edge := testLinkEdge(nil)
+	edge := testLinkEdge(nil, nil)
 	pub, _ := LinkPublish(edge)
 	_, err := LinkResolve(edge, pub.Handle, nil)
 	if !errors.Is(err, ErrLinkConsumerStackMissing) {

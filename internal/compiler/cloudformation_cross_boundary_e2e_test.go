@@ -85,6 +85,15 @@ func cfnCrossAccountInput(t *testing.T) pipelinetest.Input {
 	}
 }
 
+func cfnSameAccountDeclaredInput(t *testing.T) pipelinetest.Input {
+	t.Helper()
+	skipIfNoSiblingCatalog(t)
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/cloudformation-two-boundary/release-same-account-declared.yaml",
+		CatalogPaths: cfnCatalogPaths(),
+	}
+}
+
 // TestCloudFormationFragment_IntraStackAndProjection builds the single-stack
 // workspace end-to-end through the real cloudformation guest and asserts, from
 // the emitted bytes, that the fragment-form Recipe assembled into a well-formed
@@ -382,6 +391,86 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 // is byte-identical across repeated runs (the Deterministic Output invariant).
 func TestCloudFormationTwoBoundary_CrossAccountDeterministic(t *testing.T) {
 	in := cfnCrossAccountInput(t)
+	pipelinetest.AssertDeterministic(t, in)
+}
+
+// TestCloudFormationTwoBoundary_SameAccountDeclaredImportValue builds the
+// same-account-declared variant of the two-boundary workspace — both stacks
+// carry AWS placement annotations naming the same account and region —
+// end-to-end through the real cloudformation guest, and proves the reference
+// resolves to a same-account stack-export import from the emitted bytes. The
+// producer declaring its placement does not on its own force a cross-account
+// read: the two ends must declare placements that differ. Because both ends
+// declare the same account and region, the consumer's reference is an
+// Fn::ImportValue against the producer's Export.Name — the same round-trip
+// identity the no-annotation same-account build produces, here reached from
+// explicitly-declared matching placements rather than from absent ones.
+func TestCloudFormationTwoBoundary_SameAccountDeclaredImportValue(t *testing.T) {
+	in := cfnSameAccountDeclaredInput(t)
+
+	result := pipelinetest.Build(t, in)
+
+	producer, producerRaw := findCfnStack(t, result.Artifacts, "stack-a")
+	consumer, consumerRaw := findCfnStack(t, result.Artifacts, "stack-b")
+	t.Logf("producer stack template (stack-a):\n%s", producerRaw)
+	t.Logf("consumer stack template (stack-b):\n%s", consumerRaw)
+
+	// No cross-boundary link placeholder survives in any emitted artifact — every
+	// stamped placeholder must have been resolved into a real Export/import pair.
+	for k, v := range result.Artifacts {
+		if strings.Contains(string(v), rendercore.CrossBoundaryLinkSentinelPrefix) {
+			t.Fatalf("artifact %q retains a cross-boundary link placeholder:\n%s", k, v)
+		}
+	}
+
+	// Producer: Outputs.host carries an Export.Name the consumer stack can import.
+	producerOutputs := mustCfnMap(t, producer, "Outputs")
+	hostOut := mustCfnMap(t, producerOutputs, "host")
+	exportBlock := mustCfnMap(t, hostOut, "Export")
+	exportName, ok := exportBlock["Name"].(string)
+	if !ok || exportName == "" {
+		t.Fatalf("producer Outputs.host.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+	}
+	t.Logf("producer export name: %s", exportName)
+
+	// Consumer: AppDbHostParameter's Value is an Fn::ImportValue import — the
+	// same-account shape — and NOT an Fn::GetStackOutput cross-account read, even
+	// though the producer declares its placement. The imported name equals the
+	// producer's Export.Name: the round-trip identity that wires the two stacks.
+	consumerResources := mustCfnMap(t, consumer, "Resources")
+	appDbHost := mustCfnMap(t, consumerResources, "AppDbHostParameter")
+	appProps := mustCfnMap(t, appDbHost, "Properties")
+	value, ok := appProps["Value"].(map[string]any)
+	if !ok {
+		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an object; got %#v", appProps["Value"])
+	}
+	if _, present := value["Fn::GetStackOutput"]; present {
+		t.Fatalf("same-account-declared consumer value carries an Fn::GetStackOutput read; want Fn::ImportValue. got %#v", value)
+	}
+	importName, ok := value["Fn::ImportValue"].(string)
+	if !ok {
+		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an Fn::ImportValue intrinsic; got %#v", appProps["Value"])
+	}
+	if importName != exportName {
+		t.Fatalf("cross-stack round-trip identity broken: consumer imports %q but producer exports %q", importName, exportName)
+	}
+	t.Logf("same-account-declared round-trip identity holds: consumer Fn::ImportValue == producer Export.Name == %s", importName)
+
+	// Long-form intrinsics only — no short-form YAML tag survives in either stack.
+	for _, raw := range [][]byte{producerRaw, consumerRaw} {
+		for _, tag := range []string{"!GetAtt", "!Ref", "!Sub", "!ImportValue"} {
+			if strings.Contains(string(raw), tag) {
+				t.Fatalf("a short-form intrinsic tag %q survived in the emitted output", tag)
+			}
+		}
+	}
+}
+
+// TestCloudFormationTwoBoundary_SameAccountDeclaredDeterministic asserts the
+// same-account-declared build is byte-identical across repeated runs (the
+// Deterministic Output invariant).
+func TestCloudFormationTwoBoundary_SameAccountDeclaredDeterministic(t *testing.T) {
+	in := cfnSameAccountDeclaredInput(t)
 	pipelinetest.AssertDeterministic(t, in)
 }
 
